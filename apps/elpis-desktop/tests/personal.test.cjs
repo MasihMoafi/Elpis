@@ -86,20 +86,19 @@ test('a failed profile open reports the failure and leaves the tip available', a
   } finally { await f.close(); }
 });
 
-test('returning from another client refreshes the shared first-use state', async () => {
+test('returning to New chat refreshes first-use state changed by another client', async () => {
   const f = await fixture({ routes: routes() });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
     const tip = f.page.getByRole('button', { name: 'Tell Elpis how you work: /personal', exact: true });
     await tip.waitFor();
-    const otherContext = await f.page.context().browser().newContext();
-    const other = await otherContext.newPage();
-    await other.goto('about:blank');
+    await f.open('chat-a');
     const response = await fetch(new URL('/api/personal', f.page.url()), { method: 'POST', body: JSON.stringify({ action: 'open' }) });
     assert.equal(response.status, 200);
-    await f.page.bringToFront();
+    const refreshed = f.page.waitForResponse(response => response.url().endsWith('/api/personal') && response.request().method() === 'GET');
+    await f.page.locator('aside.sidebar').getByRole('button', { name: 'New chat', exact: true }).click();
+    await refreshed;
     await tip.waitFor({ state: 'detached' });
-    await otherContext.close();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
