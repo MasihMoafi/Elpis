@@ -87,12 +87,13 @@ test('cancel by signal sends session/cancel and answers a pending permission as 
 
 test('a timeout cancels over ACP, and an agent that ignores it is stopped', { timeout: 20000 }, async t => {
   const a = agentSpec(t, 'A');
-  await assert.rejects(runAcpNode(a.spec, { task: '[hang]' }, { cwd: a.dir, timeoutMs: 300 }), /timed out/);
+  // Include enough time for the SDK handshake when every bridge test file starts together.
+  await assert.rejects(runAcpNode(a.spec, { task: '[hang]' }, { cwd: a.dir, timeoutMs: 3000 }), /timed out/);
   assert.ok(a.received().some(m => m.method === 'session/cancel'));
   const b = agentSpec(t, 'B');
   let pid;
   const started = Date.now();
-  await assert.rejects(runAcpNode(b.spec, { task: '[ignore-cancel]' }, { cwd: b.dir, timeoutMs: 300, graceMs: 200, onSpawn: child => { pid = child.pid; } }), /timed out/);
+  await assert.rejects(runAcpNode(b.spec, { task: '[ignore-cancel]' }, { cwd: b.dir, timeoutMs: 3000, graceMs: 200, onSpawn: child => { pid = child.pid; } }), /timed out/);
   assert.ok(b.received().some(m => m.method === 'session/cancel'));
   assert.ok(Date.now() - started < 5000);
   assert.equal(alive(pid), false, 'the agent process is gone');
