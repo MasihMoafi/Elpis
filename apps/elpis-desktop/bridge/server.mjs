@@ -192,6 +192,12 @@ export async function startDesktopServer(options = {}) {
         }
         const sideChat = url.pathname.match(/^\/api\/side-chats\/([^/]+)\/(turns|close)$/);
         if (sideChat && method === 'POST') return json(response, 200, await client[sideChat[2] === 'turns' ? 'sendSideChat' : 'closeSideChat'](decodeURIComponent(sideChat[1]), await body(request)));
+        const contextFiles = url.pathname.match(/^\/api\/threads\/([^/]+)\/context-files$/);
+        if (contextFiles) {
+          const id = decodeURIComponent(contextFiles[1]);
+          if (method === 'GET') return json(response, 200, await client.contextFiles(id));
+          if (method === 'POST') return json(response, 200, await client.setContextFile(id, await body(request)));
+        }
         const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|rewind|fork|compact|review|git|permissions|shell|side-chat))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);

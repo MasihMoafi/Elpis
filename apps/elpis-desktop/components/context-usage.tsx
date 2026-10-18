@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ContextFiles } from "@/components/context-files";
 import { api } from "@/lib/api";
 import { usePreferences } from "@/lib/preferences";
 
@@ -124,6 +125,7 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
     <PopoverContent side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger">
       <LedgerView ledger={ledger} loading={Boolean(threadId) && !ledger} expanded={expanded} onToggle={() => setExpanded(value => !value)}
         compact={ledger && used !== null && capacity && pct >= COMPACT_FROM_PERCENT && current?.compact ? { ...current.compact, run: compact } : null} />
+      {opened && threadId && <ContextFiles key={threadId} threadId={threadId} onOpenFile={() => setOpened(false)} />}
     </PopoverContent>
   </Popover>;
 }

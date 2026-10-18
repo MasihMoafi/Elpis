@@ -268,10 +268,11 @@ export class DesktopClient extends EventEmitter {
       if (message.error) {
         const conflict = message.error.data?.config_write_error_code === 'configVersionConflict' || message.error.data?.reason === 'staleVersion';
         const workflow = pending.method === 'workGraph/run' || pending.method === 'workGraph/runWithProviders';
-        const unsupported = workflow && /unknown (method|variant)/i.test(message.error.message ?? '');
+        const contextFiles = pending.method === 'thread/contextFiles/list' || pending.method === 'thread/contextFiles/set';
+        const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? '');
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
         const detail = (workflow || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
-        const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
+        const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
         error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
       }
@@ -795,6 +796,17 @@ export class DesktopClient extends EventEmitter {
     try { ({ thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false })); }
     catch (error) { if (/^thread not (loaded|found)\b/.test(error.engineMessage ?? '')) return null; throw error; }
     return thread?.id === id ? { thread: this.#decorate(thread), path: typeof thread.path === 'string' ? thread.path : null } : null;
+  }
+  /** Context sources and admission use the same engine functions as the TUI Ledger. */
+  async contextFiles(id) {
+    threadId(id);
+    return this.#rpc('thread/contextFiles/list', { threadId: id });
+  }
+  async setContextFile(id, input) {
+    threadId(id); object(input, ['path', 'included']);
+    text(input.path, 'context file path');
+    if (typeof input.included !== 'boolean') throw new BridgeError('Choose included or excluded');
+    return this.#rpc('thread/contextFiles/set', { threadId: id, path: input.path, included: input.included });
   }
   async context(id) {
     threadId(id);

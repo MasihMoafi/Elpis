@@ -54,6 +54,7 @@ async function startFixture() {
       if (req.method === 'POST') { const body = JSON.parse(raw); saved.push(body); const { version, ...changes } = body; Object.assign(switches, changes, { version: `v${saved.length + 1}` }); }
       return json(switches);
     }
+    if (/^\/api\/threads\/[^/]+\/context-files$/.test(url.pathname)) return json({ files: [] });
     const context = url.pathname.match(/^\/api\/threads\/([^/]+)\/context$/);
     if (context) return json({ threadId: context[1], tokenUsage: null, smartPrune: null, ledger: ledgers[context[1]], compact: compactions[context[1]] ?? { available: true } });
     const read = url.pathname.match(/^\/api\/threads\/([^/]+)$/);

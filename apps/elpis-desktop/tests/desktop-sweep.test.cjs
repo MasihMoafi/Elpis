@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
 const { openSettings } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
+const { contextRoutes } = require('./context-files-fixture.cjs');
 
 const PAGES = ['General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Voice', 'Personalization', 'Usage & limits', 'Archived chats', 'Models & accounts', 'MCP servers', 'Git', 'Worktrees', 'Hooks', 'Configuration'];
 const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
@@ -17,6 +18,7 @@ function routes() {
     smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: null, provider: null } }, memory: { enabled: true, generate: true, use: true }, options: {}, managed: {}, write: { available: true, reason: 'Applies to new conversations.' } };
   let scene = { elements: [], appState: {}, files: {} };
   return {
+    ...contextRoutes(),
     '/api/settings': body => { if (body?.options) Object.assign(settings.options, body.options); return settings; },
     '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [] }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] }),
     '/api/providers/settings': () => ({ version: 'p1', providers: [], managed: {}, write: { available: true } }),
@@ -65,6 +67,11 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await check('project dialog', async () => { await page.getByRole('button', { name: 'Add new project', exact: true }).click(); await page.getByRole('alertdialog').waitFor(); });
       await page.keyboard.press('Escape');
       await check('chat', () => f.open('chat-a'));
+      const ledger = page.getByRole('dialog', { name: 'Context window usage', exact: true });
+      await check('Ledger context files included', async () => { await page.getByRole('button', { name: /^Ledger/ }).click(); await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }, () => ledger);
+      await check('Ledger context file excluded', async () => { await ledger.getByRole('switch', { name: 'Include ES.md', exact: true }).click(); await page.waitForFunction(() => document.querySelector('[aria-label="Include ES.md"]').getAttribute('aria-checked') === 'false'); }, () => ledger);
+      await check('Ledger categories collapsed', async () => { await ledger.getByRole('button', { name: /^Context window/ }).click(); }, () => ledger);
+      await page.keyboard.press('Escape');
       for (const name of ['Rename', 'Delete']) {
         await check(`chat ${name} dialog`, async () => {
           await page.locator('.thread-row[data-thread-id="chat-a"]').click({ button: 'right' });

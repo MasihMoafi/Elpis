@@ -1244,3 +1244,20 @@ button.trace-head:hover .trace-text { text-decoration:underline; }
   .session-split > .sidebar:not(.open) { display:none; }
   .session-split .workspace-header > .mobile-menu { display:inline-flex; }
 }
+
+/* Context file groups follow the TUI Ledger: teal sections and olive admission states. */
+.context-files { --source-heading:#007c78; --source-included:#6e7d00; margin-top:8px; border-top:1px solid var(--hairline); }
+.dark .context-files { --source-heading:#5bc8c0; --source-included:#bdce55; }
+.context-files section { padding:10px 16px 4px; }
+.context-files-heading { margin:0 0 8px; color:var(--source-heading); font-size:var(--text-small); font-weight:600; }
+.context-files ul { display:grid; gap:10px; margin:0; padding:0; list-style:none; }
+.context-files li { display:flex; align-items:center; gap:12px; min-width:0; }
+.context-files [data-slot="switch"][data-checked] { background:var(--source-included); }
+.context-file-detail { flex:1; min-width:0; }
+.context-file-name { display:block; max-width:100%; padding:0; border:0; background:transparent; color:var(--foreground); font:inherit; text-align:start; text-decoration:underline; text-underline-offset:3px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.context-file-name:focus-visible { outline:1.5px solid var(--ring); outline-offset:2px; }
+.context-file-meta { display:flex; flex-wrap:wrap; gap:4px 8px; color:var(--muted-foreground); font-size:var(--text-small); }
+.context-file-state { margin-left:auto; }
+.context-files li[data-included="true"] .context-file-state { color:var(--source-included); }
+.context-files-error { padding:8px 16px; overflow-wrap:anywhere; }
+.context-files-error [role="alert"] { color:var(--destructive); }
