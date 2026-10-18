@@ -79,6 +79,8 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, re
     for (const name of ['Researcher','Reviewer','Builder','Tester','Writer','Critic']) assert.equal(await page.getByRole('button', { name: `Add ${name}`, exact: true }).count(), 1);
     const portraits = await page.getByLabel('Choose an agent', { exact: true }).locator('img').evaluateAll(images => images.map(image => image.src));
     assert.equal(new Set(portraits).size, 6, 'all characters have different generated portraits');
+    // The characters Masih accepted (18 Oct), made by image generation and traced, not the old drawn faces.
+    assert.ok(portraits.every(src => src.startsWith('data:image/png;base64,')), 'the portraits are the new character art');
     await page.getByRole('button', { name: 'Agent', exact: true }).click();
     await page.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'Give Researcher a task' }).waitFor();

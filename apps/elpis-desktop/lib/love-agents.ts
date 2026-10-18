@@ -1,6 +1,7 @@
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
+import { portraits } from "./love-characters";
 
 export const characters = [
   { id: "researcher", name: "Researcher", color: "#c7e9df", detail: "Find evidence", prompt: "You are a careful researcher. Investigate the task using available tools. Distinguish sourced facts from inference, cite primary sources when available, and state uncertainty. Return a concise finding with evidence and the next useful step." },
@@ -20,27 +21,16 @@ export function agentOf(e: ExcalidrawElement): LoveAgent | undefined {
   return a as LoveAgent;
 }
 export function avatar(character: Character) {
-  const i = characters.indexOf(character);
-  const head = i % 2 ? '<rect x="18" y="17" width="60" height="62" rx="23" fill="#fff9ef"/>' : '<circle cx="48" cy="48" r="31" fill="#fff9ef"/>';
-  const accessory = [
-    '<circle cx="35" cy="44" r="10" fill="none" stroke="#243b43" stroke-width="3"/><circle cx="61" cy="44" r="10" fill="none" stroke="#243b43" stroke-width="3"/><path d="M45 44h6" stroke="#243b43" stroke-width="3"/>',
-    '<path d="M27 32l13-5m16 0l13 5" stroke="#243b43" stroke-width="4" stroke-linecap="round"/>',
-    '<path d="M16 30h64M23 29a25 23 0 0150 0" stroke="#a15b21" stroke-width="8" fill="none"/>',
-    '<path d="M21 44V30a27 23 0 0154 0v14" fill="none" stroke="#456879" stroke-width="6"/><rect x="16" y="40" width="10" height="20" rx="5" fill="#456879"/><rect x="70" y="40" width="10" height="20" rx="5" fill="#456879"/>',
-    '<path d="M22 25Q45 0 75 25Z" fill="#915772"/><path d="M24 26h49" stroke="#915772" stroke-width="5"/>',
-    '<path d="M27 31l15 5m12 0l15-5" stroke="#243b43" stroke-width="4" stroke-linecap="round"/>',
-  ][i];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="28" fill="${character.color}"/>${head}<circle cx="35" cy="44" r="3" fill="#243b43"/><circle cx="61" cy="44" r="3" fill="#243b43"/><path d="M37 62q11 ${i === 5 ? -7 : 10} 22 0" fill="none" stroke="#243b43" stroke-width="3" stroke-linecap="round"/>${accessory}</svg>`;
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
+  return portraits[character.id];
 }
 export function makeAgent(character: Character, x: number, y: number, task = "") {
-  const id = crypto.randomUUID(), fileId = `love-avatar-${character.id}` as FileId;
+  const id = crypto.randomUUID(), fileId = `love-portrait-${character.id}` as FileId;
   const data: LoveAgent = { preset: character.id, name: character.name, prompt: character.prompt, model: "gpt-6-luna", provider: "openai", task };
   const elements = convertToExcalidrawElements([
     { type: "rectangle", id, x, y, width: 220, height: 170, roughness: 0, roundness: { type: 3 }, backgroundColor: character.color, strokeColor: "#677478", strokeWidth: 1, fillStyle: "solid", groupIds: [id], customData: { loveAgent: data },
       label: { text: `\n\n\n${character.name}`, fontFamily: 2, fontSize: 20, strokeColor: "#243b43", verticalAlign: "bottom" } },
     { type: "image", id: `${id}-portrait`, x: x + 74, y: y + 16, width: 72, height: 72, fileId, status: "saved", groupIds: [id] },
   ], { regenerateIds: false });
-  const file: BinaryFileData = { id: fileId, mimeType: "image/svg+xml", dataURL: avatar(character) as BinaryFileData["dataURL"], created: Date.now() };
+  const file: BinaryFileData = { id: fileId, mimeType: "image/png", dataURL: avatar(character) as BinaryFileData["dataURL"], created: Date.now() };
   return { id, elements, file };
 }
