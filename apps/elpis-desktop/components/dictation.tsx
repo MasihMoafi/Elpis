@@ -8,9 +8,9 @@ import type { DictationSelection } from "@/lib/dictation";
 
 type Route = { available: boolean; backend?: string; label?: string; reason?: string };
 /** `provider` is the chat's provider (see chatProvider): the bridge picks the transcriber that provider uses, or the Settings → Voice fallback. */
-type Props = { disabled: boolean; provider: string; selection: () => DictationSelection; onTranscript: (selection: DictationSelection, text: string) => void; onBusy: (busy: boolean) => void };
+type Props = { disabled: boolean; provider: string; selection: () => DictationSelection; onTranscript: (selection: DictationSelection, text: string) => void; onBusy: (busy: boolean) => void; purpose?: string };
 
-export function Dictation({ disabled, provider, selection, onTranscript, onBusy }: Props) {
+export function Dictation({ disabled, provider, selection, onTranscript, onBusy, purpose = "Inserts text without sending." }: Props) {
   const [route, setRoute] = useState<Route | null>(null);
   const [phase, setPhase] = useState<"idle" | "preparing" | "recording" | "transcribing">("idle");
   const [seconds, setSeconds] = useState(0);
@@ -98,7 +98,7 @@ export function Dictation({ disabled, provider, selection, onTranscript, onBusy 
   return <div className="dictation-control">
     <div className="dictation-buttons">
       <Button type="button" size="icon" variant={active ? "secondary" : "ghost"} disabled={active ? phase !== "recording" : disabled} aria-disabled={unavailable || undefined} className={unavailable ? "opacity-50" : undefined}
-        aria-label={phase === "recording" ? "Stop recording and transcribe" : "Dictate message"} title={active ? label : route?.available ? `Dictate with ${route.label}. Inserts text without sending.` : reason}
+        aria-label={phase === "recording" ? "Stop recording and transcribe" : "Dictate message"} title={active ? label : route?.available ? `Dictate with ${route.label}. ${purpose}` : reason}
         onClick={() => phase === "recording" ? recorder.current?.stop() : unavailable ? setError(reason) : void start()}>
         {phase === "recording" ? <Square size={15} className="text-red-400" /> : active ? <LoaderCircle size={17} className="animate-spin" /> : <MicIcon size={17} />}
       </Button>

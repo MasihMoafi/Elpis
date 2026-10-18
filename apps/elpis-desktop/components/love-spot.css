@@ -1,3 +1,21 @@
-.love-spot { position: relative; flex: 1; min-width: 0; min-height: 0; height: 100%; }
+.love-spot { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; height: 100%; }
 .love-spot > [role="status"] { padding: 24px; color: var(--muted-foreground); }
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
+.love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.love-spot-editor { flex: 1; min-width: 0; height: 100%; min-height: 0; }
+.love-spot-tools { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.love-spot-tools .dictation-control { margin: 0; }
+.love-spot-tools .dictation-status:empty, .love-spot-talk .dictation-status:empty { display: none; }
+.love-spot-talk { flex: 0 0 min(360px, 42%); min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+.love-spot-talk[hidden] { display: none; }
+.love-spot-talk-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.love-spot-talk-messages { flex: 1; min-height: 0; overflow: auto; padding: 12px; overflow-wrap: anywhere; }
+.love-spot-talk-messages .message { min-width: 0; max-width: 100%; }
+.love-spot-talk-form { border-top: 1px solid var(--border); padding: 10px; }
+.love-spot-talk-form textarea { max-height: 160px; overflow-y: auto; resize: none; }
+.love-spot-talk-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; min-width: 0; }
+.love-spot-talk-controls > [role="combobox"] { max-width: 210px; min-width: 0; margin-right: auto; }
+.love-spot-talk-controls .dictation-control { display: contents; }
+.love-spot-talk-controls .dictation-status:not(:empty) { order: 1; flex-basis: 100%; }
+.love-spot-talk-error { padding: 8px 12px; color: var(--destructive); font-size: var(--text-small); overflow-wrap: anywhere; }
+.love-spot-menu-anchor { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

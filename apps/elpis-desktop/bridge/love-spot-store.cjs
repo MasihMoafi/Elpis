@@ -83,7 +83,62 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     return locked(async () => {
       if (revision !== (await read()).revision) throw fail('The drawing changed. Export its current picture.', 409);
       await atomic(path.join(directory, 'view.png'), bytes);
+      await atomic(path.join(directory, '.view-revision'), revision);
       return { saved: true };
+    });
+  }
+  // The chat and its replies use the same lock as every board writer, including the standalone window.
+  async function chat(create) {
+    return locked(async () => {
+      const file = path.join(directory, '.love-spot-chat.json');
+      try {
+        const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+        if (typeof saved.threadId !== 'string' || !saved.threadId) throw fail('Love Spot chat could not be read.', 409);
+        return saved.threadId;
+      } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      if (!create) return null;
+      const id = await create(directory);
+      await atomic(file, JSON.stringify({ threadId: id }));
+      return id;
+    });
+  }
+  async function boardPicture(revision) {
+    return locked(async () => {
+      const current = await read();
+      if (revision !== current.revision || await fs.readFile(path.join(directory, '.view-revision'), 'utf8').catch(() => '') !== revision) throw fail('The drawing changed. Try sending again with its current picture.', 409);
+      return (await fs.readFile(path.join(directory, 'view.png'))).toString('base64');
+    });
+  }
+  async function reply(turnId, text, agentColor) {
+    if (typeof text !== 'string' || !text.trim()) return;
+    return locked(async () => {
+      const { scene } = await read(), id = `love-reply-${turnId}`;
+      if (scene.elements.some(e => e.id === id)) return;
+      const live = scene.elements.filter(e => !e.isDeleted);
+      const anchor = live.filter(e => e.type === 'text' && !agentColor(e.strokeColor)).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
+      // Monospaced text and generous bounds keep restored font metrics inside the reserved area.
+      const lines = text.trim().split('\n').flatMap(line => {
+        const chars = Array.from(line), wrapped = [];
+        while (chars.length > 32) { let at = chars.slice(0, 33).lastIndexOf(' '); if (at < 8) at = 32; wrapped.push(chars.splice(0, at).join('')); if (chars[0] === ' ') chars.shift(); }
+        return [...wrapped, chars.join('')];
+      });
+      const width = 480, height = Math.max(1, lines.length) * 28;
+      const bounds = e => {
+        const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
+        return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height / 2 - h / 2, width: w, height: h };
+      };
+      const a = anchor ? bounds(anchor) : { x: 0, y: -40, height: 0 };
+      const x = a.x; let y = a.y + a.height + 40;
+      for (;;) {
+        const hits = live.map(bounds).filter(e => x < e.x + e.width + 24 && x + width + 24 > e.x && y < e.y + e.height + 24 && y + height + 24 > e.y);
+        if (!hits.length) break;
+        y = Math.max(...hits.map(e => e.y + e.height)) + 40;
+      }
+      const element = { id, type: 'text', x, y, width, height, angle: 0, strokeColor: '#1971c2', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
+        strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
+        isDeleted: false, boundElements: null, updated: Date.now(), link: null, locked: false, fontSize: 20, fontFamily: 3, text: lines.join('\n'),
+        originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.4 };
+      await atomic(sceneFile, JSON.stringify(merge(scene, { elements: [element] })));
     });
   }
   async function names(dir) { try { return await fs.readdir(dir); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } }
@@ -137,6 +192,6 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: e.message }); }
     return () => { listeners.delete(listen); if (!listeners.size) { clearInterval(timer); timer = undefined; } };
   }
-  return { read, save, picture, watch, close() { clearInterval(timer); timer = undefined; listeners.clear(); } };
+  return { read, save, picture, boardPicture, chat, reply, watch, close() { clearInterval(timer); timer = undefined; listeners.clear(); } };
 }
 module.exports = { createLoveSpot, newer, merge };

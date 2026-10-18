@@ -14,6 +14,7 @@ import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } fr
 import { createTrash } from './trash.mjs';
 import { createObservability } from './observability.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
+import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
 
 const COOKIE = 'elpis_desktop';
@@ -70,6 +71,7 @@ export async function startDesktopServer(options = {}) {
   const session = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
+  const loveTalk = createLoveSpotTalk({ client, store: loveSpot });
   const devServers = createDevServers();
   const loveStreams = new Set();
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
@@ -119,6 +121,18 @@ export async function startDesktopServer(options = {}) {
           return response.end(JSON.stringify(value));
         }
         if (url.pathname === '/api/love-spot/picture' && method === 'POST') return json(response, 200, await loveSpot.picture(await body(request, 32 * 1024 * 1024)));
+        if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
+        if (url.pathname === '/api/love-spot/talk/events' && method === 'GET') {
+          // Load first so a failed resume still returns a useful HTTP error.
+          await loveTalk.read();
+          response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+          loveStreams.add(response);
+          const stop = await loveTalk.watch(value => {
+            if (response.writableLength > 1024 * 1024) response.destroy();
+            else response.write(`data: ${JSON.stringify(value)}\n\n`);
+          });
+          response.on('close', () => { stop(); loveStreams.delete(response); }); return;
+        }
         if (url.pathname === '/api/love-spot/events' && method === 'GET') {
           response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
           loveStreams.add(response);
@@ -247,7 +261,7 @@ export async function startDesktopServer(options = {}) {
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
       await devServers.close();
-      loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
+      loveTalk.close(); await loveTalk.idle(); loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
       await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
