@@ -100,7 +100,7 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
   await visit('Settings'); await leaveSettings(page);
   await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click(); await page.getByText('web-dev', { exact: true }).waitFor();
   await visit('Ledger');
-  await page.locator('.nav-list').getByRole('button', { name: 'Canvas', exact: true }).click(); await page.locator('.react-flow__node-agent').first().waitFor();
+  await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.locator('.react-flow__node-agent').first().waitFor();
   await visit('canvas');
   await t.test('one chamfer and one edge per role; the send button stays round', () => {
     const seen = { buttons: 0, floating: 0, panels: new Set() };
