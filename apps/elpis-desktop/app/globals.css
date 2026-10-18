@@ -98,7 +98,7 @@ button:disabled { cursor:not-allowed; }
 .kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
 .kbd-hint { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
 .thread-list { overflow:auto; flex:1; min-height:0; margin:0 -4px; padding:0 4px; }
-.thread-list > section:first-child .section-label { padding-top:8px; }
+.thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:13px; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 .sidebar-footer { display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
@@ -241,11 +241,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .project-chip { border:0; background:none; cursor:pointer; }
 .project-chip:hover, .project-chip[aria-expanded="true"] { color:var(--foreground); background:var(--hover); }
 .project-chip span { overflow:hidden; text-overflow:ellipsis; }
-.section-label-row { display:flex; align-items:center; justify-content:space-between; }
-/* A heading row around a padded heading (Pinned, Recents): its buttons sit level with the letters, which the heading's
-   6px bottom padding lifts by as much as half a 24px button. */
-.section-label-row:not(.section-label) { align-items:flex-end; }
-.section-label-row > .section-label { margin-right:auto; }
+.section-label-row { display:flex; align-items:center; gap:4px; padding:16px 8px 6px; }
+.section-label-row > .section-label { padding:0; margin-right:auto; }
 .section-label-row > button { color:var(--muted-foreground); }
 .section-label-row > button:hover { color:var(--primary); }
 .workspace-picker { display:flex; align-items:center; gap:6px; color:var(--muted-foreground); font-size:12px; min-width:0; }
