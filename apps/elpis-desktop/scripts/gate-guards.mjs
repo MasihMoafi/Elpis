@@ -36,9 +36,9 @@ export function missingPlaywright(env = process.env, resolve = createRequire(imp
 }
 
 /** The pass record of a gate run, or null unless it ran every ordinary tier on a clean tree with no failure. */
-export function passRecord({ commit, clean, selected, tiers, files }) {
+export function passRecord({ start, commit, clean, selected, tiers, files }) {
   const ordinary = tiers.filter(tier => tier !== 'opt-in');
-  if (!clean || !commit || !ordinary.every(tier => selected.includes(tier)) || !files.length || files.some(file => file.code !== 0)) return null;
+  if (!start?.clean || start.commit !== commit || !clean || !commit || !ordinary.every(tier => selected.includes(tier)) || !files.length || files.some(file => file.code !== 0)) return null;
   return { commit, files: files.length, at: new Date().toISOString() };
 }
 

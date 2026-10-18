@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { heldByAncestor, missingPlaywright, passRecord, requirePass } from '../scripts/gate-guards.mjs';
 
 const tiers = ['fast', 'bridge', 'desktop', 'ui'];
@@ -25,12 +26,12 @@ test('a UI run without Playwright stops at once with the fix, instead of failing
 
 test('only a full, clean, all-green gate run is recorded as a pass for its commit', () => {
   const files = [passed('fast'), passed('bridge'), passed('desktop'), passed('renderer-build'), passed('tests/a.test.cjs')];
-  const record = passRecord({ commit: 'abc123', clean: true, selected: tiers, tiers, files });
+  const record = passRecord({ start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: true, selected: tiers, tiers, files });
   assert.equal(record.commit, 'abc123');
   assert.equal(record.files, 5);
-  assert.equal(passRecord({ commit: 'abc123', clean: true, selected: ['fast', 'bridge'], tiers, files }), null, 'a partial run');
-  assert.equal(passRecord({ commit: 'abc123', clean: false, selected: tiers, tiers, files }), null, 'uncommitted changes');
-  assert.equal(passRecord({ commit: 'abc123', clean: true, selected: tiers, tiers, files: [...files, { name: 'tests/b.test.cjs', code: 1 }] }), null, 'a failure');
+  assert.equal(passRecord({ start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: true, selected: ['fast', 'bridge'], tiers, files }), null, 'a partial run');
+  assert.equal(passRecord({ start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: false, selected: tiers, tiers, files }), null, 'uncommitted changes');
+  assert.equal(passRecord({ start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: true, selected: tiers, tiers, files: [...files, { name: 'tests/b.test.cjs', code: 1 }] }), null, 'a failure');
 });
 
 test('installing needs a recorded pass for the exact commit', async () => {
@@ -39,4 +40,65 @@ test('installing needs a recorded pass for the exact commit', async () => {
   await fs.writeFile(path.join(dir, 'abc123.json'), JSON.stringify({ commit: 'abc123', files: 5 }));
   assert.equal((await requirePass(dir, 'abc123')).files, 5);
   await assert.rejects(requirePass(dir, 'def456'), /def456/, 'a pass on another commit does not count');
+});
+
+// A passing run belongs to the clean commit it started on.
+test('a commit made during the gate cannot inherit its passing results', () => {
+  const run = { start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: true, selected: tiers, tiers, files: [passed('fast')] };
+  assert.equal(passRecord(run).commit, 'abc123', 'unchanged clean commit records a pass');
+  assert.equal(passRecord({ ...run, commit: 'def456' }), null, 'new HEAD was not tested');
+});
+
+test('a gate started dirty cannot be recorded after changes are committed or reverted', () => {
+  const run = { start: { commit: 'abc123', clean: false }, commit: 'abc123', clean: true, selected: tiers, tiers, files: [passed('fast')] };
+  assert.equal(passRecord(run), null);
+});
+
+test('the gate records only the clean commit present before its tests run', async () => {
+  const fixtures = path.join(os.homedir(), '.cache/elpis-tests');
+  await fs.mkdir(fixtures, { recursive: true });
+  for (const scenario of ['clean', 'commit', 'dirty-start', 'dirty-end']) {
+    const dir = await fs.mkdtemp(path.join(fixtures, 'gate-state-'));
+    const root = path.join(dir, 'repo'), home = path.join(dir, 'home');
+    const git = args => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    try {
+      for (const sub of ['scripts', 'tests', 'bridge', 'desktop', 'bin']) await fs.mkdir(path.join(root, sub), { recursive: true });
+      await fs.mkdir(home);
+      // This fixture builds no app; its lifecycle checks must not wait on workstation build locks.
+      await fs.writeFile(path.join(root, 'bin/flock'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
+      const scripts = new URL('../scripts/', import.meta.url);
+      for (const file of ['test-gate.mjs', 'gate-guards.mjs']) await fs.copyFile(new URL(file, scripts), path.join(root, 'scripts', file));
+      await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify({ fast: ['tests/state.test.mjs'], bridge: ['bridge/idle.test.mjs'], desktop: ['desktop/idle.test.mjs'], ui: [], 'opt-in': [] }));
+      await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { build: 'true' } }));
+      await fs.writeFile(path.join(root, 'bridge/build-resources.mjs'), '');
+      for (const sub of ['bridge', 'desktop']) await fs.writeFile(path.join(root, sub, 'idle.test.mjs'), "import { test } from 'node:test'; test('idle', () => {});\n");
+      await fs.writeFile(path.join(root, 'probe'), 'original');
+      await fs.writeFile(path.join(root, 'tests/state.test.mjs'), `import { test } from 'node:test';
+import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
+test('mutate during the real gate', () => {
+  const scenario = process.env.GATE_SCENARIO;
+  if (scenario === 'commit') execFileSync('git', ['-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'during gate']);
+  if (scenario === 'dirty-start') fs.writeFileSync('probe', 'original');
+  if (scenario === 'dirty-end') fs.writeFileSync('probe', 'changed');
+});
+`);
+      git(['init', '-q']); git(['config', 'user.name', 'Gate test']); git(['config', 'user.email', 'gate@example.invalid']);
+      git(['add', 'scripts/test-gate.mjs', 'scripts/gate-guards.mjs', 'test-inventory.json', 'package.json', 'bridge/build-resources.mjs', 'bridge/idle.test.mjs', 'desktop/idle.test.mjs', 'bin/flock', 'probe', 'tests/state.test.mjs']);
+      git(['commit', '-qm', 'fixture']);
+      if (scenario === 'dirty-start') await fs.writeFile(path.join(root, 'probe'), 'changed');
+      const env = { ...process.env, HOME: home, PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, GATE_SCENARIO: scenario, ELPIS_PLAYWRIGHT_PACKAGE: '/fixture/not-used' };
+      delete env.NODE_TEST_CONTEXT; // The nested gate must execute its tests rather than skip recursive runners.
+      const output = execFileSync(process.execPath, ['scripts/test-gate.mjs'], { cwd: root, encoding: 'utf8', timeout: 30_000, env });
+      const commit = git(['rev-parse', 'HEAD']);
+      const record = path.join(home, '.local/state/elpis-gate', `${commit}.json`);
+      if (scenario === 'clean') {
+        assert.match(output, /Recorded a full pass/);
+        assert.equal(JSON.parse(await fs.readFile(record, 'utf8')).commit, commit);
+      } else {
+        assert.doesNotMatch(output, /Recorded a full pass/, scenario);
+        await assert.rejects(fs.access(record), { code: 'ENOENT' }, scenario);
+      }
+    } finally { execFileSync('gio', ['trash', dir]); }
+  }
 });

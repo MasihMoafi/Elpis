@@ -53,6 +53,8 @@ async function main(args) {
     const missing = missingPlaywright();
     if (missing) throw new Error(missing);
   }
+  const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  const start = { commit: git(['rev-parse', 'HEAD']), clean: git(['status', '--porcelain', '--untracked-files=no']) === '' };
   const evidence = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-test-gate-'));
   const home = path.join(evidence, 'home');
   await fs.mkdir(home);
@@ -93,8 +95,7 @@ async function main(args) {
   }
   console.log(`Gate: ${(summary.wallMs / 1000).toFixed(2)}s wall; ${(summary.testMs / 1000).toFixed(2)}s in test runners. ${evidence}/summary.json`);
   // A full, clean, all-green run is recorded for its commit; the desktop install refuses any commit without one.
-  const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-  const record = passRecord({ commit: git(['rev-parse', 'HEAD']), clean: git(['status', '--porcelain', '--untracked-files=no']) === '', selected, tiers, files: summary.files });
+  const record = passRecord({ start, commit: git(['rev-parse', 'HEAD']), clean: git(['status', '--porcelain', '--untracked-files=no']) === '', selected, tiers, files: summary.files });
   if (record) {
     await fs.mkdir(records, { recursive: true });
     await fs.writeFile(path.join(records, `${record.commit}.json`), JSON.stringify({ ...record, evidence }, null, 2) + '\n');
