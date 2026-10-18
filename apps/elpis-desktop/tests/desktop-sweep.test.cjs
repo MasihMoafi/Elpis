@@ -28,7 +28,11 @@ function routes() {
     '/api/tools/rag': () => ({ stages: [], keys: { openrouter: false } }),
     '/api/customize': () => ({ skills: { data: [{ id: 'web-dev', name: 'web-dev', description, path: '/tmp/fixture/skills/web-dev/SKILL.md', scope: 'user', enabled: true }], errors: [] }, plugins: { data: [{ id: 'docs', name: 'Docs', description, marketplace: 'Local', enabled: true }] }, connectors: { data: [{ name: 'rag', enabled: true, transport: 'stdio' }, { name: 'GitHub', transport: 'gh', enabled: true, login: null }] } }),
     '/api/observability': () => ({ available: true, records: '/tmp/fixture/records', totals, skipped: { unreadable: 0, unlinkedAdmissions: 0 }, chats: { data: [trace], nextCursor: null } }),
-    '/api/observability/chats/chat-a': () => ({ ...trace, record: '/tmp/fixture/records/parser.md', turns: { available: true, data: [{ turnId: 't1', at: '2026-10-18T00:00:00Z', contextTokens: 2000, window: 100000, requests: 1, saved: 1500, steps: [{ kind: 'tool', at: '2026-10-18T00:00:01Z', name: 'exec_command', detail: 'npm test' }], stepsMore: 0, ledger: { used: 2000, window: 100000, basis: 'transcript', categories: [{ id: 'toolResults', label: 'Tool results', tokens: 2000 }] } }] }, attempts: { nextCursor: null, data: [{ id: 'r1', turnId: 't1', at: '2026-10-18T00:00:02Z', status: 'admitted', outcome: 'compacted', model: 'gpt-6-luna', effort: 'low', candidates: 1, shortened: 1, saved: 1500, latencyMs: 1000, prunerTokens: 200, admission: { before: 2000, after: 500, saved: 1500, requestSequence: 2 }, items: [{ callId: 'c1', tool: 'exec_command', sourceTokens: 2000, decision: 'compact', admitted: true, admittedTokens: 500, saved: 1500 }] }] } }),
+    '/api/observability/chats/chat-a': () => ({ ...trace, record: '/tmp/fixture/records/parser.md', agentId: 'chat-a', agents: [{ id: 'chat-a', name: 'Mother', model: 'gpt-6-luna', role: null }], turns: { available: true, nextCursor: null, data: [{ turnId: 't1', status: 'completed', error: null, contextTokens: 2000, window: 100000, outputTokens: 100, requests: 1, saved: 1500, items: [
+      { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: 'Fix the parser.' }] },
+      { id: 'c1', type: 'commandExecution', command: 'npm test', status: 'completed', exitCode: 0, aggregatedOutput: 'Tests passed.' },
+      { id: 'a1', type: 'agentMessage', text: '## Parser fixed\n\nValidation tests passed.' },
+    ], ledger: { used: 2000, window: 100000, basis: 'transcript', categories: [{ id: 'toolResults', label: 'Tool results', tokens: 2000 }] }, prunes: [{ id: 'r1', outcome: 'compacted', status: 'admitted', error: null, saved: 1500, shortened: 1, candidates: 1 }] }] } }),
     '/api/folders': () => ({ data: ['src', 'tests', 'docs'] }),
     '/api/repository': () => ({ repository: true }),
     '/api/files/dir': () => ({ data: [{ name: 'README.md', path: 'README.md', type: 'file' }] }),
@@ -143,10 +147,10 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.keyboard.press('Escape');
       await check('Canvas 3D', () => page.getByRole('button', { name: 'Isometric', exact: true }).click());
       await check('Love Spot', async () => { await page.getByRole('button', { name: 'Love Spot', exact: true }).click(); await page.locator('.excalidraw canvas').first().waitFor(); });
-      await check('Observability list', async () => { await page.getByRole('button', { name: 'Observability', exact: true }).click(); await page.locator('.trace-row').waitFor(); });
-      await check('Observability turn', () => page.getByRole('region', { name: 'Chats', exact: true }).getByRole('button', { name: 'Fix the parser', exact: true }).click());
-      await check('Observability steps', () => page.getByRole('button', { name: /^Turn 1/ }).click());
-      await check('Observability prune', () => page.getByRole('button', { name: /Smart Prune Compacted/ }).click());
+      await check('Observability list', async () => { await page.getByRole('button', { name: 'Observability', exact: true }).click(); await page.locator('.observed-chat-row').waitFor(); });
+      await check('Observability turn', async () => { await page.getByRole('region', { name: 'Chats', exact: true }).getByRole('button', { name: 'Fix the parser', exact: true }).click(); await page.locator('.observed-turn').getByText('Fix the parser.', { exact: true }).waitFor(); });
+      await check('Observability work', async () => { await page.locator('.observed-turn details.step > summary').click(); await page.getByText('Tests passed.', { exact: true }).waitFor(); });
+      await check('Observability Ledger', async () => { await page.locator('.observed-metrics > summary').click(); await page.getByText(/^Smart Prune: compacted/).waitFor(); });
       await f.open('chat-a');
       await check('side panel empty', () => page.getByRole('button', { name: 'Show side panel', exact: true }).click());
       await check('side panel Browser', async () => { await page.getByRole('button', { name: 'New side panel tab', exact: true }).click(); await page.getByRole('menuitem', { name: 'Browser tab', exact: true }).click(); });
