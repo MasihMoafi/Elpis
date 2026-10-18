@@ -1,7 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -18,7 +18,9 @@ import { api, providerChoices, type Entry, type Model, type ProviderSettings, ty
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { characters, type Character } from "@/lib/agent-characters";
+import { portraits } from "@/lib/love-characters";
+import { PATTERNS, applyPattern, agent, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -54,7 +56,8 @@ const OVERVIEW = { padding: 0.08, maxZoom: 1 };
  * the command bar to add agents on that side. */
 function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
   const status = data.status ?? "idle", check = data.check ?? "idle";
-  return <div className="agent-node" data-kind="agent" data-status={status}>
+  return <div className="agent-node" data-kind="agent" data-status={status} style={{ "--agent-color": agentColor(id, data) } as CSSProperties}>
+    {data.character && <span className="avatar agent-portrait"><div><img src={portraits[data.character as keyof typeof portraits]} alt="" /></div></span>}
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
     <span className="agent-node-kind">Agent{data.wave ? ` · wave ${data.wave}` : ""}</span>
     <strong className="agent-node-title" title={data.title || "Untitled"}>{data.title || "Untitled"}</strong>
@@ -409,6 +412,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
   const [flowEdit, setFlowEdit] = useState<{ edge: CanvasEdge; left: number; top: number } | null>(null);
   const [maxAtOnce, setMaxAtOnce] = useState(3);
+  const [patternCommand, setPatternCommand] = useState<string | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   const [run, setRun] = useState<Run | null>(null), [starting, setStarting] = useState(false);
   useEffect(() => {
@@ -435,8 +439,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const latest = useRef(graph); latest.current = graph;
   useEffect(() => { const flush = () => saveGraph(latest.current); window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, []);
 
-  // Where agents can run: the engine's provider and every other configured native one (work graphs refuse the
-  // Anthropic and Antigravity subscriptions), each with its models, shared by Add and the inspector.
+  // The existing provider catalog, shared by Add and the inspector; execution uses ACP.
   const choices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null).filter(choice => !choice.id.endsWith("/")), [models, settings]);
   const version = settings?.version ?? "";
   useEffect(() => {
@@ -475,6 +478,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         for (const stop of stops) { const key = `merge ${stop.agent ?? "project"}`; if (!said.current[key]) { said.current[key] = "failed"; fresh.push(stop); } }
         if (fresh.length) setNotice(fresh.map(stop => stopText(stop, stop.agent ? titleOf(stop.agent) : "")).join(" "));
         const failed = found.tasks.find(task => task.status === "failed" && task.failureReason);
+        if (!fresh.length && !failed && found.error) setNotice(found.error);
         if (!fresh.length && failed) setNotice(`${titleOf(failed.id.replace(/-check$/, ""))}: ${failed.failureReason}`);
         const stopLines = fresh.map(stop => ({ at: Date.now(), agent: stop.agent ?? undefined, text: stop.agent ? `${titleOf(stop.agent)}: merge clash in ${filesText(stop.files, 3)}` : `Merge blocked: uncommitted changes in ${filesText(stop.files, 3)}`, tone: "fail" as const }));
         const lines = found.tasks.flatMap(task => {
@@ -598,7 +602,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       // A wire goes live once its first agent's check passed and the second agent is running.
       const from = states[checkOf(edge.source)]?.status, to = states[edge.target]?.status, live = waits(edge) && from === "succeeded" && to === "running";
       const onPath = showCritical && critical.includes(edge.source) && critical[critical.indexOf(edge.source) + 1] === edge.target;
-      if (!waits(edge)) return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id, data: { alongside: true, ...flowLabels.get(edge.id) }, className: "canvas-edge-alongside" };
+      if (edge.kind === "alongside") return { ...edge, type: "default", selected: wireMenu?.edge.id === edge.id, data: { alongside: true, ...flowLabels.get(edge.id) }, className: "canvas-edge-alongside" };
       return { ...edge, type: "default", markerEnd: { type: MarkerType.ArrowClosed }, selected: wireMenu?.edge.id === edge.id || onPath, data: { live, ...flowLabels.get(edge.id) }, className: from === "failed" || to === "blocked" ? "canvas-edge-cut" : live ? "canvas-edge-live" : from === "succeeded" ? "canvas-edge-done" : undefined };
     }),
   ], [graph.edges, graph.nodes, graph.motherFlow, states, order, wireMenu, showCritical, flowLabels]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -624,9 +628,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if ([source, target].some(id => id === MOTHER || id === FATHER)) { setNotice("The Mother starts every agent that waits for no one, so she takes no wires: wire agents to each other."); return; }
     if (![source, target].every(id => agents.some(node => node.id === id))) return;
     if (graph.edges.some(edge => (edge.source === source && edge.target === target) || (edge.source === target && edge.target === source))) { setNotice("Those two are already wired: click the wire to change or remove it."); return; }
-    if (!kind && makesLoop(graph.edges, source, target)) { setNotice("That wire would make a loop: an agent can't wait for itself."); return; }
+    const feedback = !kind && makesLoop(graph.edges, source, target);
+    if (feedback && graph.template !== "recursive") { setNotice("That wire would make a loop: an agent can't wait for itself."); return; }
     setNotice(""); checkpoint();
-    setGraph(current => ({ ...current, edges: [...current.edges, { id: `${source}${kind ? "~" : "->"}${target}`, source, target, ...(kind ? { kind } : {}) } satisfies CanvasEdge] }));
+    setGraph(current => ({ ...current, edges: [...current.edges, { id: `${source}${kind ? "~" : "->"}${target}`, source, target, ...(kind ? { kind } : {}), ...(feedback ? { feedback: true, label: "Next round" } : {}) } satisfies CanvasEdge] }));
     // Auto-arrange may move them: the two just wired stay in view.
     reveal([source, target]);
   };
@@ -730,9 +735,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA" && !typing) { take(); setSelection(graph.nodes.filter(node => node.type !== "mother").map(node => node.id)); }
       else if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.shiftKey && onBoard && !typing) { take(); openAdder(); }
       else if (!ctrl && !event.altKey && event.code === "KeyA" && onBoard && !typing && !adding) { take(); addAgent(undefined, selected ? { id: selected.id, as: "target" } : undefined); }
-      // React Flow owns Space+drag panning; F frames the selected nodes.
+      // Space opens workflow patterns; middle drag and scroll pan. F frames selection.
       else if (!ctrl && event.code === "KeyF" && onBoard && !typing) { take(); if (iso) isoController.current?.frame(); else if (selection.length) void flow.fitView({ nodes: selection.map(id => ({ id })), padding: 0.3, maxZoom: 1.5, duration: 250 }); }
-      else if (event.code === "Space" && onBoard && !typing) return;
+      else if (event.code === "Space" && onBoard && !typing) { take(); setAdding(null); setMenu(null); setPatternCommand(""); }
       else if (event.key.length === 1 && !ctrl && !event.altKey && onBoard && !typing && !adding) { take(); openAdder(undefined, undefined, undefined, event.key); }
       else if (event.key === "Enter" && !iso && selected && onBoard && !typing && !adding) { take(); setDashboardId(selected.id); }
       else if (typing || event.altKey) return;
@@ -751,6 +756,14 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
   });
+  const addCharacter = (character: Character) => {
+    if (!room) { setNotice(`The graph is at its limit of ${limit} agents.`); return; }
+    checkpoint();
+    const made = agent(character.name, character.prompt, { character: character.id, model: "gpt-6-luna", provider: "openai" });
+    setGraph(current => ({ ...current, nodes: [...current.nodes, { ...made, position: place() }] }));
+    setSelection([]); reveal([made.id]);
+    board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+  };
   const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, template: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
@@ -799,7 +812,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   };
   const removeWire = (id: string) => { checkpoint(); setGraph(current => ({ ...current, edges: current.edges.filter(edge => edge.id !== id) })); setMenu(null); };
   // The mouse as in DaVinci's Fusion and 3ds Max's Slate: left-drag on empty board draws a selection box, middle-drag
-  // pans, the wheel zooms at the pointer, and agents snap to a 20 px grid. A plain click picks that one node even
+  // pans, scroll pans and Ctrl/Cmd+scroll zooms at the pointer, and agents snap to a 20 px grid. A plain click picks that one node even
   // inside a selection; Shift or Ctrl adds or removes it; a press moves nodes only past 5 px, so a hand's wobble is a
   // click. React Flow's Shift-to-box key is off: it turned every Shift+click into an empty box that dropped the selection.
   const dragged = useRef(false);
@@ -1014,7 +1027,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // Elpis merges them into the project's branch after the run; without a repository Elpis refuses that, so it isn't asked.
   async function runPart(rootThreadId: string, name: string, tasks: RunTask[]) {
     const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
-    return api<{ graphId: string }>("/workflows/run", runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository));
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository) });
   }
 
   async function start() {
@@ -1078,7 +1091,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         onBoardMenu={onPaneContextMenu} onWireMenu={onEdgeClick} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => connect(source, target)} onConnectEnd={onConnectEnd}
         onConnectStart={event => { const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
-        onEdgeClick={(event, edge) => editFlow(event, { id: edge.id, source: edge.source, target: edge.target })} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode="Space" snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
+        onEdgeClick={(event, edge) => editFlow(event, { id: edge.id, source: edge.source, target: edge.target })} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode={null} panOnScroll zoomOnScroll={false} zoomActivationKeyCode={["Control", "Meta"]} snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
         onNodeDragStart={() => { dragged.current = true; }} onNodeDragStop={() => setTimeout(() => { dragged.current = false; })}
         onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={0.3} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
@@ -1095,12 +1108,31 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <div className="canvas-toolbar" role="toolbar" aria-label="Add to Workflows">
         <span className="canvas-toolbar-label">Add</span>
         <Button variant="ghost" size="sm" aria-label="Add agent" title="An agent that writes: give it a prompt and the folders it may write; Elpis checks its work after it" onClick={() => addAgent()}><i className="canvas-kind" data-kind="agent" />Agent</Button>
+        <details className="dropdown dropdown-top canvas-characters">
+          <summary className={buttonVariants({ variant: "ghost", size: "sm", className: "btn btn-ghost btn-sm" })}>Characters</summary>
+          <div className="dropdown-content bg-base-100 text-base-content rounded-box shadow p-2 z-20 grid gap-1" role="group" aria-label="Character agents">
+            {characters.map(character => <Button key={character.id} variant="ghost" size="sm" className="btn btn-ghost btn-sm justify-start" aria-label={`Add ${character.name}`} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); addCharacter(character); }}>
+              <span className="avatar"><div className="w-7 h-7"><img src={portraits[character.id]} alt="" /></div></span>{character.name}
+            </Button>)}
+          </div>
+        </details>
         <Button variant="ghost" size="sm" onClick={() => addNote()}><StickyNote size={14} />Note</Button>
         <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; Tab opens it too">Command <kbd>Tab</kbd></Button>
         <Button variant="ghost" size="sm" aria-label="Arrange by run order" title="Arrange by run order and fit the view" onClick={tidy}><ListOrdered size={14} />Arrange</Button>
         {/* The keys, as Deus Ex's control strip shows them: a few, short; the rest are in each control's tooltip. */}
-        <span className="canvas-toolbar-keys"><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Dashboard</span><span><kbd>Shift</kbd>Select several</span><span><kbd>Ctrl+A</kbd>All</span></span>
+        <span className="canvas-toolbar-keys"><span><kbd>Space</kbd>Patterns</span><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Dashboard</span><span><kbd>Shift</kbd>Select several</span><span><kbd>Ctrl+A</kbd>All</span></span>
       </div>
+      {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="input input-sm w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
+      {patternCommand !== null && <form className="canvas-pattern-command bg-base-100 text-base-content" aria-label="Workflow command" onSubmit={event => {
+        event.preventDefault(); const number = Number(patternCommand);
+        if (!Number.isInteger(number) || number < 1 || number > PATTERNS.length) { setNotice("Choose a pattern number from 1 to 5."); return; }
+        if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
+        checkpoint(); setGraph(current => applyPattern(current, number)); setPatternCommand(null); setSelection([]); setRun(null); setStates({}); setNotice("");
+        setTimeout(() => fitAll(), 60); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+      }}>
+        <span className="text-xs">{PATTERNS.map((name, index) => `${index + 1} ${name}`).join(" · ")}</span>
+        <Input className="input input-sm w-full" aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Enter applies · Esc cancels" onChange={event => setPatternCommand(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); } }} />
+      </form>}
       {adding && <CommandBar adding={adding} room={room} limit={limit} catalog={catalog} providers={providers} onClose={() => setAdding(null)}
         onAgents={command => { addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}

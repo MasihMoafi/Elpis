@@ -201,7 +201,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual(byTitle['Zelko'].dependsOn, [join.id, joinCheck.id]);
     // The new agent had no prompt: Elpis filled it from the run's goal before the run, and nothing else changed.
     assert.deepEqual([plans.length, plans[0].goal, plans[0].agents.find(item => item.title === 'Zelko').prompt], [1, 'Keep the public API unchanged.', '']);
-    assert.equal(byTitle['Zelko'].instruction, 'Goal of the whole run: Keep the public API unchanged.\n\nDo Zelko\n\nSave your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.\n\nYour report\'s changed_files must name every file that changed in your folders, build output included (such as __pycache__ from running Python; python3 -B writes none). A rejected report does not count as your one report: fix what its reason names and report again.');
+    assert.match(byTitle['Zelko'].instruction, /Goal of the whole run: Keep the public API unchanged\.[\s\S]*Do Zelko/);
+    assert.match(byTitle['Zelko'].instruction, /final answer/);
+    assert.doesNotMatch(byTitle['Zelko'].instruction, /changed_files|terminal report/);
     assert.deepEqual(byTitle['Zelko'].acceptanceCriteria, ['The change builds and its tests pass.']);
     // An agent's thinking level goes with it; one left at the model's default is not sent.
     assert.deepEqual([join.model, join.reasoningEffort, byTitle['Zelko'].reasoningEffort], ['gpt-6.1-sol', 'high', undefined]);

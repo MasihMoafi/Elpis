@@ -105,9 +105,11 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     const walked = [];
     for (const key of ['ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowUp', 'ArrowUp']) { await page.keyboard.press(key); walked.push(await focused()); }
     assert.deepEqual(walked, ['Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts', 'Orilo · Part 3', 'Veyra · Part 2', 'Quillon · Part 1', 'Mother']);
-    // Space selects the focused agent.
-    await page.keyboard.press('ArrowRight'); await page.keyboard.press(' ');
-    assert.equal(await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Quillon · Part 1');
+    // Space opens patterns without changing the current selection.
+    const selectedBefore = await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue();
+    await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space');
+    await canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true }).press('Escape');
+    assert.equal(await inspector.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), selectedBefore);
 
     // Hovering an agent lights it and its wires, and the status panel names it.
     await agent('Nuvani · Join the parts').hover();
@@ -119,8 +121,8 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     const world = board.locator('.iso-world');
     const fitted = await world.getAttribute('transform');
     const middle = await board.boundingBox();
-    await page.mouse.move(middle.x + 20, middle.y + 20); await page.mouse.wheel(0, -400); await page.waitForTimeout(100);
-    assert.notEqual(await world.getAttribute('transform'), fitted, 'the wheel zooms');
+    await page.mouse.move(middle.x + 20, middle.y + 20); await page.keyboard.down('Control'); await page.mouse.wheel(0, -400); await page.keyboard.up('Control'); await page.waitForTimeout(100);
+    assert.notEqual(await world.getAttribute('transform'), fitted, 'modifier wheel zooms');
     const zoomed = await world.getAttribute('transform');
     await page.mouse.move(middle.x + 14, middle.y + 14); await page.mouse.down(); await page.mouse.move(middle.x + 90, middle.y + 60, { steps: 5 }); await page.mouse.up();
     assert.notEqual(await world.getAttribute('transform'), zoomed, 'a drag pans');
@@ -171,10 +173,10 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     assert.equal(await board.locator('.iso-link[data-state="live"]:not([data-mother])').count(), 1);
     assert.ok(await board.locator('.iso-link[data-state="live"] .iso-chevron[data-live]').count() >= 3, 'live wires stream their chevrons');
 
-    // The light theme paints no orange, idle or running; then both themes are shot in Masih's window.
+    // The light interface keeps its theme palette; agent identities have their own colors.
     await page.setViewportSize({ width: 1130, height: 660 }); await page.waitForTimeout(300);
     await agent('Veyra · Part 2').hover();
-    assert.deepEqual(await oranges(page), [], 'light theme, isometric board: no orange');
+    assert.deepEqual(await oranges(page, '.iso-node[data-kind="agent"], .iso-port[data-kind="agent"]'), [], 'light theme controls: no orange');
     await shoot('iso-light-1130');
     await chooseTheme(page, 'dark'); await page.waitForTimeout(300);
     await agent('Veyra · Part 2').hover();

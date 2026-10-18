@@ -50,7 +50,7 @@ test('3D ports connect and drop to create; changes persist on the flat board', a
   } finally { await f.close(); }
 });
 
-test('3D middle and Space pan; Home fits; F frames; labels do not overlap after selecting all', async () => {
+test('3D middle and scroll pan; Space opens patterns; Home fits; F frames', async () => {
   const f = await openCanvas({ width: 900, height: 700 }); const { page, canvas } = f;
   try {
     await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
@@ -59,8 +59,10 @@ test('3D middle and Space pan; Home fits; F frames; labels do not overlap after 
     await drag(page, start, { x: start.x + 60, y: start.y + 40 }, 'middle');
     assert.notEqual(await world.getAttribute('transform'), fitted, 'middle pans');
     await board.focus(); await page.keyboard.press('Home'); assert.equal(await world.getAttribute('transform'), fitted);
-    await page.keyboard.down('Space'); await drag(page, start, { x: start.x + 45, y: start.y + 30 }); await page.keyboard.up('Space');
-    assert.notEqual(await world.getAttribute('transform'), fitted, 'Space pans');
+    await page.mouse.move(start.x, start.y); await page.mouse.wheel(45, 30);
+    await page.waitForTimeout(100); assert.notEqual(await world.getAttribute('transform'), fitted, 'scroll pans');
+    await page.keyboard.press('Space');
+    await canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true }).press('Escape');
     await board.focus(); await page.keyboard.press('Home');
     await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click();
     await page.keyboard.press('f'); assert.notEqual(await world.getAttribute('transform'), fitted, 'F frames selected pedestal');

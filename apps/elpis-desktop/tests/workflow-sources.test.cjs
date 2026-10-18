@@ -13,7 +13,7 @@ function load(file, imports) {
   vm.runInNewContext(code, { exports, require: name => { assert.ok(name in imports, name); return imports[name]; }, crypto: require('node:crypto').webcrypto, console });
   return exports;
 }
-const canvas = load('canvas.ts', { '@/lib/projects': { appStorage: () => ({ getItem: () => null }) } });
+const canvas = load('canvas.ts', { './agent-characters': load('agent-characters.ts', {}), '@/lib/projects': { appStorage: () => ({ getItem: () => null }) } });
 const lab = load('experiment-lab.ts', { '@/lib/canvas': canvas });
 
 test('every actual starter has exactly one evidence entry, valid primary sources and an explicit limitation', () => {

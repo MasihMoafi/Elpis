@@ -20,7 +20,7 @@ test('agent wires keep bezier target arrows; Mother has one shared trunk and arr
   } finally { await f.close(); }
 });
 
-test('wheel at pointer, middle/Space pan, box select, delete, undo/redo, duplicate, frame, menus and wiring', async () => {
+test('modifier wheel zoom, middle/scroll pan, box select, delete, undo/redo, duplicate, frame, menus and wiring', async () => {
   const f = await openCanvas(); const { page, canvas } = f;
   try {
     await f.fit();
@@ -29,14 +29,14 @@ test('wheel at pointer, middle/Space pan, box select, delete, undo/redo, duplica
     const transform = () => viewport.getAttribute('transform').then(value => value ?? viewport.getAttribute('style'));
     const pointerWorld = () => viewport.evaluate((el, p) => { const m = new DOMMatrix(getComputedStyle(el).transform), area = el.closest('.react-flow').getBoundingClientRect(); return { x: (p.x - area.left - m.e) / m.a, y: (p.y - area.top - m.f) / m.d }; }, origin);
     const anchor = await pointerWorld();
-    const before = await transform(); await page.mouse.move(origin.x, origin.y); await page.mouse.wheel(0, -200); await page.waitForTimeout(400);
+    const before = await transform(); await page.mouse.move(origin.x, origin.y); await page.keyboard.down('Control'); await page.mouse.wheel(0, -200); await page.keyboard.up('Control'); await page.waitForTimeout(400);
     assert.notEqual(await transform(), before, 'wheel zoom');
     const after = await pointerWorld(); assert.ok(Math.hypot(after.x - anchor.x, after.y - anchor.y) < 2, 'zoom stays at the pointer');
     let previous = await transform(); await drag(page, origin, { x: origin.x + 55, y: origin.y + 35 }, 'middle');
     assert.notEqual(await transform(), previous, 'middle drag pans');
     await page.mouse.click(origin.x, origin.y);
-    await page.keyboard.down('Space'); previous = await transform(); await drag(page, origin, { x: origin.x + 70, y: origin.y + 35 }); await page.keyboard.up('Space');
-    assert.notEqual(await transform(), previous, 'Space drag pans');
+    previous = await transform(); await page.mouse.wheel(40, 70); await page.waitForTimeout(200);
+    assert.notEqual(await transform(), previous, 'scroll pans');
     assert.equal(await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).count(), 0, 'Space does not open Add');
     await f.fit(); await f.node('Quillon · Part 1').click();
     await page.keyboard.press('Control+d'); await f.agentCount(5, 'duplicate'); await page.waitForTimeout(450);

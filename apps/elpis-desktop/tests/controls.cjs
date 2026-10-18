@@ -48,7 +48,7 @@ async function guardDesktopStore(target) {
 }
 /** Every orange the light theme paints (hue 15–50°, saturated, mid lightness), as `selector: property value`. The
  * colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
-const oranges = page => page.evaluate(() => {
+const oranges = (page, exclude = '') => page.evaluate(exclude => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   const rgba = value => { context.clearRect(0, 0, 1, 1); context.fillStyle = '#000'; context.fillStyle = value; context.fillRect(0, 0, 1, 1); return context.getImageData(0, 0, 1, 1).data; };
@@ -64,6 +64,7 @@ const oranges = page => page.evaluate(() => {
   const name = element => `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${[...element.classList].slice(0, 2).map(c => `.${c}`).join('')}`;
   const hits = new Set();
   for (const element of document.querySelectorAll('body *')) {
+    if (exclude && element.closest(exclude)) continue;
     if (!element.getClientRects().length) continue;
     const style = getComputedStyle(element);
     if (style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
@@ -75,7 +76,7 @@ const oranges = page => page.evaluate(() => {
     for (const [property, value] of checks) for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
   }
   return [...hits];
-});
+}, exclude);
 /** Opens a select and lists every option whose text is cut off: clipped by the menu or the option, or running under
  * the check mark. Measures the glyphs themselves (a Range), so ellipsis and overflow:hidden both count as cut. */
 async function optionsCut(trigger) {

@@ -211,7 +211,8 @@
     "tests/personal.test.cjs",
     "tests/smart-prune.test.cjs",
     "tests/composer-corner.test.cjs",
-    "tests/hud-language.test.cjs"
+    "tests/hud-language.test.cjs",
+    "tests/night-workflows.test.cjs"
   ],
   "opt-in": [
     "tests/love-spot-performance.test.cjs",

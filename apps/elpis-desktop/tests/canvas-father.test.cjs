@@ -97,7 +97,8 @@ test('a rejected Father report stays running, retries delivery, and retains the 
     assert.match(sent[0].body.text, /Status: failed/);
     assert.match(sent[0].body.text, /Father check failed/);
     assert.match(sent[0].body.text, /Evidence a12/);
-    assert.equal(await canvas.getByRole('alert').count(), 0, 'successful retry clears its delivery error');
+    assert.equal(await canvas.getByRole('alert').filter({ hasText: 'Father report not delivered' }).count(), 0, 'successful retry clears its delivery error');
+    await canvas.getByRole('alert').filter({ hasText: 'Father check failed' }).waitFor();
     assert.deepEqual(errors, []);
   } finally { release(); await close(); }
 });

@@ -4,7 +4,8 @@ import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef
 import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
-import { CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
+import { agentColor, CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
+import { portraits } from "@/lib/love-characters";
 import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, type IsoPlace, type Point } from "@/lib/iso";
 
 /** The agents canvas's second view (components/agents-canvas.tsx): the graph as Deus Ex's hacking screen, for
@@ -133,14 +134,6 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const [renaming, setRenaming] = useState<string | null>(null);
   const rename = (id: string) => { if (nodes.get(id)?.type === "agent") { onSelect([id]); setRenaming(id); } };
   const [wireDrag, setWireDrag] = useState<{ id: string; end: "source" | "target"; from: Point; to: Point } | null>(null);
-  const space = useRef(false);
-  useEffect(() => {
-    const down = (event: KeyboardEvent) => { if (event.code === "Space" && root.current?.contains(event.target as globalThis.Node) && !(event.target as Element).closest("input, textarea")) { space.current = true; event.preventDefault(); } };
-    const up = (event: KeyboardEvent) => { if (event.code === "Space") space.current = false; };
-    const blur = () => { space.current = false; };
-    window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
-  }, []);
   const drag = useRef<{ x: number; y: number; from: View; moved: boolean } | null>(null);
 
   useLayoutEffect(() => {
@@ -177,7 +170,12 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   useEffect(() => {
     const element = root.current;
     if (!element) return;
-    const wheel = (event: WheelEvent) => { event.preventDefault(); const box = element.getBoundingClientRect(); zoomBy(Math.exp(-event.deltaY * 0.0015), { x: event.clientX - box.left, y: event.clientY - box.top }); };
+    const wheel = (event: WheelEvent) => {
+      if ((event.target as Element).closest(".iso-hud, input, textarea")) return;
+      event.preventDefault(); const box = element.getBoundingClientRect(), unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.height : 1;
+      if (event.ctrlKey || event.metaKey) zoomBy(Math.exp(-event.deltaY * unit * 0.0015), { x: event.clientX - box.left, y: event.clientY - box.top });
+      else move({ ...view, x: view.x - event.deltaX * unit, y: view.y - event.deltaY * unit });
+    };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
   });
@@ -244,8 +242,9 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   // Each title stands upright above its pedestal. Where the graph is dense, a title that would cover another title or
   // another agent's block shows only its wave badge, until it is pointed at, focused or selected, or zoomed into room;
   // the Mother's and those always show in full.
-  const anchor = (place: IsoPlace) => { const shape = shapeOf(place); return screen({ x: place.at.x, y: place.at.y - shape.core / 2 - height(shape) }); };
-  const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = shape.core * Math.cos(Math.PI / 6) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: top.y + (shape.core / 2 + shape.coreHeight) * view.zoom }; };
+  const hasPortrait = (place: IsoPlace) => place.kind === "agent" && Boolean((nodes.get(place.id)!.data as AgentData).character);
+  const anchor = (place: IsoPlace) => { const shape = shapeOf(place); return screen({ x: place.at.x, y: place.at.y - Math.max(shape.core / 2, hasPortrait(place) ? 52 : 0) - height(shape) }); };
+  const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = Math.max(shape.core * Math.cos(Math.PI / 6), hasPortrait(place) ? 33 : 0) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: screen({ x: place.at.x, y: place.at.y - shape.baseHeight }).y }; };
   const kept = (place: IsoPlace) => place.kind !== "agent" || place.id === hot || selected.includes(place.id);
   const full = new Set<string>(), taken: Box[] = [], labelPositions = new Map<string, Point>();
   const labelBox = (at: Point, width: number, labelHeight = LABEL.height): Box => ({ left: at.x - width / 2, top: at.y - labelHeight, right: at.x + width / 2, bottom: at.y });
@@ -291,7 +290,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     onDoubleClick={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onAdd({ x: event.clientX, y: event.clientY }); }}
     onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onBoardMenu(event); }}
     onPointerDown={event => {
-      if (![0, 1].includes(event.button) || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label") || (event.button === 0 && !space.current && (event.target as Element).closest(".iso-node"))) return;
+      if (![0, 1].includes(event.button) || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label") || (event.button === 0 && (event.target as Element).closest(".iso-node"))) return;
       event.preventDefault(); event.currentTarget.focus({ preventScroll: true });
       drag.current = { x: event.clientX, y: event.clientY, from: view, moved: false };
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -340,7 +339,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
         {painted.map(place => {
           const shape = shapeOf(place), ring = ellipse(shape.ring), pillar = place.kind !== "agent";
           return <g key={place.id} ref={element => { if (element) buttons.current.set(place.id, element); else buttons.current.delete(place.id); }}
-            className="iso-node" data-id={place.id} data-kind={place.kind} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
+            className="iso-node" style={place.kind === "agent" ? { "--agent-color": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties : undefined} data-id={place.id} data-kind={place.kind} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
             role="button" tabIndex={tabbable === place.id ? 0 : -1} aria-pressed={selected.includes(place.id)} aria-label={`${titleOf(place.id)}: ${describe(place.id)}`}
             onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey)} onDoubleClick={() => rename(place.id)} onKeyDown={event => keys(event, place.id)}
             onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}
@@ -352,6 +351,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
             <g className="iso-lift">
               <Prism className="iso-base" ground={place.ground} side={shape.base} bottom={0} top={shape.baseHeight} />
               <Prism className="iso-core" ground={place.ground} side={shape.core} bottom={shape.baseHeight} top={height(shape)} />
+              {place.kind === "agent" && (nodes.get(place.id)!.data as AgentData).character && <image className="iso-portrait" href={portraits[(nodes.get(place.id)!.data as AgentData).character as keyof typeof portraits]} x={place.at.x - 33} y={place.at.y - height(shape) - 52} width={66} height={66} pointerEvents="none" />}
               <polygon className="iso-inlay" points={points(square(place.ground, shape.core * 0.5, height(shape)))} />
             </g>
           </g>;
@@ -362,7 +362,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     {places.filter(place => place.kind === "agent").flatMap(place => (["target", "source"] as const).map(end => {
       const point = screen(place.at), offset = ellipse(shapeOf(place).ring).rx * view.zoom;
       const at = { x: point.x + (end === "source" ? offset : -offset), y: point.y };
-      return <button key={`${place.id}-${end}`} type="button" className="iso-port" data-kind="agent" data-node={place.id} data-end={end} aria-label={`${end === "source" ? "Output" : "Input"} of ${titleOf(place.id)}`} title={end === "source" ? "Drag to another agent's input, or drop to add an agent" : "Drag from another agent's output"} style={{ left: at.x, top: at.y }}
+      return <button key={`${place.id}-${end}`} type="button" className="iso-port" data-kind="agent" data-node={place.id} data-end={end} aria-label={`${end === "source" ? "Output" : "Input"} of ${titleOf(place.id)}`} title={end === "source" ? "Drag to another agent's input, or drop to add an agent" : "Drag from another agent's output"} style={{ left: at.x, top: at.y, "--kind": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties}
         onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }}
         onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); root.current?.focus({ preventScroll: true }); root.current?.setPointerCapture(event.pointerId); setWireDrag({ id: place.id, end, from: at, to: at }); }}
         onClick={event => { event.stopPropagation(); if (event.detail === 0) { const box = event.currentTarget.getBoundingClientRect(); onCommand({ x: box.left, y: box.bottom }, place.id, end); } }} />;
@@ -405,10 +405,10 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
       })}
     </div>
     <div className="iso-hud iso-controls" role="toolbar" aria-label="Zoom">
-      <button type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (wheel)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
-      <button type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (wheel)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
+      <button type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
+      <button type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
       <button type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
-      <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Wheel</b>Zoom</span><span><b>Drag</b>Pan</span></span>
+      <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Drag</b>Pan</span></span>
     </div>
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>

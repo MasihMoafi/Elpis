@@ -1,12 +1,13 @@
+import { characters } from "./agent-characters";
 import { appStorage } from "@/lib/projects";
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
- * sends the graph to Elpis's work-graph engine (POST /api/workflows/run, bridge/client.mjs `runWorkflow`).
+ * sends the graph to the ACP scheduler (POST /api/workflows/run, bridge/client.mjs `runWorkflow`).
  * Every agent on the board writes: Elpis checks each writer with a read-only verify task, which the run adds itself
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
 /** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
- * folders the agent may write, which Elpis requires to exist (codex-rs work_graphs.rs `validate_scope_resolution`). */
-export type AgentData = { title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
+ * folders the agent may write, which bridge/workflow-acp.mjs requires to exist inside the project. */
+export type AgentData = { character?: string; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
 /** `isoPosition` pins a manually placed pedestal in projected ground units until Arrange is used. */
@@ -14,25 +15,25 @@ export type CanvasNode = ({ id: string; type: "agent"; position: Position; data:
   | { id: typeof MOTHER; type: "mother"; position: Position; data: Record<string, never> }) & { isoPosition?: Position };
 /** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
  * at the same time, each told about the other and kept out of its folders, with no order between them. */
-export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside"; label?: string };
+export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside"; label?: string; feedback?: boolean };
 /** Whether a wire orders its agents (the target waits for the source). */
-export const waits = (edge: CanvasEdge) => edge.kind !== "alongside";
+export const waits = (edge: CanvasEdge) => edge.kind !== "alongside" && !edge.feedback;
 /** The Mother's settings, for the whole run: its goal (`brief`), which every agent gets and from which Elpis fills in
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
-export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings; motherFlow?: string };
-/** A task's state as workGraph/list reports it (codex-rs state/src/model/work_graph.rs). */
+export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number };
+/** A task's state from /api/workflows, shared by ACP runs and retained native history. */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
  * verify task Elpis runs after every agent that writes (`runTasks`). */
 export const STATUS_LABEL: Record<TaskStatus | "idle", string> = { idle: "not run", pending: "waiting", running: "running", succeeded: "done", failed: "failed", blocked: "blocked", cancelled: "cancelled" };
 export const CHECK_LABEL: Record<TaskStatus | "idle", string> = { idle: "Checked after it runs", pending: "Check waits for it", running: "Being checked", succeeded: "Check passed", failed: "Check failed", blocked: "Check blocked", cancelled: "Check cancelled" };
-/** `reasoningEffort` is the agent's thinking level; Elpis refuses one its model lacks before any agent starts. */
-export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string };
+/** `reasoningEffort` is the agent's thinking level, checked by its adapter and model. */
+export type RunTask = { id: string; kind: "implement" | "verify"; title: string; instruction: string; dependsOn: string[]; writeScopes: string[]; acceptanceCriteria: string[]; provider?: string; model?: string; reasoningEffort?: string; feedbackFrom?: string[] };
 
 /** The Mother node: the chat a run starts in. Every agent is her child; she starts the agents that wait for no one and
- * receives every report. She is drawn, never sent: Elpis's work graph takes her chat as its root thread. */
+ * owns the run's reports. She is drawn, never sent: the scheduler takes her chat as its root thread. */
 export const MOTHER = "mother";
 /** The default most agents a graph holds; past 10 a Father agent is to share the work (lat.md/tasks.md). */
 export const MAX_AGENTS = 10;
@@ -46,7 +47,7 @@ export const PER_PARENT = 10;
 export function parents(graph: CanvasGraph): { mother: string[]; father: string[] } {
   const order = waves(graph), agents = agentsOf(graph).map((node, index) => ({ id: node.id, wave: order.get(node.id) ?? Infinity, index }));
   const ranked = agents.sort((a, b) => a.wave - b.wave || a.index - b.index).map(item => item.id);
-  return { mother: ranked.slice(0, PER_PARENT), father: ranked.slice(PER_PARENT) };
+  return graph.template === "recursive" ? { mother: ranked, father: [] } : { mother: ranked.slice(0, PER_PARENT), father: ranked.slice(PER_PARENT) };
 }
 /** Each agent's check is its own engine task, so a graph of n agents is 2n tasks. */
 export const TASKS_PER_AGENT = 2;
@@ -54,8 +55,6 @@ export const TASKS_PER_AGENT = 2;
 export const checkOf = (id: string) => `${id}-check`;
 /** What an agent is held to when its "Done when" is left empty. */
 export const DONE = "The change builds and its tests pass.";
-/** How a writing agent reports, so that the engine accepts it. */
-const REPORT = "Your report's changed_files must name every file that changed in your folders, build output included (such as __pycache__ from running Python; python3 -B writes none). A rejected report does not count as your one report: fix what its reason names and report again.";
 const agentsOf = (graph: CanvasGraph) => graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
 
 let counter = 0;
@@ -303,6 +302,9 @@ export function runParts(graph: CanvasGraph): { mother: RunTask[]; father: RunTa
 
 export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: string } {
   const agents = agentsOf(graph);
+  if (graph.template === "recursive" && (!Number.isSafeInteger(graph.roundLimit) || graph.roundLimit! < 1 || graph.roundLimit! > 100)) return { error: "Recursive workflows need a round limit from 1 to 100." };
+  if (graph.template !== "recursive" && graph.edges.some(edge => edge.feedback)) return { error: "Feedback links need the recursive pattern and a round limit." };
+  if (waves(graph).size !== agents.length) return { error: "That workflow has a loop. Use the recursive pattern with a round limit." };
   if (!agents.length) return { error: "Add an agent before running the graph." };
   if (agents.length > maxAgents(graph)) return { error: `The graph has ${agents.length} agents; its limit is ${maxAgents(graph)}. Remove some or raise Max agents.` };
   const ids = new Set(agents.map(node => node.id));
@@ -313,8 +315,8 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
   // Agents working alongside each other must not share a folder: they run at the same time.
-  const byId = new Map(agents.map(node => [node.id, node])), beside = (id: string) => graph.edges.filter(edge => !waits(edge) && (edge.source === id || edge.target === id)).map(edge => byId.get(edge.source === id ? edge.target : edge.source)).filter((item): item is (typeof agents)[number] => Boolean(item));
-  for (const edge of graph.edges.filter(edge => !waits(edge))) {
+  const byId = new Map(agents.map(node => [node.id, node])), beside = (id: string) => graph.edges.filter(edge => edge.kind === "alongside" && (edge.source === id || edge.target === id)).map(edge => byId.get(edge.source === id ? edge.target : edge.source)).filter((item): item is (typeof agents)[number] => Boolean(item));
+  for (const edge of graph.edges.filter(edge => edge.kind === "alongside")) {
     const a = byId.get(edge.source), b = byId.get(edge.target), shared = a && b ? a.data.writeScopes.find(folder => b.data.writeScopes.includes(folder)) : undefined;
     if (a && b && shared) return { error: `“${a.data.title}” and “${b.data.title}” work alongside but both may write ${shared}: give each its own folder.` };
   }
@@ -329,11 +331,10 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const criteria = node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : [DONE];
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
-      // Every agent gets the Mother's brief first, then its own prompt. The engine accepts a report only when its
-      // changed_files are every file that changed in the folders, build output included; a worker told to report
-      // "exactly once" otherwise stops after the first rejection, and the run ends there (found in a live run).
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your terminal report summary so the next agent can use them.`, REPORT, alongside].filter(Boolean).join("\n\n"),
+      // Every writer receives the shared brief and its own prompt. Its final ACP answer feeds its check and successors.
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your final answer so the next agent can use them.`, graph.template === "voting" && node.id === agents.at(-1)?.id ? "Compare the connected agents’ independent answers. Give the majority conclusion and explain disagreements with evidence." : "", alongside].filter(Boolean).join("\n\n"),
         dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => [edge.source, checkOf(edge.source)]),
+        ...(graph.template === "recursive" ? { feedbackFrom: graph.edges.filter(edge => edge.feedback && edge.target === node.id).flatMap(edge => [edge.source, checkOf(edge.source)]) } : {}),
         writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
         instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}`,
@@ -365,9 +366,9 @@ export function applyPlan(graph: CanvasGraph, plan: Plan): CanvasGraph {
     const old = graph.edges.find(edge => waits(edge) && edge.source === from && edge.target === to);
     return { ...old, id: `${from}->${to}`, source: from, target: to };
   }));
-  // Wires that order nothing (alongside) are the user's: they stay between agents the plan keeps.
+  // Alongside and explicit previous-round links stay between agents the plan keeps.
   const keptIds = new Set(ids.values());
-  edges.push(...graph.edges.filter(edge => !waits(edge) && keptIds.has(edge.source) && keptIds.has(edge.target)));
+  edges.push(...graph.edges.filter(edge => (edge.kind === "alongside" || graph.template === "recursive" && edge.feedback) && keptIds.has(edge.source) && keptIds.has(edge.target)));
   // A fresh team is laid out in run order; on a board the user laid out, only new agents are placed: right of what
   // they wait for, else below the rest.
   const reused = agents.filter(node => kept.has(node.id));
@@ -398,4 +399,24 @@ export function readGraph(): CanvasGraph | null {
 }
 export function saveGraph(graph: CanvasGraph) {
   try { appStorage().setItem(KEY, JSON.stringify(graph)); return true; } catch { return false; }
+}
+
+/** Pattern commands rewire the current team without replacing its prompts or identities. */
+export const PATTERNS = ["Sequential", "Parallel", "Kahn graph waves", "Recursive", "Voting"] as const;
+export function applyPattern(graph: CanvasGraph, number: number): CanvasGraph {
+  const agents = agentsOf(graph);
+  const sequential = () => chain(...agents);
+  const edges = number === 3 ? graph.edges.filter(edge => !edge.feedback) : number === 2 ? []
+    : number === 5 ? fan(agents.slice(0, -1), agents.slice(-1)) : sequential();
+  if (number === 4 && agents.length) edges.push({ ...wire(agents.at(-1)!, agents[0]), feedback: true, label: "Next round" });
+  return arrange({ ...graph, edges, template: ["sequential", "parallel", "kahn", "recursive", "voting"][number - 1],
+    roundLimit: number === 4 ? graph.roundLimit ?? 3 : undefined });
+}
+/** Fixed identity color, shared by flat cards, isometric pedestals and ports. */
+export function agentColor(id: string, data: AgentData): string {
+  const character = characters.find(character => character.id === data.character);
+  if (character) return character.color;
+  let hash = 0;
+  for (const c of id) hash = (Math.imul(hash, 31) + c.charCodeAt(0)) >>> 0;
+  return `hsl(${(hash * 137.508) % 360} 58% 65%)`;
 }
