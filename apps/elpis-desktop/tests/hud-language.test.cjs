@@ -40,6 +40,10 @@ const measure = page => page.evaluate(({ LABELS, PANELS, FLOATING }) => {
     buttons: all('[data-slot="button"]').map(element => ({ name: name(element), send: element.classList.contains('send-button'), xs: /\b(?:h-6|size-6)\b/.test(element.className), ...corner(element) })),
     panels: all(PANELS).map(element => ({ name: name(element), ...corner(element) })),
     floating: all(FLOATING).map(element => ({ name: name(element), ...corner(element) })),
+    // Section headers: an accent tick, the title, a hairline running to the actions.
+    sections: all('.settings-group-heading, .customize-title').map(element => { const title = element.querySelector(':scope > h2, :scope > h3'), tick = getComputedStyle(element, '::before'), rule = getComputedStyle(element, '::after'), type = title && getComputedStyle(title);
+      return { name: name(element), title: title?.textContent, type: type && `${type.fontSize} ${type.fontWeight} ${type.textTransform}`, tick: `${tick.width} ${srgb(tick.backgroundColor)}`, rule: `${rule.height} ${srgb(rule.backgroundColor)} ${rule.flexGrow}` }; }),
+    hairline: token('--hairline'),
     labels: all(LABELS).map(element => { const s = getComputedStyle(element); return { name: name(element), type: [s.fontFamily.split(',')[0], s.fontSize, s.fontWeight, s.letterSpacing, s.textTransform].join(' '), color: srgb(s.color) }; }),
   };
 }, { LABELS, PANELS, FLOATING });
@@ -109,6 +113,16 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
     const seen = { labels: new Set() };
     for (const [where, report] of reports) labels(report, where, seen);
     for (const label of ['div.section-label', 'p.hud-menu-title', 'span.agent-node-kind', 'span.canvas-toolbar-label']) assert.ok([...seen.labels].some(name => name.startsWith(label)), `${label} measured (${[...seen.labels]})`);
+  });
+  await t.test('one section header: tick, title, hairline', () => {
+    let count = 0;
+    for (const [where, report] of reports) for (const section of report.sections.filter(item => item.title)) {
+      assert.equal(section.type, '14px 600 none', `${where}: ${section.name} "${section.title}" title`);
+      assert.equal(section.tick, `3px ${report.tokens.primary}`, `${where}: ${section.name} has the accent tick`);
+      assert.equal(section.rule, `1px ${report.hairline} 1`, `${where}: ${section.name} has the hairline`);
+      count++;
+    }
+    assert.ok(count >= 3, `section headers measured: ${count}`);
   });
   await t.test('every text meets WCAG AA against its own background', () => assert.deepEqual(low, []));
 });
