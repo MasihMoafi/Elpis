@@ -1122,6 +1122,24 @@ impl CodexThread {
         self.session.elpis_instructions().await
     }
 
+    /// The current Context Ledger sources, including excluded files.
+    pub async fn elpis_context_files(
+        &self,
+    ) -> CodexResult<Vec<crate::elpis_context::ContinuitySource>> {
+        self.session.elpis_context_files().await
+    }
+
+    /// Change a discovered source using the same admission record as the TUI.
+    pub async fn set_elpis_context_file_included(
+        &self,
+        path: &std::path::Path,
+        included: bool,
+    ) -> CodexResult<Vec<crate::elpis_context::ContinuitySource>> {
+        self.session
+            .set_elpis_context_file_included(path, included)
+            .await
+    }
+
     /// Elpis: this thread's Smart Prune switch, counters and latest evidence.
     pub async fn smart_prune_snapshot(
         &self,

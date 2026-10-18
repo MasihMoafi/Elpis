@@ -270,6 +270,65 @@ pub struct ThreadElpisInstructionsReadResponse {
     pub continuity: Option<String>,
 }
 
+/// Lists the thread's currently discoverable Ledger sources, including excluded files.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesListParams {
+    pub thread_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesListResponse {
+    pub files: Vec<ThreadContextFile>,
+}
+
+/// Changes an existing Ledger source. Admission is shared by threads in the workspace,
+/// just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesSetParams {
+    pub thread_id: String,
+    /// The exact path returned by thread/contextFiles/list. Unknown paths are refused.
+    pub path: String,
+    pub included: bool,
+}
+
+/// Returns the refreshed list because more than one instruction file can share a switch.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesSetResponse {
+    pub files: Vec<ThreadContextFile>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadContextFileGroup {
+    SessionContinuity,
+    DurableMemory,
+    Instructions,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFile {
+    pub name: String,
+    pub path: String,
+    pub group: ThreadContextFileGroup,
+    /// The core Ledger's capped estimate, rather than provider token accounting.
+    #[ts(type = "number")]
+    pub estimated_tokens: u64,
+    pub included: bool,
+    pub reason: String,
+    pub selectable: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

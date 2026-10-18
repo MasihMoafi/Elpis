@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Changes an existing Ledger source. Admission is shared by threads in the workspace, just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.",
+  "properties": {
+    "included": {
+      "type": "boolean"
+    },
+    "path": {
+      "description": "The exact path returned by thread/contextFiles/list. Unknown paths are refused.",
+      "type": "string"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "included",
+    "path",
+    "threadId"
+  ],
+  "title": "ThreadContextFilesSetParams",
+  "type": "object"
+}

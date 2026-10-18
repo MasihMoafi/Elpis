@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ThreadContextFile": {
+      "properties": {
+        "estimatedTokens": {
+          "description": "The core Ledger's capped estimate, rather than provider token accounting.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "group": {
+          "$ref": "#/definitions/ThreadContextFileGroup"
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "estimatedTokens",
+        "group",
+        "included",
+        "name",
+        "path",
+        "reason",
+        "selectable"
+      ],
+      "type": "object"
+    },
+    "ThreadContextFileGroup": {
+      "enum": [
+        "sessionContinuity",
+        "durableMemory",
+        "instructions"
+      ],
+      "type": "string"
+    }
+  },
+  "description": "Returns the refreshed list because more than one instruction file can share a switch.",
+  "properties": {
+    "files": {
+      "items": {
+        "$ref": "#/definitions/ThreadContextFile"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "files"
+  ],
+  "title": "ThreadContextFilesSetResponse",
+  "type": "object"
+}

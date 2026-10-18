@@ -1683,6 +1683,14 @@ impl MessageProcessor {
                     .thread_elpis_instructions_read(params)
                     .await
             }
+            ClientRequest::ThreadContextFilesList { params, .. } => {
+                self.thread_processor
+                    .thread_context_files_list(params)
+                    .await
+            }
+            ClientRequest::ThreadContextFilesSet { params, .. } => {
+                self.thread_processor.thread_context_files_set(params).await
+            }
             ClientRequest::TurnSteer { params, .. } => {
                 self.turn_processor.turn_steer(&request_id, params).await
             }

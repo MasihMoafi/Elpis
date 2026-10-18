@@ -48,6 +48,7 @@ mod daybreak_access;
 mod dynamic_tools;
 // Elpis: the instruction text a thread's model receives.
 mod elpis_instructions_read;
+mod elpis_context_files;
 // Elpis: per-turn timing, cost state and category shares.
 mod elpis_turn_activity;
 mod environment_add;

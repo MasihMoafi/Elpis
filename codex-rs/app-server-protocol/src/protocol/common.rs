@@ -909,6 +909,16 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadElpisInstructionsReadResponse,
     },
+    ThreadContextFilesList => "thread/contextFiles/list" {
+        params: v2::ThreadContextFilesListParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadContextFilesListResponse,
+    },
+    ThreadContextFilesSet => "thread/contextFiles/set" {
+        params: v2::ThreadContextFilesSetParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadContextFilesSetResponse,
+    },
     SkillsList => "skills/list" {
         params: v2::SkillsListParams,
         serialization: global_shared_read("config"),

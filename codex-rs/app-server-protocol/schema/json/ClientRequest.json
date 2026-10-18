@@ -4407,6 +4407,39 @@
       ],
       "type": "object"
     },
+    "ThreadContextFilesListParams": {
+      "description": "Lists the thread's currently discoverable Ledger sources, including excluded files.",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadContextFilesSetParams": {
+      "description": "Changes an existing Ledger source. Admission is shared by threads in the workspace, just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.",
+      "properties": {
+        "included": {
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The exact path returned by thread/contextFiles/list. Unknown paths are refused.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "included",
+        "path",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadDeleteParams": {
       "properties": {
         "threadId": {
@@ -7093,6 +7126,54 @@
         "params"
       ],
       "title": "Thread/elpisInstructions/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/contextFiles/list"
+          ],
+          "title": "Thread/contextFiles/listRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadContextFilesListParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/contextFiles/listRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/contextFiles/set"
+          ],
+          "title": "Thread/contextFiles/setRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadContextFilesSetParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/contextFiles/setRequest",
       "type": "object"
     },
     {
