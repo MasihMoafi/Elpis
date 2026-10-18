@@ -3,17 +3,21 @@
 // Elpis's own agent graphs (apps/elpis-desktop/bridge/acp-nodes.mjs), editors, or another agent.
 //   elpis acp --model gpt-6-luna [--provider openai]          (elpis-wrapper)
 //   node elpis-acp-agent.mjs --model gpt-6-luna [--provider openai]
-// Each ACP session is one Elpis thread on a private `elpis app-server` ($ELPIS_ENGINE_BIN), with the session id being
+// Each ACP session is one Elpis thread on the running shared bridge, or a private app-server when none exists,
+// with the session id being
 // the thread id, so it stays in Elpis history. Turns stream as session updates; the engine's approval requests become
 // session/request_permission (allow once, allow for the session, reject, as `fx acp` offers); session/cancel
 // interrupts the turn. Instructions come from session/new `_meta.systemPrompt.append`, the convention
-// claude-agent-acp and agy-acp.mjs read. MCP servers a client lists are not passed on: the thread uses Elpis's own.
+// claude-agent-acp and agy-acp.mjs read. Client MCP servers are thread-local configuration overrides.
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 import { redactSecrets } from "./log-redaction.mjs";
+import { runtimeDir } from "./shared-runtime.mjs";
+import WebSocket from "ws";
 
 const VERSION = "0.1.0";
 const USAGE = "usage: elpis acp [--model MODEL] [--provider PROVIDER]";
@@ -33,15 +37,47 @@ const DECISIONS = { allow_once: "accept", allow_always: "acceptForSession", reje
 const APPROVALS = new Set(["item/commandExecution/requestApproval", "item/fileChange/requestApproval"]);
 const cut = (s) => (s.length > 4000 ? `${s.slice(0, 4000)}\n…` : s);
 
-// One `elpis app-server` over stdio JSON-RPC.
+function bridgeEndpoint() {
+  const explicit = process.env.ELPIS_APP_BRIDGE_SOCKET || process.env.ELPIS_BRIDGE_SOCKET;
+  const url = process.env.ELPIS_BRIDGE_URL;
+  if (!explicit && url && !url.startsWith("unix://")) return url;
+  const socket = (explicit || url || runtimeDir().sock).replace(/^unix:\/\//, "");
+  let stat;
+  try { stat = fs.lstatSync(socket); }
+  catch (error) { if (!explicit && !url && error.code === "ENOENT") return null; throw error; }
+  if (!path.isAbsolute(socket) || !stat.isSocket() || stat.uid !== process.getuid?.() || (stat.mode & 0o077)) {
+    throw new Error("The Elpis bridge socket must be private and owned by the current user");
+  }
+  return `ws+unix://${socket}:/`;
+}
+
+// The shared bridge's JSON-RPC connection, or one private stdio app-server.
 class Engine {
-  constructor(bin) {
+  constructor(bin, endpoint) {
     this.pending = new Map();
     this.seq = 0;
     this.tail = "";
     this.dead = null;
     this.stopping = false;
     this.onMessage = () => {};
+    this.exited = new Promise(resolve => { this.resolveExit = resolve; });
+    if (endpoint) {
+      this.socket = new WebSocket(endpoint, { maxPayload: 8 * 1024 * 1024 });
+      this.opened = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { this.socket.terminate(); reject(new Error("Elpis bridge connection timed out")); }, 10000);
+        this.socket.once("open", () => { clearTimeout(timer); resolve(); });
+        this.socket.once("error", error => { clearTimeout(timer); reject(error); });
+        this.socket.once("close", () => { clearTimeout(timer); reject(new Error("Elpis bridge connection closed")); });
+      });
+      this.socket.on("message", raw => {
+        let msg;
+        try { msg = JSON.parse(raw); } catch { return; }
+        this.receive(msg);
+      });
+      this.socket.on("close", () => this.end("connection closed"));
+      return;
+    }
+    this.opened = Promise.resolve();
     this.child = spawn(bin, ["app-server"], { stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdin.on("error", () => {});
     this.child.stderr.on("data", (d) => { this.tail = (this.tail + d).slice(-2000); });
@@ -55,28 +91,33 @@ class Engine {
         if (!line) continue;
         let msg;
         try { msg = JSON.parse(line); } catch { continue; }
-        if (msg.id !== undefined && !msg.method) {
-          const p = this.pending.get(msg.id);
-          this.pending.delete(msg.id);
-          if (p) msg.error ? p.reject(new RequestError(-32603, msg.error.message ?? "The Elpis engine refused the request")) : p.resolve(msg.result);
-        } else this.onMessage(msg);
+        this.receive(msg);
       }
     });
-    this.exited = new Promise((resolve) => {
-      const end = (why) => {
-        if (this.dead) return;
-        const tail = redactSecrets(this.tail.trim()).slice(-500);
-        this.dead = new RequestError(-32603, `The Elpis engine ${why}${tail ? `: ${tail}` : ""}`);
-        for (const p of this.pending.values()) p.reject(this.dead);
-        this.pending.clear();
-        resolve(this.dead);
-      };
-      this.child.once("error", (e) => end(`could not start (${e.message}). Is Elpis installed at ${bin}?`));
-      // 'close' comes after the last output was read, so an answer already written is not lost.
-      this.child.once("close", (code, signal) => end(`exited (${signal ?? code})`));
-    });
+    this.child.once("error", (e) => this.end(`could not start (${e.message}). Is Elpis installed at ${bin}?`));
+    // 'close' comes after the last output was read, so an answer already written is not lost.
+    this.child.once("close", (code, signal) => this.end(`exited (${signal ?? code})`));
   }
-  write(msg) { if (!this.dead) this.child.stdin.write(`${JSON.stringify(msg)}\n`); }
+  receive(msg) {
+    if (msg.id !== undefined && !msg.method) {
+      const p = this.pending.get(msg.id);
+      this.pending.delete(msg.id);
+      if (p) msg.error ? p.reject(new RequestError(-32603, msg.error.message ?? "The Elpis engine refused the request")) : p.resolve(msg.result);
+    } else this.onMessage(msg);
+  }
+  end(why) {
+    if (this.dead) return;
+    const tail = redactSecrets(this.tail.trim()).slice(-500);
+    this.dead = new RequestError(-32603, `The Elpis engine ${why}${tail ? `: ${tail}` : ""}`);
+    for (const p of this.pending.values()) p.reject(this.dead);
+    this.pending.clear();
+    this.resolveExit(this.dead);
+  }
+  write(msg) {
+    if (this.dead) return;
+    if (this.socket) this.socket.send(JSON.stringify(msg));
+    else this.child.stdin.write(`${JSON.stringify(msg)}\n`);
+  }
   call(method, params) {
     if (this.dead) return Promise.reject(this.dead);
     return new Promise((resolve, reject) => {
@@ -90,6 +131,7 @@ class Engine {
   refuse(id, message) { this.write({ id, error: { code: -32601, message } }); }
   async stop() {
     this.stopping = true;
+    if (this.socket) { this.socket.close(); await this.exited; return; }
     this.child.stdin.end();
     const timer = setTimeout(() => this.child.kill("SIGTERM"), 1000);
     const hard = setTimeout(() => this.child.kill("SIGKILL"), 4000);
@@ -102,8 +144,8 @@ const sessions = new Map(); // ACP session id = Elpis thread id -> session state
 let engine = null;
 let ready = null;
 
-function startEngine() {
-  engine = new Engine(ENGINE);
+async function startEngine() {
+  engine = new Engine(ENGINE, bridgeEndpoint());
   engine.onMessage = onEngineMessage;
   engine.exited.then((error) => {
     if (engine.stopping) return;
@@ -112,6 +154,7 @@ function startEngine() {
     process.exitCode = 1;
     setTimeout(() => process.exit(1), 200);
   });
+  await engine.opened;
   return engine.call("initialize", { clientInfo: { name: "elpis-acp", title: "Elpis ACP agent", version: VERSION }, capabilities: { experimentalApi: true } })
     .then(() => engine.notify("initialized", {}));
 }
@@ -229,13 +272,38 @@ function promptText(blocks) {
   }).filter(Boolean).join("\n\n");
 }
 
+function mcpConfig(servers = []) {
+  const config = Object.create(null);
+  for (const server of servers) {
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(server.name) || Object.hasOwn(config, `mcp_servers.${server.name}`)) {
+      throw RequestError.invalidParams(undefined, "MCP server names must be unique and contain only letters, numbers, underscores or hyphens");
+    }
+    let value;
+    if (!server.type || server.type === "stdio") value = { command: server.command, args: server.args ?? [], env: Object.fromEntries((server.env ?? []).map(({ name, value }) => [name, value])) };
+    else if (server.type === "http") value = { url: server.url, http_headers: Object.fromEntries((server.headers ?? []).map(({ name, value }) => [name, value])) };
+    else throw RequestError.invalidParams(undefined, `Unsupported MCP transport: ${server.type}`);
+    config[`mcp_servers.${server.name}`] = value;
+  }
+  return config;
+}
+
+async function steer(s, prompt) {
+  const turn = s.turn;
+  if (!turn) return { outcome: "promptRequired", reason: "noRunningTurn" };
+  const started = await turn.started;
+  turn.id ??= started?.turn?.id ?? null;
+  if (s.turn !== turn || turn.cancelled) return { outcome: "promptRequired", reason: "noRunningTurn" };
+  await engine.call("turn/steer", { threadId: s.id, expectedTurnId: turn.id, input: [{ type: "text", text: promptText(prompt), text_elements: [] }] });
+  return { outcome: "queued", _meta: { delivery: "currentTurn" } };
+}
+
 const app = agent({ name: "elpis" })
   .onRequest("initialize", async () => {
-    ready ??= startEngine();
+    ready ??= startEngine().catch(error => { throw new RequestError(-32603, `Could not connect to the Elpis engine: ${redactSecrets(error.message)}`); });
     await engineReady();
     return {
       protocolVersion: 1,
-      agentCapabilities: { loadSession: false, promptCapabilities: { image: false, audio: false, embeddedContext: true } },
+      agentCapabilities: { loadSession: false, mcpCapabilities: { http: true, sse: false }, promptCapabilities: { image: false, audio: false, embeddedContext: true } },
       agentInfo: { name: "elpis", title: "Elpis", version: VERSION },
       authMethods: [],
     };
@@ -244,11 +312,13 @@ const app = agent({ name: "elpis" })
     await engineReady();
     if (!path.isAbsolute(params.cwd)) throw RequestError.invalidParams(undefined, "cwd must be an absolute path");
     const append = params._meta?.systemPrompt?.append;
+    const config = mcpConfig(params.mcpServers);
     const started = await engine.call("thread/start", {
       cwd: params.cwd,
       ...(options.model ? { model: options.model } : {}),
       ...(options.provider ? { modelProvider: options.provider } : {}),
       approvalPolicy: "on-request", sandbox: "workspace-write",
+      ...(Object.keys(config).length ? { config } : {}),
       ...(typeof append === "string" && append.trim() ? { developerInstructions: append } : {}),
     });
     const id = started?.thread?.id;
@@ -262,18 +332,34 @@ const app = agent({ name: "elpis" })
     await engineReady();
     const s = sessions.get(params.sessionId);
     if (!s) throw RequestError.invalidParams(undefined, `Unknown session ${params.sessionId}`);
-    if (s.turn) throw RequestError.invalidRequest(undefined, "Prompt already in progress");
+    if (s.turn) {
+      const turn = s.turn;
+      const delivered = await steer(s, params.prompt);
+      if (delivered.outcome !== "queued") throw RequestError.invalidRequest(undefined, "The turn ended before the steer arrived; send a new prompt");
+      return turn.result;
+    }
     const turn = s.turn = { id: null, cancelled: false, interrupting: false };
     const done = new Promise((resolve, reject) => { turn.finish = resolve; turn.fail = reject; });
     done.catch(() => {});
-    try {
-      const started = await engine.call("turn/start", { threadId: s.id, input: [{ type: "text", text: promptText(params.prompt), text_elements: [] }] });
-      turn.id ??= started?.turn?.id ?? null;
-      if (turn.cancelled) interrupt(s);
-      const ended = await done;
+    const result = ended => {
       if (ended.status === "failed") throw new RequestError(-32603, ended.error?.message ?? "The Elpis turn failed");
       return { stopReason: turn.cancelled || ended.status === "interrupted" ? "cancelled" : "end_turn" };
-    } finally { s.turn = null; }
+    };
+    turn.result = done.then(result);
+    turn.result.catch(() => {});
+    try {
+      turn.started = engine.call("turn/start", { threadId: s.id, input: [{ type: "text", text: promptText(params.prompt), text_elements: [] }] });
+      const started = await turn.started;
+      turn.id ??= started?.turn?.id ?? null;
+      if (turn.cancelled) interrupt(s);
+      return await turn.result;
+    } catch (error) { turn.fail(error); throw error; }
+    finally { if (s.turn === turn) s.turn = null; }
+  })
+  .onRequest("_session/steering", params => params, async ({ params }) => {
+    const s = sessions.get(params.sessionId);
+    if (!s) throw RequestError.invalidParams(undefined, `Unknown session ${params.sessionId}`);
+    return steer(s, params.prompt);
   })
   .onNotification("session/cancel", ({ params }) => {
     const s = sessions.get(params.sessionId);
@@ -285,6 +371,12 @@ const app = agent({ name: "elpis" })
 const connection = app.connect(ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin)));
 // The client closed the connection (stdin ended): stop the engine and leave.
 connection.closed.then(async () => {
+  if (engine?.socket && !engine.dead) {
+    for (const s of sessions.values()) {
+      if (s.turn) { s.turn.cancelled = true; interrupt(s); }
+      await engine.call("thread/unsubscribe", { threadId: s.id }).catch(() => {});
+    }
+  }
   if (engine && !engine.dead) await engine.stop();
   process.exit(process.exitCode ?? 0);
 });

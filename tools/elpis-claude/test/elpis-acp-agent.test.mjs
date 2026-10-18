@@ -1,7 +1,7 @@
 // The Elpis ACP agent (elpis-acp-agent.mjs) driven by the official ACP SDK client, on a scripted app-server
 // (fake-app-server.mjs as ELPIS_ENGINE_BIN). No model calls.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,21 +10,37 @@ import { Readable, Writable } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { client, ndJsonStream } from "@agentclientprotocol/sdk";
+import http from "node:http";
+import { randomUUID } from "node:crypto";
+import { DesktopClient } from "../../../apps/elpis-desktop/bridge/client.mjs";
+import { runtimeDir } from "../shared-runtime.mjs";
 
 const AGENT = fileURLToPath(new URL("../elpis-acp-agent.mjs", import.meta.url));
 const ENGINE = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));
+const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, what, ms = 5000) {
   for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = check(); if (value) return value; }
   throw new Error(`timed out waiting for ${what}`);
 }
 
-function start(t, { args = ["--model", "luna-test", "--provider", "openai"], answer, command } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-acp-agent-"));
+function start(t, { args = ["--model", "luna-test", "--provider", "openai"], answer, command, shared = false, env = {} } = {}) {
+  const cache = path.join(os.homedir(), ".cache/elpis-tests");
+  fs.mkdirSync(cache, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(cache, "acp-"));
   const engineLog = path.join(dir, "engine.jsonl");
+  const home = path.join(dir, "elpis");
+  const runtimeRoot = path.join(dir, "r");
+  fs.mkdirSync(runtimeRoot, { mode: 0o700 });
+  const priorRuntime = process.env.XDG_RUNTIME_DIR;
+  let socketPath;
+  try { process.env.XDG_RUNTIME_DIR = runtimeRoot; socketPath = shared === "discover" ? runtimeDir(home).sock : path.join(dir, "bridge.sock"); }
+  finally { if (priorRuntime === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = priorRuntime; }
+  const isolated = { ELPIS_HOME: home, XDG_RUNTIME_DIR: runtimeRoot, ELPIS_APP_BRIDGE_SOCKET: "", ELPIS_BRIDGE_SOCKET: "", ELPIS_BRIDGE_URL: "" };
+  const runtime = shared ? spawn(process.execPath, shared === "bridge" ? [BRIDGE] : [ENGINE, "app-server"], { env: { ...process.env, ...isolated, ELPIS_ENGINE_BIN: ENGINE, ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1", ACP_BRIDGE_LOG: path.join(dir, "bridge.log"), ...(shared === "bridge" ? { ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: socketPath } : { FAKE_ENGINE_SOCKET: socketPath }), FAKE_ENGINE_LOG: engineLog }, stdio: ["pipe", "ignore", "inherit"] }) : null;
   const launch = command ? command(dir) : { argv: [process.execPath, AGENT, ...args], env: { ELPIS_ENGINE_BIN: ENGINE } };
   const [program, ...argv] = launch.argv;
-  const child = spawn(program, argv, { cwd: dir, env: { ...process.env, FAKE_ENGINE_LOG: engineLog, ...launch.env }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(program, argv, { cwd: dir, env: { ...process.env, ...isolated, ...(shared && shared !== "discover" ? { ELPIS_APP_BRIDGE_SOCKET: socketPath } : {}), FAKE_ENGINE_LOG: engineLog, ...launch.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (d) => { stderr += d; });
   const exited = once(child, "exit");
@@ -34,17 +50,26 @@ function start(t, { args = ["--model", "luna-test", "--provider", "openai"], ans
     .onNotification("session/update", ({ params }) => { events.push({ kind: "update", ...params }); })
     .onRequest("session/request_permission", async ({ params }) => { events.push({ kind: "permission", ...params }); return state.answer(params); })
     .connect(ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout)));
-  t.after(() => { conn.close(); child.kill("SIGKILL"); fs.rmSync(dir, { recursive: true, force: true }); });
+  t.after(async () => {
+    conn.close(); child.kill("SIGKILL");
+    if (runtime && runtime.exitCode === null && runtime.signalCode === null) {
+      const gone = once(runtime, "exit"); runtime.kill("SIGTERM");
+      const timer = setTimeout(() => runtime.kill("SIGKILL"), 2000);
+      await gone; clearTimeout(timer);
+    }
+    execFileSync("gio", ["trash", dir]);
+  });
   const engine = () => (fs.existsSync(engineLog) ? fs.readFileSync(engineLog, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
   const updates = (kind) => events.filter((e) => e.kind === "update" && (!kind || e.update.sessionUpdate === kind)).map((e) => e.update);
   const text = (kind = "agent_message_chunk") => updates(kind).map((u) => u.content.text).join("");
-  const open = async (meta) => {
+  const open = async (meta, mcpServers = []) => {
+    if (shared) await until(() => fs.existsSync(socketPath), "mock shared socket");
     const init = await conn.agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } });
-    const session = await conn.agent.request("session/new", { cwd: dir, mcpServers: [], ...(meta ? { _meta: meta } : {}) });
+    const session = await conn.agent.request("session/new", { cwd: dir, mcpServers, ...(meta ? { _meta: meta } : {}) });
     return { init, sessionId: session.sessionId };
   };
   const prompt = (sessionId, text) => conn.agent.request("session/prompt", { sessionId, prompt: [{ type: "text", text }] });
-  return { dir, child, conn, events, state, engine, updates, text, open, prompt, exited, stderr: () => stderr };
+  return { dir, socketPath, runtime, child, conn, events, state, engine, updates, text, open, prompt, exited, stderr: () => stderr };
 }
 
 test("initialize and session/new start an Elpis thread with the chosen model and instructions", { timeout: 20000 }, async (t) => {
@@ -120,13 +145,122 @@ test("session/cancel interrupts the running turn and the prompt ends cancelled",
   const { sessionId } = await a.open();
   const running = a.prompt(sessionId, "[hang] wait for me");
   await until(() => a.text("agent_thought_chunk"), "the turn to start");
-  await assert.rejects(a.prompt(sessionId, "second"), /already in progress/);
   await a.conn.agent.notify("session/cancel", { sessionId });
   assert.equal((await running).stopReason, "cancelled");
   const turnId = a.engine().find((m) => m.method === "turn/start") && a.engine().find((m) => m.method === "turn/interrupt")?.params.turnId;
   assert.match(turnId ?? "", /^turn-/, "the engine was asked to interrupt the turn");
   // The session takes a new prompt afterwards.
   assert.equal((await a.prompt(sessionId, "again")).stopReason, "end_turn");
+});
+
+test("session/new forwards stdio MCP tools and keeps them local to that session", { timeout: 20000 }, async t => {
+  const a = start(t);
+  const nonce = `STDIO-${randomUUID()}`, file = path.join(a.dir, "nonce.txt");
+  fs.writeFileSync(file, nonce);
+  const servers = [{ name: "planted", command: process.execPath, args: [ENGINE, "mcp"], env: [{ name: "FAKE_MCP_NONCE_FILE", value: file }] }];
+  const { sessionId } = await a.open(undefined, servers);
+  await a.prompt(sessionId, "[mcp] read the tool");
+  assert.ok(a.text().includes(nonce), "the engine must call the client-supplied MCP tool to obtain the planted nonce");
+  const before = a.events.length;
+  const other = await a.conn.agent.request("session/new", { cwd: a.dir, mcpServers: [] });
+  await a.prompt(other.sessionId, "[mcp] read the tool");
+  assert.equal(a.events.slice(before).some(e => e.update?.content?.text?.includes(nonce)), false);
+  assert.ok(a.text().includes("NO MCP TOOLS"));
+});
+
+test("session/new forwards HTTP MCP URL and headers to the engine", { timeout: 20000 }, async t => {
+  const a = start(t), nonce = `HTTP-${randomUUID()}`, requests = [];
+  const server = http.createServer(async (req, res) => {
+    if (req.headers.authorization !== "Bearer planted-test") { res.writeHead(403).end(); return; }
+    if (req.method !== "POST") { res.writeHead(405).end(); return; }
+    let raw = ""; for await (const part of req) raw += part;
+    const msg = JSON.parse(raw); requests.push(msg.method);
+    if (msg.id === undefined) { res.writeHead(202).end(); return; }
+    const result = msg.method === "initialize" ? { protocolVersion: msg.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "http-nonce", version: "1" } }
+      : msg.method === "tools/list" ? { tools: [{ name: "nonce", inputSchema: { type: "object" } }] } : { content: [{ type: "text", text: nonce }] };
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const { init, sessionId } = await a.open(undefined, [{ type: "http", name: "remote", url: `http://127.0.0.1:${server.address().port}/mcp`, headers: [{ name: "Authorization", value: "Bearer planted-test" }] }]);
+  assert.equal(init.agentCapabilities.mcpCapabilities.http, true);
+  await a.prompt(sessionId, "[mcp]");
+  assert.ok(a.text().includes(nonce));
+  assert.ok(requests.includes("tools/call"));
+});
+
+for (const shared of [true, "bridge"]) test(`desktop lists and follows an ACP turn live, steers it, then cancels another turn (${shared === true ? "mock runtime" : "provider bridge"})`, { timeout: 20000 }, async t => {
+  const a = start(t, { shared });
+  const { sessionId } = await a.open({ elpis: { name: "ACP live test" } });
+  const desktop = await DesktopClient.connect({ socketPath: a.socketPath, rewindHome: path.join(a.dir, "rewind") });
+  t.after(() => desktop.close());
+  const events = []; desktop.on("event", e => events.push(e));
+  const listed = await desktop.listThreads();
+  assert.ok(listed.data.some(row => row.id === sessionId), "the desktop must list the ACP thread before its turn ends");
+  await desktop.resume(sessionId, {});
+  let finished = false;
+  const running = a.prompt(sessionId, "[steer] hold the turn").finally(() => { finished = true; });
+  running.catch(() => {});
+  await until(() => a.text().includes("LIVE planted update"), "ACP live output");
+  await until(() => events.filter(e => e.data?.method === "item/agentMessage/delta").map(e => e.data.params.delta).join("").includes("LIVE planted update"), "desktop live output before completion");
+  await desktop.listThreads();
+  await until(() => a.engine().some(m => m.method === "thread/resume"), "desktop subscription");
+  assert.equal(finished, false);
+  const active = await desktop.observabilityTurns(sessionId);
+  const id = active.data.find(turn => turn.status === "inProgress").id;
+  await desktop.steer(sessionId, { text: "DESKTOP planted steer", expectedTurnId: id });
+  assert.equal((await running).stopReason, "end_turn");
+  assert.ok(a.text().includes("DESKTOP planted steer"));
+  assert.ok(events.some(e => JSON.stringify(e).includes("DESKTOP planted steer")), "desktop receives the streamed steered answer");
+  const waiting = a.prompt(sessionId, "[hang]"); waiting.catch(() => {});
+  await until(() => a.engine().filter(m => m.method === "turn/start").length === 2, "second turn");
+  await desktop.interrupt(sessionId, {});
+  assert.equal((await waiting).stopReason, "cancelled");
+  a.child.stdin.end(); await a.exited;
+  assert.equal(a.runtime.exitCode, null, "ACP disconnect must leave the shared runtime alive");
+  assert.ok((await desktop.listThreads()).data.some(row => row.id === sessionId));
+});
+
+test("a mid-turn ACP prompt steers the existing turn without starting another", { timeout: 20000 }, async t => {
+  const a = start(t);
+  const { sessionId } = await a.open();
+  const running = a.prompt(sessionId, "[steer]"); running.catch(() => {});
+  await until(() => a.text().includes("LIVE planted update"), "running turn");
+  const steered = await a.prompt(sessionId, "ACP planted steer");
+  assert.equal(steered.stopReason, "end_turn");
+  assert.equal((await running).stopReason, "end_turn");
+  assert.ok(a.text().includes("ACP planted steer"));
+  assert.equal(a.engine().filter(m => m.method === "turn/start").length, 1);
+});
+
+test("an explicitly unavailable bridge fails without starting a private engine", { timeout: 20000 }, async t => {
+  const a = start(t, { env: { ELPIS_APP_BRIDGE_SOCKET: "/nonexistent/elpis-acp-test.sock" } });
+  await assert.rejects(a.open(), /ENOENT|socket/);
+  assert.equal(a.engine().some(m => m.method === "thread/start"), false);
+});
+
+test("ACP discovers the desktop bridge for its ELPIS_HOME and supports the steering extension", { timeout: 20000 }, async t => {
+  const a = start(t, { shared: "discover" });
+  const { sessionId } = await a.open();
+  const steer = prompt => a.conn.agent.request("_session/steering", { sessionId, prompt: [{ type: "text", text: prompt }] });
+  assert.deepEqual(await steer("idle"), { outcome: "promptRequired", reason: "noRunningTurn" });
+  const running = a.prompt(sessionId, "[steer]"); running.catch(() => {});
+  await until(() => a.text().includes("LIVE planted update"), "shared turn");
+  assert.equal((await steer("EXTENSION planted steer")).outcome, "queued");
+  assert.equal((await running).stopReason, "end_turn");
+  assert.ok(a.text().includes("EXTENSION planted steer"));
+  assert.equal(a.engine().filter(m => m.method === "initialize").length, 1, "ACP initializes the existing runtime, not a second private engine");
+});
+
+test("MCP names and unsupported transports fail before a thread starts", { timeout: 20000 }, async t => {
+  const a = start(t);
+  await a.open();
+  const before = a.engine().filter(m => m.method === "thread/start").length;
+  const server = { name: "same", command: "unused", args: [], env: [] };
+  for (const mcpServers of [[server, server], [{ ...server, name: "nested.name" }], [{ type: "sse", name: "legacy", url: "http://127.0.0.1/unused", headers: [] }]]) {
+    await assert.rejects(a.conn.agent.request("session/new", { cwd: a.dir, mcpServers }), /MCP|transport/);
+  }
+  assert.equal(a.engine().filter(m => m.method === "thread/start").length, before);
 });
 
 test("cancelling while permission is pending answers the engine with cancel", { timeout: 20000 }, async (t) => {
