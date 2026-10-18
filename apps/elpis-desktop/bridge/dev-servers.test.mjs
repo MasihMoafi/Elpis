@@ -2,10 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { createDevServers } from './dev-servers.mjs';
 import { EventEmitter } from 'node:events';
 import { startDesktopServer } from './server.mjs';
+
+async function availablePort() {
+  const socket = net.createServer();
+  await new Promise((resolve, reject) => socket.once('error', reject).listen(0, '127.0.0.1', resolve));
+  const { port } = socket.address();
+  await new Promise(resolve => socket.close(resolve));
+  return port;
+}
 
 async function project(t, scripts = { dev: 'node server.cjs' }) {
   const root = await fs.mkdtemp('/tmp/elpis-dev-server-');
@@ -55,7 +64,7 @@ test('a framework may print its own loopback URL; logs are bounded and launch ar
   await fs.writeFile(path.join(root, 'server.cjs'), `console.log('x'.repeat(80000));const s=require('node:http').createServer((q,r)=>r.end(process.argv[2]));s.listen(0,'127.0.0.1',()=>console.log('http://127.0.0.1:'+s.address().port+'/'));`);
   await fs.mkdir(path.join(root, '.elpis'));
   const literal = "spaces ' quotes $(touch SHOULD_NOT_EXIST)";
-  await fs.writeFile(path.join(root, '.elpis/launch.json'), JSON.stringify({ configurations: [{ name: 'site', runtimeExecutable: 'node', runtimeArgs: ['server.cjs', literal], port: 43199 }] }));
+  await fs.writeFile(path.join(root, '.elpis/launch.json'), JSON.stringify({ configurations: [{ name: 'site', runtimeExecutable: 'node', runtimeArgs: ['server.cjs', literal], port: await availablePort() }] }));
   const { servers: [server] } = await manager.start(root, 'site');
   assert.equal(await (await fetch(server.url)).text(), literal);
   assert.ok(server.logs.length <= 65536); assert.match(server.logs, /http:\/\/127\.0\.0\.1:/);
@@ -79,7 +88,7 @@ test('invalid launch files, unknown names, absent scripts and failed commands ne
   await fs.mkdir(path.join(root, '.elpis'));
   await fs.writeFile(path.join(root, '.elpis/launch.json'), '{bad');
   await assert.rejects(manager.detect(root), /launch.json/i);
-  await fs.writeFile(path.join(root, '.elpis/launch.json'), JSON.stringify({ configurations: [{ name: 'broken', runtimeExecutable: 'elpis-no-such-executable-123', runtimeArgs: [], port: 43198 }] }));
+  await fs.writeFile(path.join(root, '.elpis/launch.json'), JSON.stringify({ configurations: [{ name: 'broken', runtimeExecutable: 'elpis-no-such-executable-123', runtimeArgs: [], port: await availablePort() }] }));
   await assert.rejects(manager.start(root, 'broken'), /failed|exited/i);
   assert.equal((await manager.status(root)).servers[0].status, 'failed');
 });
