@@ -64,18 +64,18 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
     const download = f.page.waitForEvent('download');
     await lab.getByRole('button', { name: 'Export JSON', exact: true }).click();
     assert.equal((await download).suggestedFilename(), 'elpis-experiment-fixture.json');
-    await f.page.reload(); await f.page.getByRole('button', { name: 'Canvas', exact: true }).click();
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.canvas.getByRole('button', { name: 'Experiment Lab', exact: true }).click();
     await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
     current = { ...current, status: 'running' };
-    await f.canvas.getByRole('button', { name: 'Back to Canvas', exact: true }).click();
+    await f.canvas.getByRole('button', { name: 'Back to Workflows', exact: true }).click();
     await f.canvas.getByRole('button', { name: 'Experiment Lab', exact: true }).click();
     await lab.getByRole('button', { name: 'Stop experiment', exact: true }).click();
     await lab.getByRole('status').filter({ hasText: 'Stopped' }).waitFor();
     // The board is inactive while the Lab is open: its global selection/delete keys must not edit hidden agents.
     await lab.getByRole('heading', { name: 'Experiment Lab', exact: true }).click();
     await f.page.keyboard.press('Control+a'); await f.page.keyboard.press('Control+Delete');
-    await f.canvas.getByRole('button', { name: 'Back to Canvas', exact: true }).click();
+    await f.canvas.getByRole('button', { name: 'Back to Workflows', exact: true }).click();
     assert.deepEqual(await f.saved(), boardBefore);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -95,7 +95,7 @@ test('Sources and Lab stay readable in light/dark at Masih’s window size', asy
       const lab = f.page.getByRole('region', { name: 'Experiment Lab', exact: true });
       assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
       await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/lab-${theme}.png` });
-      await f.canvas.getByRole('button', { name: 'Back to Canvas', exact: true }).click();
+      await f.canvas.getByRole('button', { name: 'Back to Workflows', exact: true }).click();
     }
   } finally { await f.close(); }
 });

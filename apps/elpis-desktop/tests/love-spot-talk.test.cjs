@@ -127,7 +127,7 @@ test('a reply reaches the board after navigating away; text-only models receive 
     await panel.getByRole('textbox', { name: 'Message Elpis' }).fill('Stay with this thought');
     await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await f.page.waitForResponse(response => response.url().endsWith('/api/love-spot/talk') && response.request().method() === 'POST');
-    await f.page.getByRole('button', { name: 'Canvas', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.waitFor(s => s.elements.some(e => e.text === 'I am here with you.'), 'navigation lost the reply');
     assert.equal(f.turns[0].attachments.some(a => a.type === 'image'), false);
     assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /Still here when you return/);

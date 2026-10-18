@@ -101,7 +101,7 @@ test('Love Spot private tray is shared across windows; dismiss persists and mous
     const dismiss = tray(other).getByRole('button', { name: 'Dismiss private.png', exact: true });
     await dismiss.focus(); await other.keyboard.press('Enter');
     await tray(f.page).waitFor({ state: 'detached' }); await tray(other).waitFor({ state: 'detached' });
-    await other.getByRole('button', { name: 'Canvas', exact: true }).click(); await f.open(other);
+    await other.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.open(other);
     await other.waitForTimeout(500);
     assert.equal(await tray(other).count(), 0);
     assert.equal((await f.scene()).elements.filter(e => e.type === 'image').length, 0);
