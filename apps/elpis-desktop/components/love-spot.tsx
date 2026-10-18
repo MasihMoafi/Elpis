@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
-import { api, chatProvider, providerChoices, type Model, type ProviderSettings } from "@/lib/api";
+import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { agentColor } from "@/lib/love-spot";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -55,6 +55,8 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
   useEffect(() => {
     let active = true;
     Promise.all([api<{ data: Model[] }>("/models"), api<ProviderSettings>("/settings")]).then(([catalog, config]) => {
+      if (!Array.isArray(catalog.data) || catalog.data.some(item => !item || typeof item.model !== "string") || !config.main
+        || (config.providers !== undefined && !Array.isArray(config.providers))) throw unreadable("Love Spot model settings");
       if (active) { setModels(catalog.data); setSettings(config); setModel(config.main.model || catalog.data[0]?.model || ""); }
     }).catch(report);
     return () => { active = false; };
