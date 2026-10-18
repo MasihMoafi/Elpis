@@ -81,7 +81,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     await target.mouse.down(); await target.mouse.move(bounds.x + 550 + offset, bounds.y + 300 + offset, { steps: 8 }); await target.mouse.up();
     await target.keyboard.press('Escape');
   };
-  return { page, newPage, open, draw, root, directory, screenshots, scene, waitFor, errors, requests, responses, chats, turns, emitter,
+  return { page, url: server.url, newPage, open, draw, root, directory, screenshots, scene, waitFor, errors, requests, responses, chats, turns, emitter,
     async close() { await browser.close(); await server.close(); await exec('gio', ['trash', root]); } };
 }
 module.exports = { loveSpotFixture };

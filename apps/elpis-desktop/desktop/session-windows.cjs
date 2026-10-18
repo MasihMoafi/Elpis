@@ -21,10 +21,21 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
   const windows = new Set();
   const openers = new Map();
   const windowIpc = createWindowIpc(globalIpc);
-  async function open({ threadId, newSession = false, onPrimary } = {}) {
+  let loveSpotWindow, openingLoveSpot;
+  async function openLoveSpot() {
+    if (loveSpotWindow && !loveSpotWindow.isDestroyed()) {
+      if (loveSpotWindow.isMinimized()) loveSpotWindow.restore();
+      if (!loveSpotWindow.isVisible()) loveSpotWindow.show();
+      loveSpotWindow.focus();
+      return loveSpotWindow;
+    }
+    if (!openingLoveSpot) openingLoveSpot = open({ loveSpot: true }).then(host => { loveSpotWindow = host; return host; }).finally(() => { openingLoveSpot = null; });
+    return openingLoveSpot;
+  }
+  async function open({ threadId, newSession = false, onPrimary, loveSpot = false } = {}) {
     const origin = new URL(url).origin;
     const window = new BrowserWindow({
-      title: 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
+      title: loveSpot ? 'Love Spot · Elpis' : 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
       icon: ICON,
       backgroundColor: '#151515', show: false,
       titleBarStyle: 'hidden', titleBarOverlay: { ...TITLE_BAR.dark, height: Math.round(36 * ZOOM) },
@@ -42,7 +53,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     browserAgentSocket?.setAgent(browser.agent);
     const threads = createThreadOpener(threadId);
     const newChats = createNewChatOpener();
-    openers.set(window, { threads, newChats });
+    openers.set(window, { threads, newChats, loveSpot });
     if (newSession) newChats.queue('');
     if (onPrimary) onPrimary({ threads, newChats });
     const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
@@ -89,11 +100,12 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     });
     window.on('closed', () => { dispose(); windows.delete(window); openers.delete(window); onClosed?.(window); if (!windows.size) closeToTray.closed(); });
     const target = new URL(url);
+    if (loveSpot) target.pathname = '/love-spot.html';
     if (threadId || newSession) target.searchParams.set('session', threadId || '');
     await window.loadURL(target.href);
     return window;
   }
-  return { open, windows, openersFor: host => openers.get(host) };
+  return { open, openLoveSpot, windows, openersFor: host => openers.get(host) };
 }
 const sessionWindowMenu = open => ({ label: 'New Session in New Window', accelerator: 'CommandOrControl+Shift+N', click: () => { void open(); } });
 module.exports = { createSessionWindows, sessionWindowMenu };

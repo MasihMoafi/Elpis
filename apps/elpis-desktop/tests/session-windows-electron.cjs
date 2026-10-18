@@ -16,6 +16,7 @@ app.whenReady().then(async () => {
   global.sessionWindows = createSessionWindows({ electron, quickEntry, url: process.env.SESSION_WINDOW_URL, store,
     closeToTray: { hides: () => false, closed: () => {} }, mayClose: () => true, onDark: () => {} });
   Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'File', submenu: [sessionWindowMenu(() => global.sessionWindows.open({ newSession: true }))] }]));
-  await global.sessionWindows.open();
+  if (process.argv.includes('--love-spot')) await global.sessionWindows.openLoveSpot();
+  else await global.sessionWindows.open();
 });
 app.on('window-all-closed', () => app.quit());

@@ -18,6 +18,7 @@ let browserAgentSocket;
 let window;
 let closing = false;
 let opening;
+let openingChat;
 let store;
 const confirmedClose = new WeakSet();
 // The chat the Elpis TUI's /app asked for (`--open-thread <id>`), at start-up or from a second launch.
@@ -38,18 +39,22 @@ function mayClose(host = window) {
   return choice === 0;
 }
 
-function openWindow() {
-  if (!opening) opening = createOrFocusWindow().finally(() => { opening = null; });
-  return opening;
-}
-
-async function createOrFocusWindow() {
+async function openWindow(loveSpot = false) {
+  if (!opening) opening = prepareWindows().finally(() => { opening = null; });
+  await opening;
+  if (loveSpot) return sessionWindows.openLoveSpot();
   if (window && !window.isDestroyed()) {
     if (window.isMinimized()) window.restore();
     if (!window.isVisible()) window.show();
     window.focus();
-    return;
+  } else {
+    if (!openingChat) openingChat = sessionWindows.open({ onPrimary: openers => { primaryOpeners = openers; } }).finally(() => { openingChat = null; });
+    window = await openingChat;
   }
+  if (initialThread) { primaryOpeners.threads.queue(initialThread); initialThread = null; }
+}
+
+async function prepareWindows() {
   if (!server) {
     const { startDesktopServer } = await import(pathToFileURL(path.join(__dirname, '../bridge/server.mjs')).href);
     const { DesktopClient } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
@@ -66,11 +71,9 @@ async function createOrFocusWindow() {
   if (!sessionWindows) {
     store = createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
     sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, improvements: server.improvements,
-      mayClose, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows][0]; primaryOpeners = sessionWindows.openersFor(window); } },
-      onFocused: (host, openers) => { window = host; primaryOpeners = openers; } });
+      mayClose, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
+      onFocused: (host, openers) => { if (!openers?.loveSpot) { window = host; primaryOpeners = openers; } } });
   }
-  window = await sessionWindows.open({ onPrimary: openers => { primaryOpeners = openers; } });
-  if (initialThread) { primaryOpeners.threads.queue(initialThread); initialThread = null; }
 }
 
 // WM_CLASS comes from package.json "name" (elpis-desktop) when launched as the app directory;
@@ -80,10 +83,13 @@ app.setPath('userData', process.env.ELPIS_DESKTOP_PROFILE || path.join(app.getPa
 enableWaylandIme(app.commandLine, process.env);
 // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
 app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
-if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv) })) {
+if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv), loveSpot: process.argv.includes('--love-spot') })) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv, _cwd, data) => { void openWindow().then(() => primaryOpeners.threads.queue(data?.openThread ?? openThreadArgument(argv))).catch(showStartupError); });
+  app.on('second-instance', (_event, argv, _cwd, data) => {
+    const loveSpot = data?.loveSpot === true || argv.includes('--love-spot');
+    void openWindow(loveSpot).then(() => { if (!loveSpot) primaryOpeners.threads.queue(data?.openThread ?? openThreadArgument(argv)); }).catch(showStartupError);
+  });
   app.whenReady().then(async () => {
     // Built once: rebuilding an unchanged menu redraws the Linux menu row (Cloudroom's flicker).
     Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -95,7 +101,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
     const showWindow = () => void openWindow().catch(showStartupError);
     quickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
       onSubmit: text => { void openWindow().then(() => primaryOpeners.newChats.queue(text)).catch(showStartupError); } });
-    await openWindow();
+    await openWindow(process.argv.includes('--love-spot'));
     await quickEntry.start(quickEntryShortcut(store));
     tray = createTray({ Tray, Menu, nativeImage, icon: ICON, actions: {
       open: showWindow, newChat: () => { void openWindow().then(() => primaryOpeners.newChats.queue('')).catch(showStartupError); }, quickEntry: () => void quickEntry.toggle(), quit: () => app.quit(),

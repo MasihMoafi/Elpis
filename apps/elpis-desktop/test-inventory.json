@@ -94,7 +94,8 @@
     "desktop/terminal.test.cjs",
     "desktop/theme.test.cjs",
     "desktop/tray.test.cjs",
-    "desktop/wayland-ime.test.cjs"
+    "desktop/wayland-ime.test.cjs",
+    "desktop/love-spot.test.cjs"
   ],
   "ui": [
     "tests/agents-guide.test.cjs",
@@ -230,6 +231,7 @@
     "tests/rewind.runtime.mjs",
     "tests/runtime.mjs",
     "tests/session-windows-electron.test.cjs",
-    "bridge/mcp.runtime.mjs"
+    "bridge/mcp.runtime.mjs",
+    "tests/love-dock.test.cjs"
   ]
 }
