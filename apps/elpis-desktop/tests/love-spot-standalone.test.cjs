@@ -197,7 +197,7 @@ test('a remote deletion arriving in a real arrow-key batch never becomes undoabl
 });
 
 test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a second without losing concurrent additions', async t => {
-  const { f, standalone, standaloneErrors } = await standaloneFixture(t);
+  const { f, electron, standalone, standaloneErrors } = await standaloneFixture(t);
   await Promise.all([f.draw(f.page), f.draw(standalone, 140)]);
   await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 2, 'concurrent windows lost an element');
   const fromStandalone = Date.now(); // Measure propagation after the stroke is published.
@@ -221,9 +221,9 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
   await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 1, 'Elpis stroke was not saved');
   const fromElpis = Date.now();
   await standalone.bringToFront();
-  await standalone.locator('.excalidraw').click({ position: { x: 1000, y: 700 } });
-  await standalone.waitForTimeout(200);
-  await standalone.keyboard.press('ControlOrMeta+a'); await standalone.keyboard.press('Delete');
+  // As on the Elpis side: the standalone must show the received shape before Delete removes it (7c727e384).
+  await f.waitFor(async () => (await nativeCopy(electron, standalone)).length === 1, 'the Elpis stroke must reach the standalone canvas', 700);
+  await standalone.keyboard.press('Delete');
   await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'Elpis stroke did not reach standalone', 700).catch(async e => { await standalone.screenshot({ path: '/tmp/love-spot-standalone-failure.png' }); throw new Error(`${e.message}; scene: ${JSON.stringify((await f.scene()).elements.map(e => [e.type, e.version, e.isDeleted]))}`); });
   assert.ok(Date.now() - fromElpis < 1000);
   const shot = await f.page.screenshot();
