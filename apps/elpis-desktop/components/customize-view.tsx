@@ -130,7 +130,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         {skill.deletable ? <span className="customize-badge">{SCOPE[skill.scope]}</span>
           : <Tooltip content={skillOrigin(skill)} detail={<span className="break-all">{skillProtection(skill)}</span>}><span className="customize-badge">{skill.plugin ? `From ${skill.plugin.split("@")[0]}` : SCOPE[skill.scope]}</span></Tooltip>}
         <Switch aria-label={`Use ${skill.name}`} checked={skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
-        {skill.deletable && <MoreMenu label={`Actions for ${skill.name}`} title="Skill actions" actions={[{ id: "delete", label: "Delete", icon: <Trash2 size={14} />, hint: "Delete", destructive: true, run: () => requestDelete(skill) }]} />}
+        <span className="flex size-6 shrink-0 items-center justify-center">{skill.deletable && <MoreMenu label={`Actions for ${skill.name}`} title="Skill actions" actions={[{ id: "delete", label: "Delete", icon: <Trash2 size={14} />, hint: "Delete", destructive: true, run: () => requestDelete(skill) }]} />}</span>
       </li>)}</ul>
       {(data.skills.errors?.length ?? 0) > 0 && <details className="customize-errors"><summary>{data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read</summary>
         <ul>{data.skills.errors!.map(item => <li key={item.path}><FileRefLink target={{ path: item.path }}><code>{item.path}</code></FileRefLink> {item.message}</li>)}</ul></details>}
