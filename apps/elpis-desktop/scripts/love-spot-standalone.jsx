@@ -2,7 +2,7 @@
 import { useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CaptureUpdateAction, Excalidraw, exportToBlob, restoreElements, serializeAsJSON } from '@excalidraw/excalidraw';
-import { lightFiles } from './love-spot';
+import { MASIH_PEN, lightFiles } from './love-spot';
 import '@excalidraw/excalidraw/index.css';
 
 const board = window.board;
@@ -66,7 +66,7 @@ function App({ data }) {
     }, 1500);
   };
   const initial = data && { elements: data.elements || [], files: data.files || {}, scrollToContent: true,
-    appState: { ...(data.appState || {}), collaborators: new Map() } };
+    appState: { ...(data.appState || {}), currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } };
   return <Excalidraw excalidrawAPI={ready} initialData={initial} onChange={changed} />;
 }
 

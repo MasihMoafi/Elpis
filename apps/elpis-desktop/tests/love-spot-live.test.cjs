@@ -30,6 +30,7 @@ test('Love Spot real bridge: mouse strokes sync, stale windows retain both, dele
     await page.keyboard.type('Our love spot'); await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.waitFor(s => s.elements.some(e => e.text === 'Our love spot' && !e.isDeleted), 'typing was lost when leaving the page');
+    assert.equal((await f.scene()).elements.find(e => e.text === 'Our love spot').strokeColor, '#2f9e44', 'Masih writes in green; blue is the assistant\'s');
     await f.open(page);
     await page.keyboard.press('ControlOrMeta+a');
     assert.equal((await f.scene()).elements.filter(e => e.type === 'text' && !e.isDeleted).length, 1);

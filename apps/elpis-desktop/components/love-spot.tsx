@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
-import { agentColor, lightFiles, lightImage } from "@/lib/love-spot";
+import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
 import { CharacterPicker, LoveAgentPanel } from "./love-agent-panel";
 import "@excalidraw/excalidraw/index.css";
@@ -104,7 +104,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       revision.current = data.revision;
       currentPage.current = data.scene.page; setPage(data.scene.page); loadPages();
       setInitial({ elements: data.scene.elements, files: data.scene.files, scrollToContent: true,
-        appState: { ...data.scene.appState, collaborators: new Map() } });
+        appState: { ...data.scene.appState, currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } });
       setError("");
     }).catch(report);
     return () => { active = false; };

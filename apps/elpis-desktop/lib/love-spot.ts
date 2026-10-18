@@ -1,4 +1,6 @@
 /** Existing board notes identify Elpis by blue ink; new replies use Excalidraw's standard blue. */
+/** Masih writes in green, so his notes and Elpis's blue ones are told apart at a glance. */
+export const MASIH_PEN = "#2f9e44";
 export const agentColor = (color: string) => ["#1971c2", "#1c7ed6", "#228be6", "#1864ab", "#4dabf7", "blue", "#0000ff"].includes(color.toLowerCase());
 
 type ImageFile = { dataURL: string; mimeType: string };
