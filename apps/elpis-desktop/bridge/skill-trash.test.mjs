@@ -101,13 +101,24 @@ test('expired Undo leaves the entire skill folder safely in Trash', async t => {
   assert.equal(await fs.readFile(path.join(f.home, 'data/Trash/files/own/notes.txt'), 'utf8'), 'Companion file');
 });
 
-test('a folder containing another listed skill cannot be deleted along with it', async t => {
+test('a folder containing a protected listed skill cannot delete that skill along with it', async t => {
   const f = await fixture(t), skill = f.skills[0];
   const nested = path.join(path.dirname(skill.path), 'bundled/SKILL.md');
   await fs.mkdir(path.dirname(nested)); await fs.writeFile(nested, 'protected');
   f.skills.push({ ...skill, scope: 'system', path: nested });
   await assert.rejects(f.client.deleteSkill({ path: skill.path }), /other listed skills/);
   assert.equal(await fs.readFile(nested, 'utf8'), 'protected');
+});
+
+test('an owned skill containing another owned skill can be trashed and restored as one folder', async t => {
+  const f = await fixture(t), skill = f.skills[0];
+  const nested = path.join(path.dirname(skill.path), 'nested/SKILL.md');
+  await fs.mkdir(path.dirname(nested)); await fs.writeFile(nested, 'owned child');
+  f.skills.push({ ...skill, name: 'owned child', path: nested });
+  const result = await f.client.deleteSkill({ path: skill.path });
+  assert.equal(result.skills.data.some(item => item.path === nested), false);
+  await f.client.undoSkillDelete({ token: result.deleted.token });
+  assert.equal(await fs.readFile(nested, 'utf8'), 'owned child');
 });
 
 test('Trash collisions, dotted names, spaces, percent signs and non-ASCII folders restore the exact skill', async t => {

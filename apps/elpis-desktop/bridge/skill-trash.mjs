@@ -24,7 +24,7 @@ async function skillFolder(file, skills) {
   if (folderStat.isSymbolicLink() || fileStat.isSymbolicLink() || !folderStat.isDirectory() || !fileStat.isFile()
       || !inside(realRoot, realFolder) || path.dirname(realFile) !== realFolder
       || (process.getuid && folderStat.uid !== process.getuid())) throw Error('Skill folder must be owned and inside its known root, without symbolic links');
-  if (skills.some(other => other.path !== file && inside(folder, other.path))) throw Error('Skill folder contains other listed skills');
+  if (skills.some(other => other.path !== file && inside(folder, other.path) && !ownedSkill(other))) throw Error('Skill folder contains other listed skills that are protected');
   return { skill, folder, realRoot, realFolder, folderStat };
 }
 

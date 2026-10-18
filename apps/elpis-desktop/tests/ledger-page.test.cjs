@@ -66,7 +66,7 @@ for (const colorScheme of ['light', 'dark']) test(`owned skill menu deletion con
     assert.equal(f.posts.filter(post => post.path.endsWith('/delete')).length, 0);
     await assertUiFit(dialog, 'confirmation fits');
     const shots = process.env.ELPIS_LEDGER_SHOTS;
-    if (shots) { await fs.mkdir(shots, { recursive: true }); await page.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'detached' }); await page.screenshot({ path: path.join(shots, `ledger-confirm-${colorScheme}.png`) }); }
+    if (shots) { await fs.mkdir(shots, { recursive: true }); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await page.screenshot({ path: path.join(shots, `ledger-confirm-${colorScheme}.png`) }); }
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
     await row(page, 'My skill').waitFor({ state: 'detached' });
     const notice = page.getByRole('status').filter({ hasText: 'Deleted My skill' }); await notice.waitFor();
