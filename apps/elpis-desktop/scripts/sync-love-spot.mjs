@@ -44,6 +44,7 @@ export async function syncLoveSpot(directory, { build = true } = {}) {
   }
   if (!renderer.includes('// Love Spot pages protocol.') && (!renderer.includes('getSceneElementsIncludingDeleted') || !renderer.includes('board.onIncoming'))) throw new Error('Standalone renderer changed; review the pages integration before updating it.');
   await fs.copyFile(new URL('./love-spot-standalone.jsx', import.meta.url), path.join(directory, 'src/app.jsx'));
+  await fs.copyFile(new URL('../lib/love-spot-history.ts', import.meta.url), path.join(directory, 'src/love-spot-history.ts'));
   await fs.copyFile(new URL('../lib/love-spot.ts', import.meta.url), path.join(directory, 'src/love-spot.ts'));
   await fs.copyFile(new URL('../bridge/love-spot-store.cjs', import.meta.url), path.join(directory, 'love-spot-store.cjs'));
   await fs.copyFile(new URL('../bridge/love-spot-order.cjs', import.meta.url), path.join(directory, 'love-spot-order.cjs'));

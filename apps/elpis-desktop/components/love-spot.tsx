@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
+import { applyRemoteScene } from "@/lib/love-spot-history";
 import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
@@ -155,8 +156,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       try {
         editor.resetScene();
         editor.addFiles(Object.values(data.scene.files));
-        editor.updateScene({ elements: restoreElements(data.scene.elements, null, { refreshDimensions: true, repairBindings: true }),
-          appState: { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() }, captureUpdate: CaptureUpdateAction.NEVER });
+        applyRemoteScene(editor, restoreElements(data.scene.elements, null, { refreshDimensions: true, repairBindings: true }),
+          { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() });
       } finally { remote.current = false; }
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       setSelected(undefined); setQuote(undefined); setRenaming(false);
@@ -182,7 +183,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         if (files.length) editor.addFiles(files);
         if (changed) {
           // Admit remote changes before recording only the user's placement.
-          editor.updateScene({ elements: [...shown.values()].filter(e => e.id !== placed?.id), captureUpdate: CaptureUpdateAction.NEVER });
+          applyRemoteScene(editor, [...shown.values()].filter(e => e.id !== placed?.id));
           if (placed) editor.updateScene({ elements: [...shown.values()], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
         }
       } finally { remote.current = false; }

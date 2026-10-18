@@ -1,7 +1,8 @@
 // Love Spot pages protocol. Installed only by sync-love-spot.mjs.
 import { useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CaptureUpdateAction, Excalidraw, exportToBlob, restoreElements, serializeAsJSON } from '@excalidraw/excalidraw';
+import { Excalidraw, exportToBlob, restoreElements, serializeAsJSON } from '@excalidraw/excalidraw';
+import { applyRemoteScene } from './love-spot-history';
 import { MASIH_PEN, lightFiles } from './love-spot';
 import { newer } from '../love-spot-order.cjs';
 import '@excalidraw/excalidraw/index.css';
@@ -21,8 +22,8 @@ function App({ data }) {
         if (switching) {
           clearTimeout(saving.current); clearTimeout(viewing.current);
           editor.resetScene(); editor.addFiles(Object.values(incoming.files || {}));
-          editor.updateScene({ elements: restoreElements(incoming.elements || [], null, { refreshDimensions: true, repairBindings: true }),
-            appState: { ...(incoming.appState || {}), selectedElementIds: {}, collaborators: new Map() }, captureUpdate: CaptureUpdateAction.NEVER });
+          applyRemoteScene(editor, restoreElements(incoming.elements || [], null, { refreshDimensions: true, repairBindings: true }),
+            { ...(incoming.appState || {}), selectedElementIds: {}, collaborators: new Map() });
           editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
           if (Object.keys(incoming.files || {}).length) queueMicrotask(() => changed(editor.getSceneElements(), editor.getAppState(), editor.getFiles()));
           return;
@@ -36,7 +37,7 @@ function App({ data }) {
           if (!mine || newer(element, mine)) { shown.set(element.id, element); updated = true; }
         }
         if (files.length) editor.addFiles(files);
-        if (updated) editor.updateScene({ elements: [...shown.values()], captureUpdate: CaptureUpdateAction.NEVER });
+        if (updated) applyRemoteScene(editor, [...shown.values()]);
         if (screenshot) { editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } }); editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 }); }
         if (files.length) queueMicrotask(() => changed(editor.getSceneElements(), editor.getAppState(), editor.getFiles()));
       } finally { remote.current = false; }

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 
@@ -17,7 +17,7 @@ async function nativeCopy(electron, standalone) {
   try { return JSON.parse(text).elements.filter(e => !e.isDeleted); } catch { return []; }
 }
 
-async function standaloneFixture(t, { delaySaves = false } = {}) {
+async function standaloneFixture(t, { delaySaves = false, holdIncoming = false } = {}) {
   const reference = process.env.LOVE_SPOT_STANDALONE_DIR || path.join(os.homedir(), '.local/lib/excalidraw-local');
   const f = await loveSpotFixture();
   let electron, xvfb;
@@ -27,6 +27,16 @@ async function standaloneFixture(t, { delaySaves = false } = {}) {
   await fs.symlink(path.join(reference, 'node_modules'), path.join(app, 'node_modules'));
   const { syncLoveSpot } = await import('../scripts/sync-love-spot.mjs');
   await syncLoveSpot(app); await syncLoveSpot(app, { build: false });
+  if (holdIncoming) {
+    const renderer = path.join(app, 'src/app.jsx');
+    const text = await fs.readFile(renderer, 'utf8');
+    assert.ok(text.includes('const board = window.board;'));
+    await fs.writeFile(renderer, text.replace('const board = window.board;', `const board = { ...window.board, onIncoming: callback => window.board.onIncoming(data => {
+      if (window.__holdIncoming && data.elements?.some(e => e.isDeleted)) window.__releaseIncoming = () => callback(data);
+      else callback(data);
+    }) };`));
+    execFileSync(process.execPath, ['build.mjs'], { cwd: app });
+  }
   if (delaySaves) {
     // Delay a real standalone keyboard save so both clients edit the same base.
     // Only the throwaway main process is instrumented, never the installed app.
@@ -107,6 +117,30 @@ test('a delayed standalone keyboard edit cannot revive an equal-version Elpis de
   const output = path.join(os.homedir(), '.cache/elpis-tests/night-lovespot-sync');
   await fs.mkdir(output, { recursive: true });
   await fs.writeFile(path.join(output, 'native-conflict.json'), JSON.stringify({ original, deleted, delayed: held.elements, result: saved.scene.elements }, null, 2));
+  assert.deepEqual(standaloneErrors, []); assert.deepEqual(f.errors, []);
+});
+
+test('a remote deletion arriving in a real arrow-key batch never becomes undoable', async t => {
+  const { f, electron, standalone, standaloneErrors } = await standaloneFixture(t, { holdIncoming: true });
+  await f.draw(f.page);
+  const original = (await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'shape did not save')).elements.find(e => !e.isDeleted);
+  await f.waitFor(async () => (await nativeCopy(electron, standalone)).some(e => e.id === original.id), 'standalone did not load the shape');
+  await standalone.evaluate(() => { window.__holdIncoming = true; });
+  await f.page.locator('.excalidraw').click({ position: { x: 900, y: 650 } });
+  await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.press('Delete');
+  await f.waitFor(s => s.elements.find(e => e.id === original.id)?.isDeleted, 'delete did not save');
+  await standalone.waitForFunction(() => typeof window.__releaseIncoming === 'function');
+  await standalone.evaluate(() => window.addEventListener('keydown', event => {
+    if (event.key === 'ArrowRight') { window.__holdIncoming = false; window.__releaseIncoming(); window.__releaseIncoming = null; }
+  }, { once: true }));
+  await standalone.bringToFront(); await standalone.keyboard.press('ArrowRight');
+  await f.waitFor(async () => !(await nativeCopy(electron, standalone)).some(e => e.id === original.id), 'the real key batch did not display the deletion');
+  await standalone.keyboard.press('ControlOrMeta+z'); await standalone.waitForTimeout(600);
+  assert.equal((await f.scene()).elements.find(e => e.id === original.id)?.isDeleted, true, 'Undo captured a remote delete during a pending local edit');
+  assert.equal((await nativeCopy(electron, standalone)).length, 0);
+  // The sending window still owns its deliberate delete and may undo it.
+  await f.page.keyboard.press('ControlOrMeta+z');
+  await f.waitFor(s => !s.elements.find(e => e.id === original.id)?.isDeleted, 'local delete undo stopped working');
   assert.deepEqual(standaloneErrors, []); assert.deepEqual(f.errors, []);
 });
 

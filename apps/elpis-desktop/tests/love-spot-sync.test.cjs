@@ -128,3 +128,42 @@ test('placing a screenshot remains a deliberate local undo and redo action', asy
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+
+test('a remote delete inside a real embedded arrow-key batch stays outside Undo', async () => {
+  const f = await loveSpotFixture();
+  try {
+    await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await f.open(f.page); await f.draw(f.page);
+    const original = (await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'shape did not save')).elements.find(e => !e.isDeleted);
+    const other = await f.newPage();
+    await other.evaluate(() => {
+      window.EventSource = class extends window.EventSource {
+        constructor(...args) {
+          super(...args);
+          this.addEventListener('message', event => {
+            const data = JSON.parse(event.data);
+            if (window.__holdIncoming && data.type === 'scene' && data.scene.elements.some(e => e.isDeleted)) {
+              event.stopImmediatePropagation(); window.__releaseIncoming = () => this.onmessage?.(event);
+            }
+          });
+        }
+      };
+    });
+    await f.open(other);
+    await f.waitFor(async () => (await copied(other)).some(e => e.id === original.id), 'receiver did not load the shape');
+    await other.evaluate(() => { window.__holdIncoming = true; });
+    await copied(f.page); await f.page.keyboard.press('Delete');
+    await f.waitFor(s => s.elements.find(e => e.id === original.id)?.isDeleted, 'delete did not save');
+    await other.waitForFunction(() => typeof window.__releaseIncoming === 'function');
+    await other.evaluate(() => window.addEventListener('keydown', event => {
+      if (event.key === 'ArrowRight') { window.__holdIncoming = false; window.__releaseIncoming(); window.__releaseIncoming = null; }
+    }, { once: true }));
+    await other.bringToFront(); await other.keyboard.press('ArrowRight');
+    await f.waitFor(async () => (await copied(other)).length === 0, 'receiver did not apply the deletion');
+    await other.keyboard.press('ControlOrMeta+z'); await other.waitForTimeout(600);
+    assert.equal((await f.scene()).elements.find(e => e.id === original.id)?.isDeleted, true, 'Undo captured the remote deletion during the key batch');
+    await f.page.keyboard.press('ControlOrMeta+z');
+    await f.waitFor(s => !s.elements.find(e => e.id === original.id)?.isDeleted, 'owner cannot undo its own delete');
+  } finally { await f.close(); }
+});

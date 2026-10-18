@@ -8,7 +8,9 @@ A delayed older live save cannot revive a delete. At equal versions, deletion
 wins in either arrival order, regardless of nonce. Equal live edits retain the
 existing lower-nonce rule. A higher-version deliberate undo can restore an item,
 and redo deletes it again. Both renderers and the store use one ordering rule.
-Remote synchronization must not become a local undo operation.
+Remote synchronization must not become a local undo operation, including when it
+replaces an uncaptured local edit. The next local input must not record that remote
+change. Preserve unrelated local history and the sending window’s deliberate Undo.
 The user's screenshot placement remains its own undo/redo step, separate from
 other changes received in the same scene.
 
