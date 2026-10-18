@@ -49,6 +49,8 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
       errors.push(`Unexpected POST ${pathname}`); return json({ error: 'Unexpected fixture mutation' }, 400);
     }
     if (pathname === '/api/health') return json({ connected: true });
+    if (pathname === '/api/personal') return json({ path: '/tmp/availability-fixture/skills/personal/SKILL.md', showTip: false });
+    if (pathname === '/api/improvements') return json({ data: [] });
     if (pathname === '/api/models') {
       if (url.searchParams.get('provider') === 'alternate-local') return json({ data: [{ id: 'local-choice', model: 'local-choice', displayName: 'Local choice' }], nextCursor: null });
       control.modelReads++;
