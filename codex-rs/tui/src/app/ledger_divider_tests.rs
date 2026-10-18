@@ -343,3 +343,98 @@ async fn ledger_saved_width_is_loaded_at_the_next_start() -> Result<()> {
     assert_eq!(app.chat_widget.context_ledger_width(SIZE.width), 67);
     Ok(())
 }
+
+/// Snapshot the actual owned-screen header after opening with the keyboard and, when
+/// requested, resizing with the mouse. The last three cells are the gap, × and margin.
+async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> Result<String> {
+    let (mut app, _events, _operations) = make_test_app_with_channels().await;
+    attach_thread(&mut app, ThreadId::new());
+    let size = Size::new(terminal_width, 40);
+    let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+    let mut tui = crate::tui::test_support::make_test_tui_with_size(size)?;
+    tui.set_owned_screen(true)?;
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        TuiEvent::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT)),
+    )
+    .await?;
+    app.render_owned_transcript(&mut tui, size)?;
+    if let Some(width) = preferred {
+        let original = app.chat_widget.context_ledger_width(terminal_width);
+        for event in [
+            mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                terminal_width - original,
+                10,
+            ),
+            mouse(
+                MouseEventKind::Drag(MouseButton::Left),
+                terminal_width - width,
+                10,
+            ),
+            mouse(
+                MouseEventKind::Up(MouseButton::Left),
+                terminal_width - width,
+                10,
+            ),
+        ] {
+            app.handle_tui_event(&mut tui, &mut server, event).await?;
+        }
+        app.render_owned_transcript(&mut tui, size)?;
+        assert_eq!(app.chat_widget.context_ledger_width(terminal_width), width);
+    }
+    let width = app.chat_widget.context_ledger_width(terminal_width);
+    let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+    let y = (0..size.height)
+        .find(|&y| buffer[(terminal_width - 2, y)].symbol() == "×")
+        .expect("Ledger close button");
+    let header = (terminal_width - width..terminal_width)
+        .map(|x| buffer[(x, y)].symbol())
+        .collect::<String>();
+    // Closing still uses the exact visible button after text truncation.
+    app.handle_tui_event(
+        &mut tui,
+        &mut server,
+        mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            terminal_width - 2,
+            y,
+        ),
+    )
+    .await?;
+    assert_eq!(app.chat_widget.context_ledger_width(terminal_width), 0);
+    server.shutdown().await?;
+    tui.set_owned_screen(false)?;
+    Ok(header.trim_end().to_string())
+}
+
+#[tokio::test]
+async fn ledger_header_gap_narrowest() -> Result<()> {
+    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│ CONTEXT LEDGER  contex… ×");
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_header_gap_default() -> Result<()> {
+    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│ CONTEXT LEDGER  context not measured · ≈0 sour… ×");
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_header_gap_80_columns() -> Result<()> {
+    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│ CONTEXT LEDGER  context no… ×");
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_header_gap_120_columns() -> Result<()> {
+    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│ CONTEXT LEDGER  context not measured · ≈0 … ×");
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_header_gap_140_columns() -> Result<()> {
+    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│ CONTEXT LEDGER  context not measured · ≈0 sour… ×");
+    Ok(())
+}

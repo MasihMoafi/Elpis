@@ -754,8 +754,13 @@ impl ChatWidget {
             ),
         );
         title.extend([Span::raw("  "), Span::styled(context_header, context)]);
-        lines.extend(vec![
+        // The close button sits in the right margin; one blank column keeps the title off it.
+        let title = crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
             Line::from(title),
+            content_width.saturating_sub(1),
+        );
+        lines.extend(vec![
+            title,
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
         ]);
@@ -1274,11 +1279,8 @@ impl ChatWidget {
                 (row_of(line)..row_of(line + 1)).map(move |row| (row, destination.clone()))
             })
             .collect();
-        let title_height = wrap_ledger_rows(&[Line::from(CONTEXT_LEDGER_TITLE)], content_width)
-            .0
-            .len();
         LedgerLines {
-            title_rows: row_of(title_line)..row_of(title_line) + title_height,
+            title_rows: row_of(title_line)..row_of(title_line + 1),
             rows,
             source_row_ranges,
             source_links,
