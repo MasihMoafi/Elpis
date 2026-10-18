@@ -127,3 +127,29 @@ for (const colorScheme of ['light', 'dark']) test(`a waiting chat says why under
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+for (const newerTurn of [true, false]) test(`an in-flight idle list preserves only a newer runtime status (${newerTurn})`, async () => {
+  let hold = false, release, requested;
+  const pending = new Promise(resolve => { requested = resolve; });
+  const waiting = new Promise(resolve => { release = resolve; });
+  const chats = ['a', 'b', 'c'].map(id => ({ id: `chat-${id}`, name: `Chat ${id}`, cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
+  const f = await fixture({ routes: { '/api/threads': async () => {
+    if (hold) { hold = false; requested(); await waiting; return { data: chats.map(chat => chat.id === 'chat-c' ? { ...chat, name: 'Refreshed chat' } : chat), nextCursor: null }; }
+    return { data: chats, nextCursor: null };
+  } } }), { page } = f;
+  try {
+    await eventually(() => assert.equal(f.listening(), 1));
+    f.emit('message', { method: 'turn/started', params: { threadId: 'chat-c', turn: { id: 'first-turn', status: 'inProgress', items: [] } } });
+    await eventually(async () => assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), 'working'));
+    hold = true; finish(f, 'chat-c', 'first-turn'); await pending;
+    if (newerTurn) {
+      f.emit('message', { method: 'turn/started', params: { threadId: 'chat-c', turn: { id: 'newer-turn', status: 'inProgress', items: [] } } });
+      await eventually(async () => assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), 'working'));
+    }
+    release();
+    await row(page, 'chat-c').getByText('Refreshed chat', { exact: true }).waitFor();
+    assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), newerTurn ? 'working' : 'unread');
+    await screenshot(page, newerTurn ? 'attention-working-newer.png' : 'attention-idle-list.png');
+    assert.deepEqual(f.errors, []);
+  } finally { release(); await f.close(); }
+});

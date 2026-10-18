@@ -416,7 +416,9 @@ export default function Home() {
   const remember = (thread: Thread) => { if (thread.model) settingsOf.current[thread.id] = { model: thread.model, modelProvider: thread.modelProvider, reasoningEffort: thread.reasoningEffort ?? null }; return thread; };
   const threadsRef = useRef<Thread[]>([]);
   useEffect(() => { threadsRef.current = threads; }, [threads]);
+  const statusRevisions = useRef<Record<string, number>>({});
   const patchThread = useCallback((id: string, patch: Partial<Thread>) => {
+    if (patch.status) statusRevisions.current[id] = (statusRevisions.current[id] ?? 0) + 1;
     setThreads(prev => prev.map(thread => thread.id === id ? { ...thread, ...patch } : thread));
     if (selectedRef.current?.id === id) select({ ...selectedRef.current, ...patch });
   }, [select]);
@@ -438,16 +440,18 @@ export default function Home() {
   }, [select, setText, savedDraft, restoreAttachments, updateTabs]);
   const refreshThreads = useCallback(async () => {
     const routesAtRequest = { ...settingsOf.current };
+    const statusesAtRequest = { ...statusRevisions.current };
     const result = await api<{ data: Thread[]; nextCursor: string | null }>("/threads?limit=100&includeAgentRuns=true"); if (!Array.isArray(result.data)) throw unreadable("conversations");
     result.data = result.data.filter(thread => !hidden.current.has(thread.id));
     // Preserve an event or local acknowledgment that arrived after this list request began.
     for (const thread of result.data) if (thread.model && settingsOf.current[thread.id] === routesAtRequest[thread.id]) remember({ ...settingsOf.current[thread.id], ...thread });
     // Listed rows omit forkedFromId (native stored rows); keep what thread/read or a fork already reported.
-    const known = (t: Thread, prev: Thread[]) => ({ ...t, ...settingsOf.current[t.id], forkedFromId: t.forkedFromId ?? prev.find(p => p.id === t.id)?.forkedFromId ?? null });
+    const status = (t: Thread, current: Thread | undefined) => statusRevisions.current[t.id] !== statusesAtRequest[t.id] ? current?.status ?? t.status : t.status;
+    const known = (t: Thread, prev: Thread[]) => ({ ...t, status: status(t, prev.find(p => p.id === t.id)), ...settingsOf.current[t.id], forkedFromId: t.forkedFromId ?? prev.find(p => p.id === t.id)?.forkedFromId ?? null });
     setThreads(prev => mergeListedThreads(prev, result.data.map(t => known(t, prev)), hidden.current, true));
     if (!loadedRootPages.current) setNextCursor(result.nextCursor);
     const updated = result.data.find(t => t.id === selectedRef.current?.id);
-    if (updated) select({ ...selectedRef.current, ...updated, ...settingsOf.current[updated.id], forkedFromId: updated.forkedFromId ?? selectedRef.current?.forkedFromId ?? null });
+    if (updated) select({ ...selectedRef.current, ...updated, status: status(updated, selectedRef.current ?? undefined), ...settingsOf.current[updated.id], forkedFromId: updated.forkedFromId ?? selectedRef.current?.forkedFromId ?? null });
   }, [select]);
 
   const loadMoreConversations = useCallback(async () => {
