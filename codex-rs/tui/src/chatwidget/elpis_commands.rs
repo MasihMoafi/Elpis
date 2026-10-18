@@ -56,6 +56,7 @@ macro_rules! elpis_slash_commands {
             | $crate::slash_command::SlashCommand::Add
             | $crate::slash_command::SlashCommand::Context
             | $crate::slash_command::SlashCommand::Rag
+            | $crate::slash_command::SlashCommand::Personal
     };
 }
 pub(crate) use elpis_slash_commands;
@@ -63,6 +64,9 @@ pub(crate) use elpis_slash_commands;
 /// The v0.3.0 popup descriptions.
 pub(crate) fn description(cmd: SlashCommand) -> &'static str {
     match cmd {
+        SlashCommand::Personal => {
+            "view your working preferences, or /personal dismiss to hide the tip"
+        }
         SlashCommand::Effort => "change how hard the model thinks: /effort [low|medium|high|…]",
         SlashCommand::PrunerModel => {
             "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
@@ -175,6 +179,7 @@ pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
             | SlashCommand::Add
             | SlashCommand::Compact
             | SlashCommand::Rag
+            | SlashCommand::Personal
     )
 }
 
@@ -197,6 +202,7 @@ pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
             | SlashCommand::Agent
             | SlashCommand::Dashboard
             | SlashCommand::Context
+            | SlashCommand::Personal
     )
 }
 
@@ -274,6 +280,7 @@ impl ChatWidget {
     /// Run an Elpis slash command, bare or with inline arguments.
     pub(super) fn dispatch_elpis_command(&mut self, cmd: SlashCommand) {
         match cmd {
+            SlashCommand::Personal => self.open_personal_skill(),
             SlashCommand::Rag => self.submit_user_message(rag_command_message("").into()),
             SlashCommand::Yolo => {
                 self.app_event_tx
@@ -302,6 +309,19 @@ impl ChatWidget {
                     /*hint*/ None,
                 );
             }
+        }
+    }
+
+    pub(super) fn open_personal_skill(&mut self) {
+        match codex_skills::personal::open(self.config.codex_home.as_path()) {
+            Ok((path, content)) => {
+                self.refresh_skills_for_current_cwd(/*force_reload*/ true);
+                self.add_info_message(
+                    format!("{}\n\n{content}", path.display()),
+                    Some("Edit this SKILL.md in your editor, or tell Elpis your working preferences.".to_string()),
+                );
+            }
+            Err(error) => self.add_error_message(format!("Could not open /personal: {error}")),
         }
     }
 

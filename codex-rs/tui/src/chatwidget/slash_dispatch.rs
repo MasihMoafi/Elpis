@@ -817,6 +817,21 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Personal => {
+                if trimmed == "dismiss" {
+                    match codex_skills::personal::dismiss_tip(self.config.codex_home.as_path()) {
+                        Ok(()) => {
+                            self.add_info_message("Personal tip dismissed.".to_string(), None)
+                        }
+                        Err(error) => self
+                            .add_error_message(format!("Could not dismiss personal tip: {error}")),
+                    }
+                } else if trimmed.is_empty() {
+                    self.open_personal_skill();
+                } else {
+                    self.add_error_message("Usage: /personal [dismiss]".to_string());
+                }
+            }
             SlashCommand::Rag => {
                 let prefix_len = elpis_commands::rag_command_message("").len();
                 for element in &mut text_elements {

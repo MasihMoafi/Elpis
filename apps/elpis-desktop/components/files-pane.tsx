@@ -58,11 +58,11 @@ export function FilesPane({ cwd }: { cwd: string }) {
     const watch = new ResizeObserver(() => setNarrow(element.clientWidth < NARROW));
     watch.observe(element);
     return () => watch.disconnect();
-  }, []);
+  }, [cwd, pane.active]);
   const active = pane.open.find(file => file.path === pane.active) ?? null;
   // Side by side the tree stays; one at a time, a file asked for takes the room.
   useEffect(() => { if (narrow && active && pane.showTree) setShowTree(cwd, false); }, [narrow, active?.path, active?.focus]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!cwd) return <div className="files-pane"><p className="files-note">Open a chat to browse its folder.</p></div>;
+  if (!cwd && !active) return <div className="files-pane"><p className="files-note">Open a chat to browse its folder.</p></div>;
 
   const dirtyOf = (paths: string[]) => paths.filter(path => isDirty(files.docs[docKey(cwd, path)]));
   const close = (paths: string[]) => { if (dirtyOf(paths).length) setClosing(paths); else closeFiles(cwd, paths); };
@@ -70,14 +70,14 @@ export function FilesPane({ cwd }: { cwd: string }) {
   const widen = (width: number) => setTreeWidth(cwd, Math.min(MAX_TREE, Math.max(MIN_TREE, Math.round(width))));
   const split = (event: KeyboardEvent) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); widen(pane.treeWidth + (event.key === "ArrowRight" ? 24 : -24)); } };
   const empty = pane.showTree ? "Pick a file in the tree, or click a file path in the conversation." : "Click a file path in the conversation to open it.";
-  const treeShown = pane.showTree;
+  const treeShown = !!cwd && pane.showTree;
   const treeMenu: MenuAction[] = [
     { id: "hidden", label: pane.hidden ? "Hide hidden files" : "Show hidden files", run: () => setHidden(cwd, !pane.hidden) },
     { id: "collapse", label: "Collapse all folders", run: () => collapseAll(cwd) },
   ];
   return <div ref={root} className="files-pane" data-narrow={narrow || undefined}>
     <div className="files-bar">
-      <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={treeShown} aria-label={treeShown ? "Hide file tree" : "Show file tree"} title={treeShown ? "Hide file tree" : "Show file tree"} onClick={() => setShowTree(cwd, !treeShown)}>
+      <Button type="button" variant="ghost" size="icon-sm" className="side-action" disabled={!cwd} aria-pressed={treeShown} aria-label={treeShown ? "Hide file tree" : "Show file tree"} title={treeShown ? "Hide file tree" : "Show file tree"} onClick={() => setShowTree(cwd, !treeShown)}>
         {treeShown ? <PanelLeftClose size={15} /> : <PanelLeft size={15} />}
       </Button>
       {treeShown && <>
@@ -88,7 +88,7 @@ export function FilesPane({ cwd }: { cwd: string }) {
         {pane.open.map(file => {
           const name = nameOf(file.path), Icon = fileKind(name).Icon, dirty = isDirty(files.docs[docKey(cwd, file.path)]);
           const actions: MenuAction[] = [
-            { id: "reveal", label: "Reveal in file tree", run: () => reveal(cwd, file.path) },
+            ...(cwd ? [{ id: "reveal", label: "Reveal in file tree", run: () => reveal(cwd, file.path) }] : []),
             { id: "close", label: "Close file", run: () => close([file.path]) },
             { id: "others", label: "Close other files", run: () => close(pane.open.filter(item => item.path !== file.path).map(item => item.path)) },
             { id: "all", label: "Close all files", run: () => close(pane.open.map(item => item.path)) },

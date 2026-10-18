@@ -8,6 +8,7 @@ use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
 use crate::bottom_pane::slash_commands::find_builtin_command;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::slash_command::built_in_slash_commands;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::str::FromStr;
 
@@ -18,6 +19,56 @@ const NOT_IN_THIS_BUILD: &str =
 /// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
 /// background model; `/dashboard` works (elpis_dashboard.rs).
 const LATER_BUILD: [SlashCommand; 1] = [SlashCommand::ForcePrune];
+
+#[tokio::test]
+async fn personal_command_shows_the_user_file_and_never_overwrites_it() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    let command = SlashCommand::from_str("personal").expect("/personal is a built-in command");
+    for c in "/personal".chars() {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let path = codex_skills::personal::path(chat.config.codex_home.as_path());
+    assert!(path.is_file());
+    let shown = history_text(&mut rx).join("\n");
+    assert!(shown.contains("Learning method:"));
+    assert!(shown.contains("Edit this SKILL.md"));
+    let content = format!(
+        "{}\nPREFERENCE_SENTINEL_914\n",
+        codex_skills::personal::TEMPLATE
+    );
+    std::fs::write(&path, &content).unwrap();
+    chat.dispatch_command(command);
+    assert!(
+        history_text(&mut rx)
+            .join("\n")
+            .contains("PREFERENCE_SENTINEL_914")
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+    while let Ok(op) = ops.try_recv() {
+        assert_matches!(op, Op::ListSkills { force_reload: true, .. });
+    }
+}
+
+#[tokio::test]
+async fn personal_dismissal_does_not_create_a_profile() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    let home = tempfile::TempDir::new().unwrap();
+    chat.config.codex_home = AbsolutePathBuf::from_absolute_path(home.path()).unwrap();
+    assert!(codex_skills::personal::show_tip(home.path()));
+    let command = SlashCommand::from_str("personal").unwrap();
+    chat.dispatch_command_with_args(command, "dismiss".into(), vec![]);
+    assert!(
+        history_text(&mut rx)
+            .join("\n")
+            .contains("Personal tip dismissed")
+    );
+    assert!(!codex_skills::personal::path(chat.config.codex_home.as_path()).exists());
+    assert!(!codex_skills::personal::show_tip(
+        chat.config.codex_home.as_path()
+    ));
+    assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
+}
 
 fn history_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<String> {
     drain_insert_history(rx)
@@ -103,7 +154,7 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
 fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
     let mut expected = vec![
         "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
-        "hotkeys", "settings", "add", "skills", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
+        "hotkeys", "settings", "add", "skills", "personal", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
         // Masih, 16 Oct 2026: open the TUI's chat in the desktop app.
         "app", "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
         "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "rag", "quit",

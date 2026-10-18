@@ -36,6 +36,37 @@ use rmcp::model::ContentBlock;
 
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 
+#[tokio::test]
+async fn personal_welcome_tip_snapshot_and_remembered_dismissal() {
+    let mut config = test_config().await;
+    config.cwd = test_path_buf("/tmp/project").abs();
+    let home = tempfile::TempDir::new().unwrap();
+    let render = || {
+        let cell = new_session_info(
+            &config,
+            &crate::local_settings::LocalSettings::from(&config),
+            "gpt-5",
+            "gpt-5",
+            &session_configured_event("gpt-5"),
+            true,
+            None,
+            None,
+        )
+        .with_personal_tip(home.path());
+        render_transcript(&cell).join("\n")
+    };
+    let shown = render();
+    assert!(shown.contains(codex_skills::personal::TIP));
+    let tip = shown
+        .lines()
+        .filter(|line| line.contains("/personal"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!("personal_welcome_tip", tip);
+    codex_skills::personal::dismiss_tip(home.path()).unwrap();
+    assert!(!render().contains(codex_skills::personal::TIP));
+}
+
 #[test]
 fn connected_server_version_notice_snapshot() {
     let target = crate::AppServerTarget::Remote {

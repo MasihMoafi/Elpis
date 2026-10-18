@@ -101,6 +101,7 @@ pub(crate) mod context_pruner;
 pub mod pruner_settings;
 // Elpis: the model's request follows the Context Ledger.
 pub mod elpis_admission;
+pub mod elpis_personal;
 // Elpis: the responding agent saves MEMORY.md / ES.md through the guarded `save_memory` tool.
 pub mod elpis_memory;
 pub mod memory_save;

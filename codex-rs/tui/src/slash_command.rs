@@ -36,6 +36,7 @@ pub enum SlashCommand {
     Add, // Elpis: Context Ledger
     Memories,
     Skills,
+    Personal, // Elpis: the user's working preferences.
     Import,
     Hooks,
     Review,
@@ -253,7 +254,8 @@ impl SlashCommand {
     pub(crate) fn available_when_thread_unavailable(self) -> bool {
         matches!(
             self,
-            SlashCommand::New
+            SlashCommand::Personal
+                | SlashCommand::New
                 | SlashCommand::Clear
                 | SlashCommand::Resume
                 | SlashCommand::Agents

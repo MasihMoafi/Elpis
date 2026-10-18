@@ -220,7 +220,9 @@ impl ChatWidget {
                 startup_tooltip_override,
                 self.plan_type,
             );
-            self.apply_session_info_cell(session_info_cell);
+            self.apply_session_info_cell(
+                session_info_cell.with_personal_tip(self.config.codex_home.as_path()),
+            );
         } else if self
             .transcript
             .active_cell

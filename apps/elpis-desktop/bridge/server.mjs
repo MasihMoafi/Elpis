@@ -18,6 +18,7 @@ import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
+import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -187,6 +188,12 @@ export async function startDesktopServer(options = {}) {
           if (method === 'GET' && !improvement[2]) return json(response, 200, await store.get(improvement[1]));
           if (method === 'POST' && improvement[2]) { object(await body(request), []); return json(response, 200, await store[improvement[2]](improvement[1])); }
           throw new BridgeError('Method is not allowed', 405);
+        }
+        if (url.pathname === '/api/personal' && method === 'GET') return json(response, 200, await personalStatus(options.elpisHome));
+        if (url.pathname === '/api/personal' && method === 'POST') {
+          const input = object(await body(request), ['action']);
+          if (!['open', 'dismiss'].includes(input.action)) throw new BridgeError('Choose open or dismiss');
+          return json(response, 200, await (input.action === 'open' ? openPersonal : dismissPersonalTip)(options.elpisHome));
         }
         if (url.pathname === '/api/attachments/extract' && method === 'POST') return json(response, 200, await extractPdf(await body(request, PDF_BODY_LIMIT)));
         const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);

@@ -19,6 +19,8 @@ pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     // Keep generic UI snapshots stable when the bundled catalog default changes.
     config.model = Some("gpt-5.6-sol".to_string());
     config.codex_home = codex_home.path().abs();
+    // Generic transcript snapshots model an established user; personal's tests use a fresh home.
+    codex_skills::personal::dismiss_tip(codex_home.path()).expect("dismiss personal tip");
     config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
     config.log_dir = codex_home.path().join("log");
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();

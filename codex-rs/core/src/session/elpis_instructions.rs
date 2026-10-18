@@ -114,6 +114,11 @@ impl Session {
             .await;
         let continuity =
             elpis_admission::thread_continuity(&self.services.thread_extension_data).await;
+        let personal = crate::elpis_personal::instructions(config.codex_home.as_path()).await;
+        let continuity = match (continuity, personal) {
+            (Some(continuity), Some(personal)) => Some(format!("{continuity}\n\n{personal}")),
+            (continuity, personal) => continuity.or(personal),
+        };
         Ok(ElpisInstructions {
             developer_instructions: developer_instructions.filter(|text| !text.is_empty()),
             agents_md: agents_md?

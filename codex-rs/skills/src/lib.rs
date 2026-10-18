@@ -5,6 +5,7 @@ mod mentions;
 mod model;
 mod name_counts;
 mod parser;
+pub mod personal;
 mod selection;
 
 pub use interface::SkillInterfaceAssetPolicy;

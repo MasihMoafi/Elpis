@@ -65,6 +65,7 @@ futures = { workspace = true }
 codex-rollout = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-shell-command = { workspace = true }
+codex-skills = { workspace = true }
 codex-state = { workspace = true }
 codex-terminal-detection = { workspace = true }
 codex-worktree = { workspace = true }

@@ -84,6 +84,7 @@ mod direct_tool_metadata;
 mod elpis_context_attribution;
 // Elpis: the request follows the Context Ledger.
 mod elpis_ledger_admission;
+mod elpis_personal;
 mod exec;
 mod exec_policy;
 #[cfg(not(target_os = "windows"))]

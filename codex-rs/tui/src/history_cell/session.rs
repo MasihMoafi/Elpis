@@ -129,6 +129,20 @@ impl HistoryCell for SessionNoticeCell {
 #[derive(Debug)]
 pub struct SessionInfoCell(CompositeHistoryCell);
 
+impl SessionInfoCell {
+    pub(crate) fn with_personal_tip(mut self, home: &std::path::Path) -> Self {
+        if codex_skills::personal::show_tip(home) {
+            self.0.parts.push(Box::new(PlainHistoryCell {
+                lines: vec![
+                    Line::from(format!("  {}", codex_skills::personal::TIP)),
+                    Line::from("  /personal dismiss to hide this tip".dim()),
+                ],
+            }));
+        }
+        self
+    }
+}
+
 /// Fullscreen transcript presentation omits tips; scrollback retains the original cells.
 pub(crate) fn fullscreen_session_lines(
     cell: &dyn HistoryCell,

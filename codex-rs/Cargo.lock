@@ -4897,6 +4897,7 @@ dependencies = [
  "codex-rollout",
  "codex-sandboxing",
  "codex-shell-command",
+ "codex-skills",
  "codex-state",
  "codex-terminal-detection",
  "codex-uds",

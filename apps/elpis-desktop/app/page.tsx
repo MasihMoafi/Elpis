@@ -70,7 +70,8 @@ import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/li
 import { readAttention, saveAttention, type Attention } from "@/lib/attention";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
-import { onRequest as onFileRequest } from "@/lib/files-pane";
+import { onRequest as onFileRequest, openFile } from "@/lib/files-pane";
+import { PersonalTip, usePersonal } from "@/components/personal-tip";
 import { SidePanel, useSidePanel } from "@/components/side-panel";
 import { SideChat, type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
@@ -1194,6 +1195,7 @@ export default function Home() {
   const idle = !busy && !activeTurn && selected?.status?.type !== "active";
   const writable = !!selected && !continues;
   const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
+  const personal = usePersonal(ready && !selected, path => { openFile(selected?.cwd || cwd, path); side.openFiles(); }, setError);
   const chooseEffort = (level?: string) => {
     if (!level) { openComposerControl("Reasoning effort"); return; }
     const match = turnEfforts.find(item => item.toLowerCase() === level.toLowerCase());
@@ -1253,6 +1255,7 @@ export default function Home() {
     { name: "yolo", description: "choose Full access or Bypass permissions", available: !busy, run: () => openComposerControl("Change permissions") },
     { name: "settings", description: "open Settings", run: () => openSettings("general") },
     { name: "memories", description: "configure memory use and generation", run: () => openSettings("personalization") },
+    { name: "personal", description: "edit your priorities, working habits and preferences", run: personal.open },
     { name: "hooks", description: "view and manage lifecycle hooks", run: () => openSettings("hooks") },
     { name: "review", description: "review my current changes and find issues", available: writable && idle, args: true, run: text => { if (!selected) return; if (text) void startReview(selected, { type: "custom", instructions: text }); else setPanel("review"); } },
     { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(e instanceof Error ? e.message : String(e))); else setRenameRequest(true); } },
@@ -1563,7 +1566,7 @@ export default function Home() {
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && !entries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
-          {!loading && !entries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2></>}</div>}
+          {!loading && !entries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={entries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
