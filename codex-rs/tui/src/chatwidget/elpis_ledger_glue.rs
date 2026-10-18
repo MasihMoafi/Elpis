@@ -232,7 +232,7 @@ impl ChatWidget {
         buf: &mut ratatui::buffer::Buffer,
     ) {
         self.context_ledger.column.set(Some(area));
-        match self.context_ledger_lines_with_height(area.width) {
+        match self.context_ledger_lines_with_height(area.width, true) {
             Some((_, ledger_lines)) => {
                 self.render_context_ledger_lines(area, buf, ledger_lines, &[]);
             }
@@ -271,7 +271,7 @@ impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
         let (pane, ledger_width) = self.split(area);
         let Some((ledger_height, ledger_lines)) = self
             .chat_widget
-            .context_ledger_lines_with_height(ledger_width)
+            .context_ledger_lines_with_height(ledger_width, false)
         else {
             self.chat_widget.forget_context_ledger_clicks();
             self.bottom_pane.render(pane, buf);

@@ -40,8 +40,9 @@ const LEDGER_HANDLE_COLS: u16 = 2;
 /// The rule column and one blank column before the text.
 const LEDGER_LEFT_COLS: u16 = 2;
 /// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
-/// edge. The Ledger keeps the same margin.
+/// edge. The native inline Ledger keeps the same margin.
 const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
+const LEDGER_CLOSE_BUTTON_WIDTH: u16 = 3;
 
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
 /// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
@@ -79,7 +80,7 @@ pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &m
     };
     render_ledger_rule(area, &[], buf);
     let content_width =
-        ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+        ledger_content_width(area.width, false).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
     if content_width == 0 || area.height == 0 {
         return;
     }
@@ -106,9 +107,16 @@ pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &m
 }
 
 /// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
-fn ledger_content_width(ledger_width: u16) -> u16 {
+fn ledger_content_width(ledger_width: u16, close_button: bool) -> u16 {
+    // The owned column reserves the whole button and one cell at the screen edge on every
+    // row, including source rows that scroll to the top. Inline rendering keeps Codex's margin.
+    let right_margin = if close_button {
+        LEDGER_CLOSE_BUTTON_WIDTH + 1
+    } else {
+        LEDGER_RIGHT_MARGIN
+    };
     ledger_width
-        .saturating_sub(LEDGER_LEFT_COLS + LEDGER_RIGHT_MARGIN)
+        .saturating_sub(LEDGER_LEFT_COLS + right_margin)
         .max(1)
 }
 /// User-facing grouping for portable sources. Core categories retain their
@@ -387,7 +395,7 @@ impl ChatWidget {
     }
 
     pub(super) fn context_ledger_desired_height(&self, ledger_width: u16) -> u16 {
-        self.context_ledger_lines_with_height(ledger_width)
+        self.context_ledger_lines_with_height(ledger_width, false)
             .map(|(height, _)| height)
             .unwrap_or(0)
     }
@@ -399,13 +407,17 @@ impl ChatWidget {
     pub(super) fn context_ledger_lines_with_height(
         &self,
         ledger_width: u16,
+        close_button: bool,
     ) -> Option<(u16, LedgerLines)> {
         if !self.context_ledger.visible || ledger_width == 0 {
             return None;
         }
         // The rows are wrapped once, with the same wrapper that draws them, so the height is
         // their count and the panel cannot be measured differently from what it draws.
-        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(ledger_width)));
+        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(
+            ledger_width,
+            close_button,
+        )));
         let height = u16::try_from(ledger_lines.rows.len()).unwrap_or(u16::MAX);
         Some((height, ledger_lines))
     }
@@ -754,7 +766,8 @@ impl ChatWidget {
             ),
         );
         title.extend([Span::raw("  "), Span::styled(context_header, context)]);
-        // The close button sits in the right margin; one blank column keeps the title off it.
+        // The close button sits in the column's wider right margin; one blank column keeps
+        // the title off its padding.
         let title = crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
             Line::from(title),
             content_width.saturating_sub(1),
@@ -1290,7 +1303,10 @@ impl ChatWidget {
 
     #[cfg(test)]
     pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
-        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(area.width)));
+        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(
+            area.width,
+            self.context_ledger.column.get() == Some(area),
+        )));
         self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
 
@@ -1313,8 +1329,9 @@ impl ChatWidget {
         } = ledger_lines;
         self.forget_context_ledger_clicks();
         render_ledger_rule(area, box_rules, buf);
-        let content_width =
-            ledger_content_width(area.width).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+        let owned_column = self.context_ledger.column.get() == Some(area);
+        let content_width = ledger_content_width(area.width, owned_column)
+            .min(area.width.saturating_sub(LEDGER_LEFT_COLS));
         if content_width == 0 || area.height == 0 {
             return;
         }
@@ -1341,12 +1358,21 @@ impl ChatWidget {
             .scroll((scroll_rows, 0))
             .render(content, buf);
         // Only the owned column handles mouse input. Keep the native inline Ledger unchanged.
-        let close_button = (self.context_ledger.column.get() == Some(area))
-            .then(|| Rect::new(area.right() - 2, area.y, 1, 1));
+        let close_button = owned_column.then(|| {
+            Rect::new(
+                area.right() - LEDGER_CLOSE_BUTTON_WIDTH - 1,
+                area.y,
+                LEDGER_CLOSE_BUTTON_WIDTH,
+                1,
+            )
+        });
         if let Some(button) = close_button {
-            buf[(button.x, button.y)]
-                .set_symbol("×")
-                .set_style(Style::default());
+            buf.set_string(
+                button.x,
+                button.y,
+                " ✕ ",
+                crate::style::user_message_style().bold(),
+            );
         }
         *self.context_ledger.click_map.borrow_mut() = Some(LedgerClickMap {
             close_button,
