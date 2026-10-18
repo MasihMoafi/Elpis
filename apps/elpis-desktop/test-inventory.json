@@ -204,7 +204,8 @@
     "tests/agent-runs.test.cjs",
     "tests/canvas-editing.test.cjs",
     "tests/personal.test.cjs",
-    "tests/smart-prune.test.cjs"
+    "tests/smart-prune.test.cjs",
+    "tests/composer-corner.test.cjs"
   ],
   "opt-in": [
     "tests/app-fix-2.runtime.mjs",

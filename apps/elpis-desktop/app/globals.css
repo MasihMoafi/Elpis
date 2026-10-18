@@ -586,9 +586,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .worked-for-body { padding:2px 0 6px; }
 
 .composer { position:relative; border-radius:6px; background:var(--composer); border-color:var(--border); box-shadow:var(--shadow); }
-.composer::before, .composer::after { content:""; position:absolute; width:14px; height:14px; pointer-events:none; border-color:var(--primary); border-style:solid; opacity:.85; }
-.composer::before { top:-1px; left:-1px; border-width:1.5px 0 0 1.5px; border-top-left-radius:6px; }
-.composer::after { bottom:-1px; right:-1px; border-width:0 1.5px 1.5px 0; border-bottom-right-radius:6px; }
+/* Amber brackets mark the outer corners of the composer, bending with each corner's own radius. On a new chat the
+   environment bar sits on top and squares the composer's top corners, so the bar carries the top bracket. */
+.composer::before, .composer::after, .composer-tray::before { content:""; position:absolute; width:14px; height:14px; pointer-events:none; border-color:var(--primary); border-style:solid; opacity:.85; }
+.composer::before, .composer-tray::before { top:-1px; left:-1px; border-width:1.5px 0 0 1.5px; border-top-left-radius:inherit; }
+.composer::after { bottom:-1px; right:-1px; border-width:0 1.5px 1.5px 0; border-bottom-right-radius:inherit; }
+.composer-tray { position:relative; }
+.composer-tray + .composer::before { display:none; }
 .composer:focus-within { border-color:color-mix(in oklch, var(--primary) 45%, var(--border)); box-shadow:var(--shadow), var(--glow, none); }
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
