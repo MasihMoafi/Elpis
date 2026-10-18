@@ -50,6 +50,21 @@ function windows(t) {
   return { store, file, open, delay: value => { delay = value; }, deliver: () => { for (const send of broadcasts.splice(0)) send(); }, settle: async () => { await Promise.allSettled(pending.splice(0)); await new Promise(resolve => setImmediate(resolve)); } };
 }
 
+test('appearance choices persist through real desktop IPC, rebase across windows, and reject unknown values', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  a.preferences.savePreferences({ accent: 'teal' }); await f.settle();
+  b.preferences.savePreferences({ chatFont: 'serif' }); await f.settle();
+  const saved = JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']);
+  assert.equal(saved.accent, 'teal'); assert.equal(saved.chatFont, 'serif');
+  for (const window of [a, b]) {
+    assert.equal(window.preferences.readPreferences().accent, 'teal');
+    assert.equal(window.preferences.readPreferences().chatFont, 'serif');
+    assert.deepEqual(window.errors, []);
+  }
+  for (const changes of [{ accent: 'bad' }, { chatFont: 'bad' }])
+    await assert.rejects(f.store.patch({ key: 'elpis-preferences-v1', baseRevision: f.store.snapshot().revision, changes }), /Unsupported/);
+});
+
 test('two actual preloads preserve wrap when another window changes notifications and refresh both preference caches', async t => {
   const f = windows(t), a = f.open(1), b = f.open(2);
   a.preferences.savePreferences({ softWrap: true }); await f.settle();

@@ -5,7 +5,7 @@ import { MONO, SANS, SERIF, codeFontProblem, readingStyle } from '../lib/reading
 const defaults = { transcriptSize: 'm', transcriptWidth: 's', interfaceFont: 'sans', codeFont: '' };
 
 test('the defaults are today’s look: 14.5px transcript, 740px columns, the sans stack, the mono stack', () => {
-  assert.deepEqual(readingStyle(defaults), { '--transcript-size': '14.5px', '--transcript-width': '740px', '--ui-font': SANS, '--mono': MONO });
+  assert.deepEqual(readingStyle(defaults), { '--transcript-size': '14.5px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': 'var(--ui-font)', '--mono': MONO });
   assert.match(SANS, /^Inter, system-ui/);
   assert.match(SERIF, /serif$/);
   assert.match(MONO, /^"JetBrains Mono".*monospace$/);
@@ -32,4 +32,16 @@ test('a code font name is one family name: letters, digits, spaces, - _ . and at
 
 test('unknown stored values fall back to the defaults', () => {
   assert.deepEqual(readingStyle({ transcriptSize: 'xl', transcriptWidth: 7, interfaceFont: 'comic', codeFont: null }), readingStyle(defaults));
+});
+
+test('chat font has five roles, independent of interface and code fonts', () => {
+  const style = chatFont => readingStyle({ ...defaults, interfaceFont: 'serif', codeFont: 'Custom Mono', chatFont });
+  assert.equal(style('default')['--chat-font'], 'var(--ui-font)');
+  assert.equal(style('sans')['--chat-font'], SANS);
+  assert.match(style('serif')['--chat-font'], /^"DejaVu Serif"/);
+  assert.match(style('mono')['--chat-font'], /^"DejaVu Sans Mono"/);
+  assert.match(style('system')['--chat-font'], /^system-ui/);
+  assert.equal(style('bad')['--chat-font'], style('default')['--chat-font']);
+  assert.equal(style('mono')['--mono'], `"Custom Mono", ${MONO}`);
+  assert.equal(style('sans')['--ui-font'], SERIF);
 });

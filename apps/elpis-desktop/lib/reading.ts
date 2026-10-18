@@ -4,7 +4,8 @@
 
 export type ReadingStep = "s" | "m" | "l";
 export type InterfaceFont = "sans" | "serif";
-export type Reading = { transcriptSize: ReadingStep; transcriptWidth: ReadingStep; interfaceFont: InterfaceFont; codeFont: string };
+export type ChatFont = "default" | "sans" | "serif" | "mono" | "system";
+export type Reading = { transcriptSize: ReadingStep; transcriptWidth: ReadingStep; interfaceFont: InterfaceFont; codeFont: string; chatFont: ChatFont };
 
 export const SANS = 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 export const SERIF = 'ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, "DejaVu Serif", serif';
@@ -13,6 +14,12 @@ export const MONO = '"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospa
 const SIZES: Record<ReadingStep, string> = { s: "13.5px", m: "14.5px", l: "16px" };
 const WIDTHS: Record<ReadingStep, string> = { s: "740px", m: "900px", l: "1100px" };
 const FONTS: Record<InterfaceFont, string> = { sans: SANS, serif: SERIF };
+const CHAT_FONTS: Record<ChatFont, string> = {
+  default: "var(--ui-font)", sans: SANS,
+  serif: '"DejaVu Serif", ui-serif, serif',
+  mono: '"DejaVu Sans Mono", ui-monospace, monospace',
+  system: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+};
 const NAME_LIMIT = 80;
 const ONE_NAME = /^[\p{L}\p{N} ._-]*$/u;
 
@@ -31,6 +38,7 @@ export function readingStyle(choices: { [K in keyof Reading]?: unknown }): Recor
     "--transcript-size": SIZES[step(choices.transcriptSize, "m")],
     "--transcript-width": WIDTHS[step(choices.transcriptWidth, "s")],
     "--ui-font": FONTS[choices.interfaceFont === "serif" ? "serif" : "sans"],
+    "--chat-font": typeof choices.chatFont === "string" && Object.hasOwn(CHAT_FONTS, choices.chatFont) ? CHAT_FONTS[choices.chatFont as ChatFont] : CHAT_FONTS.default,
     "--mono": code ? `"${code}", ${MONO}` : MONO,
   };
 }

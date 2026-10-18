@@ -50,7 +50,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
     const f = await fixture({ width, height, colorScheme, routes: routes() }), { page } = f;
     const directory = process.env.ELPIS_SWEEP_SHOTS || '/tmp/elpis-desktop-sweep';
     const failures = [], visited = [], consoleErrors = [];
-    await page.route('**/api/love-spot/events', route => route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' }));
+    await page.route(url => /^\/api\/love-spot\/(?:talk\/)?events$/.test(url.pathname), route => route.fulfill({ contentType: 'text/event-stream', body: ': fixture\n\n' }));
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     await fs.mkdir(directory, { recursive: true });
     const check = async (name, action, scope = () => page.locator('body')) => {

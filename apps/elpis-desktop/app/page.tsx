@@ -16,7 +16,6 @@ import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
-import { readingStyle } from "@/lib/reading";
 import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
@@ -498,11 +497,6 @@ export default function Home() {
   // The desktop gets the theme as dark or not, the choice (System keeps the operating system in charge of pages in the browser)
   // and the page's own --background, resolved: main paints the browser's blank pages with it.
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
-  // Settings → Appearance's reading options, as CSS variables on the document, so menus and dialogs take them too.
-  useEffect(() => {
-    const root = document.documentElement.style;
-    for (const [name, value] of Object.entries(readingStyle(preferences))) root.setProperty(name, value);
-  }, [preferences.transcriptSize, preferences.transcriptWidth, preferences.interfaceFont, preferences.codeFont]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let saved: string | null = null;
     try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = stored.selectedId ? `new-${stored.selectedId}` : "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setProjectId(stored.selectedId); setCwd(stored.projects.find(item => item.id === stored.selectedId)?.cwd ?? ""); }
