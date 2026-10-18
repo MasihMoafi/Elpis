@@ -58,7 +58,17 @@ const app = agent({ name: "fake-acp-agent" })
     await say({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" });
     if (text.includes("[ignore-cancel]")) await new Promise(() => {});
     if (text.includes("[hang]")) { await new Promise((resolve) => { s.cancelled = resolve; }); return { stopReason: "cancelled" }; }
-    const answer = `${name}(${s.model}) answered: ${permission}${text}`;
+    if (process.env.FAKE_ACP_WRITE) {
+      const { file, text } = JSON.parse(process.env.FAKE_ACP_WRITE);
+      fs.writeFileSync(file, text);
+    }
+    let checked;
+    if (process.env.FAKE_ACP_EXPECT) {
+      const { file, text } = JSON.parse(process.env.FAKE_ACP_EXPECT);
+      const passed = fs.existsSync(file) && fs.readFileSync(file, 'utf8') === text;
+      checked = JSON.stringify({ passed, summary: passed ? `Read planted result: ${text}` : 'The planted result did not arrive' });
+    }
+    const answer = checked ?? process.env.FAKE_ACP_ANSWER ?? `${name}(${s.model}) answered: ${permission}${text}`;
     await chunk("m2", answer.slice(0, 10));
     await chunk("m2", answer.slice(10));
     return { stopReason: "end_turn" };

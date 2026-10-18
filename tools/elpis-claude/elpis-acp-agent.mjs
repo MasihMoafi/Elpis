@@ -272,6 +272,24 @@ function promptText(blocks) {
   }).filter(Boolean).join("\n\n");
 }
 
+/** Workflows supplies scoped execution policy through ACP metadata; Love Spot keeps its ordinary session policy. */
+function workflowPolicy(value, cwd) {
+  if (value === undefined) return null;
+  if (!value || !['implement', 'fix', 'verify', 'explore'].includes(value.kind) || !Array.isArray(value.writeScopes)) throw RequestError.invalidParams(undefined, "Invalid workflow policy");
+  const writes = ['implement', 'fix'].includes(value.kind), roots = [];
+  if (!writes && value.writeScopes.length || writes && !value.writeScopes.length) throw RequestError.invalidParams(undefined, "Invalid workflow write scopes");
+  const base = fs.realpathSync(cwd);
+  for (const scope of value.writeScopes) {
+    if (typeof scope !== 'string' || path.isAbsolute(scope) || scope.split(/[\\/]/).includes('..')) throw RequestError.invalidParams(undefined, "Invalid workflow write scope");
+    const root = fs.realpathSync(path.join(base, scope));
+    if (root !== base && !root.startsWith(`${base}${path.sep}`) || !fs.statSync(root).isDirectory()) throw RequestError.invalidParams(undefined, "Workflow write scope must be a project folder");
+    roots.push(root);
+  }
+  if (value.reasoningEffort !== undefined && (typeof value.reasoningEffort !== 'string' || !/^[a-z]{2,16}$/.test(value.reasoningEffort))) throw RequestError.invalidParams(undefined, "Invalid workflow reasoning effort");
+  return { profile: { extends: ':read-only', filesystem: { '/': 'read', ...Object.fromEntries(roots.map(root => [root, 'write'])) }, network: { enabled: false } },
+    turn: { permissions: 'elpis-workflow', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}) } };
+}
+
 function mcpConfig(servers = []) {
   const config = Object.create(null);
   for (const server of servers) {
@@ -312,18 +330,19 @@ const app = agent({ name: "elpis" })
     await engineReady();
     if (!path.isAbsolute(params.cwd)) throw RequestError.invalidParams(undefined, "cwd must be an absolute path");
     const append = params._meta?.systemPrompt?.append;
+    const policy = workflowPolicy(params._meta?.elpis?.workflow, params.cwd);
     const config = mcpConfig(params.mcpServers);
     const started = await engine.call("thread/start", {
       cwd: params.cwd,
       ...(options.model ? { model: options.model } : {}),
       ...(options.provider ? { modelProvider: options.provider } : {}),
-      approvalPolicy: "on-request", sandbox: "workspace-write",
-      ...(Object.keys(config).length ? { config } : {}),
+      approvalPolicy: "on-request", ...(policy ? { permissions: "elpis-workflow" } : { sandbox: "workspace-write" }),
+      ...(policy || Object.keys(config).length ? { config: { ...config, ...(policy ? { "permissions.elpis-workflow": policy.profile } : {}) } } : {}),
       ...(typeof append === "string" && append.trim() ? { developerInstructions: append } : {}),
     });
     const id = started?.thread?.id;
     if (typeof id !== "string") throw new RequestError(-32603, "The Elpis engine did not start a thread");
-    sessions.set(id, { id, turn: null, announced: new Set(), phases: new Map(), streamed: new Map() });
+    sessions.set(id, { id, policy, turn: null, announced: new Set(), phases: new Map(), streamed: new Map() });
     const name = params._meta?.elpis?.name;
     if (typeof name === "string" && name.trim()) await engine.call("thread/name/set", { threadId: id, name: name.trim().slice(0, 120) }).catch(() => {});
     return { sessionId: id };
@@ -348,7 +367,7 @@ const app = agent({ name: "elpis" })
     turn.result = done.then(result);
     turn.result.catch(() => {});
     try {
-      turn.started = engine.call("turn/start", { threadId: s.id, input: [{ type: "text", text: promptText(params.prompt), text_elements: [] }] });
+      turn.started = engine.call("turn/start", { threadId: s.id, ...(s.policy?.turn ?? {}), input: [{ type: "text", text: promptText(params.prompt), text_elements: [] }] });
       const started = await turn.started;
       turn.id ??= started?.turn?.id ?? null;
       if (turn.cancelled) interrupt(s);

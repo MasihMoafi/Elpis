@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -33,7 +34,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     { key: 'managed:/etc/requirements.toml:stop:0:0', eventName: 'stop', handlerType: 'command', command: 'audit', matcher: null, timeoutSec: 30, statusMessage: null, sourcePath: '/etc/requirements.toml', source: 'system', pluginId: null, displayOrder: 1, enabled: true, isManaged: true, currentHash: 'sha256:managed', trustStatus: 'managed' },
   ] }] };
   const threads = new Map([
-    [ROOT, { id: ROOT, name: 'Existing root', source: 'cli', status: { type: 'idle' } }],
+    [ROOT, { id: ROOT, name: 'Existing root', source: 'cli', cwd: os.tmpdir(), model: MODEL, modelProvider: 'openai', status: { type: 'idle' } }],
     [CHILD, { id: CHILD, name: null, preview: '', agentNickname: 'Sagan', model: MODEL, modelProvider: 'openai', parentThreadId: ROOT, canAcceptDirectInput: false, source: { subAgent: { thread_spawn: { parent_thread_id: ROOT, agent_path: '/root/failure_reporting' } } }, status: { type: 'active' } }],
   ]);
   const socket = new EventEmitter(); socket.sent = []; socket.closed = false;
@@ -97,7 +98,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
-  const client = new DesktopClient(socket, { browserConfig });
+  const client = new DesktopClient(socket, { browserConfig, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -458,7 +459,7 @@ test('workflow workers keep recorded task names and lineage when native list omi
   client.close();
 });
 
-test('manual workflows require an idle root and forward the reviewed graph without a model turn', async () => {
+test('manual workflows require an idle root and dispatch the reviewed graph through ACP', async () => {
   const {client,socket,threads}=fixture(); await client.initialize();
   const task={id:'inspect',title:'Inspect',instruction:'Read the evidence',kind:'explore',dependsOn:[],writeScopes:[],acceptanceCriteria:['Report evidence']};
   const draft={rootThreadId:ROOT,name:'Reviewed workflow',maxConcurrency:2,tasks:[task]};
@@ -468,41 +469,40 @@ test('manual workflows require an idle root and forward the reviewed graph witho
   await assert.rejects(client.runWorkflow(draft),/Wait for/);
   threads.get(ROOT).status={type:'idle'};
   await assert.rejects(client.runWorkflow({...draft,approvalPolicy:'never'}),/Unsupported/);
-  await assert.rejects(client.runWorkflow({...draft,tasks:[{...task,model:'claude/opus'}]}),/native model/);
+  await assert.rejects(client.runWorkflow({...draft,tasks:[{...task,model:'bad model'}]}),/model ID/);
   assert.equal(socket.sent.some(row=>row.method==='workGraph/run'),false);
-  assert.equal((await client.runWorkflow(draft)).graphId,'graph-1');
-  assert.deepEqual(socket.sent.find(row=>row.method==='workGraph/run').params,draft);
+  const started=await client.runWorkflow(draft);
+  const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
+  assert.equal(record.name,draft.name); assert.equal(record.tasks[0].instruction,task.instruction);
   assert.equal(socket.sent.some(row=>row.method==='turn/start'),false);
-  assert.equal(socket.sent.filter(row=>row.method==='workGraph/run').length,1);
+  assert.equal(socket.sent.filter(row=>row.method==='workGraph/run').length,0);
   client.close();
 });
 
-test('a task reasoning effort is validated and forwarded on the routed workflow method', async () => {
+test('a task reasoning effort is validated and retained for ACP execution', async () => {
   const {client,socket}=fixture(); await client.initialize();
   const task={id:'inspect',title:'Inspect',instruction:'Read the evidence',kind:'explore',dependsOn:[],writeScopes:[],acceptanceCriteria:['Report evidence']};
   const draft={rootThreadId:ROOT,name:'Effort workflow',tasks:[{...task,reasoningEffort:'high'},{...task,id:'plain',dependsOn:['inspect']}]};
   for(const bad of ['','High','x','high effort','a'.repeat(17),7,null])
     await assert.rejects(client.runWorkflow({...draft,tasks:[{...task,reasoningEffort:bad}]}),/reasoning effort/,JSON.stringify(bad));
   assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
-  assert.equal((await client.runWorkflow(draft)).graphId,'graph-1');
-  const routed=socket.sent.filter(row=>row.method==='workGraph/runWithProviders');
-  assert.equal(routed.length,1,'an effort alone needs the routed method');
-  assert.deepEqual(routed[0].params,draft);
-  assert.equal(socket.sent.some(row=>row.method==='workGraph/run'),false);
+  const started=await client.runWorkflow(draft);
+  const record=(await client.workflows(ROOT)).data.find(row=>row.id===started.graphId);
+  assert.equal(record.tasks[0].reasoningEffort,'high');
+  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
   client.close();
 });
 
-test('worktree isolation is validated and forwarded with the workflow', async () => {
+test('worktree isolation is validated and retained by the ACP workflow', async () => {
   const {client,socket}=fixture(); await client.initialize();
   const task={id:'inspect',title:'Inspect',instruction:'Read the evidence',kind:'explore',dependsOn:[],writeScopes:[],acceptanceCriteria:['Report evidence']};
   const draft={rootThreadId:ROOT,name:'Isolated workflow',isolation:'worktree',tasks:[task]};
   for(const bad of ['','Worktree','copy',true,null,{}])
     await assert.rejects(client.runWorkflow({...draft,isolation:bad}),/isolation/,JSON.stringify(bad));
   assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
-  assert.equal((await client.runWorkflow(draft)).graphId,'graph-1');
-  assert.deepEqual(socket.sent.find(row=>row.method==='workGraph/run').params,draft);
-  await client.runWorkflow({...draft,isolation:undefined});
-  assert.equal('isolation' in socket.sent.filter(row=>row.method==='workGraph/run')[1].params,false,'absent isolation stays absent');
+  const started=await client.runWorkflow(draft);
+  assert.equal((await client.workflows(ROOT)).data.find(row=>row.id===started.graphId).isolation,'worktree');
+  assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
   client.close();
 });
 

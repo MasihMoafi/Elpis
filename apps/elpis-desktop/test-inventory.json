@@ -70,7 +70,8 @@
     "bridge/transcription.test.mjs",
     "bridge/trash.test.mjs",
     "bridge/personal.test.mjs",
-    "bridge/smart-prune.test.mjs"
+    "bridge/smart-prune.test.mjs",
+    "bridge/workflow-acp.test.mjs"
   ],
   "desktop": [
     "desktop/browser-agent.test.cjs",

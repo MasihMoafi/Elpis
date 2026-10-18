@@ -18,6 +18,7 @@ import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
+import { createWorkflowRuns } from './workflow-acp.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
@@ -155,13 +156,14 @@ export class DesktopClient extends EventEmitter {
   #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
   #sideChats = new Map();
   #workflowTitles = new Map(); #workflowLookups = new Map();
+  #workflowRuns; #acpApprovals = new Map();
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
   #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#browserConfig = browserConfig;
     this.#githubConnector = githubConnector;
@@ -173,6 +175,9 @@ export class DesktopClient extends EventEmitter {
       return result;
     });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
+    this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(elpisHome(), 'desktop-workflows'),
+      onPermission: (record, task, request, signal) => this.#workflowPermission(record, task, request, signal),
+      onSession: (_record, _task, id) => { this.#known.add(id); }, ...workflowOptions });
     this.#bind(socket);
   }
   #bind(socket) {
@@ -209,6 +214,7 @@ export class DesktopClient extends EventEmitter {
     this.#closed = true; this.#ready = false;
     this.#socket.terminate?.();
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(new BridgeError(pending.reading ? 'Elpis connection closed while reading. Reload the view after reconnecting.' : 'Elpis connection closed; the request outcome is unknown. Check the conversation before retrying.', 503)); }
+    this.#workflowRuns.close();
     this.#pending.clear(); this.#approvals.clear(); this.#checkingApprovals.clear();
     this.#owned.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear();
     for (const id of this.#sideChats.keys()) this.emit('event', { type: 'sideChat', data: { method: 'thread/closed', params: { threadId: id } } });
@@ -905,36 +911,42 @@ export class DesktopClient extends EventEmitter {
     const current=await this.#rpc('thread/read',{threadId:id,includeTurns:false});
     if(current.thread?.id!==id)throw new BridgeError('Elpis returned a different thread',502);
     this.#decorate(current.thread);
-    return this.#rpc('workGraph/list', {rootThreadId:id});
+    const native = await this.#rpc('workGraph/list', {rootThreadId:id});
+    return { data: [...(native.data ?? []), ...await this.#workflowRuns.list(id)] };
   }
   async runWorkflow(body) {
-    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','isolation']);
+    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','isolation','roundLimit']);
     const id=threadId(body.rootThreadId);
     const params={rootThreadId:id,name:text(body.name,'workflow name',256),tasks:[]};
     if(!Array.isArray(body.tasks)||body.tasks.length<1||body.tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
     for(const task of body.tasks){
-      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort']);
+      object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort','feedbackFrom']);
       if(!['explore','implement','verify','fix'].includes(task.kind))throw new BridgeError('Unknown task role');
       const next={id:text(task.id,'task ID',100),kind:task.kind,title:text(task.title,'task title',256),instruction:text(task.instruction,'task instructions')};
       for(const key of ['dependsOn','writeScopes','acceptanceCriteria']){
         if(!Array.isArray(task[key])||task[key].length>256)throw new BridgeError(`Invalid ${key}`);
         next[key]=task[key].map(value=>text(value,key,4096));
       }
-      if(task.environmentId!==undefined)next.environmentId=text(task.environmentId,'environment ID',256);
+      if(task.feedbackFrom!==undefined){
+        if(!Array.isArray(task.feedbackFrom)||task.feedbackFrom.length>256)throw new BridgeError('Invalid feedback dependencies');
+        next.feedbackFrom=task.feedbackFrom.map(value=>text(value,'feedback dependency',100));
+      }
+      if(task.environmentId!==undefined)throw new BridgeError('ACP workflows currently run in the selected local project; environment IDs are not supported');
       if(task.provider!==undefined){
         next.provider=text(task.provider,'task provider',100);
-        if(!/^[A-Za-z0-9_.-]+$/.test(next.provider)||/^(claude|agy|antigravity)$/i.test(next.provider))throw new BridgeError('Workflow tasks require a native provider');
+        if(!/^[A-Za-z0-9_.-]+$/.test(next.provider))throw new BridgeError('Invalid ACP provider');
         if(task.model===undefined)throw new BridgeError('A task provider requires an explicit model');
       }
       if(task.model!==undefined){
         next.model=text(task.model,'task model',200);
-        if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(next.model)||/^(claude|agy|antigravity)\//i.test(next.model))throw new BridgeError('Workflow tasks require a native model ID');
+        if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(next.model))throw new BridgeError('Invalid ACP model ID');
       }
       if(task.reasoningEffort!==undefined)next.reasoningEffort=this.#effort(task.reasoningEffort);
       params.tasks.push(next);
     }
+    if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;
     for(const key of ['maxConcurrency','maxRuntimeSeconds'])if(body[key]!==undefined){
-      if(!Number.isSafeInteger(body[key])||body[key]<1||(key==='maxConcurrency'&&body[key]>32))throw new BridgeError(`Invalid ${key}`);
+      if(!Number.isSafeInteger(body[key])||body[key]<1||(key==='maxConcurrency'&&body[key]>32)||(key==='maxRuntimeSeconds'&&body[key]>2147483))throw new BridgeError(`Invalid ${key}`);
       params[key]=body[key];
     }
     // 'worktree': each implement/fix task works in its own git worktree, merged after the run.
@@ -946,7 +958,7 @@ export class DesktopClient extends EventEmitter {
       const current=await this.#current(id);
       if(current.desktopAccess.mode==='continue')throw new BridgeError('Run workflows from a root conversation; this agent takes turns only from its parent',409);
       if(current.status?.type==='active')throw new BridgeError('Wait for the current turn to finish before running a workflow',409);
-      return this.#rpc(params.tasks.some(task=>task.provider!==undefined||task.model!==undefined||task.reasoningEffort!==undefined)?'workGraph/runWithProviders':'workGraph/run',params);
+      return this.#workflowRuns.start(params,current);
     });
   }
   /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
@@ -1323,6 +1335,8 @@ export class DesktopClient extends EventEmitter {
   /** Stops the given turn, or the agent's running turn when the caller has not seen its start. */
   async interrupt(id, body) {
     object(body, ['turnId']);
+    threadId(id);
+    if(this.#workflowRuns.cancel(id))return { interrupted: true };
     return this.#mutate(id, async () => {
       await this.#attach(id);
       let turnId = body.turnId === undefined ? null : text(body.turnId, 'turn ID', 200);
@@ -1382,6 +1396,23 @@ export class DesktopClient extends EventEmitter {
     this.#mutating.add(id);
     try { return await run(); } finally { this.#mutating.delete(id); }
   }
+  #workflowPermission(record, task, request, signal) {
+    const choices = new Map();
+    for (const option of request.options ?? []) {
+      const decision = { allow_once: 'accept', allow_always: 'acceptForSession', reject_once: 'decline', reject_always: 'decline' }[option.kind];
+      if (decision && !choices.has(decision)) choices.set(decision, option.optionId);
+    }
+    const id = randomUUID(), approval = { id, wireId: `acp-${id}`, method: 'item/commandExecution/requestApproval', supported: true,
+      params: { threadId: record.rootThreadId, turnId: record.id, command: request.toolCall?.title || task.title, availableDecisions: [...choices.keys()] } };
+    return new Promise(resolve => {
+      const finish = option => { signal.removeEventListener('abort', abort); resolve(option); };
+      const abort = () => { this.#approvals.delete(id); this.#acpApprovals.delete(id); this.emit('event', { type: 'approvalResolved', data: { id } }); finish(null); };
+      this.#approvals.set(id, approval); this.#acpApprovals.set(id, { choices, resolve: finish });
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) return abort();
+      const { wireId, ...visible } = approval; this.emit('event', { type: 'approval', data: visible });
+    });
+  }
   answerApproval(id, body) {
     const pending = this.#approvals.get(id);
     if (!pending) throw new BridgeError('Approval is no longer pending', 409);
@@ -1406,7 +1437,10 @@ export class DesktopClient extends EventEmitter {
       if (!isOffered) throw new BridgeError('Decision is not offered for this request');
       result = { decision: body.decision };
     }
-    this.#socket.send(JSON.stringify({ id: pending.wireId, result })); this.#approvals.delete(id);
+    const acp = this.#acpApprovals.get(id);
+    if(acp){ acp.resolve(acp.choices.get(result.decision) ?? null); this.#acpApprovals.delete(id); }
+    else this.#socket.send(JSON.stringify({ id: pending.wireId, result }));
+    this.#approvals.delete(id);
     this.emit('event', { type: 'approvalResolved', data: { id } }); return { resolved: true };
   }
   /** "Deny, and tell Elpis what to do instead": the instruction joins the waiting turn (turn/steer), then the command or

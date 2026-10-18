@@ -1,47 +1,64 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {EventEmitter} from 'node:events';
 import {DesktopClient} from '../bridge/client.mjs';
 
-function fixture({unsupported=false}={}) {
+const rootId='00000000-0000-0000-0000-000000000001';
+const fake=fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs',import.meta.url));
+function fixture(t) {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'elpis-workflow-routing-')), specs=[];
   const socket=new EventEmitter();socket.sent=[];socket.close=()=>{};
   socket.send=wire=>{const request=JSON.parse(wire);socket.sent.push(request);queueMicrotask(()=>{
-    let result={};
-    if(request.method==='thread/read'||request.method==='thread/resume')result={thread:{id:'00000000-0000-0000-0000-000000000001',source:'appServer',status:{type:'idle'},model:'root-model',modelProvider:'openai'}};
-    if(request.method==='workGraph/runWithProviders'&&unsupported){socket.emit('message',JSON.stringify({id:request.id,error:{code:-32601,message:'Unknown method workGraph/runWithProviders'}}));return;}
-    if(request.method.startsWith('workGraph/run'))result={graphId:'graph',threadId:'00000000-0000-0000-0000-000000000001',turnId:'workflow-turn'};
+    const result=request.method==='thread/read'||request.method==='thread/resume'
+      ? {thread:{id:rootId,cwd:dir,source:'appServer',status:{type:'idle'},model:'root-model',modelProvider:'openai'}}
+      : request.method==='workGraph/list'?{data:[]}:{};
     socket.emit('message',JSON.stringify({id:request.id,result}));
   });};
-  return {socket,client:new DesktopClient(socket)};
+  const client=new DesktopClient(socket,{workflowOptions:{stateDir:path.join(dir,'state'),nodeSpec:node=>{
+    specs.push(node);
+    return {name:node.name,instructions:node.prompt,command:node.provider==='unavailable'?path.join(dir,'missing-agent'):process.execPath,args:[fake],env:{FAKE_ACP_MODELS:node.model},model:node.model};
+  }}});
+  t.after(()=>{client.close();execFileSync('gio',['trash',dir]);});
+  const finished=async id=>{
+    for(let n=0;n<300;n++) {
+      const found=(await client.workflows(rootId)).data.find(row=>row.id===id);
+      if(found?.status!=='running')return found;
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    throw Error('ACP run did not finish');
+  };
+  return {socket,client,specs,finished};
 }
 const task={id:'inspect',title:'Inspect',instruction:'Report evidence',kind:'explore',dependsOn:[],writeScopes:[],acceptanceCriteria:['Evidence reported']};
-const graph={rootThreadId:'00000000-0000-0000-0000-000000000001',name:'Provider routing',tasks:[task]};
+const graph={rootThreadId:rootId,name:'Provider routing',tasks:[task]};
 
-test('workflow inheritance uses legacy method; explicit routing is preserved and uses new native method',async()=>{
-  const {client,socket}=fixture();try {
-    await client.runWorkflow(graph);
-    assert.deepEqual(socket.sent.find(row=>row.method==='workGraph/run').params,graph);
-    const explicit={...graph,tasks:[{...task,provider:'local_one',model:'custom/one'},{...task,id:'second',provider:'local_two',model:'custom/two',dependsOn:['inspect']}]};
-    await client.runWorkflow(explicit);
-    assert.deepEqual(socket.sent.find(row=>row.method==='workGraph/runWithProviders').params,explicit);
-    await client.runWorkflow({...graph,tasks:[{...task,model:'other/native-model'}]});
-    assert.deepEqual(socket.sent.filter(row=>row.method==='workGraph/runWithProviders')[1].params.tasks,[{...task,model:'other/native-model'}]);
-  }finally{client.close();}
+test('workflow ACP nodes inherit root routing and preserve explicit models and providers',async t=>{
+  const f=fixture(t);
+  for(const [override,provider,model] of [[{},'openai','root-model'],[{provider:'local_one',model:'custom/one'},'local_one','custom/one'],[{model:'other/model'},'openai','other/model'],[{provider:'claude',model:'claude/opus'},'claude','claude/opus']]) {
+    const run=await f.client.runWorkflow({...graph,tasks:[{...task,...override}]});
+    assert.equal((await f.finished(run.graphId)).status,'succeeded');
+    assert.deepEqual([f.specs.at(-1).provider,f.specs.at(-1).model],[provider,model]);
+  }
+  assert.equal(f.socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
 });
 
-test('old runtimes fail closed for task routing without a legacy retry',async()=>{
-  const {client,socket}=fixture({unsupported:true});try {
-    await assert.rejects(client.runWorkflow({...graph,tasks:[{...task,provider:'local',model:'custom/native'}]}),error=>error.status===503&&/Update and restart Elpis/.test(error.message));
-    assert.equal(socket.sent.filter(row=>row.method==='workGraph/runWithProviders').length,1);
-    assert.equal(socket.sent.some(row=>row.method==='workGraph/run'),false);
-  }finally{client.close();}
+test('an unavailable ACP agent fails closed without a native fallback',async t=>{
+  const f=fixture(t);
+  const run=await f.client.runWorkflow({...graph,tasks:[{...task,provider:'unavailable',model:'custom/model'}]});
+  const result=await f.finished(run.graphId);
+  assert.equal(result.status,'failed');assert.match(result.tasks[0].failureReason,/ENOENT/);
+  assert.equal(f.specs.length,1);assert.equal(f.socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
 });
 
-test('missing model, subscription routes, and invalid model IDs never reach native execution',async()=>{
-  const {client,socket}=fixture();try {
-    for(const override of [{provider:'local'},{provider:'claude',model:'native'},{provider:'agy',model:'native'},{model:'claude/opus'},{model:'agy/gemini'},{model:'bad model'},{model:''}]) {
-      await assert.rejects(client.runWorkflow({...graph,tasks:[{...task,...override}]}),/explicit model|native provider|native model|task model/);
-    }
-    assert.equal(socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
-  }finally{client.close();}
+test('invalid routing is refused before starting any ACP or native execution',async t=>{
+  const f=fixture(t);
+  for(const override of [{provider:'local'},{provider:'bad provider',model:'valid'},{model:'bad model'},{model:''}]) {
+    await assert.rejects(f.client.runWorkflow({...graph,tasks:[{...task,...override}]}),/explicit model|ACP provider|ACP model|task model/);
+  }
+  assert.equal(f.specs.length,0);assert.equal(f.socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
 });
