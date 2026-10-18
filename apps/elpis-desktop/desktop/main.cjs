@@ -10,6 +10,7 @@ const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
 const { startQuickEntry } = require('./quick-entry.cjs');
 const { createSessionWindows, sessionWindowMenu } = require('./session-windows.cjs');
+const { enableWaylandIme } = require('./wayland-ime.cjs');
 
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
@@ -76,6 +77,7 @@ async function createOrFocusWindow() {
 // elpis-desktop.desktop.in sets StartupWMClass=elpis-desktop to match, so docks show the Elpis icon.
 app.setName('Elpis');
 app.setPath('userData', path.join(app.getPath('appData'), 'Elpis'));
+enableWaylandIme(app.commandLine, process.env);
 // Wayland gives apps global shortcuts only through the desktop portal; Claude's app turns on Chromium's portal support the same way.
 app.commandLine.appendSwitch('enable-features', [app.commandLine.getSwitchValue('enable-features'), 'GlobalShortcutsPortal'].filter(Boolean).join(','));
 if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv) })) {
