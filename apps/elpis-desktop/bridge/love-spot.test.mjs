@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { startDesktopServer } from './server.mjs';
+import { createLoveSpot } from './love-spot-store.cjs';
 
 const exec = promisify(execFile);
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
@@ -150,7 +151,7 @@ test('new screenshots remain private in memory, newest first, without changing s
   assert.equal(shots[0].dataURL, `data:image/png;base64,${PNG.toString('base64')}`);
   assert.deepEqual(await fs.readFile(path.join(f.directory, 'view.png')), PNG);
   assert.deepEqual(await fs.readdir(path.join(f.directory, 'inbox')), []);
-  assert.deepEqual((await fs.readdir(f.directory)).sort(), ['.view-revision', 'inbox', 'scene.excalidraw', 'view.png']);
+  assert.deepEqual((await fs.readdir(f.directory)).sort(), ['.view-revision', 'inbox', 'pages', 'scene.excalidraw', 'view.png']);
   await fs.writeFile(path.join(f.screenshots, 'partial.png'), PNG);
   await f.wait(async () => (await f.tray()).length === 3);
   assert.ok(f.events.some(e => e.type === 'screenshots' && e.screenshots.length));
@@ -199,4 +200,86 @@ test('Love Spot independent processes serialize their merges on the same drawing
   const module = new URL('./love-spot-store.cjs', import.meta.url).pathname;
   await Promise.all(Array.from({ length: 8 }, (_, i) => exec(process.execPath, ['-e', `const {createLoveSpot}=require(${JSON.stringify(module)});createLoveSpot({directory:process.argv[1]}).save(JSON.parse(process.argv[2])).catch(e=>{console.error(e);process.exitCode=1});`, f.directory, JSON.stringify({ elements: [element(`process-${i}`)], files: {} })])));
   assert.equal((await f.load()).scene.elements.length, 8);
+});
+
+test('Love Spot watcher does not reread an unchanged drawing and delivers external replacements', async t => {
+  const f = await fixture(t);
+  await f.save({ elements: [element('large', 1, { text: 'x'.repeat(2_000_000) })], files: {} });
+  const file = path.join(f.directory, 'scene.excalidraw'), original = fs.readFile.bind(fs);
+  let reads = 0;
+  t.mock.method(fs, 'readFile', (...args) => { if (args[0] === file) reads++; return original(...args); });
+  const store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots }), events = [];
+  t.after(() => store.close());
+  await store.watch(event => events.push(event));
+  await new Promise(resolve => setTimeout(resolve, 350));
+  const settled = reads;
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.equal(reads, settled, 'idle ticks must stat without reading or hashing the drawing');
+  await fs.writeFile(`${file}.replacement`, JSON.stringify({ elements: [element('external')], files: {} }));
+  await fs.rename(`${file}.replacement`, file);
+  for (let i = 0; i < 30 && !events.some(e => e.scene?.elements.some(e => e.id === 'external')); i++) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.ok(events.some(e => e.scene?.elements.some(e => e.id === 'external')));
+  assert.equal(reads, settled + 1, 'one changed file needs one read');
+});
+
+test('Love Spot pages discover archives, preserve drawings, rename, and reject delayed saves across switches', async t => {
+  const f = await fixture(t), first = await f.save({ elements: [element('original')], files: {} });
+  await fs.mkdir(path.join(f.directory, 'pages'), { recursive: true });
+  await fs.writeFile(path.join(f.directory, 'pages', '2026-10-18-morning.excalidraw'), JSON.stringify({ elements: [element('archived')], files: {} }));
+  const listing = await f.request('/pages');
+  assert.equal(listing.status, 200);
+  assert.ok((await listing.json()).pages.some(p => p.name === '2026-10-18-morning' && Number.isFinite(p.modified)));
+  const store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots }), events = [];
+  t.after(() => store.close()); await store.watch(e => events.push(e));
+  const created = await f.request('/pages', { action: 'new', name: 'Ideas', page: first.scene.page });
+  assert.equal(created.status, 200);
+  const fresh = await created.json();
+  assert.deepEqual(fresh.scene.elements, []);
+  assert.equal(fresh.scene.page.name, 'Ideas');
+  assert.equal((await f.request('', first.scene)).status, 409, 'a delayed old-window save must never mix pages');
+  await f.save({ ...fresh.scene, elements: [element('new-page')] });
+  assert.equal((await f.request('/pages', { action: 'rename', name: 'Ideas renamed', page: fresh.scene.page })).status, 200);
+  assert.ok((await fs.readdir(path.join(f.directory, 'pages'))).includes('Ideas renamed.excalidraw'));
+  assert.ok(!(await fs.readdir(path.join(f.directory, 'pages'))).includes('Ideas.excalidraw'));
+  const archive = await f.request('/pages', { action: 'switch', name: '2026-10-18-morning' });
+  assert.equal(archive.status, 200);
+  assert.equal((await archive.json()).scene.elements[0].id, 'archived');
+  for (let i = 0; i < 30 && !events.some(e => e.scene?.page?.name === '2026-10-18-morning'); i++) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.ok(events.some(e => e.scene?.page?.name === '2026-10-18-morning'), 'another store process sees the page switch');
+  const original = await f.request('/pages', { action: 'switch', name: first.scene.page.name });
+  assert.equal((await original.json()).scene.elements[0].id, 'original');
+  assert.equal((await f.request('', first.scene)).status, 409, 'returning to the same page still rejects an earlier visit');
+  const renamed = await f.request('/pages', { action: 'switch', name: 'Ideas renamed' });
+  assert.equal((await renamed.json()).scene.elements[0].id, 'new-page');
+});
+
+test('Love Spot pages reject unsafe names, collisions, and corrupt archives without changing the drawing', async t => {
+  const f = await fixture(t);
+  const saved = await f.save({ elements: [element('safe')], files: {} });
+  for (const name of ['../escape', '/tmp/escape', '', 'a/b', 'a\\b', '.', 'x'.repeat(101)]) {
+    assert.equal((await f.request('/pages', { action: 'new', name })).status, 400, name);
+  }
+  assert.equal((await f.request('/pages', { action: 'new', name: saved.scene.page.name })).status, 409);
+  assert.equal((await f.request('/pages', { action: 'switch', name: 'missing' })).status, 404);
+  await fs.writeFile(path.join(f.directory, 'pages', 'broken.excalidraw'), '{');
+  assert.equal((await f.request('/pages', { action: 'switch', name: 'broken' })).status, 409);
+  assert.equal((await f.load()).revision, saved.revision);
+});
+
+test('Love Spot saves prune unused image files, keep live references, and accept undo with retained editor files', async t => {
+  const f = await fixture(t);
+  const image = element('image', 1, { type: 'image', fileId: 'pixels' });
+  const pixels = { id: 'pixels', mimeType: 'image/png', dataURL: `data:image/png;base64,${PNG.toString('base64')}` };
+  await f.save({ elements: [image], files: { pixels, unused: { ...pixels, id: 'unused' } } });
+  assert.deepEqual(Object.keys((await f.load()).scene.files), ['pixels']);
+  await f.save({ elements: [{ ...image, version: 2, isDeleted: true }], files: { pixels } });
+  assert.deepEqual((await f.load()).scene.files, {});
+  await f.save({ elements: [image], files: { pixels } });
+  assert.deepEqual((await f.load()).scene.files, {}, 'a stale live version cannot retain deleted image bytes');
+  await f.save({ elements: [{ ...image, version: 3 }], files: { pixels } });
+  assert.equal((await f.load()).scene.files.pixels.dataURL, pixels.dataURL);
+  await fs.writeFile(path.join(f.directory, 'pages', 'Unused archive.excalidraw'), JSON.stringify({ elements: [], files: { pixels } }));
+  const selected = await f.request('/pages', { action: 'switch', name: 'Unused archive' });
+  assert.deepEqual((await selected.json()).scene.files, {}, 'switching an archive also saves only live image references');
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.directory, 'pages', 'Unused archive.excalidraw'), 'utf8')).files, {});
 });

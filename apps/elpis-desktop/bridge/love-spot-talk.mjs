@@ -6,8 +6,8 @@ const INSTRUCTIONS = 'You are Elpis, talking with Masih in your shared Love Spot
 /** One ordinary, persistent chat. Reply placement belongs to the bridge so it survives panel navigation. */
 export function createLoveSpotTalk({ client, store }) {
   let threadId = null, thread = null, entries = [], activeTurnId = null, finishedTurnId = null, error = '', loaded = false, sending = false, closed = false;
-  let work = Promise.resolve(), loading;
-  const listeners = new Set(), parts = new Map();
+  let work = Promise.resolve(), loading, sendingPage;
+  const listeners = new Set(), parts = new Map(), turnPages = new Map();
   const snapshot = () => ({ thread, entries, busy: sending || !!activeTurnId, error });
   const publish = () => { if (!closed) for (const listen of listeners) listen(snapshot()); };
   function upsert(turnId, item) {
@@ -55,7 +55,8 @@ export function createLoveSpotTalk({ client, store }) {
       parts.delete(turn.id);
       error = turn.error?.message || (turn.status === 'failed' ? 'Love Spot could not get a reply. Try again.' : '');
       if (turn.status === 'completed' && !turn.error && final) {
-        work = work.catch(() => {}).then(() => store.reply(turn.id, final, agentColor)).catch(cause => { error = cause.message || 'The reply could not be added to the board.'; publish(); });
+        const page = turnPages.get(turn.id) ?? sendingPage;
+        work = work.catch(() => {}).then(() => store.reply(turn.id, final, agentColor, page)).catch(cause => { error = cause.message || 'The reply could not be added to the board.'; publish(); });
       }
     }
     if (method === 'error' && !params.willRetry) { error = params.error?.message || params.message || 'Love Spot could not get a reply.'; }
@@ -95,13 +96,15 @@ export function createLoveSpotTalk({ client, store }) {
           if (!thread) thread = (await client.readThread(threadId)).thread;
         }
         if (body.provider && body.provider !== thread.modelProvider) throw new BridgeError('Choose a model from the Love Spot chat’s connection.', 400);
+        sendingPage = board.scene.page;
         const result = await client.send(threadId, { text: body.text, model, attachments });
+        turnPages.set(result.turn.id, sendingPage);
         // Some local providers finish before send returns; do not revive their completed turn.
         if (finishedTurnId !== result.turn.id) activeTurnId = result.turn.id;
         if (!entries.some(e => e.turnId === result.turn.id && e.item.type === 'userMessage')) upsert(result.turn.id, { id: `love-prompt-${result.turn.id}`, type: 'userMessage', content: [{ type: 'text', text: body.text }] });
         return { ...snapshot(), busy: !!activeTurnId, turn: result.turn };
       } catch (cause) { error = cause.message; throw cause; }
-      finally { sending = false; publish(); }
+      finally { sending = false; sendingPage = undefined; publish(); }
     },
     async watch(listen) { await load(); listeners.add(listen); listen(snapshot()); return () => listeners.delete(listen); },
     idle: () => work,

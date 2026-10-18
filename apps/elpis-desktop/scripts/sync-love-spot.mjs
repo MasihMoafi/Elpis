@@ -42,6 +42,9 @@ export async function syncLoveSpot(directory, { build = true } = {}) {
     await fs.writeFile(path.join(directory, 'preload.cjs'), preload);
     await fs.writeFile(path.join(directory, 'src/app.jsx'), renderer);
   }
+  if (!renderer.includes('// Love Spot pages protocol.') && (!renderer.includes('getSceneElementsIncludingDeleted') || !renderer.includes('board.onIncoming'))) throw new Error('Standalone renderer changed; review the pages integration before updating it.');
+  await fs.copyFile(new URL('./love-spot-standalone.jsx', import.meta.url), path.join(directory, 'src/app.jsx'));
+  await fs.copyFile(new URL('../lib/love-spot.ts', import.meta.url), path.join(directory, 'src/love-spot.ts'));
   await fs.copyFile(new URL('../bridge/love-spot-store.cjs', import.meta.url), path.join(directory, 'love-spot-store.cjs'));
   if (build) await promisify(execFile)(process.execPath, ['build.mjs'], { cwd: directory });
 }

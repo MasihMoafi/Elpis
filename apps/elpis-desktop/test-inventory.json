@@ -155,6 +155,7 @@
     "tests/love-spot-standalone.test.cjs",
     "tests/love-spot-talk.test.cjs",
     "tests/love-spot.test.cjs",
+    "tests/love-spot-pages.test.cjs",
     "tests/menus.test.cjs",
     "tests/mode-cycle.test.cjs",
     "tests/navigation-drafts.test.cjs",

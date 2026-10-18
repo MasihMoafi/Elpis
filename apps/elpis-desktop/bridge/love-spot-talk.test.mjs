@@ -100,3 +100,14 @@ test('a recorded user item replaces the provisional prompt and only the final an
   assert.equal((await f.talk.read()).entries.filter(e => e.item.type === 'userMessage').length, 1);
   assert.deepEqual((await f.store.read()).scene.elements.map(e => e.originalText), ['The answer']);
 });
+
+test('a reply started on another page stays in Talk and does not write onto the newly selected page', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'About the original page', model: 'text' });
+  await f.store.changePage({ action: 'new', name: 'Quiet' });
+  f.finish(); await f.talk.idle();
+  assert.deepEqual((await f.store.read()).scene.elements, []);
+  const chat = await f.talk.read();
+  assert.ok(chat.entries.some(e => e.item.text === 'Here with you.'));
+  assert.match(chat.error, /page changed/i);
+});

@@ -2,33 +2,37 @@
 
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Check, ChevronDown, X } from "lucide-react";
 import { CaptureUpdateAction, Excalidraw, newElementWith, convertToExcalidrawElements, exportToBlob, restoreElements, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
-import { agentColor } from "@/lib/love-spot";
+import { agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
 import { CharacterPicker, LoveAgentPanel } from "./love-agent-panel";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
 
-type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; appState: Partial<AppState> };
-type Saved = { scene: Drawing; revision: string };
+type BoardPage = { name: string; session: string };
+type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; appState: Partial<AppState>; page?: BoardPage };
+type Saved = { scene: Drawing & { page: BoardPage }; revision: string };
+type PageList = { pages: { name: string; modified: number }[] };
 type Screenshot = { id: string; name: string; dataURL: string };
 type Update = ({ type: "scene" } & Saved) | { type: "screenshots"; screenshots: Screenshot[] } | { type: "error"; message: string };
 const screenshotDrag = "application/x-elpis-screenshot";
 const newer = (a: ExcalidrawElement, b: ExcalidrawElement) => a.version > b.version || (a.version === b.version && a.versionNonce < b.versionNonce);
 const versions = (elements: readonly ExcalidrawElement[]) => JSON.stringify(elements.map(e => [e.id, e.version, e.versionNonce, e.isDeleted]));
-function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles): Drawing {
+function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles, page?: BoardPage): Drawing {
   // Excalidraw's file serializer drops deleted elements even when they are supplied.
   // Keep its app-state filtering, and explicitly preserve the merge tombstones.
-  return { ...JSON.parse(serializeAsJSON(elements, appState, files, "local")), elements: JSON.parse(JSON.stringify(elements)), files: { ...files } };
+  return { ...JSON.parse(serializeAsJSON(elements, appState, files, "local")), elements: JSON.parse(JSON.stringify(elements)), files: { ...files }, page };
 }
+async function lightDrawing(drawing: Drawing) { return { ...drawing, files: await lightFiles(drawing.elements, drawing.files) }; }
 async function savePicture(data: Saved) {
   const blob = await exportToBlob({ elements: restoreElements(data.scene.elements, null).filter(e => !e.isDeleted),
     appState: { ...data.scene.appState, exportBackground: true }, files: data.scene.files, mimeType: "image/png", exportPadding: 24, maxWidthOrHeight: 2400 });
@@ -48,6 +52,9 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const [model, setModel] = useState(""), [choiceId, setChoiceId] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; text: string }>();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
+  const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]);
+  const [pageBusy, setPageBusy] = useState(false), [renaming, setRenaming] = useState(false), [pageName, setPageName] = useState("");
+  const currentPage = useRef<BoardPage>(undefined);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
   const boardArea = useRef<HTMLDivElement>(null);
   const [picker, setPicker] = useState(false);
@@ -60,9 +67,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const viewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const saving = useRef<Promise<void>>(Promise.resolve());
+  const saveLatest = useRef<(() => void) | undefined>(undefined);
   const mounted = useRef(true);
   const remote = useRef(false);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
+  const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => { if (mounted.current) setPages(data.pages); }).catch(report); }, [report]);
 
   useEffect(() => {
     let active = true;
@@ -93,16 +102,36 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     api<Saved>("/love-spot").then(data => {
       if (!active) return;
       revision.current = data.revision;
+      currentPage.current = data.scene.page; setPage(data.scene.page); loadPages();
       setInitial({ elements: data.scene.elements, files: data.scene.files, scrollToContent: true,
         appState: { ...data.scene.appState, collaborators: new Map() } });
       setError("");
     }).catch(report);
     return () => { active = false; };
-  }, [attempt, report]);
+  }, [attempt, loadPages, report]);
 
   const receive = useCallback((data: Saved) => {
     revision.current = data.revision;
+    const switching = currentPage.current?.session !== data.scene.page.session;
+    const renamed = currentPage.current?.name !== data.scene.page.name;
+    currentPage.current = data.scene.page;
+    if (switching || renamed) { setPage(data.scene.page); loadPages(); }
     if (!editor) return;
+    if (switching) {
+      clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
+      remote.current = true;
+      try {
+        editor.resetScene();
+        editor.addFiles(Object.values(data.scene.files));
+        editor.updateScene({ elements: restoreElements(data.scene.elements, null, { refreshDimensions: true, repairBindings: true }),
+          appState: { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() }, captureUpdate: CaptureUpdateAction.NEVER });
+      } finally { remote.current = false; }
+      latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
+      setSelected(undefined); setQuote(undefined); setRenaming(false);
+      editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
+      if (Object.keys(data.scene.files).length) queueMicrotask(() => saveLatest.current?.());
+      return;
+    }
     const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
     const screenshot = data.scene.elements.find(e => e.type === "image" && !e.isDeleted && e.id.startsWith("shot-") && !shown.has(e.id));
     const reply = data.scene.elements.some(e => !e.isDeleted && e.id.startsWith("love-reply-") && !shown.has(e.id));
@@ -111,7 +140,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       const mine = shown.get(e.id);
       if (!mine || newer(e, mine)) { shown.set(e.id, e); changed = true; }
     }
-    const files = Object.values(data.scene.files).filter(f => !editor.getFiles()[f.id]);
+    const files = Object.values(data.scene.files).filter(f => editor.getFiles()[f.id]?.dataURL !== f.dataURL);
     if (files.length || changed) {
       remote.current = true;
       try {
@@ -119,23 +148,28 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
         if (changed) editor.updateScene({ elements: [...shown.values()] });
       } finally { remote.current = false; }
       // A remote merge is included if a local debounce is waiting to save.
-      latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles());
+      latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       if (screenshot) {
         editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } });
         editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 });
       } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 });
+      // Inbox images and older pages also pass through the same pixel limit once they arrive.
+      if (files.length) queueMicrotask(() => saveLatest.current?.());
     }
-  }, [editor]);
+  }, [editor, loadPages]);
 
   const save = useCallback((picture = false) => {
     const drawing = latest.current;
     if (!drawing) return;
     saving.current = saving.current.catch(() => {}).then(async () => {
-      const data = await api<Saved>("/love-spot", drawing);
+      if (drawing.page?.session !== currentPage.current?.session) return;
+      const data = await api<Saved>("/love-spot", await lightDrawing(drawing));
+      if (drawing.page?.session !== currentPage.current?.session) return;
       if (mounted.current) { receive(data); setError(""); }
       if (picture) await savePicture(data);
     }).catch(report);
   }, [receive, report]);
+  useEffect(() => { saveLatest.current = save; }, [save]);
 
   useEffect(() => {
     if (!editor) return;
@@ -163,7 +197,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     // onChange contains only live elements. Persist the API's tombstones too, or a stale
     // writer would resurrect a shape the user just deleted.
     const all = editor?.getSceneElementsIncludingDeleted() ?? elements;
-    latest.current = snapshot(all, appState, files);
+    latest.current = snapshot(all, appState, files, currentPage.current);
     const cards = elements.filter(e => agentOf(e));
     setAgents(previous => versions(previous) === versions(cards) ? previous : cards);
     const note = !appState.editingTextElement && elements.find(e => e.type === "text" && !e.containerId && /(?:^|\s)@agent\b/i.test(e.text) && !converting.current.has(e.id));
@@ -188,7 +222,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       try {
         await saving.current;
         if (!editor || !mounted.current) return;
-        await savePicture({ scene: snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles()), revision: revision.current });
+        await savePicture({ scene: { ...snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current), page: currentPage.current! }, revision: revision.current });
       } catch (e) { if (!(e instanceof Error && e.message.includes("drawing changed"))) report(e); }
     }, 900);
   }, [editor, report, save]);
@@ -197,7 +231,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
     await saving.current;
     if (!editor) throw new Error("The board is still opening. Try again in a moment.");
-    const data = await api<Saved>("/love-spot", snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles()));
+    const data = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
     receive(data); await savePicture(data); return data.revision;
   }, [editor, receive]);
 
@@ -205,11 +239,28 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     if (choosing) return;
     setChoosing(true);
     try {
-      if (action === "place") receive(await api<Saved>("/love-spot/screenshots", { id, action }));
+      if (action === "place") {
+        const shot = screenshots.find(s => s.id === id);
+        if (!shot) return;
+        const file = await lightImage({ dataURL: shot.dataURL, mimeType: "image/png" });
+        receive(await api<Saved>("/love-spot/screenshots", { id, action, dataURL: file.dataURL }));
+      }
       else await api("/love-spot/screenshots", { id, action });
       setScreenshots(shots => shots.filter(shot => shot.id !== id)); setError("");
     } catch (e) { report(e); }
     finally { setChoosing(false); }
+  }
+
+  async function changePage(action: "new" | "switch" | "rename", name?: string) {
+    if (pageBusy || !editor) return;
+    setPageBusy(true);
+    try {
+      clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
+      save(); await saving.current;
+      receive(await api<Saved>("/love-spot/pages", { action, ...(name === undefined ? {} : { name }), page: currentPage.current }));
+      setRenaming(false); setError(""); loadPages();
+    } catch (e) { report(e); }
+    finally { setPageBusy(false); }
   }
 
   const add = (character: Character) => {
@@ -231,7 +282,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     try {
       clearTimeout(saveTimer.current); await saving.current;
       if (!editor) return;
-      receive(await api<Saved>("/love-spot", snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles())));
+      receive(await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current))));
       await api("/love-spot/agents/run", { id: selected, ...(cwd ? { cwd } : {}) });
       receive(await api<Saved>("/love-spot"));
     } catch (e) { if (mounted.current) setRunError(e instanceof Error ? e.message : "The agents could not run."); }
@@ -251,12 +302,32 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     const point: { x: number; y: number; color: string } = JSON.parse(selection.text);
     const note = convertToExcalidrawElements([{ type: "text", x: point.x, y: point.y, text: text.trim(), strokeColor: point.color, fontSize: 20 }]);
     editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...note] });
-    latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles());
+    latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
     save(true);
   }
 
   return <section className="love-spot" aria-label="Love Spot">
     <div className="love-spot-tools">
+      <div className="love-spot-pages">
+        <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Pages" disabled={!editor || pageBusy} />}>
+            <span className="truncate max-w-40">{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
+            <DropdownMenuItem onClick={() => void changePage("new")}>New page</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>
+            {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
+              <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
+              <span className="min-w-0"><span className="block truncate">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</time></span>
+            </DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {renaming && <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); void changePage("rename", pageName.trim()); }}>
+          <Input autoFocus aria-label="Page name" value={pageName} maxLength={100} className="max-w-48" onChange={event => setPageName(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setRenaming(false); }} />
+          <Button variant="outline" size="sm" type="submit" disabled={pageBusy || !pageName.trim()}>Save</Button>
+          <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
+        </form>}
+      </div>
       {editor && <div className="love-agent-toolbar">
         <Button variant="outline" size="sm" title="Add an agent, or type @agent in a text note" onClick={() => add(characters[0])}>Agent</Button>
         <Button variant="outline" size="sm" aria-expanded={picker} onClick={() => setPicker(p => !p)}>Characters</Button>
