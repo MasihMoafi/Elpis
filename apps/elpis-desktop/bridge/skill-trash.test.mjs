@@ -70,15 +70,18 @@ test('delete refuses unlisted paths, traversal, symlink folders/files and change
   const outside = path.join(f.home, 'outside'); await fs.mkdir(outside); await fs.writeFile(path.join(outside, 'SKILL.md'), 'outside');
   const link = path.join(f.root, 'escape'); await fs.symlink(outside, link);
   f.skills.push({ ...own, path: path.join(link, 'SKILL.md') });
+  await fs.mkdir(path.join(outside, 'nested')); await fs.writeFile(path.join(outside, 'nested/SKILL.md'), 'outside nested');
+  const nestedLink = path.join(link, 'nested/SKILL.md'); f.skills.push({ ...own, path: nestedLink });
   const fileLink = path.join(f.root, 'file-link'); await fs.mkdir(fileLink); await fs.symlink(path.join(outside, 'SKILL.md'), path.join(fileLink, 'SKILL.md'));
   f.skills.push({ ...own, path: path.join(fileLink, 'SKILL.md') });
-  for (const file of [path.join(outside, 'SKILL.md'), `${f.root}/own/../../outside/SKILL.md`, path.join(link, 'SKILL.md'), path.join(fileLink, 'SKILL.md'), f.root, 'relative/SKILL.md']) {
+  for (const file of [path.join(outside, 'SKILL.md'), `${f.root}/own/../../outside/SKILL.md`, path.join(link, 'SKILL.md'), nestedLink, path.join(fileLink, 'SKILL.md'), f.root, 'relative/SKILL.md']) {
     await assert.rejects(f.client.deleteSkill({ path: file }), /listed|path|root|symbolic|symlink|folder/i);
   }
   await fs.rename(path.dirname(own.path), path.join(f.home, 'moved'));
   await fs.symlink(outside, path.dirname(own.path));
   await assert.rejects(f.client.deleteSkill({ path: own.path }), /symlink|symbolic|root/i);
   assert.equal(await fs.readFile(path.join(outside, 'SKILL.md'), 'utf8'), 'outside');
+  assert.equal(await fs.readFile(path.join(outside, 'nested/SKILL.md'), 'utf8'), 'outside nested');
 });
 
 test('Undo refuses a forged token and never overwrites a recreated skill', async t => {
