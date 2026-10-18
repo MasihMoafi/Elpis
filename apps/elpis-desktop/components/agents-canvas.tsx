@@ -4,10 +4,12 @@ import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, useReactFlow, type Edge, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, PanelRight, PanelRightClose, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkflowSources } from "@/components/workflow-sources";
+import { ExperimentLab } from "@/components/experiment-lab";
 import { summarize, workedFor } from "@/components/transcript";
 import { IsoBoard, ViewToggle, type IsoController } from "@/components/agents-iso";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
@@ -347,8 +349,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => readGraph() ?? { ...withMother(TEMPLATES[0].build()), template: TEMPLATES[0].id });
+  const [sourceId, setSourceId] = useState<string | null>(null), [labOpen, setLabOpen] = useState(false);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
+  useEffect(() => { if (selection.length) setSourceId(null); }, [selection]);
   const [menu, setMenu] = useState<BoardMenu | null>(null), wireMenu = menu?.kind === "wire" ? menu : null;
   // The side panel folds away to give the board the whole width, remembered on this device; choosing an agent or the
   // Mother brings it back.
@@ -643,6 +647,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (labOpen) return;
       const take = () => { event.preventDefault(); event.stopPropagation(); };
       const target = event.target as HTMLElement | null, typing = target?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']");
       const onBoard = !target || target === document.body || Boolean(target.closest?.(".react-flow, .iso-board")), ctrl = event.ctrlKey || event.metaKey;
@@ -928,6 +933,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const chat = selected ? states[selected.id]?.chat : null;
   // Both views share the graph, selection, settings and connection callbacks.
   const [iso, setIso] = useState(false);
+  if (labOpen) return <section className="agents-canvas" aria-label="Agents canvas" data-panel="closed">
+    <header className="canvas-header"><Button variant="ghost" size="sm" onClick={() => setLabOpen(false)}>Back to Canvas</Button>{projectMenu}</header>
+    <ExperimentLab graph={graph} />
+  </section>;
   return <section className="agents-canvas" aria-label="Agents canvas" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
@@ -935,6 +944,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
+      <Button variant="ghost" size="sm" onClick={() => setLabOpen(true)}>Experiment Lab</Button>
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} />Auto-arrange</Button>
@@ -993,7 +1003,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
       {notice && <p className="canvas-notice" role="alert">{notice}{needProject && !cwd && projectMenu}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
     </div>
-    {!panelOpen ? null : selected ? <aside className="canvas-side" aria-label="Selected agent">
+    {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, ...(/^New agent( \d+)?$|^$/.test(selected.data.title) || selected.data.title === nameFrom(selected.data.instruction) ? { title: nameFrom(event.target.value) || "New agent" } : {}) })} /></label>
@@ -1048,11 +1058,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           <span>Critical path · {critical.length} rounds</span>{critical.map(titleOf).join(" → ")}</p>}
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
-        {TEMPLATES.filter(template => template.group === group).map(template => <button key={template.id} type="button" className="canvas-template" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
+        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><button type="button" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
           <strong>{template.name}{graph.template === template.id && <span className="canvas-template-loaded">On the board</span>}</strong>
           <Shape shape={shapes.get(template.id) ?? []} /><small>{template.description}</small>
           {template.caution && <small className="canvas-template-caution">{template.caution}</small>}
-          {template.source && <small className="canvas-template-source">{template.source}</small>}</button>)}
+          {template.source && <small className="canvas-template-source">{template.source}</small>}</button>
+          <a className={buttonVariants({ variant: "link", size: "xs" })} href={`#workflow-sources-${template.id}`} aria-label={`Sources for ${template.name}`} onClick={event => { event.preventDefault(); setSelection([]); setSourceId(template.id); }}>Sources</a></div>)}
       </section>)}
       <section className="canvas-guide" aria-label="Guide">
         <p className="hud-menu-title">Guide</p>

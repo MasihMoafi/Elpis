@@ -1,0 +1,213 @@
+{
+  "reviewed": "2026-10-18",
+  "scope": "Primary abstracts and results were read. Published findings are evidence for related methods; every Elpis starter remains unproven until measured locally.",
+  "sources": {
+    "least-to-most": {
+      "title": "Least-to-Most Prompting Enables Complex Reasoning in Large Language Models",
+      "authors": "Denny Zhou; Nathanael Schärli; Le Hou; Jason Wei; Nathan Scales; Xuezhi Wang; Dale Schuurmans; Claire Cui; Olivier Bousquet; Quoc Le; Ed Chi",
+      "year": 2022,
+      "venue": "arXiv 2022; ICLR 2023",
+      "url": "https://arxiv.org/abs/2205.10625",
+      "read": "https://arxiv.org/html/2205.10625v3#S3.SS2",
+      "finding": "SCAN length-split accuracy: code-davinci-002, 16.2% chain-of-thought → 99.7% least-to-most (Table 8)."
+    },
+    "plan-solve": {
+      "title": "Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models",
+      "authors": "Lei Wang; Wanyu Xu; Yihuai Lan; Zhiqiang Hu; Yunshi Lan; Roy Ka-Wei Lee; Ee-Peng Lim",
+      "year": 2023,
+      "venue": "ACL 2023",
+      "url": "https://aclanthology.org/2023.acl-long.147/",
+      "read": "https://aclanthology.org/2023.acl-long.147.pdf#page=6",
+      "finding": "GSM8K accuracy with text-davinci-003: 56.4% zero-shot CoT → 59.3% PS+ (Table 2)."
+    },
+    "self-refine": {
+      "title": "Self-Refine: Iterative Refinement with Self-Feedback",
+      "authors": "Aman Madaan; Niket Tandon; Prakhar Gupta; Skyler Hallinan; Luyu Gao; Sarah Wiegreffe; Uri Alon; Nouha Dziri; Shrimai Prabhumoye; Yiming Yang; Shashank Gupta; Bodhisattwa Prasad Majumder; Katherine Hermann; Sean Welleck; Amir Yazdanbakhsh; Peter Clark",
+      "year": 2023,
+      "venue": "NeurIPS 2023",
+      "url": "https://arxiv.org/abs/2303.17651",
+      "read": "https://arxiv.org/html/2303.17651v2#S3",
+      "finding": "GPT-4 code optimization: programs optimized, 27.3% → 36.0%; math solve rate barely changes, 92.9% → 93.1% (Table 1)."
+    },
+    "self-consistency": {
+      "title": "Self-Consistency Improves Chain of Thought Reasoning in Language Models",
+      "authors": "Xuezhi Wang; Jason Wei; Dale Schuurmans; Quoc Le; Ed H. Chi; Sharan Narang; Aakanksha Chowdhery; Denny Zhou",
+      "year": 2022,
+      "venue": "arXiv 2022; ICLR 2023",
+      "url": "https://arxiv.org/abs/2203.11171",
+      "read": "https://arxiv.org/html/2203.11171v4#S3.SS2",
+      "finding": "PaLM-540B GSM8K accuracy: 56.5% greedy CoT → 74.4% self-consistency with 40 sampled paths (Table 2)."
+    },
+    "metagpt": {
+      "title": "MetaGPT: Meta Programming for a Multi-Agent Collaborative Framework",
+      "authors": "Sirui Hong; Mingchen Zhuge; Jiaqi Chen; Xiawu Zheng; Yuheng Cheng; Ceyao Zhang; Jinlin Wang; Zili Wang; Steven Ka Shing Yau; Zijuan Lin; Liyang Zhou; Chenyu Ran; Lingfeng Xiao; Chenglin Wu; Jürgen Schmidhuber",
+      "year": 2023,
+      "venue": "arXiv 2023; ICLR 2024",
+      "url": "https://arxiv.org/abs/2308.00352",
+      "read": "https://arxiv.org/html/2308.00352v6#S4",
+      "finding": "GPT-4 MetaGPT reports HumanEval pass@1 85.9% and MBPP 87.7% (Section 4.1); this is a bundled system result, not a topology ablation."
+    },
+    "debate": {
+      "title": "Improving Factuality and Reasoning in Language Models through Multiagent Debate",
+      "authors": "Yilun Du; Shuang Li; Antonio Torralba; Joshua B. Tenenbaum; Igor Mordatch",
+      "year": 2023,
+      "venue": "arXiv 2023; ICML 2024",
+      "url": "https://arxiv.org/abs/2305.14325",
+      "read": "https://arxiv.org/html/2305.14325v1#S3",
+      "finding": "ChatGPT GSM8K accuracy on 100 problems: single agent 77.0 ± 4.2% → debate 85.0 ± 3.5%, using 3 agents and 2 rounds (Table 1)."
+    },
+    "mindsearch": {
+      "title": "MindSearch: Mimicking Human Minds Elicits Deep AI Searcher",
+      "authors": "Zehui Chen; Kuikun Liu; Qiuchen Wang; Jiangning Liu; Wenwei Zhang; Kai Chen; Feng Zhao",
+      "year": 2024,
+      "venue": "arXiv 2024",
+      "url": "https://arxiv.org/abs/2407.20183",
+      "read": "https://arxiv.org/html/2407.20183v1#S3",
+      "finding": "GPT-4o closed-set QA average score: ReAct Search 55.1 → MindSearch 59.8 (Table 1). Open-set analysis says factuality did not improve (Section 3.1.2)."
+    }
+  },
+  "patterns": [
+    {
+      "id": "split-parts",
+      "name": "Split by parts",
+      "sources": [
+        "metagpt"
+      ],
+      "proven": "Structured multi-agent software workflows have measured benchmark results.",
+      "unproven": "No direct evidence found for this exact three independent writers plus join graph. MetaGPT uses roles and shared SOPs, not this split; Elpis speed, quality and token benefit are unproven.",
+      "status": "No direct evidence",
+      "origins": [
+        "anthropic-parts"
+      ]
+    },
+    {
+      "id": "sequential",
+      "name": "Sequential (prompt chaining)",
+      "sources": [
+        "least-to-most"
+      ],
+      "proven": "Sequential subproblem solving improves SCAN in the cited model and prompting setup.",
+      "unproven": "Three separate writing agents with file handoffs are not validated by this single-model prompting study; its gains do not transfer automatically.",
+      "status": "Related evidence",
+      "origins": [
+        "anthropic-patterns"
+      ]
+    },
+    {
+      "id": "plan-build",
+      "name": "Plan → Build",
+      "sources": [
+        "plan-solve"
+      ],
+      "proven": "Planning before solving improves the cited arithmetic accuracy.",
+      "unproven": "A planner followed by two parallel builders is not validated by Plan-and-Solve; it tests a prompt strategy, not separate coding agents.",
+      "status": "Related evidence",
+      "origins": [
+        "anthropic-patterns"
+      ]
+    },
+    {
+      "id": "evaluator-optimizer",
+      "name": "Evaluator–optimizer",
+      "sources": [
+        "self-refine"
+      ],
+      "proven": "Feedback followed by revision can improve code optimization; the paper also reports negligible math gains.",
+      "unproven": "Elpis’s draft/check/improve graph is not validated by this paper. Its checks and one revision differ from iterative Self-Refine; model feedback is not ground truth.",
+      "status": "Related evidence",
+      "origins": [
+        "anthropic-patterns"
+      ]
+    },
+    {
+      "id": "voting",
+      "name": "Voting",
+      "sources": [
+        "self-consistency"
+      ],
+      "proven": "Sampling diverse answers and aggregating improves the cited GSM8K benchmark.",
+      "unproven": "Three file-writing voters plus a model tally are not validated here; the paper marginalizes 40 sampled paths. Correlated errors, ties and a mistaken tally remain possible.",
+      "status": "Related evidence",
+      "origins": [
+        "anthropic-patterns"
+      ]
+    },
+    {
+      "id": "hierarchical",
+      "name": "Hierarchical (orchestrator and teams)",
+      "sources": [
+        "metagpt"
+      ],
+      "proven": "MetaGPT measures a complete structured multi-agent coding system.",
+      "unproven": "No direct evidence found for this fixed lead/two team leads/four workers/join tree. The reported result does not isolate hierarchy or establish Elpis gains.",
+      "status": "No direct evidence",
+      "origins": [
+        "anthropic-patterns"
+      ]
+    },
+    {
+      "id": "debate",
+      "name": "Debate + judge",
+      "sources": [
+        "debate"
+      ],
+      "proven": "Multiple rounds of critique improve GSM8K in the cited small sample.",
+      "unproven": "Two independent cases plus a judge are not validated by this paper: Elpis has no rebuttal rounds, and the study uses three debating agents.",
+      "status": "Related evidence",
+      "origins": []
+    },
+    {
+      "id": "research",
+      "name": "Multi-agent research",
+      "sources": [
+        "mindsearch"
+      ],
+      "proven": "A planner and parallel searchers improve the cited closed-set QA aggregate.",
+      "unproven": "This fixed four-researcher/report/citation-check graph is not validated. MindSearch dynamically expands its graph; Anthropic’s vendor research result is not an independent paper validating this starter.",
+      "status": "Related evidence",
+      "origins": [
+        "anthropic-research"
+      ]
+    },
+    {
+      "id": "deep-research",
+      "name": "Deep research",
+      "sources": [
+        "mindsearch"
+      ],
+      "proven": "Planner/searcher decomposition has related measured QA evidence.",
+      "unproven": "No direct evidence found for this exact scope/supervisor/three researchers/report graph. LangGraph’s Open Deep Research is an implementation source, not proof of this Elpis starter.",
+      "status": "No direct evidence",
+      "origins": [
+        "open-deep-research"
+      ]
+    },
+    {
+      "id": "blank",
+      "name": "Blank playground",
+      "sources": [],
+      "proven": "No efficacy claim: this is an empty editor.",
+      "unproven": "No direct evidence exists for an unspecified user graph; every custom topology needs its own comparison.",
+      "status": "No direct evidence",
+      "origins": []
+    }
+  ],
+  "origins": {
+    "anthropic-patterns": {
+      "title": "Building effective agents",
+      "url": "https://www.anthropic.com/engineering/building-effective-agents"
+    },
+    "anthropic-parts": {
+      "title": "When to use multi-agent systems (and when not to)",
+      "url": "https://claude.com/resources/articles/building-multi-agent-systems-when-and-how-to-use-them"
+    },
+    "anthropic-research": {
+      "title": "How we built our multi-agent research system",
+      "url": "https://www.anthropic.com/engineering/multi-agent-research-system"
+    },
+    "open-deep-research": {
+      "title": "Open Deep Research implementation",
+      "url": "https://github.com/langchain-ai/open_deep_research"
+    }
+  }
+}

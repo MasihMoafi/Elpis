@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
+import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, searchFiles, writeFile } from './files.mjs';
 import { listFolders, projectDirectory } from './folders.mjs';
 import { isRepository } from './git.mjs';
@@ -73,6 +74,7 @@ export async function startDesktopServer(options = {}) {
   const loveSpot = createLoveSpot(options.loveSpot);
   const loveTalk = createLoveSpotTalk({ client, store: loveSpot });
   const devServers = createDevServers();
+  const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
   const loveStreams = new Set();
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
@@ -173,6 +175,12 @@ export async function startDesktopServer(options = {}) {
         // Whether the project is a Git repository with a commit: the canvas asks for worktree isolation only then.
         if (url.pathname === '/api/repository' && method === 'GET') return json(response, 200, { repository: await isRepository(await projectDirectory(cwdOf(url))) });
         if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
+        if (url.pathname === '/api/experiment-lab') {
+          if (method === 'GET') return json(response, 200, { record: await experimentLab.read() });
+          const input = await body(request);
+          if (input?.action === 'stop') { object(input, ['action']); return json(response, 200, { record: await experimentLab.stop() }); }
+          return json(response, 200, { record: await experimentLab.start(input) });
+        }
         if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());
         if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));
         if (url.pathname === '/api/pruner' && method === 'POST') return json(response, 200, await client.savePruner(await body(request)));
@@ -263,6 +271,7 @@ export async function startDesktopServer(options = {}) {
     url: `${origin}/#token=${capability}`,
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
+      await experimentLab.close();
       await devServers.close();
       loveTalk.close(); await loveTalk.idle(); loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();
