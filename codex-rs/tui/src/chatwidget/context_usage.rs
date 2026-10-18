@@ -508,13 +508,47 @@ impl ChatWidget {
 /// Left-aligned blocks of 0–7 eighths of a cell.
 const LEFT_EIGHTHS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
-/// The used part of a context bar, `used_cells` wide, split between `(tokens, color)` segments
-/// in proportion to their tokens at one-eighth-cell resolution. Whole cells could not show a
-/// 27k category wider than a 1k one when a low-usage bar has about one cell per category. A
-/// cell holding a boundary paints the segment that ends there in front and the one that
-/// continues behind it, so the boundary sits where the next segment starts. A segment under
-/// an eighth of a cell is not drawn; the legend still lists it.
+/// The used part of a context bar, `used_cells` wide, split between `(tokens, color)` segments in
+/// proportion to their tokens. A bar with room (two cells or more per segment, like the Ledger's)
+/// gives each segment whole cells and keeps neighbours apart with a sliver of background, as Masih
+/// asked on 11 October and again on 18 October. A cramped bar cannot spare the gaps: there one-eighth
+/// cell resolution keeps a 27k category wider than a 1k one, which whole cells could not.
 pub(super) fn category_bar_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
+    let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
+    let shown = weighted_cell_counts(&tokens, used_cells * 8).into_iter().filter(|eighths| *eighths > 0).count();
+    if shown > 1 && used_cells >= 2 * shown {
+        gapped_spans(segments, &tokens, used_cells)
+    } else {
+        blended_spans(segments, used_cells)
+    }
+}
+
+/// Whole cells per segment; every segment but the last ends in ▉, whose unpainted eighth is the gap.
+fn gapped_spans(segments: &[(u64, Color)], tokens: &[u64], used_cells: usize) -> Vec<Span<'static>> {
+    let visible = segments
+        .iter()
+        .zip(weighted_cell_counts(tokens, used_cells))
+        .filter(|(_, cells)| *cells > 0)
+        .map(|((_, color), cells)| (cells, *color))
+        .collect::<Vec<_>>();
+    let mut spans = Vec::new();
+    for (index, (cells, color)) in visible.iter().enumerate() {
+        if index + 1 == visible.len() {
+            spans.push(Span::styled("█".repeat(*cells), Style::default().fg(*color)));
+            continue;
+        }
+        if *cells > 1 {
+            spans.push(Span::styled("█".repeat(cells - 1), Style::default().fg(*color)));
+        }
+        spans.push(Span::styled("▉", Style::default().fg(*color).bg(Color::Reset)));
+    }
+    spans
+}
+
+/// One-eighth cell resolution: a cell holding a boundary paints the segment that ends there in
+/// front and the one that continues behind it, so the boundary sits where the next segment starts.
+/// A segment under an eighth of a cell is not drawn; the legend still lists it.
+fn blended_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
     let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
     let eighths = weighted_cell_counts(&tokens, used_cells * 8);
     let colors = segments
@@ -822,16 +856,52 @@ mod tests {
     fn painted_eighths(spans: &[Span<'static>]) -> std::collections::HashMap<Color, usize> {
         let mut painted = std::collections::HashMap::new();
         for span in spans {
-            let front = LEFT_EIGHTHS
-                .iter()
-                .position(|block| *block == span.content)
-                .unwrap_or(8);
-            *painted.entry(span.style.fg.expect("front color")).or_default() += front;
-            if let Some(back) = span.style.bg {
-                *painted.entry(back).or_default() += 8 - front;
+            for cell in span.content.chars() {
+                let front = LEFT_EIGHTHS
+                    .iter()
+                    .position(|block| block.chars().eq([cell]))
+                    .unwrap_or(8);
+                *painted.entry(span.style.fg.expect("front color")).or_default() += front;
+                if let Some(back) = span.style.bg.filter(|back| *back != Color::Reset) {
+                    *painted.entry(back).or_default() += 8 - front;
+                }
             }
         }
         painted
+    }
+
+    /// The bar cell by cell: each cell's colour and how many eighths it paints.
+    fn bar_cells(spans: &[Span<'static>]) -> Vec<(Color, usize)> {
+        spans
+            .iter()
+            .flat_map(|span| {
+                let color = span.style.fg.expect("front color");
+                span.content.chars().map(move |cell| {
+                    let eighths = LEFT_EIGHTHS.iter().position(|block| block.chars().eq([cell])).unwrap_or(8);
+                    (color, eighths)
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn neighbouring_segments_are_separated_by_a_gap() {
+        // As on 11 October: on a bar with room, a gap of an eighth between segments, none after the last.
+        let spans = category_bar_spans(&[(2, Color::Blue), (0, Color::Green), (6, Color::Red), (2, Color::Yellow)], 10);
+        assert_eq!(spans.iter().map(|span| span.content.as_ref()).collect::<String>(), "█▉█████▉██");
+        for (cells, segments) in [
+            (24, vec![(4_000, Color::Magenta), (2_500, Color::Green), (900, Color::DarkGray), (1_400, Color::Gray)]),
+            (40, vec![(9_000, Color::Magenta), (6_000, Color::Green), (900, Color::DarkGray), (3_000, Color::Gray)]),
+        ] {
+            let spans = category_bar_spans(&segments, cells);
+            let bar = bar_cells(&spans);
+            assert_eq!(Line::from(spans.clone()).width(), cells, "the bar keeps its width");
+            assert!(spans.iter().all(|span| span.style.bg.is_none_or(|back| back == Color::Reset)), "no cell mixes two segments");
+            for pair in bar.windows(2).filter(|pair| pair[0].0 != pair[1].0) {
+                assert!(pair[0].1 < 8, "{:?} runs into {:?} with no gap: {bar:?}", pair[0].0, pair[1].0);
+            }
+            assert_eq!(bar.last().map(|cell| cell.1), Some(8), "the used edge is not cut short: {bar:?}");
+        }
     }
 
     #[test]
