@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createRequire } = require('node:module');
 const ts = require('typescript');
 const { closeNeedsConfirmation } = require('../desktop/preferences.cjs');
 
@@ -15,7 +16,7 @@ function loader() {
     const module = { exports: {} }; cache.set(file, module);
     const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     const local = id => {
-      if (!id.startsWith('@/')) return require(id);
+      if (!id.startsWith('@/')) return createRequire(file)(id);
       const base = path.join(root, id.slice(2));
       return load(['.ts', '.tsx'].map(extension => base + extension).find(fs.existsSync));
     };
