@@ -10,6 +10,7 @@ use crossterm::event::MouseEvent;
 use crossterm::event::MouseEventKind;
 
 const SIZE: Size = Size::new(/*width*/ 125, /*height*/ 40);
+const CLOSE_BUTTON_LABEL: &str = " ✕ Close ";
 
 fn mouse(kind: MouseEventKind, column: u16, row: u16) -> TuiEvent {
     TuiEvent::Mouse(MouseEvent {
@@ -213,7 +214,7 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
         .flat_map(|y| (0..SIZE.width).map(move |x| (x, y)))
         .find(|&(x, y)| buffer[(x, y)].symbol() == "✕")
         .expect("Ledger has a visible close button");
-    assert_eq!(close.0, SIZE.width - 3);
+    let button_left = SIZE.width - CLOSE_BUTTON_LABEL.chars().count() as u16 - 1;
     let mut modified = mouse(MouseEventKind::Down(MouseButton::Left), close.0, close.1);
     if let TuiEvent::Mouse(event) = &mut modified {
         event.modifiers = KeyModifiers::CONTROL;
@@ -222,8 +223,8 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
         .await?;
     assert_eq!(app.chat_widget.context_ledger_width(SIZE.width), original);
     for (x, y) in [
-        (close.0 - 2, close.1),
-        (close.0 + 2, close.1),
+        (button_left - 1, close.1),
+        (SIZE.width - 1, close.1),
         (close.0, close.1 + 1),
     ] {
         app.handle_tui_event(
@@ -234,7 +235,7 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
         .await?;
         assert_eq!(app.chat_widget.context_ledger_width(SIZE.width), original);
     }
-    for x in close.0 - 1..=close.0 + 1 {
+    for x in button_left..SIZE.width - 1 {
         app.handle_tui_event(
             &mut tui,
             &mut server,
@@ -255,6 +256,7 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
         app.render_owned_transcript(&mut tui, SIZE)?;
         assert_eq!(ledger_width_on_screen(&tui), original);
     }
+    assert_eq!(close.0, button_left + 1);
     server.shutdown().await?;
     tui.set_owned_screen(false)?;
     Ok(())
@@ -395,8 +397,11 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
     let width = app.chat_widget.context_ledger_width(terminal_width);
     let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
     let y = (0..size.height)
-        .find(|&y| buffer[(terminal_width - 3, y)].symbol() == "✕")
+        .find(|&y| (0..terminal_width).any(|x| buffer[(x, y)].symbol() == "✕"))
         .expect("Ledger close button");
+    let close_x = (0..terminal_width)
+        .find(|&x| buffer[(x, y)].symbol() == "✕")
+        .expect("Ledger close glyph");
     let header = (terminal_width - width..terminal_width)
         .map(|x| buffer[(x, y)].symbol())
         .collect::<String>();
@@ -411,11 +416,7 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
     app.handle_tui_event(
         &mut tui,
         &mut server,
-        mouse(
-            MouseEventKind::Down(MouseButton::Left),
-            terminal_width - 3,
-            y,
-        ),
+        mouse(MouseEventKind::Down(MouseButton::Left), close_x, y),
     )
     .await?;
     assert_eq!(app.chat_widget.context_ledger_width(terminal_width), 0);
@@ -426,31 +427,31 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
 
 #[tokio::test]
 async fn ledger_header_gap_narrowest() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│ CONTEXT LEDGER  cont…  ✕");
+    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│ CONTEXT LEDGER…  ✕ Close");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_default() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│ CONTEXT LEDGER  context not measured · ≈0 so…  ✕");
+    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│ CONTEXT LEDGER  context not measured ·…  ✕ Close");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_80_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│ CONTEXT LEDGER  context …  ✕");
+    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│ CONTEXT LEDGER  co…  ✕ Close");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_120_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│ CONTEXT LEDGER  context not measured · ≈…  ✕");
+    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│ CONTEXT LEDGER  context not measur…  ✕ Close");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_140_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│ CONTEXT LEDGER  context not measured · ≈0 so…  ✕");
+    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│ CONTEXT LEDGER  context not measured ·…  ✕ Close");
     Ok(())
 }
 
@@ -472,15 +473,19 @@ async fn ledger_close_button_has_a_bold_padded_fill_in_both_themes() -> Result<(
                 let buffer =
                     crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
                 let y = (0..SIZE.height)
-                    .find(|&y| buffer[(SIZE.width - 3, y)].symbol() == "✕")
+                    .find(|&y| (0..SIZE.width).any(|x| buffer[(x, y)].symbol() == "✕"))
                     .expect("Ledger close glyph");
-                for (offset, symbol) in [" ", "✕", " "].into_iter().enumerate() {
-                    let cell = &buffer[(SIZE.width - 4 + offset as u16, y)];
-                    assert_eq!(cell.symbol(), symbol);
+                let button_left = SIZE.width - CLOSE_BUTTON_LABEL.chars().count() as u16 - 1;
+                for (offset, symbol) in CLOSE_BUTTON_LABEL.chars().enumerate() {
+                    let cell = &buffer[(button_left + offset as u16, y)];
+                    assert_eq!(cell.symbol(), symbol.to_string());
                     assert!(cell.modifier.contains(ratatui::style::Modifier::BOLD));
                     assert_eq!(cell.bg, crate::style::user_message_bg(bg));
                     assert_ne!(cell.bg, ratatui::style::Color::Rgb(bg.0, bg.1, bg.2));
                 }
+                assert_eq!(buffer[(button_left - 1, y)].symbol(), " ");
+                assert_eq!(buffer[(SIZE.width - 1, y)].symbol(), " ");
+                assert_ne!(buffer[(SIZE.width - 1, y)].bg, buffer[(button_left, y)].bg);
                 Ok(())
             },
         )?;

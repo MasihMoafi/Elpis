@@ -42,7 +42,7 @@ const LEDGER_LEFT_COLS: u16 = 2;
 /// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
 /// edge. The native inline Ledger keeps the same margin.
 const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
-const LEDGER_CLOSE_BUTTON_WIDTH: u16 = 3;
+const LEDGER_CLOSE_BUTTON_LABEL: &str = " ✕ Close ";
 
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
 /// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
@@ -111,7 +111,7 @@ fn ledger_content_width(ledger_width: u16, close_button: bool) -> u16 {
     // The owned column reserves the whole button and one cell at the screen edge on every
     // row, including source rows that scroll to the top. Inline rendering keeps Codex's margin.
     let right_margin = if close_button {
-        LEDGER_CLOSE_BUTTON_WIDTH + 1
+        LEDGER_CLOSE_BUTTON_LABEL.width() as u16 + 1
     } else {
         LEDGER_RIGHT_MARGIN
     };
@@ -1359,18 +1359,14 @@ impl ChatWidget {
             .render(content, buf);
         // Only the owned column handles mouse input. Keep the native inline Ledger unchanged.
         let close_button = owned_column.then(|| {
-            Rect::new(
-                area.right() - LEDGER_CLOSE_BUTTON_WIDTH - 1,
-                area.y,
-                LEDGER_CLOSE_BUTTON_WIDTH,
-                1,
-            )
+            let width = LEDGER_CLOSE_BUTTON_LABEL.width() as u16;
+            Rect::new(area.right() - width - 1, area.y, width, 1)
         });
         if let Some(button) = close_button {
             buf.set_string(
                 button.x,
                 button.y,
-                " ✕ ",
+                LEDGER_CLOSE_BUTTON_LABEL,
                 crate::style::user_message_style().bold(),
             );
         }
