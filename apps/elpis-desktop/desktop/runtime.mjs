@@ -5,6 +5,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { promisify } from 'node:util';
 import { childEnv } from '../bridge/tools.mjs';
+import { runtimeTools } from '../bridge/runtime-paths.mjs';
 import { existingSocket } from '../bridge/client.mjs';
 
 const run = promisify(execFile);
@@ -32,7 +33,7 @@ export async function ensureInstalledRuntime({ env = process.env } = {}) {
   let engine;
   try { engine = fs.realpathSync(selected); }
   catch { throw new Error('Install Elpis before opening the app. The Elpis runtime executable could not be found.'); }
-  const bridgeDir = path.join(path.dirname(engine), 'tools', 'elpis-claude');
+  const bridgeDir = runtimeTools(engine);
   const helper = path.join(bridgeDir, 'shared-runtime.mjs');
   const bridge = path.join(bridgeDir, 'acp-bridge.mjs');
   if (!fs.existsSync(helper) || !fs.existsSync(bridge)) {

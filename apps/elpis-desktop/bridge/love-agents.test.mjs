@@ -120,11 +120,11 @@ test('a permission request waits on its card until answered from the panel', { t
   assert.equal(f.loveAgent('a').status, 'completed');
 });
 
-test('each card names its ACP agent: Elpis per model, Claude, Antigravity or a configured command', t => {
+for (const packaged of [false, true]) test(`each card finds its ACP agent in a ${packaged ? 'packaged' : 'legacy'} engine installation`, t => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'love-node-spec-')));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   // An installation as desktop/runtime.mjs finds it: the engine with its tools/elpis-claude folder beside it.
-  const engine = path.join(dir, 'version/elpis-next'), tools = path.join(dir, 'version/tools/elpis-claude');
+  const engine = path.join(dir, packaged ? 'version/package/bin/codex' : 'version/elpis-next'), tools = path.join(dir, 'version/tools/elpis-claude');
   for (const file of [engine, path.join(tools, 'elpis-acp-agent.mjs'), path.join(tools, 'agy-acp.mjs'), path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js')]) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, ''); }
   fs.symlinkSync(engine, path.join(dir, 'elpis-next'));
   const home = path.join(dir, 'home'); fs.mkdirSync(home);

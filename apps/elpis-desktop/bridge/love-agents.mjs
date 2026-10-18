@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BridgeError, elpisHome, object, text } from './client.mjs';
+import { runtimeTools } from './runtime-paths.mjs';
 import { handoffText, runAcpNode } from './acp-nodes.mjs';
 
 // Excalidraw remains the source of truth: bound arrows, not a second edge store.
@@ -47,7 +48,7 @@ function installation(env) {
   let engine;
   try { engine = fs.realpathSync(selected); }
   catch { throw new BridgeError('Install Elpis before running agents. The Elpis runtime executable could not be found.', 503); }
-  return { engine, tools: path.join(path.dirname(engine), 'tools', 'elpis-claude') };
+  return { engine, tools: runtimeTools(engine) };
 }
 const present = file => {
   if (!fs.existsSync(file)) throw new BridgeError(`This Elpis installation has no ${path.basename(file)} (${file}). Update Elpis to run agents over ACP.`, 503);

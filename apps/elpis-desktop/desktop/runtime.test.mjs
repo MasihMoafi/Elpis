@@ -8,9 +8,10 @@ import net from 'node:net';
 import { createHash } from 'node:crypto';
 import { ensureInstalledRuntime } from './runtime.mjs';
 
-test('desktop reuses the selected installation launcher and keeps explicit sockets external', async () => {
+for (const packaged of [false, true]) test(`desktop reuses ${packaged ? 'packaged' : 'legacy'} installation and keeps explicit sockets external`, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-app-launch-'));
-  const engine = path.join(dir, 'elpis-next');
+  const engine = path.join(dir, packaged ? 'package/bin/codex' : 'elpis-next');
+  fs.mkdirSync(path.dirname(engine), { recursive: true });
   const bridgeDir = path.join(dir, 'tools', 'elpis-claude');
   fs.mkdirSync(bridgeDir, { recursive: true }); fs.writeFileSync(engine, 'fixture');
   const marker = path.join(dir, 'called.json');

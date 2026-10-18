@@ -11,7 +11,8 @@ import {DesktopClient} from '../bridge/client.mjs';
 const rootId='00000000-0000-0000-0000-000000000001';
 const fake=fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs',import.meta.url));
 function fixture(t) {
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'elpis-workflow-routing-')), specs=[];
+  const cache=path.join(os.homedir(),'.cache/elpis-tests');fs.mkdirSync(cache,{recursive:true});
+  const dir=fs.mkdtempSync(path.join(cache,'elpis-workflow-routing-')), specs=[];
   const socket=new EventEmitter();socket.sent=[];socket.close=()=>{};
   socket.send=wire=>{const request=JSON.parse(wire);socket.sent.push(request);queueMicrotask(()=>{
     const result=request.method==='thread/read'||request.method==='thread/resume'
