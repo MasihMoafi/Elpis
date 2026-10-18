@@ -51,6 +51,7 @@ mod elpis_instructions_read;
 mod elpis_context_files;
 // Elpis: per-turn timing, cost state and category shares.
 mod elpis_turn_activity;
+mod elpis_work_graphs;
 mod environment_add;
 mod environment_info;
 mod environment_status;

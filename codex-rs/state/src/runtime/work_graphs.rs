@@ -401,11 +401,11 @@ WHERE graph_id = ? AND task_id = ? AND status = ?
     ) -> anyhow::Result<bool> {
         let now = Utc::now().timestamp_millis();
         let mut tx = self.work_graphs_pool().await?.begin().await?;
+        // Keep an assigned worker's chat available after failure or cancellation.
         let result = sqlx::query(
             r#"
 UPDATE work_graph_tasks
-SET status = ?, updated_at_ms = ?, completed_at_ms = ?, failure_reason = ?,
-    assigned_thread_id = NULL
+SET status = ?, updated_at_ms = ?, completed_at_ms = ?, failure_reason = ?
 WHERE graph_id = ? AND task_id = ? AND status IN (?, ?)
             "#,
         )
