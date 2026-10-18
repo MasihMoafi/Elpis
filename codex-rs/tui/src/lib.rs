@@ -147,6 +147,7 @@ mod elpis_local_bridge;
 mod elpis_ledger_events;
 // Elpis: the Elpis motion palette.
 mod elpis_motion;
+mod empty_state_animation;
 mod experimental_features;
 mod markdown_copy;
 mod permission_discovery;

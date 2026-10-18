@@ -39,6 +39,7 @@ use crate::config_update::RemoteProjectTrust;
 use crate::config_update::format_config_error;
 use crate::config_update::replace_config_value;
 use crate::config_update::write_trusted_project;
+use crate::empty_state_animation::Presentation;
 use crate::key_hint::KeyBindingListExt;
 use crate::legacy_core::config::Config;
 use crate::onboarding::auth::AuthModeWidget;
@@ -138,10 +139,11 @@ impl OnboardingScreen {
             .map(|project| project.trust_target.to_string_lossy().into_owned());
         let auth_config = config.auth_config();
         let mut steps: Vec<Step> = Vec::new();
-        steps.push(Step::Welcome(WelcomeWidget::new(!matches!(
-            login_status,
-            LoginStatus::NotAuthenticated
-        ))));
+        steps.push(Step::Welcome(WelcomeWidget::new(
+            !matches!(login_status, LoginStatus::NotAuthenticated),
+            tui.frame_requester(),
+            local_settings.tui.animations && local_settings.tui.effects.welcome,
+        )));
         #[cfg(target_os = "windows")]
         let show_windows_create_sandbox_hint = if show_trust_screen
             && remote_project_trust.is_none()
@@ -411,9 +413,19 @@ fn suppress_quit_while_typing(key_event: KeyEvent, text_entry_context: TextEntry
 impl WidgetRef for &OnboardingScreen {
     fn render_ref(&self, area: Rect, buf: &mut Buffer) {
         let suppress_animations = self.should_suppress_animations();
+        let logo_presentation = if suppress_animations {
+            Presentation::Hidden
+        } else if self.text_entry_context().active {
+            Presentation::Static
+        } else {
+            Presentation::Animated
+        };
         for step in self.current_steps() {
             match step {
-                Step::Welcome(_) => {}
+                Step::Welcome(widget) => {
+                    widget.update_layout_area(area);
+                    widget.set_presentation(logo_presentation);
+                }
                 Step::Auth(widget) => widget.set_animations_suppressed(suppress_animations),
                 Step::TrustDirectory(_) => {}
             }
@@ -816,6 +828,10 @@ async fn persist_selected_trust(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "welcome_preview_tests.rs"]
+mod welcome_preview_tests;
 
 #[cfg(test)]
 mod tests {
