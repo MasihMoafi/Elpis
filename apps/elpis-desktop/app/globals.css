@@ -39,6 +39,11 @@
 .hud-cut, .hud-cut-sm { corner-shape:bevel; }
 .hud-cut { border-radius:var(--cut) 0; }
 .hud-cut-sm { border-radius:var(--cut-sm) 0; }
+/* The HUD label: every small uppercase caption (the lab's mono labels) in one type — 12px, never smaller (--text-small),
+ * mono, .14em, uppercase. Each label keeps its own line-height, colour and spacing. */
+:where(.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span, .canvas-order li span, .canvas-critical span,
+  .quick-add-crumb, .canvas-template-loaded, .agent-node-kind, .canvas-note-grip, .splash-boot li) {
+  font-family:var(--mono); font-size:var(--label-size); font-weight:500; letter-spacing:var(--label-track); text-transform:uppercase; }
 /* One cut per role. Controls and the rows that light on hover or selection, and code blocks inside panels: --cut. */
 :where(.search-field, .model-select, .composer-chip, .feature-form select, .provider-model-input, .field select, .composer-pill, .context-ring, .feature-chip, .task-tab,
   .browser-toolbar input, .browser-find input, .annotation-editor textarea, .canvas-chip, .canvas-count input, .quick-add-field, .agent-dashboard header button,
@@ -181,7 +186,7 @@ button:disabled { cursor:not-allowed; }
 .markdown p { margin:0 0 12px; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:12.5px; font-family:var(--mono); } .markdown :not(pre) > code { color:var(--code-ink); background:var(--muted); border:1px solid var(--hairline); padding:1px 5px; border-radius:5px; font-size:13px; } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:var(--primary); text-decoration:underline; text-underline-offset:2px; } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:13px; width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:18px; } .markdown h2 { font-size:16px; } .markdown h3 { font-size:14.5px; }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:12px; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 14px; }
-.composer { max-width:740px; margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); transition:border-color .15s; }
+.composer { max-width:740px; margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); }
 .composer:focus-within { border-color:color-mix(in oklch, var(--ink), var(--border) 70%); }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
@@ -553,7 +558,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 }
 
 /* ── Elpis HUD: transcript and composer (16 Oct 2026) ─────────────────────────────── */
-.hud-label { font:500 var(--text-small)/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; }
+.hud-label { line-height:1; }
 .turn { margin-bottom:14px; }
 .turn .user-turn { margin-bottom:24px; }
 .message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); padding:9px 14px; }
@@ -614,6 +619,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .worked-for-body { padding:2px 0 6px; }
 
 .composer { position:relative; background:var(--composer); border-color:var(--hud-edge); box-shadow:var(--shadow); }
+/* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
 /* Each cut corner carries an accent line along its bevel (the square's anti-diagonal is the cut). On a new chat the
    environment bar sits on top and squares the composer's top corners, so the bar's own cut carries the top accent. */
 .composer::before, .composer::after, .composer-tray::before { content:""; position:absolute; width:var(--cut-lg); height:var(--cut-lg); pointer-events:none;
@@ -640,7 +646,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-key-form strong { color:var(--foreground); font-weight:500; }
 .provider-key-row { display:flex; gap:8px; }
 .plan-card { margin:10px 0; padding:12px 16px 4px; border:1px solid var(--border); border-left:2px solid var(--primary); background:var(--card); }
-.plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; font:500 var(--text-small)/1.2 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--primary); }
+.plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; line-height:1.2; color:var(--primary); }
 .permissions-auto svg:first-child { color:var(--primary); }
 .permissions-full { color:var(--warning); }
 /* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one
@@ -649,7 +655,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .hud-menu { padding:6px; }
 .hud-popover { padding:16px; }
 .hud-dialog { padding:20px; }
-.hud-menu-title { font:500 var(--text-small)/1.2 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-foreground); padding:6px 8px 8px; margin:0; }
+.hud-menu-title { line-height:1.2; color:var(--muted-foreground); padding:6px 8px 8px; margin:0; }
 .hud-menu-item { display:flex; align-items:center; gap:10px; padding:8px; }
 .hud-menu-item small { color:var(--muted-foreground); font-size:var(--text-small); line-height:1.35; }
 .hud-menu-item[data-highlighted], .hud-menu-item[aria-selected="true"] { background:var(--selected); }
@@ -739,7 +745,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer .model-trigger-provider { border-inline-start-color:var(--hairline); color:var(--subtle-foreground); }
 /* Sidebar */
 /* Group labels in the sidebar and in Settings' navigation. */
-.section-label { font:500 var(--text-small)/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; color:var(--subtle-foreground); padding:16px 8px 6px; }
+.section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
 .thread-row { position:relative; }
 .thread-row.active { background:var(--selected); }
 .thread-row.active::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
@@ -911,7 +917,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-template small { color:var(--muted-foreground); font-size:12px; line-height:1.35; }
 .canvas-toolbar { flex:none; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:2px; padding:5px 8px; border-top:1px solid var(--hairline); background:var(--card); }
 .canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
-.canvas-toolbar-label { padding:0 6px 0 8px; font:500 10.5px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-foreground); }
+.canvas-toolbar-label { padding:0 6px 0 8px; line-height:1; color:var(--muted-foreground); }
 .canvas-toolbar-more { border-inline-start:1px solid var(--hairline); }
 .canvas-toolbar-keys { display:flex; gap:12px; margin-inline-start:10px; color:var(--muted-foreground); font-size:12px; }
 .canvas-toolbar-keys > span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
@@ -938,7 +944,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .quick-add-plan b { color:var(--foreground); font-weight:600; }
 .quick-add-plan span:not(:first-child)::before, .quick-add-plan b + span::before { content:"· "; }
 .quick-add-plan em { flex-basis:100%; font-style:normal; color:var(--destructive); }
-.quick-add-crumb { display:flex; justify-content:space-between; margin:2px 0 0; padding:0 4px; font:500 10.5px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
+.quick-add-crumb { display:flex; justify-content:space-between; margin:2px 0 0; padding:0 4px; line-height:1.4; color:var(--muted-foreground); }
 .quick-add-more { margin-inline-start:auto; flex:none; color:var(--muted-foreground); }
 .quick-add-option { display:flex; align-items:center; gap:10px; padding:7px 8px; border:0; background:transparent; color:var(--foreground); text-align:left; font-size:13px; cursor:pointer; }
 .quick-add-option[aria-selected="true"], .quick-add-option[role="menuitem"]:focus { background:var(--hover); outline:none; }
@@ -966,7 +972,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Shared run instruments sit outside either board so they never cover nodes or editor controls. */
 .canvas-telemetry { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:8px 12px; border-bottom:1px solid var(--hairline); background:var(--card); }
 .canvas-hud { flex:none; display:grid; gap:0; padding-right:14px; border-right:1px solid var(--border); }
-.canvas-hud span { font:500 10.5px/1.4 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted-foreground); }
+.canvas-hud span { line-height:1.4; color:var(--muted-foreground); }
 .canvas-hud strong { font:600 36px/1.25 var(--mono); font-variant-numeric:tabular-nums; color:var(--primary); }
 .canvas-inputs { flex-basis:100%; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:12px; line-height:1.5; }
 .canvas-inputs b { color:var(--foreground); font-weight:600; }
@@ -987,7 +993,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-guide small { display:block; margin-top:2px; color:var(--muted-foreground); font-size:12px; line-height:1.35; }
 /* Which architecture is on the board, each one's shape (the Mother, then a column per wave), and the role-split caution. */
 .canvas-template[aria-current="true"] { border-color:var(--border); background:var(--hover); }
-.canvas-template-loaded { margin-inline-start:8px; font:500 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); vertical-align:2px; }
+.canvas-template-loaded { margin-inline-start:8px; line-height:1; color:var(--muted-foreground); vertical-align:2px; }
 .canvas-template small.canvas-template-caution { font-style:italic; }
 .canvas-shape { display:flex; align-items:center; gap:12px; padding:3px 0 1px; }
 .canvas-shape > span { position:relative; display:grid; gap:3px; }
@@ -1001,12 +1007,12 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-order ol { display:flex; gap:6px; overflow:auto; margin:0; padding:0; list-style:none; }
 .canvas-order li { flex:1 0 100px; min-width:0; max-width:240px; display:grid; gap:2px; padding:4px 8px; border-left:3px solid var(--hairline); color:var(--foreground); font-size:12px; line-height:1.5; }
 .canvas-order li strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
-.canvas-order li span { font:500 10.5px/1.6 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
+.canvas-order li span { line-height:1.6; color:var(--muted-foreground); }
 .canvas-order li[data-status="running"] { border-left-color:var(--context); background:color-mix(in oklab, var(--context) 14%, var(--card)); }
 .canvas-order li[data-status="succeeded"] { border-left-color:var(--success); }
 .canvas-order li[data-status="failed"] { border-left-color:var(--destructive); }
 .canvas-critical { display:grid; gap:2px; margin:6px 0 0; padding:6px 8px; border-left:2px solid var(--foreground); color:var(--foreground); font-size:12.5px; line-height:1.35; overflow-wrap:anywhere; cursor:default; }
-.canvas-critical span { font:500 10.5px/1.6 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
+.canvas-critical span { line-height:1.6; color:var(--muted-foreground); }
 .canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:12px; line-height:1.4; }
 [data-kind="mother"], [data-kind="father"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
 .dark [data-kind="agent"] { --kind:#ab84ff; }
@@ -1038,7 +1044,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-node { position:relative; display:grid; gap:3px; width:190px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:13px; }
 .react-flow__node.selected .agent-node { outline:1.5px dashed color-mix(in oklch, var(--foreground) 70%, transparent); outline-offset:4px; }
 .mother-node { border-left-width:5px; padding-right:14px; }
-.agent-node-kind { font:600 10.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted-foreground); }
+.agent-node-kind { line-height:1; color:var(--muted-foreground); }
 .agent-node-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:15px; font-weight:600; line-height:1.3; }
 .agent-node-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:12.5px; }
 .agent-node-mark { position:absolute; top:10px; right:10px; display:grid; place-items:center; width:18px; height:18px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--border); }
@@ -1074,7 +1080,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @media (prefers-reduced-motion:reduce) { .agent-node .react-flow__handle { transition:none; } }
 /* A note for the user, never sent: dragged by its strip, written in below. */
 .canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }
-.canvas-note-grip { padding:6px 10px 0; font:500 10px/1.4 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:#6b5f2a; cursor:grab; user-select:none; }
+.canvas-note-grip { padding:6px 10px 0; line-height:1.4; color:#6b5f2a; cursor:grab; user-select:none; }
 .canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font:13px/1.4 inherit; resize:both; outline:none; }
 .dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
 .canvas-notice { flex:none; display:flex; align-items:center; gap:10px; margin:6px 12px; padding:8px 12px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:13px; box-shadow:var(--shadow); }

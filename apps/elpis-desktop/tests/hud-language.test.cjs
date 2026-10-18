@@ -18,8 +18,9 @@ const ROUTES = {
   '/api/folders': () => ({ data: ['src', 'tests'] }),
   '/api/customize': () => ({ skills: { data: [skill('pdf', 'system'), skill('web-dev', 'user')], errors: [] }, plugins: { data: [] }, connectors: { data: [] } }),
 };
-/** Every small uppercase label in the app (the HUD label role). */
-const LABELS = '.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .worked-for > summary, .canvas-toolbar-label, .canvas-hud span, .canvas-order li span, .canvas-critical span, .quick-add-crumb, .canvas-template-loaded, .agent-node-kind';
+/** Every small uppercase label in the app (the HUD label role). "Worked for 5s" is a caption, not a label: its time units
+ * stay lowercase (tests/desktop-polish.test.cjs). */
+const LABELS = '.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span, .canvas-order li span, .canvas-critical span, .quick-add-crumb, .canvas-template-loaded, .agent-node-kind';
 const PANELS = '.settings-rows, .settings-card, .customize-list, .step-card, .decision-card, .plan-card, .file-card, .task-list, .agent-conversation-group, .agent-node, .composer';
 const FLOATING = '.hud-menu, .hud-popover, .hud-dialog';
 const { contrastFailures } = require('./hud-contrast.cjs');
@@ -104,7 +105,7 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
     assert.ok(seen.floating >= 2, `menus and dialogs measured: ${seen.floating}`);
     for (const panel of ['div.step-card', 'form.composer', 'div.settings-rows', 'ul.customize-list', 'div.agent-node']) assert.ok([...seen.panels].some(name => name.startsWith(panel)), `${panel} measured (${[...seen.panels]})`);
   });
-  await t.test('one HUD label type', { todo: 'the label commit' }, () => {
+  await t.test('one HUD label type', () => {
     const seen = { labels: new Set() };
     for (const [where, report] of reports) labels(report, where, seen);
     for (const label of ['div.section-label', 'p.hud-menu-title', 'span.agent-node-kind', 'span.canvas-toolbar-label']) assert.ok([...seen.labels].some(name => name.startsWith(label)), `${label} measured (${[...seen.labels]})`);
