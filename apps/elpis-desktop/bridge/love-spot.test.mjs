@@ -71,6 +71,32 @@ test('Love Spot load/save unions stale windows, keeps newest versions and deleti
   assert.equal(JSON.parse(await fs.readFile(path.join(f.directory, 'scene.excalidraw'), 'utf8')).elements.length, 2);
 });
 
+test('two Love Spot stores converge on equal-version deletes in either order, but allow newer undo and redo', async t => {
+  const f = await fixture(t);
+  const other = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  t.after(() => other.close());
+  for (const [index, [deleteFirst, liveNonce, deletedNonce]] of [
+    [true, 1, 900], [false, 1, 900], [true, 900, 1], [false, 900, 1], [true, 100, 100], [false, 100, 100],
+  ].entries()) {
+    const id = `conflict-${index}`;
+    const live = element(id, 2, { isDeleted: false, versionNonce: liveNonce });
+    const deleted = { ...live, isDeleted: true, versionNonce: deletedNonce };
+    const page = (await f.load()).scene.page;
+    const fromElpis = e => f.save({ elements: [e], files: {}, page });
+    const fromStandalone = e => other.save({ elements: [e], files: {}, page });
+    await fromElpis(deleteFirst ? deleted : live);
+    await fromStandalone(deleteFirst ? live : deleted);
+    assert.equal((await other.read()).scene.elements.find(e => e.id === id).isDeleted, true,
+      `delete must win: deleteFirst=${deleteFirst}, liveNonce=${liveNonce}, deletedNonce=${deletedNonce}`);
+    await fromStandalone({ ...live, version: 1, versionNonce: 0 });
+    assert.equal((await f.load()).scene.elements.find(e => e.id === id).isDeleted, true);
+    await fromElpis({ ...live, version: 3 });
+    assert.equal((await other.read()).scene.elements.find(e => e.id === id).isDeleted, false, 'newer undo must restore');
+    await fromStandalone({ ...deleted, version: 4 });
+    assert.equal((await f.load()).scene.elements.find(e => e.id === id).isDeleted, true, 'newer redo must delete');
+  }
+});
+
 test('Love Spot rejects malformed saves and leaves an unreadable existing scene intact', async t => {
   const f = await fixture(t);
   await f.save({ elements: [element('safe')], files: {} });

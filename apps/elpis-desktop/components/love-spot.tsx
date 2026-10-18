@@ -14,6 +14,7 @@ import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
+import { newer } from "@/bridge/love-spot-order.cjs";
 import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
 import { CharacterPicker, LoveAgentPanel } from "./love-agent-panel";
 import "@excalidraw/excalidraw/index.css";
@@ -26,7 +27,6 @@ type PageList = { pages: { name: string; modified: number }[] };
 type Screenshot = { id: string; name: string; dataURL: string };
 type Update = ({ type: "scene" } & Saved) | { type: "screenshots"; screenshots: Screenshot[] } | { type: "error"; message: string };
 const screenshotDrag = "application/x-elpis-screenshot";
-const newer = (a: ExcalidrawElement, b: ExcalidrawElement) => a.version > b.version || (a.version === b.version && a.versionNonce < b.versionNonce);
 const versions = (elements: readonly ExcalidrawElement[]) => JSON.stringify(elements.map(e => [e.id, e.version, e.versionNonce, e.isDeleted]));
 function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles, page?: BoardPage): Drawing {
   // Excalidraw's file serializer drops deleted elements even when they are supplied.
@@ -74,6 +74,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const saveLatest = useRef<((picture?: boolean) => void) | undefined>(undefined);
   const mounted = useRef(true);
   const remote = useRef(false);
+  const placingScreenshot = useRef<string>(undefined);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
   // A page list that fails is shown in the Pages menu it belongs to; the shared message line is cleared by every save.
   const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => {
@@ -164,7 +165,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       return;
     }
     const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
-    const screenshot = data.scene.elements.find(e => e.type === "image" && !e.isDeleted && e.id.startsWith("shot-") && !shown.has(e.id));
+    const placed = data.scene.elements.find(e => e.id === placingScreenshot.current && !e.isDeleted && !shown.has(e.id));
+    const screenshot = placed ?? data.scene.elements.find(e => e.type === "image" && !e.isDeleted && e.id.startsWith("shot-") && !shown.has(e.id));
     const reply = data.scene.elements.some(e => !e.isDeleted && e.id.startsWith("love-reply-") && !shown.has(e.id));
     let changed = false;
     for (const e of restoreElements(data.scene.elements, null, { refreshDimensions: true, repairBindings: true })) {
@@ -178,7 +180,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       remote.current = true;
       try {
         if (files.length) editor.addFiles(files);
-        if (changed) editor.updateScene({ elements: [...shown.values()] });
+        if (changed) {
+          // Admit remote changes before recording only the user's placement.
+          editor.updateScene({ elements: [...shown.values()].filter(e => e.id !== placed?.id), captureUpdate: CaptureUpdateAction.NEVER });
+          if (placed) editor.updateScene({ elements: [...shown.values()], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+        }
       } finally { remote.current = false; }
       // A remote merge is included if a local debounce is waiting to save.
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
@@ -277,6 +283,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     setChoosing(true);
     try {
       if (action === "place") {
+        placingScreenshot.current = id;
         const shot = screenshots.find(s => s.id === id);
         if (!shot) return;
         const file = await lightImage({ dataURL: shot.dataURL, mimeType: "image/png" });
@@ -285,7 +292,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       else await api("/love-spot/screenshots", { id, action });
       setScreenshots(shots => shots.filter(shot => shot.id !== id)); setError("");
     } catch (e) { report(e); }
-    finally { setChoosing(false); }
+    finally { placingScreenshot.current = undefined; setChoosing(false); }
   }
 
   async function changePage(action: "new" | "switch" | "rename", name?: string) {

@@ -156,6 +156,7 @@
     "tests/love-agents.test.cjs",
     "tests/love-spot-live.test.cjs",
     "tests/love-spot-standalone.test.cjs",
+    "tests/love-spot-sync.test.cjs",
     "tests/love-spot-talk.test.cjs",
     "tests/love-spot.test.cjs",
     "tests/love-spot-pages.test.cjs",

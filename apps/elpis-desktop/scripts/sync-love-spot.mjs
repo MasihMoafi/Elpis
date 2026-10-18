@@ -46,6 +46,7 @@ export async function syncLoveSpot(directory, { build = true } = {}) {
   await fs.copyFile(new URL('./love-spot-standalone.jsx', import.meta.url), path.join(directory, 'src/app.jsx'));
   await fs.copyFile(new URL('../lib/love-spot.ts', import.meta.url), path.join(directory, 'src/love-spot.ts'));
   await fs.copyFile(new URL('../bridge/love-spot-store.cjs', import.meta.url), path.join(directory, 'love-spot-store.cjs'));
+  await fs.copyFile(new URL('../bridge/love-spot-order.cjs', import.meta.url), path.join(directory, 'love-spot-order.cjs'));
   if (build) await promisify(execFile)(process.execPath, ['build.mjs'], { cwd: directory });
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

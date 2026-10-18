@@ -3,10 +3,10 @@ import { useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CaptureUpdateAction, Excalidraw, exportToBlob, restoreElements, serializeAsJSON } from '@excalidraw/excalidraw';
 import { MASIH_PEN, lightFiles } from './love-spot';
+import { newer } from '../love-spot-order.cjs';
 import '@excalidraw/excalidraw/index.css';
 
 const board = window.board;
-const newer = (a, b) => a.version > b.version || (a.version === b.version && a.versionNonce < b.versionNonce);
 
 function App({ data }) {
   const api = useRef(null), saving = useRef(0), viewing = useRef(0), queue = useRef(Promise.resolve());
@@ -36,7 +36,7 @@ function App({ data }) {
           if (!mine || newer(element, mine)) { shown.set(element.id, element); updated = true; }
         }
         if (files.length) editor.addFiles(files);
-        if (updated) editor.updateScene({ elements: [...shown.values()] });
+        if (updated) editor.updateScene({ elements: [...shown.values()], captureUpdate: CaptureUpdateAction.NEVER });
         if (screenshot) { editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } }); editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 }); }
         if (files.length) queueMicrotask(() => changed(editor.getSceneElements(), editor.getAppState(), editor.getFiles()));
       } finally { remote.current = false; }
