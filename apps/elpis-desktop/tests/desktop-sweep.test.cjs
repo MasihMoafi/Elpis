@@ -16,7 +16,7 @@ const description = 'Check the shared components and their rendered layout, then
 function routes() {
   const settings = { version: 's1', main: { model: 'sol', provider: 'openai' }, background: {}, providers: [{ id: 'openai', displayName: 'OpenAI' }], agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' },
     smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: null, provider: null } }, memory: { enabled: true, generate: true, use: true }, options: {}, managed: {}, write: { available: true, reason: 'Applies to new conversations.' } };
-  let scene = { elements: [], appState: {}, files: {} };
+  let scene = { elements: [], appState: {}, files: {}, page: { name: 'Current page', session: 'fixture' } };
   return {
     ...contextRoutes(),
     '/api/settings': body => { if (body?.options) Object.assign(settings.options, body.options); return settings; },
@@ -40,6 +40,7 @@ function routes() {
     '/api/threads/chat-a/git': () => ({ branch: 'main', files: [], staged: [], unstaged: [] }),
     '/api/workflows': () => ({ data: [] }),
     '/api/love-spot': body => { if (body) scene = body; return { scene, revision: 'fixture' }; },
+    '/api/love-spot/pages': () => ({ current: scene.page, pages: [{ name: 'Current page', modified: 1 }] }),
   };
 }
 async function command(page, name) {

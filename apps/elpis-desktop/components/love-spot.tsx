@@ -52,7 +52,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const [model, setModel] = useState(""), [choiceId, setChoiceId] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; text: string }>();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
-  const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]);
+  const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
   const [pageBusy, setPageBusy] = useState(false), [renaming, setRenaming] = useState(false), [pageName, setPageName] = useState("");
   const currentPage = useRef<BoardPage>(undefined);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
@@ -71,7 +71,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
   const mounted = useRef(true);
   const remote = useRef(false);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
-  const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => { if (mounted.current) setPages(data.pages); }).catch(report); }, [report]);
+  // A page list that fails is shown in the Pages menu it belongs to; the shared message line is cleared by every save.
+  const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => {
+    if (!Array.isArray(data?.pages)) throw unreadable("Love Spot pages");
+    if (mounted.current) { setPages(data.pages); setPagesError(""); }
+  }).catch(e => { if (mounted.current) setPagesError(e instanceof Error ? e.message : String(e)); }); }, []);
 
   useEffect(() => {
     let active = true;
@@ -320,6 +324,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
               <span className="min-w-0"><span className="block truncate">{item.name}</span><time className="block text-xs text-muted-foreground" dateTime={new Date(item.modified).toISOString()}>{new Date(item.modified).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}</time></span>
             </DropdownMenuItem>)}
+            {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
         {renaming && <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); void changePage("rename", pageName.trim()); }}>

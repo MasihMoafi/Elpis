@@ -79,3 +79,18 @@ test('Love Spot light images: tall screenshots and pasted SVGs shrink, deletion 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('an unreadable page list is reported in Love Spot, and the rest of the app keeps working', async () => {
+  const f = await loveSpotFixture({ colorScheme: 'dark' });
+  try {
+    const crashes = []; f.page.on('pageerror', error => crashes.push(error.message));
+    await f.page.route('**/api/love-spot/pages', route => route.request().method() === 'GET' ? route.fulfill({ contentType: 'application/json', body: '{}' }) : route.continue());
+    await f.open(f.page);
+    await f.page.locator('.excalidraw canvas').first().waitFor();
+    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: /could not read \(Love Spot pages\)/ }).waitFor();
+    await f.page.keyboard.press('Escape');
+    await f.page.getByRole('button', { name: 'Observability', exact: true }).waitFor();
+    assert.deepEqual(crashes, [], 'one malformed reply must not take the whole app down');
+  } finally { await f.close(); }
+});
