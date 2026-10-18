@@ -74,17 +74,6 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     const listed = () => new Promise(resolve => { const check = () => listRequests > before ? resolve() : setTimeout(check, 50); const before = listRequests; for (const stream of streams) stream.write(`event: message\ndata: ${JSON.stringify({ method: 'turn/completed', params: { threadId: 'elsewhere', turn: { id: 'turn-elsewhere' } } })}\n\n`); check(); });
     await listed(); await new Promise(resolve => setTimeout(resolve, 300));
     assert.match(await chip.innerText(), /^Opus\s+Anthropic$/, 'the composer keeps the read model after a list refresh');
-    await page.locator('aside').getByRole('button', { name: 'Agents', exact: true }).click();
-    const row = page.locator('.agent-row[data-thread-id="gemini-agent"]');
-    await row.waitFor();
-    assert.match(await page.locator('.agent-row[data-thread-id="claude-root"] .agent-meta').innerText(), /^Anthropic · Opus · high$/, 'agents page uses the read model too');
-    assert.equal(await row.locator('.agent-title').innerText(), 'Check docs');
-    const orphanRow=page.locator('.agent-row[data-thread-id="orphan-agent"]');
-    assert.equal(await orphanRow.locator('.agent-title').innerText(),'Untitled agent · an-agent');
-    assert.match(await orphanRow.innerText(),/reviewer/);
-    assert.equal(await page.getByText('You are a bounded worker in this repository.',{exact:true}).count(),0);
-    assert.equal(await row.locator('.agent-nickname').innerText(), 'Sagan');
-    assert.equal(await row.locator('.agent-meta').innerText(), 'Antigravity · Gemini 3 Pro');
     await openSettings(page);
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     const account = id => page.locator(`.provider-card[data-provider="${id}"]`);

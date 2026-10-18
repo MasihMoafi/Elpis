@@ -17,9 +17,6 @@ for (const colorScheme of ['light', 'dark']) test(`${colorScheme} desktop recove
     await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
     await page.screenshot({ path: `/tmp/polish9/shots/${colorScheme}-820-panel.png` });
     await page.getByRole('button', { name: 'Close side panel', exact: true }).click();
-    await page.getByRole('button', { name: 'Agents', exact: true }).click();
-    await page.locator('.agent-title').first().waitFor();
-    await page.screenshot({ path: `/tmp/polish9/shots/${colorScheme}-agents.png` });
     await f.open('chat-a');
     await page.evaluate(() => {
       for (const stream of window.__streams) stream.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 't4', error: { message: 'The connection ended. Try again in a moment.', codexErrorInfo: 'other' } } } }) }));

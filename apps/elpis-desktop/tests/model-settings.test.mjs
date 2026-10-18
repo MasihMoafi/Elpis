@@ -42,15 +42,6 @@ const settings = {
   write: { available: true },
 };
 
-test('new agent uses the catalog model picker and a readable inherited selection', () => {
-  const { NewAgentForm } = load('components/new-agent-form.tsx');
-  const html = renderToStaticMarkup(React.createElement(NewAgentForm, { models, settings, connected: true, onCreated() {} }));
-  assert.match(html, /Sol 6/);
-  assert.match(html, /OpenAI/);
-  assert.doesNotMatch(html, /<input[^>]*placeholder="(?:Model ID|Leave empty to use the configured model)/);
-  assert.match(html, /Choose folder/);
-});
-
 const MAINTENANCE='components/settings/maintenance.tsx';
 const render=(name,props)=>renderToStaticMarkup(React.createElement(load(MAINTENANCE)[name],props));
 

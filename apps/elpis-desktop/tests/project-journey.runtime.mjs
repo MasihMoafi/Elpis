@@ -189,26 +189,6 @@ try {
   await desktop.close(); desktop = null;
   await launch();
   await page.getByText('Completed the local task.', { exact: true }).waitFor();
-  // Creating an independent root with a failed first message must open that root
-  // with its retained draft, rather than leave a form that creates another root.
-  await page.locator('aside').getByRole('button', { name: 'Agents', exact: true }).click();
-  await page.getByRole('button', { name: 'New agent', exact: true }).click();
-  const agentTurnPaths = []; let newRoots = 0;
-  page.on('request', request => { const pathname = new URL(request.url()).pathname; if (request.method() !== 'POST') return; if (pathname === '/api/threads') newRoots++; if (/^\/api\/threads\/[^/]+\/turns$/.test(pathname)) agentTurnPaths.push(pathname); });
-  await page.getByLabel('Name', { exact: true }).fill('Retry first agent message');
-  await page.getByLabel('First message', { exact: true }).fill('Keep this agent task');
-  await page.route('**/api/threads/*/turns', route => route.fulfill({ status: 503, json: { error: 'Local agent first-send failure' } }));
-  await page.getByRole('button', { name: 'Create agent', exact: true }).click();
-  await page.getByRole('alert').filter({ hasText: 'Conversation created, but its first message was not sent' }).waitFor();
-  assert.equal(await page.getByLabel('Message Elpis').inputValue(), 'Keep this agent task');
-  assert.equal(newRoots, 1);
-  await page.unroute('**/api/threads/*/turns'); provider.actions.push(message('Agent task retried in the same conversation.'));
-  await page.getByRole('button', { name: 'Send message', exact: true }).click();
-  await page.getByText('Agent task retried in the same conversation.', { exact: true }).waitFor();
-  assert.equal(newRoots, 1);
-  assert.equal(agentTurnPaths.length, 2);
-  assert.equal(agentTurnPaths[1], agentTurnPaths[0]);
-  checks.push('Failed first agent message opens the created chat with its draft; retry creates no duplicate root');
   const chooseProject = async name => { await page.getByRole('button', { name: 'Choose workspace', exact: true }).click(); await page.getByRole('menuitem', { name }).click(); };
   const draftIs = expected => page.waitForFunction(expected => document.querySelector('textarea[aria-label="Message Elpis"]').value === expected, expected);
   const sentBeforeSwitch = provider.requests.length;

@@ -19,8 +19,8 @@ test('a chat the app cannot follow live is refreshed by reading: messages, child
   await page.getByRole('button',{name:'Root conversation',exact:true}).click();await page.locator('.thread-row[data-thread-id="child"] .thread-link').click();await page.getByRole('button',{name:'Load earlier messages',exact:true}).click();for(const s of await page.locator('.worked-for:not([open]) > summary').all())await s.click();for(const s of await page.locator('.activity-group:not([open]) > summary').all())await s.click();await page.getByText('Earlier retained history',{exact:true}).waitFor();
   await page.locator('.chat-scroll').evaluate(element=>{element.scrollTop=100;element.dispatchEvent(new Event('scroll',{bubbles:true}));});const position=await page.locator('.chat-scroll').evaluate(element=>element.scrollTop);
   await page.getByText('A new observation arrived',{exact:true}).waitFor({state:'attached'});assert.equal(await page.getByText('Earlier retained history',{exact:true}).count(),1);assert.equal(await page.locator('.chat-scroll').evaluate(element=>element.scrollTop),position);
-  await page.locator('.thread-row[data-thread-id="new-child"] .thread-title').filter({hasText:'Newly spawned reviewer'}).waitFor();await page.getByRole('button',{name:'Agents',exact:true}).click();assert.match(await page.locator('.agent-row[data-thread-id="child"] .agent-state').innerText(),/idle/i);
+  await page.locator('.thread-row[data-thread-id="new-child"] .thread-title').filter({hasText:'Newly spawned reviewer'}).waitFor();assert.equal(await page.locator('.thread-row[data-thread-id="child"] .thread-dot').getAttribute('data-state'),'idle');
   assert.deepEqual([...new Set(calls.filter(c=>c.method==='POST'&&!(c.path.endsWith('/rewind')&&c.body?.action==='status')).map(c=>c.path))].sort(),['/api/threads/child/resume','/api/threads/root/resume'],'opening only asks to follow live; nothing is written');
-  await page.screenshot({path:'/tmp/elpis-observer-agents.png'});
+  await page.screenshot({path:'/tmp/elpis-observer-sidebar.png'});
  }finally{await browser.close();for(const c of clients)c.end();await new Promise(resolve=>server.close(resolve));}
 });

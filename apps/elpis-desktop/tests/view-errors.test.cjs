@@ -42,16 +42,11 @@ async function stands(f, label) {
 const says = (reply, locator) => reply.status === 500 ? locator.getByText(MESSAGE, { exact: false }).first().waitFor() : locator.getByText(/could not read/i).first().waitFor();
 
 for (const [name, reply] of Object.entries(REPLIES)) {
-  test(`${name}: Ledger, Agents, Canvas, New agent and every Settings page stay up`, () => using(reply, async f => {
+  test(`${name}: Ledger, Canvas and every Settings page stay up`, () => using(reply, async f => {
     const { page } = f;
     await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
     await says(reply, page.getByLabel('Ledger', { exact: true }).first());
     await stands(f, 'Ledger');
-    await page.getByRole('button', { name: 'Agents', exact: true }).click();
-    await page.getByRole('button', { name: 'New agent', exact: true }).first().waitFor();
-    await stands(f, 'Agents');
-    await page.getByRole('button', { name: 'New agent', exact: true }).first().click();
-    await stands(f, 'New agent');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await stands(f, 'Workflows');
     for (const tab of SETTINGS_PAGES) {

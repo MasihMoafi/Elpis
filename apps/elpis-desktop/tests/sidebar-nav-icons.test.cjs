@@ -18,3 +18,26 @@ test('every sidebar page icon is a text-coloured vector, Love Spot included', as
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('Agents is absent from workspace navigation and commands; Workflows and sidebar Agent runs remain', async () => {
+  const f = await fixture({ routes: { '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [
+    { id: 'chat-a', name: 'Parent chat', status: { type: 'idle' } },
+    { id: 'run-a', name: 'Retained agent run', parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/check' } } }, status: { type: 'idle' } },
+  ], nextCursor: null }) } });
+  try {
+    const { page } = f;
+    await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    const nav = page.locator('.nav-list');
+    assert.equal(await nav.getByRole('button', { name: /^Agents\b/ }).count(), 0);
+    for (const name of ['Workflows', 'Love Spot', 'Observability']) assert.equal(await nav.getByRole('button', { name, exact: true }).count(), 1);
+    await page.getByRole('button', { name: 'Agent runs (1)', exact: true }).click();
+    await page.getByRole('region', { name: 'Agent runs', exact: true }).getByText('Retained agent run', { exact: true }).waitFor();
+    await page.keyboard.press('Control+k');
+    await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Agents');
+    assert.equal(await page.getByRole('option', { name: 'Agents', exact: true }).count(), 0);
+    await page.keyboard.press('Escape');
+    await f.composer.fill('/agents');
+    assert.equal(await page.getByRole('option', { name: /^\/agents\b/ }).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

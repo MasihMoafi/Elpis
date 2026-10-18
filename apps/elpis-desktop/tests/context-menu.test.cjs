@@ -206,12 +206,3 @@ test('a message right-click opens the message menu, the same list as the hover �
   assert.equal(await lastPrevented(), false, 'the composer shows the native edit items');
   assert.equal(await page.getByRole('menu').count(), 0);
 }));
-
-test('the Agents list opens each chat\'s "…" menu on right-click too', () => fixture(async ({ page, items, closeMenu }) => {
-  await page.getByRole('button', { name: 'Agents', exact: true }).first().click();
-  const row = page.locator('.agent-row[data-thread-id="alpha"]'); await row.waitFor();
-  await row.getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
-  const fromButton = await items(); await closeMenu();
-  await row.click({ button: 'right' });
-  assert.deepEqual(await items(), [...fromButton, 'Change this…']);
-}));

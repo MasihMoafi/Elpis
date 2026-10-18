@@ -94,8 +94,8 @@ const card = panel => panel.locator('dl > div').evaluateAll(rows => Object.fromE
 /** Typing after a command goes to the composer, wherever the command left the focus. */
 async function typesIntoComposer(page, composer, text) { await page.keyboard.type(text); assert.equal(await composer.inputValue(), text, 'typing goes to the composer'); await composer.fill(''); }
 
-const NEW_CHAT = ['/model', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/resume', '/init', '/prune', '/plan', '/agents', '/status', '/usage', '/theme', '/mcp', '/rag'];
-const OPEN_CHAT = ['/btw', '/model', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/agents', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/theme', '/mcp', '/rag'];
+const NEW_CHAT = ['/model', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/theme', '/mcp', '/rag'];
+const OPEN_CHAT = ['/btw', '/model', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/theme', '/mcp', '/rag'];
 const RUNNING_TURN = OPEN_CHAT.filter(name => !['/review', '/init', '/compact', '/prune', '/fork', '/rag', '/export'].includes(name));
 
 test('"/" lists the terminal\'s commands the app can run, in its order: a new chat, an open chat, and one with a turn running', async () => {
@@ -135,7 +135,7 @@ test('the menu filters (names that start with the text first, then names that co
     await composer.press('ArrowUp'); await composer.press('ArrowUp'); assert.equal(await selected(menu), '/rag', 'the arrows wrap around');
     await composer.press('Escape'); assert.equal(await menu.count(), 0); assert.equal(await composer.inputValue(), '/', 'Escape closes the menu and keeps the text');
     await composer.fill('/sta'); assert.deepEqual(await names(menu), ['/status']);
-    await composer.fill('/ag'); assert.deepEqual(await names(menu), ['/agents', '/usage', '/rag']);
+    await composer.fill('/ag'); assert.deepEqual(await names(menu), ['/usage', '/rag']);
     await composer.fill('/mod'); assert.deepEqual(await names(menu), ['/model', '/pruner-model', '/memory-model']);
     await composer.fill('/prune'); assert.deepEqual(await names(menu), ['/prune', '/pruner-model'], 'the name typed in full comes first, so Enter runs it');
     await composer.fill('/MOD'); assert.deepEqual(await names(menu), ['/model', '/pruner-model', '/memory-model'], 'case does not matter');
@@ -363,14 +363,13 @@ test('/copy puts the last reply on the clipboard; /export saves the chat as mark
   } finally { await context.close(); }
 });
 
-test('commands that open a page: /settings, /memories, /hooks, /mcp, /theme, /pruner-model, /memory-model, /agents, /resume', async () => {
+test('commands that open a page: /settings, /memories, /hooks, /mcp, /theme, /pruner-model, /memory-model, /resume', async () => {
   const { page, context, errors, run } = await open();
   const tab = name => page.getByRole('tab', { name, exact: true, selected: true });
   try {
     for (const [command, name] of [['/settings', 'General'], ['/memories', 'Personalization'], ['/hooks', 'Hooks'], ['/mcp', 'MCP servers'], ['/theme', 'Appearance'], ['/pruner-model', 'Configuration'], ['/memory-model', 'Configuration']]) {
       await run(command); await tab(name).waitFor(); await leaveSettings(page);
     }
-    await run('/agents'); await page.getByRole('heading', { name: 'Agents', exact: true }).waitFor();
     await page.locator('.new-chat').click();
     await run('/resume');
     assert.equal(await focused(page), 'input:Search conversations', '/resume goes to the saved-chat search');

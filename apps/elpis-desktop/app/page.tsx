@@ -2,8 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ArchiveIcon, ChatIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Activity, Archive, ArrowLeft, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
+import { ArchiveIcon, ChatIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Activity, Archive, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -35,13 +35,10 @@ import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, 
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 import { replacementEligibility } from "@/lib/turn-replacement";
-import { AgentsView } from "@/components/agents-view";
-import { AgentsGuide, AgentsGuideLink } from "@/components/agents-guide";
+import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
-import { ObservabilityView } from "@/components/observability-view";
-import { NewAgentForm } from "@/components/new-agent-form";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
@@ -93,7 +90,7 @@ import { activityOf, api, unreadable, chatProvider, choiceOf, effortsOf, isAgent
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
-type View = "chat" | "agents" | "agentsGuide" | "canvas" | "loveSpot" | "customize" | "observability" | "newAgent" | "settings";
+type View = "chat" | "agentsGuide" | "canvas" | "loveSpot" | "customize" | "observability" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -322,15 +319,11 @@ export default function Home() {
     if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
     return true;
   }
-  const [agentsLoading, setAgentsLoading] = useState(false);
   const [moreLoading, setMoreLoading] = useState(false);
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
   const rootPaging = useRef(false), loadedRootPages = useRef(false);
   const childPaging = useRef(new Set<string>()), loadedChildPages = useRef(new Set<string>());
   const [settingsVisited, setSettingsVisited] = useState(false);
-  const [newAgentVisited, setNewAgentVisited] = useState(false);
-  const [observabilityVisited, setObservabilityVisited] = useState(false);
-  const [newAgentVersion, setNewAgentVersion] = useState(0);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
   const [activeTurns, setActiveTurns] = useState<Record<string, string>>({});
   // Each chat's latest task list (turn/plan/updated), shown above the message box (components/task-list.tsx).
@@ -345,7 +338,6 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
-  const [guideBack, setGuideBack] = useState<"Agents" | "Workflows">("Agents");
   const viewRef = useRef(view); viewRef.current = view;
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
@@ -703,27 +695,22 @@ export default function Home() {
     }, 3000);
     return () => { disposed = true; clearInterval(timer); };
   }, [selected?.id, selectedLiveError, view, loading, select, liveKeysAfter]);
-  // Follow the control room even when its parent rows are collapsed in the sidebar.
-  const knownIds = new Set(threads.map(thread => thread.id));
-  const observedIds = JSON.stringify([...new Set([
-    ...Object.keys(expanded).filter(id => expanded[id]),
-    ...(view === "agents" ? threads.filter(thread => !thread.parentThreadId || !knownIds.has(thread.parentThreadId)).map(thread => thread.id) : []),
-  ])].sort());
+  // Follow agents whose parent is expanded in the sidebar.
+  const observedIds = JSON.stringify(Object.keys(expanded).filter(id => expanded[id]).sort());
   useEffect(() => {
     let disposed = false, inFlight = false;
     const refresh = async () => {
       if (disposed || inFlight || document.visibilityState !== "visible") return;
-      inFlight = true; if (view === "agents") setAgentsLoading(true);
+      inFlight = true;
       try {
-        if (view === "agents") await refreshThreads();
         const ids = JSON.parse(observedIds) as string[];
         for (let start = 0; start < ids.length && !disposed; start += 3) await Promise.all(ids.slice(start, start + 3).map(id => loadChildren(id, undefined, false)));
       } catch (cause) { if (!disposed) setError(String(cause)); }
-      finally { inFlight = false; if (!disposed) setAgentsLoading(false); }
+      finally { inFlight = false; }
     };
     void refresh(); const timer = setInterval(() => void refresh(), 5000);
     return () => { disposed = true; clearInterval(timer); };
-  }, [observedIds, view, loadChildren, refreshThreads]);
+  }, [observedIds, loadChildren]);
   // Name the parent and the agent a continued chat came from, even when they are not on the loaded page.
   const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
   useEffect(() => {
@@ -807,7 +794,6 @@ export default function Home() {
   })();
   const parent = find(selected?.parentThreadId), source = find(selected?.forkedFromId);
   const waitingIds = new Set(approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId));
-  const working = threads.filter(thread => agentState(thread, waitingIds) === "working").length;
   // The chat's team: a root shows its agents; an agent shows its siblings and the way back to the root.
   const teamRoot = selected ? (selected.parentThreadId ? find(selected.parentThreadId) ?? { id: selected.parentThreadId } as Thread : selected) : null;
   const team = teamRoot ? threads.filter(thread => thread.parentThreadId === teamRoot.id) : [];
@@ -886,7 +872,7 @@ export default function Home() {
     try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
-  const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } if (next === "newAgent") setNewAgentVisited(true); if (next === "observability") setObservabilityVisited(true); setView(next); setSidebar(false); };
+  const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
   async function forkFrom(thread: Thread, lastTurnId: string) {
@@ -1292,7 +1278,6 @@ export default function Home() {
     { name: "prune", description: "turn Smart Prune on for new chats", available: idle, run: () => void turnSmartPruneOn() },
     { name: "plan", description: planMode ? "turn Plan mode off" : "turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
     { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !panelShown, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
-    { name: "agents", description: "open the task list to resume, rename or delete chats", run: () => show("agents") },
     { name: "copy", description: "copy the last response", available: !!lastReply(entries), run: () => { const reply = lastReply(entries); if (reply) navigator.clipboard.writeText(reply).then(() => setSlashNotice("Copied the last reply."), () => setError("Could not copy: the clipboard is unavailable.")); } },
     { name: "export", description: "export the conversation as markdown", available: !!selected && entries.length > 0 && idle, run: () => { if (selected) void exportChat(selected); } },
     { name: "diff", description: "show git diff (including untracked files)", available: !!selected, run: () => setPanel("diff") },
@@ -1499,7 +1484,7 @@ export default function Home() {
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
       empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agents: "Agents", agentsGuide: "Guide to managing agents", canvas: "Workflows", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", newAgent: "New agent", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -1508,7 +1493,7 @@ export default function Home() {
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
   commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
-  for (const [target, name] of [["agents", "Agents"], ["agentsGuide", "Guide to managing agents"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => { if (target === "agentsGuide") setGuideBack(view === "canvas" ? "Workflows" : "Agents"); show(target); } });
+  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
@@ -1524,7 +1509,6 @@ export default function Home() {
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        <Button variant="ghost" aria-current={view === "agents" ? "page" : undefined} onClick={() => show("agents")}><AgentsIcon size={16} />Agents{working > 0 && <span className="nav-badge" aria-hidden="true"><i />{working}</span>}</Button>
         <Button variant="ghost" aria-current={view === "canvas" ? "page" : undefined} onClick={() => show("canvas")}><WorkflowsIcon size={16} />Workflows</Button>
         <Button variant="ghost" aria-current={view === "loveSpot" ? "page" : undefined} onClick={() => show("loveSpot")}><LoveSpotIcon size={16} />Love Spot</Button>
         <Button variant="ghost" aria-current={view === "customize" ? "page" : undefined} onClick={() => show("customize")}><Blocks size={16} />Ledger</Button>
@@ -1575,7 +1559,6 @@ export default function Home() {
                 {tabs.tabs.map(chatTab)}
               </TabStrip>
             : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
-          {view === "agents" && <p className="page-description">Your conversations and agents. Open a chat or follow a running task.</p>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
           {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
             {selected.parentThreadId && <Button variant="link" size="xs" aria-label={`Open parent: ${parent ? title(parent) : "parent conversation"}`} onClick={() => openById(selected.parentThreadId!)}>Agent of {parent ? title(parent) : "its parent conversation"}</Button>}
@@ -1609,16 +1592,14 @@ export default function Home() {
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
-      {view === "agentsGuide" && <div className="page-scroll"><AgentsGuide back={guideBack} onBack={() => show(guideBack === "Workflows" ? "canvas" : "agents")} /></div>}
-      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => { setGuideBack("Workflows"); show("agentsGuide"); }}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+      {view === "agentsGuide" && <div className="page-scroll"><AgentsGuide onBack={() => show("canvas")} /></div>}
+      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <LoveSpot dark={dark} cwd={newChatFolder(cwd) || undefined} onOpenChat={id => { show("chat"); void openById(id); }} />}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
-      {observabilityVisited && <div className="page-scroll" hidden={view !== "observability"}><ObservabilityView hiddenChats={hidden.current} onOpenChat={id => void openById(id)} /></div>}
-      {view === "agents" && <div className="page-scroll"><ViewBoundary label="Agents"><div className="mx-auto mb-3 max-w-[1080px]"><AgentsGuideLink onOpen={() => { setGuideBack("Agents"); show("agentsGuide"); }} /></div><AgentsView threads={threads} activity={activity} models={models} providers={providerSettings?.providers} loading={agentsLoading} pendingThreadIds={approvals.map(approval => approval.params.threadId ?? approval.ownerThreadId)} moreConversations={!!nextCursor} loadingMore={moreLoading} onMoreConversations={loadMoreConversations} childCursors={childCursors} loadingChildren={loadingChildren} onMoreAgents={id => void loadChildren(id, childCursors[id] ?? undefined, false)} onOpen={loadThread} onStop={stop} onDelete={deleteThread} onNewAgent={() => show("newAgent")} /></ViewBoundary></div>}
-      {newAgentVisited && <div className="page-scroll" hidden={view !== "newAgent"}><button type="button" className="back-link" onClick={() => show("agents")}><ArrowLeft size={18} aria-hidden="true" />Back to Agents</button><ViewBoundary label="New agent" resetKey={newAgentVersion}><NewAgentForm key={newAgentVersion} models={models} settings={providerSettings} defaultCwd={cwd} connected={connected} onConfigure={manageConnections} onCreated={(thread, turnId, unsent, failure) => { setNewAgentVersion(value => value + 1); upsertThread(thread); if (unsent) saveDraft(thread.id, unsent); if (turnId && !completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: turnId })); void loadThread(thread).then(() => { if (failure && selectedRef.current?.id === thread.id) setError(failure); }); }} /></ViewBoundary></div>}
+      {view === "observability" && <div className="page-scroll" />}
       {view === "chat" && <div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}

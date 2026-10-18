@@ -14,7 +14,6 @@ import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
 import { smartPruneDetail } from './smart-prune.mjs';
-import { createObservability } from './observability.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createLoveAgents } from './love-agents.mjs';
@@ -26,7 +25,7 @@ const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const ERROR_CAUSES = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
-const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'observability', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot']);
+const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot']);
 /** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request. */
 function requestDiagnostics(home) {
   const directory = path.join(home, 'logs'), file = path.join(directory, 'desktop-requests.jsonl');
@@ -104,9 +103,6 @@ export async function startDesktopServer(options = {}) {
   let improvementStore;
   const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
-  // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
-  const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id),
-    listChats: params => client.observabilityChats(params), turnsOf: (id, params) => client.observabilityTurns(id, params), graphsOf: id => client.workflows(id) });
   const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const event = value => {
@@ -251,9 +247,6 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));
         const inlinePrune = url.pathname.match(/^\/api\/threads\/([^/]+)\/smart-prune\/([^/]+)\/([^/]+)$/);
         if (inlinePrune && method === 'GET') return json(response, 200, await smartPruneDetail(options.elpisHome, ...inlinePrune.slice(1).map(decodeURIComponent)));
-        if (url.pathname === '/api/observability' && method === 'GET') return json(response, 200, await observability.overview(url.searchParams));
-        const observed = url.pathname.match(/^\/api\/observability\/chats\/([^/]+)$/);
-        if (observed && method === 'GET') return json(response, 200, await observability.chat(decodeURIComponent(observed[1]), url.searchParams));
         if (url.pathname === '/api/customize' && method === 'GET') return json(response, 200, await client.customize(url.searchParams.get('cwd') || undefined));
         if (url.pathname === '/api/customize/skill' && method === 'POST') return json(response, 200, await client.setSkill(await body(request)));
         if (url.pathname === '/api/customize/skill/delete' && method === 'POST') return json(response, 200, await client.deleteSkill(await body(request)));

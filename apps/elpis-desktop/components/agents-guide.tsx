@@ -43,11 +43,11 @@ export function AgentsGuideLink({ onOpen }: { onOpen: () => void }) {
   return <Button variant="ghost" size="sm" onClick={onOpen}><BookOpen size={14} />Guide to managing agents</Button>;
 }
 
-export function AgentsGuide({ back, onBack }: { back: "Agents" | "Workflows"; onBack: () => void }) {
+export function AgentsGuide({ onBack }: { onBack: () => void }) {
   const [index, setIndex] = useState(0);
   const topic = topics[index];
   return <section aria-label="Guide to managing agents" className="mx-auto max-w-3xl space-y-5">
-    <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft size={14} />Back to {back}</Button>
+    <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft size={14} />Back to Workflows</Button>
     <nav aria-label="Guide topics" className="flex flex-wrap gap-2">
       {topics.map((item, at) => <Button key={item.title} variant={at === index ? "secondary" : "ghost"} size="sm" aria-current={at === index ? "page" : undefined} onClick={() => setIndex(at)}>{item.title}</Button>)}
     </nav>

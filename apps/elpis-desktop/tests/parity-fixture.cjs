@@ -70,7 +70,7 @@ async function fixture({ staticDir = out, width = 1130, height = 660, colorSchem
     } catch { res.statusCode = 404; res.end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: !process.env.ELPIS_UI_HEADED });
   const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);

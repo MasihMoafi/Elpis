@@ -46,7 +46,7 @@
 :where(.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span, .canvas-order li span, .canvas-critical span,
   .quick-add-crumb, .canvas-template-loaded, .agent-node-kind, .canvas-note-grip, .splash-boot li) {
   font-family:var(--mono); font-size:var(--label-size); font-weight:500; letter-spacing:var(--label-track); text-transform:uppercase; }
-/* Section header: the title over a group of rows (Settings groups, Ledger and Observability sections) — the lab status
+/* Section header: the title over a group of rows (Settings groups, Ledger sections) — the lab status
  * panel's accent tick, the title at 14px/600 in its own case, then a hairline running to the actions. */
 :where(.settings-group-heading, .customize-title):has(> :is(h2, h3))::before { content:""; flex:none; width:3px; height:14px; background:var(--primary); }
 :where(.settings-group-heading, .customize-title)::after { content:""; order:1; flex:1 1 24px; height:1px; background:var(--hairline); }
@@ -55,7 +55,7 @@
 /* One cut per role. Controls and the rows that light on hover or selection, and code blocks inside panels: --cut. */
 :where(.search-field, .model-select, .composer-chip, .feature-form select, .provider-model-input, .field select, .composer-pill, .context-ring, .feature-chip, .task-tab,
   .browser-toolbar input, .browser-find input, .annotation-editor textarea, .canvas-chip, .canvas-count input, .quick-add-field, .agent-dashboard header button,
-  .thread-row, .account-row, .back-link, .usage-summary, .team-row, .observability-chat, .activity-card, .activity-heading, .activity-group > summary, .hud-menu-item,
+  .thread-row, .account-row, .back-link, .usage-summary, .team-row, .activity-card, .activity-heading, .activity-group > summary, .hud-menu-item,
   .sidebar-group-row, .command-row, .canvas-template, .quick-add-option, .step-head, .turn-changes-toggle, .choice, .change-row,
   .markdown pre, .step-script, .decision-body pre, .hud-tooltip, .canvas-count-error) { border-radius:var(--cut) 0; corner-shape:bevel; }
 /* Badges and keycaps: --cut-sm. */
@@ -83,8 +83,6 @@ button:disabled { cursor:not-allowed; }
 .nav-list button[aria-current="page"], .settings-nav button[role="tab"].active { background:var(--selected); font-weight:500; }
 .nav-list button svg, .settings-nav button[role="tab"] svg { flex-shrink:0; color:var(--muted-foreground); }
 .nav-list button[aria-current="page"] svg, .settings-nav button[role="tab"].active svg { color:var(--primary); }
-.nav-badge { margin-left:auto; display:inline-flex; align-items:center; gap:5px; font-size:var(--text-small); color:var(--success); font-variant-numeric:tabular-nums; }
-.nav-badge i { width:6px; height:6px; border-radius:50%; background:currentColor; animation:pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity:.35; } }
 /* Search fields: one component (components/ui/search-field.tsx), one look, wherever they are. */
 /* The magnifier and text line up with the navigation rows' icons and labels (same 8px inset, 18px icon, 10px gap). */
@@ -345,7 +343,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
 .back-link { display:flex; align-items:center; gap:10px; height:34px; padding:0 8px; border:0; background:none; color:var(--muted-foreground); font-size:13px; cursor:pointer; }
 .back-link:hover { background:var(--hover); color:var(--foreground); }
-.page-scroll > .back-link { margin:0 0 12px -8px; }
 .settings-title { margin:10px 8px 4px; font:500 19px/1.3 var(--serif); }
 .settings-nav [role="tablist"] { display:grid; gap:1px; }
 .settings-nav-group { display:grid; gap:1px; }
@@ -366,9 +363,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .mcp-values dd { margin:0; overflow-wrap:anywhere; }
 .field { display:grid; gap:6px; font-size:13px; font-weight:500; min-width:0; }
 @media(max-width:760px) {
- .agent-row { flex-wrap:wrap; padding:12px; }
- .agent-row > .min-w-0 { flex-basis:100%; }
- .agent-actions { margin-left:auto; }
  .mcp-values div { grid-template-columns:1fr; gap:0; }
 }
 .mobile-brand { display:none; border-radius:6px; flex-shrink:0; }
@@ -423,7 +417,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Workspace hierarchy and requests stay separate from the scrolling task list. */
 .workspace-header > .min-w-0 { order:1; }
 .workspace-header > .mobile-menu, .workspace-header > .mobile-brand { order:0; }
-.page-description { color:var(--muted-foreground); font-size:12px; margin-top:5px; }
 .pending-input-anchor { order:2; margin-left:auto; min-width:0; }
 .pending-input-trigger { gap:7px; max-width:300px; }
 .pending-count { display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; background:var(--primary); color:var(--primary-foreground); font-size:var(--text-small); }
@@ -439,17 +432,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @media(max-width:760px) {
  .workspace-header { min-height:68px; gap:8px; }
  .workspace-header h1 { font-size:16px; }
- .page-description { display:none; }
  .pending-task-name { display:none; }
  .pending-input-trigger { font-size:var(--text-small); }
  .pending-input-panel { right:12px; top:74px; width:calc(100% - 24px); max-height:calc(100dvh - 100px); }
- .agents-toolbar { align-items:flex-start; flex-wrap:wrap; }
- .agent-row { display:grid; grid-template-columns:28px minmax(0,1fr); gap:8px 10px; margin-left:0!important; }
- .agent-icon { width:28px; height:28px; }
  .agent-state { grid-column:2; font-size:var(--text-small); min-width:0; }
- .agent-actions { grid-column:2; justify-self:end; margin-top:-30px; min-width:0; }
- .agent-title-line { flex-wrap:wrap; gap:0 7px; }
- .agent-meta { font-size:var(--text-small); }
  .thread-actions { opacity:1; }
 }
 
@@ -477,8 +463,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes spin { to { transform:rotate(360deg); } }
 @media(max-width:1100px) { .team-panel { display:none; } }
 
-/* Agents: a Linear-style list — one line per agent, grouped under its conversation. */
-.agents-view { max-width:1080px; margin:0 auto; }
 /* Customize (components/customize-view.tsx), as Claude's: the three sections, then each one's list of rows. */
 .customize { display:grid; gap:14px; max-width:820px; margin:0 auto; }
 .customize-title { display:flex; align-items:center; gap:12px; min-height:32px; }
@@ -496,70 +480,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .customize-state[data-on] { color:var(--foreground); }
 .customize-errors { margin-top:10px; font-size:13px; color:var(--muted-foreground); }
 .customize-errors summary { cursor:pointer; }
-/* Observability: recorded context and pruning, within the shared Customize frame. */
-.observability { container:observability / inline-size; }
-.observability > section, .observability section > section { margin-bottom:24px; }
-.observability-chat { text-align:start; cursor:pointer; }
-.observability-chat:hover .customize-name { text-decoration:underline; }
-.observability :is(button,li[tabindex]):focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
-.observability .customize-list + button { margin-top:12px; }
-/* Readable turns use the chat's messages, Markdown, work steps and Ledger. */
-.observed-chat-row { display:flex; align-items:center; gap:12px; }
-.observed-agent { min-width:0; padding-top:12px; }
-.observed-agent + .observed-agent { border-top:1px solid var(--border); padding-top:24px; }
-.observed-agent > .customize-title { margin-bottom:4px; }
-.observed-turn { min-width:0; padding:20px 0; border-bottom:1px solid var(--hairline); }
-.observed-turn-number { margin:0 0 12px; font-size:12px; color:var(--muted-foreground); }
-.observed-item { min-width:0; }
-.observed-metrics { margin:20px 0 8px; font-size:12px; color:var(--muted-foreground); }
-.observed-metrics > summary { cursor:pointer; overflow-wrap:anywhere; }
-.observed-metrics .context-bar { margin:12px 0; }
-.observed-metrics .context-ledger-rows { padding:0; margin:12px 0; }
-.observed-failure { color:var(--destructive); font-size:13px; overflow-wrap:anywhere; }
-.observed-agent > button { margin-top:16px; }
-.agents-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:14px; }
-/* Segmented choices: the Agents status filters and Settings' side-by-side options. */
+/* Segmented choices: Settings' side-by-side options. */
 .segmented { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; padding:2px; border-radius:calc(var(--cut) + 1px) 0; corner-shape:bevel; background:var(--muted); }
 .segmented > button { height:26px; padding:0 10px; font-size:12.5px; font-weight:500; color:var(--muted-foreground); }
 .segmented > button:is([aria-pressed="true"], [aria-checked="true"]) { background:var(--card); color:var(--foreground); box-shadow:var(--shadow); }
-.filter-count { font-size:var(--text-small); color:var(--subtle-foreground); padding-left:4px; font-variant-numeric:tabular-nums; }
-.agents-loading { color:var(--muted-foreground); font-size:12px; margin:8px 0; }
-.agents-view-heading { display:none; }
-.agents-empty-state { max-width:540px; margin:60px auto; text-align:center; color:var(--muted-foreground); }
-.agent-conversation-group { border:1px solid var(--border); margin:0 0 12px; overflow:hidden; background:var(--background); }
-.agent-group-label { display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:12px; font-weight:500; color:var(--muted-foreground); background:var(--sidebar); }
-.agent-group-hint { font-weight:400; opacity:.85; }
-.agent-row { display:flex; align-items:center; gap:10px; min-height:40px; padding:6px 12px; min-width:0; border-top:1px solid var(--hairline); }
-.agent-conversation-group > .agent-row:first-child { border-top:0; background:var(--sidebar); min-height:44px; }
-.agent-conversation-group > .agent-group-label + div > .agent-row { border-top:0; }
-.agent-row:hover { background:var(--hover); }
-.agent-icon { display:grid; place-items:center; height:20px; width:20px; flex-shrink:0; color:var(--subtle-foreground); }
-.agent-conversation-group > .agent-row:first-child .agent-icon { color:var(--foreground); }
-.agent-main { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; column-gap:16px; }
-.agent-title-line { display:flex; align-items:baseline; gap:8px; min-width:0; }
-.agent-title { display:block; font-size:13px; line-height:1.4; font-weight:500; text-align:left; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:none; border:0; padding:0; color:var(--foreground); }
-.agent-conversation-group > .agent-row:first-child .agent-title { font-weight:600; }
-.agent-nickname { font-size:var(--text-small); color:var(--subtle-foreground); white-space:nowrap; }
-.agent-meta { margin:0; font-size:var(--text-small); color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; max-width:320px; }
-.agent-activity { grid-column:1/-1; margin:1px 0 0; font-size:12px; color:var(--foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.agent-activity:empty { display:none; }
 .agent-state { display:inline-flex; align-items:center; gap:6px; min-width:88px; font-size:var(--text-small); white-space:nowrap; color:var(--muted-foreground); }
 .agent-state i { height:7px; width:7px; border-radius:50%; background:currentColor; opacity:.55; }
 .agent-state.working { color:var(--success); font-weight:500; } .agent-state.working i { opacity:1; animation:pulse 1.6s ease-in-out infinite; }
 .agent-state.waiting { color:var(--primary); font-weight:500; } .agent-state.waiting i { opacity:1; }
-/* Room for Stop, Open chat and ⋯ on every row, so the status column lines up whether or not a row can be stopped. */
-.agent-actions { display:flex; align-items:center; justify-content:flex-end; gap:2px; flex-shrink:0; min-width:170px; opacity:0; transition:opacity .12s; }
-.agent-row:hover .agent-actions, .agent-actions:focus-within { opacity:1; }
-.agent-actions button { height:26px; font-size:12px; }
-.agent-context .agent-icon { opacity:.65; }
-.agent-context .agent-activity { display:none; }
-@media(hover:none) { .agent-actions { opacity:1; } }
-
-@container workspace (max-width:760px) {
- .agent-main { grid-template-columns:minmax(0,1fr); row-gap:3px; }
- .agent-meta { text-align:left; max-width:100%; }
- .agent-actions { min-width:0; }
-}
 
 /* Settings respond to the available pane width, including beside the browser. */
 @container workspace (max-width:760px) {

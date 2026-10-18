@@ -99,23 +99,6 @@ test('search keeps a server match that appears after the shortened conversation 
   assert.equal(await page.locator('.thread-row[data-thread-id="late-preview"]').count(), 0);
 }));
 
-test('new-agent drafts survive navigation and its model uses the shared choice control', () => fixture(async ({ page, shot }) => {
-  await (await sidebar(page)).getByRole('button', { name: 'Agents', exact: true }).click();
-  await page.getByRole('button', { name: 'New agent', exact: true }).click();
-  const form = page.getByRole('form', { name: 'New agent', exact: true });
-  await form.getByLabel('Name', { exact: true }).fill('Check my book');
-  await form.getByLabel('Instructions', { exact: true }).fill('Keep these instructions while I check settings.');
-  await form.getByLabel('Model', { exact: true }).click();
-  await page.getByLabel('Search models', { exact: true }).waitFor();
-  await page.getByLabel('Search models', { exact: true }).press('Escape');
-  await openSettings(page);
-  await (await sidebar(page)).getByRole('button', { name: 'Agents', exact: true }).click();
-  await page.getByRole('button', { name: 'New agent', exact: true }).click();
-  assert.equal(await form.getByLabel('Name', { exact: true }).inputValue(), 'Check my book');
-  assert.match(await form.getByLabel('Instructions', { exact: true }).inputValue(), /Keep these instructions/);
-  await shot('03-agent-draft-light');
-}));
-
 test('rendered local file links open inside Files and explain failures without leaving the chat', () => fixture(async ({ page, calls }) => {
   await page.evaluate(() => {
     window.testOpenedFiles = [];
@@ -166,7 +149,7 @@ test('API setup omits internal IDs and keeps unsaved values across sections and 
   await page.getByRole('tab', { name: 'MCP servers', exact: true }).click();
   await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('Provider display name', { exact: true }).inputValue(), 'My research server');
-  await (await sidebar(page)).getByRole('button', { name: 'Agents', exact: true }).click();
+  await (await sidebar(page)).getByRole('button', { name: 'Observability', exact: true }).click();
   await openSettings(page);
   await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('API endpoint', { exact: true }).inputValue(), 'http://127.0.0.1:1234/v1');

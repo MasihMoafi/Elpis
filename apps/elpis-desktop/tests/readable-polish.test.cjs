@@ -78,8 +78,6 @@ for (const size of [{ width: 1440, height: 900 }, { width: 1130, height: 800 }])
     seen.chat = await problems(page); await shot('polish-chat');
     await page.locator('.thread-row[data-thread-id="bravo"]').getByRole('button', { name: /^Actions for/ }).click(); await page.getByRole('menu').waitFor();
     seen.chatMenu = await problems(page); await page.keyboard.press('Escape');
-    await page.locator('.nav-list').getByRole('button', { name: /^Agents/ }).click(); await page.locator('.agent-row').first().waitFor();
-    seen.agents = await problems(page); await shot('polish-agents');
     await openSettings(page);
     for (const tab of ['General', 'Usage & limits', 'Archived chats', 'Models & accounts', 'Keyboard shortcuts', 'Configuration']) {
       await page.getByRole('tab', { name: tab, exact: true }).click(); await page.getByRole('tabpanel', { name: tab, exact: true }).waitFor(); await page.waitForTimeout(150);

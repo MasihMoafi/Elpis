@@ -115,7 +115,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
 
 
 test('mouse clicks run navigation actions; projects match folders; sidebar hint and shortcut help agree', async () => {
-  const f = await fixture({ routes: { ...routes, '/api/observability': () => ({ available: false, chats: { data: [], nextCursor: null }, totals: { unlinked: 0 }, skipped: { unreadable: 0 } }) } }), { page } = f;
+  const f = await fixture({ routes }), { page } = f;
   try {
     await page.evaluate(() => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'proj', name: 'Compiler', cwd: '/tmp/compiler-project' }], selectedId: null })));
     await page.reload(); await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();

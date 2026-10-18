@@ -181,8 +181,8 @@ async function until(predicate, label, timeout = 15000) {
   throw new Error(`Timed out: ${label}`);
 }
 async function check(name, run) {
-  if (modelsOnly && !/^(child approval|titles-not-nicknames|live activity|interrupt any agent|writable child chat|existing chat|a chat working|new agent passes|model and effort change)/.test(name)) return;
-  if (designOnly && !/^(child approval|titles-not-nicknames|live activity|interrupt any agent)/.test(name)) return;
+  if (modelsOnly && !/^(child approval|titles-not-nicknames|writable child chat|existing chat|a chat working|model and effort change)/.test(name)) return;
+  if (designOnly && !/^(child approval|titles-not-nicknames)/.test(name)) return;
   try { await run(); results.push({ name, ok: true }); console.log(`PASS ${name}`); }
   catch (error) {
     results.push({ name, ok: false, error: String(error.message).split('\n')[0] }); console.log(`FAIL ${name}: ${String(error.message).split('\n')[0]}`);
@@ -271,13 +271,7 @@ try {
     await until(async () => (await fs.readFile(marker, 'utf8').catch(() => '')) === 'approved', 'approved command ran');
   });
 
-  await check('titles-not-nicknames (sidebar and agents page)', async () => {
-    await nav('Agents').click();
-    const row = page.locator(`.agent-row[data-thread-id="${childThread.id}"]`);
-    await row.waitFor({ timeout: 10000 });
-    assert.equal((await row.locator('.agent-title').innerText()).trim(), childTitle);
-    assert.notEqual((await row.locator('.agent-title').innerText()).trim(), childThread.agentNickname);
-    assert.match(await row.locator('.agent-nickname').innerText(), new RegExp(childThread.agentNickname));
+  await check('titles-not-nicknames (sidebar)', async () => {
     const rootRow = page.locator(`.thread-row[data-thread-id="${rootThread.id}"]`);
     // A chat's agents are shown from its row menu (the row's hover shows only Pin and Archive, as in the ChatGPT app).
     await rootRow.first().getByRole('button', { name: /^Actions for / }).click();
@@ -290,29 +284,10 @@ try {
     await shoot('sidebar', { mobileSidebar: true });
   });
 
-  await check('live activity updates without reload', async () => {
-    const before = loads;
-    const row = page.locator(`.agent-row[data-thread-id="${childThread.id}"]`);
-    await until(async () => /^Running: .*sleep 8/.test(await row.locator('.agent-activity').innerText().catch(() => '')), 'activity shows current command');
-    assert.match(await row.locator('.agent-state').innerText(), /Working/);
-    await shoot('agents', { mobileSidebar: false });
-    await until(() => fixture.hanging.size === 1, 'child waiting on the model', 20000);
-    await until(async () => /^Ran: .*sleep 8/.test(await row.locator('.agent-activity').innerText().catch(() => '')), 'activity moved past the command', 10000);
-    assert.equal(loads, before, 'no page reload');
-  });
-
-  await check('interrupt any agent from the agents page', async () => {
-    const before = requestsOf('child').length;
-    const row = page.locator(`.agent-row[data-thread-id="${childThread.id}"]`);
-    await row.getByRole('button', { name: `Stop ${childTitle}` }).click();
-    await until(async () => !/Working/.test(await row.locator('.agent-state').innerText()), 'child stopped');
-    await until(() => fixture.hanging.size === 0, 'hung inference request closed');
-    await wait(500);
-    assert.equal(requestsOf('child').length, before, 'interrupt does not start inference');
-  });
-
+  await api(`/threads/${childThread.id}/interrupt`, {});
+  await until(() => fixture.hanging.size === 0, 'child fixture stopped');
   await check('writable child chat sends exactly one fixture request', async () => {
-    await page.locator(`.agent-row[data-thread-id="${childThread.id}"]`).getByRole('button', { name: 'Open chat' }).click();
+    await page.locator(`.thread-row[data-thread-id="${childThread.id}"] .thread-link`).click();
     await page.getByRole('heading', { level: 1, name: childTitle }).waitFor();
     await page.getByRole('button', { name: `Open parent: ${(await api(`/threads/${rootThread.id}?limit=1`)).body.thread.name || rootThread.preview}` }).waitFor();
     assert.equal(await page.getByText(/controlled by its parent/i).count(), 0);
@@ -366,31 +341,10 @@ try {
   });
 
   let agentThread;
-  await check('new agent passes chosen name, model, folder and instructions', async () => {
-    await nav('Agents').click();
-    await page.getByRole('button', { name: 'New agent', exact: true }).click();
-    const form = page.getByRole('form', { name: 'New agent' });
-    await form.getByLabel('Name').fill('Docs reviewer 4242');
-    await chooseOption(form.getByLabel('Model'), 'gpt-6-luna');
-    await form.getByLabel('Working folder').fill(agentCwd);
-    await form.getByLabel('Instructions').fill('AGENT_INSTRUCTIONS_4242 review docs only');
-    await form.getByLabel('First message').fill('AGENT_TASK_4242 start');
-    await shoot('new-agent');
-    const before = fixture.requests.length;
-    reply('AGENT_TASK_4242', message('AGENT_REPLY_4242'));
-    await form.getByRole('button', { name: 'Create agent' }).click();
-    await page.getByText('AGENT_REPLY_4242', { exact: true }).waitFor({ timeout: 30000 });
-    assert.equal(fixture.requests.length, before + 1);
-    const request = requestsWith('AGENT_TASK_4242')[0].body;
-    assert.equal(request.model, 'gpt-6-luna');
-    assert.match(JSON.stringify(request), /AGENT_INSTRUCTIONS_4242/);
-    assert.match(JSON.stringify(request.input), /AGENT_TASK_4242/);
-    agentThread = (await api('/threads?limit=20')).body.data.find(t => t.name === 'Docs reviewer 4242');
-    assert(agentThread, 'agent named natively');
-    assert.equal(agentThread.parentThreadId ?? null, null, 'no fabricated parent');
-    assert.equal(await fs.realpath(agentThread.cwd), await fs.realpath(agentCwd));
-    await page.locator(`.thread-row[data-thread-id="${agentThread.id}"] .thread-title`).filter({ hasText: 'Docs reviewer 4242' }).waitFor();
-  });
+  agentThread = (await api('/threads', { model: 'gpt-6-luna', cwd: agentCwd })).body.thread;
+  await api(`/threads/${agentThread.id}/rename`, { name: 'Docs reviewer 4242' });
+  await page.reload();
+  await page.locator(`.thread-row[data-thread-id="${agentThread.id}"] .thread-link`).click();
 
   await check('model and effort change is shown and reaches the next request', async () => {
     await chooseOption(page.getByLabel('Model', { exact: true }), 'gpt-5.5');
@@ -421,8 +375,6 @@ try {
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
     await until(async () => await row().count() === 0, 'row removed from sidebar');
     assert.equal((await api('/threads?limit=50')).body.data.some(t => t.id === agentThread.id), false, 'native list no longer has it');
-    await nav('Agents').click();
-    assert.equal(await page.locator(`[data-thread-id="${agentThread.id}"]`).count(), 0, 'agents page no longer has it');
     // A root with an agent and a continued agent chat: every piece disappears.
     const rootRow = page.locator(`.thread-row[data-thread-id="${rootThread.id}"]`);
     await rootRow.getByRole('button', { name: /^Actions for / }).click(); await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();

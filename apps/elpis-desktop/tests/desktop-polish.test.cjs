@@ -52,29 +52,11 @@ test('elapsed work keeps lowercase time units', () => using({ chat: [['t1', 'Exp
 test('non-chat views get the whole workspace while the panel stays hidden', () => using({ width: 820 }, async ({ page }) => {
   await panel(page);
   await page.getByRole('button', { name: 'Open sidebar', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Agents', exact: true }).click();
-  await page.locator('.agent-title').first().waitFor();
+  await page.getByRole('button', { name: 'Observability', exact: true }).click();
+  await page.getByRole('heading', { name: 'Observability', exact: true }).waitFor();
   assert.equal(await page.locator('.side-panel').isVisible(), false);
   await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   assert.equal(await page.locator('.side-panel').isVisible(), false);
-}));
-
-test('agent titles have room and metadata sits underneath at 820px', () => using({ width: 820 }, async ({ page }) => {
-  await page.getByRole('button', { name: 'Agents', exact: true }).click();
-  await page.locator('.agent-title').first().waitFor();
-  const size = await page.locator('.agent-title-line').first().boundingBox();
-  assert.ok(size.width >= 100, JSON.stringify(size));
-  assert.equal(await page.locator('.agent-title').first().evaluate(el => el.scrollWidth <= el.clientWidth + 1), true, 'the complete title is visible');
-  const stacked = await page.locator('.agent-main').first().evaluate(el => {
-    const title = el.querySelector('.agent-title-line').getBoundingClientRect(), meta = el.querySelector('.agent-meta').getBoundingClientRect();
-    return meta.top >= title.bottom;
-  });
-  assert.equal(stacked, true);
-  // Disabling the fix reproduces the original competing title/metadata columns.
-  const oldColumns = await page.addStyleTag({ content: '@container workspace (max-width:760px) { .agent-main { grid-template-columns:minmax(0,1fr) auto; } }' });
-  const oldStacked = await page.locator('.agent-main').first().evaluate(el => el.querySelector('.agent-meta').getBoundingClientRect().top >= el.querySelector('.agent-title-line').getBoundingClientRect().bottom);
-  assert.equal(oldStacked, false, 'the check detects the original layout');
-  await oldColumns.evaluate(el => el.remove());
 }));
 
 test('a turn is visibly working before its first entry arrives', () => using({ running: true, chat: TURNS.slice(0, 3), routes: {

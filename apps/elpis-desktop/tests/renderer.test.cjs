@@ -77,7 +77,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(output,'elpis-app-chat-dark-390.png')});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.getByLabel('Open sidebar').click();await chooseTheme(page, 'light');await page.waitForTimeout(250);await page.getByLabel('Close sidebar').click();await page.screenshot({path:path.join(output,'elpis-app-chat-light-390.png')});
-    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Agents',exact:true}).click();await page.getByRole('heading',{name:'Agents',exact:true}).waitFor();
+    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Observability',exact:true}).click();await page.getByRole('heading',{name:'Observability',exact:true}).waitFor();
     assert.deepEqual(errors,[]);
   }finally{await browser.close();for(const client of clients)client.end();await new Promise(resolve=>server.close(resolve));}
 });

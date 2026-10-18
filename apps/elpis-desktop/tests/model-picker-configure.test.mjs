@@ -67,12 +67,6 @@ test('optional setup callback is absent safely; retry recovers without changing 
   } finally { view.dispose(); globalThis.fetch = previous; }
 });
 
-test('new-agent form forwards the same connection setup callback to its model picker', () => {
-  const onConfigure = () => {};
-  const view = fixture('components/new-agent-form.tsx', 'NewAgentForm', { models, settings, defaultCwd: '/workspace', connected: true, onCreated() {}, onConfigure });
-  assert.equal(named(view.render(), 'ModelPicker').props.onConfigure, onConfigure);
-});
-
 test('inherited subscription defaults retain their provider identity while exact route matches take precedence', () => {
   const choices = [{ id: '', label: 'OpenAI', models }];
   for (const [defaultModel, provider] of [['claude/opus', 'Anthropic'], ['agy/gpt-oss', 'Antigravity'], ['sol', 'OpenAI']]) {

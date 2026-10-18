@@ -17,11 +17,10 @@ async function command(page, name) {
   await page.getByRole('option', { name: new RegExp('^' + name) }).click();
 }
 
-test('Agents opens the guide; topics and back links work without starting a run', async () => {
+test('The command menu opens the guide; topics and the Workflows back link work without starting a run', async () => {
   const f = await fixture(), { page } = f;
   try {
-    await command(page, 'Agents');
-    await page.getByRole('button', { name: 'Guide to managing agents', exact: true }).click();
+    await command(page, 'Guide');
     await guide(page).waitFor();
     await page.context().route('https://www.anthropic.com/engineering/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Guide reference</title>' }));
     for (const name of topics) {
@@ -45,8 +44,8 @@ test('Agents opens the guide; topics and back links work without starting a run'
     assert.match(await guide(page).innerText(), /worktree/);
     await guide(page).getByRole('button', { name: 'Choose a pattern', exact: true }).click();
     for (const name of ['Split by parts', 'Voting', 'Debate', 'Hierarchical', 'Research']) assert.ok((await guide(page).innerText()).includes(name));
-    await guide(page).getByRole('button', { name: 'Back to Agents' }).click();
-    await page.getByRole('region', { name: 'Agents', exact: true }).waitFor();
+    await guide(page).getByRole('button', { name: 'Back to Workflows' }).click();
+    await page.getByRole('region', { name: 'Workflows', exact: true }).waitFor();
     await command(page, 'Guide');
     await guide(page).waitFor();
     assert.equal(f.posts.filter(p => /workflows|turns|\/api\/threads$/.test(p.path)).length, 0);
