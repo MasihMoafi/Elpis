@@ -145,3 +145,22 @@ test('a chat deleted while Observability is open disappears with its counts and 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('MCP output and the full subagent prompt open with one click', async () => {
+  const all = routes([], 1), f = await fixture({ routes: { ...all, '/api/observability/chats/chat-a': (body, url) => {
+    const page = all['/api/observability/chats/chat-a'](body, url);
+    if (page.agentId === 'chat-a') page.turns.data[0].items.splice(-1, 0, { id: 'mcp-read', type: 'mcpToolCall', server: 'rag', tool: 'search', status: 'completed', arguments: { query: 'parser' }, result: { content: [{ type: 'text', text: 'README loaded.' }] } });
+    return page;
+  } } });
+  try {
+    const { page } = f; await enter(page); await open(page);
+    const first = mother(page).locator('.observed-turn').first();
+    const mcp = first.locator('details.step').filter({ hasText: 'Used rag search' });
+    await mcp.locator(':scope > summary').click();
+    await mcp.getByText('README loaded.', { exact: true }).waitFor();
+    const delegation = first.locator('details.step').filter({ hasText: 'Asked a subagent: Verify Unicode cases' });
+    await delegation.locator(':scope > summary').click();
+    await delegation.getByText('Verify Unicode cases', { exact: true }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

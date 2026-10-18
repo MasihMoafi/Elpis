@@ -27,12 +27,9 @@ const short = (value: unknown) => typeof value === "string" ? value.replace(/\s+
 /** Keep the chat's work components, with a short sentence in the closed row and full recorded details inside. */
 function Work({ item }: { item: Item }) {
   if (item.type === "commandExecution") return <CommandStep item={item} open={false} />;
-  const label = item.type === "collabAgentToolCall" ? (item.prompt ? `Asked a subagent: ${short(item.prompt)}` : "Worked with a subagent")
-    : item.type === "subAgentActivity" ? "Worked with a subagent"
-    : ["fileChange", "mcpToolCall", "webSearch"].includes(item.type) ? stepLabel(item)
-    : item.type === "reasoning" ? "Reasoned through the task"
-    : `Used ${short(item.tool ?? item.name) || item.type.replace(/([a-z])([A-Z])/g, "$1 $2")}`;
-  return <Step title={<FilePathText text={label} />} failed={stepFailed(item)} body={<ChatMessage item={item} />} />;
+  if (item.type === "collabAgentToolCall") return <ChatMessage item={item} activityLabel={item.prompt ? `Asked a subagent: ${short(item.prompt)}` : "Worked with a subagent"} />;
+  if (item.type === "fileChange") return <Step title={<FilePathText text={stepLabel(item)} />} failed={stepFailed(item)} body={<ChatMessage item={item} />} />;
+  return <ChatMessage item={item} />;
 }
 
 function TurnLedger({ turn }: { turn: Turn }) {
