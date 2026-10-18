@@ -473,6 +473,7 @@ WHERE graph_id = ? AND task_id = ? AND status = ? AND assigned_thread_id = ?
                 Some(&serde_json::json!({
                     "thread_id": thread_id,
                     "evidence_count": report.evidence.len(),
+                    "undeclared_changed_files": report.result.get("undeclared_changed_files"),
                 })),
                 now,
             )
@@ -521,6 +522,7 @@ WHERE graph_id = ? AND task_id = ? AND status = ? AND assigned_thread_id = ?
                 Some(&serde_json::json!({
                     "thread_id": thread_id,
                     "reason": reason,
+                    "undeclared_changed_files": report.and_then(|result| result.get("undeclared_changed_files")),
                 })),
                 now,
             )

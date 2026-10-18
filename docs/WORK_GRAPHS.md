@@ -201,10 +201,12 @@ Windows-style absolute paths, Git metadata paths, and scopes whose existing pref
 resolves through a symlink outside the selected workspace are rejected.
 
 This is enforced by the sandbox, not only by the prompt. Before dispatching a writable
-task, Elpis records SHA-256 digests for files and symlinks under its declared scopes.
-When the assigned thread reports, Elpis measures the workspace again. A successful
-report is rejected unless its declared changed-file set exactly matches the measured
-created, modified, and deleted files.
+task, Elpis records SHA-256 digests for files and symlinks in its workspace, excluding
+Git metadata and ignored paths. When the assigned thread reports, Elpis measures the
+workspace again. Every declared file must be among the measured created, modified,
+and deleted files, and every measured change must be within the task's write scopes.
+Additional changes within those scopes, such as generated caches, are accepted and
+recorded as `undeclared_changed_files` in the task result and terminal event in the run log.
 
 `report_agent_work_task` is accepted only from the assigned thread. Success requires
 concrete checks and evidence. Writable success requires a measured changed file.

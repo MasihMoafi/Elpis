@@ -505,6 +505,7 @@ async fn report_work_task(
             )),
         });
     }
+    let mut undeclared_changed_files = BTreeSet::new();
     if task.kind.is_writable() {
         let baseline = task.baseline.as_ref().ok_or_else(|| {
             FunctionCallError::Fatal(format!(
@@ -519,26 +520,41 @@ async fn report_work_task(
             ))
         })?;
         let actual = changed_paths(baseline, &current)?;
+        let outside_scopes = changed_files_outside_scopes(
+            &actual.iter().cloned().collect::<Vec<_>>(),
+            &task.write_scopes,
+        )?;
+        if !outside_scopes.is_empty() {
+            return tool_json(&ReportToolResult {
+                accepted: false,
+                reason: Some(format!(
+                    "measured changed files outside declared write scopes: {}",
+                    outside_scopes.join(", ")
+                )),
+            });
+        }
         let declared = args
             .changed_files
             .iter()
             .map(|path| normalize_repo_path(path))
             .collect::<Result<BTreeSet<_>, _>>()?;
-        if actual != declared {
+        if !declared.is_subset(&actual) {
             return tool_json(&ReportToolResult {
                 accepted: false,
                 reason: Some(format!(
-                    "declared changed files do not match engine measurement; measured: [{}], declared: [{}]",
+                    "declared changed files include paths without measured changes; measured: [{}], declared: [{}]",
                     actual.iter().cloned().collect::<Vec<_>>().join(", "),
                     declared.iter().cloned().collect::<Vec<_>>().join(", ")
                 )),
             });
         }
+        undeclared_changed_files = actual.difference(&declared).cloned().collect();
     }
 
     let result = serde_json::json!({
         "summary": args.summary,
         "changed_files": args.changed_files,
+        "undeclared_changed_files": undeclared_changed_files,
         "checks": args.checks,
         "risks": args.risks,
         "edge_cases_considered": args.edge_cases_considered,
@@ -1581,12 +1597,36 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
         .ok_or_else(|| anyhow::anyhow!("task has no native workspace path"))?;
     let root = Path::new(workspace);
     let mut files = BTreeMap::<String, String>::new();
-    for scope in &task.write_scopes {
-        let scoped_path = root.join(scope);
-        if !scoped_path.exists() {
-            continue;
+    // Measure the workspace, including paths outside the scopes. Git enumerates
+    // tracked and untracked files without ignored output or repository metadata.
+    let output = std::process::Command::new("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+        ])
+        .current_dir(root)
+        .output()?;
+    if output.status.success() {
+        for path in output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+        {
+            let path = std::str::from_utf8(path)?;
+            snapshot_path(root, &root.join(path), &mut files)?;
         }
-        snapshot_path(root, &scoped_path, &mut files)?;
+    } else if root.ancestors().any(|path| path.join(".git").exists()) {
+        bail!(
+            "failed to enumerate workspace files: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    } else {
+        snapshot_path(root, root, &mut files)?;
     }
     Ok(serde_json::to_value(files)?)
 }
@@ -1596,7 +1636,14 @@ fn snapshot_path(
     path: &Path,
     files: &mut BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
-    let metadata = std::fs::symlink_metadata(path)?;
+    if path.file_name().is_some_and(|name| name == ".git") {
+        return Ok(());
+    }
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
     if metadata.is_dir() {
         for entry in std::fs::read_dir(path)? {
             snapshot_path(root, &entry?.path(), files)?;
