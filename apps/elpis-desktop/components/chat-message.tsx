@@ -1,5 +1,6 @@
 "use client";
 
+import { SmartPruneLine } from "@/components/smart-prune";
 import { useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
 import { Copy, FileText, Pencil, RefreshCw, Terminal, Undo2 } from "lucide-react";
@@ -115,6 +116,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const actions:MessageAction[]=item.text?[copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
     return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
+  if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;
   if(item.type==="fileChange")return <ItemEdits item={item}/>;
   if(item.type==="mcpToolCall"||item.type==="dynamicToolCall"){

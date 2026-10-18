@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Maximize2, Minimize2, X } from "lucide-react";
+import { SmartPruneDetail } from "@/components/smart-prune";
+import { onPruneRequest, type PruneTarget } from "@/lib/smart-prune";
+import { Maximize2, Minimize2, Scissors, X } from "lucide-react";
 import { BrowserIcon, FileEditIcon, FolderIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -18,11 +20,12 @@ import type { BrowserTab } from "@/lib/desktop";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
 export type TerminalTab = { key: string; n: number; cwd: string; threadId?: string };
-type Item = { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab } | { key: string; kind: "changes" } | { key: string; kind: "files" };
+type Item = { key: string; kind: "smartPrune"; target: PruneTarget } | { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab } | { key: string; kind: "changes" } | { key: string; kind: "files" };
 /** The Changes tab (components/changes-panel.tsx) is one tab for the open chat's folder, so it has one key. */
 const CHANGES = "c:changes";
 /** The Files tab (components/files-pane.tsx) is one tab too: the open chat's folder. */
 const FILES = "f:files";
+const PRUNE = "p:prune";
 
 /** Narrower than this the browser toolbar could not keep its address field (components/browser-panel.tsx). */
 const MIN_WIDTH = 360;
@@ -33,6 +36,7 @@ const MIN_WIDTH = 360;
  * over it as a card (`chatCollapsed`: a pill instead). */
 export function useSidePanel(browser: Browser) {
   const [open, setOpen] = useState(false);
+  const [prune, setPrune] = useState<PruneTarget | null>(null);
   const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false), [filesTab, setFilesTab] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
@@ -40,8 +44,9 @@ export function useSidePanel(browser: Browser) {
   const [width, setWidth] = useState<number | null>(null);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
-  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : [])]);
+  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : []), ...(prune ? [PRUNE] : [])]);
   const items = order.current.flatMap((key): Item[] => {
+    if (key === PRUNE && prune) return [{ key, kind: "smartPrune", target: prune }];
     if (key === CHANGES) return [{ key, kind: "changes" }];
     if (key === FILES) return [{ key, kind: "files" }];
     const terminal = key.startsWith("t:") && terminals.find(tab => `t:${tab.key}` === key), page = key.startsWith("b:") && pages.find(tab => `b:${tab.id}` === key);
@@ -71,6 +76,7 @@ export function useSidePanel(browser: Browser) {
     if (!same) setTerminals(previous => [...previous, tab]);
     select(`t:${tab.key}`); return tab.key;
   }, [terminals, select]);
+  useEffect(() => onPruneRequest(target => { setPrune(target); select(PRUNE); }), [select]);
   const openPage = useCallback(() => { setOpen(true); void command("new"); }, [command]);
   /** Shows the Changes tab, opening it first when it is not there. */
   const openChanges = useCallback(() => { setChanges(true); select(CHANGES); }, [select]);
@@ -80,7 +86,8 @@ export function useSidePanel(browser: Browser) {
   const close = useCallback((key: string) => {
     const next = neighbour(order.current, key);
     if (shown?.key === key) { if (next) select(next); else setActive(null); }
-    if (key === CHANGES) setChanges(false);
+    if (key === PRUNE) setPrune(null);
+    else if (key === CHANGES) setChanges(false);
     else if (key === FILES) setFilesTab(false);
     else if (key.startsWith("t:")) { setTerminals(previous => previous.filter(tab => `t:${tab.key}` !== key)); endTerminal(key.slice(2)); }
     else void command("close", { id: key.slice(2) });
@@ -158,6 +165,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       </DropdownMenu>}>
         {panel.items.map(item => {
           const active = item.key === shown?.key, close = () => panel.close(item.key), select = () => panel.select(item.key);
+          if (item.kind === "smartPrune") return <Tab key={item.key} icon={<Scissors size={14} />} label="Smart Prune" title={item.target.prune.tool} active={active} closeLabel="Close Smart Prune tab" actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           if (item.kind === "changes") return <Tab key={item.key} icon={<FileEditIcon size={14} />} label="Changes" title="Changes in this chat's folder" active={active} closeLabel="Close Changes tab"
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           if (item.kind === "files") return <Tab key={item.key} icon={<FolderIcon size={14} />} label="Files" title="The files in this chat's folder" active={active} closeLabel="Close Files tab"
@@ -173,6 +181,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-label="Close side panel" title="Close side panel (Ctrl+`)" onClick={panel.closePanel}><X size={15} /></Button>
     </div>
     <div className="side-body"><ViewBoundary label="This panel" resetKey={`${shown?.key}:${threadId}`}>
+      {shown?.kind === "smartPrune" && <SmartPruneDetail target={shown.target} />}
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
       {shown?.kind === "files" && <FilesPane cwd={cwd} />}

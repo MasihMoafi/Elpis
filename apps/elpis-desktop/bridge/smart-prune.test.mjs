@@ -1,0 +1,35 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { smartPruneDetail } from './smart-prune.mjs';
+
+test('inline details use the committed output, scope to chat and confine artifact paths', async t => {
+  const cache = path.join(os.homedir(), '.cache/elpis-tests');
+  await fs.mkdir(cache, { recursive: true });
+  const home = await fs.mkdtemp(path.join(cache, 'prune-detail-'));
+  t.after(() => promisify(execFile)('gio', ['trash', home]));
+  const root = path.join(home, 'logs/smart-prune');
+  await fs.mkdir(path.join(root, 'attempts'), { recursive: true });
+  await fs.mkdir(path.join(root, 'admissions/a1/items'), { recursive: true });
+  const put = (name, value) => fs.writeFile(path.join(root, name), JSON.stringify(value));
+  const attempt = { attempt_id: 'p1', thread_id: 'chat-1', session_id: 'agent-1', status: 'admitted', admission_id: 'a1', input: JSON.stringify({ items: [{ call_id: 'call-1', source_output: { output: 'ORIGINAL' } }] }) };
+  await put('attempts/p1.json', attempt);
+  await put('admissions/a1/manifest.json', { items: [{ call_id: 'call-1', admitted_artifact: 'items/compact.json' }] });
+  await put('admissions/a1/items/compact.json', { output: 'COMPACT' });
+  assert.deepEqual(await smartPruneDetail(home, 'chat-1', 'p1', 'call-1'), { original: 'ORIGINAL', compact: 'COMPACT' });
+  await assert.rejects(smartPruneDetail(home, 'agent-1', 'p1', 'call-1'), /not found in this chat/);
+  await assert.rejects(smartPruneDetail(home, 'chat-1', '../p1', 'call-1'), /Invalid/);
+  await assert.rejects(smartPruneDetail(home, 'chat-1', 'p1', 'missing'), /not found/);
+  await put('admissions/a1/manifest.json', { items: [{ call_id: 'call-1', admitted_artifact: '../../attempts/p1.json' }] });
+  await assert.rejects(smartPruneDetail(home, 'chat-1', 'p1', 'call-1'), /Invalid/);
+  await put('admissions/a1/manifest.json', { items: [] });
+  await assert.rejects(smartPruneDetail(home, 'chat-1', 'p1', 'call-1'), /Committed Smart Prune output is unavailable/);
+  await put('attempts/p1.json', { ...attempt, admission_id: null });
+  await assert.rejects(smartPruneDetail(home, 'chat-1', 'p1', 'call-1'), /Committed Smart Prune output is unavailable/);
+  await put('attempts/p1.json', { ...attempt, status: 'model_error' });
+  assert.deepEqual(await smartPruneDetail(home, 'chat-1', 'p1', 'call-1'), { original: 'ORIGINAL', compact: null });
+});

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { pruneOf } from "@/lib/smart-prune";
 import type { Entry, Item } from "@/lib/api";
 import { elapsed, stepLabel, summarize, summaryParts } from "@/lib/steps";
 import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
@@ -26,10 +27,11 @@ const isReply = (item: Item) => item.type === "agentMessage" || item.type === "e
 
 function turnsOf(entries: Entry[]): TurnEntries[] {
   const turns: TurnEntries[] = [];
+  const byId = new Map<string, TurnEntries>();
   for (const entry of entries) {
-    const last = turns.at(-1);
-    if (last && last.id === entry.turnId) last.entries.push(entry);
-    else turns.push({ id: entry.turnId, entries: [entry] });
+    let turn = byId.get(entry.turnId);
+    if (!turn) { turn = { id: entry.turnId, entries: [] }; byId.set(entry.turnId, turn); turns.push(turn); }
+    turn.entries.push(entry);
   }
   return turns;
 }
@@ -45,8 +47,9 @@ function createdFiles(entries: Entry[]): string[] {
 }
 
 function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
-  const users = turn.entries.filter(entry => entry.item.type === "userMessage");
-  const work = turn.entries.filter(entry => entry.item.type !== "userMessage");
+  const ordered = withPrunes(turn.entries);
+  const users = ordered.filter(entry => entry.item.type === "userMessage");
+  const work = ordered.filter(entry => entry.item.type !== "userMessage");
   // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
   const lastReply = findLastIndex(work, entry => isReply(entry.item)), plan = work.findIndex(entry => entry.item.type === "plan");
   const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
@@ -89,7 +92,7 @@ function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]
  * Claude's rows have them. Collapsed until opened by click, Enter or Space. */
 function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[]; live: boolean } & Draw) {
   const [open, setOpen] = useState(false);
-  const items = entries.map(entry => entry.item);
+  const items = entries.filter(entry => entry.item.type !== "smartPrune").map(entry => entry.item);
   const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
   const views = entries.filter(entry => entry.item.type === "imageView" && typeof entry.item.path === "string" && mediaOf?.(entry)).slice(0, 3);
   const edits = running ? null : turnEdits(items);
@@ -140,4 +143,14 @@ function earliest(entries: Entry[]): number | undefined {
 function findLastIndex<T>(values: T[], test: (value: T) => boolean): number {
   for (let index = values.length - 1; index >= 0; index--) if (test(values[index])) return index;
   return -1;
+}
+
+
+/** Batch decisions arrive after all sibling outputs; display each immediately below its call. */
+function withPrunes(entries: Entry[]): Entry[] {
+  const prunes = entries.filter(entry => entry.item.type === "smartPrune");
+  const calls = new Set(entries.filter(entry => entry.item.type !== "smartPrune").map(entry => entry.item.id));
+  return entries.filter(entry => entry.item.type !== "smartPrune").flatMap(entry => [entry,
+    ...prunes.filter(prune => pruneOf(prune.item.prune)?.callId === entry.item.id)])
+    .concat(prunes.filter(entry => !calls.has(pruneOf(entry.item.prune)?.callId ?? "")));
 }

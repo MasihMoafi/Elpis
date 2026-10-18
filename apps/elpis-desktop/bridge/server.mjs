@@ -13,6 +13,7 @@ import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
+import { smartPruneDetail } from './smart-prune.mjs';
 import { createObservability } from './observability.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
@@ -243,6 +244,8 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/providers/settings') return json(response, 200, method === 'GET' ? await client.providerSettings() : await client.saveProvider(await body(request)));
         if (url.pathname === '/api/providers/key' && method === 'POST') return json(response, 200, await client.saveProviderKey(await body(request)));
         if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));
+        const inlinePrune = url.pathname.match(/^\/api\/threads\/([^/]+)\/smart-prune\/([^/]+)\/([^/]+)$/);
+        if (inlinePrune && method === 'GET') return json(response, 200, await smartPruneDetail(options.elpisHome, ...inlinePrune.slice(1).map(decodeURIComponent)));
         if (url.pathname === '/api/observability' && method === 'GET') return json(response, 200, await observability.overview(url.searchParams));
         const observed = url.pathname.match(/^\/api\/observability\/chats\/([^/]+)$/);
         if (observed && method === 'GET') return json(response, 200, await observability.chat(decodeURIComponent(observed[1]), url.searchParams));

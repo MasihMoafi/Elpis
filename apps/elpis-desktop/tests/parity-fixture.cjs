@@ -28,7 +28,7 @@ const TURNS = [
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
  * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. */
-async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {} } = {}) {
+async function fixture({ staticDir = out, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {} } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set();
   let rewindSaved = null, rewindAction;
   const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
@@ -65,7 +65,7 @@ async function fixture({ width = 1130, height = 660, colorScheme = 'light', runn
     if (chat && req.method === 'GET') return json({ thread: chat, data: chat.id === 'chat-a' ? entries().reverse() : [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try {
-      const file = path.join(out, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);
+      const file = path.join(staticDir, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);
       res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content);
     } catch { res.statusCode = 404; res.end(); }
   });
