@@ -28,7 +28,7 @@ const TURNS = [
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
  * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. */
-async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {} } = {}) {
+async function fixture({ width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {} } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set();
   let rewindSaved = null, rewindAction;
   const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
@@ -74,11 +74,12 @@ async function fixture({ width = 1130, height = 660, colorScheme = 'light', runn
   const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);
+  await page.addInitScript(values => { for (const [key, value] of Object.entries(values)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, storage);
   if (desktop) await page.addInitScript(fakeDesktop);
   await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => { window.__copied = text; } } }); });
   await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-  await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();
+  await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().waitFor();
   const open = async id => {
     await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click();
     await page.locator(`.thread-row.active[data-thread-id="${id}"]`).waitFor();

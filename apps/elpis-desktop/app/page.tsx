@@ -82,7 +82,7 @@ import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
-import { activityOf, api, unreadable, chatProvider, choiceOf, effortsOf, isAgent, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
+import { activityOf, api, unreadable, chatProvider, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
@@ -214,6 +214,7 @@ export default function Home() {
   const [dictating, setDictating] = useState(false);
   const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
   const [search, setSearch] = useState("");
+  const [agentRunsOpen, setAgentRunsOpen] = useState(false);
   const searchTerm = search.trim();
   const [searchResults, setSearchResults] = useState<{ query: string; data: Thread[]; nextCursor: string | null; loading: boolean; error: string }>({ query: "", data: [], nextCursor: null, loading: false, error: "" });
   const drafts = useRef<Record<string, string>>({});
@@ -422,7 +423,7 @@ export default function Home() {
   }, [select, setText, savedDraft, restoreAttachments, updateTabs]);
   const refreshThreads = useCallback(async () => {
     const routesAtRequest = { ...settingsOf.current };
-    const result = await api<{ data: Thread[]; nextCursor: string | null }>("/threads?limit=100"); if (!Array.isArray(result.data)) throw unreadable("conversations");
+    const result = await api<{ data: Thread[]; nextCursor: string | null }>("/threads?limit=100&includeAgentRuns=true"); if (!Array.isArray(result.data)) throw unreadable("conversations");
     result.data = result.data.filter(thread => !hidden.current.has(thread.id));
     // Preserve an event or local acknowledgment that arrived after this list request began.
     for (const thread of result.data) if (thread.model && settingsOf.current[thread.id] === routesAtRequest[thread.id]) remember({ ...settingsOf.current[thread.id], ...thread });
@@ -438,7 +439,7 @@ export default function Home() {
     if (!nextCursor || rootPaging.current) return;
     rootPaging.current = true; setMoreLoading(true);
     try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&cursor=${encodeURIComponent(nextCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
+      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&includeAgentRuns=true&cursor=${encodeURIComponent(nextCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
       loadedRootPages.current = true;
       setThreads(prev => mergeListedThreads(prev, result.data, hidden.current)); setNextCursor(result.nextCursor);
     } catch (cause) { setError(String(cause)); }
@@ -580,7 +581,7 @@ export default function Home() {
             setAttention(previous => ({ unread: previous.unread.filter(id => id !== threadId), plans: without(previous.plans, threadId) }));
           }
           if (threadId && method === "item/completed" && params.item?.type === "plan") planTurns.current.set(threadId, params.turnId);
-          if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error) {
+          if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error && !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})) {
             const unread = selectedRef.current?.id !== threadId || viewRef.current !== "chat";
             const planReady = planTurns.current.get(threadId) === params.turn.id || params.turn.items?.some((item: Item) => item.type === "plan");
             setAttention(previous => ({
@@ -700,7 +701,7 @@ export default function Home() {
     return () => { disposed = true; clearInterval(timer); };
   }, [observedIds, view, loadChildren, refreshThreads]);
   // Name the parent and the agent a continued chat came from, even when they are not on the loaded page.
-  const relatedIds = [selected?.parentThreadId, selected?.forkedFromId].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
+  const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
   useEffect(() => {
     for (const id of relatedIds) api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`).then(result => setRelated(prev => ({ ...prev, [id]: result.thread }))).catch(() => {});
   }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -731,7 +732,8 @@ export default function Home() {
   const lastTurnId = entries.at(-1)?.turnId;
   const proposedPlan = selected && planMode && lastTurnId && lastTurnId !== activeTurn && planAnswered[selected.id] !== lastTurnId && entries.some(entry => entry.turnId === lastTurnId && entry.item.type === "plan") ? lastTurnId : null;
   const outsideChatApprovals = approvals.filter(approval => view !== "chat" || approval.params.threadId !== selected?.id);
-  const continues = selected?.desktopAccess?.mode === "continue";
+  const readOnlyRun = !!selected && (isAgentRun(selected) || selected.desktopAccess?.writable === false);
+  const continues = readOnlyRun || selected?.desktopAccess?.mode === "continue";
   const choices = providerChoices(models, providerSettings);
   const newChoice = choices.find(choice => choice.id === choiceId) ?? choices[0];
   const needsModelId = !selected && !!newChoice?.provider;
@@ -744,7 +746,7 @@ export default function Home() {
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : ""].filter(Boolean).join("\n");
-  const sendBlocked = (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && needsModelId && !model.trim());
+  const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && needsModelId && !model.trim());
   const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
@@ -873,6 +875,17 @@ export default function Home() {
     }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
+  async function continueHere(thread: Thread) {
+    const originalRequest = request.current;
+    setBusy(true); setError("");
+    try {
+      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/continue`, {});
+      if (!result.thread?.id) throw unreadable("continued chat");
+      upsertThread(result.thread);
+      if (request.current === originalRequest && selectedRef.current?.id === thread.id) await loadThread(result.thread);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }
   /** What a reopened chat reports about its approval mode and Plan mode. */
   function rememberModes(id: string, live: Live) {
     if (live.permissions) setThreadModes(prev => ({ ...prev, [id]: live.permissions! }));
@@ -932,6 +945,7 @@ export default function Home() {
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   async function send(own?: string, followUp?: Preferences["followUp"]) {
+    if (readOnlyRun) return;
     if (own === undefined && shellMode) { await sendShell(); return; }
     const sideQuestion = own === undefined ? /^\/btw(?:[\s:,.]\s*([\s\S]*))?$/i.exec(textRef.current.trim()) : null;
     if (sideQuestion) { if (selected) editDraft(""); askSideQuestion(sideQuestion[1]); return; }
@@ -1163,6 +1177,7 @@ export default function Home() {
   /** The "+" menu's Slash commands: a "/" in an empty box, which opens the command list. */
   function startSlash() { editDraft("/"); setCaret(1); focusComposer(); }
   function askSideQuestion(question?: string) {
+    if (readOnlyRun) return;
     if (!selected) { setError("Start a conversation before asking a side question."); return; }
     setSideChat({ parentId: selected.id, open: true, question: { id: ++sideRequests.current, text: question ?? "" } });
   }
@@ -1273,19 +1288,22 @@ export default function Home() {
 
   const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
-  const filtered = searchedThreads.filter(t => (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
+  const ordinaryThreads = threads.filter(thread => !isAgentRun(thread));
+  const agentRuns = threads.filter(isAgentRun);
+  const ordinaryUnread = attention.unread.filter(id => ordinaryThreads.some(thread => thread.id === id));
+  const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   const ordered = [...roots.filter(t => pins.includes(t.id)), ...roots.filter(t => !pins.includes(t.id))];
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
-  escapeStops.current = event => { if (selected && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
+  escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
   useEffect(() => { const onKey = (event: KeyboardEvent) => escapeStops.current(event); window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
   shortcutAction.current = (id, index) => {
     const at = selected ? ordered.findIndex(t => t.id === selected.id) : -1;
     if (id === "new-chat") newChat();
     else if (id === "command-menu") { commandReturnFocus.current = document.activeElement as HTMLElement | null; setCommandMenuOpen(true); }
-    else if (id === "side-chat" && selected && view === "chat") { setSideChat(previous => previous?.parentId === selected.id ? { ...previous, open: !previous.open } : { parentId: selected.id, open: true }); if (sideChat?.open) focusComposer(); }
+    else if (id === "side-chat" && selected && !readOnlyRun && view === "chat") { setSideChat(previous => previous?.parentId === selected.id ? { ...previous, open: !previous.open } : { parentId: selected.id, open: true }); if (sideChat?.open) focusComposer(); }
     else if (id === "search") focusSearch();
     else if (id === "undo-delete") void undoDelete();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
@@ -1386,17 +1404,19 @@ export default function Home() {
     };
   }
   function threadRow(thread: Thread, depth = 0) {
-    const name = title(thread), state = agentState(thread, waitingIds, new Set(attention.unread)), pinned = pins.includes(thread.id);
+    const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
+    const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
-      agents={!depth && !isAgent(thread) ? { shown: !!expanded[thread.id], onToggle: () => expanded[thread.id] ? setExpanded(prev => ({ ...prev, [thread.id]: false })) : void loadChildren(thread.id) } : undefined}
+      agents={!depth && !isAgent(thread) ? { shown: agentRunsOpen, onToggle: () => { setAgentRunsOpen(open => !open); if (!agentRunsOpen) void loadChildren(thread.id, undefined, false); } } : undefined}
       area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
       {state === "unread" ? <button className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
+        {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
@@ -1436,7 +1456,7 @@ export default function Home() {
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
-    {commandMenuOpen && <CommandMenu threads={threads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
+    {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash done={ready && connected} steps={[{ label: "Elpis engine connected", ok: connected }, { label: "models loaded", ok: models.length > 0 }, { label: "conversations loaded", ok: ready }]} />}
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} onClose={() => setDeleteTargets(null)} />
@@ -1453,7 +1473,7 @@ export default function Home() {
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label section-label-row">Projects<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
-          {projects.map(item => { const open = !collapsedProjects[item.id], chats = threads.filter(t => !t.parentThreadId && sameFolder(t.cwd && projectFolderOf(t.cwd), item.cwd)).slice(0, 5);
+          {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !t.parentThreadId && sameFolder(t.cwd && projectFolderOf(t.cwd), item.cwd)).slice(0, 5);
             return <div key={item.id} className="project-group">
               <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<div className={`project-row${project?.id === item.id ? " active" : ""}`} />}>
                 {menu => <><button className="project-toggle" aria-expanded={open} title={item.cwd} onClick={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}><ChevronRight size={13} className="project-chevron" /><FolderIcon size={14} /><span>{item.name}</span></button>
@@ -1462,8 +1482,8 @@ export default function Home() {
               {open && <div className="project-chats">{chats.map(t => threadRow(t))}{!chats.length && <p className="project-empty">No chats yet</p>}</div>}
             </div>; })}
         </section>}
-        {[{ label: "Pinned", list: roots.filter(t => pins.includes(t.id)) }, { label: searchTerm ? "Results" : "Recents", list: roots.filter(t => !pins.includes(t.id)) }].filter(group => group.list.length).map(group => <section key={group.label} aria-label={group.label}><div className="section-label-row"><div className="section-label">{group.label}</div>{group.label === "Recents" && attention.unread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}</div>
-          {group.list.map(t => <div key={t.id}>{threadRow(t)}{expanded[t.id] && descendants(t.id, 1)}{expanded[t.id] && childCursors[t.id] && <Button variant="ghost" size="xs" onClick={() => loadChildren(t.id, childCursors[t.id]!)}>More agents</Button>}</div>)}
+        {[{ label: "Pinned", list: roots.filter(t => pins.includes(t.id)) }, { label: searchTerm ? "Results" : "Recents", list: roots.filter(t => !pins.includes(t.id)) }].filter(group => group.list.length).map(group => <section key={group.label} aria-label={group.label}><div className="section-label-row"><div className="section-label">{group.label}</div>{group.label === "Recents" && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}</div>
+          {group.list.map(t => <div key={t.id}>{threadRow(t)}{expanded[t.id] && descendants(t.id, 1)}</div>)}
         </section>)}
         {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadRow(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
@@ -1471,6 +1491,12 @@ export default function Home() {
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
         {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
+        {!searchTerm && agentRuns.length > 0 && <section className="mt-4" aria-label="Background runs">
+          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} />Agent runs ({agentRuns.length})</Button>
+          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{agentRuns.map(thread => threadRow(thread, 1))}
+            {Object.entries(childCursors).filter(([id, cursor]) => cursor && !hidden.current.has(id)).map(([id, cursor]) => <Button key={id} variant="ghost" size="xs" className="w-full justify-start" disabled={loadingChildren[id]} onClick={() => void loadChildren(id, cursor!, false)}><span className="truncate">More agents from {find(id) ? title(find(id)!) : "parent conversation"}</span></Button>)}
+          </div>}
+        </section>}
       </div>
       <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
       <div className="sidebar-footer"><AccountMenu refreshKey={accountRefresh} dark={dark} onTheme={() => setTheme(dark ? "light" : "dark")} onSettings={() => openSettings("general")} onAccounts={manageConnections} /></div>
@@ -1543,12 +1569,12 @@ export default function Home() {
             onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
-            onFork={selected && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={replaceable ? () => setRewindTurn(e.turnId) : undefined}
+            onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={replaceable ? () => setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
-          {selected && proposedPlan && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
+          {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div><PromptRail scroller={scroll} version={entries} /></div></div>
         <div className="composer-wrap">
@@ -1562,7 +1588,10 @@ export default function Home() {
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
-          <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
+          {readOnlyRun ? <div className="mx-auto flex w-full max-w-[740px] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
+            <p>{AGENT_RUN_NOTICE}</p>
+            {selected?.desktopAccess?.canContinue && !activeTurn && selected.status?.type !== "active" && <Button variant="outline" size="sm" className="self-start" disabled={busy || !connected || loading} onClick={() => void continueHere(selected)}>Continue here</Button>}
+          </div> : <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
             {!shellMode && <><SlashMenu menu={slash} /><MentionMenu menu={mention} /></>}
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
             <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const next = attachmentsRef.current.filter(item => item.id !== id); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
@@ -1592,11 +1621,11 @@ export default function Home() {
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
               {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
-          </form>
+          </form>}
           <div className="composer-meta">
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
             {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}
-            <span className="composer-hint">{continues ? "Elpis takes direct messages for this agent only from its parent; sending continues its history in a new chat with the same model." : selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
+            <span className="composer-hint">{selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
             <ElpisFeatures threadId={selected?.id} />
           </div>
         </div>

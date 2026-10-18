@@ -50,13 +50,13 @@ function cwdOf(url, ...others) {
 function pageQuery(url, ancestor = false, models = false) {
   const result = {};
   for (const [key, value] of url.searchParams) {
-    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm'] : []), ...(models ? ['provider'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
+    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
     if (key === 'searchTerm') {
       if (!value.trim() || value.length > 200) throw new BridgeError('Search must contain 1 through 200 characters');
       result.searchTerm = value.trim();
-    } else if (key === 'archived') {
-      if (!['true', 'false'].includes(value)) throw new BridgeError('archived must be true or false');
-      result.archived = value === 'true';
+    } else if (key === 'archived' || key === 'includeAgentRuns') {
+      if (!['true', 'false'].includes(value)) throw new BridgeError(`${key} must be true or false`);
+      result[key] = value === 'true';
     } else if (key === 'limit') {
       if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 100) throw new BridgeError('Limit must be 1 through 100');
       result.limit = Number(value);
@@ -263,7 +263,7 @@ export async function startDesktopServer(options = {}) {
           if (method === 'GET') return json(response, 200, await client.contextFiles(id));
           if (method === 'POST') return json(response, 200, await client.setContextFile(id, await body(request)));
         }
-        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|context|delete|rename|archive|unarchive|revert|rewind|fork|compact|review|git|permissions|shell|side-chat))?$/);
+        const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|continue|context|delete|rename|archive|unarchive|revert|rewind|fork|compact|review|git|permissions|shell|side-chat))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
           if (thread[2] === 'shell' && method === 'POST') return json(response, 200, await client.shellCommand(id, await body(request)));
@@ -276,7 +276,7 @@ export async function startDesktopServer(options = {}) {
           }
           if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));
           if (thread[2] && !['context', 'git'].includes(thread[2]) && method === 'POST') {
-            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions' }[thread[2]];
+            const operation = { turns: 'send', steer: 'steer', interrupt: 'interrupt', resume: 'resume', continue: 'continueThread', delete: 'deleteThread', rename: 'renameThread', archive: 'archiveThread', unarchive: 'unarchiveThread', revert: 'revert', rewind: 'rewind', fork: 'forkThread', compact: 'compact', review: 'review', permissions: 'setPermissions' }[thread[2]];
             return json(response, 200, await client[operation](id, await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536)));
           }
           throw new BridgeError('Method is not allowed', 405);

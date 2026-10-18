@@ -1,3 +1,4 @@
+export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mjs";
 export type Thread = {
   id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string;
   reasoningEffort?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
@@ -5,7 +6,7 @@ export type Thread = {
   agentNickname?: string | null; agentRole?: string | null;
   source?: string | {subAgent?:unknown;custom?:string};
   status?: { type: string; activeFlags?: string[] };
-  desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; reason: string | null };
+  desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; canContinue?: boolean; reason: string | null };
 };
 export type Item = { id: string; type: string; text?: string; content?: {type: string; text?: string}[]; command?: string; aggregatedOutput?: string; [key: string]: unknown };
 export type Entry = { turnId: string; item: Item; startedAtMs?: number; completedAtMs?: number };

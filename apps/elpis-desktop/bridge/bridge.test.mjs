@@ -165,6 +165,67 @@ test('saved-conversation search passes its term and cursor to the native list be
   } finally { client.close(); }
 });
 
+test('background sources are excluded from ordinary lists and search, and explicitly available to Agent runs', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  threads.set(CREATED, { id: CREATED, source: 'exec', name: 'Worker · inspect', parentThreadId: ROOT, status: { type: 'idle' } });
+  threads.set(FORK, { id: FORK, source: 'vscode', name: 'Worker · my own chat', status: { type: 'idle' } });
+  try {
+    for (const options of [{}, { searchTerm: 'Worker' }, { archived: false }]) {
+      const listed = await client.listThreads(options);
+      assert.deepEqual(listed.data.map(thread => thread.id), [ROOT, FORK]);
+      assert.ok(!socket.sent.findLast(row => row.method === 'thread/list').params.sourceKinds.includes('exec'));
+    }
+    assert.deepEqual((await client.listThreads({ includeAgentRuns: true })).data.map(thread => thread.id), [ROOT, CHILD, CREATED, FORK]);
+    assert.deepEqual((await client.listThreads({ ancestorThreadId: ROOT })).data.map(thread => thread.id), [CHILD, CREATED]);
+  } finally { client.close(); }
+});
+
+test('background runs are read-only; only an idle run may explicitly continue in a normal chat without sending', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  threads.set(CREATED, { id: CREATED, source: 'exec', name: 'Worker · inspect', parentThreadId: ROOT, model: MODEL, modelProvider: 'openai', canAcceptDirectInput: true, status: { type: 'active' } });
+  try {
+    for (const id of [CHILD, CREATED]) {
+      assert.equal((await client.readThread(id)).thread.desktopAccess.writable, false);
+      await assert.rejects(client.send(id, { text: 'Hello' }), /background|parent|continued conversation name/i);
+      await assert.rejects(client.continueThread(id, {}), /finish/i);
+    }
+    assert.equal(socket.sent.filter(row => row.method === 'thread/fork' || row.method === 'turn/start').length, 0);
+    threads.get(CREATED).status = { type: 'idle' };
+    assert.equal((await client.readThread(CREATED)).thread.desktopAccess.canContinue, true);
+    const continued = await client.continueThread(CREATED, {});
+    assert.equal(continued.thread.id, FORK);
+    assert.equal(continued.thread.desktopAccess.writable, true);
+    assert.equal(continued.thread.source, 'appServer');
+    assert.equal(continued.thread.forkedFromId, CREATED);
+    assert.equal(threads.get(CREATED).source, 'exec');
+    assert.equal(threads.get(CREATED).parentThreadId, ROOT);
+    assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 0);
+    assert.deepEqual(socket.sent.find(row => row.method === 'thread/fork').params, { threadId: CREATED, model: MODEL, modelProvider: 'openai' });
+    await client.send(FORK, { text: 'Now talk here' });
+    assert.equal(socket.sent.find(row => row.method === 'turn/start').params.threadId, FORK);
+  } finally { client.close(); }
+});
+
+test('a finished child can continue from stored history when its parent is not loaded', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  threads.get(CHILD).status = { type: 'notLoaded' };
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'thread/resume' && request.params.threadId === CHILD) {
+      socket.sent.push(request);
+      queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'parent is not loaded; resume the parent first' } })));
+    } else send(raw);
+  };
+  try {
+    const continued = await client.continueThread(CHILD, {});
+    assert.equal(continued.thread.id, FORK);
+    assert.equal(continued.thread.name, 'Chat (continued)');
+    assert.equal(socket.sent.some(row => row.method === 'thread/resume'), false, 'forking a finished run must not load its parent or take over the run');
+    assert.equal(socket.sent.some(row => row.method === 'turn/start'), false);
+  } finally { client.close(); }
+});
+
 test('the auto-review reviewer\'s own threads are never listed as chats', async () => {
   const { client, threads } = fixture(); await client.initialize();
   const reviewer = 'guardian-review-thread';
@@ -173,11 +234,11 @@ test('the auto-review reviewer\'s own threads are never listed as chats', async 
   finally { client.close(); }
 });
 
-test('existing chats are written directly after a native rejoin; parent-owned agents continue in a fork', async () => {
+test('existing chats are written directly after a native rejoin; parent-owned agents explicitly continue in a fork', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
-  const listed = await client.listThreads();
+  const listed = await client.listThreads({ includeAgentRuns: true });
   assert.equal(listed.data.length, 2);
-  assert.deepEqual(listed.data.map(thread => [thread.desktopAccess.writable, thread.desktopAccess.mode]), [[true, 'direct'], [true, 'continue']]);
+  assert.deepEqual(listed.data.map(thread => [thread.desktopAccess.writable, thread.desktopAccess.mode]), [[true, 'direct'], [false, 'continue']]);
   assert.ok(socket.sent.find(row => row.method === 'thread/list').params.sourceKinds.includes('subAgentThreadSpawn'));
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(socket.sent.filter(row => row.method === 'thread/resume').map(row => row.params.threadId), [CHILD], 'working agents are followed live');
@@ -345,8 +406,12 @@ test('HTTP requires capability/cookie, strict origin/host, allowlisted routes an
   assert.match(auth.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
   const cookie = auth.headers.get('set-cookie').split(';')[0];
   const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
-  const result = await (await get('/api/threads')).json(); assert.equal(result.data.length, 2);
+  const result = await (await get('/api/threads')).json(); assert.deepEqual(result.data.map(thread => thread.id), [ROOT]);
+  const all = await (await get('/api/threads?includeAgentRuns=true')).json(); assert.equal(all.data.length, 2);
+  assert.equal((await get('/api/threads?includeAgentRuns=yes')).status, 400);
   const child = await (await get(`/api/threads/${CHILD}`)).json(); assert.equal(child.thread.id, CHILD);
+  assert.equal(child.thread.desktopAccess.writable, false);
+  assert.equal((await post(`/api/threads/${CHILD}/continue`, {}, { Cookie: cookie })).status, 409);
   const settings = await (await get('/api/settings')).json(); assert.equal(settings.smartPrune.enabled, true);
   assert.doesNotMatch(JSON.stringify(settings), /PRIVATE CONFIG SECRET|private\/config/);
   const context = await (await get(`/api/threads/${ROOT}/context`)).json(); assert.equal(context.tokenUsage, null);
@@ -378,15 +443,15 @@ test('workflow workers keep recorded task names and lineage when native list omi
   const graphId='10000000-0000-0000-0000-000000000001';
   threads.set(CHILD,{id:CHILD,name:null,parentThreadId:ROOT,status:{type:'idle'},source:{subAgent:{other:`work_graph:${graphId}:inspect`}}});
   workflowRecords.push({id:graphId,rootThreadId:ROOT,tasks:[{id:'inspect',title:'Inspect actual project',assignedThreadId:CHILD}]});
-  const worker=(await client.listThreads()).data.find(thread=>thread.id===CHILD);
+  const worker=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
   assert.equal(worker.workflowTaskTitle,'Inspect actual project');
   assert.equal(worker.parentThreadId,ROOT,'list must preserve the native read and recorded graph lineage');
   assert.deepEqual(socket.sent.filter(row=>row.method==='thread/read').map(row=>row.params.threadId),[CHILD]);
-  const again=(await client.listThreads()).data.find(thread=>thread.id===CHILD);
+  const again=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
   assert.equal(again.parentThreadId,ROOT);
   assert.equal(socket.sent.filter(row=>row.method==='thread/read').length,1,'verified workflow metadata is reused');
   threads.get(CHILD).source={subAgent:{other:`work_graph:${graphId}:different-task`}};
-  const unrelated=(await client.listThreads()).data.find(thread=>thread.id===CHILD);
+  const unrelated=(await client.listThreads({includeAgentRuns:true})).data.find(thread=>thread.id===CHILD);
   assert.equal(unrelated.workflowTaskTitle,undefined);
   assert.equal(unrelated.parentThreadId,null,'unrecorded task cannot inherit cached lineage');
   client.close();

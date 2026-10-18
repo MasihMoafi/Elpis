@@ -6,7 +6,7 @@ import { ChatIcon, FolderIcon, NewChatIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
-import { api, title, unreadable, type Thread } from "@/lib/api";
+import { api, isAgentRun, title, unreadable, type Thread } from "@/lib/api";
 import type { Project } from "@/lib/projects";
 
 export type CommandAction = { id: string; name: string; keys?: string[]; run: () => void };
@@ -40,8 +40,9 @@ export function CommandMenu({ threads, projects, actions, onThread, onProject, o
     return () => { disposed = true; clearTimeout(timer); };
   }, [term]);
   const matches = (value: string) => value.toLowerCase().includes(lower);
+  threads = threads.filter(thread => !isAgentRun(thread));
   const found = new Map(threads.filter(thread => matches(`${title(thread)} ${thread.preview ?? ""} ${thread.cwd ?? ""} ${thread.agentNickname ?? ""}`)).map(thread => [thread.id, thread]));
-  if (term && saved.query === term) for (const thread of saved.data) found.set(thread.id, thread);
+  if (term && saved.query === term) for (const thread of saved.data) if (!isAgentRun(thread)) found.set(thread.id, thread);
   const chats = term ? [...found.values()] : threads.filter(thread => !thread.parentThreadId).slice(0, 8);
   const chatRows: Command[] = chats.map(thread => ({ id: `chat:${thread.id}`, name: title(thread), detail: thread.cwd, run: () => onThread(thread) }));
   const groups: { name: string; icon: ComponentType<{ size?: number; "aria-hidden"?: boolean }>; rows: Command[] }[] = [

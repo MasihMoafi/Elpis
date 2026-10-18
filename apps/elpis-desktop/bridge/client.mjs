@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,6 +22,7 @@ import { RewindHistory } from './rewind-history.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
+const CHAT_SOURCE_KINDS = ['cli', 'vscode', 'appServer', 'unknown'];
 
 export class BridgeError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -407,22 +409,22 @@ export class DesktopClient extends EventEmitter {
     if (recorded?.source===thread.source?.subAgent?.other && recorded && (!thread.parentThreadId || thread.parentThreadId===recorded.rootThreadId)) {
       thread.workflowTaskTitle=recorded.title; thread.parentThreadId ??= recorded.rootThreadId;
     }
-    // Elpis accepts turns for a multi-agent v2 agent only from its parent (thread_input.rs). Such a
-    // chat stays writable here: a message continues its history in a fork under the same model.
-    const parentOwned = thread.canAcceptDirectInput === false
+    const background = isAgentRun(thread);
+    const parentOwned = background || thread.canAcceptDirectInput === false
       || (thread.canAcceptDirectInput == null && typeof thread.source?.subAgent?.thread_spawn?.agent_path === 'string');
-    return { ...thread, desktopAccess: { writable: true, mode: parentOwned ? 'continue' : 'direct', reason: parentOwned
-      ? 'Elpis takes direct messages for this agent only from its parent, so your message continues its history in a new conversation with the same model.'
-      : null } };
+    return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
+      canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
   #forget(id) { this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); }
   async listThreads(options = {}) {
-    object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm']);
+    object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
+    if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
+    const includeAgentRuns = options.includeAgentRuns === true || !!options.ancestorThreadId;
     if (options.searchTerm !== undefined) text(options.searchTerm, 'conversation search', 200);
     const result = await this.#rpc('thread/list', { limit: options.limit ?? 50, cursor: options.cursor, modelProviders: [],
       ...(options.archived === true ? { archived: true } : {}),
       ...(options.searchTerm ? { searchTerm: options.searchTerm.trim() } : {}),
-      sourceKinds: SOURCE_KINDS,
+      sourceKinds: includeAgentRuns ? SOURCE_KINDS : CHAT_SOURCE_KINDS,
       ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}) });
     // A native fork has no first_user_message of its own until another turn. Keep the current rewind checkpoint
     // discoverable across desktop restarts without inventing a user message just to make the engine list it.
@@ -437,7 +439,7 @@ export class DesktopClient extends EventEmitter {
     }
     await this.#loadWorkflowTitles(result.data);
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
-    const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian').map(thread => this.#decorate(thread));
+    const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map(thread => this.#decorate(thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
     for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
     return { ...result, data };
@@ -1027,7 +1029,7 @@ export class DesktopClient extends EventEmitter {
       try { await this.#rpc('thread/delete', { threadId: id }); }
       catch (error) {
         if (!/forked history still references it/.test(error.message)) throw error;
-        const listAll = options => scanDeletionThreads(page => this.listThreads({ ...options, ...page })).catch(() => {
+        const listAll = options => scanDeletionThreads(page => this.listThreads({ ...options, ...page, includeAgentRuns: true })).catch(() => {
           throw new BridgeError('Elpis could not read the complete conversation list. No related chats were deleted.', 502);
         });
         const subtree = new Set([id, ...(await listAll({ ancestorThreadId: id })).map(thread => thread.id)]), forks = [];
@@ -1110,11 +1112,28 @@ export class DesktopClient extends EventEmitter {
     object(body, ['lastTurnId']);
     const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);
     const thread = await this.#current(id);
-    const fork = await this.#rpc('thread/fork', { threadId: id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...this.#browserOptions() });
+    if (isAgentRun(thread) && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
+    return this.#forkChat(thread, lastTurnId);
+  }
+  async #forkChat(thread, lastTurnId, suffix = 'fork') {
+    const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...this.#browserOptions() });
     threadId(fork.thread?.id); this.#owned.add(fork.thread.id);
-    const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (fork)`;
+    const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (${suffix})`;
     try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }
     return { thread: this.#decorate(fork.thread) };
+  }
+  /** Explicitly continue a finished agent history in a user-owned chat, without starting a turn. */
+  async continueThread(id, body) {
+    object(body, []);
+    return this.#mutate(id, async () => {
+      // A completed child can be read and forked even if its parent is not loaded; attaching it would fail.
+      const result = await this.#rpc('thread/read', { threadId: threadId(id), includeTurns: false });
+      if (result.thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+      const thread = this.#decorate(result.thread);
+      if (thread.desktopAccess.writable) throw new BridgeError('This is already a normal chat.', 409);
+      if (!thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
+      return this.#forkChat(thread, undefined, 'continued');
+    });
   }
   async renameThread(id, body) {
     object(body, ['name']); const name = text(body.name, 'name', 120).trim();
@@ -1246,6 +1265,8 @@ export class DesktopClient extends EventEmitter {
     const effort = this.#effort(body.effort), permissions = permissionMode(body.permissions);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
+      if (!thread.desktopAccess.writable && !body.continueAs) throw new BridgeError(`${AGENT_RUN_NOTICE}. Choose Continue here after it finishes (continued conversation name required).`, 409);
+      if (!thread.desktopAccess.writable && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
       const model = await this.#providerModel(body.model, thread.modelProvider);
       const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...turnPermissions(permissions), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
       if (thread.desktopAccess.mode === 'continue') {
