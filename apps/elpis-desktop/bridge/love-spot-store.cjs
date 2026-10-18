@@ -13,6 +13,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const newer = (a, b) => a.version > b.version || (a.version === b.version && a.versionNonce < b.versionNonce);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
+const screenshotId = (name, bytes) => `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
 function validate(scene) {
   if (!record(scene) || !Array.isArray(scene.elements) || (scene.files !== undefined && !record(scene.files)) || (scene.appState !== undefined && !record(scene.appState))) throw fail('Invalid drawing');
   for (const e of scene.elements) {
@@ -34,6 +35,14 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   const sceneFile = path.join(directory, 'scene.excalidraw'), lock = path.join(directory, '.scene-lock'), inbox = path.join(directory, 'inbox');
   let timer, running = false, seen, previous, lastError;
   const listeners = new Set();
+  // Pending screenshots belong only to the open bridge, never to the shared drawing store.
+  const pending = new Map();
+  const screenshotsList = () => [...pending.values()].sort((a, b) => b.modified - a.modified || b.name.localeCompare(a.name))
+    .map(({ id, name, bytes }) => ({ id, name, dataURL: `data:image/png;base64,${bytes.toString('base64')}` }));
+  function publishScreenshots() {
+    const update = { type: 'screenshots', screenshots: screenshotsList() };
+    for (const listen of listeners) listen(update);
+  }
   async function read() {
     let text;
     try { text = await fs.readFile(sceneFile, 'utf8'); }
@@ -154,7 +163,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG)) return false;
     const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
     if (!width || !height) return false;
-    const id = `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`, scale = Math.min(1, 1200 / width);
+    const id = screenshotId(name, bytes), scale = Math.min(1, 1200 / width);
     await locked(async () => {
       const { scene } = await read();
       if (scene.elements.some(e => e.id === id)) return;
@@ -169,6 +178,17 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     });
     return true;
   }
+  async function chooseScreenshot(choice) {
+    if (!record(choice)) throw fail('Invalid screenshot choice');
+    const { id, action } = choice;
+    if (typeof id !== 'string' || !['place', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
+    const shot = pending.get(id);
+    if (!shot) throw fail('This screenshot has already left the tray.', 404);
+    if (action === 'place') await importScreenshot(shot.name, shot.bytes);
+    pending.delete(id);
+    publishScreenshots();
+    return action === 'place' ? read() : { dismissed: true };
+  }
   async function tick() {
     if (running) return;
     running = true;
@@ -181,11 +201,16 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         // Commit before consuming. Two readers may both merge the same inbox file; the merge is idempotent.
         await exec('gio', ['trash', file]).catch(async e => { try { await fs.access(file); throw e; } catch (missing) { if (missing.code !== 'ENOENT') throw missing; } });
       }
+      let added = false;
       for (const name of (await names(screenshots)).filter(n => /\.png$/i.test(n) && !seen.has(n))) {
         let bytes; try { bytes = await fs.readFile(path.join(screenshots, name)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
         // Wait for a complete PNG (IEND), so a notification while GNOME is writing retries.
-        if (bytes.length >= 12 && bytes.subarray(-8, -4).toString() === 'IEND' && await importScreenshot(name, bytes)) seen.add(name);
+        if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG) || bytes.subarray(-8, -4).toString() !== 'IEND' || !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20)) continue;
+        let stat; try { stat = await fs.stat(path.join(screenshots, name)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+        const id = screenshotId(name, bytes);
+        pending.set(id, { id, name, bytes, modified: stat.mtimeMs }); seen.add(name); added = true;
       }
+      if (added) publishScreenshots();
       const current = await read();
       if (current.revision !== previous) { previous = current.revision; for (const listen of listeners) listen({ type: 'scene', ...current }); }
       lastError = undefined;
@@ -198,8 +223,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     listeners.add(listen);
     if (!timer) { timer = setInterval(() => void tick(), 150); timer.unref(); }
     try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: e.message }); }
+    listen({ type: 'screenshots', screenshots: screenshotsList() });
     return () => { listeners.delete(listen); if (!listeners.size) { clearInterval(timer); timer = undefined; } };
   }
-  return { read, save, picture, boardPicture, chat, reply, watch, close() { clearInterval(timer); timer = undefined; listeners.clear(); } };
+  return { read, save, picture, boardPicture, chat, reply, watch, screenshotsList, chooseScreenshot, close() { clearInterval(timer); timer = undefined; listeners.clear(); pending.clear(); } };
 }
 module.exports = { createLoveSpot, newer, merge };

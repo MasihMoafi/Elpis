@@ -44,6 +44,7 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
     assert.ok(Date.now() - fromElpis < 1000);
     const shot = await f.page.screenshot();
     await fs.writeFile(path.join(f.screenshots, 'shared.png'), shot);
+    await f.page.getByRole('button', { name: 'Add shared.png to drawing', exact: true }).click();
     await f.waitFor(s => s.elements.filter(e => e.type === 'image').length === 1, 'two screenshot watchers duplicated the same picture');
     await standalone.waitForTimeout(300);
     await standalone.keyboard.press('ControlOrMeta+a'); await standalone.keyboard.press('Delete');

@@ -62,7 +62,7 @@ test('Love Spot picture requires the current revision and PNG bytes', async t =>
   assert.equal((await f.request('/picture', { revision: (await f.load()).revision, png: 'not a PNG' })).status, 400);
 });
 
-test('Love Spot inbox merges durably, retains partial JSON, and imports new screenshots only once', async t => {
+test('Love Spot inbox merges durably and retains partial JSON', async t => {
   const f = await fixture(t);
   await fs.writeFile(path.join(f.screenshots, 'old.png'), PNG);
   const stream = await f.request('/events'), reader = stream.body.getReader();
@@ -71,23 +71,106 @@ test('Love Spot inbox merges durably, retains partial JSON, and imports new scre
   await f.save({ elements: [element('a', 3)], files: {} });
   await fs.writeFile(path.join(f.directory, 'inbox', 'add.json'), JSON.stringify({ elements: [element('a', 2), element('inbox')] }));
   await fs.writeFile(path.join(f.directory, 'inbox', 'partial.json'), '{');
-  await fs.writeFile(path.join(f.screenshots, 'new.png'), PNG.subarray(0, 10));
-  await new Promise(resolve => setTimeout(resolve, 300));
-  await fs.writeFile(path.join(f.screenshots, 'new.png'), PNG);
   let scene;
   for (let i = 0; i < 30; i++) {
     scene = (await f.load()).scene;
-    if (scene.elements.some(e => e.type === 'image') && scene.elements.some(e => e.id === 'inbox')) break;
+    if (scene.elements.some(e => e.id === 'inbox')) break;
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   assert.equal(scene.elements.find(e => e.id === 'a').version, 3);
-  assert.equal(scene.elements.filter(e => e.type === 'image').length, 1);
-  assert.equal(Object.values(scene.files)[0].dataURL, `data:image/png;base64,${PNG.toString('base64')}`);
+  for (let i = 0; i < 30 && await fs.stat(path.join(f.directory, 'inbox', 'add.json')).catch(() => false); i++) await new Promise(resolve => setTimeout(resolve, 30));
   await assert.rejects(fs.access(path.join(f.directory, 'inbox', 'add.json')));
   assert.equal(await fs.readFile(path.join(f.directory, 'inbox', 'partial.json'), 'utf8'), '{');
   await fs.writeFile(path.join(f.directory, 'inbox', 'partial.json'), JSON.stringify({ elements: [element('finished')] }));
   for (let i = 0; i < 20 && !(await f.load()).scene.elements.some(e => e.id === 'finished'); i++) await new Promise(resolve => setTimeout(resolve, 50));
   assert.ok((await f.load()).scene.elements.some(e => e.id === 'finished'));
+});
+
+async function screenshotFixture(t) {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.screenshots, 'old.png'), PNG);
+  const saved = await f.save({ elements: [element('existing-image', 1, { type: 'image' })], files: {} });
+  await f.request('/picture', { revision: saved.revision, png: PNG.toString('base64') });
+  const events = [], reader = (await f.request('/events')).body.getReader();
+  t.after(() => reader.cancel());
+  const decoder = new TextDecoder(); let buffer = '';
+  void (async () => {
+    while (true) {
+      const { done, value } = await reader.read(); if (done) return;
+      buffer += decoder.decode(value, { stream: true });
+      let at;
+      while ((at = buffer.indexOf('\n\n')) !== -1) {
+        const event = buffer.slice(0, at); buffer = buffer.slice(at + 2);
+        if (event.startsWith('data: ')) events.push(JSON.parse(event.slice(6)));
+      }
+    }
+  })().catch(() => {});
+  const tray = async () => {
+    const response = await f.request('/screenshots'); assert.equal(response.status, 200);
+    return (await response.json()).screenshots;
+  };
+  const wait = async check => {
+    for (let i = 0; i < 60; i++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)); }
+    assert.fail('screenshot watcher did not settle');
+  };
+  return { ...f, saved, events, tray, wait };
+}
+
+test('new screenshots remain private in memory, newest first, without changing scene, inbox or picture', async t => {
+  const f = await screenshotFixture(t), before = await fs.readFile(path.join(f.directory, 'scene.excalidraw'));
+  await fs.writeFile(path.join(f.screenshots, 'partial.png'), PNG.subarray(0, 10));
+  await fs.writeFile(path.join(f.screenshots, 'first.png'), PNG);
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'scene.excalidraw')), before);
+  await fs.writeFile(path.join(f.screenshots, 'latest.png'), PNG);
+  await f.wait(async () => (await f.tray()).length === 2);
+  const shots = await f.tray();
+  assert.deepEqual(shots.map(s => s.name), ['latest.png', 'first.png']);
+  assert.equal(shots[0].dataURL, `data:image/png;base64,${PNG.toString('base64')}`);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'view.png')), PNG);
+  assert.deepEqual(await fs.readdir(path.join(f.directory, 'inbox')), []);
+  assert.deepEqual((await fs.readdir(f.directory)).sort(), ['.view-revision', 'inbox', 'scene.excalidraw', 'view.png']);
+  await fs.writeFile(path.join(f.screenshots, 'partial.png'), PNG);
+  await f.wait(async () => (await f.tray()).length === 3);
+  assert.ok(f.events.some(e => e.type === 'screenshots' && e.screenshots.length));
+  assert.ok(f.events.filter(e => e.type === 'scene').every(e => e.scene.elements.length === 1));
+});
+
+test('placing a private screenshot uses the existing import geometry and consumes it for all windows', async t => {
+  const f = await screenshotFixture(t);
+  await fs.writeFile(path.join(f.screenshots, 'chosen.png'), PNG);
+  await f.wait(async () => (await f.tray()).length === 1);
+  const [shot] = await f.tray();
+  const reader = (await f.request('/events')).body.getReader(); t.after(() => reader.cancel());
+  const decoder = new TextDecoder(); let initial = '';
+  while (!initial.includes('"type":"screenshots"')) initial += decoder.decode((await reader.read()).value, { stream: true });
+  assert.ok(initial.includes(shot.id), 'a second window receives the same private tray');
+  await fs.unlink(path.join(f.screenshots, 'chosen.png')); // Placement uses the captured bytes.
+  assert.equal((await f.request('/screenshots', { id: shot.id, action: 'place' })).status, 200);
+  const { scene } = await f.load(), image = scene.elements.find(e => e.id === shot.id);
+  assert.equal(image.type, 'image'); assert.equal(image.y, 140); assert.equal(image.width, 8);
+  assert.equal(scene.files[image.fileId].dataURL, shot.dataURL);
+  assert.ok(scene.elements.some(e => e.id === 'existing-image'));
+  assert.deepEqual(await f.tray(), []);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'view.png')), PNG);
+  assert.equal((await f.request('/screenshots', { id: shot.id, action: 'place' })).status, 404);
+  assert.equal((await f.load()).scene.elements.length, 2);
+});
+
+test('dismissed screenshots stay dismissed and leave all shared files unchanged', async t => {
+  const f = await screenshotFixture(t), before = await fs.readFile(path.join(f.directory, 'scene.excalidraw'));
+  await fs.writeFile(path.join(f.screenshots, 'private.png'), PNG);
+  await f.wait(async () => (await f.tray()).length === 1);
+  const [shot] = await f.tray();
+  assert.equal((await f.request('/screenshots', null)).status, 400);
+  assert.equal((await f.request('/screenshots', { id: shot.id, action: 'other' })).status, 400);
+  assert.equal((await f.request('/screenshots', { id: '../private.png', action: 'place' })).status, 404);
+  assert.equal((await f.request('/screenshots', { id: shot.id, action: 'dismiss' })).status, 200);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  assert.deepEqual(await f.tray(), []);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'scene.excalidraw')), before);
+  assert.deepEqual(await fs.readFile(path.join(f.directory, 'view.png')), PNG);
+  assert.deepEqual(await fs.readdir(path.join(f.directory, 'inbox')), []);
 });
 
 test('Love Spot independent processes serialize their merges on the same drawing', async t => {

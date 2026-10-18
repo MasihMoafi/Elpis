@@ -2,6 +2,7 @@
 
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { Excalidraw, convertToExcalidrawElements, exportToBlob, restoreElements, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
@@ -16,7 +17,9 @@ import "./love-spot.css";
 
 type Drawing = { elements: readonly ExcalidrawElement[]; files: BinaryFiles; appState: Partial<AppState> };
 type Saved = { scene: Drawing; revision: string };
-type Update = ({ type: "scene" } & Saved) | { type: "error"; message: string };
+type Screenshot = { id: string; name: string; dataURL: string };
+type Update = ({ type: "scene" } & Saved) | { type: "screenshots"; screenshots: Screenshot[] } | { type: "error"; message: string };
+const screenshotDrag = "application/x-elpis-screenshot";
 const newer = (a: ExcalidrawElement, b: ExcalidrawElement) => a.version > b.version || (a.version === b.version && a.versionNonce < b.versionNonce);
 const versions = (elements: readonly ExcalidrawElement[]) => JSON.stringify(elements.map(e => [e.id, e.version, e.versionNonce, e.isDeleted]));
 function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles): Drawing {
@@ -41,6 +44,7 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
   const [models, setModels] = useState<Model[]>([]), [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [model, setModel] = useState(""), [choiceId, setChoiceId] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; text: string }>();
+  const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
   const boardArea = useRef<HTMLDivElement>(null);
   const latest = useRef<Drawing | undefined>(undefined);
@@ -133,6 +137,7 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
       try {
         const data: Update = JSON.parse(event.data);
         if (data.type === "error") setError(data.message);
+        else if (data.type === "screenshots") setScreenshots(data.screenshots);
         else { receive(data); setError(""); }
       } catch (e) { report(e); }
     };
@@ -172,6 +177,17 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
     receive(data); await savePicture(data); return data.revision;
   }, [editor, receive]);
 
+  async function chooseScreenshot(id: string, action: "place" | "dismiss") {
+    if (choosing) return;
+    setChoosing(true);
+    try {
+      if (action === "place") receive(await api<Saved>("/love-spot/screenshots", { id, action }));
+      else await api("/love-spot/screenshots", { id, action });
+      setScreenshots(shots => shots.filter(shot => shot.id !== id)); setError("");
+    } catch (e) { report(e); }
+    finally { setChoosing(false); }
+  }
+
   function insertion() {
     if (!editor) return { text: "", start: 0, end: 0 };
     const state = editor.getAppState();
@@ -192,8 +208,26 @@ export default function LoveSpot({ dark }: { dark: boolean }) {
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>
     </div>
+    {screenshots.length > 0 && <section className="love-spot-screenshots" aria-label="New screenshots">
+      <div className="love-spot-screenshots-heading"><strong>New screenshots</strong><span>Only shared when you add them. Click or drag onto the drawing.</span></div>
+      <ul className="love-spot-screenshots-list">{screenshots.map(shot => <li key={shot.id}>
+        <Button variant="outline" className="love-spot-screenshot" aria-label={`Add ${shot.name} to drawing`} title={`Add ${shot.name} to drawing`} disabled={choosing} draggable onDragStart={event => {
+          event.dataTransfer.setData(screenshotDrag, shot.id); event.dataTransfer.effectAllowed = "copy";
+        }} onClick={() => void chooseScreenshot(shot.id, "place")}>
+          {/* Private previews stay outside Excalidraw and its exported scene. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={shot.dataURL} alt="" draggable={false} /><span>{shot.name}</span>
+        </Button>
+        <Button variant="outline" size="icon-xs" className="love-spot-screenshot-dismiss" aria-label={`Dismiss ${shot.name}`} title={`Dismiss ${shot.name}`} disabled={choosing} onClick={() => void chooseScreenshot(shot.id, "dismiss")}><X aria-hidden="true" /></Button>
+      </li>)}</ul>
+    </section>}
     {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
-    <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onContextMenuCapture={event => {
+    <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
+      if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
+    }} onDropCapture={event => {
+      const id = event.dataTransfer.getData(screenshotDrag);
+      if (id) { event.preventDefault(); event.stopPropagation(); void chooseScreenshot(id, "place"); }
+    }} onContextMenuCapture={event => {
       if (!editor || !(event.target instanceof HTMLCanvasElement)) return;
       const p = viewportCoordsToSceneCoords({ clientX: event.clientX, clientY: event.clientY }, editor.getAppState());
       const note = [...editor.getSceneElements()].reverse().find(e => e.type === "text" && !agentColor(e.strokeColor) && p.x >= e.x && p.x <= e.x + e.width && p.y >= e.y && p.y <= e.y + e.height);

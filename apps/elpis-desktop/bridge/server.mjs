@@ -154,6 +154,11 @@ export async function startDesktopServer(options = {}) {
           return response.end(JSON.stringify(value));
         }
         if (url.pathname === '/api/love-spot/picture' && method === 'POST') return json(response, 200, await loveSpot.picture(await body(request, 32 * 1024 * 1024)));
+        if (url.pathname === '/api/love-spot/screenshots' && ['GET', 'POST'].includes(method)) {
+          const value = method === 'GET' ? { screenshots: loveSpot.screenshotsList() } : await loveSpot.chooseScreenshot(await body(request));
+          response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          return response.end(JSON.stringify(value));
+        }
         if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
         if (url.pathname === '/api/love-spot/talk/events' && method === 'GET') {
           // Load first so a failed resume still returns a useful HTTP error.
