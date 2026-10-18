@@ -19,7 +19,7 @@ test('Love Spot is beside Canvas and loads its editor only after a real click', 
     await love.click();
     assert.equal(await page.locator('.nav-list button').evaluateAll(nodes => { const i = nodes.findIndex(n => n.textContent === 'Love Spot'); return nodes[i - 1]?.textContent; }), 'Canvas');
     assert.equal(await love.getAttribute('aria-current'), 'page');
-    const icon = love.locator('img');
+    const icon = love.locator('svg');
     assert.equal(await icon.getAttribute('width'), '16');
     await page.locator('.excalidraw').waitFor();
     assert.ok(f.requests.some(url => heavy.some(name => url.endsWith(name))), 'opening Love Spot must load Excalidraw');
