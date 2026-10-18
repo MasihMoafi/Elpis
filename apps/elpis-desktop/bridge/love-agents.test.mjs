@@ -67,7 +67,8 @@ test('a crashed predecessor stops its successors and keeps an inspectable error'
 });
 
 test('a second run is refused while one is active; a timeout cancels over ACP', { timeout: 30000 }, async t => {
-  const f = fixture(t, [card('a', '[hang]')], { timeoutMs: 400 });
+  // The deadline includes process startup and ACP initialization under the full bridge suite.
+  const f = fixture(t, [card('a', '[hang]')], { timeoutMs: 3000 });
   const first = f.runner.run({ id: 'a', cwd: f.dir });
   await assert.rejects(f.runner.run({ id: 'a', cwd: f.dir }), /already running/);
   await assert.rejects(first, /timed out/);
