@@ -385,7 +385,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     };
     await clickWire(wireOf('Quillon · Part 1', 'Nuvani · Join the parts'));
     const wireMenu = canvas.getByRole('menu', { name: 'Wire', exact: true });
-    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Describe the flow', 'Insert agents here', 'Make it two-way', 'Remove wire']);
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Describe the flow', 'Insert agents here', 'Make it two-way', 'Remove wire', 'Change this…']);
     await wireMenu.getByRole('menuitem', { name: /^Insert agents here/ }).click();
     await command.waitFor();
     await page.keyboard.type('Review part 1'); await page.keyboard.press('Enter');
@@ -402,7 +402,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(await edges.count(), wires - 1, 'the wire was removed');
     // The Mother's dotted wires take a click too: agents inserted there start first, and her agent waits for them.
     await clickWire(canvas.locator(`.react-flow__edge[data-id="mother->${id('Orilo · Part 3')}"]`), 0.85);
-    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Describe the flow\nName what the receiving agent gets', 'Insert agents here\nBefore Orilo · Part 3, started by the Mother']);
+    assert.deepEqual(await wireMenu.getByRole('menuitem').allInnerTexts(), ['Describe the flow\nName what the receiving agent gets', 'Insert agents here\nBefore Orilo · Part 3, started by the Mother', 'Change this…']);
     await wireMenu.getByRole('menuitem', { name: /^Insert agents here/ }).click(); await command.waitFor();
     await page.keyboard.type('Read the issue'); await page.keyboard.press('Enter');
     await until('the agent before Orilo · Part 3 was added', () => document.querySelectorAll('.react-flow__node-agent').length === 15);

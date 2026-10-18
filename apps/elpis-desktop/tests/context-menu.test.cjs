@@ -1,4 +1,4 @@
-// Right-click in the app. Chats, projects, the chat tab and messages open the same items as their "…" or hover buttons, from one list;
+// Right-click in the app. Chats, projects, the chat tab and messages keep their "…" or hover actions and append "Change this…";
 // text, links and images are left to Electron's native menu (desktop/context-menu.cjs), so the page must not cancel those.
 // Synthetic HTTP/SSE; no engine or provider calls. Screenshots of each menu go to $ELPIS_SHOTS when it is set.
 const { test } = require('node:test');
@@ -50,7 +50,8 @@ async function fixture(run, { desktop = true } = {}) {
       // Whether each right-click ended up cancelled once every handler had run: a cancelled event shows no native menu.
       window.__contextmenu = []; window.addEventListener('contextmenu', event => setTimeout(() => window.__contextmenu.push(event.defaultPrevented)), true);
       window.__opened = [];
-      if (desktop) window.elpisDesktop = { browser: { command: async () => ({ visible: false, activeId: null, focusAddress: 0, tabs: [] }), layout() {}, subscribe: callback => { callback({ visible: false, activeId: null, focusAddress: 0, tabs: [] }); return () => {}; } }, chooseFolder: async () => null, openFolder: async folder => { window.__opened.push(folder); } };
+      // Electron provides native Change this support; its onPoint hook keeps text/link/edit menus native.
+      if (desktop) window.elpisDesktop = { improve: { onPoint: () => () => {} }, browser: { command: async () => ({ visible: false, activeId: null, focusAddress: 0, tabs: [] }), layout() {}, subscribe: callback => { callback({ visible: false, activeId: null, focusAddress: 0, tabs: [] }); return () => {}; } }, chooseFolder: async () => null, openFolder: async folder => { window.__opened.push(folder); } };
     }, { cwd: CWD, desktop });
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
     const row = id => page.locator(`.thread-list .thread-row[data-thread-id="${id}"]`).first();
@@ -60,8 +61,8 @@ async function fixture(run, { desktop = true } = {}) {
     const items = async () => { await menu().waitFor(); return menu().getByRole('menuitem').evaluateAll(list => list.map(item => { const copy = item.cloneNode(true); copy.querySelectorAll('kbd').forEach(key => key.remove()); return copy.textContent.trim(); })); };
     const closeMenu = async () => { await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); };
     const lastPrevented = async () => { await page.waitForTimeout(60); return page.evaluate(() => window.__contextmenu.at(-1)); };
-    // The "…" and right-click menus are one list: same items, same size, drawn by the same menu style.
-    const popup = async () => menu().evaluate(element => { const box = element.getBoundingClientRect(), style = getComputedStyle(element); return { width: Math.round(box.width), height: Math.round(box.height), background: style.backgroundColor, border: style.borderTopColor, radius: style.borderTopLeftRadius, font: style.fontSize }; });
+    // Compare the shared actions' dimensions and style, accounting for the extra right-click action's height.
+    const popup = async () => menu().evaluate(element => { const box = element.getBoundingClientRect(), style = getComputedStyle(element), change = [...element.querySelectorAll('[role="menuitem"]')].find(item => item.textContent.trim() === 'Change this…'); return { width: Math.round(box.width), height: Math.round(box.height - (change?.getBoundingClientRect().height ?? 0)), background: style.backgroundColor, border: style.borderTopColor, radius: style.borderTopLeftRadius, font: style.fontSize }; });
     await run({ page, row, items, closeMenu, lastPrevented, popup, shot, menu, calls, errors });
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
@@ -76,7 +77,7 @@ test('a chat row opens its "…" menu on right-click, at the pointer, without th
   await closeMenu();
   const box = await row('alpha').boundingBox();
   await row('alpha').click({ button: 'right', position: { x: 90, y: box.height / 2 } });
-  assert.deepEqual(await items(), fromButton, 'right-click and "…" show the same items');
+  assert.deepEqual(await items(), [...fromButton, 'Change this…'], 'right-click keeps the "…" actions and appends Improve Elpis');
   assert.equal(await lastPrevented(), true, 'the page cancels the native menu so only one appears');
   assert.deepEqual(await popup(), buttonLook, 'same size and look as the "…" menu');
   const at = await page.getByRole('menu').boundingBox();
@@ -91,7 +92,7 @@ test('a chat row opens its "…" menu on right-click, at the pointer, without th
   assert.equal(await row('bravo').getAttribute('data-popup-open'), null);
   // The keyboard's menu key (Shift+F10) opens it for the focused chat.
   await row('bravo').locator('.thread-link').focus(); await page.keyboard.press('Shift+F10');
-  assert.deepEqual(await items(), fromButton);
+  assert.deepEqual(await items(), [...fromButton, 'Change this…']);
   await closeMenu();
   // Each item works from the right-click menu: Archive posts, Rename opens its dialog, Delete asks first.
   await row('bravo').click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
@@ -108,7 +109,7 @@ test('right-click on a chat inside a Ctrl/Shift selection acts on the whole sele
   const link = id => row(id).locator('.thread-link');
   await link('alpha').click(); await link('charlie').click({ modifiers: ['Control'] }); await link('delta').click({ modifiers: ['Control'] });
   await row('charlie').click({ button: 'right' });
-  assert.deepEqual(await items(), ['Archive 3 chats', 'Delete 3 chats']);
+  assert.deepEqual(await items(), ['Archive 3 chats', 'Delete 3 chats', 'Change this…']);
   const fromRightClick = await popup();
   await shot('chat-selection-right-click');
   await closeMenu();
@@ -123,7 +124,7 @@ test('right-click on a chat inside a Ctrl/Shift selection acts on the whole sele
   await eventually(async () => assert.deepEqual(calls.filter(call => call.path.endsWith('/archive')).map(call => call.path).sort(), ['/api/threads/alpha/archive', '/api/threads/charlie/archive', '/api/threads/delta/archive']));
   // A chat outside the selection is acted on alone.
   await row('bravo').click({ button: 'right' });
-  assert.deepEqual(await items(), CHAT_ACTIONS);
+  assert.deepEqual(await items(), [...CHAT_ACTIONS, 'Change this…']);
 }));
 
 test('a project opens its "…" menu on right-click', () => fixture(async ({ page, items, closeMenu, popup, shot }) => {
@@ -134,7 +135,7 @@ test('a project opens its "…" menu on right-click', () => fixture(async ({ pag
   await shot('project-dots-menu');
   await closeMenu();
   await project.click({ button: 'right' });
-  assert.deepEqual(await items(), fromButton);
+  assert.deepEqual(await items(), [...fromButton, 'Change this…']);
   assert.deepEqual(await popup(), buttonLook);
   await shot('project-right-click');
   await page.getByRole('menuitem', { name: 'Open in file manager', exact: true }).click();
@@ -153,7 +154,7 @@ test('the chat tab opens the "Chat actions" menu on right-click', () => fixture(
   await shot('chat-tab-dots-menu');
   await closeMenu();
   await tab.click({ button: 'right' });
-  assert.deepEqual(await items(), fromButton);
+  assert.deepEqual(await items(), [...fromButton, 'Change this…']);
   assert.deepEqual(await popup(), buttonLook);
   await shot('chat-tab-right-click');
 }));
@@ -164,7 +165,7 @@ test('without the desktop tab strip, the chat title right-clicks into the same m
   await page.getByRole('button', { name: 'Chat actions', exact: true }).click();
   const fromButton = await items(); await closeMenu();
   await page.locator('.header-title-row h1').click({ button: 'right' });
-  assert.deepEqual(await items(), fromButton);
+  assert.deepEqual(await items(), [...fromButton, 'Change this…']);
 }, { desktop: false }));
 
 test('a message right-click opens the message menu, the same list as the hover …; selected text, links and fields keep the native menu', () => fixture(async ({ page, row, items, closeMenu, lastPrevented, popup, shot }) => {
@@ -176,7 +177,7 @@ test('a message right-click opens the message menu, the same list as the hover �
   // Right-click on a message that has no selection.
   const userMenu = await hovered(user);
   await user.locator('.message.user').click({ button: 'right' });
-  assert.deepEqual(await items(), userMenu, 'a user message: the menu is the hover …');
+  assert.deepEqual(await items(), [...userMenu, 'Change this…'], 'a user message keeps the hover actions and appends Improve Elpis');
   assert.ok((await items()).includes('Copy as Markdown'));
   assert.equal(await lastPrevented(), true);
   await shot('message-user-right-click');
@@ -184,7 +185,7 @@ test('a message right-click opens the message menu, the same list as the hover �
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Please summarize the cache design.');
   const replyMenu = await hovered(reply);
   await reply.locator('p').first().click({ button: 'right' });
-  assert.deepEqual(await items(), replyMenu, 'a reply: the menu is the hover …');
+  assert.deepEqual(await items(), [...replyMenu, 'Change this…'], 'a reply keeps the hover actions and appends Improve Elpis');
   assert.ok((await items()).includes('Copy as Markdown'));
   await shot('message-reply-right-click');
   await page.getByRole('menuitem', { name: 'Copy as Markdown', exact: true }).click();
@@ -212,5 +213,5 @@ test('the Agents list opens each chat\'s "…" menu on right-click too', () => f
   await row.getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
   const fromButton = await items(); await closeMenu();
   await row.click({ button: 'right' });
-  assert.deepEqual(await items(), fromButton);
+  assert.deepEqual(await items(), [...fromButton, 'Change this…']);
 }));

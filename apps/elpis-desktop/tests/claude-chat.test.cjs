@@ -45,19 +45,19 @@ const MENU = { user: ['Copy text', 'Copy as Markdown', 'Edit and retry', 'Rewind
 const menuItems = async page => { await page.getByRole('menuitem').first().waitFor(); return (await page.getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim()); };
 const closeMenu = async page => { await page.keyboard.press('Escape'); await page.getByRole('menu').waitFor({ state: 'hidden' }); };
 
-test('right-click on a message opens its menu, and the hover … opens the same one', () => using({}, async f => {
+test('right-click on a message keeps the hover … actions and appends Change this…', () => using({}, async f => {
   const { page } = f;
   await f.open('chat-a');
   const prompt = page.locator('.message.user', { hasText: 'Run them.' }), reply = page.locator('.message.agent', { hasText: 'two passes' });
   await prompt.click({ button: 'right' });
-  assert.deepEqual(await menuItems(page), MENU.user);
+  assert.deepEqual(await menuItems(page), [...MENU.user, 'Change this…']);
   await closeMenu(page);
   const turn = page.locator('.user-turn', { hasText: 'Run them.' });
   await turn.hover(); await turn.getByRole('button', { name: 'More message actions', exact: true }).click();
-  assert.deepEqual(await menuItems(page), MENU.user, 'the … holds the right-click items');
+  assert.deepEqual(await menuItems(page), MENU.user, 'the … holds the message actions');
   await closeMenu(page);
   await reply.click({ button: 'right' });
-  assert.deepEqual(await menuItems(page), MENU.reply);
+  assert.deepEqual(await menuItems(page), [...MENU.reply, 'Change this…']);
   await closeMenu(page);
   await reply.hover(); await reply.getByRole('button', { name: 'More message actions', exact: true }).click();
   assert.deepEqual(await menuItems(page), MENU.reply);

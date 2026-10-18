@@ -141,17 +141,17 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     graph = await saved();
     assert.ok(wired(graph, 'Quillon · Step 1: the base', 'Orilo · Step 3: finish'), 'step 3 now waits for step 1');
 
-    // Right-click menus: on an agent, its actions with their keys; Duplicate adds a copy.
+    // Right-click menus preserve their actions and append Improve Elpis's "Change this…".
     await node('Quillon · Step 1: the base').click({ button: 'right' });
     const agentMenu = canvas.getByRole('menu', { name: 'Agent Quillon · Step 1: the base', exact: true });
-    assert.deepEqual(await agentMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Dashboard', 'Rename', 'Add agents after it', 'Duplicate', 'Copy', 'Delete, keep the flow', 'Delete']);
+    assert.deepEqual(await agentMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Dashboard', 'Rename', 'Add agents after it', 'Duplicate', 'Copy', 'Delete, keep the flow', 'Delete', 'Change this…']);
     await agentMenu.getByRole('menuitem', { name: /^Duplicate/ }).click();
     await agentCount(3, 'duplicated from the menu');
     // On the board: add, paste, arrange and fit.
     await fit();
     await page.mouse.click(board.x + 20, board.y + 20, { button: 'right' });
     const boardMenu = canvas.getByRole('menu', { name: 'Board', exact: true });
-    assert.deepEqual(await boardMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Add agents', 'Add a note', 'Paste 2 agents', 'Arrange by run order', 'Fit the view']);
+    assert.deepEqual(await boardMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Add agents', 'Add a note', 'Paste 2 agents', 'Arrange by run order', 'Fit the view', 'Change this…']);
     await boardMenu.getByRole('menuitem', { name: /^Add agents/ }).click();
     await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).waitFor();
     await page.keyboard.press('Escape');
