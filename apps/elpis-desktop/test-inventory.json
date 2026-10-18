@@ -33,6 +33,7 @@
   "bridge": [
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",
+    "bridge/acp-nodes.test.mjs",
     "bridge/anthropic-signout.test.mjs",
     "bridge/approvals.test.mjs",
     "bridge/attachments.test.mjs",
