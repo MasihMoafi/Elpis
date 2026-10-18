@@ -67,7 +67,8 @@
     "bridge/tools.test.mjs",
     "bridge/transcription.test.mjs",
     "bridge/trash.test.mjs",
-    "bridge/personal.test.mjs"
+    "bridge/personal.test.mjs",
+    "bridge/smart-prune.test.mjs"
   ],
   "desktop": [
     "desktop/browser-agent.test.cjs",
@@ -202,7 +203,8 @@
     "tests/workflow.test.cjs",
     "tests/agent-runs.test.cjs",
     "tests/canvas-editing.test.cjs",
-    "tests/personal.test.cjs"
+    "tests/personal.test.cjs",
+    "tests/smart-prune.test.cjs"
   ],
   "opt-in": [
     "tests/app-fix-2.runtime.mjs",
