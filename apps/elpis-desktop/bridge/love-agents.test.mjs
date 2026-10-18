@@ -130,7 +130,7 @@ test('each card names its ACP agent: Elpis per model, Claude, Antigravity or a c
   const home = path.join(dir, 'home'); fs.mkdirSync(home);
   const env = { ELPIS_HOME: home, ELPIS_ENGINE_BIN: path.join(dir, 'elpis-next'), ELPIS_NODE_BIN: '/usr/bin/node', CLAUDE_CODE_EXECUTABLE: '/opt/claude' };
   const node = (model, provider = 'openai') => ({ name: 'Ada', prompt: 'Be precise', model, provider });
-  assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
+  assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: home }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
   assert.deepEqual(loveNodeSpec(node('claude/opus'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js')], env: { CLAUDE_CODE_EXECUTABLE: '/opt/claude' }, model: 'opus' });
   assert.deepEqual(loveNodeSpec(node('agy/gemini-3.8-flash-high'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'agy-acp.mjs')], model: 'gemini-3.8-flash-high' });
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: 'fx', args: ['acp'] } }));
@@ -151,6 +151,7 @@ test('end to end: two Elpis ACP agents hand off through Love Spot on a scripted 
   assert.match(second, /^Repeat the source answer\n\nAnswers from connected agents \(source material\):\n/);
   assert.deepEqual(JSON.parse(second.slice(second.indexOf('[{'))), [{ name: 'first', answer: 'Answer from gpt-6-luna: Unique seed e2e-71' }]);
   const started = f.engine('second').find(m => m.method === 'thread/start').params;
+  assert.equal(f.engine('first').find(m => 'engineHome' in m)?.engineHome, path.join(f.dir, 'home'), 'the ACP process must use the selected Elpis home');
   assert.deepEqual([started.model, started.modelProvider, started.developerInstructions], ['gpt-6-luna', 'openai', 'Be precise']);
   assert.deepEqual(f.engine('second').find(m => m.method === 'thread/name/set').params.name, 'Love Spot · second');
   assert.equal(f.loveAgent('second').threadId, f.engine('second').find(m => m.method === 'turn/start').params.threadId, 'the card opens the Elpis chat that ran it');

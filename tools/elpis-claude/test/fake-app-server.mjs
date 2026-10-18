@@ -132,7 +132,7 @@ function handle(msg, socket) {
   if (msg.id === undefined) return;
   const p = msg.params ?? {};
   switch (msg.method) {
-    case "initialize": return reply({ userAgent: "fake-engine/0" });
+    case "initialize": log({ engineHome: process.env.ELPIS_HOME ?? null }); return reply({ userAgent: "fake-engine/0" });
     case "thread/start": {
       const id = randomUUID();
       const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, turns: [] };

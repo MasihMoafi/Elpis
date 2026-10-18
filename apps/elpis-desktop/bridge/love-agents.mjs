@@ -89,7 +89,7 @@ export function loveNodeSpec(node, env = process.env) {
   if (node.model.startsWith('agy/')) return { ...base, command: nodeBin, args: [present(path.join(installation(env).tools, 'agy-acp.mjs'))], model: node.model.slice('agy/'.length) };
   const { engine, tools } = installation(env);
   return { ...base, command: nodeBin, args: [present(env.ELPIS_ACP_AGENT || path.join(tools, 'elpis-acp-agent.mjs')), ...(node.model ? ['--model', node.model] : []), ...(node.provider ? ['--provider', node.provider] : [])],
-    env: { ELPIS_ENGINE_BIN: engine }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
+    env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: elpisHome(env) }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
 }
 
 /** Runs a card's connected agents in order, each as its own ACP agent process (bridge/acp-nodes.mjs): a card's final
