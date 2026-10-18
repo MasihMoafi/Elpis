@@ -5,18 +5,62 @@ const path = require('node:path');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const agents = scene => scene.elements.filter(e => !e.isDeleted && e.customData?.loveAgent);
 
-test('one Agents entry chooses a preset, adds its card and edits its task', async () => {
+for (const surface of ['embedded', 'standalone']) for (const confirmation of ['Enter', 'Add']) test(`${surface}: choosing an agent stays a focused draft until ${confirmation}`, async () => {
   const f = await loveSpotFixture();
   try {
-    await f.open(f.page);
+    if (surface === 'embedded') await f.open(f.page);
+    else { await f.page.goto(new URL('love-spot.html', f.url).href); await f.page.locator('.excalidraw canvas').first().waitFor(); }
     assert.equal(await f.page.getByRole('button', { name: /^(Agent|Characters)$/ }).count(), 0);
     await f.page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
     await f.page.getByRole('menuitem', { name: 'Add Critic', exact: true }).click();
-    await f.page.getByRole('textbox', { name: 'Task', exact: true }).fill('Find the weakest assumption');
+    const task = f.page.getByRole('textbox', { name: 'Task', exact: true });
+    assert.ok(await task.evaluate(el => el === document.activeElement), 'preset selection must focus its task');
+    await task.fill('Find the weakest assumption');
+    await f.page.waitForTimeout(500);
+    assert.equal(agents(await f.scene()).length, 0, 'an unconfirmed draft must never enter the saved scene');
+    assert.equal(await f.page.getByRole('button', { name: 'Inspect Critic', exact: true }).count(), 0, 'an unconfirmed draft must have no board tab');
+    assert.equal(f.chats.length, 0);
+    if (confirmation === 'Enter') await task.press('Enter');
+    else await f.page.getByRole('button', { name: 'Add', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Inspect Critic', exact: true }).waitFor();
     await f.page.getByRole('button', { name: 'Done', exact: true }).click();
     await f.waitFor(s => agents(s)[0]?.customData.loveAgent.task === 'Find the weakest assumption', 'chosen task did not persist');
-    assert.equal(agents(await f.scene())[0].customData.loveAgent.name, 'Critic');
+    assert.equal(agents(await f.scene()).length, 1, 'confirmation must create exactly one card');
+    assert.equal(await f.page.getByRole('button', { name: 'Inspect Critic', exact: true }).count(), 1);
+    await f.page.reload();
+    if (surface === 'embedded') await f.open(f.page);
+    else await f.page.locator('.excalidraw canvas').first().waitFor();
+    await f.page.getByRole('button', { name: 'Inspect Critic', exact: true }).click();
+    assert.equal(await task.inputValue(), 'Find the weakest assumption');
     assert.equal(await f.page.getByRole('menu', { name: 'Agents', exact: true }).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const dismissal of ['Escape', 'outside drag']) test(`${dismissal} cancels three agent drafts without creating cards, tabs or drawings`, async () => {
+  const f = await loveSpotFixture();
+  try {
+    const { page } = f; await f.open(page); await f.draw(page);
+    const original = await f.waitFor(s => s.elements.some(e => e.type === 'rectangle' && !e.isDeleted), 'initial drawing must persist');
+    for (let i = 0; i < 3; i++) {
+      await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Task', exact: true }).fill(`Cancelled task ${i}`);
+      if (dismissal === 'Escape') await page.keyboard.press('Escape');
+      else {
+        const board = await page.locator('.excalidraw').boundingBox();
+        await page.mouse.move(board.x + 650, board.y + 400); await page.mouse.down();
+        await page.mouse.move(board.x + 750, board.y + 500, { steps: 8 }); await page.mouse.up();
+      }
+      assert.equal(await page.getByRole('textbox', { name: 'Task', exact: true }).count(), 0, 'the draft must disappear');
+      await page.waitForTimeout(500);
+      assert.equal(await page.getByRole('button', { name: 'Inspect Researcher', exact: true }).count(), 0);
+      assert.deepEqual((await f.scene()).elements, original.elements, 'cancel must neither add nor alter board elements');
+    }
+    assert.equal(f.chats.length, 0);
+    await f.draw(page, 100);
+    await f.waitFor(s => s.elements.filter(e => e.type === 'rectangle' && !e.isDeleted).length === 2, 'drawing must work after cancellation');
+    assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
@@ -39,10 +83,19 @@ for (const colorScheme of ['light', 'dark']) test(`agent menu contains every nam
       }).map(el => el.textContent);
     });
     assert.deepEqual(overflow, [], 'every character name and description must fit');
-    await fs.mkdir(path.join(process.env.HOME, '.cache/elpis-tests/love-polish'), { recursive: true });
+    const output = path.join(process.env.HOME, '.cache/elpis-tests/love-confirm');
+    await fs.mkdir(output, { recursive: true });
     for (const width of [545, 760, 1280]) {
       await page.setViewportSize({ width, height: width === 545 ? 436 : 900 });
-      await page.screenshot({ path: path.join(process.env.HOME, `.cache/elpis-tests/love-polish/menu-${colorScheme}-${width}.png`) });
+      await page.screenshot({ path: path.join(output, `menu-${colorScheme}-${width}.png`) });
+    }
+    await page.getByRole('menuitem', { name: 'Add Critic', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Task', exact: true }).fill('Challenge the weakest assumption');
+    for (const width of [545, 760, 1280]) {
+      await page.setViewportSize({ width, height: width === 545 ? 436 : 900 });
+      const form = page.locator('.love-agent-draft form');
+      assert.ok(await form.evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'the draft must fit');
+      await page.screenshot({ path: path.join(output, `draft-${colorScheme}-${width}.png`) });
     }
     await page.keyboard.press('Escape');
     assert.deepEqual(f.errors, []);
@@ -80,7 +133,8 @@ for (const colorScheme of ['light', 'dark']) test(`Talk, agents and private scre
     await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
     const details = page.getByLabel('Agent details', { exact: true });
-    await details.getByRole('textbox', { name: 'Task', exact: true }).fill('Review our shared idea');
+    await page.getByRole('textbox', { name: 'Task', exact: true }).fill('Review our shared idea');
+    await page.getByRole('textbox', { name: 'Task', exact: true }).press('Enter');
     await page.getByRole('button', { name: 'Talk', exact: true }).click();
     const talk = page.getByRole('region', { name: 'Love Spot Talk', exact: true });
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
@@ -143,6 +197,7 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, AC
     // The characters Masih accepted (18 Oct), made by image generation and traced, not the old drawn faces.
     assert.ok(portraits.every(src => src.startsWith('data:image/png;base64,')), 'the portraits are the new character art');
     await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
     await page.getByRole('button', { name: 'Run connected agents', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'Give Researcher a task' }).waitFor();
     assert.deepEqual(await f.acp(), [], 'invalid graph must not start agents');
@@ -150,6 +205,7 @@ for (const colorScheme of ['light', 'dark']) test(`characters, native arrows, AC
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add Reviewer', exact: true }).click();
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
     assert.match(await page.getByRole('textbox', { name: 'Prompt', exact: true }).inputValue(), /review/i);
     assert.equal(await page.getByRole('textbox', { name: 'Model', exact: true }).inputValue(), 'gpt-6-luna');
     assert.equal(await page.getByRole('textbox', { name: 'Provider', exact: true }).inputValue(), 'openai');

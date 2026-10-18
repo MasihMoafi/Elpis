@@ -2,12 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { characters, avatar, type Character, type LoveAgent } from "@/lib/love-agents";
 
-export function CharacterPicker({ onAdd }: { onAdd: (character: Character) => void }) {
+export function CharacterPicker({ onAdd, onCancel }: { onAdd: (character: Character, task: string) => void; onCancel: () => void }) {
+  const [character, setCharacter] = useState<Character>();
+  const [task, setTask] = useState("");
+  if (character) return <DropdownMenuContent align="start" className="love-agent-picker love-agent-draft" aria-label="New agent">
+    <form className="grid gap-3" onSubmit={event => { event.preventDefault(); onAdd(character, task.trim()); }} onKeyDown={event => { if (event.key !== "Escape") event.stopPropagation(); }}>
+      <strong>{character.name}</strong>
+      <label className="grid gap-1">Task<Input className="input input-sm" autoFocus aria-label="Task" value={task} maxLength={16000} placeholder={`What should ${character.name} do?`} onChange={event => setTask(event.target.value)} /></label>
+      <div className="flex flex-wrap items-center justify-end gap-2"><span className="mr-auto text-xs text-muted-foreground">Enter to add · Esc to cancel</span><Button className="btn btn-ghost btn-sm" variant="ghost" size="sm" type="button" onClick={onCancel}>Cancel</Button><Button className="btn btn-sm" variant="outline" size="sm" type="submit">Add</Button></div>
+    </form>
+  </DropdownMenuContent>;
   return <DropdownMenuContent align="start" className="love-agent-picker" aria-label="Choose an agent">
-    {characters.map(c => <DropdownMenuItem key={c.id} aria-label={`Add ${c.name}`} onClick={() => onAdd(c)}>
+    {characters.map(c => <DropdownMenuItem key={c.id} aria-label={`Add ${c.name}`} closeOnClick={false} onClick={() => setCharacter(c)}>
       {/* Portraits are generated locally; no account, image service or download. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="shrink-0" src={avatar(c)} alt="" width={40} height={40} /><span className="min-w-0 whitespace-normal wrap-break-word"><strong>{c.name}</strong><small>{c.detail}</small></span>

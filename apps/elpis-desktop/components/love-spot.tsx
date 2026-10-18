@@ -299,14 +299,15 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
     finally { setPageBusy(false); }
   }
 
-  const add = (character: Character) => {
+  const add = (character: Character, task: string) => {
     if (!editor) return;
     const state = editor.getAppState(), zoom = state.zoom.value;
-    const made = makeAgent(character, 260 / zoom - state.scrollX + (agents.length % 2) * 280, 200 / zoom - state.scrollY + Math.floor(agents.length / 2) * 220);
+    const made = makeAgent(character, 260 / zoom - state.scrollX + (agents.length % 2) * 280, 200 / zoom - state.scrollY + Math.floor(agents.length / 2) * 220, task);
     editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...made.elements], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     editor.addFiles([made.file]);
     setSelected(made.id);
     editor.setActiveTool({ type: "selection" });
+    setPicker(false);
   };
   const updateAgent = (change: Partial<LoveAgent>) => {
     if (!editor || !selected) return;
@@ -374,7 +375,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat }: { dark: boolean; cwd
       {editor && <div className="love-agent-toolbar">
         <DropdownMenu open={picker} onOpenChange={setPicker}>
           <DropdownMenuTrigger render={<Button variant="outline" size="sm" title="Choose an agent, or type @agent in a text note" />}>Agents</DropdownMenuTrigger>
-          {picker && <CharacterPicker onAdd={add} />}
+          {picker && <CharacterPicker onAdd={add} onCancel={() => setPicker(false)} />}
         </DropdownMenu>
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
