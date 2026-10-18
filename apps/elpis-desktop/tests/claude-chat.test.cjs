@@ -165,6 +165,7 @@ test('the gap under a reply, up to the next message, is tight and does not hold 
 test('the new surfaces paint no orange in the light theme: the @ picker, the + menu, a message menu, the prompt rail, the back buttons and the side panel', () => using({ colorScheme: 'light' }, async f => {
   const { page, composer } = f;
   await f.open('chat-a');
+  await page.locator('.startup-splash').waitFor({ state: 'detached' });
   assert.deepEqual(await oranges(page), [], 'the chat with its rail and back buttons');
   await composer.click(); await page.keyboard.type('@'); await page.getByRole('listbox', { name: 'Mentions' }).waitFor();
   assert.deepEqual(await oranges(page), [], 'the @ picker');
