@@ -286,7 +286,7 @@ impl App {
         self.insert_pending_usage_output(tui);
     }
 
-    pub(super) fn open_url_in_browser(&mut self, url: String) {
+    pub(crate) fn open_url_in_browser(&mut self, url: String) {
         if let Some(target) =
             url.strip_prefix(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX)
         {

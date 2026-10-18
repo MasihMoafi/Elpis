@@ -23,6 +23,7 @@ const LATER_BUILD: [SlashCommand; 1] = [SlashCommand::ForcePrune];
 #[tokio::test]
 async fn personal_command_shows_the_user_file_and_never_overwrites_it() {
     let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_disable_paste_burst(true);
     let command = SlashCommand::from_str("personal").expect("/personal is a built-in command");
     for c in "/personal".chars() {
         chat.handle_key_event(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
@@ -434,7 +435,6 @@ fn commands_v030_removed_stay_hidden_and_other_unlisted_commands_leave_the_popup
         .map(|(name, _)| name)
         .collect::<Vec<_>>();
     for name in [
-        "app",
         "apps",
         "plugins",
         "setup-default-sandbox",
@@ -460,10 +460,11 @@ fn commands_v030_removed_stay_hidden_and_other_unlisted_commands_leave_the_popup
         assert!(!listed.contains(&name), "/{name} is listed");
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
     }
-    // Negative: v0.3.0's own commands are listed.
-    for name in ["model", "compact", "context", "dashboard"] {
+    // Selected commands remain listed, including the desktop handoff.
+    for name in ["model", "compact", "context", "dashboard", "app"] {
         assert!(listed.contains(&name), "/{name} is missing");
     }
+    assert_eq!(find_builtin_command("app", flags), Some(SlashCommand::App));
 }
 
 #[test]
