@@ -9,10 +9,10 @@ import { resolveRef, type FileRef } from "@/lib/file-refs";
 export type Entry = { name: string; dir: boolean; link?: boolean };
 export type Listing = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; entries: Entry[] };
 export type Doc =
-  | { status: "loading" } | { status: "error"; message: string } | { status: "binary" | "large"; size: number } | { status: "image"; src: string }
+  | { status: "loading" } | { status: "error"; message: string } | { status: "binary" | "large"; size: number; limit?: number } | { status: "image" | "pdf"; src: string }
   | { status: "ready"; text: string; saved: string; mtimeMs: number; eol: "\n" | "\r\n"; saving: boolean; saveError: string };
 /** A file in the tab strip. A preview is replaced by the next file previewed; `focus` counts the times the lines were asked for. */
-export type OpenFile = { path: string; preview: boolean; line?: number; endLine?: number; focus: number };
+export type OpenFile = { path: string; preview: boolean; line?: number; endLine?: number; focus: number; view?: "source" | "preview" };
 export type Pane = { open: OpenFile[]; active: string | null; showTree: boolean; expanded: string[]; selected: string | null; reveal: number; hidden: boolean; treeWidth: number };
 export type Names = "loading" | "error" | string[];
 export type FilesState = { host: { attached: boolean; cwd: string }; panes: Record<string, Pane>; docs: Record<string, Doc>; dirs: Record<string, Listing>; names: Record<string, Names> };
@@ -100,6 +100,11 @@ export function reveal(cwd: string, path: string) {
 const location = (cwd: string, path: string) => path.startsWith("/")
   ? { cwd: path.slice(0, path.lastIndexOf("/")) || "/", path: path.slice(path.lastIndexOf("/") + 1) }
   : { cwd, path };
+/** An explicit file tab uses its own folder when outside the project; embedded assets must pass their project scope. */
+export function fileAssetUrl(cwd: string, path: string) {
+  return `/api/file/asset?cwd=${enc(cwd)}&path=${enc(path)}`;
+}
+export function fileScope(cwd: string, path: string) { return location(cwd, path); }
 const FRESH = (text: string) => text.replace(/\r\n/g, "\n");
 /** Reads the file into its tab. A file with unsaved edits is left as it is; one that has not changed keeps its text. */
 export async function loadDoc(cwd: string, path: string) {
@@ -108,10 +113,11 @@ export async function loadDoc(cwd: string, path: string) {
   if (!known || known.status !== "ready") set({ docs: { ...state.docs, [key]: { status: "loading" } } });
   try {
     const source = location(cwd, path);
-    const result = await api<{ content?: string; image?: string; binary?: boolean; tooLarge?: boolean; size: number; mtimeMs?: number }>(`/file?cwd=${enc(source.cwd)}&path=${enc(source.path)}`);
+    const result = await api<{ content?: string; image?: string; preview?: "pdf" | "image"; binary?: boolean; tooLarge?: boolean; size: number; limit?: number; mtimeMs?: number }>(`/file?cwd=${enc(source.cwd)}&path=${enc(source.path)}`);
     if (isDirty(state.docs[key])) return;
+    if (result.preview === "pdf" || result.preview === "image") { set({ docs: { ...state.docs, [key]: { status: result.preview, src: fileAssetUrl(source.cwd, source.path) } } }); return; }
     if (typeof result.image === "string" && result.image.startsWith("data:image/")) { set({ docs: { ...state.docs, [key]: { status: "image", src: result.image } } }); return; }
-    if (result.tooLarge) { set({ docs: { ...state.docs, [key]: { status: "large", size: result.size } } }); return; }
+    if (result.tooLarge) { set({ docs: { ...state.docs, [key]: { status: "large", size: result.size, limit: result.limit } } }); return; }
     if (result.binary || typeof result.content !== "string" || typeof result.mtimeMs !== "number") { set({ docs: { ...state.docs, [key]: { status: "binary", size: result.size } } }); return; }
     const text = FRESH(result.content), now = state.docs[key];
     if (now?.status === "ready" && now.saved === text && now.mtimeMs === result.mtimeMs) return;
@@ -121,7 +127,7 @@ export async function loadDoc(cwd: string, path: string) {
 /** Shows `path` in a tab (a preview, unless asked to keep it) and reads it; `lines` marks and scrolls to them. */
 export function openFile(cwd: string, path: string, { preview = false, line, endLine, show = false }: { preview?: boolean; line?: number; endLine?: number; show?: boolean } = {}) {
   const pane = paneOf(cwd), at = pane.open.findIndex(file => file.path === path), old = pane.open[at];
-  const file: OpenFile = { path, preview: old ? old.preview && preview : preview, line, endLine, focus: (old?.focus ?? 0) + 1 };
+  const file: OpenFile = { path, preview: old ? old.preview && preview : preview, line, endLine, focus: (old?.focus ?? 0) + 1, view: line ? "source" : old?.view };
   let open: OpenFile[];
   if (old) open = pane.open.map(item => item === old ? file : item);
   else if (preview && pane.open.some(item => item.preview)) open = pane.open.map(item => item.preview ? file : item);
@@ -149,6 +155,9 @@ export function openRef(ref: FileRef, { asText = false }: { asText?: boolean } =
 export function activate(cwd: string, path: string) {
   patchPane(cwd, { active: path, selected: path, open: paneOf(cwd).open.map(file => file.path === path ? { ...file, focus: file.focus + 1 } : file) });
   void loadDoc(cwd, path);
+}
+export function setFileView(cwd: string, path: string, view: "source" | "preview") {
+  patchPane(cwd, pane => ({ open: pane.open.map(file => file.path === path ? { ...file, view } : file) }));
 }
 /** The tab stays; a preview that is edited or double-clicked is kept. */
 export function keep(cwd: string, path: string) { patchPane(cwd, pane => ({ open: pane.open.map(file => file.path === path ? { ...file, preview: false } : file) })); }

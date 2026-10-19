@@ -1,16 +1,21 @@
 // The Files pane's side of the bridge: one folder's entries at a time (the tree), one file's text (the viewer), saving
 // it back (in-place editing) and a search of the files' contents. Temporary folders only; nothing outside them is read.
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
+import { execFile } from 'node:child_process';
 import { BridgeError } from './client.mjs';
 import { listDirectory, readFile, writeFile, searchFiles } from './files.mjs';
 import { startDesktopServer } from './server.mjs';
 
+const tempRoot = await fs.mkdtemp(path.join(os.homedir(), '.cache/elpis-file-view-'));
+after(() => promisify(execFile)('gio', ['trash', tempRoot]));
+
 async function project() {
-  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-view-')));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(tempRoot, 'elpis-view-')));
   const put = async (file, content = 'x') => { await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true }); await fs.writeFile(path.join(root, file), content); };
   await put('README.md', '# Parser\nA tiny parser.\n');
   await put('package.json', '{}\n');
@@ -24,12 +29,12 @@ async function project() {
   await fs.writeFile(path.join(root, 'blob.bin'), Buffer.from([1, 2, 0, 3, 4]));
   await fs.writeFile(path.join(root, 'big.txt'), 'a'.repeat(600 * 1024));
   await fs.symlink(path.join(root, 'README.md'), path.join(root, 'linked.md'));
-  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-view-outside-'));
+  const outside = await fs.mkdtemp(path.join(tempRoot, 'elpis-view-outside-'));
   await fs.writeFile(path.join(outside, 'secret.txt'), 'outside');
   await fs.symlink(path.join(outside, 'secret.txt'), path.join(root, 'escape.txt'));
   return { root, outside };
 }
-const cleanup = (t, ...dirs) => t.after(() => Promise.all(dirs.map(dir => fs.rm(dir, { recursive: true, force: true }))));
+const cleanup = (t, ...dirs) => t.after(() => promisify(execFile)('gio', ['trash', ...dirs]));
 const refused = (promise, status, message) => assert.rejects(promise, error => error instanceof BridgeError && error.status === status && message.test(error.message));
 
 test('lists one folder: folders first, then files, each in name order; dot entries and generated folders stay out', async t => {
@@ -123,7 +128,7 @@ test('searches file contents, ignoring case: one row per matching line, in path 
 });
 
 test('caps a search at 200 rows and says it was cut; cuts a long line', async t => {
-  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-view-many-'))); cleanup(t, root);
+  const root = await fs.realpath(await fs.mkdtemp(path.join(tempRoot, 'elpis-view-many-'))); cleanup(t, root);
   await fs.writeFile(path.join(root, 'a.txt'), Array.from({ length: 250 }, (_, i) => `hit ${i}`).join('\n'));
   await fs.writeFile(path.join(root, 'b.txt'), `hit ${'y'.repeat(500)}`);
   const found = await searchFiles(root, 'hit');
@@ -135,7 +140,7 @@ test('caps a search at 200 rows and says it was cut; cuts a long line', async t 
 test('the routes need the session and answer the same as the functions, with a 4xx message for a bad request', async t => {
   const { root, outside } = await project(); cleanup(t, root, outside);
   const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
-  const app = await startDesktopServer({ client, staticDir: root }); t.after(() => app.close());
+  const app = await startDesktopServer({ client, staticDir: root, elpisHome: path.join(tempRoot, 'home'), loveSpot: { directory: path.join(tempRoot, 'love-spot'), screenshots: path.join(tempRoot, 'screenshots') } }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
   const q = (route, params) => `${route}?${new URLSearchParams(params)}`;
   assert.equal((await fetch(origin + q('/api/file', { cwd: root, path: 'README.md' }))).status, 401);
@@ -160,4 +165,45 @@ test('the routes need the session and answer the same as the functions, with a 4
     assert.equal(typeof (await response.json()).error, 'string');
   }
   assert.equal((await get(q('/api/file', { cwd: root, path: 'nope.ts' }))).status, 404);
+});
+
+test('a PDF is described as a document, including one larger than the text editor limit', async t => {
+  const root = await fs.mkdtemp(path.join(tempRoot, 'elpis-pdf-view-')); cleanup(t, root);
+  const bytes = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(600 * 1024, 32)]);
+  await fs.writeFile(path.join(root, 'report.pdf'), bytes);
+  const file = await readFile(root, 'report.pdf');
+  assert.equal(file.preview, 'pdf', 'PDF bytes must not enter the source editor or its 512 KB limit');
+  assert.equal(file.content, undefined);
+  assert.equal(file.size, bytes.length);
+});
+
+test('preview assets require the app session and canonical project path and serve only validated documents or images', async t => {
+  const { root, outside } = await project(); cleanup(t, root, outside);
+  const pdf = Buffer.from('%PDF-1.4\nprivate document bytes\n%%EOF\n');
+  await fs.writeFile(path.join(root, 'report.pdf'), pdf);
+  await fs.writeFile(path.join(root, 'fake.pdf'), '<script>window.executed=true</script>');
+  await fs.writeFile(path.join(root, 'fake.png'), '<html>not an image</html>');
+  await fs.writeFile(path.join(root, 'oversized.pdf'), '%PDF-1.4\n');
+  await fs.truncate(path.join(root, 'oversized.pdf'), 31 * 1024 * 1024);
+  const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) };
+  const app = await startDesktopServer({ client, staticDir: root, elpisHome: path.join(tempRoot, 'home'), loveSpot: { directory: path.join(tempRoot, 'love-spot'), screenshots: path.join(tempRoot, 'screenshots') } }); t.after(() => app.close());
+  const launch = new URL(app.url), origin = launch.origin;
+  const asset = (target, extra = {}) => `${origin}/api/file/asset?${new URLSearchParams({ cwd: root, path: target, ...extra })}`;
+  assert.equal((await fetch(asset('report.pdf'))).status, 401);
+  const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(launch.hash.slice(1)).get('token') }) });
+  const headers = { Cookie: auth.headers.get('set-cookie').split(';')[0] };
+  const response = await fetch(asset('report.pdf'), { headers });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/pdf');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'self'/);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), pdf);
+  for (const target of ['README.md', 'fake.pdf', 'fake.png', 'escape.txt', '../secret.txt']) {
+    assert.equal((await fetch(asset(target), { headers })).status, 400, target);
+  }
+  assert.equal((await fetch(asset('oversized.pdf'), { headers })).status, 413);
+  assert.equal((await fetch(asset('report.pdf', { extra: '1' }), { headers })).status, 400);
+  assert.equal((await fetch(asset('report.pdf'), { headers: { ...headers, Origin: 'https://example.invalid' } })).status, 403);
 });

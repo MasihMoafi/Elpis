@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
-import { listDirectory, listFiles, readFile, searchFiles, writeFile } from './files.mjs';
+import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
 import { listFolders, projectDirectory } from './folders.mjs';
 import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
@@ -238,6 +238,14 @@ export async function startDesktopServer(options = {}) {
         // The Files pane: a folder's entries, a file's text and saving it, a search of the contents.
         if (url.pathname === '/api/files/dir' && method === 'GET') return json(response, 200, await listDirectory(cwdOf(url, 'dir', 'hidden'), url.searchParams.get('dir') ?? '', url.searchParams.get('hidden') === '1'));
         if (url.pathname === '/api/files/search' && method === 'GET') return json(response, 200, await searchFiles(cwdOf(url, 'q'), url.searchParams.get('q') ?? ''));
+        if (url.pathname === '/api/file/asset' && method === 'GET') {
+          const asset = await readFileAsset(cwdOf(url, 'path'), url.searchParams.get('path') ?? '');
+          // Only these validated passive assets may be framed by the private app. Other routes retain DENY.
+          response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+          response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'none'");
+          response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
+          return response.end(asset.bytes);
+        }
         if (url.pathname === '/api/file' && method === 'GET') return json(response, 200, await readFile(cwdOf(url, 'path'), url.searchParams.get('path') ?? ''));
         if (url.pathname === '/api/file' && method === 'POST') {
           const edit = object(await body(request, 3 * 1024 * 1024), ['cwd', 'path', 'content', 'mtimeMs']);

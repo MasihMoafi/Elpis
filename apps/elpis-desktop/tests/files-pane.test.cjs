@@ -8,8 +8,13 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { fixture, CWD } = require('./parity-fixture.cjs');
+const os = require('node:os');
+const { promisify } = require('node:util');
+const execFile = promisify(require('node:child_process').execFile);
+const { fixture } = require('./parity-fixture.cjs');
 const { oranges } = require('./controls.cjs');
+const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
+const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
 /** Retries `check` until it stops throwing: a folder is read by the bridge after the click that opens it. */
 async function eventually(check, ms = 5000) {
   const deadline = Date.now() + ms;
@@ -26,23 +31,37 @@ const PROJECT = {
   'docs/report.html': '<h1>Report</h1>',
 };
 async function writeProject() {
-  await fs.rm(CWD, { recursive: true, force: true });
+  await trashProject();
   for (const [file, content] of Object.entries(PROJECT)) { await fs.mkdir(path.dirname(path.join(CWD, file)), { recursive: true }); await fs.writeFile(path.join(CWD, file), content); }
 }
 /** The bridge's own file functions answering the fixture's routes; a refusal is its 4xx status and message. */
 async function routes() {
   const files = await import('../bridge/files.mjs');
   const answer = async run => { try { return await run(); } catch (error) { return { __http: error.status ?? 500, error: error.message }; } };
+  let backend;
+  const assetServer = () => backend ??= (async () => {
+    const { startDesktopServer } = await import('../bridge/server.mjs');
+    const app = await startDesktopServer({ client: { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}) }, staticDir: CWD, elpisHome: path.join(CWD, '.elpis-test-home'), loveSpot: { directory: path.join(CWD, '.love-spot'), screenshots: path.join(CWD, '.screenshots') } });
+    const launch = new URL(app.url);
+    const auth = await fetch(`${launch.origin}/api/session`, { method: 'POST', headers: { Origin: launch.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(launch.hash.slice(1)).get('token') }) });
+    return { ...app, origin: launch.origin, cookie: auth.headers.get('set-cookie').split(';')[0] };
+  })();
   return {
+    close: async () => { if (backend) await (await backend).close(); },
     '/api/files/dir': (_body, url) => answer(() => files.listDirectory(url.searchParams.get('cwd'), url.searchParams.get('dir') ?? '', url.searchParams.get('hidden') === '1')),
     '/api/file': (body, url) => answer(() => body ? files.writeFile(body.cwd, body.path, body.content, body.mtimeMs) : files.readFile(url.searchParams.get('cwd'), url.searchParams.get('path'))),
+    '/api/file/asset': (_body, url) => answer(async () => {
+      const app = await assetServer(), response = await fetch(`${app.origin}${url.pathname}${url.search}`, { headers: { Cookie: app.cookie } });
+      if (!response.ok) return { __http: response.status, error: (await response.json()).error };
+      return { __asset: { bytes: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type'), headers: Object.fromEntries(['content-security-policy', 'x-frame-options', 'cache-control', 'x-content-type-options'].map(name => [name, response.headers.get(name)])) } };
+    }),
     '/api/files/search': (_body, url) => answer(() => files.searchFiles(url.searchParams.get('cwd'), url.searchParams.get('q'))),
     '/api/dev-servers/page': body => ({ url: `http://127.0.0.1:4999/${'a'.repeat(32)}/${body.path}`, asked: body }),
   };
 }
 const REPLY = [
   'The parser is in `src/lib/parser.ts:2-3`; `lexer.ts` is a separate file.',
-  'See [the lexer](src/lib/lexer.ts#L1-L2), [the app](file:///tmp/parity-fixture/src/app.ts#L1) and /tmp/parity-fixture/docs/guide.md:2 in the guide.',
+  `See [the lexer](src/lib/lexer.ts#L1-L2), [the app](file://${CWD}/src/app.ts#L1) and ${CWD}/docs/guide.md:2 in the guide.`,
   'Run `npm run build`. Outside the project: `/etc/hosts.conf:3`. The page: `docs/report.html`.',
 ].join('\n\n');
 const TURNS = [['t1', 'Where is the parser?', REPLY], ['t2', 'Run them.', 'All green.']];
@@ -57,7 +76,8 @@ const prepare = (page, editors) => page.evaluate(editors => {
 }, editors);
 async function open({ editors = [], ...options } = {}) {
   await writeProject();
-  const f = await fixture({ chat: TURNS, routes: await routes(), width: 1400, height: 800, ...options });
+  const handlers = await routes();
+  const f = await fixture({ chat: TURNS, cwd: CWD, routes: handlers, width: 1400, height: 800, ...(process.env.ELPIS_TEST_STATIC_DIR ? { staticDir: process.env.ELPIS_TEST_STATIC_DIR } : {}), ...options });
   await prepare(f.page, editors);
   await f.open('chat-a');
   const side = f.page.getByRole('region', { name: 'Side panel' });
@@ -68,7 +88,7 @@ async function open({ editors = [], ...options } = {}) {
   const editor = file => side.getByRole('textbox', { name: `Contents of ${file}`, exact: true });
   const shot = async name => { if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await f.page.waitForTimeout(400); await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `${name}.png`) }); } };
   const ref = name => f.page.locator('.message.agent').first().getByRole('button', { name, exact: true });
-  return { ...f, side, view, tree, tabs, row, editor, shot, ref };
+  return { ...f, close: async () => { await f.close(); await handlers.close(); await trashProject(); }, side, view, tree, tabs, row, editor, shot, ref };
 }
 async function openFilesTab(f) {
   await f.page.getByRole('button', { name: 'Show side panel' }).click();
@@ -78,12 +98,84 @@ async function openFilesTab(f) {
 }
 const lit = f => f.side.locator('.fe-line.hit').evaluateAll(lines => lines.map(line => line.textContent));
 
+test('Markdown opens as a document; source editing and relative links/images keep their file context', async () => {
+  for (const colorScheme of ['light', 'dark']) {
+    const f = await open({ colorScheme });
+    try {
+      const document = '# Project tasks\n\n| Task | Status |\n| --- | --- |\n| File previews | Working |\n\n[Open the guide](guide.md)\n\n![Preview diagram](picture.png)\n\n![Remote](https://example.invalid/spy.png)\n\n![Outside](../../outside.png)\n\n<script>window.markdownExecuted=true</script>\n';
+      await fs.writeFile(path.join(CWD, 'docs/preview.md'), document);
+      await fs.writeFile(path.join(CWD, 'docs/picture.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64'));
+      const requested = [];
+      f.page.on('request', request => { if (/spy\.png|outside\.png/.test(request.url())) requested.push(request.url()); });
+      await openFilesTab(f); await f.row('docs').click(); await f.row('preview.md').click();
+      await f.view.getByRole('heading', { name: 'Project tasks', exact: true }).waitFor();
+      assert.equal(await f.editor('docs/preview.md').count(), 0, 'the default is the document, not markup');
+      assert.deepEqual(await f.view.getByRole('cell').allInnerTexts(), ['File previews', 'Working']);
+      const image = f.view.getByRole('img', { name: 'Preview diagram', exact: true });
+      await eventually(async () => assert.equal(await image.evaluate(node => node.complete && node.naturalWidth), 8));
+      assert.deepEqual(requested, [], 'remote images and paths outside the project are not loaded');
+      assert.equal(await f.page.evaluate(() => window.markdownExecuted), undefined, 'Markdown HTML is never executed');
+      await f.shot(`files-markdown-${colorScheme}`);
+      await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+      await f.editor('docs/preview.md').fill(`${document}\n## Unsaved edit\n`);
+      await f.view.getByRole('button', { name: 'Preview', exact: true }).click();
+      await f.view.getByRole('heading', { name: 'Unsaved edit', exact: true }).waitFor();
+      await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+      assert.equal(await f.editor('docs/preview.md').inputValue(), `${document}\n## Unsaved edit\n`, 'switching views preserves the draft');
+      await f.editor('docs/preview.md').focus(); await f.page.keyboard.press('Control+s');
+      await eventually(async () => assert.equal(await fs.readFile(path.join(CWD, 'docs/preview.md'), 'utf8'), `${document}\n## Unsaved edit\n`));
+      await f.view.getByRole('button', { name: 'Preview', exact: true }).click();
+      await f.view.getByRole('button', { name: 'Open the guide', exact: true }).click();
+      await eventually(async () => assert.equal(await f.tabs.getByRole('tab', { name: 'guide.md', exact: true }).getAttribute('aria-selected'), 'true'));
+      assert.match(await f.view.innerText(), /See the parser section/);
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  }
+});
+
+/** Two real PDF pages with distinct visible content and proper object offsets. No renderer or inference is involved. */
+function previewPdf() {
+  const texts = ['Elpis document preview', 'Second page: previews work'];
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>'];
+  for (let index = 0; index < 2; index++) {
+    const stream = `BT /F1 24 Tf 32 400 Td (${texts[index]}) Tj ET\n`;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 480] /Resources << /Font << /F1 7 0 R >> >> /Contents ${4 + index * 2} 0 R >>`, `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}endstream`);
+  }
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  let pdf = '%PDF-1.4\n'; const offsets = [0];
+  for (const [index, object] of objects.entries()) { offsets.push(Buffer.byteLength(pdf)); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; }
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 8\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf);
+}
+
+test('PDF files open a real document viewer instead of raw bytes', async () => {
+  const f = await open();
+  try {
+    await fs.writeFile(path.join(CWD, 'report.pdf'), previewPdf());
+    await openFilesTab(f); await f.row('report.pdf').click();
+    const preview = f.view.locator('iframe[title="Preview of report.pdf"]');
+    await preview.waitFor();
+    assert.equal(await f.editor('report.pdf').count(), 0);
+    await f.page.waitForTimeout(700);
+    const viewer = f.page.frames().find(frame => frame.url().startsWith('chrome-extension://') && frame.url().endsWith('/index.html'));
+    assert.ok(viewer, 'the native PDF viewer has loaded');
+    await viewer.locator('pdf-viewer').waitFor();
+    await eventually(async () => assert.equal(await viewer.locator('pdf-viewer').evaluate(element => element.documentDimensions?.pageDimensions?.length), 2, 'both PDF pages have been decoded by the viewer'));
+    const loaded = await viewer.locator('pdf-viewer').evaluate(element => ({ pages: element.documentDimensions.pageDimensions, loaded: element.loaded_, state: element.loadState_ }));
+    if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await fs.writeFile(path.join(process.env.ELPIS_SHOTS, 'pdf-loaded.json'), JSON.stringify(loaded, null, 2)); }
+    await f.shot('files-pdf-light');
+    assert.equal(loaded.pages.length, 2);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a path in a reply is a button that opens the Files tab on the file at its lines and shows it in the tree', async () => {
   const f = await open();
   try {
     // Which of the reply's words are file refs: inline code that is a path, a Markdown link to a path, a file:/// address
     // and an absolute path in plain text. A bare name, a command and the rest stay as they were.
-    for (const name of ['src/lib/parser.ts:2-3', 'the lexer', 'the app', '/tmp/parity-fixture/docs/guide.md:2', '/etc/hosts.conf:3']) assert.equal(await f.ref(name).count(), 1, name);
+    for (const name of ['src/lib/parser.ts:2-3', 'the lexer', 'the app', `${CWD}/docs/guide.md:2`, '/etc/hosts.conf:3']) assert.equal(await f.ref(name).count(), 1, name);
     assert.equal(await f.ref('lexer.ts').count(), 0, 'a name with no folder is not a ref');
     assert.equal(await f.ref('npm run build').count(), 0);
     assert.equal(await f.page.getByRole('region', { name: 'Side panel' }).count(), 0, 'nothing is open before a click');
@@ -109,7 +201,7 @@ test('a path in a reply is a button that opens the Files tab on the file at its 
     await f.ref('the app').click();
     await f.editor('src/app.ts').waitFor();
     assert.deepEqual(await lit(f), ['import { parse } from "./lib/parser";']);
-    await f.ref('/tmp/parity-fixture/docs/guide.md:2').click();
+    await f.ref(`${CWD}/docs/guide.md:2`).click();
     await f.editor('docs/guide.md').waitFor();
     assert.deepEqual(await lit(f), ['See the parser section.']);
     assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['parser.ts', 'lexer.ts', 'app.ts', 'guide.md']);
@@ -157,8 +249,8 @@ test('the Files tab is a project tree: folders open and close by click and by ke
     assert.equal(await f.row('docs').getAttribute('aria-expanded'), 'false');
     await f.row('README.md').focus();
     await f.page.keyboard.press('Enter');
-    await f.editor('README.md').waitFor();
-    assert.equal(await f.editor('README.md').inputValue(), PROJECT['README.md']);
+    await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
+    assert.match(await f.view.innerText(), /A tiny parser/);
     await f.shot('files-tree-light');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -169,7 +261,7 @@ test('a click on a file previews it in a tab the next click replaces; a double c
   try {
     await openFilesTab(f);
     await f.row('README.md').click();
-    await f.editor('README.md').waitFor();
+    await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
     assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['README.md']);
     assert.equal(await f.tabs.locator('.task-tab.preview').count(), 1, 'the tab is a preview');
     await f.row('package.json').click();
@@ -178,8 +270,9 @@ test('a click on a file previews it in a tab the next click replaces; a double c
     await f.row('package.json').dblclick();
     assert.equal(await f.tabs.locator('.task-tab.preview').count(), 0, 'a double click keeps it');
     await f.row('README.md').click();
-    await f.editor('README.md').waitFor();
+    await f.view.getByRole('heading', { name: 'Parser', exact: true }).waitFor();
     assert.deepEqual(await f.tabs.getByRole('tab').allInnerTexts(), ['package.json', 'README.md']);
+    await f.view.getByRole('button', { name: 'Source', exact: true }).click();
     await f.editor('README.md').click();
     await f.page.keyboard.press('End');
     await f.page.keyboard.type('!');
@@ -200,7 +293,7 @@ test('the filter finds files by name from anywhere in the tree, and ? searches t
     assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['parser.ts\nsrc/lib'], 'the file and its folder, found by letters in order');
     await filter.fill('guide');
     await f.tree.getByRole('treeitem').filter({ hasText: 'guide.md' }).click();
-    await f.editor('docs/guide.md').waitFor();
+    await f.view.getByText(/See the parser section/).waitFor();
     await filter.fill('zzzz');
     assert.match(await f.side.locator('.files-tree').innerText(), /No matching files/);
     await filter.fill('');
@@ -296,6 +389,7 @@ test('code is coloured by its language, as in a code block, and long lines wrap 
     assert.ok(colours.every(colour => colour !== plain), `keywords have their own colour (${colours[0]} vs ${plain})`);
     assert.equal(await text.evaluate(node => getComputedStyle(node).webkitTextFillColor), 'rgba(0, 0, 0, 0)', 'the textarea draws only the caret and selection; the coloured layer shows the letters');
     await f.row('README.md').dblclick();
+    await f.view.getByRole('button', { name: 'Source', exact: true }).click();
     const log = f.editor('README.md');
     await log.waitFor();
     const box = await log.evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth }));
@@ -310,7 +404,7 @@ test('an HTML file in a reply opens as a page in the built-in browser, served fr
     await f.ref('docs/report.html').click();
     await eventually(async () => assert.deepEqual(await f.page.evaluate(() => window.__commands.filter(command => command.action === 'new').map(command => command.url)), [`http://127.0.0.1:4999/${'a'.repeat(32)}/report.html`]));
     const asked = f.posts.find(post => post.path === '/api/dev-servers/page');
-    assert.deepEqual(asked.body, { cwd: '/tmp/parity-fixture/docs', path: 'report.html' }, 'its folder is what gets served');
+    assert.deepEqual(asked.body, { cwd: `${CWD}/docs`, path: 'report.html' }, 'its folder is what gets served');
     assert.equal(await f.side.getByRole('textbox', { name: 'Contents of docs/report.html', exact: true }).count(), 0, 'not opened as text');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

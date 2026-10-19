@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { BridgeError } from './client.mjs';
 import { projectDirectory, skipped } from './folders.mjs';
+import { ATTACHMENT_LIMITS, imageMime } from './attachments.mjs';
 
 const MAX_DEPTH = 4;
 const MAX_ENTRIES = 2000;
@@ -39,6 +40,7 @@ export async function listFiles(cwd) {
 // The Files pane (components/files-pane.tsx): a tree of one folder at a time, a viewer and editor of one file, a
 // search of the contents. Every path is checked to lie inside the project folder after links are followed.
 const MAX_VIEW = 512 * 1024;
+const MAX_PREVIEW = ATTACHMENT_LIMITS.fileBytes;
 const MAX_DIRECTORY = 5000;
 const MAX_SEARCHED = 256 * 1024;
 const SEARCH_DEPTH = 8;
@@ -79,19 +81,36 @@ export async function listDirectory(cwd, dir = '', hidden = false) {
   return { data: found.slice(0, MAX_DIRECTORY) };
 }
 
-/** Pictures the Files pane shows as themselves (SVG stays text: it is code and may carry scripts). */
+/** Only passive raster images and PDFs are served as assets. SVG stays source code. */
 const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
-/** Read-only: one file's text, or a picture as a data URL. Another binary file, one that is not UTF-8 or one over 512 KB
- * is reported, not sent. */
+const previewType = real => path.extname(real).toLowerCase() === '.pdf' ? 'pdf' : IMAGE_TYPES[path.extname(real).toLowerCase()] ? 'image' : null;
+const assetMime = (real, bytes) => previewType(real) === 'pdf'
+  ? /^%PDF-\d\.\d\b/.test(bytes.subarray(0, 12).toString('ascii')) ? 'application/pdf' : null
+  : imageMime(bytes) === IMAGE_TYPES[path.extname(real).toLowerCase()] ? imageMime(bytes) : null;
+
+/** Read-only metadata for documents/pictures, or text for the source editor. The asset route rechecks path and type. */
 export async function readFile(cwd, target) {
   const { real, rel, info } = await inside(cwd, target, 'file');
-  if (info.size > MAX_VIEW) return { path: rel, tooLarge: true, size: info.size };
+  const preview = previewType(real), limit = preview ? MAX_PREVIEW : MAX_VIEW;
+  if (info.size > limit) return { path: rel, tooLarge: true, size: info.size, ...(preview ? { limit } : {}) };
   const bytes = await fs.readFile(real).catch(() => { throw new BridgeError('This file cannot be read.'); });
-  const image = IMAGE_TYPES[path.extname(real).toLowerCase()];
-  if (image) return { path: rel, image: `data:${image};base64,${bytes.toString('base64')}`, size: info.size };
+  if (bytes.length > limit) return { path: rel, tooLarge: true, size: bytes.length, ...(preview ? { limit } : {}) };
+  if (preview) return assetMime(real, bytes) ? { path: rel, preview, size: bytes.length } : { path: rel, binary: true, size: bytes.length };
   const content = bytes.toString('utf8');
   if (bytes.subarray(0, 8000).includes(0) || !Buffer.from(content).equals(bytes)) return { path: rel, binary: true, size: info.size };
   return { path: rel, content, size: info.size, mtimeMs: info.mtimeMs };
+}
+
+/** An authenticated preview response can contain no active HTML, SVG, script or arbitrary file bytes. */
+export async function readFileAsset(cwd, target) {
+  const { real, info } = await inside(cwd, target, 'file');
+  if (!previewType(real)) throw new BridgeError('This file has no document or image preview.');
+  if (info.size > MAX_PREVIEW) throw new BridgeError('This preview is larger than 30 MB.', 413);
+  const bytes = await fs.readFile(real).catch(() => { throw new BridgeError('This file cannot be read.'); });
+  if (bytes.length > MAX_PREVIEW) throw new BridgeError('This preview is larger than 30 MB.', 413);
+  const mimeType = assetMime(real, bytes);
+  if (!mimeType) throw new BridgeError('This file does not contain a supported document or image.');
+  return { bytes, mimeType };
 }
 
 /** Saves `content` over an existing file, unless the file changed on disk since it was read (`mtimeMs`). It never creates a

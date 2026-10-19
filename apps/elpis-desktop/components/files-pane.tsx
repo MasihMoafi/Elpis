@@ -6,12 +6,13 @@ import { MoreMenu, type MenuAction } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { fileKind } from "@/components/file-cards";
 import { FileEditor } from "@/components/file-editor";
+import { MarkdownText } from "@/components/markdown-text";
 import { FileTree } from "@/components/file-tree";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { savePreferences, usePreferences } from "@/lib/preferences";
-import { activate, closeFiles, collapseAll, docKey, edit, isDirty, paneIn, refresh, reveal, revert, save, setHidden, setShowTree, setTreeWidth, useFiles, type Doc, type OpenFile } from "@/lib/files-pane";
+import { activate, closeFiles, collapseAll, docKey, edit, fileScope, isDirty, paneIn, refresh, reveal, revert, save, setFileView, setHidden, setShowTree, setTreeWidth, useFiles, type Doc, type OpenFile } from "@/lib/files-pane";
 import "@/components/files-pane.css";
 
 /** Narrower than this the tree and the file share the pane one at a time. */
@@ -24,18 +25,26 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   const [note, setNote] = useState("");
   const { softWrap } = usePreferences();
   const abs = file.path.startsWith("/") ? file.path : `${cwd.replace(/\/+$/, "")}/${file.path}`, dirty = isDirty(doc), ready = doc?.status === "ready" ? doc : null;
+  const markdown = /\.(md|markdown)$/i.test(file.path), source = file.view === "source";
   const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), line: file.line }, setNote);
   useEffect(() => setNote(""), [file.path]);
   let body: React.ReactNode;
   if (!doc || doc.status === "loading") body = <p className="files-note" role="status">Reading the file…</p>;
   else if (doc.status === "error") body = <p className="files-note files-error" role="alert">{doc.message}</p>;
-  else if (doc.status === "ready") body = <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} />;
+  else if (doc.status === "ready") body = markdown && !source
+    ? <article className="file-markdown" aria-label={`Preview of ${file.path}`}><MarkdownText text={doc.text} file={fileScope(cwd, file.path)} /></article>
+    : <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} />;
   else if (doc.status === "image") body = <div className="file-image"><img src={doc.src} alt={nameOf(file.path)} /></div>;
-  else if (doc.size > 512 * 1024) body = <p className="files-note">This file is over 512 KB, too large to show here.</p>;
+  else if (doc.status === "pdf") body = <iframe className="file-pdf" title={`Preview of ${file.path}`} src={doc.src} />;
+  else if (doc.status === "large") body = <p className="files-note">This file is over {doc.limit ? `${doc.limit / 1024 / 1024} MB` : "512 KB"}, too large to show here.</p>;
   else body = <p className="files-note">This is a binary file, so it is not shown here.</p>;
   return <>
     <div className="file-view-head">
       <span className="file-view-path" title={abs} dir="ltr">{file.path}</span>
+      {markdown && ready && <div className="file-view-mode" role="group" aria-label="Document view">
+        <Button type="button" variant={source ? "ghost" : "secondary"} size="xs" aria-pressed={!source} onClick={() => setFileView(cwd, file.path, "preview")}>Preview</Button>
+        <Button type="button" variant={source ? "secondary" : "ghost"} size="xs" aria-pressed={source} onClick={() => setFileView(cwd, file.path, "source")}>Source</Button>
+      </div>}
       {dirty && <Button type="button" variant="ghost" size="icon-xs" aria-label="Revert changes" title="Throw away the edits" onClick={() => revert(cwd, file.path)}><Undo2 size={14} /></Button>}
       {dirty && <Button type="button" variant="default" size="xs" disabled={ready?.saving} title="Save (Ctrl+S)" onClick={() => void save(cwd, file.path)}>{ready?.saving ? "Saving…" : "Save"}</Button>}
       <MoreMenu actions={[{ id: "wrap", label: softWrap ? "Disable soft wrap" : "Enable soft wrap", run: () => savePreferences({ softWrap: !softWrap }) }, ...actions]} label="More file actions" title="More file actions" size={15} align="end" className="side-action" />

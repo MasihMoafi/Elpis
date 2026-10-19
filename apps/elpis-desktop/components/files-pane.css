@@ -51,6 +51,12 @@
 .file-view-head { display:flex; align-items:center; gap:6px; flex-shrink:0; min-height:36px; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:13px; }
 .file-view-path { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 .file-view-body { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.file-view-mode { display:flex; gap:2px; }
+.file-markdown { flex:1; min-height:0; overflow:auto; padding:16px; font-size:13px; line-height:1.6; overflow-wrap:anywhere; background:var(--card); }
+.file-markdown .markdown > :first-child { margin-top:0; }
+.file-markdown img { max-width:100%; height:auto; }
+.file-image-unavailable { color:var(--muted-foreground); }
+.file-pdf { flex:1; width:100%; min-height:0; border:0; background:var(--card); }
 
 /* The editor: line numbers and a layer for the marks, behind a textarea that draws the text. All three share one font, one
    line height and one padding, so a number, a mark and a line sit on the same row. */

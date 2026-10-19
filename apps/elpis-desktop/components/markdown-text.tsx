@@ -1,13 +1,14 @@
 "use client";
 
-import { createElement, memo, useRef, useState, type HTMLAttributes } from "react";
+import { createElement, memo, useMemo, useRef, useState, type HTMLAttributes } from "react";
 import { Check, Copy } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
 import { FileRefLink } from "@/components/file-ref";
-import { linkFilePaths, parseHref } from "@/lib/file-refs";
+import { linkFilePaths, parseHref, resolveRef } from "@/lib/file-refs";
+import { fileAssetUrl } from "@/lib/files-pane";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -62,6 +63,23 @@ const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugin
 const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
 const PLUGINS = [remarkGfm, linkFilePaths];
 
-export const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
-  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={components} urlTransform={urlTransform}>{text}</Markdown></div>;
+export const MarkdownText = memo(function MarkdownText({ text, file }: { text: string; file?: { cwd: string; path: string } }) {
+  const rendered = useMemo<Components>(() => {
+    if (!file) return components;
+    const abs = resolveRef({ path: file.path }, file.cwd).abs, folder = abs.slice(0, abs.lastIndexOf("/")) || "/";
+    return { ...components,
+      a: ({ node: _node, href, children, ...props }) => {
+        const target = href ? parseHref(href) : null;
+        if (target) return <FileRefLink target={{ ...target, path: resolveRef(target, folder).abs }}>{children}</FileRefLink>;
+        return <MarkdownLink {...props} href={href}>{children}</MarkdownLink>;
+      },
+      img: ({ src, alt }) => {
+        const target = typeof src === "string" ? parseHref(src) : null;
+        const found = target ? resolveRef({ path: resolveRef(target, folder).abs }, file.cwd) : null;
+        // Documents cannot silently fetch remote resources or files outside the folder the tab was opened in.
+        return found?.inside ? <img src={fileAssetUrl(file.cwd, found.rel)} alt={alt ?? ""} loading="lazy" /> : <span className="file-image-unavailable">{alt || "Image"} (image unavailable)</span>;
+      },
+    };
+  }, [file?.cwd, file?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{text}</Markdown></div>;
 });

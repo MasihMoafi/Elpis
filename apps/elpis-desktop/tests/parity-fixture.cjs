@@ -28,8 +28,9 @@ const TURNS = [
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
  * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. */
-async function fixture({ staticDir = out, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {} } = {}) {
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {} } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set();
+  const threads = THREADS.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
   const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
     const at = Date.now() - (turns.length - index) * 120_000;
@@ -40,15 +41,20 @@ async function fixture({ staticDir = out, width = 1130, height = 660, colorSchem
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
-    const chat = THREADS.find(item => item.id === url.pathname.split('/')[3]);
+    const chat = threads.find(item => item.id === url.pathname.split('/')[3]);
     if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     // A route answers with its value, or with { __http: status, error } for a refusal.
-    if (routes[url.pathname]) { const reply = await routes[url.pathname](raw ? JSON.parse(raw) : null, url); if (reply?.__http) { res.statusCode = reply.__http; return json({ error: reply.error }); } return json(reply); }
+    if (routes[url.pathname]) {
+      const reply = await routes[url.pathname](raw ? JSON.parse(raw) : null, url);
+      if (reply?.__http) { res.statusCode = reply.__http; return json({ error: reply.error }); }
+      if (reply?.__asset) { res.writeHead(200, { 'Content-Type': reply.__asset.mimeType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...reply.__asset.headers }); return res.end(reply.__asset.bytes); }
+      return json(reply);
+    }
     if (url.pathname === '/api/files') return json({ data: FILES });
-    if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : THREADS.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
+    if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : threads.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
     if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });
     if (chat && url.pathname.endsWith('/rewind')) {
       const body = JSON.parse(raw);
