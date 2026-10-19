@@ -31,7 +31,7 @@ const over = (run: Run) => FINISHED.has(run.status) && (!run.father || (FINISHED
 type Listed = { data: { id: string; status: string; error?: string | null; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown }[] }[] };
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
-type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string, how: "next" | "parallel") => void };
+type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
 type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; onHandle?: AgentNodeData["onHandle"] };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
@@ -65,9 +65,9 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
     <small className="agent-node-meta" title={`${data.modelLabel ?? "Default model"} · ${data.clash ? "clash" : STATUS_LABEL[status]}`}>{data.modelLabel ?? "Default model"} · {data.clash ? "clash" : STATUS_LABEL[status]}</small>
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
-    {/* FigJam's quick create: a + beside the agent makes the next one, already wired; below it, a parallel one. */}
-    <button type="button" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id, "next"); }}><Plus size={13} /></button>
-    <button type="button" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent beside ${data.title || "this one"}`} title="Add an agent beside this one: same place in the flow, the same wires in and out" onClick={event => { event.stopPropagation(); data.onQuick?.(id, "parallel"); }}><Plus size={13} /></button>
+    {/* Both quick-create buttons add one successor linked only from this agent. */}
+    <button type="button" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
+    <button type="button" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
   </div>;
 }
 
@@ -579,18 +579,17 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     return found?.label ?? data.model;
   };
   const setText = (id: string, text: string) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "note" ? { ...node, data: { text } } : node) }));
-  // Quick create: the next agent (waits for this one, to its right) or a parallel one (below it, in the same place in the
-  // flow: it waits for what this one waits for and feeds what this one feeds). The new agent is selected and its prompt takes the keys at once.
+  // Quick create adds one successor in the next column's nearest free slot, selected with its prompt focused.
   const promptField = useRef<HTMLTextAreaElement>(null);
-  const onQuick = (id: string, how: "next" | "parallel") => {
+  const onQuick = (id: string) => {
     const source = graph.nodes.find(node => node.id === id);
     if (!source) return;
     if (!room) { setNotice(`The graph is at its limit of ${limit} agents. Raise Max agents to add more.`); return; }
     const [made] = newAgents(1, { model: null }, { x: 0, y: 0 }, [], agents.map(node => node.data.title));
-    const at = place(how === "next" ? { x: source.position.x + COLUMN, y: source.position.y } : { x: source.position.x, y: source.position.y + 120 });
-    const wires = how === "next" ? [{ id: `${id}->${made.id}`, source: id, target: made.id }]
-      : graph.edges.filter(edge => waits(edge) && (edge.target === id || edge.source === id)).map(edge => edge.target === id ? { id: `${edge.source}->${made.id}`, source: edge.source, target: made.id } : { id: `${made.id}->${edge.target}`, source: made.id, target: edge.target });
-    setGraph(current => ({ ...current, nodes: [...current.nodes, { ...made, position: at }], edges: [...current.edges, ...wires] }));
+    const at = place({ x: source.position.x + COLUMN, y: source.position.y });
+    const wire = { id: `${id}->${made.id}`, source: id, target: made.id };
+    checkpoint(); restored.current = true;
+    setGraph(current => ({ ...current, nodes: [...current.nodes, { ...made, position: at }], edges: [...current.edges, wire] }));
     setSelection([made.id]); setMenu(null); setAdding(null); reveal([made.id]);
     setTimeout(() => promptField.current?.focus(), 60);
   };
@@ -804,7 +803,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   useEffect(() => {
     if (shape === lastShape.current) return;
     lastShape.current = shape;
-    // An undone or redone board is put back exactly as it was.
+    // Undo, redo and direct creation retain their chosen positions.
     if (restored.current) { restored.current = false; return; }
     if (autoLayout) setGraph(current => { const next = arrange(current); return next.nodes.every((node, index) => node.position.x === current.nodes[index].position.x && node.position.y === current.nodes[index].position.y) ? current : next; });
   }, [shape, autoLayout]);

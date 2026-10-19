@@ -1022,7 +1022,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-node[data-status="pending"], .agent-node[data-status="cancelled"] { opacity:.75; }
 @keyframes canvas-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
-/* FigJam's quick create: a + beside an agent (the next one) and below it (a parallel one), shown on hover or focus. */
+/* Quick create: either + adds one successor linked only from this agent, shown on hover or focus. */
 .agent-node-plus { position:absolute; display:grid; place-items:center; width:24px; height:24px; padding:0; border:1.5px solid var(--kind); border-radius:50%; background:var(--card); color:var(--kind); cursor:pointer; opacity:0; transition:opacity .12s ease, transform .12s ease; }
 .agent-node-plus[data-side="right"] { top:50%; right:-46px; transform:translateY(-50%); }
 .agent-node-plus[data-side="bottom"] { left:50%; bottom:-27px; transform:translateX(-50%); }

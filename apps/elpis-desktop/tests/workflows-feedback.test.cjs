@@ -7,6 +7,66 @@ const shots = '/home/masih/.cache/elpis-tests/workflows-feedback';
 const agent = (id, x = 0, y = 0, extra = {}) => ({ id, type: 'agent', position: { x, y }, data: { title: id, instruction: `Do ${id}`, model: null, provider: null, effort: null, writeScopes: ['src'], acceptanceCriteria: ['Done'], ...extra } });
 const wire = (source, target, extra = {}) => ({ id: `${source}->${target}`, source, target, ...extra });
 const selected = f => f.canvas.locator('.react-flow__node.selected').evaluateAll(nodes => nodes.map(n => n.dataset.id).sort());
+
+for (const middle of [false, true]) test(`bottom + adds only a successor: ${middle ? 'middle agent with folded panel' : 'root agent'}`, async () => {
+  const original = { name: 'One successor', nodes: [agent('Start', 260), agent('Existing', 520), { id: 'note', type: 'note', position: { x: 520, y: 140 }, data: { text: 'Keep this space clear' } }, ...(middle ? [agent('Input', 0)] : [])], edges: [wire('Start', 'Existing'), ...(middle ? [wire('Input', 'Start')] : [])] };
+  const f = await openCanvas({ graph: original, width: middle ? 1100 : 1440 });
+  try {
+    if (middle) await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
+    const added = [];
+    for (let i = 0; i < 2; i++) {
+      await f.fit();
+      const source = f.canvas.locator('.react-flow__node[data-id="Start"]');
+      await source.hover();
+      const plus = source.locator('.agent-node-plus[data-side="bottom"]');
+      await plus.click();
+      const saved = await f.saved(), beforeIds = new Set([...original.nodes.map(n => n.id), ...added]);
+      const made = saved.nodes.filter(n => !beforeIds.has(n.id) && n.type === 'agent');
+      assert.equal(made.length, 1, 'one click adds exactly one agent');
+      const id = made[0].id; added.push(id);
+      assert.deepEqual(saved.edges.filter(e => e.source === id || e.target === id), [wire('Start', id)], 'only Start → new: no inherited inputs, outputs or Mother link');
+      assert.deepEqual(saved.edges.filter(e => !added.includes(e.source) && !added.includes(e.target)), original.edges, 'existing links stay intact');
+      assert.deepEqual(saved.nodes.filter(n => original.nodes.some(old => old.id === n.id)).map(n => n.position), original.nodes.map(n => n.position), 'quick creation preserves the existing layout');
+      assert.ok(made[0].position.x > original.nodes[0].position.x, 'the successor occupies the next column');
+      assert.deepEqual(await selected(f), [id]);
+      const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true }); await panel.waitFor();
+      const prompt = panel.getByRole('textbox', { name: 'Prompt', exact: true });
+      assert.equal(await prompt.evaluate(el => el === document.activeElement), true, 'the new prompt takes the keys');
+      await f.page.keyboard.type(`Follow Start ${i + 1}`);
+      await f.fit();
+      const overlaps = await f.canvas.locator('.react-flow__node-agent, .react-flow__node-note, .react-flow__node-mother').evaluateAll(nodes => {
+        const boxes = nodes.map(n => n.getBoundingClientRect());
+        return boxes.some((a, i) => boxes.slice(i + 1).some(b => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
+      });
+      assert.equal(overlaps, false, 'successors avoid occupied slots, notes and each other');
+      assert.match(await plus.getAttribute('title'), /after this one.*only.*this one/i);
+      assert.equal(await plus.getAttribute('aria-label'), 'Add an agent after Start');
+    }
+    await fs.mkdir(`${shots}/plus`, { recursive: true });
+    for (const theme of ['light', 'dark']) {
+      if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+      await f.fit();
+      if (!middle) { await f.canvas.getByRole('button', { name: /zoom out/i }).click(); await f.page.waitForTimeout(250); }
+      await f.page.screenshot({ path: `${shots}/plus/${middle ? 'middle' : 'root'}-${theme}.png` });
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('bottom + respects the agent limit without changing links', async () => {
+  const original = { name: 'Full board', maxAgents: 2, nodes: [agent('Start', 260), agent('Existing', 520)], edges: [wire('Start', 'Existing')] };
+  const f = await openCanvas({ graph: original });
+  try {
+    await f.fit(); const before = await f.saved(), source = f.canvas.locator('.react-flow__node[data-id="Start"]');
+    await source.hover(); await source.locator('.agent-node-plus[data-side="bottom"]').click();
+    assert.match(await f.canvas.getByRole('alert').innerText(), /limit of 2 agents/);
+    const saved = await f.saved();
+    assert.deepEqual(saved.nodes, before.nodes);
+    assert.deepEqual(saved.edges, before.edges);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 async function drag(f, from, to, { shift = false, shot } = {}) {
   if (shift) await f.page.keyboard.down('Shift');
   await f.page.mouse.move(from.x, from.y); await f.page.mouse.down();

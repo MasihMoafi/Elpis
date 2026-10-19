@@ -238,8 +238,8 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await page.waitForTimeout(450);
     assert.equal((await edgesNow()).filter(([, , kind]) => kind === 'alongside').length, 0, 'now one-way');
 
-    // FigJam's quick create: the + beside an agent makes the next one, wired after it, its prompt taking the keys, its
-    // name following the prompt; the + below makes a parallel one waiting for the same agents. Nothing lands on anything.
+    // Both quick-create buttons add a successor linked only from this agent, with its prompt focused and name
+    // following the prompt. Nothing lands on anything.
     await fit();
     await node('Finish it').hover();
     await node('Finish it').getByRole('button', { name: 'Add the next agent after Finish it' }).click();
@@ -248,18 +248,18 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await node('Write the release notes').waitFor();
     assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b.endsWith(' · Write the release notes')), 'the next agent waits for it');
     await node('Write the release notes').hover();
-    await node('Write the release notes').getByRole('button', { name: /^Add an agent beside .* · Write the release notes$/ }).click();
+    await node('Write the release notes').getByRole('button', { name: /^Add an agent after .* · Write the release notes$/ }).click();
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt' && !document.activeElement.value);
     await page.keyboard.type('Update the changelog');
     await node('Update the changelog').waitFor();
-    assert.ok((await edgesNow()).some(([a, b]) => a === 'Finish it' && b.endsWith(' · Update the changelog')), 'the parallel agent waits for the same agent');
-    // And beside an agent that feeds others, the parallel one feeds them too.
+    assert.ok((await edgesNow()).some(([a, b]) => a.endsWith(' · Write the release notes') && b.endsWith(' · Update the changelog')), 'the bottom + makes a successor too');
+    // Adding after an agent that already feeds others preserves its outputs without copying them.
     await fit(); await node('Quillon · Step 1: the base').first().hover();
-    await node('Quillon · Step 1: the base').first().getByRole('button', { name: 'Add an agent beside Quillon · Step 1: the base' }).click();
+    await node('Quillon · Step 1: the base').first().getByRole('button', { name: 'Add an agent after Quillon · Step 1: the base' }).click();
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Prompt' && !document.activeElement.value);
     await page.keyboard.type('Second base');
     await node('Second base').waitFor();
-    assert.ok((await edgesNow()).some(([a, b]) => a.endsWith(' · Second base') && b === 'Finish it'), 'it feeds what its sibling feeds');
+    assert.deepEqual((await edgesNow()).filter(([a, b]) => a.endsWith(' · Second base') || b.endsWith(' · Second base')), [['Quillon · Step 1: the base', (await titles()).find(title => title.endsWith(' · Second base')), 'waits']], 'only the clicked agent feeds the successor');
     await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
     await page.waitForTimeout(450);
     const overlaps = await canvas.locator('.react-flow__node-agent, .react-flow__node-note, .react-flow__node-mother').evaluateAll(list => { const boxes = list.map(item => item.getBoundingClientRect()); let count = 0; boxes.forEach((a, i) => boxes.slice(i + 1).forEach(b => { if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) count++; })); return count; });
