@@ -137,7 +137,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
         const messages = node.interview?.messages ?? [];
         if (!Array.isArray(messages) || messages.length > 40 || messages.some(m => !m || !['assistant', 'user'].includes(m.role) || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 16000)) throw new BridgeError('Invalid interview history');
         if (input.message !== undefined && !messages.length) throw new BridgeError('Wait for the agent to ask its first question');
-        if (input.message === undefined && (messages.length || node.interview?.proposal) && !node.interview?.error) return { interview: node.interview };
+        if (input.message === undefined && (messages.length || node.interview?.proposal) && !node.interview?.error && !node.interview?.busy) return { interview: node.interview };
         const next = { messages: [...messages, ...(input.message === undefined ? [] : [{ role: 'user', text: input.message.trim() }])], busy: true };
         const conversation = JSON.stringify(next.messages);
         if (conversation.length > 24000 || next.messages.length > 40) throw new BridgeError('This interview is too long. Start a new agent.', 413);
@@ -186,6 +186,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
         }
         const { scene } = await store.read();
         const nodes = agentGraph(scene.elements, input.id), answers = new Map(), results = [];
+        if (nodes.some(node => interviewing.has(node.id))) throw new BridgeError('Wait for the connected agents to finish interviewing', 409);
         const cwd = input.cwd ?? os.homedir();
         for (const node of nodes) {
           try {

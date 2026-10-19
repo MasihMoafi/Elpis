@@ -70,3 +70,11 @@ test('invalid inputs and an unasked answer never spawn an agent', async t => {
   for (const input of [{ id: 'missing' }, { id: 'a', message: '' }, { id: 'a', message: 'x'.repeat(16001) }, { id: 'a', cwd: 'relative' }, { id: 'a', message: 'no prior question' }]) await assert.rejects(f.runner.interview(input));
   assert.equal(f.spawned(), 0);
 });
+test('a persisted interrupted interview recovers without duplicating the user answer', async t => {
+  const f = fixture(t, { task: 'Check the retained claim.' });
+  f.agent().interview = { messages: [{ role: 'assistant', text: 'What claim?' }, { role: 'user', text: 'RECOVERY_SEED' }], busy: true };
+  await f.runner.interview({ id: 'a', cwd: f.dir });
+  assert.equal(f.agent().interview.messages.length, 2);
+  assert.equal(f.agent().interview.proposal, 'Check the retained claim.');
+  assert.equal(f.agent().interview.busy, false);
+});
