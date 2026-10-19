@@ -118,6 +118,29 @@ test('rapid own edits remain ordered; stale shared drafts conflict rather than s
   assert.equal(a.storage.getItem(key), null);
 });
 
+test('delayed duplicate saves from another window succeed without a conflict, but different stale values still fail', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  f.delay(true);
+  for (const [key, value] of [['elpis-theme', 'dark'], ['elpis-draft-v1:chat-1', 'shared draft'], ['elpis-last-chat', 'chat-1']]) {
+    a.storage.setItem(key, value); await f.settle();
+    await b.storage.saveItem(key, value);
+    a.storage.setItem(key, value + '-new'); await f.settle();
+    await assert.rejects(b.storage.saveItem(key, value + '-different'), /another window/i);
+  }
+  a.preferences.savePreferences({ accent: 'teal', chatFont: 'serif' }); await f.settle();
+  b.preferences.savePreferences({ accent: 'teal', transcriptSize: 'l' }); await f.settle();
+  assert.deepEqual(b.errors, [], 'an already committed choice is not a competing edit');
+  assert.equal(b.preferences.readPreferences().transcriptSize, 'l');
+  a.preferences.savePreferences({ accent: 'blue' }); await f.settle();
+  b.preferences.savePreferences({ accent: 'rose', chatFont: 'mono' }); await f.settle();
+  assert.match(b.errors.at(-1), /another window/i);
+  assert.equal(b.preferences.readPreferences().chatFont, 'serif');
+  a.storage.removeItem('elpis-last-chat'); await f.settle();
+  b.storage.removeItem('elpis-last-chat'); await f.settle();
+  assert.equal(b.errors.length, 1, 'duplicate removal also succeeds');
+  f.deliver();
+});
+
 test('main revisions rebase other keys, reject overlapping and invalid patches, and do not publish failed saves', async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-revisions-')), 'workspace.json');
   const store = createStateStore(file), changes = [];

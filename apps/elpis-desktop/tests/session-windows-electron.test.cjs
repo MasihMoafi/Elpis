@@ -37,6 +37,39 @@ test('native settings changes update both windows without reverting another pref
     for (const page of [first, second]) { await page.getByRole('tab', { name: 'General', exact: true }).click(); assert.equal(await usage(page).getAttribute('aria-checked'), 'false'); }
     const saved = JSON.parse(JSON.parse(await fs.readFile(path.join(root, 'profile/workspace.json'), 'utf8'))['elpis-preferences-v1']);
     assert.equal(saved.showContextUsage, false); assert.equal(saved.turnNotifications, 'always');
+    // Delayed broadcasts reproduce the false conflict: two real windows choose
+    // the same appearance while the second still holds the older revision.
+    const secondId = await (await electron.browserWindow(second)).evaluate(window => window.webContents.id);
+    await electron.evaluate(({ ipcMain, webContents }, id) => {
+      const target = webContents.fromId(id), send = target.send.bind(target), held = [];
+      global.restoreStateBroadcasts = () => { target.send = send; for (const args of held) send(...args); };
+      target.send = (...args) => { if (args[0] === 'elpis:state:changed') held.push(args); else send(...args); };
+      global.appearanceConflicts = [];
+      global.appearanceWrites = [];
+      const write = ipcMain._invokeHandlers.get('elpis:state:write');
+      ipcMain._invokeHandlers.set('elpis:state:write', async (...args) => {
+        const result = await write(...args);
+        global.appearanceWrites.push(args[1].key);
+        if (result.code === 'STATE_CONFLICT') global.appearanceConflicts.push(args[1].key);
+        return result;
+      });
+    }, secondId);
+    for (const page of [first, second]) {
+      await page.getByRole('tab', { name: 'Appearance', exact: true }).click();
+      await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: 'Dark', exact: true }).click();
+      await page.waitForFunction(() => window.elpisDesktop.storage.getItem('elpis-theme') === 'dark');
+    }
+    await electron.evaluate(async () => {
+      const deadline = Date.now() + 5000;
+      while (global.appearanceWrites.filter(key => key === 'elpis-theme').length < 2) {
+        if (Date.now() > deadline) throw Error('Appearance writes were not acknowledged');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      global.restoreStateBroadcasts();
+    });
+    assert.deepEqual(await electron.evaluate(() => global.appearanceConflicts), []);
+    for (const page of [first, second]) assert.equal(await page.getByText(/This setting or draft changed in another window/).count(), 0);
+    for (const page of [first, second]) await page.getByRole('radiogroup', { name: 'Theme', exact: true }).getByRole('radio', { name: 'System', exact: true }).click();
     if (process.env.ELPIS_PARITY_SHOTS) for (const colorScheme of ['light', 'dark']) {
       await second.emulateMedia({ colorScheme });
       await second.waitForFunction(dark => document.querySelector('.app-shell').classList.contains('dark') === dark, colorScheme === 'dark');

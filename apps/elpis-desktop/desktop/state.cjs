@@ -55,20 +55,24 @@ function createStateStore(file) {
       let value = input?.value;
       if (!allowed(key) || !Number.isSafeInteger(baseRevision) || baseRevision < 0 || baseRevision > revision ||
         (changes !== undefined ? key !== PREFERENCES_KEY || value !== undefined || !preferencePatch(changes) : value !== null && typeof value !== 'string')) throw Error('Unsupported workspace patch');
+      let changedFields;
+      if (changes !== undefined) {
+        let current = {};
+        try { const parsed = JSON.parse(values[key] || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed; } catch { /* Same defaults recovery as lib/preferences.ts. */ }
+        changedFields = Object.keys(changes).filter(field => current[field] !== changes[field]);
+        value = changedFields.length ? JSON.stringify({ ...current, ...changes }) : values[key] ?? null;
+      }
+      const rebased = baseRevision < revision;
+      // Startup/restoration and two windows can submit the same saved value.
+      // An acknowledgement that changes nothing cannot overwrite another writer.
+      if (values[key] === value || (value === null && values[key] === undefined)) return { key, value, revision, rebased };
       // Ordered in-flight edits from one renderer may share a base revision.
       // Edits from another renderer always require an observed revision.
       const stale = version => version && version.revision > baseRevision && (writer === undefined || version.writer !== writer);
       const conflict = changes !== undefined
-        ? stale(replacements.get(key)) || Object.keys(changes).some(field => stale(fields.get(field)))
+        ? stale(replacements.get(key)) || changedFields.some(field => stale(fields.get(field)))
         : stale(versions.get(key));
       if (conflict) throw Object.assign(Error('This setting or draft changed in another window. Your change was not saved. Check the current value and try again; copy unsent text before closing.'), { code: 'STATE_CONFLICT' });
-      if (changes !== undefined) {
-        let current = {};
-        try { const parsed = JSON.parse(values[key] || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed; } catch { /* Same defaults recovery as lib/preferences.ts. */ }
-        value = JSON.stringify({ ...current, ...changes });
-      }
-      const rebased = baseRevision < revision;
-      if (values[key] === value || (value === null && values[key] === undefined)) return { key, value, revision, rebased };
       if (typeof value === 'string' && Buffer.byteLength(value) > (key.startsWith('elpis-attachments-v1:') ? 6 * 1024 * 1024 : 1_000_000)) throw Error('Workspace value is too large');
       const next = { ...values };
       if (value === null) delete next[key]; else next[key] = value;
@@ -77,7 +81,7 @@ function createStateStore(file) {
       values = next; ++revision;
       const version = { revision, writer };
       versions.set(key, version);
-      if (changes !== undefined) for (const field of Object.keys(changes)) fields.set(field, version);
+      if (changes !== undefined) for (const field of changedFields) fields.set(field, version);
       else replacements.set(key, version);
       const change = { key, value, revision, rebased };
       for (const listener of listeners) { try { listener(change); } catch { /* A closed window cannot invalidate a durable save. */ } }
