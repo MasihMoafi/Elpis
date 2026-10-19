@@ -20,6 +20,7 @@ import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, readGroup
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
+import { arrange, move } from "@/lib/nav-order";
 import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences, type Preferences } from "@/lib/preferences";
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { queueFollowUp, sendQueuedFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
@@ -103,6 +104,15 @@ const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in r
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 /** Whether a chat ran in a project's folder (trailing slashes ignored). */
 const sameFolder = (a: string | undefined, b: string) => !!a && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+/** The sidebar's pages after New chat, in their default order; the person may rearrange them. */
+const NAV_PAGES = [
+  { id: "experimentLab", name: "Lab", Icon: ExperimentLabIcon },
+  { id: "canvas", name: "Workflows", Icon: WorkflowsIcon },
+  { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
+  { id: "customize", name: "Ledger", Icon: Blocks },
+  { id: "observability", name: "Observability", Icon: Activity },
+] as const;
 
 export default function Home() {
   const preferences = useAppPreferences();
@@ -1554,6 +1564,9 @@ export default function Home() {
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
   commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
+  // The sidebar's pages in the person's order (drag and drop, or Alt+Up/Down), saved with the preferences.
+  const arrangedPages = arrange(NAV_PAGES, preferences.navOrder.split(",").filter(Boolean));
+  const reorderPages = (ids: string[]) => { try { savePreferences({ navOrder: ids.join(",") }); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
   for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -1570,11 +1583,14 @@ export default function Home() {
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        <Button className="btn btn-ghost" variant="ghost" aria-current={view === "experimentLab" ? "page" : undefined} onClick={() => show("experimentLab")}><ExperimentLabIcon size={16} />Lab</Button>
-        <Button variant="ghost" aria-current={view === "canvas" ? "page" : undefined} onClick={() => show("canvas")}><WorkflowsIcon size={16} />Workflows</Button>
-        <Button variant="ghost" aria-current={view === "loveSpot" ? "page" : undefined} onClick={() => show("loveSpot")}><LoveSpotIcon size={16} />Love Spot</Button>
-        <Button variant="ghost" aria-current={view === "customize" ? "page" : undefined} onClick={() => show("customize")}><Blocks size={16} />Ledger</Button>
-        <Button variant="ghost" aria-current={view === "observability" ? "page" : undefined} onClick={() => show("observability")}><Activity size={16} />Observability</Button>      </nav>
+        {arrangedPages.map(page => <Button key={page.id} variant="ghost" draggable data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
+          title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}
+          onDragStart={event => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-page", page.id); }}
+          onDragOver={event => { if (event.dataTransfer.types.includes("text/x-elpis-page")) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+          onDrop={event => { const id = event.dataTransfer.getData("text/x-elpis-page"); if (!id || id === page.id) return; event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); reorderPages(move(arrangedPages.map(item => item.id), id, { target: page.id, after: event.clientY > box.top + box.height / 2 })); }}
+          onKeyDown={event => { if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return; event.preventDefault(); event.stopPropagation(); reorderPages(move(arrangedPages.map(item => item.id), page.id, { by: event.key === "ArrowUp" ? -1 : 1 })); requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-nav-page="${page.id}"]`)?.focus()); }}>
+          <page.Icon size={16} />{page.name}</Button>)}
+      </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><div className="section-label">Projects</div><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>

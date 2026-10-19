@@ -215,3 +215,20 @@ for (const colorScheme of ['light', 'dark']) test(`send keeps amber and shared p
   assert.equal(await send.evaluate(node => { const r = node.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }), true);
   await page.screenshot({ path: path.join(evidence, `send-narrow-${colorScheme}.png`) });
 });
+
+test('sidebar pages reorder by drag and drop and by Alt+Arrow, and keep their order after a reload', async t => {
+  const f = await fixture();
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+  const { page } = f, nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
+  await page.locator('.startup-splash').waitFor({ state: 'detached' });
+  const order = () => nav.getByRole('button').allInnerTexts().then(names => names.map(name => name.trim()));
+  assert.deepEqual(await order(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Ledger', 'Observability']);
+  await nav.getByRole('button', { name: 'Love Spot', exact: true }).dragTo(nav.getByRole('button', { name: 'Lab', exact: true }), { targetPosition: { x: 20, y: 4 } });
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Ledger', 'Observability'], 'dropped on the top half of Lab, it goes above Lab');
+  await nav.getByRole('button', { name: 'Observability', exact: true }).focus();
+  await page.keyboard.press('Alt+ArrowUp'); await page.keyboard.press('Alt+ArrowUp');
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Observability', 'Workflows', 'Ledger'], 'Alt+Up moves the focused page up');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Observability', 'focus stays on the moved page');
+  await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
+  assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Observability', 'Workflows', 'Ledger'], 'the order is saved');
+});
