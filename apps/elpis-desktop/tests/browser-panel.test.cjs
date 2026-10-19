@@ -18,15 +18,19 @@ async function eventually(check) {
 }
 
 // The desktop browser as the renderer sees it: state pushed by "main", commands recorded. A tiny JPEG stands in for page captures.
-function fakeDesktop() {
+// With `scoped`, each chat has its own browser, as the real preload's (sessionScoped): "session" shows that chat's.
+function fakeDesktop(scoped = false) {
   const tab = { id: 't1', url: 'https://example.com/login', title: 'Example login', loading: false, error: null, failure: null, security: 'secure', zoom: 100, comments: 0, canGoBack: true, canGoForward: false };
-  window.__state = { visible: true, activeId: 't1', focusAddress: 0, tabs: [tab], annotating: false, markersVisible: true, annotations: [], draft: null, find: { open: false, text: '', matches: 0, active: 0, focus: 0 } };
+  const fresh = sessionId => ({ visible: true, activeId: 't1', focusAddress: 0, tabs: [tab], annotating: false, markersVisible: true, annotations: [], draft: null, find: { open: false, text: '', matches: 0, active: 0, focus: 0 }, ...(scoped ? { sessionId } : {}) });
+  const sessions = new Map();
+  window.__state = fresh(null);
   window.__commands = []; window.__layouts = []; window.__themes = []; const listeners = new Set();
   const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 180;
   const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 320, 180); ctx.strokeStyle = '#2f6fed'; ctx.lineWidth = 3; ctx.strokeRect(40, 60, 120, 40);
   window.__jpeg = canvas.toDataURL('image/jpeg', 0.8);
   window.__push = patch => { window.__state = { ...window.__state, ...patch }; for (const listener of listeners) listener(window.__state); };
   const commands = {
+    session: data => { sessions.set(window.__state.sessionId, window.__state); window.__state = sessions.get(data.sessionId) ?? fresh(data.sessionId); return {}; },
     annotate: data => ({ annotating: data.value === undefined ? !window.__state.annotating : data.value === true }),
     comment: data => { const draft = window.__state.draft; const annotations = [...window.__state.annotations, { id: draft.id, number: window.__state.annotations.length + 1, kind: 'element', label: draft.label, body: data.body.trim() }]; return { draft: null, annotations, tabs: [{ ...window.__state.tabs[0], comments: annotations.length }] }; },
     commentCancel: () => ({ draft: null }),
@@ -41,8 +45,10 @@ function fakeDesktop() {
     setTheme: (dark, details) => window.__themes.push({ dark, ...details }),
     storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value), removeItem: key => localStorage.removeItem(key), onError: () => () => {} },
     browser: {
+      ...(scoped ? { sessionScoped: true } : {}),
       command: async (action, data = {}) => {
         window.__commands.push({ action, ...data });
+        if (scoped && action !== 'session' && data.sessionId !== window.__state.sessionId) return { error: 'This browser session is no longer shown.' };
         const { result, ...patch } = commands[action]?.(data) ?? {};
         if (Object.keys(patch).length) window.__push(patch);
         return { ...window.__state, ...(result ? { result } : {}) };
@@ -53,7 +59,7 @@ function fakeDesktop() {
   };
 }
 
-async function fixture(t) {
+async function fixture(t, { running = false, scoped = false } = {}) {
   const streams = new Set(), posts = [], errors = [];
   const thread = { id: 'a', name: 'Chat A', cwd: '/tmp/browser-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } };
   const server = http.createServer(async (req, res) => {
@@ -63,7 +69,8 @@ async function fixture(t) {
     if (req.method === 'POST') {
       let raw = ''; for await (const chunk of req) raw += chunk; const body = raw ? JSON.parse(raw) : {}; posts.push({ path: pathname, body });
       if (pathname === '/api/threads') return json({ thread: { ...thread, id: 'fresh', name: 'New chat' } });
-      if (/\/resume$/.test(pathname)) return json({ thread, activeTurnId: null });
+      if (/\/resume$/.test(pathname)) return json({ thread: running ? { ...thread, status: { type: 'active', activeFlags: [] } } : thread, activeTurnId: running ? 'turn-0' : null });
+      if (/\/steer$/.test(pathname)) return json({ turnId: 'turn-0' });
       if (/\/turns$/.test(pathname)) return json({ turn: { id: 'turn-1' } });
       return json({});
     }
@@ -83,7 +90,7 @@ async function fixture(t) {
   const page = await browser.newPage({ viewport: { width: 1320, height: 860 } });
   page.setDefaultTimeout(4000); page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);
-  await page.addInitScript(fakeDesktop);
+  await page.addInitScript(fakeDesktop, scoped);
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.getByRole('button', { name: 'Annotate this page' }).waitFor();
   const commands = () => page.evaluate(() => window.__commands.map(item => item.action));
@@ -181,5 +188,43 @@ test('the page area follows the app theme: the app background, never white, and 
   await page.evaluate(() => localStorage.setItem('elpis-theme', 'dark')); await page.reload();
   await page.getByRole('button', { name: 'Annotate this page' }).waitFor();
   await eventually(async () => { const seen = await look(); assert.deepEqual(seen.reported, { dark: true, source: 'dark', background: seen.body }, 'an explicit choice is reported as the choice, whatever the system says'); });
+  assert.deepEqual(errors, []);
+});
+
+for (const running of [false, true]) test(`Annotate in an open chat${running ? ' while its turn runs' : ''}: Send adds the comments to that chat, not a new conversation (A16)`, async t => {
+  const { page, posts, errors } = await fixture(t, { running });
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await page.evaluate(() => window.__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await comment.fill('Make this the accent colour'); await comment.press('Enter');
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads').map(post => post.path);
+  await eventually(async () => assert.ok(sent().length, 'Send sends the message'));
+  assert.equal(sent().length, 1); assert.match(sent()[0], /^\/api\/threads\/a\/(turns|steer)$/, 'the comments go to chat A, not a new conversation');
+  assert.equal(await page.locator('.thread-row.active[data-thread-id="a"]').count(), 1, 'chat A stays the open chat');
+  assert.deepEqual(errors, []);
+});
+
+test('Comments made in a chat\'s browser stay with that chat: a new chat tab has its own browser, and Send back in the chat goes to it (A16)', async t => {
+  const { page, posts, errors } = await fixture(t, { scoped: true });
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await eventually(async () => assert.equal(await page.evaluate(() => window.__state.annotating), true));
+  await page.evaluate(() => window.__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await comment.fill('Make this the accent colour'); await comment.press('Enter');
+  const send = page.getByRole('button', { name: 'Send 1 pending annotation' });
+  await send.waitFor();
+  await page.getByRole('button', { name: 'New chat tab', exact: true }).click();
+  await send.waitFor({ state: 'detached' });
+  await page.getByRole('tab', { name: /Chat A/ }).click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await send.click();
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads').map(post => post.path);
+  await eventually(async () => assert.ok(sent().length, 'Send sends the message'));
+  assert.deepEqual(sent(), ['/api/threads/a/turns'], 'the comments go to chat A, not a new conversation');
   assert.deepEqual(errors, []);
 });
