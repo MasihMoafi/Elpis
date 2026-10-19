@@ -49,13 +49,19 @@ function createdFiles(entries: Entry[]): string[] {
 
 function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
   const ordered = withPrunes(turn.entries);
-  const users = ordered.filter(entry => entry.item.type === "userMessage");
-  const work = ordered.filter(entry => entry.item.type !== "userMessage");
+  // The prompt that started the turn heads it; a message sent while it ran (a steer) stays where it was sent.
+  const prompt = ordered.findIndex(entry => entry.item.type === "userMessage");
+  const leading = prompt < 0 ? 0 : ordered.findIndex((entry, index) => index > prompt && entry.item.type !== "userMessage");
+  const users = prompt < 0 ? [] : ordered.slice(0, leading < 0 ? ordered.length : leading).filter(entry => entry.item.type === "userMessage");
+  const work = ordered.filter(entry => !users.includes(entry));
   // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
   const lastReply = findLastIndex(work, entry => isReply(entry.item)), plan = work.findIndex(entry => entry.item.type === "plan");
   const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
-  const folded = finalReply > 0 ? work.slice(0, finalReply) : [];
-  const visible = finalReply > 0 ? work.slice(finalReply) : work;
+  // Work before the final answer folds away, but never past a message the person sent while it ran.
+  const lastSent = findLastIndex(work.slice(0, Math.max(finalReply, 0)), entry => entry.item.type === "userMessage");
+  const foldEnd = lastSent >= 0 ? lastSent : finalReply;
+  const folded = foldEnd > 0 ? work.slice(0, foldEnd) : [];
+  const visible = foldEnd > 0 ? work.slice(foldEnd) : work;
   return <section className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for">
@@ -79,7 +85,7 @@ function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]
     run = [];
   };
   for (const entry of entries) {
-    if (isReply(entry.item) || entry.item.type === "plan" || (entry.item.type === "commandExecution" && entry.item.source === "userShell")) {
+    if (isReply(entry.item) || entry.item.type === "userMessage" || entry.item.type === "plan" || (entry.item.type === "commandExecution" && entry.item.source === "userShell")) {
       flush();
       blocks.push(<div key={entry.item.id}>{renderItem(entry)}</div>);
     } else run.push(entry);

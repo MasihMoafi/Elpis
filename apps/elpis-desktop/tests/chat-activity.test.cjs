@@ -29,6 +29,8 @@ function history(now) {
     entry('t1', { id: 'a2', type: 'agentMessage', text: 'Everything is moved. Test files: `legal/evals/test-files/`.' }, t1 + 8000),
     entry('t2', { id: 'u2', type: 'userMessage', content: [{ type: 'text', text: 'Restart the local site.' }] }, now - 90_000),
     entry('t2', { id: 'a3', type: 'agentMessage', text: 'Restarting the site from its new place.' }, now - 80_000),
+    // Sent while t2 ran (steered into it): it belongs after the work it followed, not at the top of the turn.
+    entry('t2', { id: 'u3', type: 'userMessage', content: [{ type: 'text', text: 'Use port 8088.' }] }, now - 78_000),
     entry('t2', { id: 'c5', type: 'commandExecution', command: 'npm run build', cwd: '/tmp/demo', status: 'completed', exitCode: 0, aggregatedOutput: 'built', durationMs: 9000, commandActions: unknown('npm run build') }, now - 75_000, now - 66_000),
     // Running for 62 seconds when the page loads: the timer reads 1:02 and keeps counting.
     { turnId: 't2', item: { id: 'c6', type: 'commandExecution', command: 'npm run dev -- --port 8088', cwd: '/tmp/demo', status: 'inProgress', exitCode: null, aggregatedOutput: '', durationMs: null, commandActions: unknown('npm run dev -- --port 8088') }, startedAtMs: now - 62_000 },
@@ -152,6 +154,21 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     assert.ok(isRed(await exit.evaluate(node => window.__rgb(getComputedStyle(node).color))), 'dark: the exit code line is red');
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
+});
+
+test('a message sent while a turn runs appears where it was sent, after the work before it', async () => {
+  const f = await fixture();
+  try {
+    const { page, errors } = await f.open();
+    const order = await page.locator('section.turn').last().evaluate(turn => {
+      const texts = ['Restart the local site.', 'Restarting the site from its new place.', 'Use port 8088.'];
+      const all = [...turn.querySelectorAll('*')].filter(node => !node.children.length || [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim()));
+      return texts.map(text => all.findIndex(node => node.textContent.trim() === text));
+    });
+    assert.ok(order.every(at => at >= 0), `all three are shown (${order})`);
+    assert.ok(order[0] < order[1] && order[1] < order[2], `in the order they happened: prompt, reply, then the steered message (${order})`);
+    assert.deepEqual(errors, []);
+  } finally { await f.close(); }
 });
 
 test('a running step reads as a sentence with a live timer and animated dots', async () => {
