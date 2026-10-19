@@ -397,18 +397,23 @@ test('with no editor chosen, or none installed, Open in uses the system\'s defau
   } finally { await f.close(); }
 });
 
-test('the tree can be hidden and shown with its button; a file too large or binary says so instead of showing', async () => {
+test('the tree can be hidden and shown with its button; a file too large or binary says so instead of showing, and an image shows as itself', async () => {
   await fs.mkdir(CWD, { recursive: true });
   const f = await open();
   try {
     await fs.writeFile(path.join(CWD, 'blob.bin'), Buffer.from([1, 2, 0, 3]));
     await fs.writeFile(path.join(CWD, 'big.txt'), 'a'.repeat(600 * 1024));
+    await fs.writeFile(path.join(CWD, 'shot.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP4z8DAwMDAxMDAwAAAHQAHAS/1UvQAAAAASUVORK5CYII=', 'base64'));
     await openFilesTab(f);
     await f.side.getByRole('button', { name: 'Refresh files', exact: true }).click();
     await f.row('blob.bin').click();
     await f.view.getByText('This is a binary file, so it is not shown here.').waitFor();
     await f.row('big.txt').click();
     await f.view.getByText(/over 512 KB, too large to show here/).waitFor();
+    await f.row('shot.png').click();
+    const picture = f.view.getByRole('img', { name: 'shot.png', exact: true });
+    await picture.waitFor();
+    await eventually(async () => assert.equal(await picture.evaluate(image => image.complete && image.naturalWidth), 2, 'an image file is shown as the picture it is'));
     await f.side.getByRole('button', { name: 'Hide file tree', exact: true }).click();
     assert.equal(await f.tree.count(), 0);
     await f.side.getByRole('button', { name: 'Show file tree', exact: true }).click();

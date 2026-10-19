@@ -81,3 +81,5 @@
 .fe-coloured .fe-text { -webkit-text-fill-color:transparent; }
 .fe-coloured .fe-find-hit { color:var(--foreground); }
 .fe-coloured .fe-layer * { font-style:normal; font-weight:inherit; }
+.file-image { display:flex; align-items:flex-start; justify-content:center; flex:1; min-height:0; overflow:auto; padding:12px; background:var(--card); }
+.file-image img { max-width:100%; height:auto; image-rendering:auto; border:1px solid var(--hairline); }

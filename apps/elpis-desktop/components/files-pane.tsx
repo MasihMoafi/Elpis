@@ -30,6 +30,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   if (!doc || doc.status === "loading") body = <p className="files-note" role="status">Reading the file…</p>;
   else if (doc.status === "error") body = <p className="files-note files-error" role="alert">{doc.message}</p>;
   else if (doc.status === "ready") body = <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} />;
+  else if (doc.status === "image") body = <div className="file-image"><img src={doc.src} alt={nameOf(file.path)} /></div>;
   else if (doc.size > 512 * 1024) body = <p className="files-note">This file is over 512 KB, too large to show here.</p>;
   else body = <p className="files-note">This is a binary file, so it is not shown here.</p>;
   return <>

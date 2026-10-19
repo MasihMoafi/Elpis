@@ -79,11 +79,16 @@ export async function listDirectory(cwd, dir = '', hidden = false) {
   return { data: found.slice(0, MAX_DIRECTORY) };
 }
 
-/** Read-only: one file's text. A binary file, one that is not UTF-8 or one over 512 KB is reported, not sent. */
+/** Pictures the Files pane shows as themselves (SVG stays text: it is code and may carry scripts). */
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+/** Read-only: one file's text, or a picture as a data URL. Another binary file, one that is not UTF-8 or one over 512 KB
+ * is reported, not sent. */
 export async function readFile(cwd, target) {
   const { real, rel, info } = await inside(cwd, target, 'file');
   if (info.size > MAX_VIEW) return { path: rel, tooLarge: true, size: info.size };
   const bytes = await fs.readFile(real).catch(() => { throw new BridgeError('This file cannot be read.'); });
+  const image = IMAGE_TYPES[path.extname(real).toLowerCase()];
+  if (image) return { path: rel, image: `data:${image};base64,${bytes.toString('base64')}`, size: info.size };
   const content = bytes.toString('utf8');
   if (bytes.subarray(0, 8000).includes(0) || !Buffer.from(content).equals(bytes)) return { path: rel, binary: true, size: info.size };
   return { path: rel, content, size: info.size, mtimeMs: info.mtimeMs };
