@@ -463,8 +463,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     const fetched = choice.provider ? catalogs.get(choice.provider) : undefined;
     return { id: choice.provider ?? null, label: choice.label, state: choice.needsKey ? "key" : fetched?.error ? "error" : choice.provider && !fetched?.models ? "loading" : "ready", error: fetched?.error } satisfies Provider;
   });
-  const canonicalProvider = (provider?: string | null) => provider === settings?.main.provider ? null : provider ?? null;
-  const providerDefault = (provider: string | null) => catalog.find(item => item.provider === provider && provider === null && item.model === settings?.main.model) ?? catalog.find(item => item.provider === provider);
+  const primaryProvider = choices[0]?.provider ?? null;
+  const canonicalProvider = (provider?: string | null) => !provider || provider === settings?.main.provider ? primaryProvider : provider;
+  const providerDefault = (provider: string | null) => catalog.find(item => item.provider === provider && provider === primaryProvider && item.model === settings?.main.model) ?? catalog.find(item => item.provider === provider);
   useEffect(() => {
     if (!pendingProviderDefaults.current.size) return;
     const patches = new Map<string, { provider: string | null; model: string; effort: string | null }>();

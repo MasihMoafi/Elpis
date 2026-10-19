@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SearchField } from "@/components/ui/search-field";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
-import { api, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
+import { api, choiceById, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
 type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string };
 /** Where each built-in API provider issues keys, as the terminal's /provider names them. */
 const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };
@@ -62,8 +62,8 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   }, [open, disabled, activeConnection?.id, activeConnection?.provider, activeConnection?.catalogVersion, retry]); // Reuse successful catalogs only for the same saved configuration.
   const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
   const currentModel = model || defaultModel || "";
-  const current = available.find(item => item.model === currentModel && item.choiceId === choiceId) ?? null;
-  const connection = choices.find(choice => choice.id === choiceId);
+  const connection = choiceById(choices, choiceId);
+  const current = available.find(item => item.model === currentModel && item.choiceId === connection?.id) ?? null;
   const currentLabel = current?.label || modelLabel(currentModel, models);
   const currentProvider = current?.providerLabel || subscriptionOf(currentModel)?.label || connection?.label;
   const rows = tab === "all" ? available : available.filter(item => item.choiceId === tab);

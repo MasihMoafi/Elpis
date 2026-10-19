@@ -177,6 +177,7 @@
     "tests/preferences.test.cjs",
     "tests/provider-key.test.cjs",
     "tests/provider-labels.test.cjs",
+    "tests/provider-model-pairs.test.cjs",
     "tests/provider-settings.test.cjs",
     "tests/provider-usage.test.cjs",
     "tests/quick-entry.test.cjs",

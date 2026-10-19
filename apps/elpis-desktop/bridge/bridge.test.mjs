@@ -172,6 +172,37 @@ test('configured connection models use only that endpoint and never authorize th
   } finally { globalThis.fetch = original; client.close(); }
 });
 
+test('the current API default loads its own catalog instead of the engine startup catalog', async () => {
+  const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
+  configRead.config.model_provider = 'anthropic-credits';
+  configRead.config.model = 'claude-opus-5-5';
+  configRead.config.model_providers['anthropic-credits'] = { name: 'Anthropic credits', base_url: 'http://127.0.0.1:44103/v1', wire_api: 'responses', requires_openai_auth: false,
+    http_headers: { 'x-elpis-gateway-token': 'PRIVATE GATEWAY TOKEN', 'x-elpis-provider': 'anthropic-credits', 'x-elpis-wire': 'anthropic_messages' } };
+  const original = globalThis.fetch, calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, provider: options.headers.get('x-elpis-provider') });
+    return new Response(JSON.stringify({ models: [{ slug: 'claude-opus-5-5', display_name: 'Claude Opus 5.5' }] }), { headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const before = socket.sent.filter(message => message.method === 'model/list').length;
+    const credits = await client.models({ provider: 'anthropic-credits' });
+    assert.deepEqual(credits.data.map(model => model.model), ['claude-opus-5-5']);
+    assert.deepEqual(calls, [{ url: 'http://127.0.0.1:44103/v1/models', provider: 'anthropic-credits' }]);
+    assert.equal(socket.sent.filter(message => message.method === 'model/list').length, before, 'the old engine catalog is not relabeled');
+    assert.doesNotMatch(JSON.stringify(credits), /PRIVATE GATEWAY TOKEN|x-elpis-/);
+    await client.createThread({ provider: 'anthropic-credits', model: credits.data[0].model });
+    const start = socket.sent.findLast(message => message.method === 'thread/start');
+    assert.deepEqual([start.params.modelProvider, start.params.model], ['anthropic-credits', 'claude-opus-5-5']);
+    await client.createThread({ provider: 'anthropic-credits' });
+    const inherited = socket.sent.findLast(message => message.method === 'thread/start');
+    assert.equal(inherited.params.modelProvider, 'anthropic-credits');
+    assert.equal(inherited.params.model, undefined, 'a primary connection can inherit its configured model');
+    requirementsRead.requirements = { modelProvider: 'openai' };
+    await assert.rejects(client.models({ provider: 'anthropic-credits' }), /restricted/);
+    assert.equal(calls.length, 1, 'managed policy is checked before another endpoint lookup');
+  } finally { globalThis.fetch = original; client.close(); }
+});
+
 test('saved-conversation search passes its term and cursor to the native list before decoration', async () => {
   const { client, socket } = fixture(); await client.initialize();
   try {

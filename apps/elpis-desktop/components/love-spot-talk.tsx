@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dictation } from "@/components/dictation";
 import { ModelPicker } from "@/components/model-picker";
 import { ChatMessage } from "@/components/chat-message";
-import { api, type Entry, type Model, type ProviderChoice, type Thread } from "@/lib/api";
+import { api, choiceById, type Entry, type Model, type ProviderChoice, type Thread } from "@/lib/api";
 import { insertTranscript } from "@/lib/dictation";
 
 type Conversation = { thread: Thread | null; entries: Entry[]; busy: boolean; error: string };
@@ -46,7 +46,9 @@ export function LoveSpotTalk({ open, onClose, quote, model, choiceId, choices, m
     pending.current = true; setSending(true); setError("");
     try {
       await sendWithBoard(async revision => {
-        const result = await api<Conversation>("/love-spot/talk", { text, model, ...(choices.find(c => c.id === choiceId)?.provider ? { provider: choices.find(c => c.id === choiceId)!.provider } : {}), revision });
+        const choice = choiceById(choices, choiceId);
+        if (!choice) throw new Error("This connection is no longer available. Choose another model.");
+        const result = await api<Conversation>("/love-spot/talk", { text, model, ...(choice.provider ? { provider: choice.provider } : {}), revision });
         setConversation(result);
         if (currentDraft.current === text) setDraft("");
       });

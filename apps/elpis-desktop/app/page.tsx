@@ -86,7 +86,7 @@ import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
-import { activityOf, api, unreadable, chatProvider, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
+import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title,
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
@@ -766,8 +766,9 @@ export default function Home() {
   const readOnlyRun = !!selected && (isAgentRun(selected) || selected.desktopAccess?.writable === false);
   const continues = readOnlyRun || selected?.desktopAccess?.mode === "continue";
   const choices = providerChoices(models, providerSettings);
-  const newChoice = choices.find(choice => choice.id === choiceId) ?? choices[0];
-  const needsModelId = !selected && !!newChoice?.provider;
+  const newChoice = choiceById(choices, choiceId);
+  const missingChoiceNotice = !selected && choiceId && !newChoice ? "This connection is no longer available. Choose another model." : "";
+  const needsModelId = !selected && !!newChoice?.provider && newChoice.provider !== providerSettings?.main.provider;
   const selectedChoice = selected ? choiceOf(selected, choices) : null;
   const pending = selected ? nextTurn[selected.id] : undefined;
   const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
@@ -776,8 +777,8 @@ export default function Home() {
   const turnEffort = selected ? pending?.effort ?? selected.reasoningEffort ?? "" : effort;
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
-  const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : ""].filter(Boolean).join("\n");
-  const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && needsModelId && !model.trim());
+  const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
+  const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
   const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
@@ -987,6 +988,7 @@ export default function Home() {
     const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
     if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging || !connected) return;
     if (imageBlocked && own === undefined) return; // the box already says why
+    if (missingChoiceNotice) return;
     if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
     setBusy(true); setError("");
     const sentText = outgoing, sentAttachments = [...files];

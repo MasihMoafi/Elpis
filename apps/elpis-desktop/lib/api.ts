@@ -132,7 +132,7 @@ export function activityOf(method: string, params: Record<string, unknown>): str
 }
 
 /** Where a new chat can run: the engine's provider, each subscription the bridge offers, and other configured providers.
- * Choice IDs: "" for the engine, the model prefix for a subscription, the provider ID otherwise. */
+ * Choice IDs are stable provider IDs (or subscription prefixes); an empty selection inherits the current default. */
 export type ProviderChoice = { id: string; label: string; provider?: string; models: Model[]; catalogVersion?: string | null; needsKey?: boolean };
 /** Engine providers the model list leaves out: the local gpt-oss servers and Amazon Bedrock. */
 const UNLISTED = new Set(["ollama", "lmstudio", "amazon-bedrock", "amazon-bedrock-runtime"]);
@@ -141,20 +141,29 @@ const ORDER = ["claude/", "anthropic-credits", "anthropic", "agy/", "openrouter"
 const rank = (id: string) => { const index = ORDER.indexOf(id); return index < 0 ? ORDER.indexOf("agy/") - 0.5 : index; };
 export function providerChoices(models: Model[], settings: ProviderSettings | null): ProviderChoice[] {
   const main = settings?.main.provider ?? null;
+  const connection = (provider: string, id = provider): ProviderChoice => ({ id, label: providerLabel(null, provider, settings?.providers), provider,
+    models: [], catalogVersion: settings?.version, ...(settings?.providers.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}) });
   const others: ProviderChoice[] = [
     ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
     ...(settings?.providers ?? []).filter(item => item.id !== main && !UNLISTED.has(item.id) && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))
-      .map(item => ({ id: item.id, label: providerLabel(null, item.id, settings?.providers), provider: item.id, models: [], catalogVersion: settings?.version, ...(item.needsKey ? { needsKey: true } : {}) })),
+      .map(item => connection(item.id)),
   ];
   return [
-    { id: "", label: providerLabel(null, main, settings?.providers) || "Configured provider", models: models.filter(model => !subscriptionOf(model.model)) },
+    // Defaults can change while model/list still belongs to the engine's startup provider.
+    // API connections, including the default, get their own catalog and explicit route.
+    main && main !== "openai" && !UNLISTED.has(main) ? connection(main)
+      : { id: main ?? "", label: providerLabel(null, main, settings?.providers) || "Configured provider", models: models.filter(model => !subscriptionOf(model.model)) },
     ...others.sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label)),
   ];
 }
+/** An unset selection inherits the default; a removed explicit connection never changes its route. */
+export const choiceById = (choices: ProviderChoice[], id: string) => choices.find(choice => choice.id === id) ?? (!id ? choices[0] : undefined);
 /** The choice an existing chat runs under: its subscription, its own configured provider, or the engine. */
 export function choiceOf(thread: Thread, choices: ProviderChoice[]) {
   const subscription = subscriptionOf(thread.model);
-  return choices.find(choice => subscription ? choice.id === subscription.prefix : !!thread.modelProvider && choice.provider === thread.modelProvider) ?? choices[0];
+  return choices.find(choice => subscription ? choice.id === subscription.prefix : !!thread.modelProvider && (choice.id === thread.modelProvider || choice.provider === thread.modelProvider))
+    ?? (subscription ? { id: subscription.prefix, label: subscription.label, models: [] }
+      : thread.modelProvider ? { id: thread.modelProvider, provider: thread.modelProvider, label: providerLabel(thread.model, thread.modelProvider), models: [] } : choices[0]);
 }
 /** The provider a chat runs on, as the microphone needs it: a subscription by its model prefix, else the chat's own provider, else the engine's default (ChatGPT). */
 export const chatProvider = (model: string | null | undefined, provider: string | null | undefined, main: string | null | undefined) => subscriptionOf(model)?.id ?? (provider || main || "openai");

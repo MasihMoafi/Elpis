@@ -535,7 +535,9 @@ export class DesktopClient extends EventEmitter {
       if (policy === null) throw new BridgeError('Connection policy could not be read. Try again after reconnecting.', 503);
       const managed = policy.requirements;
       if (managed?.modelProvider && managed.modelProvider !== options.provider) throw new BridgeError('This connection is restricted by your organization', 403);
-      if (options.provider !== read?.config?.model_provider) {
+      // config/read reflects current defaults; model/list retains the engine's startup
+      // catalog. An explicit API connection always lists its own endpoint.
+      if (options.provider !== 'openai' || options.provider !== read?.config?.model_provider) {
         const definitions = { ...BUILT_IN_KEY_PROVIDERS, ...(read?.config?.model_providers ?? {}), ...(managed?.modelProviders ?? {}) };
         if (!Object.hasOwn(definitions, options.provider)) throw new BridgeError('This connection needs a saved API address before Elpis can list its models. Add a connection in Settings → Models & accounts.');
         try { return await providerModels(definitions[options.provider], { savedKey: savedProviderKey(configHome(read), options.provider) }); }
