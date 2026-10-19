@@ -28,7 +28,10 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (req.method === 'POST' && url.pathname !== '/api/session') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : null });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
-    if (url.pathname === '/api/models' && providerModels[url.searchParams.get('provider')]) return json({ data: providerModels[url.searchParams.get('provider')], nextCursor: null });
+    if (url.pathname === '/api/models' && providerModels[url.searchParams.get('provider')]) {
+      const offered = providerModels[url.searchParams.get('provider')];
+      return json({ data: typeof offered === 'function' ? await offered() : offered, nextCursor: null });
+    }
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, ...settings });
     if (url.pathname === '/api/folders') return json({ data: ['docs', 'src', 'src/lib', 'tests'] });

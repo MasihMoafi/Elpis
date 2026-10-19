@@ -400,6 +400,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const [sourceId, setSourceId] = useState<string | null>(null), [labOpen, setLabOpen] = useState(false);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
+  const pendingProviderDefaults = useRef(new Map<string, { provider: string | null; model: string | null; effort: string | null }>());
   const boxDrag = useRef<{ x: number; y: number; base: string[]; moved: boolean } | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number; crossing: boolean } | null>(null);
   useEffect(() => { if (selection.length) setSourceId(null); }, [selection]);
@@ -462,6 +463,22 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const providers = choices.map(choice => {
     const fetched = choice.provider ? catalogs.get(choice.provider) : undefined;
     return { id: choice.provider ?? null, label: choice.label, state: choice.needsKey ? "key" : fetched?.error ? "error" : choice.provider && !fetched?.models ? "loading" : "ready", error: fetched?.error } satisfies Provider;
+  });
+  const canonicalProvider = (provider?: string | null) => provider === settings?.main.provider ? null : provider ?? null;
+  const providerDefault = (provider: string | null) => catalog.find(item => item.provider === provider && provider === null && item.model === settings?.main.model) ?? catalog.find(item => item.provider === provider);
+  useEffect(() => {
+    if (!pendingProviderDefaults.current.size) return;
+    const patches = new Map<string, { provider: string | null; model: string; effort: string | null }>();
+    for (const [id, pending] of pendingProviderDefaults.current) {
+      const keep = catalog.find(item => item.provider === pending.provider && item.model === pending.model);
+      const model = keep ?? providerDefault(pending.provider);
+      if (!model) continue;
+      pendingProviderDefaults.current.delete(id); patches.set(id, { provider: pending.provider, model: model.model, effort: keep?.efforts.includes(pending.effort ?? "") ? pending.effort : null });
+    }
+    if (patches.size) setGraph(current => ({ ...current, nodes: current.nodes.map(node => {
+      const patch = patches.get(node.id);
+      return node.type === "agent" && patch && canonicalProvider(node.data.provider) === patch.provider && !node.data.model ? { ...node, data: { ...node.data, model: patch.model, effort: patch.effort } } : node;
+    }) }));
   });
 
   // Follow a run: Elpis reports each task's state; stop once the graph has finished.
@@ -558,7 +575,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const fatherState: MotherData["run"] = run?.father?.threadId ? (FINISHED.has(run.father.status) ? "finished" : "running") : "idle";
   const modelLabel = (data: AgentData) => {
     if (!data.model) return "Default model";
-    const found = catalog.find(item => item.model === data.model && item.provider === (data.provider ?? null)) ?? (data.provider ? undefined : models.map(model => ({ label: model.displayName || model.model, model: model.model })).find(item => item.model === data.model));
+    const found = catalog.find(item => item.model === data.model && item.provider === canonicalProvider(data.provider));
     return found?.label ?? data.model;
   };
   const setText = (id: string, text: string) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "note" ? { ...node, data: { text } } : node) }));
@@ -988,12 +1005,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const columns = [...new Set(order.values())].sort((a, b) => a - b).map(level => ({ level, members: agents.filter(node => order.get(node.id) === level) }));
   const waveState = (members: typeof agents) => { const of = (node: (typeof agents)[number]) => [states[node.id]?.status, states[checkOf(node.id)]?.status];
     return members.some(node => of(node).includes("running")) ? "running" : members.length && members.every(node => of(node)[1] === "succeeded") ? "succeeded" : members.some(node => of(node).some(status => status === "failed" || status === "blocked")) ? "failed" : undefined; };
-  const choiceKey = (data: AgentData) => data.model ? `${data.provider ?? ""}|${data.model}` : "";
+  const choiceKey = (data: AgentData) => data.model ? `${canonicalProvider(data.provider) ?? ""}|${data.model}` : "";
   const shared = (key: (data: AgentData) => string) => new Set(chosen.map(node => key(node.data))).size === 1 ? key(chosen[0].data) : "mixed";
   const modelPatch = (value: string): Partial<AgentData> => { const [provider, ...rest] = value.split("|"); return value ? { provider: provider || null, model: rest.join("|"), effort: null } : { provider: null, model: null, effort: null }; };
-  const modelOptions = [<option key="" value="">Default model</option>, ...catalog.map(item => <option key={`${item.provider}|${item.model}`} value={`${item.provider ?? ""}|${item.model}`} data-hint={item.providerLabel}>{item.label}</option>)];
+  const modelOptions = (provider?: string | null) => [<option key="" value="">Default model</option>, ...catalog.filter(item => provider === undefined || item.provider === provider).map(item => <option key={`${item.provider}|${item.model}`} value={`${item.provider ?? ""}|${item.model}`} data-hint={provider === undefined ? item.providerLabel : undefined}>{item.label}</option>)];
   const mixed = <option value="mixed" disabled>Mixed</option>;
-  const selectedModel = selected ? catalog.find(item => item.model === selected.data.model && item.provider === (selected.data.provider ?? null)) : undefined;
+  const selectedModel = selected ? catalog.find(item => item.model === selected.data.model && item.provider === canonicalProvider(selected.data.provider)) : undefined;
 
   // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
@@ -1180,12 +1197,20 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
-      <label>Provider<OptionSelect aria-label="Provider" value={selected.data.provider ?? ""} onChange={event => {
-        const provider = event.target.value || null, first = catalog.find(item => item.provider === provider);
-        edit({ provider, model: first?.model ?? null, effort: null });
+      <label>Provider<OptionSelect aria-label="Provider" value={canonicalProvider(selected.data.provider) ?? ""} onChange={event => {
+        const provider = event.target.value || null, offered = catalog.filter(item => item.provider === provider);
+        const keep = offered.find(item => item.model === selected.data.model);
+        const preferred = providerDefault(provider);
+        if (!offered.length) pendingProviderDefaults.current.set(selected.id, { provider, model: selected.data.model, effort: selected.data.effort ?? null }); else pendingProviderDefaults.current.delete(selected.id);
+        edit({ provider, model: keep?.model ?? preferred?.model ?? null, effort: keep?.efforts.includes(selected.data.effort ?? "") ? selected.data.effort : null });
       }}>{choices.map(choice => <option key={choice.id} value={choice.provider ?? ""}>{choice.label}</option>)}</OptionSelect></label>
-      <label>Model<OptionSelect aria-label="Model" title={modelLabel(selected.data)} value={choiceKey(selected.data)} onChange={event => edit(modelPatch(event.target.value))}>
-        {modelOptions}
+      <label>Model<OptionSelect aria-label="Model" title={modelLabel(selected.data)} value={choiceKey(selected.data)} onChange={event => {
+        if (event.target.value) { pendingProviderDefaults.current.delete(selected.id); edit(modelPatch(event.target.value)); return; }
+        const provider = canonicalProvider(selected.data.provider), fallback = provider ? providerDefault(provider) : undefined;
+        if (provider && !fallback) pendingProviderDefaults.current.set(selected.id, { provider, model: null, effort: null }); else pendingProviderDefaults.current.delete(selected.id);
+        edit({ provider, model: fallback?.model ?? null, effort: null });
+      }}>
+        {modelOptions(canonicalProvider(selected.data.provider))}
         {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
       {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
         <option value="">Model default{selectedModel.defaultEffort ? ` (${selectedModel.defaultEffort})` : ""}</option>{selectedModel.efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</OptionSelect></label>}
@@ -1200,7 +1225,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     </aside> : chosen.length > 1 ? <aside className="canvas-side" aria-label="Selected agents">
       <p className="hud-menu-title">{chosen.length} agents selected</p>
       <p className="canvas-help">{chosen.map(node => node.data.title || "Untitled").join(", ")}</p>
-      <label>Model<OptionSelect aria-label="Model" value={shared(choiceKey)} onChange={event => edit(modelPatch(event.target.value))}>{mixed}{modelOptions}</OptionSelect></label>
+      <label>Model<OptionSelect aria-label="Model" value={shared(choiceKey)} onChange={event => edit(modelPatch(event.target.value))}>{mixed}{modelOptions()}</OptionSelect></label>
       <FolderPicker cwd={cwd} {...project} value={commonFolders} onChange={setCommonFolders} />
       <div className="canvas-inspector-actions">
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove(chosen.map(node => node.id))}><Trash2 size={14} />Delete {chosen.length} agents <kbd>Delete</kbd></Button>
@@ -1211,7 +1236,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
       <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
       <Button size="sm" onClick={() => void letElpis(mother.brief)} disabled={!mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
-      <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions}</OptionSelect></label>
+      <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions()}</OptionSelect></label>
       <div className="canvas-mother-counts">
         <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={Math.floor(allowed.graph / TASKS_PER_AGENT)} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
           why={typed => typed > allowed.graph / TASKS_PER_AGENT ? `Elpis runs at most ${allowed.graph} tasks in a graph: ${Math.floor(allowed.graph / TASKS_PER_AGENT)} agents, each with its check.` : typed < agents.length ? `The graph already has ${agents.length} agents; remove some first.` : "Type a whole number from 1."} />

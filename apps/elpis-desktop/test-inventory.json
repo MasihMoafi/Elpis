@@ -219,7 +219,8 @@
     "tests/composer-corner.test.cjs",
     "tests/hud-language.test.cjs",
     "tests/night-workflows.test.cjs",
-    "tests/love-spot-saving.test.cjs"
+    "tests/love-spot-saving.test.cjs",
+    "tests/workflows-feedback.test.cjs"
   ],
   "opt-in": [
     "tests/love-spot-performance.test.cjs",
