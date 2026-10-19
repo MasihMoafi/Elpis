@@ -17,6 +17,18 @@ const groups = [
 ] as const;
 const tokens = (count: number) => count >= 1000 ? `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(count);
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+/** An opening must reach either readable content or Retry even if its local bridge stops replying. */
+export async function readContext<T>(endpoint: string, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController(), cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([api<T>(endpoint, undefined, controller.signal), new Promise<T>((_, reject) => {
+      timer = setTimeout(() => { controller.abort(); reject(new Error("Reading context took too long. Try again.")); }, 10000);
+    })]);
+  } finally { clearTimeout(timer); signal?.removeEventListener("abort", cancel); }
+}
 function sourcesOf(value: unknown): Sources {
   const result = value as Partial<Sources> | null;
   if (!Array.isArray(result?.files) || !result.files.every(file => file && typeof file.name === "string" && typeof file.path === "string"
@@ -28,25 +40,28 @@ function sourcesOf(value: unknown): Sources {
 }
 
 /** Mounted only while this chat's Ledger is open; refresh also sees changes made in the terminal. */
-export function ContextFiles({ threadId, onOpenFile }: { threadId: string; onOpenFile: () => void }) {
+export function ContextFiles({ threadId, onOpenFile, onReady }: { threadId: string; onOpenFile: () => void; onReady?: () => void }) {
   const [sources, setSources] = useState<Sources | null>(null), [error, setError] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const request = useRef(0), writing = useRef(false), reading = useRef(false);
+  const readController = useRef<AbortController | null>(null);
   const endpoint = `/threads/${encodeURIComponent(threadId)}/context-files`;
   const refresh = useCallback(async () => {
     if (writing.current || reading.current) return;
     reading.current = true;
+    const controller = new AbortController(); readController.current = controller;
     const sequence = ++request.current;
     try {
-      const value = sourcesOf(await api<unknown>(endpoint));
+      const value = sourcesOf(await readContext<unknown>(endpoint, controller.signal));
       if (sequence === request.current) { setSources(value); setError(""); }
     } catch (cause) { if (sequence === request.current) setError(message(cause)); }
-    finally { reading.current = false; }
+    finally { if (readController.current === controller) { readController.current = null; reading.current = false; } }
   }, [endpoint]);
+  useEffect(() => { if (sources || error) onReady?.(); }, [sources, error, onReady]);
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 3000);
-    return () => { clearInterval(timer); request.current++; };
+    return () => { clearInterval(timer); request.current++; readController.current?.abort(); readController.current = null; reading.current = false; };
   }, [refresh]);
   const save = async (file: ContextFile, included: boolean) => {
     if (writing.current || !file.selectable) return;

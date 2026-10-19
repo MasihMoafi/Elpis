@@ -21,9 +21,9 @@ export type Approval = { id: string; ownerThreadId: string; thread?: Thread; met
 export const unreadable = (what: string) => new Error(`Elpis sent a reply the app could not read (${what}). Update Elpis and try again.`);
 /** Every bridge reply is a JSON object; anything else is refused before a view can read from it. */
 const isObject = (value: unknown): value is object => typeof value === "object" && value !== null && !Array.isArray(value);
-async function call<T>(path: string, body?: unknown): Promise<T> {
+async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
-  try { response = await fetch(`/api${path}`, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  try { response = await fetch(`/api${path}`, body === undefined ? (signal ? { signal } : undefined) : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal }); }
   catch { throw new Error("Could not reach Elpis. Check the connection and try again."); }
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -46,9 +46,9 @@ const session: Promise<void> = token
   : Promise.resolve();
 session.catch(() => {}); // The page reports a failed exchange (sessionReady); requests then show their own errors.
 export const sessionReady = () => session;
-export async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   await session.catch(() => {});
-  return call<T>(path, body);
+  return call<T>(path, body, signal);
 }
 const spawn = (thread: Thread) => {
   const source = thread.source;

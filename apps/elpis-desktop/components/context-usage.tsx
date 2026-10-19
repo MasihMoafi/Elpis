@@ -1,11 +1,11 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
-import { ContextFiles } from "@/components/context-files";
+import { ContextFiles, readContext } from "@/components/context-files";
 import { api } from "@/lib/api";
 import { usePreferences } from "@/lib/preferences";
 
@@ -74,8 +74,10 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
   const { showContextUsage } = usePreferences();
   const triggerId = useId();
   const ringRef = useRef<HTMLButtonElement>(null);
-  const [read, setRead] = useState<{ threadId: string; ledger: Ledger; compact: Compact | null } | null>(null);
+  const [read, setRead] = useState<{ threadId: string; ledger: Ledger; compact: Compact | null; unavailable?: boolean } | null>(null);
   const [opened, setOpened] = useState(false);
+  const [filesReady, setFilesReady] = useState(false), [revealed, setRevealed] = useState(false);
+  const markFilesReady = useCallback(() => setFilesReady(true), []);
   const [openedFor, setOpenedFor] = useState(threadId);
   if (openedFor !== threadId) { setOpenedFor(threadId); setOpened(false); }
   const [expanded, setExpanded] = useState(true);
@@ -88,19 +90,30 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
   useEffect(() => {
     if (!threadId || !watching) return;
     let disposed = false, timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
     const poll = async () => {
       if (document.visibilityState === "visible") try {
-        const value = await api<{ threadId: string; ledger?: Ledger; compact?: Compact }>(`/threads/${encodeURIComponent(threadId)}/context`);
+        const value = await readContext<{ threadId: string; ledger?: Ledger; compact?: Compact }>(`/threads/${encodeURIComponent(threadId)}/context`, controller.signal);
+        if (value.threadId !== threadId) throw new Error("Context reply belongs to another chat.");
         if (!disposed && value.threadId === threadId) { setRead({ threadId, ledger: value.ledger ?? UNMEASURED, compact: value.compact ?? null }); publishShared({ threadId, ledger: value.ledger ?? UNMEASURED }); }
-      } catch { if (!disposed) { setRead({ threadId, ledger: UNMEASURED, compact: null }); publishShared({ threadId, ledger: UNMEASURED }); } }
+      } catch { if (!disposed) { setRead({ threadId, ledger: UNMEASURED, compact: null, unavailable: true }); publishShared({ threadId, ledger: UNMEASURED }); } }
       if (!disposed) timer = setTimeout(poll, 5000);
     };
     void poll();
-    return () => { disposed = true; clearTimeout(timer); };
+    return () => { disposed = true; controller.abort(); clearTimeout(timer); };
   }, [threadId, watching]);
+  const current = threadId && read?.threadId === threadId ? read : null, ledger = current?.ledger ?? null;
+  const contentReady = !threadId || (filesReady && current !== null);
+  useEffect(() => {
+    setRevealed(false);
+    if (!opened) { setFilesReady(false); return; }
+    if (!contentReady) return;
+    // Let the hidden card's final content resize and its positioner settle before its first painted frame.
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => setRevealed(true)); });
+    return () => cancelAnimationFrame(frame);
+  }, [opened, contentReady]);
   // In view on a new chat too: its ring is empty until the first message.
   if (!showContextUsage && !opened) return null;
-  const current = threadId && read?.threadId === threadId ? read : null, ledger = current?.ledger ?? null;
   const { used, capacity, pct, tooltip } = describe(ledger);
   const name = used === null ? "Context window: not measured yet" : capacity ? `Context window: ${percent(used, capacity)}% used` : `Context window: ${tokens(used)} used`;
   const onOpenChange = (next: boolean, details: { reason: string; cancel: () => void; event?: Event }) => {
@@ -120,12 +133,12 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
   };
   return <Popover open={opened} onOpenChange={onOpenChange} triggerId={triggerId}>
     <Tooltip content={tooltip} suppressed={opened}>
-      <PopoverTrigger ref={ringRef} id={triggerId} className="context-ring" aria-label={name}><ContextRingIcon pct={pct} /></PopoverTrigger>
+      <PopoverTrigger ref={ringRef} id={triggerId} className="context-ring" aria-label={opened && !revealed ? "Loading context window…" : name} aria-busy={opened && !revealed} title={opened && !revealed ? "Loading context window…" : undefined}>{opened && !revealed ? <span aria-hidden="true">…</span> : <ContextRingIcon pct={pct} />}</PopoverTrigger>
     </Tooltip>
-    <PopoverContent side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger">
-      <LedgerView ledger={ledger} loading={Boolean(threadId) && !ledger} expanded={expanded} onToggle={() => setExpanded(value => !value)}
+    <PopoverContent side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger" style={{ visibility: revealed ? undefined : "hidden" }}>
+      <LedgerView ledger={ledger} loading={Boolean(threadId) && !ledger} unavailable={current?.unavailable} expanded={expanded} onToggle={() => setExpanded(value => !value)}
         compact={ledger && used !== null && capacity && pct >= COMPACT_FROM_PERCENT && current?.compact ? { ...current.compact, run: compact } : null} />
-      {opened && threadId && <ContextFiles key={threadId} threadId={threadId} onOpenFile={() => setOpened(false)} />}
+      {opened && threadId && <ContextFiles key={threadId} threadId={threadId} onOpenFile={() => setOpened(false)} onReady={markFilesReady} />}
     </PopoverContent>
   </Popover>;
 }
@@ -157,7 +170,7 @@ export function LedgerRows({ ledger }: { ledger: Ledger | null }) {
 /** Claude's context section (its popover's "Context window" block) over the TUI ledger's CONTEXT WINDOW section
  * (codex-rs/tui/src/chatwidget/context_ledger.rs): the measured total, the bar on a full-window scale, and the categories
  * below it. The title and the switches the TUI's ledger also has are in the chat below this popover, so they are not repeated. */
-function LedgerView({ ledger, loading, expanded, onToggle, compact }: { ledger: Ledger | null; loading: boolean; expanded: boolean; onToggle: () => void; compact: (Compact & { run: () => void }) | null }) {
+function LedgerView({ ledger, loading, unavailable, expanded, onToggle, compact }: { ledger: Ledger | null; loading: boolean; unavailable?: boolean; expanded: boolean; onToggle: () => void; compact: (Compact & { run: () => void }) | null }) {
   const { used, window: capacity, categories, basis } = ledger ?? UNMEASURED;
   const { summary } = describe(ledger);
   const note = used === null ? null
@@ -171,7 +184,7 @@ function LedgerView({ ledger, loading, expanded, onToggle, compact }: { ledger: 
       {categories.length > 0 && <ChevronRight size={12} aria-hidden="true" className="context-ledger-caret" data-expanded={expanded || undefined} />}
     </button>
     {measured && <LedgerBar ledger={ledger} />}
-    {!measured && !loading && <p className="context-ledger-note">Send a message to see context usage.</p>}
+    {!measured && !loading && <p className="context-ledger-note" role={unavailable ? "status" : undefined}>{unavailable ? "Context usage unavailable. Retrying…" : "Send a message to see context usage."}</p>}
     {note && <p className="context-ledger-note">{note}</p>}
     {categories.length > 0 && expanded && <LedgerRows ledger={ledger} />}
     {compact && <div className="context-ledger-compact">
