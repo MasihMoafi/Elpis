@@ -343,6 +343,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       const made = makeAgent(character, note.x, note.y, task);
       // Change the scene after this notification returns; editor updates are synchronous.
       queueMicrotask(() => {
+        // The note's text now lives in the agent's task; its draft must not come back as a copy (and a second agent).
+        if (currentPage.current) journal.current!.acknowledge([note], currentPage.current);
         editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted().map(e => e.id === note.id ? newElementWith(e, { isDeleted: true }) : e), ...made.elements], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
         editor.addFiles([made.file]);
       });
