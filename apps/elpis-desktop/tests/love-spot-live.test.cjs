@@ -90,9 +90,8 @@ test('Love Spot real bridge: screenshots wait for a click, inbox and PNG export 
 });
 
 test('Love Spot private tray is shared across windows; dismiss persists and mouse drag places only the chosen image', async () => {
-  const f = await loveSpotFixture();
+  const f = await loveSpotFixture({ prepareScreenshots: screenshots => fs.writeFile(path.join(screenshots, 'baseline.png'), PNG) });
   try {
-    await fs.writeFile(path.join(f.screenshots, 'baseline.png'), PNG);
     await f.open(f.page); await f.draw(f.page);
     await f.waitFor(s => s.elements.length === 1, 'drawing was not saved');
     const other = await f.newPage(); await f.open(other);

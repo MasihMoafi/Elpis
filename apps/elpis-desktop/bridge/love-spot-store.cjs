@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const net = require('node:net');
 const { createHash, randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -37,12 +38,69 @@ function merge(current, incoming) {
   return { ...current, type: 'excalidraw', version: 2, source: 'Love Spot', elements: [...elements.values()],
     appState: { ...current.appState, ...incoming.appState }, files: Object.fromEntries(Object.entries(files).filter(([id]) => referenced.has(id))) };
 }
-function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
+function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
   const sceneFile = path.join(directory, 'scene.excalidraw'), lock = path.join(directory, '.scene-lock'), inbox = path.join(directory, 'inbox'), pages = path.join(directory, 'pages');
-  let timer, running = false, seen, previous, sceneStamp, lastError;
+  const choicesFile = path.join(directory, '.screenshot-choices.json');
+  // Same-user local IPC keeps private trays available to a later dock process
+  // without journaling screenshot names or pixels to the board directory.
+  const peerDirectory = path.join(os.tmpdir(), `elpis-shots-${process.getuid?.() ?? 'user'}-${hash(path.resolve(directory)).slice(0, 16)}`);
+  const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set();
+  let peerServer;
+  let timer, starting, closed = false, running = false, seen, previous, sceneStamp, lastError;
   const listeners = new Set();
-  // Pending screenshots belong only to the open bridge, never to the shared drawing store.
+  // Pending pixels stay in memory. Only explicit choices persist as opaque IDs,
+  // so separate app processes cannot offer an already placed/dismissed screenshot.
   const pending = new Map();
+  function track(socket) { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); return socket; }
+  async function shareScreenshots() {
+    peerServer = net.createServer(socket => {
+      track(socket).setTimeout(1000, () => socket.destroy()); socket.on('error', () => {});
+      let input = '';
+      socket.on('data', chunk => {
+        input += chunk;
+        if (input.length > 1024 * 1024) return socket.destroy();
+        if (!input.includes('\n')) return;
+        try {
+          const ids = JSON.parse(input.trim());
+          if (!Array.isArray(ids)) return socket.destroy();
+          const known = new Set(ids);
+          socket.end(JSON.stringify([...pending.values()].filter(shot => !known.has(shot.id))
+            .map(({ id, name, bytes, modified }) => ({ id, name, data: bytes.toString('base64'), modified }))));
+        } catch { socket.destroy(); }
+      });
+    });
+    await fs.mkdir(peerDirectory, { recursive: true, mode: 0o700 });
+    await new Promise((resolve, reject) => { peerServer.once('error', reject); peerServer.listen(peerSocket, resolve); });
+    peerServer.unref();
+  }
+  async function receiveScreenshots() {
+    const peers = (await names(peerDirectory)).filter(name => name.endsWith('.sock') && name !== path.basename(peerSocket));
+    const replies = await Promise.all(peers.map(name => new Promise(resolve => {
+      const socket = track(net.createConnection(path.join(peerDirectory, name)));
+      let data = '', settled = false;
+      const finish = shots => { if (!settled) { settled = true; resolve(shots); socket.destroy(); } };
+      socket.setTimeout(500, () => finish([])); socket.on('error', () => finish([]));
+      socket.once('connect', () => socket.write(`${JSON.stringify([...pending.keys()])}\n`));
+      socket.on('data', chunk => { data += chunk; if (data.length > 64 * 1024 * 1024) finish([]); });
+      socket.on('end', () => { try { const shots = JSON.parse(data); finish(Array.isArray(shots) ? shots : []); } catch { finish([]); } });
+      socket.on('close', () => finish([]));
+    })));
+    let added = false;
+    for (const shots of replies) for (const shot of shots) {
+      if (!record(shot) || typeof shot.name !== 'string' || typeof shot.data !== 'string' || !Number.isFinite(shot.modified)) continue;
+      const bytes = Buffer.from(shot.data, 'base64');
+      if (shot.id !== screenshotId(shot.name, bytes) || pending.has(shot.id)) continue;
+      pending.set(shot.id, { id: shot.id, name: shot.name, bytes, modified: shot.modified }); added = true;
+    }
+    return added;
+  }
+  async function screenshotChoices() {
+    try {
+      const ids = JSON.parse(await fs.readFile(choicesFile, 'utf8'));
+      if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string' || !/^shot-[a-f0-9]{32}$/.test(id))) throw fail('Screenshot choices could not be read. Please retry.', 409);
+      return new Set(ids);
+    } catch (e) { if (e.code === 'ENOENT') return new Set(); throw e; }
+  }
   const screenshotsList = () => [...pending.values()].sort((a, b) => b.modified - a.modified || b.name.localeCompare(a.name))
     .map(({ id, name, bytes }) => ({ id, name, dataURL: `data:image/png;base64,${bytes.toString('base64')}` }));
   function publishScreenshots() {
@@ -254,9 +312,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
     if (!width || !height) return false;
     const id = screenshotId(name, bytes), scale = Math.min(1, 1200 / width);
-    await locked(async () => {
+    {
       const { scene } = await read();
-      if (scene.elements.some(e => e.id === id)) return;
+      if (scene.elements.some(e => e.id === id)) return true;
       const live = scene.elements.filter(e => !e.isDeleted), now = Date.now();
       const element = { id, type: 'image', fileId: id, version: 1, versionNonce: 0, isDeleted: false,
         x: live.length ? Math.min(...live.map(e => e.x)) : 0, y: live.length ? Math.max(...live.map(e => e.y + e.height)) + 60 : 0,
@@ -266,7 +324,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const file = { id, dataURL: dataURL ?? `data:image/png;base64,${bytes.toString('base64')}`, mimeType: 'image/png', created: now, lastRetrieved: now };
       validate({ elements: [], files: { [id]: file } });
       await persist(merge(scene, { elements: [element], files: { [id]: file } }));
-    });
+    }
     return true;
   }
   async function chooseScreenshot(choice) {
@@ -275,13 +333,19 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     if (typeof id !== 'string' || !['place', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
     const shot = pending.get(id);
     if (!shot) throw fail('This screenshot has already left the tray.', 404);
-    if (action === 'place') await importScreenshot(shot.name, shot.bytes, choice.dataURL);
+    await locked(async () => {
+      const choices = await screenshotChoices();
+      if (choices.has(id)) { pending.delete(id); publishScreenshots(); throw fail('This screenshot has already left the tray.', 404); }
+      if (action === 'place' && !await importScreenshot(shot.name, shot.bytes, choice.dataURL)) throw fail('Invalid screenshot');
+      choices.add(id);
+      await atomic(choicesFile, JSON.stringify([...choices]));
+    });
     pending.delete(id);
     publishScreenshots();
     return action === 'place' ? read() : { dismissed: true };
   }
   async function tick() {
-    if (running) return;
+    if (running || closed) return;
     running = true;
     try {
       await fs.mkdir(inbox, { recursive: true });
@@ -292,14 +356,18 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         // Commit before consuming. Two readers may both merge the same inbox file; the merge is idempotent.
         await exec('gio', ['trash', file]).catch(async e => { try { await fs.access(file); throw e; } catch (missing) { if (missing.code !== 'ENOENT') throw missing; } });
       }
-      let added = false;
+      let added = await receiveScreenshots();
+      const choices = await screenshotChoices();
+      for (const id of pending.keys()) if (choices.has(id)) { pending.delete(id); added = true; }
+      if (!seen) seen = new Set(await names(screenshots));
       for (const name of (await names(screenshots)).filter(n => /\.png$/i.test(n) && !seen.has(n))) {
         let bytes; try { bytes = await fs.readFile(path.join(screenshots, name)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
         // Wait for a complete PNG (IEND), so a notification while GNOME is writing retries.
         if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG) || bytes.subarray(-8, -4).toString() !== 'IEND' || !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20)) continue;
         let stat; try { stat = await fs.stat(path.join(screenshots, name)); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
         const id = screenshotId(name, bytes);
-        pending.set(id, { id, name, bytes, modified: stat.mtimeMs }); seen.add(name); added = true;
+        if (!choices.has(id)) { pending.set(id, { id, name, bytes, modified: stat.mtimeMs }); added = true; }
+        seen.add(name);
       }
       if (added) publishScreenshots();
       let stamp;
@@ -314,14 +382,33 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (lastError !== e.message) { lastError = e.message; for (const listen of listeners) listen({ type: 'error', message: e.loveSpot ? e.message : 'Love Spot could not sync the drawing.' }); }
     } finally { running = false; }
   }
+  async function start() {
+    if (!starting) starting = (async () => {
+      // Sample once at server startup, never again when a view subscribes.
+      // A temporarily unavailable folder retries its baseline in tick().
+      try { seen = new Set(await names(screenshots)); } catch {}
+      await shareScreenshots();
+      if (!closed) { timer = setInterval(() => void tick(), 150); timer.unref(); }
+    })();
+    return starting;
+  }
   async function watch(listen) {
-    if (!listeners.size) { seen = new Set(await names(screenshots)); previous = undefined; sceneStamp = undefined; }
+    await start();
     listeners.add(listen);
-    if (!timer) { timer = setInterval(() => void tick(), 150); timer.unref(); }
     try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: e.message }); }
     listen({ type: 'screenshots', screenshots: screenshotsList() });
-    return () => { listeners.delete(listen); if (!listeners.size) { clearInterval(timer); timer = undefined; } };
+    return () => { listeners.delete(listen); };
   }
-  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, watch, screenshotsList, chooseScreenshot, close() { clearInterval(timer); timer = undefined; listeners.clear(); pending.clear(); } };
+  async function close() {
+    closed = true; clearInterval(timer); timer = undefined; listeners.clear();
+    if (starting) await starting.catch(() => {});
+    while (running) await pause(10);
+    for (const socket of sockets) socket.destroy();
+    if (peerServer?.listening) await new Promise(resolve => peerServer.close(resolve));
+    await fs.unlink(peerSocket).catch(e => { if (e.code !== 'ENOENT') throw e; });
+    await fs.rmdir(peerDirectory).catch(e => { if (!['ENOENT', 'ENOTEMPTY'].includes(e.code)) throw e; });
+    pending.clear();
+  }
+  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, start, watch, screenshotsList, chooseScreenshot, close };
 }
 module.exports = { createLoveSpot, newer, merge };

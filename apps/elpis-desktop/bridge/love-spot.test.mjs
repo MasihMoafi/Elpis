@@ -15,11 +15,12 @@ const FAKE_ACP_AGENT = fileURLToPath(new URL('../../../tools/elpis-claude/test/f
 const exec = promisify(execFile);
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
 const element = (id, version = 1, extra = {}) => ({ id, type: 'rectangle', version, versionNonce: 100, x: 0, y: 0, width: 100, height: 80, ...extra });
-async function fixture(t, { loveAgents } = {}) {
+async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'love-spot-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
+  if (prepareScreenshots) await prepareScreenshots(screenshots);
   const client = new EventEmitter(); Object.assign(client, { connected: true, pendingApprovals: [], close() {} });
   const app = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), ...(loveAgents ? { loveAgents } : {}) });
   t.after(async () => { await app.close(); await exec('gio', ['trash', root]); });
@@ -184,8 +185,7 @@ test('Love Spot inbox merges durably and retains partial JSON', async t => {
 });
 
 async function screenshotFixture(t) {
-  const f = await fixture(t);
-  await fs.writeFile(path.join(f.screenshots, 'old.png'), PNG);
+  const f = await fixture(t, { prepareScreenshots: screenshots => fs.writeFile(path.join(screenshots, 'old.png'), PNG) });
   const saved = await f.save({ elements: [element('existing-image', 1, { type: 'image' })], files: {} });
   await f.request('/picture', { revision: saved.revision, png: PNG.toString('base64') });
   const events = [], reader = (await f.request('/events')).body.getReader();
@@ -212,6 +212,68 @@ async function screenshotFixture(t) {
   };
   return { ...f, saved, events, tray, wait };
 }
+
+test('screenshots are captured before any event subscriber and between visits without sharing them', async t => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.screenshots, 'before-visit.png'), PNG);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const tray = async () => (await (await f.request('/screenshots')).json()).screenshots;
+  assert.deepEqual((await tray()).map(s => s.name), ['before-visit.png']);
+  assert.equal((await f.load()).scene.elements.length, 0);
+  const reader = (await f.request('/events')).body.getReader(); await reader.read(); await reader.cancel();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await fs.writeFile(path.join(f.screenshots, 'between-visits.png'), PNG);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.deepEqual((await tray()).map(s => s.name).sort(), ['before-visit.png', 'between-visits.png']);
+  assert.equal((await f.load()).scene.elements.length, 0);
+});
+
+test('independent screenshot watchers consume one choice across page switches and keep dismissals private', async t => {
+  const f = await fixture(t);
+  const a = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  const b = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  t.after(() => { a.close(); b.close(); });
+  await a.watch(() => {}); await b.watch(() => {});
+  const wait = async check => {
+    for (let i = 0; i < 60; i++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 30)); }
+    assert.fail('independent screenshot watchers did not settle');
+  };
+  await fs.writeFile(path.join(f.screenshots, 'placed-once.png'), PNG);
+  await wait(() => a.screenshotsList().length === 1 && b.screenshotsList().length === 1);
+  const shot = a.screenshotsList()[0];
+  await assert.rejects(a.chooseScreenshot({ id: shot.id, action: 'place', dataURL: 'data:text/plain;base64,cHJpdmF0ZQ==' }), /Invalid drawing image/);
+  assert.equal(a.screenshotsList().length, 1, 'a refused import must retain the private screenshot for retry');
+  assert.equal((await a.read()).scene.elements.length, 0);
+  await a.chooseScreenshot({ id: shot.id, action: 'place' });
+  await wait(() => b.screenshotsList().length === 0);
+  await a.changePage({ action: 'new', name: 'Next page' });
+  await assert.rejects(b.chooseScreenshot({ id: shot.id, action: 'place' }), /already left/);
+  assert.equal((await b.read()).scene.elements.length, 0, 'a stale tray cannot place the same screenshot on another page');
+  await fs.writeFile(path.join(f.screenshots, 'dismiss-everywhere.png'), PNG);
+  await wait(() => a.screenshotsList().length === 1 && b.screenshotsList().length === 1);
+  await b.chooseScreenshot({ id: b.screenshotsList()[0].id, action: 'dismiss' });
+  await wait(() => a.screenshotsList().length === 0);
+  assert.equal((await a.read()).scene.elements.length, 0);
+  assert.ok(JSON.parse(await fs.readFile(path.join(f.directory, '.screenshot-choices.json'), 'utf8')).every(id => /^shot-[a-f0-9]{32}$/.test(id)), 'choice metadata contains no screenshot names or pixels');
+});
+
+test('a later Love Spot process receives private pending screenshots from the already running app', async t => {
+  const f = await fixture(t), a = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  t.after(() => a.close());
+  await a.watch(() => {});
+  await fs.writeFile(path.join(f.screenshots, 'before-second-app.png'), PNG);
+  for (let i = 0; i < 40 && !a.screenshotsList().length; i++) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(a.screenshotsList().length, 1);
+  const script = `const {createLoveSpot}=require(process.argv[1]); (async()=>{
+    const b=createLoveSpot({directory:process.argv[2],screenshots:process.argv[3]});
+    try { await b.start(); for(let i=0;i<40&&!b.screenshotsList().length;i++)await new Promise(r=>setTimeout(r,30));
+      console.log(JSON.stringify({shots:b.screenshotsList(),scene:(await b.read()).scene}));
+    } finally { await b.close(); }
+  })().catch(e=>{console.error(e);process.exitCode=1});`;
+  const result = JSON.parse((await exec(process.execPath, ['-e', script, new URL('./love-spot-store.cjs', import.meta.url).pathname, f.directory, f.screenshots])).stdout);
+  assert.deepEqual(result.shots, a.screenshotsList(), 'a new process must not classify the other app\'s pending screenshot as old');
+  assert.equal(result.scene.elements.length, 0);
+});
 
 test('new screenshots remain private in memory, newest first, without changing scene, inbox or picture', async t => {
   const f = await screenshotFixture(t), before = await fs.readFile(path.join(f.directory, 'scene.excalidraw'));
@@ -278,13 +340,15 @@ test('Love Spot independent processes serialize their merges on the same drawing
 });
 
 test('Love Spot watcher does not reread an unchanged drawing and delivers external replacements', async t => {
-  const f = await fixture(t);
-  await f.save({ elements: [element('large', 1, { text: 'x'.repeat(2_000_000) })], files: {} });
-  const file = path.join(f.directory, 'scene.excalidraw'), original = fs.readFile.bind(fs);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'love-watcher-'));
+  const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
+  await fs.mkdir(screenshots);
+  const store = createLoveSpot({ directory, screenshots }), events = [];
+  t.after(async () => { await store.close(); await fs.rm(root, { recursive: true, force: true }); });
+  await store.save({ elements: [element('large', 1, { text: 'x'.repeat(2_000_000) })], files: {} });
+  const file = path.join(directory, 'scene.excalidraw'), original = fs.readFile.bind(fs);
   let reads = 0;
   t.mock.method(fs, 'readFile', (...args) => { if (args[0] === file) reads++; return original(...args); });
-  const store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots }), events = [];
-  t.after(() => store.close());
   await store.watch(event => events.push(event));
   await new Promise(resolve => setTimeout(resolve, 350));
   const settled = reads;

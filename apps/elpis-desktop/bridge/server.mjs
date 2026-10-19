@@ -95,6 +95,7 @@ export async function startDesktopServer(options = {}) {
   const session = randomBytes(32).toString('hex');
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
+  await loveSpot.start();
   const loveTalk = createLoveSpotTalk({ client, store: loveSpot });
   // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mjs), not through this Elpis connection.
   const loveAgents = createLoveAgents(loveSpot, { ...(options.elpisHome ? { env: { ...process.env, ELPIS_HOME: options.elpisHome } } : {}), ...options.loveAgents });
@@ -342,7 +343,7 @@ export async function startDesktopServer(options = {}) {
   server.requestTimeout = 35000; server.headersTimeout = 10000;
   try {
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', resolve); });
-  } catch (error) { client.off('event', event); client.close(); throw error; }
+  } catch (error) { await loveSpot.close(); client.off('event', event); client.close(); throw error; }
   origin = `http://127.0.0.1:${server.address().port}`;
   const heartbeat = setInterval(() => { for (const response of listeners) response.write(': heartbeat\n\n'); }, 15000);
   heartbeat.unref();
@@ -354,7 +355,7 @@ export async function startDesktopServer(options = {}) {
       await experimentLab.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();
-      loveTalk.close(); await loveTalk.idle(); await loveAgents.close(); loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
+      loveTalk.close(); await loveTalk.idle(); await loveAgents.close(); await loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
       await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);

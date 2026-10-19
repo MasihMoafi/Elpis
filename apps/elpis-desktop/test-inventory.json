@@ -101,6 +101,7 @@
     "desktop/love-spot.test.cjs"
   ],
   "ui": [
+    "tests/love-spot-screenshots.test.cjs",
     "tests/view-boundaries.test.cjs",
     "tests/night-themes.test.cjs",
     "tests/agents-guide.test.cjs",

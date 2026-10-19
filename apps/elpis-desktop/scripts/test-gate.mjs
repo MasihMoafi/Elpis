@@ -66,7 +66,8 @@ async function main(args) {
     let code;
     try {
       code = await new Promise((resolve, reject) => {
-        const child = spawn(command, parameters, { cwd: root, env: { ...process.env, ELPIS_HOME: home }, stdio: ['ignore', output.fd, output.fd] });
+        const child = spawn(command, parameters, { cwd: root, env: { ...process.env, ELPIS_HOME: home,
+          EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd] });
         child.on('error', reject); child.on('exit', (status, signal) => resolve(signal ? 1 : status));
       });
     } finally { await output.close(); }

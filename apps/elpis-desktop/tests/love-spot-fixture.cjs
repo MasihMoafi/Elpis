@@ -12,11 +12,12 @@ const exec = promisify(execFile);
 // Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
 const FAKE_ACP_AGENT = path.resolve(__dirname, '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
-async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv } = {}) {
+async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'love-spot-ui-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
+  if (prepareScreenshots) await prepareScreenshots(screenshots);
   if (prepareDirectory) await prepareDirectory(directory);
   const { startDesktopServer } = await import('../bridge/server.mjs');
   const emitter = new EventEmitter();
@@ -58,13 +59,13 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: process.env.ELPIS_UI_HEADFUL !== '1' });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, colorScheme });
   const errors = [], requests = [], responses = [];
-  const newPage = async () => {
+  const newPage = async (url = server.url) => {
     const page = await context.newPage(); page.setDefaultTimeout(10000);
     await guardDesktopStore(page); await page.addInitScript(fakeDesktop);
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => requests.push(r.url()));
     page.on('response', r => responses.push({ url: r.url(), status: r.status() }));
-    await page.goto(server.url); await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await page.goto(url); await page.locator('.startup-splash').waitFor({ state: 'detached' });
     await page.locator('.nav-list').getByRole('button', { name: 'Love Spot', exact: true }).waitFor();
     return page;
   };
