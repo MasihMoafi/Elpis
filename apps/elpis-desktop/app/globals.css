@@ -717,9 +717,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
 .row-hover-actions button { color:var(--muted-foreground); }
 .row-hover-actions button:hover { color:var(--primary); }
-/* A chat's status dot, before its title: filled while it runs, hollow when idle, red on error. */
+/* A chat's status dot, before its title: a still amber ring while it runs, filled amber when it finished unseen, red on error. */
 .thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 8px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
-.thread-dot[data-state="working"] { border-color:var(--primary); background:var(--primary); animation:pulse 1.6s ease-in-out infinite; }
+.thread-dot[data-state="working"] { border-color:var(--primary); background:transparent; }
 .thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }
 .thread-dot[data-state="unread"] { border-color:var(--primary); background:var(--primary); padding:0; cursor:pointer; }
 .thread-row:has(.thread-dot[data-state="unread"]) .thread-title { font-weight:600; }

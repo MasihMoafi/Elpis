@@ -91,7 +91,7 @@ test('every project header has a "+" that starts a new chat in that project', as
   });
 });
 
-test('every chat row has a status dot: filled while it runs, hollow when idle, red on error', async () => {
+test('every chat row has a status dot: a still amber ring while it runs, hollow when idle, red on error', async () => {
   await fixture(async ({ page, aside, emit, shoot }) => {
     const dot = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first().locator('.thread-dot');
     for (const id of ['t-run', 't-idle', 't-bad', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} has one dot`);
@@ -99,7 +99,9 @@ test('every chat row has a status dot: filled while it runs, hollow when idle, r
     assert.deepEqual(await Promise.all(['t-run', 't-idle', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Idle', 'Error']);
     const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
     const [run, idle, bad] = [await fill('t-run'), await fill('t-idle'), await fill('t-bad')];
-    assert.ok(!same(run, BASE), `a running chat's dot is filled (${run})`);
+    assert.ok(same(run, BASE), `a running chat's dot is a ring, not a filled notification (${run})`);
+    assert.ok(!same(await ring('t-run'), await ring('t-idle')), 'a running ring is coloured, unlike an idle one');
+    assert.equal(await dot('t-run').evaluate(element => getComputedStyle(element).animationName), 'none', 'a running dot does not flash');
     assert.ok(same(idle, BASE), `an idle chat's dot is hollow (${idle})`);
     assert.ok(!same(await ring('t-idle'), BASE), 'a hollow dot still has its ring');
     assert.ok(bad[0] > bad[1] + 60 && bad[0] > bad[2] + 60, `an error dot is red (${bad})`);
@@ -111,9 +113,10 @@ test('every chat row has a status dot: filled while it runs, hollow when idle, r
     // A completed reply stays marked unread until that chat is opened.
     emit('turn/started', { threadId: 't-idle', turn: { id: 'turn-9' } });
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'working'));
-    assert.ok(!same(await fill('t-idle'), BASE));
+    assert.ok(same(await fill('t-idle'), BASE), 'still a ring while it works');
     emit('turn/completed', { threadId: 't-idle', turn: { id: 'turn-9', status: 'completed' } });
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'unread'));
+    assert.ok(!same(await fill('t-idle'), BASE), 'filled once it finished unseen, like a notification');
     await aside.locator('.thread-row[data-thread-id="t-idle"] .thread-link').first().click();
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'idle'));
     assert.deepEqual(await oranges(page), [], 'light theme, sidebar dots: no orange');
