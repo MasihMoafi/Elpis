@@ -231,6 +231,10 @@ test('a path in a reply is a button that opens the Files tab on the file at its 
 
     await f.ref('src/lib/parser.ts:2-3').click();
     assert.equal(await f.side.getByRole('tab', { name: 'Files', exact: true }).getAttribute('aria-selected'), 'true');
+    // A short label still puts its × at the tab's right end, as on chat tabs (Masih's screenshot 19:35).
+    const filesTab = await f.side.locator('.task-tab', { has: f.page.getByRole('tab', { name: 'Files', exact: true }) }).boundingBox();
+    const filesClose = await f.side.getByRole('button', { name: 'Close Files tab', exact: true }).boundingBox();
+    assert.ok(filesTab.x + filesTab.width - (filesClose.x + filesClose.width) <= 6, 'the close button sits at the right end');
     const parser = f.tabs.getByRole('tab', { name: 'parser.ts', exact: true });
     assert.equal(await parser.getAttribute('aria-selected'), 'true');
     await f.editor('src/lib/parser.ts').waitFor();

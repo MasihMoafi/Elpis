@@ -789,7 +789,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .tab-strip { display:flex; align-items:center; gap:2px; min-width:0; flex:1 1 auto; }
 .task-tabs { display:flex; align-items:center; gap:2px; min-width:0; overflow-x:auto; scrollbar-width:none; padding:6px 0; }
 .task-tab { display:flex; align-items:center; gap:2px; min-width:128px; max-width:240px; flex:0 1 auto; border:1px solid transparent; color:var(--muted-foreground); padding:0 2px 0 0; position:relative; }
-.task-tab > button[role="tab"] { display:flex; align-items:center; gap:7px; min-width:0; border:0; background:none; color:inherit; font:inherit; font-size:13px; padding:5px 6px 5px 9px; }
+.task-tab > button[role="tab"] { display:flex; flex:1 1 auto; align-items:center; gap:7px; min-width:0; border:0; background:none; color:inherit; font:inherit; font-size:13px; padding:5px 6px 5px 9px; }
 .task-tab > button[role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-tab > button[role="tab"] svg { flex-shrink:0; }
 .task-tab:hover, .task-tab[data-popup-open] { background:var(--hover); color:var(--foreground); }
