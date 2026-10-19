@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Activity, Archive, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -716,7 +716,8 @@ export default function Home() {
   useEffect(() => {
     for (const id of relatedIds) api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`).then(result => setRelated(prev => ({ ...prev, [id]: result.thread }))).catch(() => {});
   }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
-  const shownEntries = withSubmittedMessages(entries, submissions, selected?.id ?? newDraftKey.current);
+  const shownScope = selected?.id ?? newDraftKey.current;
+  const shownEntries = useMemo(() => withSubmittedMessages(entries, submissions, shownScope), [entries, submissions, shownScope]);
   useEffect(() => { setSubmissions(previous => rememberSubmittedMessages(entries, previous, selected?.id ?? newDraftKey.current)); }, [entries, selected?.id, submissions]);
   useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, submissions, selected?.id]);
 
@@ -780,6 +781,7 @@ export default function Home() {
   const turnEntries = new Map<string, Entry[]>();
   for (const entry of entries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
   const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, replacementEligibility(group, id, { historyComplete: !loading && itemCursor === null })]));
+  const replacementOptionsKey = JSON.stringify([...replacementOptions]);
   const failedTurn = selected ? failedTurns[selected.id] : undefined;
   const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
@@ -1166,6 +1168,17 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
+  // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
+  // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
+  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError });
+  live.current = { openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError };
+  const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={id => live.current.openById(id)}
+            editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
+            onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
+            editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
+            time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
+            onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId) : undefined} onRewind={!e.clientPending && replaceable ? () => live.current.setRewindTurn(e.turnId) : undefined}
+            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
   function editQueued(item: FollowUp) {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
@@ -1646,13 +1659,7 @@ export default function Home() {
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
-          <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
-            editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}
-            onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
-            editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
-            time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
-            onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={!e.clientPending && replaceable ? () => setRewindTurn(e.turnId) : undefined}
-            onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>
+          {conversation}
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
