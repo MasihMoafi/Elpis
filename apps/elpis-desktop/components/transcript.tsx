@@ -16,12 +16,12 @@ import { turnEdits } from "@/lib/diff";
 type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined };
 export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
   const turns = turnsOf(entries);
-  return <>{turns.map(turn => <Turn key={turn.id} turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...draw} />)}
+  return <>{turns.map(turn => <Turn key={turn.clientKey ?? turn.id} turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...draw} />)}
     {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <div className="turn-working" role="status"><LiveStep key={activeTurnId} label="Working" /></div>}
   </>;
 }
 
-type TurnEntries = { id: string; entries: Entry[] };
+type TurnEntries = { id: string; clientKey?: string; entries: Entry[] };
 /** Elpis's answer: its message, or the review that /review ends with. */
 const isReply = (item: Item) => item.type === "agentMessage" || item.type === "exitedReviewMode";
 
@@ -32,6 +32,7 @@ function turnsOf(entries: Entry[]): TurnEntries[] {
     let turn = byId.get(entry.turnId);
     if (!turn) { turn = { id: entry.turnId, entries: [] }; byId.set(entry.turnId, turn); turns.push(turn); }
     turn.entries.push(entry);
+    if (entry.clientTurnKey) turn.clientKey = entry.clientTurnKey;
   }
   return turns;
 }

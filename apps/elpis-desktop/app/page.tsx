@@ -20,7 +20,7 @@ import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, readGroup
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
-import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, useAppPreferences, type Preferences } from "@/lib/preferences";
+import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences, type Preferences } from "@/lib/preferences";
 import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
 import { queueFollowUp, sendQueuedFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
@@ -33,6 +33,7 @@ import { StartupSplash } from "@/components/startup-splash";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
+import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
@@ -42,7 +43,7 @@ import { SettingsView, type Tab as SettingsTab } from "@/components/settings-vie
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
-import { letterKey } from "@/components/action-menu";
+import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
@@ -114,6 +115,7 @@ export default function Home() {
   const restoredTabs = useRef(false);
   const updateTabs = useCallback((next: ChatTabs) => { tabsRef.current = next; setTabs(next); }, []);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [submissions, setSubmissions] = useState<SubmittedMessage[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -176,6 +178,7 @@ export default function Home() {
   }, [planAnswered]);
   /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
   const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
+  const [deleteRunHistory, setDeleteRunHistory] = useState(false);
   /** "Deleted …" with its Undo, after the sidebar deletes chats; Ctrl+Z does the same. `shownWhenDeleted` reopens the chat that was open. */
   const [deletedNotice, setDeletedNotice] = useState<string | null>(null);
   const shownWhenDeleted = useRef(new Set<string>());
@@ -708,11 +711,13 @@ export default function Home() {
     return () => { disposed = true; clearInterval(timer); };
   }, [observedIds, loadChildren]);
   // Name the parent and the agent a continued chat came from, even when they are not on the loaded page.
-  const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
+  const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(preferences.showAgentRuns && agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
   useEffect(() => {
     for (const id of relatedIds) api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`).then(result => setRelated(prev => ({ ...prev, [id]: result.thread }))).catch(() => {});
   }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, selected?.id]);
+  const shownEntries = withSubmittedMessages(entries, submissions, selected?.id ?? newDraftKey.current);
+  useEffect(() => { setSubmissions(previous => rememberSubmittedMessages(entries, previous, selected?.id ?? newDraftKey.current)); }, [entries, selected?.id, submissions]);
+  useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, submissions, selected?.id]);
 
   // A chat that was at its end stays there when its box changes size (full view turns the column into a card).
   useEffect(() => {
@@ -964,6 +969,14 @@ export default function Home() {
     const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
     pickedMentions.current = new Map();
     const originalId = selected?.id || newDraftKey.current, originalRequest = request.current;
+    const submissionKey = crypto.randomUUID();
+    const queued = activeTurn && !continues && (followUp ?? preferences.followUp) === "queue";
+    if (!queued) {
+      stickToBottom.current = true;
+      setSubmissions(previous => [...previous.filter(sent => sent.scope === originalId), { key: submissionKey, scope: originalId, content: submittedContent(sentText, sentAttachments), previousKeys: entries.map(entryKey), newTurn: !activeTurn || continues, ...(activeTurn && !continues ? { turnId: activeTurn } : {}) }]);
+    }
+    const updateSubmission = (patch: Partial<SubmittedMessage>) => setSubmissions(previous => previous.map(sent => sent.key === submissionKey
+      ? { ...sent, ...(patch.turnId && sent.turnId && patch.turnId !== sent.turnId ? { recorded: undefined } : {}), ...patch } : sent));
     const originalFocus = document.activeElement;
     const attached = { ...(sentAttachments.length ? { attachments: sentAttachments } : {}), ...(sentMentions.length ? { mentions: sentMentions } : {}) };
     let errorThreadId = selected?.id;
@@ -972,6 +985,7 @@ export default function Home() {
       if (!thread) {
         const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
         thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
+        updateSubmission({ scope: thread.id });
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
         saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
         if (originalRequest === request.current) { saveDraft(originalId, ""); saveAttachments(originalId, []); select(thread); }
@@ -984,6 +998,7 @@ export default function Home() {
       } else {
         const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
         if (result.thread && result.sendError) {
+          updateSubmission({ failed: true });
           const forkDraft = savedDraft(result.thread.id);
           const hasNewerForkDraft = !!forkDraft.trim() && forkDraft !== sentText || savedAttachments(result.thread.id).length > 0;
           const targetKey = hasNewerForkDraft ? `recovery-${result.thread.id}` : result.thread.id;
@@ -996,6 +1011,7 @@ export default function Home() {
           return;
         }
         if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
+        updateSubmission({ turnId: result.turn.id, ...(result.thread ? { scope: result.thread.id } : {}) });
         if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [result.thread?.id || thread!.id]: result.turn!.id }));
         if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
         if (selected && used) {
@@ -1017,6 +1033,7 @@ export default function Home() {
       clearSubmittedAttachments(originalId, sentAttachments); clearSubmittedAttachments(thread.id, sentAttachments);
       if (selectedRef.current?.id === thread.id && textRef.current === sentText && originalRequest === request.current) setText("");
     } catch (e) {
+      updateSubmission({ failed: true });
       for (const mention of sentMentions) pickedMentions.current.set(mention.path, mention);
       if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
       else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
@@ -1297,6 +1314,13 @@ export default function Home() {
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
   const ordinaryThreads = threads.filter(thread => !isAgentRun(thread));
   const agentRuns = threads.filter(isAgentRun);
+  const runActions: MenuAction[] = [
+    { id: "hide", label: "Hide Agent runs", run: () => {
+      try { savePreferences({ showAgentRuns: false }); requestAnimationFrame(() => searchInput.current?.focus()); }
+      catch (cause) { setError(`Could not save this preference: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    } },
+    { id: "delete", label: agentRuns.length > 100 ? "Delete 100 Agent runs…" : "Delete Agent run history…", destructive: true, run: () => { setDeleteRunHistory(true); setDeleteTargets(agentRuns.slice(0, 100)); } },
+  ];
   const ordinaryUnread = attention.unread.filter(id => ordinaryThreads.some(thread => thread.id === id));
   const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId)));
@@ -1352,6 +1376,7 @@ export default function Home() {
   /** Deletes these chats as one step Ctrl+Z undoes: after the shared confirmation, or at once when it is turned off.
    * `focusAt` is the sidebar row to focus afterwards, so Ctrl+Z reaches the app and not a text field. */
   function deleteChats(ids: string[], focusAt?: number) {
+    setDeleteRunHistory(false);
     const targets = chatsOf(ids);
     if (!targets.length) return;
     if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
@@ -1393,18 +1418,27 @@ export default function Home() {
       setMarked(ids.slice(Math.min(from, to), Math.max(from, to) + 1)); event.currentTarget.focus();
     } else { setMarked([]); markAnchor.current = thread.id; void loadThread(thread); }
   }
-  /** Keys on a focused chat row: D deletes the marked chats, else this one (Claude's shortcut); ↑/↓ open the chat above or below; Escape clears the marks. */
+  /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
+  function sidebarKeys(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const target = event.target as HTMLElement;
+    const stops = [...event.currentTarget.querySelectorAll<HTMLElement>(".nav-list > button, input[aria-label='Search conversations'], .sidebar-group-toggle, .thread-row > .thread-link, [data-sidebar-stop]")]
+      .filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
+    const at = stops.indexOf(target);
+    if (at < 0 || !event.currentTarget.contains(target)) return;
+    if (target instanceof HTMLInputElement && target.value && (event.key === "Home" || event.key === "End")) return;
+    const index = event.key === "Home" ? 0 : event.key === "End" ? stops.length - 1 : Math.max(0, Math.min(stops.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
+    event.preventDefault(); stops[index]?.focus();
+  }
+  /** Keys on a focused chat row: D deletes, U changes attention, and Escape clears the marks. */
   function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement, id = rowOf(target);
     if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "Escape" && marked.length) setMarked([]);
     else if (letterKey(event) === "u") attentionFor(id).planReady ? attentionFor(id).onComplete() : attentionFor(id).onToggleRead();
     else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
-    else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      const links = rowLinks(), next = links[links.findIndex(link => link.parentElement === target.closest(".thread-row")) + (event.key === "ArrowDown" ? 1 : -1)];
-      if (!next) return;
-      next.focus(); next.click();
-    } else return;
+    else return;
     event.preventDefault();
   }
   function attentionFor(id: string) {
@@ -1434,7 +1468,11 @@ export default function Home() {
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
       group={depth ? undefined : groupMenu(thread, marked.length > 1 && marked.includes(thread.id) ? marked : [thread.id])}
-      agents={!depth && !isAgent(thread) ? { shown: agentRunsOpen, onToggle: () => { setAgentRunsOpen(open => !open); if (!agentRunsOpen) void loadChildren(thread.id, undefined, false); } } : undefined}
+      agents={!depth && !isAgent(thread) ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
+        try { if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true }); }
+        catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
+        setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
+      } } : undefined}
       area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
       {state === "unread" ? <button className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
@@ -1499,9 +1537,9 @@ export default function Home() {
     <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
     <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
       onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
-    <DeleteChatsDialog threads={deleteTargets} trash={trashChats} onClose={() => setDeleteTargets(null)} />
+    <DeleteChatsDialog threads={deleteTargets} trash={trashChats} alwaysConfirm={deleteRunHistory} onClose={() => { setDeleteTargets(null); setDeleteRunHistory(false); }} />
     <RewindDialog threadId={selected?.id} turnId={rewindTurn} prompt={rewindTurn ? entries.find(entry => entry.turnId === rewindTurn && entry.item.type === "userMessage")?.item.content?.map(part => part.text ?? "").join("\n") ?? "" : ""} turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null} onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)} onClose={() => setRewindTurn(null)} />
-    <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation">
+    <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation" onKeyDown={sidebarKeys}>
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
@@ -1531,8 +1569,11 @@ export default function Home() {
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
         {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
         {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
-        {!searchTerm && agentRuns.length > 0 && <section className="mt-4" aria-label="Background runs">
-          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} />Agent runs ({agentRuns.length})</Button>
+        {!searchTerm && preferences.showAgentRuns && agentRuns.length > 0 && <section className="mt-4" aria-label="Background runs">
+          <RightClickMenu actions={runActions} area={<div className="flex items-center" />}>
+            <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} />Agent runs ({agentRuns.length})</Button>
+            <MoreMenu actions={runActions} label="Agent runs actions" title="Hide Agent runs or delete their history" />
+          </RightClickMenu>
           {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{agentRuns.map(thread => threadRow(thread, 1))}
             {Object.entries(childCursors).filter(([id, cursor]) => cursor && !hidden.current.has(id)).map(([id, cursor]) => <Button key={id} variant="ghost" size="xs" className="w-full justify-start" disabled={loadingChildren[id]} onClick={() => void loadChildren(id, cursor!, false)}><span className="truncate">More agents from {find(id) ? title(find(id)!) : "parent conversation"}</span></Button>)}
           </div>}
@@ -1597,24 +1638,24 @@ export default function Home() {
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView /></ViewBoundary>}
-      {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !entries.length ? " empty-chat" : ""}`}>
+      {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
           {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
-          {loading && !entries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
-          {!loading && !entries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
-          <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={entries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
+          {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
+          {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
+          <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={openById}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) focusComposer(); }}
-            onEdit={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
+            onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
-            onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={replaceable ? () => setRewindTurn(e.turnId) : undefined}
+            onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void forkFrom(selected, e.turnId) : undefined} onRewind={!e.clientPending && replaceable ? () => setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
-        </div><PromptRail scroller={scroll} version={entries} /></div></div>
+        </div><PromptRail scroller={scroll} version={shownEntries} /></div></div>
         <div className="composer-wrap">
           {sideChat && selected?.id === sideChat.parentId && <SideChat key={sideChat.parentId} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }} />}
           <ViewBoundary label="This panel" resetKey={panel}>
@@ -1658,7 +1699,7 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
+              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
           </form>}
           <div className="composer-meta">
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}

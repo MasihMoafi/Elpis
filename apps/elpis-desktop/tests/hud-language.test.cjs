@@ -1,6 +1,6 @@
 // The HUD language (app/globals.css, "The HUD language"; components/ui/*), measured on the rendered app in both themes:
 // one chamfer per role (controls 7px or 4px, panels and floating surfaces 10px, top-left and bottom-right, bevelled),
-// one edge colour per role, one HUD label type, the send button left round, and AA contrast for every text on the way.
+// one edge colour per role, one HUD label type, the send button sharing the control cuts, and AA contrast for every text on the way.
 // Mock bridge (tests/parity-fixture.cjs); no engine, no model.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -52,7 +52,6 @@ const BEVEL = /bevel|superellipse\(0\)/;
 function corners(report, where, seen) {
   const { tokens } = report;
   for (const button of report.buttons) {
-    if (button.send) { assert.equal(button.tl, '9px', `${where}: the send button keeps its 9px corner`); assert.doesNotMatch(button.shape, BEVEL, `${where}: the send button stays round`); continue; }
     const cut = button.xs ? '4px' : '7px';
     assert.deepEqual([button.tl, button.tr, button.br, button.bl], [cut, '0px', cut, '0px'], `${where}: ${button.name} is chamfered top-left and bottom-right by ${cut}`);
     assert.match(button.shape, BEVEL, `${where}: ${button.name} is bevelled`); assert.match(button.shapeBr, BEVEL);
@@ -102,7 +101,7 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
   await visit('Ledger');
   await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.locator('.react-flow__node-agent').first().waitFor();
   await visit('canvas');
-  await t.test('one chamfer and one edge per role; the send button stays round', () => {
+  await t.test('one chamfer and one edge per role; the send button shares the control cuts', () => {
     const seen = { buttons: 0, floating: 0, panels: new Set() };
     for (const [where, report] of reports) corners(report, where, seen);
     assert.ok(seen.buttons >= 20, `buttons measured: ${seen.buttons}`);

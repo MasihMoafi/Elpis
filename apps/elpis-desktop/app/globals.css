@@ -47,8 +47,7 @@
 .dark { --hud-edge:color-mix(in oklch, var(--gold) 60%, transparent); --hud-face:color-mix(in oklch, var(--gold) 8%, var(--card)); --hud-face-hover:color-mix(in oklch, var(--gold) 22%, var(--card)); }
 /* Chamfers: the lab's cut corners (.iso-chamfer) without its clip-path, so focus rings and shadows stay visible. Controls
  * (components/ui: buttons, fields, select triggers) take .hud-cut, those 24px tall or less .hud-cut-sm, and panels and
- * floating surfaces --cut-lg (below). Roundness stays only where it means something: dots, rings, switches, the send
- * button. */
+ * floating surfaces --cut-lg (below). Roundness stays only where it means something: dots, rings and switches. */
 .hud-cut, .hud-cut-sm { corner-shape:bevel; }
 .hud-cut { border-radius:var(--cut) 0; }
 .hud-cut-sm { border-radius:var(--cut-sm) 0; }
@@ -318,10 +317,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-select { color:var(--foreground); }
 .provider-model-input { max-width:240px; min-width:0; background:transparent; color:var(--foreground); height:28px; padding:0 8px; font-size:12.5px; }
 .model-select:hover:not(:disabled) { background-color:var(--hover); color:var(--foreground); }
-/* Masih: today's send button stays as it is, rounded, whatever the HUD chamfers around it. */
-.send-button { border-radius:9px; corner-shape:round; background:var(--primary); color:var(--primary-foreground); height:32px; min-width:32px; }
-.send-button:hover { background:color-mix(in oklch, var(--primary), var(--foreground) 12%); }
-.send-button:disabled { opacity:1; background:var(--muted); color:var(--subtle-foreground); }
+/* Shared amber primary action. The Button's hud-cut owns the parallel top-left/bottom-right chamfers. */
+:root { --primary-action:#f2a93b; --primary-action-content:#252524; }
+.primary-cut { background:var(--primary-action); color:var(--primary-action-content); }
+.primary-cut:hover:not(:disabled) { background:color-mix(in oklch, var(--primary-action), var(--primary-action-content) 8%); }
+.send-button { height:32px; min-width:32px; }
 
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
 .brand img { width:73px; height:36px; flex-shrink:0; }

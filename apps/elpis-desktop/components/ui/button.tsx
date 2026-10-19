@@ -11,6 +11,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        cutPrimary: "primary-cut",
         // The lab's key (.iso-key): the accented edge and face, gold text in dark.
         outline:
           "border-(--hud-edge) bg-(--hud-face) hover:bg-(--hud-face-hover) hover:text-foreground aria-expanded:bg-(--hud-face-hover) aria-expanded:text-foreground dark:text-primary dark:hover:text-primary",

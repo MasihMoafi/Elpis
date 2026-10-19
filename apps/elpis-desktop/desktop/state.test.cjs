@@ -65,6 +65,18 @@ test('appearance choices persist through real desktop IPC, rebase across windows
     await assert.rejects(f.store.patch({ key: 'elpis-preferences-v1', baseRevision: f.store.snapshot().revision, changes }), /Unsupported/);
 });
 
+test('Agent runs visibility persists through actual desktop IPC and synchronizes between windows', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  a.preferences.savePreferences({ showAgentRuns: false }); await f.settle();
+  assert.deepEqual(a.errors, []);
+  assert.equal(JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']).showAgentRuns, false);
+  assert.equal(b.preferences.readPreferences().showAgentRuns, false);
+  b.preferences.savePreferences({ showAgentRuns: true }); await f.settle();
+  assert.equal(a.preferences.readPreferences().showAgentRuns, true);
+  assert.deepEqual(b.errors, []);
+  await assert.rejects(f.store.patch({ key: 'elpis-preferences-v1', baseRevision: f.store.snapshot().revision, changes: { showAgentRuns: 'yes' } }), /Unsupported/);
+});
+
 test('two actual preloads preserve wrap when another window changes notifications and refresh both preference caches', async t => {
   const f = windows(t), a = f.open(1), b = f.open(2);
   a.preferences.savePreferences({ softWrap: true }); await f.settle();

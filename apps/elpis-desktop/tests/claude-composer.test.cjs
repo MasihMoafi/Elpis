@@ -1,6 +1,6 @@
 // The message box as Claude's desktop app has it: an @ opens a picker of the project's files and the person's other
 // chats (arrows, Enter or Tab, Escape); the "+" menu offers what Elpis can do and nothing that does nothing; and the
-// send button is a rounded button inside the box, whatever the theme. Local bridge fixture; no engine or model.
+// send button is a cut-corner button inside the box, whatever the theme. Local bridge fixture; no engine or model.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cjs');
@@ -123,15 +123,16 @@ test('Add files or photos opens one chooser for pictures and documents alike; a 
 }));
 
 for (const colorScheme of ['light', 'dark']) for (const running of [false, true]) {
-  test(`the send button is a rounded button inside the box (${colorScheme}, ${running ? 'a turn running' : 'idle'})`, () => using({ colorScheme, running }, async f => {
+  test(`the send button is a cut-corner button inside the box (${colorScheme}, ${running ? 'a turn running' : 'idle'})`, () => using({ colorScheme, running }, async f => {
     const { page, composer } = f;
     await f.open('chat-a'); await composer.fill('a message');
     const button = page.getByRole('button', { name: running ? 'Send follow-up' : 'Send message', exact: true });
     await button.waitFor();
     const look = await button.evaluate(node => { const style = getComputedStyle(node), box = node.getBoundingClientRect(), outer = node.closest('.composer').getBoundingClientRect();
-      return { clip: style.clipPath, radius: parseFloat(style.borderTopLeftRadius), right: outer.right - box.right, bottom: outer.bottom - box.bottom, left: box.left - outer.left, top: box.top - outer.top }; });
-    assert.equal(look.clip, 'none', 'no chamfered or arrow-shaped cut');
-    assert.ok(look.radius >= 6, `rounded corners, got ${look.radius}px`);
+      return { clip: style.clipPath, radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius], shape: style.cornerTopLeftShape, right: outer.right - box.right, bottom: outer.bottom - box.bottom, left: box.left - outer.left, top: box.top - outer.top }; });
+    assert.equal(look.clip, 'none', 'focus rings follow the native bevel without clipping');
+    assert.deepEqual(look.radii, ['7px', '0px', '7px', '0px']);
+    assert.match(look.shape, /bevel|superellipse\(0\)/);
     for (const side of ['right', 'bottom', 'left', 'top']) assert.ok(look[side] >= 6, `${side} edge sits inside the box with room: ${look[side]}px`);
   }));
 }

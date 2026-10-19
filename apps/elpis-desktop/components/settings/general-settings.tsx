@@ -70,6 +70,11 @@ export function GeneralSettings() {
       </SettingRow>
       <Speed />
     </SettingsGroup>
+    <SettingsGroup title="Sidebar">
+      <SettingRow title="Show Agent runs in sidebar" description="Show background agent history as a separate group. Hiding it keeps the history.">
+        <Switch aria-label="Show Agent runs in sidebar" checked={preferences.showAgentRuns} onCheckedChange={showAgentRuns => save({ showAgentRuns })} />
+      </SettingRow>
+    </SettingsGroup>
     <SettingsGroup title="Composer">
       <SettingRow title="Send shortcut" description="Choose whether Enter sends a message or inserts a new line.">
         <Choice label="Send shortcut" value={preferences.sendShortcut} options={[{ value: "enter", label: "Enter" }, { value: "modEnter", label: "Ctrl+Enter" }]} onChange={sendShortcut => save({ sendShortcut })} />

@@ -9,7 +9,7 @@ export type Thread = {
   desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; canContinue?: boolean; reason: string | null };
 };
 export type Item = { id: string; type: string; text?: string; content?: {type: string; text?: string}[]; command?: string; aggregatedOutput?: string; [key: string]: unknown };
-export type Entry = { turnId: string; item: Item; startedAtMs?: number; completedAtMs?: number };
+export type Entry = { turnId: string; item: Item; startedAtMs?: number; completedAtMs?: number; clientKey?: string; clientTurnKey?: string; clientPending?: boolean };
 /** Where the bridge serves an entry's recorded pictures and sounds (`/<index>` after it); it serves only what the
  * chat's record holds. */
 export const mediaUrl = (threadId: string, entry: Entry) => `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(entry.turnId)}/items/${encodeURIComponent(entry.item.id)}/media`;

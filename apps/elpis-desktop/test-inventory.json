@@ -26,6 +26,7 @@
     "tests/reading.test.mjs",
     "tests/slash-helpers.test.mjs",
     "tests/steps.test.mjs",
+    "tests/submitted-messages.test.mjs",
     "tests/test-inventory.test.mjs",
     "tests/turn-replacement.test.mjs",
     "tests/workflow-sources.test.cjs"
@@ -143,6 +144,7 @@
     "tests/decision-cards.test.cjs",
     "tests/desktop-polish-visual.test.cjs",
     "tests/desktop-polish.test.cjs",
+    "tests/desktop-small-fixes.test.cjs",
     "tests/desktop-sweep.test.cjs",
     "tests/dev-server.test.cjs",
     "tests/elpis-features.test.cjs",
