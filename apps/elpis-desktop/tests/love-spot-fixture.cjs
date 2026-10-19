@@ -2,12 +2,9 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const { guardDesktopStore } = require('./controls.cjs');
-const exec = promisify(execFile);
 
 // Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
 const FAKE_ACP_AGENT = path.resolve(__dirname, '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
@@ -70,7 +67,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     return page;
   };
   let page;
-  try { page = await newPage(); } catch (e) { await browser.close(); await server.close(); await exec('gio', ['trash', root]); throw e; }
+  try { page = await newPage(); } catch (e) { await browser.close(); await server.close(); await fs.rm(root, { recursive: true, force: true }); throw e; }
   const scene = async () => { try { return JSON.parse(await fs.readFile(path.join(directory, 'scene.excalidraw'), 'utf8')); } catch (e) { if (e.code === 'ENOENT') return { elements: [], files: {} }; throw e; } };
   const waitFor = async (check, message, timeout = 5000) => {
     const end = Date.now() + timeout;
@@ -91,6 +88,6 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     await target.keyboard.press('Escape');
   };
   return { page, url: server.url, newPage, open, draw, root, directory, screenshots, scene, waitFor, errors, requests, responses, chats, turns, emitter, acp,
-    async close() { await browser.close(); await server.close(); await exec('gio', ['trash', root]); } };
+    async close() { await browser.close(); await server.close(); await fs.rm(root, { recursive: true, force: true }); } };
 }
 module.exports = { loveSpotFixture };

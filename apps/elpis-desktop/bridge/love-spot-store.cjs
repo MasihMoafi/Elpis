@@ -54,7 +54,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   function track(socket) { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); return socket; }
   async function shareScreenshots() {
     peerServer = net.createServer(socket => {
-      track(socket).setTimeout(1000, () => socket.destroy()); socket.on('error', () => {});
+      track(socket).setTimeout(5000, () => socket.destroy()); socket.on('error', () => {});
       let input = '';
       socket.on('data', chunk => {
         input += chunk;
@@ -63,9 +63,14 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         try {
           const ids = JSON.parse(input.trim());
           if (!Array.isArray(ids)) return socket.destroy();
-          const known = new Set(ids);
-          socket.end(JSON.stringify([...pending.values()].filter(shot => !known.has(shot.id))
-            .map(({ id, name, bytes, modified }) => ({ id, name, data: bytes.toString('base64'), modified }))));
+          const known = new Set(ids), batch = []; let bytesInBatch = 0;
+          for (const shot of pending.values()) {
+            if (known.has(shot.id)) continue;
+            if (batch.length && bytesInBatch + shot.bytes.length > 4 * 1024 * 1024) break;
+            batch.push({ id: shot.id, name: shot.name, data: shot.bytes.toString('base64'), modified: shot.modified });
+            bytesInBatch += shot.bytes.length;
+          }
+          socket.end(JSON.stringify(batch));
         } catch { socket.destroy(); }
       });
     });
@@ -79,9 +84,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const socket = track(net.createConnection(path.join(peerDirectory, name)));
       let data = '', settled = false;
       const finish = shots => { if (!settled) { settled = true; resolve(shots); socket.destroy(); } };
-      socket.setTimeout(500, () => finish([])); socket.on('error', () => finish([]));
+      socket.setTimeout(5000, () => finish([])); socket.on('error', () => finish([]));
       socket.once('connect', () => socket.write(`${JSON.stringify([...pending.keys()])}\n`));
-      socket.on('data', chunk => { data += chunk; if (data.length > 64 * 1024 * 1024) finish([]); });
+      socket.on('data', chunk => { data += chunk; });
       socket.on('end', () => { try { const shots = JSON.parse(data); finish(Array.isArray(shots) ? shots : []); } catch { finish([]); } });
       socket.on('close', () => finish([]));
     })));

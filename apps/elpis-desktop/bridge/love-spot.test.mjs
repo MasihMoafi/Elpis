@@ -23,7 +23,7 @@ async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
   if (prepareScreenshots) await prepareScreenshots(screenshots);
   const client = new EventEmitter(); Object.assign(client, { connected: true, pendingApprovals: [], close() {} });
   const app = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), ...(loveAgents ? { loveAgents } : {}) });
-  t.after(async () => { await app.close(); await exec('gio', ['trash', root]); });
+  t.after(async () => { await app.close(); await fs.rm(root, { recursive: true, force: true }); });
   const url = new URL(app.url), origin = url.origin;
   const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ token: url.hash.slice(7) }) });
   const cookie = auth.headers.get('set-cookie').split(';')[0];
@@ -291,6 +291,31 @@ test('a later Love Spot process receives private pending screenshots from the al
   const result = JSON.parse((await exec(process.execPath, ['-e', script, new URL('./love-spot-store.cjs', import.meta.url).pathname, f.directory, f.screenshots])).stdout);
   assert.deepEqual(result.shots, a.screenshotsList(), 'a new process must not classify the other app\'s pending screenshot as old');
   assert.equal(result.scene.elements.length, 0);
+});
+
+test('a later app receives a private screenshot backlog larger than one IPC response', async t => {
+  const f = await fixture(t), store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  t.after(() => store.close());
+  let captured = 0; await store.watch(e => { if (e.type === 'screenshots') captured = e.screenshots.length; });
+  // A valid ancillary PNG text chunk exercises transport size without huge pixel dimensions.
+  const data = Buffer.concat([Buffer.from('Comment\0'), Buffer.alloc(10 * 1024 * 1024, 'x')]);
+  const chunk = Buffer.alloc(data.length + 12); chunk.writeUInt32BE(data.length); chunk.write('tEXt', 4); data.copy(chunk, 8);
+  chunk.writeUInt32BE((await import('node:zlib')).crc32(chunk.subarray(4, -4)), chunk.length - 4);
+  const png = Buffer.concat([PNG.subarray(0, -12), chunk, PNG.subarray(-12)]);
+  const expected = Array.from({ length: 7 }, (_, i) => `backlog-${i}.png`);
+  await Promise.all(expected.map(name => fs.writeFile(path.join(f.screenshots, name), png)));
+  for (let i = 0; i < 100 && captured < expected.length; i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(captured, expected.length);
+  const script = `const {createLoveSpot}=require(process.argv[1]); (async()=>{
+    const b=createLoveSpot({directory:process.argv[2],screenshots:process.argv[3]}); let names=[];
+    try { await b.watch(e=>{if(e.type==='screenshots')names=e.screenshots.map(s=>s.name)});
+      for(let i=0;i<150&&names.length<7;i++)await new Promise(r=>setTimeout(r,100));
+      console.log(JSON.stringify({names,shared:(await b.read()).scene.elements.length}));
+    } finally { await b.close(); }
+  })().catch(e=>{console.error(e);process.exitCode=1});`;
+  const result = JSON.parse((await exec(process.execPath, ['-e', script, new URL('./love-spot-store.cjs', import.meta.url).pathname, f.directory, f.screenshots])).stdout);
+  assert.deepEqual(result.names.sort(), expected, 'every pending screenshot must arrive in the later process');
+  assert.equal(result.shared, 0);
 });
 
 test('new screenshots remain private in memory, newest first, without changing scene, inbox or picture', async t => {
