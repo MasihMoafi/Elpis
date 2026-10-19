@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-async function launch(args, flushText) {
+async function launch(args, flushText, flushBrowsers) {
   const app = new EventEmitter(); let ready, lock;
   const identity = {};
   Object.assign(app, { setName: name => { identity.name = name; }, setPath: (key, value) => { identity[key] = value; },
@@ -16,7 +16,7 @@ async function launch(args, flushText) {
     whenReady: () => new Promise(resolve => { ready = resolve; }), quit() {} });
   const calls = [], host = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => true, focus: () => calls.push('focus-chat') };
   const openers = { threads: { queue: id => calls.push(['thread', id]) }, newChats: { queue() {} } };
-  const sessions = { windows: new Set(), flushText, openersFor: () => openers,
+  const sessions = { windows: new Set(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
     open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); } };
   const electron = { app, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
@@ -40,6 +40,22 @@ test('app quit waits for live text before closing the board server; a failure pe
   release(false); await f.settle(); assert.equal(quit, 0); assert.ok(!f.calls.includes('board-close'));
   request(); await f.settle(); assert.equal(saves, 2);
   release(true); await f.settle(); assert.ok(f.calls.includes('board-close')); assert.equal(quit, 1);
+  assert.ok(f.calls.indexOf('browser-flush') < f.calls.indexOf('board-close'));
+});
+
+test('app quit waits for browser persistence and permits retry after a failed save', async () => {
+  let finish;
+  const f = await launch([], async () => true, () => new Promise((resolve, reject) => { finish = { resolve, reject }; }));
+  let quit = 0; f.app.quit = () => { quit++; };
+  const request = () => f.app.emit('before-quit', { preventDefault() {} });
+  request(); await f.settle();
+  assert.ok(f.calls.includes('browser-flush')); assert.ok(!f.calls.includes('board-close')); assert.equal(quit, 0);
+  finish.reject(Error('fixture browser save failure')); await f.settle();
+  assert.ok(!f.calls.includes('board-close')); assert.equal(quit, 0);
+  request(); await f.settle();
+  assert.equal(f.calls.filter(call => call === 'browser-flush').length, 2);
+  finish.resolve(); await f.settle();
+  assert.ok(f.calls.includes('board-close')); assert.equal(quit, 1);
 });
 
 test('cold --love-spot launch opens only the drawing window and carries the flag through the lock', async () => {
