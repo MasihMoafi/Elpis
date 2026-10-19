@@ -64,15 +64,19 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     let disposed = false;
     setChange(null); setReviewOpen(false); setNotice("");
     if (!threadId) return;
+    // A chat with a review follows it closely; any other chat looks rarely, and only while the window is shown.
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const slow = setInterval(() => { if (!timer) void refresh(); }, 15000);
     const refresh = async () => {
+      if (document.visibilityState === "hidden") return;
       try {
         const list = await api<{ data: { id: string; threadId: string }[] }>("/improvements");
         const row = list.data?.find(row => row.threadId === threadId);
-        if (row) { const next = await api<Change>(`/improvements/${row.id}`); if (!disposed) setChange(next); }
+        if (row) { const next = await api<Change>(`/improvements/${row.id}`); if (!disposed) { setChange(next); timer ??= setInterval(() => { void refresh(); }, 2500); } }
       } catch { /* An ordinary chat has no improvement review. The open dialog reports its own request failures. */ }
     };
-    void refresh(); const timer = setInterval(() => { void refresh(); }, 2500);
-    return () => { disposed = true; clearInterval(timer); };
+    void refresh();
+    return () => { disposed = true; clearInterval(timer); clearInterval(slow); };
   }, [threadId]);
   useEffect(() => {
     if (!change || !["review", "checks-failed"].includes(change.status)) return;
