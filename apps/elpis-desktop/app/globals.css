@@ -207,7 +207,6 @@ button:disabled { cursor:not-allowed; }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:12px; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 14px; }
 .composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); }
-.composer:focus-within { border-color:color-mix(in oklch, var(--ink), var(--border) 70%); }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
@@ -570,17 +569,21 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .worked-for[open] > summary { margin-bottom:10px; }
 .worked-for-body { padding:2px 0 6px; }
 
-.composer { position:relative; background:var(--composer); border-color:var(--hud-edge); box-shadow:var(--shadow); }
+.composer, .composer-tray { --edge:var(--hud-edge); }
+.composer:focus-within, .composer-tray:has(+ .composer:focus-within) { --edge:color-mix(in oklch, var(--primary) 80%, var(--hud-edge)); }
+.composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--shadow); }
+.composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
-/* Each cut corner carries a neutral line along its bevel (gold did not fit, Masih 18 Oct) (the square's anti-diagonal is the cut). On a new chat the
+/* Each cut corner carries a line along its bevel in the box's own edge colour (--edge), so the bar, the composer and
+   both corner lines read as one edge (Masih 18-19 Oct: they "shouldn't be" different) (the square's anti-diagonal is the cut). On a new chat the
    environment bar sits on top and squares the composer's top corners, so the bar's own cut carries the top accent. */
 .composer::before, .composer::after, .composer-tray::before { content:""; position:absolute; width:var(--cut-lg); height:var(--cut-lg); pointer-events:none;
-  background:linear-gradient(to bottom right, transparent calc(50% - 1px), var(--muted-foreground) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
+  background:linear-gradient(to bottom right, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
 .composer::before, .composer-tray::before { top:-1px; left:-1px; }
 .composer::after { bottom:-1px; right:-1px; }
 .composer-tray { position:relative; }
 .composer-tray + .composer::before { display:none; }
-.composer:focus-within { border-color:color-mix(in oklch, var(--primary) 80%, var(--hud-edge)); box-shadow:var(--shadow), var(--glow, none); }
+.composer:focus-within { box-shadow:var(--shadow), var(--glow, none); }
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
 .composer-controls { margin-top:6px; }
