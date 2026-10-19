@@ -1,17 +1,17 @@
+const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { execFileSync } = require('node:child_process');
 const { fixture } = require('./parity-fixture.cjs');
 const { openSettings } = require('./controls.cjs');
 
 test('an actual bridge failure displays its code and request ID in the renderer in both themes', async () => {
   const cache = path.join(os.homedir(), '.cache', 'elpis-tests');
   await fs.mkdir(cache, { recursive: true });
-  const home = await fs.mkdtemp(path.join(cache, 'request-ui-'));
+  const home = createTestTempDir(path.join(cache, 'request-ui-'));
   const { startDesktopServer } = await import('../bridge/server.mjs');
   const client = Object.assign(new EventEmitter(), { close() {}, async settings() { throw new TypeError('PRIVATE_CONTENT'); } });
   const app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json') });
@@ -38,5 +38,5 @@ test('an actual bridge failure displays its code and request ID in the renderer 
         assert.deepEqual(f.errors, []);
       } finally { await f.close(); }
     }
-  } finally { await app.close(); execFileSync('gio', ['trash', home]); }
+  } finally { await app.close(); removeTestTempDir(home); }
 });

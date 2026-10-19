@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -13,8 +14,8 @@ const fixtures = JSON.parse(fs.readFileSync(new URL("./fixtures/log-secrets.json
 test("scrub command atomically rewrites a log copy, preserves JSON and skips links", t => {
   const cache = path.join(os.homedir(), ".cache/elpis-tests");
   fs.mkdirSync(cache, { recursive: true });
-  const root = fs.mkdtempSync(path.join(cache, "secret-scrub-"));
-  t.after(() => assert.equal(spawnSync("gio", ["trash", root]).status, 0));
+  const root = createTestTempDir(path.join(cache, "secret-scrub-"));
+  t.after(() => removeTestTempDir(root));
   const logs = path.join(root, "logs");
   fs.mkdirSync(path.join(logs, "smart-prune/attempts"), { recursive: true });
   const file = path.join(logs, "smart-prune/attempts/attempt.json");
@@ -78,8 +79,8 @@ test("stderr redaction handles split UTF-8, split keys, EOF and oversized lines"
 test("real log append stores only redacted text without changing its input", t => {
   const cache = path.join(os.homedir(), ".cache/elpis-tests");
   fs.mkdirSync(cache, { recursive: true });
-  const root = fs.mkdtempSync(path.join(cache, "secret-writer-"));
-  t.after(() => assert.equal(spawnSync("gio", ["trash", root]).status, 0));
+  const root = createTestTempDir(path.join(cache, "secret-writer-"));
+  t.after(() => removeTestTempDir(root));
   const file = path.join(root, "bridge.log");
   for (const [index, { input, expected }] of fixtures.entries()) {
     fs.writeFileSync(file, "");

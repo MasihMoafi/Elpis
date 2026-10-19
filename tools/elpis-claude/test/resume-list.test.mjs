@@ -1,7 +1,8 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
 // Actual bridge, deterministic local engine, isolated state; no provider calls.
 // Run: node --test tools/elpis-claude/test/resume-list.test.mjs
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import { createServer } from "node:http";
@@ -83,7 +84,7 @@ if (process.argv.includes("app-server")) {
   }
 } else {
   async function setup(t, fixture, store, shared = false, maxPayload = 8 * 1024 * 1024) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-resume-list-"));
+    const root = createTestTempDir(path.join(os.tmpdir(), "elpis-resume-list-"));
     const config = path.join(root, "fixture.json"), trace = path.join(root, "trace.jsonl");
     fs.writeFileSync(config, JSON.stringify(fixture)); fs.writeFileSync(trace, "");
     fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify(store));
@@ -108,7 +109,7 @@ if (process.argv.includes("app-server")) {
         await exited; clearTimeout(timer);
       }
       assert.equal(child.signalCode, null, stderr);
-      spawnSync("gio", ["trash", root]);
+      removeTestTempDir(root);
     });
     async function until(condition, label, ms = 5000) {
       const end = Date.now() + ms;

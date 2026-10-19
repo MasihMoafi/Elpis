@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 // One real two-character handoff over ACP: two Elpis ACP agents (this worktree's tools/elpis-claude/elpis-acp-agent.mjs,
 // or $ELPIS_ACP_AGENT) on the installed engine, in an isolated Elpis home with a copy of the sign-in.
 // Usage: node tests/love-agents-live.runtime.mjs /absolute/path/to/elpis-next
@@ -5,16 +6,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createLoveSpot } from '../bridge/love-spot-store.cjs';
 import { createLoveAgents } from '../bridge/love-agents.mjs';
-const exec = promisify(execFile);
 const engine = process.argv[2];
 assert(engine && path.isAbsolute(engine), 'Provide the absolute installed engine path');
 const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
-const root = await fs.mkdtemp(path.join(base, 'love-agents-live-'));
+const root = createTestTempDir(path.join(base, 'love-agents-live-'));
 const home = path.join(root, 'home'), project = path.join(root, 'project');
 await fs.mkdir(home, { mode: 0o700 }); await fs.mkdir(project);
 const sourceHome = process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next');
@@ -46,5 +44,5 @@ try {
   process.stdout.write(`${JSON.stringify(evidence)}\n`);
 } finally {
   store?.close();
-  await exec('gio', ['trash', root]);
+  removeTestTempDir(root);
 }

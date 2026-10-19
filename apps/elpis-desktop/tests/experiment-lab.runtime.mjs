@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 // Explicit live acceptance check. Uses a disposable ELPIS_HOME and only the ChatGPT gpt-6-luna subscription.
 // ELPIS_PLAYWRIGHT_PACKAGE=... ELPIS_CHROMIUM=... node tests/experiment-lab.runtime.mjs /abs/elpis-next /abs/evidence-dir
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import fs from 'node:fs/promises';
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mjs';
@@ -17,7 +18,7 @@ assert(engine && evidence && path.isAbsolute(engine) && path.isAbsolute(evidence
 const bridgeScript = path.join(path.dirname(realpathSync(engine)), 'tools/elpis-claude/acp-bridge.mjs');
 assert(existsSync(bridgeScript));
 const cache = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });
-const profile = await fs.mkdtemp(path.join(cache, 'provenance-')), runtime = path.join(profile, 'runtime'); await fs.mkdir(runtime);
+const profile = createTestTempDir(path.join(cache, 'provenance-')), runtime = path.join(profile, 'runtime'); await fs.mkdir(runtime);
 const work = path.join(profile, 'work'); await fs.mkdir(work); await fs.mkdir(evidence, { recursive: true });
 await fs.copyFile(path.join(process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'), 'auth.json'), path.join(profile, 'auth.json'));
 await fs.chmod(path.join(profile, 'auth.json'), 0o600);
@@ -70,5 +71,5 @@ try {
   bridge.kill('SIGTERM');
   await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 5000))]);
   if (bridge.exitCode === null && bridge.signalCode === null) { bridge.kill('SIGKILL'); await exited; }
-  await log.close(); execFileSync('gio', ['trash', profile]);
+  await log.close(); removeTestTempDir(profile);
 }

@@ -1,17 +1,16 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { smartPruneDetail } from './smart-prune.mjs';
 
 test('inline details use the committed output, scope to chat and confine artifact paths', async t => {
   const cache = path.join(os.homedir(), '.cache/elpis-tests');
   await fs.mkdir(cache, { recursive: true });
-  const home = await fs.mkdtemp(path.join(cache, 'prune-detail-'));
-  t.after(() => promisify(execFile)('gio', ['trash', home]));
+  const home = createTestTempDir(path.join(cache, 'prune-detail-'));
+  t.after(() => removeTestTempDir(home));
   const root = path.join(home, 'logs/smart-prune');
   await fs.mkdir(path.join(root, 'attempts'), { recursive: true });
   await fs.mkdir(path.join(root, 'admissions/a1/items'), { recursive: true });

@@ -1,9 +1,10 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
 // Elpis's own "Anthropic sign out": a switch in the Elpis home that stops Elpis, and only Elpis, from
 // using the Claude subscription. Claude Code's login (~/.claude) is never touched.
 // Actual bridge, deterministic local engine and ACP adapter, isolated home; no provider calls.
 // Run: node --test tools/elpis-claude/test/anthropic-signout.test.mjs
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -55,8 +56,8 @@ if (process.argv.includes("app-server")) {
   const { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } = await import("../anthropic-signout.mjs");
 
   test("the switch file: missing means signed in; it is private, atomic and fails closed", (t) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-signout-unit-"));
-    t.after(() => spawnSync("gio", ["trash", dir]));
+    const dir = createTestTempDir(path.join(os.tmpdir(), "elpis-signout-unit-"));
+    t.after(() => removeTestTempDir(dir));
     assert.equal(SIGNED_OUT_MESSAGE, MESSAGE);
     assert.equal(isSignedOut(dir), false, "no file: signed in");
     setSignedOut(path.join(dir, "made", "on", "demand"), true);
@@ -75,7 +76,7 @@ if (process.argv.includes("app-server")) {
 
   // A real bridge on an isolated home. `preset` is written to the switch file before the bridge starts.
   async function setup(t, { preset, sessions, defaultStore } = {}) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-signout-"));
+    const root = createTestTempDir(path.join(os.tmpdir(), "elpis-signout-"));
     const userHome = path.join(root, "home"), elpisHome = path.join(userHome, ".elpis-next"), state = path.join(elpisHome, "elpis-claude");
     const claudeDir = path.join(userHome, ".claude");
     for (const dir of [state, claudeDir, path.join(root, "bin")]) fs.mkdirSync(dir, { recursive: true });
@@ -117,7 +118,7 @@ if (process.argv.includes("app-server")) {
         const timer = setTimeout(() => child.kill("SIGKILL"), 6000);
         await exited; clearTimeout(timer);
       }
-      spawnSync("gio", ["trash", root]);
+      removeTestTempDir(root);
     });
     const until = async (condition, label, ms = 8000) => {
       const end = Date.now() + ms;

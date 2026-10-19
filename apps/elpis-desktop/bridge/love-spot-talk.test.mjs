@@ -1,11 +1,10 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 
@@ -13,7 +12,7 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTE
 const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
 async function fixture(t) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
+  const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(), created = [], sent = [], entries = [];
   Object.assign(client, {
     settings: async () => ({ main: { model: 'luna', provider: 'openai' } }),
@@ -24,7 +23,7 @@ async function fixture(t) {
     send: async (id, value) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
   });
   const talk = createLoveSpotTalk({ client, store });
-  t.after(async () => { talk.close(); store.close(); await promisify(execFile)('gio', ['trash', directory]); });
+  t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: 'Here with you.' }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries };
 }

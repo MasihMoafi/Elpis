@@ -1,9 +1,9 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { checkInventory, discoverTests } from '../scripts/test-gate.mjs';
 
 const inventory = JSON.parse(await fs.readFile(new URL('../test-inventory.json', import.meta.url), 'utf8'));
@@ -19,8 +19,8 @@ test('new unassigned tests, duplicate ownership and stale entries fail the gate'
 test('discovery includes new specs and legacy node:test files outside existing test directories', async t => {
   const cache = path.join(os.homedir(), '.cache', 'elpis-tests');
   await fs.mkdir(cache, { recursive: true });
-  const directory = await fs.mkdtemp(path.join(cache, 'inventory-'));
-  t.after(() => execFileSync('gio', ['trash', directory]));
+  const directory = createTestTempDir(path.join(cache, 'inventory-'));
+  t.after(() => removeTestTempDir(directory));
   await fs.mkdir(path.join(directory, 'feature'));
   await fs.mkdir(path.join(directory, 'node_modules'));
   await fs.writeFile(path.join(directory, 'feature', 'added.spec.ts'), '');

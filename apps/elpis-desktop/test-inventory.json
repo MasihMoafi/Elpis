@@ -28,6 +28,7 @@
     "tests/steps.test.mjs",
     "tests/submitted-messages.test.mjs",
     "tests/test-inventory.test.mjs",
+    "tests/temp-root.test.mjs",
     "tests/turn-replacement.test.mjs",
     "tests/workflow-sources.test.cjs",
     "tests/canvas-delete-flow.test.mjs"
@@ -102,6 +103,7 @@
   ],
   "ui": [
     "tests/love-spot-screenshots.test.cjs",
+    "tests/temp-root-ui.test.cjs",
     "tests/view-boundaries.test.cjs",
     "tests/night-themes.test.cjs",
     "tests/agents-guide.test.cjs",

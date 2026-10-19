@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -17,13 +18,13 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR
 const element = (id, version = 1, extra = {}) => ({ id, type: 'rectangle', version, versionNonce: 100, x: 0, y: 0, width: 100, height: 80, ...extra });
 async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'love-spot-'));
+  const root = createTestTempDir(path.join(base, 'love-spot-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
   if (prepareScreenshots) await prepareScreenshots(screenshots);
   const client = new EventEmitter(); Object.assign(client, { connected: true, pendingApprovals: [], close() {} });
   const app = await startDesktopServer({ client, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), ...(loveAgents ? { loveAgents } : {}) });
-  t.after(async () => { await app.close(); await fs.rm(root, { recursive: true, force: true }); });
+  t.after(async () => { await app.close(); removeTestTempDir(root); });
   const url = new URL(app.url), origin = url.origin;
   const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ token: url.hash.slice(7) }) });
   const cookie = auth.headers.get('set-cookie').split(';')[0];
@@ -35,7 +36,9 @@ async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
 
 test('Love Spot agent routes authenticate, run the saved drawing over ACP and answer its permission request', async t => {
   // The card runs as an ACP agent process: the scripted SDK agent, which logs what reaches it.
-  const log = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'love-route-')), 'agent.jsonl');
+  const logRoot = createTestTempDir(path.join(os.tmpdir(), 'love-route-'));
+  t.after(() => removeTestTempDir(logRoot));
+  const log = path.join(logRoot, 'agent.jsonl');
   const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE_ACP_AGENT], env: { FAKE_ACP_LOG: log, FAKE_ACP_NAME: 'route' }, instructions: node.prompt });
   const f = await fixture(t, { loveAgents: { nodeSpec } });
   for (const route of ['run', 'permission']) assert.equal((await fetch(`${f.origin}/api/love-spot/agents/${route}`, { method: 'POST', headers: { origin: f.origin, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'agent' }) })).status, 401);

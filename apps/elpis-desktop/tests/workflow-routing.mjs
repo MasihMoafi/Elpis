@@ -1,9 +1,9 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {EventEmitter} from 'node:events';
 import {DesktopClient} from '../bridge/client.mjs';
@@ -12,7 +12,7 @@ const rootId='00000000-0000-0000-0000-000000000001';
 const fake=fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs',import.meta.url));
 function fixture(t) {
   const cache=path.join(os.homedir(),'.cache/elpis-tests');fs.mkdirSync(cache,{recursive:true});
-  const dir=fs.mkdtempSync(path.join(cache,'elpis-workflow-routing-')), specs=[];
+  const dir=createTestTempDir(path.join(cache,'elpis-workflow-routing-')), specs=[];
   const socket=new EventEmitter();socket.sent=[];socket.close=()=>{};
   socket.send=wire=>{const request=JSON.parse(wire);socket.sent.push(request);queueMicrotask(()=>{
     const result=request.method==='thread/read'||request.method==='thread/resume'
@@ -24,7 +24,7 @@ function fixture(t) {
     specs.push(node);
     return {name:node.name,instructions:node.prompt,command:node.provider==='unavailable'?path.join(dir,'missing-agent'):process.execPath,args:[fake],env:{FAKE_ACP_MODELS:node.model},model:node.model};
   }}});
-  t.after(()=>{client.close();execFileSync('gio',['trash',dir]);});
+  t.after(()=>{client.close();removeTestTempDir(dir);});
   const finished=async id=>{
     for(let n=0;n<300;n++) {
       const found=(await client.workflows(rootId)).data.find(row=>row.id===id);

@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -34,8 +35,9 @@ test('only a full, clean, all-green gate run is recorded as a pass for its commi
   assert.equal(passRecord({ start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: true, selected: tiers, tiers, files: [...files, { name: 'tests/b.test.cjs', code: 1 }] }), null, 'a failure');
 });
 
-test('installing needs a recorded pass for the exact commit', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gate-records-'));
+test('installing needs a recorded pass for the exact commit', async t => {
+  const dir = createTestTempDir(path.join(os.tmpdir(), 'gate-records-'));
+  t.after(() => removeTestTempDir(dir));
   await assert.rejects(requirePass(dir, 'abc123'), /full test gate has not passed on abc123/);
   await fs.writeFile(path.join(dir, 'abc123.json'), JSON.stringify({ commit: 'abc123', files: 5 }));
   assert.equal((await requirePass(dir, 'abc123')).files, 5);
@@ -58,7 +60,7 @@ test('the gate records only the clean commit present before its tests run', asyn
   const fixtures = path.join(os.homedir(), '.cache/elpis-tests');
   await fs.mkdir(fixtures, { recursive: true });
   for (const scenario of ['clean', 'commit', 'dirty-start', 'dirty-end', 'resource-failure', 'renderer-failure', 'fast-only', 'desktop-only']) {
-    const dir = await fs.mkdtemp(path.join(fixtures, 'gate-state-'));
+    const dir = createTestTempDir(path.join(fixtures, 'gate-state-'));
     const root = path.join(dir, 'repo'), home = path.join(dir, 'home');
     const git = args => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     try {
@@ -113,6 +115,6 @@ test('mutate during the real gate', () => {
         assert.doesNotMatch(output, /Recorded a full pass/, scenario);
         await assert.rejects(fs.access(record), { code: 'ENOENT' }, scenario);
       }
-    } finally { execFileSync('gio', ['trash', dir]); }
+    } finally { removeTestTempDir(dir); }
   }
 });

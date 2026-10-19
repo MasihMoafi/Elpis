@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -10,11 +11,11 @@ import { startDesktopServer } from './server.mjs';
 async function fixture(t) {
   const cache = path.join(os.homedir(), '.cache', 'elpis-tests');
   await fs.mkdir(cache, { recursive: true });
-  const home = await fs.mkdtemp(path.join(cache, 'request-diagnostics-'));
+  const home = createTestTempDir(path.join(cache, 'request-diagnostics-'));
   let failure;
   const client = Object.assign(new EventEmitter(), { close() {}, async models() { throw failure; }, async saveSettings() { throw failure; } });
   const app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json') });
-  t.after(async () => { await app.close(); const { execFileSync } = await import('node:child_process'); execFileSync('gio', ['trash', home]); });
+  t.after(async () => { await app.close(); removeTestTempDir(home); });
   const launch = new URL(app.url), origin = launch.origin;
   const session = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: launch.hash.slice(7) }) });
   const cookie = session.headers.get('set-cookie').split(';')[0];

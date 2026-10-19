@@ -1,3 +1,4 @@
+const { createTestTempDir, removeTestTempDir } = require('../tests/temp-root.cjs');
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -162,10 +163,10 @@ test('dock preparation replaces both launch paths, preserves other actions, and 
   assert.throws(() => prepareDock('[Desktop Entry]\nExec=x\n', '/tmp'), /new-page/);
   const { spawnSync } = require('node:child_process');
   const os = require('node:os');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'love-dock-rollback-'));
+  const root = createTestTempDir(path.join(os.tmpdir(), 'love-dock-rollback-'));
   try {
     const file = path.join(root, 'drawing.desktop'); fs.writeFileSync(file, next);
     const result = spawnSync('bash', ['-c', rollbackCommand(file, old)], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr); assert.equal(fs.readFileSync(file, 'utf8'), old);
-  } finally { spawnSync('gio', ['trash', root]); }
+  } finally { removeTestTempDir(root); }
 });

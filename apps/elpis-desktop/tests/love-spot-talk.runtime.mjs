@@ -123,7 +123,7 @@ try {
   await browser?.close(); await app?.close();
   if (bridge.exitCode === null) bridge.kill('SIGTERM');
   await exited; await log.close();
-  // Retain evidence and throwaway chats; trash the temporary credential after shutting down its engine.
-  await run('gio', ['trash', path.join(elpisHome, 'auth.json')]);
+  // Retain evidence and throwaway chats; erase the copied credential after shutting down its engine.
+  await fs.writeFile(path.join(elpisHome, 'auth.json'), '{}');
 }
 if (failure) throw failure;

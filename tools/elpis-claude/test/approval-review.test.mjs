@@ -1,10 +1,11 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
@@ -65,7 +66,7 @@ if (role) {
   for (const label of ["approved", "denied", "error", "malformed", "plan", "manual", "agy-approved", "agy-denied", "agy-error"]) {
     const agy = label.startsWith("agy-"), scenario = label.replace(/^agy-/, "");
     test(`bridged permission review: ${label}`, { timeout: 15000 }, async t => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-approval-"));
+      const root = createTestTempDir(path.join(os.tmpdir(), "elpis-approval-"));
       const trace = path.join(root, "trace"), log = path.join(root, "log");
       fs.writeFileSync(trace, "");
       fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({ chat: { model: agy ? "agy/fixture" : "claude/haiku", turns: [] } }));
@@ -93,7 +94,7 @@ if (role) {
           const timer = setTimeout(() => child.kill("SIGKILL"), 2000);
           await exited; clearTimeout(timer);
         }
-        spawnSync("gio", ["trash", root]);
+        removeTestTempDir(root);
       });
       const until = async (predicate, label) => {
         const deadline = Date.now() + 8000;

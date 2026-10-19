@@ -1,21 +1,21 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createLoveAgents } from './love-agents.mjs';
 const fake = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 const card = { id: 'a', type: 'rectangle', version: 1, customData: { loveAgent: { preset: 'researcher', name: 'Researcher', prompt: 'ROLE_SEED: careful researcher', task: '', model: 'gpt-6-luna', provider: 'test', interview: { messages: [] } } } };
 function fixture(t, answer = { question: 'Which claim should I investigate?' }) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(base, { recursive: true });
-  const dir = fs.mkdtempSync(path.join(base, 'interview-')), log = path.join(dir, 'acp.jsonl');
+  const dir = createTestTempDir(path.join(base, 'interview-')), log = path.join(dir, 'acp.jsonl');
   const scene = { elements: [structuredClone(card)], files: {}, appState: {} };
   let spawned = 0;
   const store = { read: async () => ({ scene }), save: async s => Object.assign(scene, s) };
   const runner = createLoveAgents(store, { timeoutMs: 3000, nodeSpec: node => { spawned++; return { name: node.name, command: process.execPath, args: [fake], instructions: node.prompt, env: { FAKE_ACP_LOG: log, FAKE_ACP_ANSWER: typeof answer === 'string' ? answer : JSON.stringify(answer) } }; } });
-  t.after(async () => { await runner.close?.(); execFileSync('gio', ['trash', dir]); });
+  t.after(async () => { await runner.close?.(); removeTestTempDir(dir); });
   return { runner, scene, dir, spawned: () => spawned, agent: () => scene.elements[0].customData.loveAgent, log: () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [] };
 }
 test('first question is from the role ACP agent and persists once without a task run', async t => {

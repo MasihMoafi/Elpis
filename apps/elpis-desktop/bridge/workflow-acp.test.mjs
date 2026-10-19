@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,7 +15,8 @@ const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-ag
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const task = (id, dependsOn = [], instruction = 'Seed workflow-acp-739') => ({ id, title: id, instruction, kind: 'explore', dependsOn, writeScopes: [], acceptanceCriteria: ['Return evidence'] });
 function fixture(t, overrides = {}) {
-  const dir = fs.mkdtempSync(path.join(os.homedir(), '.cache/elpis-tests/workflow-acp-'));
+  const tempRoot = createTestTempDir(path.join(os.homedir(), '.cache/elpis-tests/workflow-acp-'));
+  const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
   const root = { id: ROOT, cwd: dir, source: 'cli', model: 'm-fast', modelProvider: 'openai', status: { type: 'idle' } };
   socket.send = raw => {
@@ -30,7 +32,7 @@ function fixture(t, overrides = {}) {
     return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   };
   const client = new DesktopClient(socket, { workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.model }), ...overrides } });
-  t.after(() => { client.close(); execFileSync('gio', ['trash', dir]); });
+  t.after(() => { client.close(); removeTestTempDir(tempRoot); });
   const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
   const finished = async id => {
     for (let n = 0; n < 500; n++) {
@@ -130,8 +132,6 @@ test('isolated ACP writes reach their verifier, then the source; scope escape or
       assert.equal(g.status, 'failed'); assert.equal(git('rev-parse', 'HEAD'), baseline); assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false);
       if (mode === 'dirty') assert.equal(fs.readFileSync(path.join(f.dir, 'src/seed'), 'utf8'), 'user edit');
     }
-    const worktreeHome = path.join(path.dirname(f.dir), `${path.basename(f.dir)}-elpis`);
-    if (fs.existsSync(worktreeHome)) t.after(() => execFileSync('gio', ['trash', worktreeHome]));
   }
 });
 
@@ -160,7 +160,6 @@ test('isolation rejects staged changes outside scope even when the working file 
   const isolation = await workflowWorktrees(f.dir, 'staged-scope-eval');
   const writer = { ...task('writer'), kind: 'implement', writeScopes: ['src'] };
   const cwd = await isolation.prepare(writer, 1);
-  t.after(() => execFileSync('gio', ['trash', `${f.dir}-elpis`]));
   fs.writeFileSync(path.join(cwd, 'outside'), 'unwanted staged edit'); git(cwd, 'add', 'outside');
   fs.writeFileSync(path.join(cwd, 'outside'), 'original');
   await assert.rejects(isolation.complete(writer, 1), /outside its write scopes: outside/);

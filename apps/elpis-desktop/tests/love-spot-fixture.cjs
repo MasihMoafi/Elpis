@@ -1,3 +1,4 @@
+const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -11,7 +12,7 @@ const FAKE_ACP_AGENT = path.resolve(__dirname, '../../../tools/elpis-claude/test
 
 async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
-  const root = await fs.mkdtemp(path.join(base, 'love-spot-ui-'));
+  const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
   if (prepareScreenshots) await prepareScreenshots(screenshots);
@@ -67,7 +68,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     return page;
   };
   let page;
-  try { page = await newPage(); } catch (e) { await browser.close(); await server.close(); await fs.rm(root, { recursive: true, force: true }); throw e; }
+  try { page = await newPage(); } catch (e) { await browser.close(); await server.close(); removeTestTempDir(root); throw e; }
   const scene = async () => { try { return JSON.parse(await fs.readFile(path.join(directory, 'scene.excalidraw'), 'utf8')); } catch (e) { if (e.code === 'ENOENT') return { elements: [], files: {} }; throw e; } };
   const waitFor = async (check, message, timeout = 5000) => {
     const end = Date.now() + timeout;
@@ -88,6 +89,6 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
     await target.keyboard.press('Escape');
   };
   return { page, url: server.url, newPage, open, draw, root, directory, screenshots, scene, waitFor, errors, requests, responses, chats, turns, emitter, acp,
-    async close() { await browser.close(); await server.close(); await fs.rm(root, { recursive: true, force: true }); } };
+    async close() { await browser.close(); await server.close(); removeTestTempDir(root); } };
 }
 module.exports = { loveSpotFixture };

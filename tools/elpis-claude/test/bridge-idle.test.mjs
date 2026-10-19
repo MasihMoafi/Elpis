@@ -1,6 +1,7 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
 // Real bridges and launcher, private homes/sockets, deterministic engine; no provider calls.
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
@@ -68,7 +69,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
   }
 
   async function setup(t, extra = {}, bundleSource = process.env.ELPIS_IDLE_TEST_BUNDLE ?? source) {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ebi-"));
+    const root = createTestTempDir(path.join(os.tmpdir(), "ebi-"));
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root,
       XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
       ACP_BRIDGE_STORE: path.join(root, "chats.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"),
@@ -111,7 +112,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
         if (startToken(state.pid) === state.token) { try { process.kill(state.pid, "SIGTERM"); } catch {} }
       }
       await pause(250);
-      spawnSync("gio", ["trash", root]);
+      removeTestTempDir(root);
     });
     const connect = async () => {
       const ws = new WebSocket(`ws+unix://${endpoint}:/`); sockets.push(ws); await once(ws, "open");

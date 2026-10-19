@@ -1,20 +1,18 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
 import { startDesktopServer } from './server.mjs';
 
-const run = promisify(execFile);
 async function home(t) {
   const root = path.join(os.homedir(), '.cache/elpis-tests');
   await fs.mkdir(root, { recursive: true });
-  const dir = await fs.mkdtemp(path.join(root, 'personal-'));
-  t.after(() => run('gio', ['trash', dir]));
+  const dir = createTestTempDir(path.join(root, 'personal-'));
+  t.after(() => removeTestTempDir(dir));
   return dir;
 }
 

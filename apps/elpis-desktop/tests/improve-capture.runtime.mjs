@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 // Native region capture through the production window factory and preload; fake engine, private profile.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -5,13 +6,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 const require = createRequire(import.meta.url), { fixture } = require('./parity-fixture.cjs');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const cache = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });
-const profile = await fs.mkdtemp(path.join(cache, 'improve-capture-'));
+const profile = createTestTempDir(path.join(cache, 'improve-capture-'));
 const f = await fixture(); let desktop;
 try {
   const executablePath = path.join(appRoot, 'node_modules/electron/dist', (await fs.readFile(path.join(appRoot, 'node_modules/electron/path.txt'), 'utf8')).trim());
@@ -29,4 +28,4 @@ try {
   assert.ok(Math.abs(size.height - result.box.height * result.dpr) <= 2);
   await fs.writeFile('/tmp/elpis-improve-native-region.png', bytes);
   process.stdout.write(`PASS: native source provenance and region capture ${size.width}×${size.height}\n`);
-} finally { await desktop?.close(); await f.close(); await promisify(execFile)('gio', ['trash', profile]); }
+} finally { await desktop?.close(); await f.close(); removeTestTempDir(profile); }

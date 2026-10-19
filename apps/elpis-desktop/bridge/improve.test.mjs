@@ -1,3 +1,4 @@
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -15,8 +16,8 @@ const target = { id: 'button', label: 'Send', image: PNG };
 const map = { button: { component: 'Composer', file: 'button.txt' } };
 async function setup(t, checks = true) {
   const cache = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });
-  const root = await fs.mkdtemp(path.join(cache, 'improve-'));
-  t.after(async () => { await execFile('gio', ['trash', root]); });
+  const root = createTestTempDir(path.join(cache, 'improve-'));
+  t.after(async () => { removeTestTempDir(root); });
   const sourceRoot = path.join(root, 'source'); await fs.mkdir(sourceRoot);
   const git = (...args) => execFile('git', args, { cwd: sourceRoot });
   await git('init', '-q'); await git('config', 'user.name', 'Test'); await git('config', 'user.email', 'test@invalid');

@@ -98,6 +98,5 @@ finally {
   bridge.kill('SIGTERM'); await until(() => bridge.exitCode !== null || bridge.signalCode !== null, 'bridge exit', 8000).catch(() => bridge.kill('SIGKILL'));
   await log.close();
   await fs.writeFile(path.join(home, 'auth.json'), '{}');
-  try { execFileSync('gio', ['trash', path.join(home, 'auth.json')], { stdio: 'ignore' }); } catch { /* /tmp may not support Trash; only an empty object remains. */ }
   await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(evidence, null, 2)); console.log(JSON.stringify(evidence));
 }

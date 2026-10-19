@@ -1,7 +1,8 @@
+import { createTestTempDir, removeTestTempDir } from './temp-root.mjs';
 // The Elpis ACP agent (elpis-acp-agent.mjs) driven by the official ACP SDK client, on a scripted app-server
 // (fake-app-server.mjs as ELPIS_ENGINE_BIN). No model calls.
 import assert from "node:assert/strict";
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -27,7 +28,7 @@ async function until(check, what, ms = 5000) {
 function start(t, { args = ["--model", "luna-test", "--provider", "openai"], answer, command, shared = false, env = {} } = {}) {
   const cache = path.join(os.homedir(), ".cache/elpis-tests");
   fs.mkdirSync(cache, { recursive: true });
-  const dir = fs.mkdtempSync(path.join(cache, "acp-"));
+  const dir = createTestTempDir(path.join(cache, "acp-"));
   const engineLog = path.join(dir, "engine.jsonl");
   const home = path.join(dir, "elpis");
   const runtimeRoot = path.join(dir, "r");
@@ -57,7 +58,7 @@ function start(t, { args = ["--model", "luna-test", "--provider", "openai"], ans
       const timer = setTimeout(() => runtime.kill("SIGKILL"), 2000);
       await gone; clearTimeout(timer);
     }
-    execFileSync("gio", ["trash", dir]);
+    removeTestTempDir(dir);
   });
   const engine = () => (fs.existsSync(engineLog) ? fs.readFileSync(engineLog, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
   const updates = (kind) => events.filter((e) => e.kind === "update" && (!kind || e.update.sessionUpdate === kind)).map((e) => e.update);
