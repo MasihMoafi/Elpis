@@ -343,6 +343,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* As in the ChatGPT app, Settings takes over the window: its sections replace the sidebar and the page sits centred. */
 .app-shell.settings-mode { grid-template-columns:minmax(0,1fr); }
 .app-shell.settings-mode > .sidebar { display:none; }
+/* Settings owns its normal navigation; a failed Settings view restores the app sidebar. */
+.app-shell.settings-mode:has(.workspace-content > .page-scroll > .view-error) { grid-template-columns:var(--sidebar-width, 256px) minmax(0,1fr); }
+.app-shell.settings-mode:has(.workspace-content > .page-scroll > .view-error) > .sidebar { display:flex; }
 /* The header stays only while something needs input, so an approval is never hidden behind Settings. */
 .app-shell.settings-mode .workspace-header:not(:has(.pending-input-anchor)) { display:none; }
 .settings-mode .page-scroll:has(> .settings-layout) { padding:0; overflow:hidden; }

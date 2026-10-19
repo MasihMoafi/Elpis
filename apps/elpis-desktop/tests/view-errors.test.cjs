@@ -106,7 +106,7 @@ test('a message the transcript cannot draw is caught where it is: the chat says 
     assert.equal(await page.getByText(/This page couldn.t load/).count(), 0);
     assert.equal(await composer.isEnabled(), true, 'the box still takes a message');
     await composer.fill('draft survives'); assert.equal(await composer.inputValue(), 'draft survives');
-    await net.getByRole('button', { name: 'Try again', exact: true }).click();
+    await net.getByRole('button', { name: 'Reload', exact: true }).click();
     await net.waitFor();                      // the same reply fails the same way, in the same place
     await f.open('chat-b');
     assert.equal(await page.locator('.view-error').count(), 0, 'another chat does not carry the failure');

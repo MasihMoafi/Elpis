@@ -21,9 +21,9 @@ export class ViewBoundary extends Component<Props, State> {
   static getDerivedStateFromProps(props: Props, state: State) { return props.resetKey === state.resetKey ? null : { error: null, resetKey: props.resetKey }; }
   render() {
     if (this.state.error === null) return this.props.children;
-    return <div role="alert" className="view-error">
+    return <div role="alert" className="alert view-error">
       <p>{this.props.label ?? "This page"} could not be shown: {this.state.error}</p>
-      <Button type="button" variant="outline" size="sm" onClick={() => this.setState({ error: null })}>Try again</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => this.setState({ error: null })}>Reload</Button>
     </div>;
   }
 }
