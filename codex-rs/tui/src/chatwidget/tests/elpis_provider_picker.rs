@@ -194,7 +194,7 @@ fn provider_rows(popup: &str) -> Vec<String> {
 
 /// Positive: the provider list is OpenAI, the Claude subscription, the Anthropic API key,
 /// Antigravity and OpenRouter, in that order. Negative: the providers that do not answer here
-/// (Gemini API key, Ollama, LM Studio, Bedrock, a configured vendor) are not listed.
+/// (Gemini API key, Ollama, LM Studio, Bedrock) are not listed. Configured vendors are listed.
 #[tokio::test]
 async fn the_provider_list_is_openai_claude_anthropic_antigravity_openrouter() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
@@ -214,8 +214,45 @@ async fn the_provider_list_is_openai_claude_anthropic_antigravity_openrouter() {
             "Anthropic Claude",
             "Antigravity",
             "OpenRouter",
+            "Fixture Vendor",
         ],
         "{popup}"
+    );
+}
+
+#[tokio::test]
+async fn configured_provider_is_searchable_with_its_saved_key_without_becoming_active() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
+    let home = tempfile::tempdir().expect("tempdir");
+    add_keyless_vendor(&mut chat, home.path());
+    codex_elpis_gateway::save_provider_key(home.path(), VENDOR, "sk-fixture-private")
+        .expect("save key");
+
+    chat.open_elpis_provider_popup();
+    for ch in VENDOR.chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(popup.contains("Fixture Vendor"), "{popup}");
+    assert!(popup.contains("key saved in this Elpis home"), "{popup}");
+    assert!(!popup.contains("sk-fixture-private"), "{popup}");
+    assert!(!popup.contains("Anthropic Claude"), "{popup}");
+    assert_eq!(chat.config.model_provider_id, "openai");
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    assert!(matches!(
+        provider_events(&mut rx).as_slice(),
+        [ElpisProviderEvent::Browse { provider_id }] if provider_id == VENDOR
+    ));
+
+    chat.config.model_provider_id = VENDOR.to_string();
+    chat.open_elpis_provider_popup();
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(
+        provider_rows(&popup)
+            .iter()
+            .filter(|name| *name == "Fixture Vendor")
+            .count(),
+        1
     );
 }
 

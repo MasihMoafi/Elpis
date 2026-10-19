@@ -24,9 +24,8 @@ pub(super) const ELPIS_PROVIDER_LOADING_VIEW_ID: &str = "elpis-provider-loading"
 pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
 pub(super) const ANTIGRAVITY_PROVIDER_ID: &str = "antigravity";
 
-/// The providers the pickers and the dashboard offer, in this order. The others Elpis knows
-/// (Gemini API key, Ollama, LM Studio, Bedrock, configured vendors) do not answer for the owner;
-/// one of them is listed only while a chat runs on it.
+/// The providers the pickers and dashboard offer first, in this order. Configured vendors
+/// follow; other built-ins (Gemini, Ollama, LM Studio, Bedrock) appear only while active.
 const LISTED_PROVIDERS: [&str; 5] = [
     codex_model_provider_info::OPENAI_PROVIDER_ID,
     CLAUDE_SUBSCRIPTION_PROVIDER_ID,
@@ -275,7 +274,7 @@ pub(crate) fn elpis_provider_display_name(
 }
 
 /// The configured providers "Change provider…" and the dashboard's API keys offer, as
-/// `(id, name)` in [`LISTED_PROVIDERS`] order.
+/// `(id, name)`, with [`LISTED_PROVIDERS`] first.
 pub(crate) fn elpis_picker_providers(
     providers: &std::collections::HashMap<String, ModelProviderInfo>,
     active: &str,
@@ -283,17 +282,29 @@ pub(crate) fn elpis_picker_providers(
     elpis_chat_model_providers(providers, active, /*catalog*/ &[])
 }
 
-/// [`LISTED_PROVIDERS`] in order: the configured ones, and each bridged subscription whose models
-/// `catalog` carries (only the chat model can be one of theirs); then `active`, if it is another.
+/// [`LISTED_PROVIDERS`] in order, including subscriptions whose models `catalog` carries;
+/// then configured vendors by id and any other active built-in, each exactly once.
 pub(crate) fn elpis_chat_model_providers(
     providers: &std::collections::HashMap<String, ModelProviderInfo>,
     active: &str,
     catalog: &[ModelPreset],
 ) -> Vec<(String, String)> {
+    let builtins =
+        codex_model_provider_info::built_in_model_providers(/*openai_base_url*/ None);
+    let mut configured: Vec<&str> = providers
+        .keys()
+        .map(String::as_str)
+        .filter(|id| !LISTED_PROVIDERS.contains(id) && !builtins.contains_key(*id))
+        .collect();
+    configured.sort_unstable();
     let listed_ids = LISTED_PROVIDERS
         .iter()
         .copied()
-        .chain((!LISTED_PROVIDERS.contains(&active)).then_some(active));
+        .chain(configured.iter().copied())
+        .chain(
+            (!LISTED_PROVIDERS.contains(&active) && !configured.contains(&active))
+                .then_some(active),
+        );
     listed_ids
         .filter_map(|id| match bridged_provider(id) {
             Some(bridged) => (!bridged.presets(catalog).is_empty())
