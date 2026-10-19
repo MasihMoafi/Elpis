@@ -167,3 +167,7 @@ clarification prefers existing TASKS.md files; do not create further request led
   approval label stay static, which is how Codex behaves.
 - Running clients keep the previous executable; restart is required. Nothing was pushed, tagged, or
   published.
+
+## 2026-10-19 desktop requests — acceptance open
+
+Masih requested drawing with Love Spot's Excalidraw tools in the built-in Browser, immediate visible sending on Enter, a labelled Stop response control, spacing before Thought rows, F2 rename, persistent chat drag ordering, Lab repeat-until-finished mode and clearer setup, and consistent Settings controls. Composer screenshot three is the layout reference. The later Love Spot arrow targets larger diagonal cuts on website cards, not the app composer. Masih asked whether ACP meant Agent Communication Protocol and whether workers had individual HTTP URLs, then asked which protocol fx uses. Verified fx official documentation and installed help: fx uses Agent Client Protocol over stdio. Elpis uses that same protocol family; implementation parity is unverified and individual HTTP service URLs are absent. Do not claim parity or HTTP service availability. Local website remains a separate draft, no deployment. Automated checks do not imply visual acceptance.

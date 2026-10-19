@@ -24,6 +24,9 @@ function backgroundScene(shot: string, width: number, height: number): { element
   return { elements, files: { [fileId]: { id: fileId, mimeType: "image/jpeg", dataURL: shot as BinaryFiles[string]["dataURL"], created: Date.now() } } };
 }
 
+const TABBABLE = 'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])';
+const tabbable = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(element => !(element as HTMLButtonElement).disabled && element.tabIndex >= 0 && element.getClientRects().length > 0);
+
 const marks = (elements: readonly ExcalidrawElement[]) => elements.filter(element => !element.isDeleted && element.id !== BACKGROUND);
 
 /** The page screenshot under Excalidraw's own editor: draw on it, then add the marked picture and its address to the composer. */
@@ -35,8 +38,18 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
   const scene = useRef<DrawingDraft>(draft);
+  const root = useRef<HTMLDivElement>(null);
   const first = useRef<ExcalidrawElement>(draft.elements.find(element => element.id === BACKGROUND)!);
 
+  // The window is modal: focus starts inside it, Tab wraps within it, and focus that lands on the page underneath is brought back.
+  // The discard question is its own dialog with its own focus handling, so it is left alone while it is open.
+  useEffect(() => {
+    const element = root.current; if (!element) return;
+    const inside = (target: EventTarget | null) => target instanceof Node && (element.contains(target) || !!(target instanceof Element && target.closest('[role="alertdialog"]')));
+    const pull = () => { if (!asking && !inside(document.activeElement)) (tabbable(element)[0] ?? element).focus(); };
+    pull(); document.addEventListener("focusin", pull);
+    return () => document.removeEventListener("focusin", pull);
+  }, [asking]);
   useEffect(() => { if (editor) editor.scrollToContent(first.current, { fitToViewport: true, viewportZoomFactor: 0.95 }); }, [editor]);
 
   // The unsent drawing is held until it is added or discarded, so closing the panel never loses it.
@@ -76,8 +89,16 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
     finally { setBusy(false); }
   }
 
-  return createPortal(<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="fixed inset-0 z-40 flex flex-col bg-background text-foreground"
+  return createPortal(<div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Draw on the page" className="fixed inset-0 z-40 flex flex-col bg-background text-foreground outline-none"
     onKeyDownCapture={event => {
+      if (event.key === "Tab" && !asking && root.current) {
+        const stops = tabbable(root.current), index = stops.indexOf(document.activeElement as HTMLElement);
+        if (stops.length) {
+          event.preventDefault(); event.stopPropagation();
+          stops[index < 0 ? (event.shiftKey ? stops.length - 1 : 0) : (index + (event.shiftKey ? -1 : 1) + stops.length) % stops.length].focus();
+        }
+        return;
+      }
       if (event.key !== "Escape" || asking) return;
       const state = editor?.getAppState();
       // Escape belongs to the editor while it has a tool, a selection, a text box or a menu open.

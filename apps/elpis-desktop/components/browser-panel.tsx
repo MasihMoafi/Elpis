@@ -71,6 +71,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
   const [held, setHeld] = useState(() => !!heldDrawing());
   const [drawFailure, setDrawFailure] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const drawButton = useRef<HTMLButtonElement>(null);
   const viewport = useRef<HTMLDivElement>(null), address = useRef<HTMLInputElement>(null);
   const active = state?.tabs.find(tab => tab.id === state.activeId);
   useEffect(() => {
@@ -121,7 +122,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
         disabled={!active || !/^https?:/.test(active.url)} onClick={() => void command("annotate")}>
         <SquareDashedMousePointer size={15} aria-hidden="true" /><span className="browser-annotate-label">Annotate</span>{!state.annotating && !!active?.comments && <span className="browser-badge" aria-label={`${active.comments} pending`}>{active.comments}</span>}
       </Button>
-      <Button type="button" variant="ghost" size="sm" className="browser-annotate" aria-label="Draw on this page" title={drawingBlocked || "Draw on this page: arrows, pen, shapes and text over a screenshot"}
+      <Button ref={drawButton} type="button" variant="ghost" size="sm" className="browser-annotate" aria-label="Draw on this page" title={drawingBlocked || "Draw on this page: arrows, pen, shapes and text over a screenshot"}
         disabled={!active || !/^https?:/.test(active.url) || !!drawingBlocked || capturing} onClick={() => void startDrawing()}>
         <PenLine size={15} aria-hidden="true" /><span className="browser-annotate-label">Draw</span>
       </Button>
@@ -158,7 +159,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
     <AnnotationDock browser={browser} onAttach={onAttach} imagesAllowed={imagesAllowed} />
     {drawing && onAttach && <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="fixed inset-0 z-40 grid place-items-center bg-background text-sm text-muted-foreground"><p role="status">Opening the drawing tools…</p></div>}>
       <BrowserDrawing draft={drawing} dark={document.documentElement.classList.contains("dark")} onAttach={onAttach}
-        onClose={() => { setDrawing(null); setHeld(!!heldDrawing()); }} onAdded={() => { setDrawing(null); setHeld(false); setNotice("Drawing added to your message"); }} />
+        onClose={() => { setDrawing(null); setHeld(!!heldDrawing()); requestAnimationFrame(() => drawButton.current?.focus()); }} onAdded={() => { setDrawing(null); setHeld(false); setNotice("Drawing added to your message"); }} />
     </Suspense>}
   </section>;
 }
