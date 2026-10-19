@@ -53,7 +53,10 @@ async function stopServer(server) {
 
 async function check({ binary, output, phase }, width, light) {
   const label = `${width}-${light ? 'light' : 'dark'}`;
-  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-ledger-close-'));
+  const fixtureBase = path.join(os.homedir(), '.cache', 'elpis-tests');
+  assert(Buffer.byteLength(path.join(fixtureBase, 't7-ledger-XXXXXX', 'tmux')) < 100, 'Home-cache path is too long for a private tmux socket');
+  fs.mkdirSync(fixtureBase, { recursive: true, mode: 0o700 });
+  const fixture = fs.mkdtempSync(path.join(fixtureBase, 't7-ledger-'));
   fs.chmodSync(fixture, 0o700);
   const home = path.join(fixture, 'home');
   const cwd = path.join(fixture, 'workspace');
