@@ -2,6 +2,8 @@
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { common, createLowlight } from "lowlight";
+import type { Element, ElementContent, Root } from "hast";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 
@@ -19,9 +21,33 @@ function search(lines: string[], query: string): Found[] {
 }
 const mod = (n: number, size: number) => ((n % size) + size) % size;
 
+/** The colours a code block in a reply has (highlight.js classes, styled in app/globals.css), for the languages
+ * highlight.js names in its common set; other files stay plain. */
+const lowlight = createLowlight(common);
+const LANGUAGE: Record<string, string> = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", py: "python", rs: "rust", go: "go", rb: "ruby", java: "java", kt: "kotlin", c: "c", h: "c", cpp: "cpp", cc: "cpp", hpp: "cpp", cs: "csharp", php: "php", swift: "swift", sh: "bash", bash: "bash", zsh: "bash", json: "json", yml: "yaml", yaml: "yaml", toml: "ini", ini: "ini", md: "markdown", css: "css", scss: "scss", html: "xml", xml: "xml", svg: "xml", sql: "sql", lua: "lua", r: "r", diff: "diff" };
+const languageOf = (label: string) => LANGUAGE[label.slice(label.lastIndexOf(".") + 1).toLowerCase()];
+type Piece = { text: string; className?: string };
+/** Highlights the whole file once, then splits the coloured pieces at line breaks, so each layer line keeps its colours
+ * even inside a multi-line comment or string. */
+function colourLines(value: string, language: string | undefined): Piece[][] | null {
+  if (!language || value.length > 200_000) return null;
+  let tree: Root;
+  try { tree = lowlight.highlight(language, value); } catch { return null; }
+  const lines: Piece[][] = [[]];
+  const walk = (nodes: ElementContent[], className?: string) => {
+    for (const node of nodes) {
+      if (node.type === "text") node.value.split("\n").forEach((part, index) => { if (index) lines.push([]); if (part) lines[lines.length - 1].push({ text: part, className }); });
+      else if (node.type === "element") walk(node.children, [className, ...((node as Element).properties?.className as string[] | undefined ?? [])].filter(Boolean).join(" ") || undefined);
+    }
+  };
+  walk(tree.children as ElementContent[]);
+  return lines;
+}
+
 /** One line of the layer behind the text: it marks the lines a reply pointed at and the places the find matched. The
  * letters are transparent (the textarea above draws them); only the marks show. */
-const Line = memo(function Line({ text, hit, pieces, current }: { text: string; hit: boolean; pieces: (Found & { index: number })[]; current: number }) {
+const Line = memo(function Line({ text, hit, pieces, current, colours }: { text: string; hit: boolean; pieces: (Found & { index: number })[]; current: number; colours?: Piece[] }) {
+  if (colours && !pieces.length) return <div className={`fe-line${hit ? " hit" : ""}`}>{colours.length ? colours.map((piece, index) => <span key={index} className={piece.className}>{piece.text}</span>) : " "}</div>;
   const parts: React.ReactNode[] = [];
   let at = 0;
   for (const piece of pieces) {
@@ -39,6 +65,8 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
   const area = useRef<HTMLTextAreaElement>(null), layer = useRef<HTMLDivElement>(null), numbers = useRef<HTMLDivElement>(null), field = useRef<HTMLInputElement>(null);
   const [find, setFind] = useState<{ query: string; at: number; focus: number } | null>(null);
   const lines = useMemo(() => value.split("\n"), [value]);
+  const language = languageOf(label);
+  const coloured = useMemo(() => colourLines(value, language), [value, language]);
   const found = useMemo(() => search(lines, find?.query ?? ""), [lines, find?.query]);
   const current = found.length && find ? mod(find.at, found.length) : -1;
   const byLine = useMemo(() => {
@@ -96,7 +124,7 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
     else if (event.key === "Escape" && find) { event.preventDefault(); closeFind(); }
   };
   const width = `${String(lines.length).length}ch`;
-  return <div className="fe" data-wrap={softWrap || undefined} onKeyDown={keys}>
+  return <div className={`fe${coloured ? " fe-coloured" : ""}`} data-wrap={softWrap || undefined} onKeyDown={keys}>
     {find && <div className="fe-find" role="search" aria-label="Find in file">
       <SearchField ref={undefined} className="fe-find-field">
         <input ref={field} type="text" aria-label="Find in file" placeholder="Find in file…" value={find.query} spellCheck={false} autoComplete="off"
@@ -115,7 +143,7 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
       <div className="fe-stage">
         <div className="fe-layer" aria-hidden="true"><div ref={layer}>{lines.map((text, index) => {
           const pieces = byLine.get(index) ?? NO_PIECES;
-          return <Line key={index} text={text} hit={first > 0 && index + 1 >= first && index + 1 <= last} pieces={pieces} current={pieces === NO_PIECES ? -1 : current} />;
+          return <Line key={index} text={text} hit={first > 0 && index + 1 >= first && index + 1 <= last} pieces={pieces} current={pieces === NO_PIECES ? -1 : current} colours={coloured?.[index]} />;
         })}</div></div>
         <textarea ref={area} className="fe-text" aria-label={label} value={value} wrap={softWrap ? "soft" : "off"} dir="ltr" spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
           onChange={event => onChange(event.target.value)} onScroll={sync} />

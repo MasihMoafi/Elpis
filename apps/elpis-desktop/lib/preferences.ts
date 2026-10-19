@@ -37,7 +37,7 @@ export type Preferences = {
   accent: Accent;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  softWrap: false, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
+  softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
   transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", chatFont: "default", accent: "amber",
 };

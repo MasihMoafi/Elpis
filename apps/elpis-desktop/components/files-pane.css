@@ -75,3 +75,9 @@
 .fe[data-wrap] .fe-text { white-space:pre-wrap; overflow-wrap:anywhere; }
 .fe[data-wrap] .fe-layer > div { min-width:0; }
 .fe[data-wrap] .fe-line { height:auto; min-height:var(--fe-line); white-space:pre-wrap; overflow-wrap:anywhere; }
+/* Coloured files: the layer draws the letters in their code colours and the textarea above draws only the caret and the
+ * selection; a find hit keeps its letters visible on the marked ground. */
+.fe-coloured .fe-layer { color:var(--foreground); }
+.fe-coloured .fe-text { -webkit-text-fill-color:transparent; }
+.fe-coloured .fe-find-hit { color:var(--foreground); }
+.fe-coloured .fe-layer * { font-style:normal; font-weight:inherit; }

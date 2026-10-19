@@ -17,7 +17,7 @@ async function eventually(check, ms = 5000) {
 }
 
 const PROJECT = {
-  'README.md': '# Parser\nA tiny parser.\nUsage below.\n',
+  'README.md': `# Parser\nA tiny parser.\nUsage below. ${'https://rag-web-deployment-preview-0123456789abcdef.vercel.app/'.repeat(4)}\n`,
   'package.json': '{\n  "name": "parser"\n}\n',
   'docs/guide.md': 'Guide\nSee the parser section.\nEnd of guide.\n',
   'src/app.ts': 'import { parse } from "./lib/parser";\nparse();\n',
@@ -282,6 +282,26 @@ test('open files and unsaved edits stay when another side-panel tab is shown', a
   } finally { await f.close(); }
 });
 
+test('code is coloured by its language, as in a code block, and long lines wrap inside the pane by default', async () => {
+  const f = await open();
+  try {
+    await f.ref('src/lib/parser.ts:2-3').click();
+    const text = f.editor('src/lib/parser.ts');
+    await text.waitFor();
+    const colours = await f.view.locator('.fe-layer .hljs-keyword').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).color));
+    assert.ok(colours.length >= 3, `keywords are marked (${colours.length})`);
+    const plain = await text.evaluate(node => getComputedStyle(node).color);
+    assert.ok(colours.every(colour => colour !== plain), `keywords have their own colour (${colours[0]} vs ${plain})`);
+    assert.equal(await text.evaluate(node => getComputedStyle(node).webkitTextFillColor), 'rgba(0, 0, 0, 0)', 'the textarea draws only the caret and selection; the coloured layer shows the letters');
+    await f.row('README.md').dblclick();
+    const log = f.editor('README.md');
+    await log.waitFor();
+    const box = await log.evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth }));
+    assert.ok(box.scroll <= box.client + 1, `a long line wraps instead of running past the pane (${box.scroll} > ${box.client})`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('find in file: Ctrl+F opens a bar that counts and steps through the matches, and Esc closes it', async () => {
   const f = await open();
   try {
@@ -427,8 +447,9 @@ test('light and dark: the pane has no orange in light, and nothing is cut off in
         return box.width > 0 && (box.right > parent.right + 1 || box.left < parent.left - 1);
       }).map(node => node.className || node.tagName));
       assert.deepEqual(cut, [], `${colorScheme}: nothing sticks out of the pane`);
-      const lineHeights = await f.side.locator('.fe-line').evaluateAll(lines => [...new Set(lines.map(line => Math.round(line.getBoundingClientRect().height)))]);
-      assert.equal(lineHeights.length, 1, 'every line is as tall as the others, so the numbers line up');
+      const heights = await f.side.locator('.fe-line').evaluateAll(lines => lines.map(line => Math.round(line.getBoundingClientRect().height)));
+      const numberHeights = await f.side.locator('.fe-gutter-line').evaluateAll(lines => lines.map(line => Math.round(line.getBoundingClientRect().height)));
+      assert.deepEqual(numberHeights, heights, 'each number is as tall as its line, wrapped or not, so the numbers line up');
       const gutter = await f.side.locator('.fe-gutter-line').evaluateAll(lines => lines.slice(0, 5).map(line => Math.round(line.getBoundingClientRect().top)));
       const text = await f.side.locator('.fe-line').evaluateAll(lines => lines.slice(0, 5).map(line => Math.round(line.getBoundingClientRect().top)));
       assert.deepEqual(gutter, text, 'each number sits on its line');
