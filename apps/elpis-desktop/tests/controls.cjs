@@ -46,8 +46,9 @@ async function guardDesktopStore(target) {
     } });
   }, STORE_KEYS.source);
 }
-/** Every orange the light theme paints (hue 15–50°, saturated, mid lightness), as `selector: property value`. The
- * colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
+/** Unapproved oranges in the light theme (hue 15–50°, saturated, mid lightness), as `selector: property value`.
+ * Masih's shared amber primary button fill is allowed; its text, edges and all other surfaces stay checked.
+ * Colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
 const oranges = (page, exclude = '') => page.evaluate(exclude => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
   const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -73,7 +74,10 @@ const oranges = (page, exclude = '') => page.evaluate(exclude => {
     for (const side of ['top', 'right', 'bottom', 'left']) if (parseFloat(style[`border-${side}-width`]) > 0) checks.push([`border-${side}-color`, style[`border-${side}-color`]]);
     if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) checks.push(['outline-color', style.outlineColor]);
     if (element instanceof SVGElement) checks.push(['fill', style.fill], ['stroke', style.stroke]);
-    for (const [property, value] of checks) for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+    for (const [property, value] of checks) {
+      if (property === 'background-color' && element.matches('[data-slot="button"].primary-cut')) continue;
+      for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+    }
   }
   return [...hits];
 }, exclude);

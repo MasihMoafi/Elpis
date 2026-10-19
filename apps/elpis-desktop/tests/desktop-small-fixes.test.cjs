@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { fixture, CWD } = require('./parity-fixture.cjs');
-const { openSettings, leaveSettings } = require('./controls.cjs');
+const { openSettings, leaveSettings, oranges } = require('./controls.cjs');
 
 const evidence = path.join(os.homedir(), '.cache/elpis-tests/desktop-small-fixes');
 const chat = (id, name, extra = {}) => ({ id, name, cwd: CWD, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });
@@ -158,6 +158,22 @@ for (const colorScheme of ['light', 'dark']) test(`Agent runs hide persistently 
   assert.equal(await page.locator('.thread-row[data-thread-id="chat-a"]').count(), 1);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await page.getByRole('button', { name: 'Agent runs (2)', exact: true }).waitFor();
+});
+
+test('light-theme colour guard permits the approved primary fill and still rejects orange text and unrelated fills', async t => {
+  const f = await fixture();
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+  await f.page.evaluate(() => {
+    const other = document.createElement('span'); other.id = 'unexpected-fill'; other.textContent = 'Other fill'; other.style.backgroundColor = '#f2a93b';
+    const primary = document.createElement('button'); primary.id = 'primary-probe'; primary.className = 'primary-cut'; primary.dataset.slot = 'button'; primary.textContent = 'Unreadable text'; primary.style.color = '#f2a93b';
+    document.body.append(other, primary);
+  });
+  const hits = await oranges(f.page);
+  assert.ok(hits.some(hit => hit.includes('span#unexpected-fill') && hit.includes('background-color')));
+  assert.ok(hits.some(hit => hit.includes('button#primary-probe') && hit.includes(': color')));
+  assert.equal(hits.some(hit => hit.includes('button#primary-probe') && hit.includes('background-color')), false, 'only the approved primary fill is exempt');
+  await f.page.evaluate(() => { document.querySelector('#unexpected-fill').remove(); document.querySelector('#primary-probe').remove(); });
+  assert.deepEqual(await oranges(f.page), []);
 });
 
 test('large Agent runs groups delete a labeled batch within the existing trash limit', async t => {
