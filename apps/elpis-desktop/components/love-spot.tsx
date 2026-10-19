@@ -4,7 +4,7 @@ import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, X } from "lucide-react";
-import { CaptureUpdateAction, Excalidraw, newElementWith, convertToExcalidrawElements, exportToBlob, restoreElements, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
-import { applyRemoteScene } from "@/lib/love-spot-history";
+import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { newer } from "@/bridge/love-spot-order.cjs";
@@ -38,7 +38,7 @@ function snapshot(elements: readonly ExcalidrawElement[], appState: AppState, fi
 }
 async function lightDrawing(drawing: Drawing) { return { ...drawing, files: await lightFiles(drawing.elements, drawing.files) }; }
 async function savePicture(data: Saved) {
-  const blob = await exportToBlob({ elements: restoreElements(data.scene.elements, null).filter(e => !e.isDeleted),
+  const blob = await exportToBlob({ elements: restoreRemoteElements(data.scene.elements).filter(e => !e.isDeleted),
     appState: { ...data.scene.appState, exportBackground: true }, files: data.scene.files, mimeType: "image/png", exportPadding: 24, maxWidthOrHeight: 2400 });
   const dataURL = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); });
   await api("/love-spot/picture", { revision: data.revision, png: dataURL.split(",")[1] });
@@ -138,10 +138,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       revision.current = data.revision;
       currentPage.current = data.scene.page; setPage(data.scene.page); loadPages();
       journal.current!.acknowledge(data.scene.elements, data.scene.page);
-      const elements = journal.current!.recover(data.scene.elements, data.scene.page);
+      const recovered = journal.current!.recover(data.scene.elements, data.scene.page);
+      const elements = restoreRemoteElements(recovered);
       setInitial({ elements, files: data.scene.files, scrollToContent: true,
         appState: { ...data.scene.appState, currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } });
-      recoveryPending.current = versions(elements) !== versions(data.scene.elements);
+      recoveryPending.current = versions(recovered) !== versions(data.scene.elements);
       setError("");
     }).catch(report);
     return () => { active = false; };
@@ -181,7 +182,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       try {
         editor.resetScene();
         editor.addFiles(Object.values(data.scene.files));
-        applyRemoteScene(editor, restoreElements(data.scene.elements, null, { refreshDimensions: true, repairBindings: true }),
+        applyRemoteScene(editor, restoreRemoteElements(data.scene.elements),
           { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() });
       } finally { remote.current = false; }
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
@@ -194,11 +195,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     const placed = data.scene.elements.find(e => e.id === placingScreenshot.current && !e.isDeleted && !shown.has(e.id));
     const screenshot = placed ?? data.scene.elements.find(e => e.type === "image" && !e.isDeleted && e.id.startsWith("shot-") && !shown.has(e.id));
     const reply = data.scene.elements.some(e => !e.isDeleted && e.id.startsWith("love-reply-") && !shown.has(e.id));
-    let changed = false;
-    for (const e of restoreElements(data.scene.elements, null, { refreshDimensions: true, repairBindings: true })) {
-      const mine = shown.get(e.id);
-      if (!mine || newer(e, mine)) { shown.set(e.id, e); changed = true; }
-    }
+    const changed = mergeRemoteElements(shown, data.scene.elements, newer);
     // File IDs are immutable in Excalidraw: addFiles only accepts missing IDs.
     // Keep originals for undo instead of repeatedly resaving a normalized copy.
     const files = Object.values(data.scene.files).filter(f => !editor.getFiles()[f.id]);

@@ -17,6 +17,13 @@ async function nativeCopy(electron, standalone) {
   try { return JSON.parse(text).elements.filter(e => !e.isDeleted); } catch { return []; }
 }
 
+async function browserCopy(page) {
+  await page.evaluate(() => navigator.clipboard.writeText(''));
+  await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.press('ControlOrMeta+c');
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  try { return JSON.parse(text).elements.filter(e => !e.isDeleted); } catch { return []; }
+}
+
 async function standaloneFixture(t, { delaySaves = false, holdIncoming = false, failSaves = false } = {}) {
   const reference = process.env.LOVE_SPOT_STANDALONE_DIR || path.join(os.homedir(), '.local/lib/excalidraw-local');
   const f = await loveSpotFixture();
@@ -196,6 +203,29 @@ test('a remote deletion arriving in a real arrow-key batch never becomes undoabl
   assert.deepEqual(standaloneErrors, []); assert.deepEqual(f.errors, []);
 });
 
+test('concurrent Love Spot shapes keep stable versions while both windows are idle', async t => {
+  const { f, electron, standalone } = await standaloneFixture(t);
+  await Promise.all([f.draw(f.page), f.draw(standalone, 140)]);
+  await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 2, 'concurrent additions did not save');
+  await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await f.page.locator('.excalidraw').click({ position: { x: 1000, y: 700 } });
+  await f.waitFor(async () => (await browserCopy(f.page)).length === 2, 'Elpis did not display both shapes');
+  await f.waitFor(async () => (await nativeCopy(electron, standalone)).length === 2, 'standalone did not display both shapes');
+  // Let the 150 ms save debounce publish any index repair caused by the merge.
+  await standalone.waitForTimeout(250);
+  const versions = scene => scene.elements.map(e => [e.id, e.version, e.versionNonce, e.index, e.isDeleted]);
+  const before = versions(await f.scene());
+  await standalone.waitForTimeout(600);
+  const after = versions(await f.scene());
+  assert.deepEqual(after, before, 'receiving a scene must not generate another edit while both canvases are idle');
+  if (process.env.ELPIS_SHOTS) {
+    await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true });
+    await fs.writeFile(path.join(process.env.ELPIS_SHOTS, 'idle-versions.json'), JSON.stringify({ before, after }, null, 2));
+    await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, 'idle-elpis.png') });
+    await standalone.screenshot({ path: path.join(process.env.ELPIS_SHOTS, 'idle-standalone.png') });
+  }
+});
+
 test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a second without losing concurrent additions', async t => {
   const { f, electron, standalone, standaloneErrors } = await standaloneFixture(t);
   await Promise.all([f.draw(f.page), f.draw(standalone, 140)]);
@@ -206,13 +236,9 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
   await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   // A disk write is not an acknowledgement from this window. Observe both
   // shapes through the real Copy action before asking Delete to remove them.
-  await f.waitFor(async () => {
-    await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.press('ControlOrMeta+c');
-    const text = await f.page.evaluate(() => navigator.clipboard.readText());
-    try { return JSON.parse(text).elements.filter(e => !e.isDeleted).length === 2; } catch { return false; }
-  }, 'both published shapes must reach the Elpis canvas', 700);
+  await f.waitFor(async () => (await browserCopy(f.page)).length === 2, 'both published shapes must reach the Elpis canvas', 700);
   await f.page.keyboard.press('Delete');
-  await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'standalone stroke did not reach Elpis', 700).catch(async e => {
+  await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'Elpis Delete did not remove both received shapes', 700).catch(async e => {
     await f.page.screenshot({ path: '/tmp/love-spot-pages-standalone-failure.png' });
     throw new Error(`${e.message}; scene: ${JSON.stringify((await f.scene()).elements.map(e => [e.id, e.version, e.isDeleted]))}; alerts: ${JSON.stringify(await f.page.locator('.love-spot [role="alert"]').allTextContents())}`);
   });
@@ -224,7 +250,7 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
   // As on the Elpis side: the standalone must show the received shape before Delete removes it (7c727e384).
   await f.waitFor(async () => (await nativeCopy(electron, standalone)).length === 1, 'the Elpis stroke must reach the standalone canvas', 700);
   await standalone.keyboard.press('Delete');
-  await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'Elpis stroke did not reach standalone', 700).catch(async e => { await standalone.screenshot({ path: '/tmp/love-spot-standalone-failure.png' }); throw new Error(`${e.message}; scene: ${JSON.stringify((await f.scene()).elements.map(e => [e.type, e.version, e.isDeleted]))}`); });
+  await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 0, 'standalone Delete did not remove the received shape', 700).catch(async e => { await standalone.screenshot({ path: '/tmp/love-spot-standalone-failure.png' }); throw new Error(`${e.message}; scene: ${JSON.stringify((await f.scene()).elements.map(e => [e.type, e.version, e.isDeleted]))}`); });
   assert.ok(Date.now() - fromElpis < 1000);
   const shot = await f.page.screenshot();
   await fs.writeFile(path.join(f.screenshots, 'shared.png'), shot);

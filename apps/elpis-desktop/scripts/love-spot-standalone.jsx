@@ -1,8 +1,8 @@
 // Love Spot pages protocol. Installed only by sync-love-spot.mjs.
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Excalidraw, exportToBlob, restoreElements, serializeAsJSON } from '@excalidraw/excalidraw';
-import { applyRemoteScene } from './love-spot-history';
+import { Excalidraw, exportToBlob, serializeAsJSON } from '@excalidraw/excalidraw';
+import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from './love-spot-history';
 import { MASIH_PEN, lightFiles } from './love-spot';
 import { newer } from '../love-spot-order.cjs';
 import { createTextJournal, saveWithTextDrafts } from './love-spot-drafts';
@@ -51,7 +51,7 @@ function App({ data }) {
         if (switching) {
           clearTimeout(saving.current); clearTimeout(viewing.current);
           editor.resetScene(); editor.addFiles(Object.values(incoming.files || {}));
-          applyRemoteScene(editor, restoreElements(incoming.elements || [], null, { refreshDimensions: true, repairBindings: true }),
+          applyRemoteScene(editor, restoreRemoteElements(incoming.elements || []),
             { ...(incoming.appState || {}), selectedElementIds: {}, collaborators: new Map() });
           editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
           if (recovery || Object.keys(incoming.files || {}).length) queueMicrotask(save);
@@ -60,11 +60,7 @@ function App({ data }) {
         const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
         const screenshot = (incoming.elements || []).find(e => e.type === 'image' && !e.isDeleted && e.id.startsWith('shot-') && !shown.has(e.id));
         const files = Object.values(incoming.files || {}).filter(f => editor.getFiles()[f.id]?.dataURL !== f.dataURL);
-        let updated = false;
-        for (const element of restoreElements(incoming.elements || [], null, { refreshDimensions: true, repairBindings: true })) {
-          const mine = shown.get(element.id);
-          if (!mine || newer(element, mine)) { shown.set(element.id, element); updated = true; }
-        }
+        const updated = mergeRemoteElements(shown, incoming.elements || [], newer);
         if (files.length) editor.addFiles(files);
         if (updated) applyRemoteScene(editor, [...shown.values()]);
         if (screenshot) { editor.updateScene({ appState: { selectedElementIds: { [screenshot.id]: true } } }); editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 }); }
@@ -114,8 +110,8 @@ function App({ data }) {
       } catch (e) { console.error(e); }
     }, 1500);
   };
-  const initial = data && { elements: data.elements || [], files: data.files || {}, scrollToContent: true,
-    appState: { ...(data.appState || {}), currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } };
+  const [initial] = useState(() => data && { elements: restoreRemoteElements(data.elements || []), files: data.files || {}, scrollToContent: true,
+    appState: { ...(data.appState || {}), currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } });
   return <><Excalidraw excalidrawAPI={ready} initialData={initial} onChange={changed} />
     <div className="badge badge-sm badge-ghost" role={error ? 'alert' : 'status'} aria-label="Drawing save status" style={{ position: 'fixed', bottom: 20, right: 100, zIndex: 10, padding: '4px 8px', borderRadius: 6, background: 'var(--color-base-100, Canvas)', color: 'var(--color-base-content, CanvasText)', font: '13px sans-serif' }}>{error || status}</div></>;
 }

@@ -82,6 +82,49 @@ for (const colorScheme of ['light', 'dark']) test(`two windows keep a real delet
   } finally { release?.(); await f.close(); }
 });
 
+test('a legacy live snapshot cannot revive an equal-version local Delete while its save is pending', async () => {
+  const f = await loveSpotFixture();
+  let releaseLive, releaseDelete;
+  const liveGate = new Promise(resolve => { releaseLive = resolve; });
+  const deleteGate = new Promise(resolve => { releaseDelete = resolve; });
+  let heldLive, heldDelete;
+  try {
+    await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await f.open(f.page); await f.draw(f.page);
+    const original = (await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'shape did not save')).elements.find(e => !e.isDeleted);
+    const other = await f.newPage(); await f.open(other);
+    await f.waitFor(async () => (await copied(other)).some(e => e.id === original.id), 'other canvas did not receive the shape');
+    await other.route('**/api/love-spot', async route => {
+      if (route.request().method() !== 'POST' || heldLive) return route.continue();
+      const drawing = route.request().postDataJSON();
+      const live = drawing.elements.find(e => e.id === original.id && !e.isDeleted);
+      if (!live) return route.continue();
+      delete live.index; heldLive = drawing; await liveGate;
+      return route.continue({ postData: JSON.stringify(drawing) });
+    });
+    await other.keyboard.press('ArrowRight');
+    await f.waitFor(() => heldLive, 'live keyboard edit was not held');
+    await f.page.bringToFront(); await copied(f.page);
+    await f.page.route('**/api/love-spot', async route => {
+      if (route.request().method() !== 'POST' || heldDelete) return route.continue();
+      const drawing = route.request().postDataJSON();
+      if (!drawing.elements.some(e => e.id === original.id && e.isDeleted)) return route.continue();
+      heldDelete = drawing; await deleteGate; return route.continue();
+    });
+    await f.page.keyboard.press('Delete');
+    await f.waitFor(() => heldDelete, 'local Delete was not held');
+    assert.equal(heldLive.elements.find(e => e.id === original.id).version, heldDelete.elements.find(e => e.id === original.id).version);
+    const published = other.waitForResponse(r => new URL(r.url()).pathname === '/api/love-spot' && r.request().method() === 'POST');
+    releaseLive(); await published;
+    await f.page.waitForTimeout(300); // Admit the published scene while Delete still awaits disk acknowledgement.
+    assert.equal((await copied(f.page)).length, 0, 'repairing a missing layer index must not turn a stale live snapshot into a newer edit');
+    releaseDelete();
+    await f.waitFor(s => s.elements.find(e => e.id === original.id)?.isDeleted, 'Delete did not save');
+    await f.waitFor(async () => (await copied(other)).length === 0, 'other canvas revived the winning deletion');
+    assert.deepEqual(f.errors, []);
+  } finally { releaseLive(); releaseDelete(); await f.close(); }
+});
+
 test('remote deletion is not a local undo step; deliberate delete undo and redo synchronize', async () => {
   const f = await loveSpotFixture();
   try {
