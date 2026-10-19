@@ -397,7 +397,7 @@ export function readGraph(): CanvasGraph | null {
     return withMother({ ...value, nodes });
   } catch { return null; }
 }
-/** Both Workflows and Experiment Lab start from the same board or starter. */
+/** Both Workflows and Lab start from the same board or starter. */
 export function initialGraph(): CanvasGraph {
   return readGraph() ?? { ...withMother(TEMPLATES[0].build()), template: TEMPLATES[0].id };
 }

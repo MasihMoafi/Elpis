@@ -56,8 +56,8 @@ function Lab({ graph }: { graph: CanvasGraph }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const status = record ? ({ running: "Running", completed: "Completed", stopped: "Stopped", failed: "Failed", interrupted: "Interrupted" }[record.status]) : "Ready";
-  return <section aria-label="Experiment Lab" className={`min-h-0 flex-1 ${styles.lab}`}>
-    <div className={styles.intro}><h1>Experiment Lab</h1><p>Does a pattern earn its extra calls? Compare it with one agent on the same task.</p>
+  return <section aria-label="Lab" className={`min-h-0 flex-1 ${styles.lab}`}>
+    <div className={styles.intro}><h1>Lab</h1><p>Does a pattern earn its extra calls? Compare it with one agent on the same task.</p>
       <p className={styles.muted}>ChatGPT subscription · gpt-6-luna · low thinking · fresh context for every stage</p></div>
     <form className={styles.form} onSubmit={event => { event.preventDefault(); if (valid && !running && !busy) void action(); }}>
       <div className={styles.fields}>

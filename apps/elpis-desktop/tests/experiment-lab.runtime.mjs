@@ -38,8 +38,8 @@ try {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(cwd => { localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'lab', name: 'Lab check', cwd }], selectedId: 'lab' })); }, work);
   await page.goto(app.url);
-  await page.getByRole('button', { name: 'Experiment Lab', exact: true }).click();
-  const lab = page.getByRole('region', { name: 'Experiment Lab', exact: true });
+  await page.getByRole('button', { name: 'Lab', exact: true }).click();
+  const lab = page.getByRole('region', { name: 'Lab', exact: true });
   await chooseOption(lab.getByRole('combobox', { name: 'Pattern', exact: true }), 'evaluator-optimizer');
   await lab.getByRole('textbox', { name: 'Task', exact: true }).fill('What is 19 + 23? Return only the integer.');
   await lab.getByRole('textbox', { name: 'Expected answer', exact: true }).fill('42');
@@ -62,7 +62,7 @@ try {
   await lab.getByRole('table', { name: 'Comparison', exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(evidence, 'live.png') });
   await page.reload();
-  await page.getByRole('button', { name: 'Experiment Lab', exact: true }).click();
+  await page.getByRole('button', { name: 'Lab', exact: true }).click();
   await page.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
   console.log(JSON.stringify({ trials: record.trials.length, passed: record.trials.filter(t => t.passed).length, calls: record.trials.reduce((n, t) => n + t.steps.length, 0), tokens: record.trials.reduce((n, t) => n + t.tokens, 0), evidence }));
 } finally {

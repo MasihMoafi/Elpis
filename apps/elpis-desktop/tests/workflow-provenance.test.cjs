@@ -5,30 +5,30 @@ const { chooseOption, chooseTheme } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
 
-test('Experiment Lab is the page after New chat, with history, command search and matching sidebar icons', async () => {
+test('Lab is the page after New chat, with history, command search and matching sidebar icons', async () => {
   const f = await fixture({ routes: { '/api/experiment-lab': () => ({ record: null }) } });
   try {
     const { page } = f, nav = page.getByRole('navigation', { name: 'Workspace', exact: true });
     const names = await nav.getByRole('button').allTextContents();
-    assert.deepEqual(names.slice(0, 3), ['New chat', 'Experiment Lab', 'Workflows']);
-    const labButton = nav.getByRole('button', { name: 'Experiment Lab', exact: true });
+    assert.deepEqual(names.slice(0, 3), ['New chat', 'Lab', 'Workflows']);
+    const labButton = nav.getByRole('button', { name: 'Lab', exact: true });
     await labButton.focus(); await page.keyboard.press('Enter');
-    const lab = page.getByRole('region', { name: 'Experiment Lab', exact: true });
-    await lab.getByRole('heading', { name: 'Experiment Lab', exact: true }).waitFor();
+    const lab = page.getByRole('region', { name: 'Lab', exact: true });
+    await lab.getByRole('heading', { name: 'Lab', exact: true }).waitFor();
     assert.equal(await labButton.getAttribute('aria-current'), 'page');
-    assert.equal(await page.title(), 'Experiment Lab · Elpis');
+    assert.equal(await page.title(), 'Lab · Elpis');
     assert.equal(await page.getByRole('region', { name: 'Workflows', exact: true }).count(), 0);
     await nav.getByRole('button', { name: 'Workflows', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.waitFor();
-    assert.equal(await board.getByRole('button', { name: 'Experiment Lab', exact: true }).count(), 0);
+    assert.equal(await board.getByRole('button', { name: 'Lab', exact: true }).count(), 0);
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await lab.waitFor();
     await page.getByRole('button', { name: 'Forward', exact: true }).click();
     await board.waitFor();
     await page.keyboard.press('Control+k');
-    await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Experiment Lab');
-    await page.getByRole('option', { name: 'Experiment Lab', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Lab');
+    await page.getByRole('option', { name: 'Lab', exact: true }).click();
     await lab.waitFor();
     for (const theme of ['light', 'dark']) {
       if (theme === 'dark') await chooseTheme(page, theme);
@@ -65,8 +65,8 @@ test('Lab receives the current board even when navigation immediately follows an
   try {
     await f.agents.first().click();
     await f.canvas.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Fresh board instruction for the Lab');
-    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Experiment Lab', exact: true }).click();
-    const lab = f.page.getByRole('region', { name: 'Experiment Lab', exact: true });
+    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
+    const lab = f.page.getByRole('region', { name: 'Lab', exact: true });
     await chooseOption(lab.getByRole('combobox', { name: 'Pattern', exact: true }), 'current');
     await lab.getByRole('textbox', { name: 'Task', exact: true }).fill('Board handover');
     await lab.getByRole('textbox', { name: 'Expected answer', exact: true }).fill('42');
@@ -119,8 +119,8 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
   });
   try {
     const boardBefore = await f.saved();
-    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Experiment Lab', exact: true }).click();
-    const lab = f.page.getByRole('region', { name: 'Experiment Lab', exact: true });
+    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
+    const lab = f.page.getByRole('region', { name: 'Lab', exact: true });
     await lab.getByRole('textbox', { name: 'Task', exact: true }).fill('What is 19 + 23? Return the number.');
     await lab.getByRole('textbox', { name: 'Expected answer', exact: true }).fill('42');
     await chooseOption(lab.getByRole('combobox', { name: 'Pattern', exact: true }), 'voting');
@@ -139,15 +139,15 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
     await lab.getByRole('button', { name: 'Export JSON', exact: true }).click();
     assert.equal((await download).suggestedFilename(), 'elpis-experiment-fixture.json');
     await f.page.reload();
-    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Experiment Lab', exact: true }).click();
+    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
     await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
     current = { ...current, status: 'running' };
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
-    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Experiment Lab', exact: true }).click();
+    await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
     await lab.getByRole('button', { name: 'Stop experiment', exact: true }).click();
     await lab.getByRole('status').filter({ hasText: 'Stopped' }).waitFor();
     // The board is inactive while the Lab is open: its global selection/delete keys must not edit hidden agents.
-    await lab.getByRole('heading', { name: 'Experiment Lab', exact: true }).click();
+    await lab.getByRole('heading', { name: 'Lab', exact: true }).click();
     await f.page.keyboard.press('Control+a'); await f.page.keyboard.press('Control+Delete');
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     assert.deepEqual(await f.saved(), boardBefore);
@@ -165,8 +165,8 @@ test('Sources and Lab stay readable in light/dark at Masih’s window size', asy
       await f.canvas.getByRole('link', { name: 'Sources for Voting', exact: true }).click();
       await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/sources-${theme}.png` });
       await f.canvas.getByRole('button', { name: 'Back to patterns', exact: true }).click();
-      await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Experiment Lab', exact: true }).click();
-      const lab = f.page.getByRole('region', { name: 'Experiment Lab', exact: true });
+      await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
+      const lab = f.page.getByRole('region', { name: 'Lab', exact: true });
       assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
       await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/lab-${theme}.png` });
       await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
