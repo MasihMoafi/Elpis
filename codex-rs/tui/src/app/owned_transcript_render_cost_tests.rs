@@ -84,21 +84,29 @@ async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer(
         row(title_row + 1, 0..rule_x).contains(&cwd),
         "the cwd row must follow the title\n{screen_text}"
     );
-    let ledger_top = (0..screen.height)
+    let close_row = (0..screen.height)
+        .find(|&y| row(y, rule_x + 1..screen.width).contains("✕ Close"))
+        .unwrap_or_else(|| panic!("the Ledger Close button is missing\n{screen_text}"));
+    let ledger_title = (0..screen.height)
         .find(|&y| row(y, rule_x + 1..screen.width).contains("CONTEXT LEDGER"))
         .unwrap_or_else(|| panic!("the Ledger title is missing\n{screen_text}"));
     let first_line = (title_row + 2..screen.height)
         .find(|&y| row(y, 0..rule_x).contains("first line of the transcript"))
         .unwrap_or_else(|| panic!("the transcript must stay beside the Ledger\n{screen_text}"));
     assert_eq!(
-        ledger_top, first_line,
-        "the Ledger must start level with the first transcript line, below the header's gap\n\
+        close_row, first_line,
+        "the Ledger Close row must start level with the first transcript line, below the header's gap\n\
          {screen_text}"
     );
-    for y in 0..ledger_top {
+    assert_eq!(
+        ledger_title,
+        close_row + 1,
+        "the Ledger title must follow its dedicated Close row\n{screen_text}"
+    );
+    for y in 0..close_row {
         assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}\n{screen_text}");
     }
-    for y in ledger_top..screen.height {
+    for y in close_row..screen.height {
         assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}\n{screen_text}");
     }
     tui.set_owned_screen(/*owned*/ false)?;
