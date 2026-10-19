@@ -435,31 +435,31 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
 
 #[tokio::test]
 async fn ledger_header_gap_narrowest() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│ CONTEXT LEDGER…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│                  ✕ Close\n│ CONTEXT LEDGER  context …");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_default() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│ CONTEXT LEDGER  context not measured ·…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│                                          ✕ Close\n│ CONTEXT LEDGER  context not measured · ≈0 source…");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_80_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│ CONTEXT LEDGER  co…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│                      ✕ Close\n│ CONTEXT LEDGER  context not …");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_120_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│ CONTEXT LEDGER  context not measur…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│                                      ✕ Close\n│ CONTEXT LEDGER  context not measured · ≈0 so…");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_140_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│ CONTEXT LEDGER  context not measured ·…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│                                          ✕ Close\n│ CONTEXT LEDGER  context not measured · ≈0 source…");
     Ok(())
 }
 

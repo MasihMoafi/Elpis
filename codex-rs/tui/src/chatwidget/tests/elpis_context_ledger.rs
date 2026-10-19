@@ -163,7 +163,10 @@ async fn owned_ledger_displays_complete_source_names_at_narrow_widths() -> anyho
                 "complete {name} at width {width}:\n{text}"
             );
         }
-        let flattened = text
+        // Reconstruct wrapped file text from the body cells, excluding the decorative rule
+        // and margins between rows. Wide-character continuation cells contain only spaces.
+        let flattened = rows(&buffer, 2..width - 1)
+            .join("")
             .chars()
             .filter(|ch| !ch.is_whitespace())
             .collect::<String>();
