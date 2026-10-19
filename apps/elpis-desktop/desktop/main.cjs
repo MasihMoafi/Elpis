@@ -60,9 +60,13 @@ async function prepareWindows() {
     const { DesktopClient } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
-    browserAgentSocket = await startBrowserAgentSocket();
+    browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
-      const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: browserMcpConfig(browserAgentSocket.path) });
+      const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: {
+        forSession: id => browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
+        bind: (from, to) => browserAgentSocket.rebind(from, to),
+        close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
+      } });
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
       try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }
@@ -122,6 +126,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
     // The renderer must save live text while its board server is still open.
     Promise.resolve(sessionWindows?.flushText()).then(async saved => {
       if (saved === false) { closing = false; return; }
+      await sessionWindows?.flushBrowsers();
       await Promise.all([store?.flush(), server.close(), browserAgentSocket?.close()]);
       app.quit();
     }).catch(error => { closing = false; console.error('Could not save before quitting:', error); });

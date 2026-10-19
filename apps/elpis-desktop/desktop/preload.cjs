@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     if(result?.opened!==true)throw Error('Could not open this folder.');
   }),
   browser:{
+    sessionScoped:true,
     command:(action,data={})=>ipcRenderer.invoke('elpis:browser',{action,...data}).then(result=>{if(typeof result?.error==='string')throw Error(result.error);return result;}),
     layout:value=>ipcRenderer.send('elpis:browser:layout',value),
     subscribe:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('elpis:browser:state',listener);return()=>ipcRenderer.removeListener('elpis:browser:state',listener);},

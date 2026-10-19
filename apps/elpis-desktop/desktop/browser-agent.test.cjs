@@ -107,10 +107,11 @@ test('private Unix socket permissions and round-trip dispatch', async () => {
   try {
     assert.equal((await fs.stat(endpoint.path)).mode & 0o777,0o600);
     assert.equal((await fs.stat(require('node:path').dirname(endpoint.path))).mode & 0o777,0o700);
-    endpoint.setAgent({call: async (name,args) => ({name,args})});
+    endpoint.setResolver(() => ({call: async (name,args) => ({name,args})}));
+    const capability=endpoint.scope('fixture');
     const value = await new Promise((resolve,reject) => {
       const socket=net.createConnection(endpoint.path);socket.on('error',reject);
-      socket.on('connect',()=>socket.write(JSON.stringify({name:'browser_tabs',arguments:{}})+'\n'));
+      socket.on('connect',()=>socket.write(JSON.stringify({name:'browser_tabs',arguments:{},capability})+'\n'));
       socket.once('data',data=>{socket.end();resolve(JSON.parse(data));});
     });
     assert.deepEqual(value.result,{name:'browser_tabs',args:{}});

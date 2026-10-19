@@ -1,6 +1,6 @@
 'use strict';
 const path = require('node:path');
-const { createBrowser } = require('./browser.cjs');
+const { createBrowserSessions } = require('./browser-sessions.cjs');
 const { registerState } = require('./state.cjs');
 const { registerFiles } = require('./files.cjs');
 const { registerTerminal } = require('./terminal.cjs');
@@ -22,6 +22,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
   const savedText = new WeakSet();
   const openers = new Map();
   const windowIpc = createWindowIpc(globalIpc);
+  const browsers = createBrowserSessions({ store, browserAgentSocket });
   let loveSpotWindow, openingLoveSpot;
   async function openLoveSpot() {
     if (loveSpotWindow && !loveSpotWindow.isDestroyed()) {
@@ -49,9 +50,8 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     });
     const ipcMain = windowIpc(window);
     windows.add(window);
-    const browser = createBrowser({ host: window, origin, WebContentsView, session, ipcMain, Menu, clipboard, openExternal: url => shell.openExternal(url) });
-    window.on('focus', () => { browserAgentSocket?.setAgent(browser.agent); onFocused?.(window, openers.get(window)); });
-    browserAgentSocket?.setAgent(browser.agent);
+    const browser = browsers.attach({ host: window, origin, WebContentsView, session, ipcMain, Menu, clipboard, openExternal: url => shell.openExternal(url) });
+    window.on('focus', () => { onFocused?.(window, openers.get(window)); });
     const threads = createThreadOpener(threadId);
     const newChats = createNewChatOpener();
     openers.set(window, { threads, newChats, loveSpot });
@@ -125,7 +125,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     }));
     return results.every(Boolean);
   };
-  return { open, openLoveSpot, windows, flushText, openersFor: host => openers.get(host) };
+  return { open, openLoveSpot, windows, flushText, openersFor: host => openers.get(host), closeBrowser: browsers.drop, flushBrowsers: browsers.flush };
 }
 const sessionWindowMenu = open => ({ label: 'New Session in New Window', accelerator: 'CommandOrControl+Shift+N', click: () => { void open(); } });
 module.exports = { createSessionWindows, sessionWindowMenu };

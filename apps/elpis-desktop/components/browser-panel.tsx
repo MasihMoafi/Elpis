@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, SquareDashedMousePointer, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,23 +11,34 @@ import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
 
 /** The desktop's built-in browser: tabs and pages live in the Electron main process. */
-export function useBrowser() {
-  const [api, setApi] = useState<DesktopBrowser | null>(null);
+export function useBrowser(sessionId: string) {
+  const [desktopApi, setApi] = useState<DesktopBrowser | null>(null);
   const [state, setState] = useState<BrowserState | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
+  const current = useRef(sessionId); current.current = sessionId;
+  useLayoutEffect(() => {
     const browser = window.elpisDesktop?.browser; if (!browser) return;
-    setApi(browser); let disposed = false;
-    const update = (value: BrowserState) => { if (!disposed) setState(value); };
+    setApi(browser); setError(""); let disposed = false;
+    const update = (value: BrowserState) => { if (!disposed && (!browser.sessionScoped || value.sessionId === sessionId)) { setState(value); setError(value.error ?? ""); } };
     const unsubscribe = browser.subscribe(update);
-    void browser.command("state").then(update).catch(e => setError(e.message));
+    void browser.command(browser.sessionScoped ? "session" : "state", browser.sessionScoped ? { sessionId } : undefined).then(update).catch(e => { if (!disposed) setError(e.message); });
     return () => { disposed = true; unsubscribe(); };
-  }, []);
+  }, [sessionId]);
+  const api = useMemo<DesktopBrowser | null>(() => desktopApi && ({ ...desktopApi,
+    command: async (action, data) => {
+      const response = await desktopApi.command(action, desktopApi.sessionScoped ? { ...data, sessionId } : data);
+      if (current.current !== sessionId) throw Error("This browser session is no longer shown.");
+      return response;
+    },
+    layout: value => desktopApi.layout(desktopApi.sessionScoped ? { ...value, sessionId } : value),
+  }), [desktopApi, sessionId]);
   const command = useCallback(async (action: string, data?: BrowserCommand) => {
     if (!api) return undefined; setError("");
-    try { return await api.command(action, data); } catch (e) { setError(e instanceof Error ? e.message : String(e)); return undefined; }
-  }, [api]);
-  return { api, state, error, command };
+    try { return await api.command(action, data); } catch (e) { if (current.current === sessionId) setError(e instanceof Error ? e.message : String(e)); return undefined; }
+  }, [api, sessionId]);
+  const closeSession = useCallback((id: string) => { if (desktopApi?.sessionScoped) void desktopApi.command("sessionClose", { sessionId: id }).catch(e => setError(e.message)); }, [desktopApi]);
+  const adoptSession = useCallback(async (from: string, to: string) => { if (desktopApi?.sessionScoped) await desktopApi.command("sessionAdopt", { fromSessionId: from, sessionId: to }); }, [desktopApi]);
+  return { api, state: desktopApi?.sessionScoped && state?.sessionId !== sessionId ? null : state, error, command, closeSession, adoptSession, sessionId };
 }
 export type Browser = ReturnType<typeof useBrowser>;
 
@@ -63,7 +74,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
     const rect = element.getBoundingClientRect();
     // A failed page shows Elpis's explanation instead of Chromium's empty error page.
     api.layout({ bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, obscured: covered || modal || !state?.visible || !!active?.failure });
-  }, [api, covered, modal, state?.visible, active?.failure]);
+  }, [api, covered, modal, state?.visible, state?.presentation, active?.failure]);
   useEffect(() => {
     if (!state?.visible || !viewport.current) return;
     const observer = new ResizeObserver(layout); observer.observe(viewport.current); window.addEventListener("resize", layout); layout();

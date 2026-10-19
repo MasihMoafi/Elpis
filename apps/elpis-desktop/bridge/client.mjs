@@ -207,7 +207,7 @@ export class DesktopClient extends EventEmitter {
     this.#socket.send(JSON.stringify({ method: 'initialized', params: {} })); this.#ready = true;
   }
   get connected() { return this.#ready && !this.#closed; }
-  #browserOptions() { return this.#browserConfig ? { config: this.#browserConfig } : {}; }
+  #browserOptions(id) { return this.#browserConfig ? { config: this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig } : {}; }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {
     if (this.#closed) return;
@@ -421,7 +421,7 @@ export class DesktopClient extends EventEmitter {
     return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
       canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
-  #forget(id) { this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); }
+  #forget(id) { this.#browserConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); }
   async listThreads(options = {}) {
     object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
     if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
@@ -456,8 +456,9 @@ export class DesktopClient extends EventEmitter {
     threadId(id);
     if (this.#owned.has(id) && !this.#attaching.has(id)) return Promise.resolve(null);
     if (this.#attaching.has(id)) return this.#attaching.get(id);
+    const browserOptions = this.#browserOptions(id);
     this.#owned.add(id);
-    const attempt = this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...this.#browserOptions() })
+    const attempt = this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' }, ...browserOptions })
       .then(result => {
         if (result.thread?.id !== id) throw new BridgeError('Elpis resumed another conversation', 502);
         return result;
@@ -986,14 +987,16 @@ export class DesktopClient extends EventEmitter {
     // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
     // worktree goes again.
     const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
-    const config = { ...this.#browserOptions().config, ...(body.agents ? { 'features.multi_agent': true } : {}) };
+    const browserSession = `pending-${randomUUID()}`;
+    const config = { ...this.#browserOptions(browserSession).config, ...(body.agents ? { 'features.multi_agent': true } : {}) };
     let result;
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
         ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
         ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
-    } catch (error) { if (made) await undoChatWorktree(made); throw error; }
+    } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
+    this.#browserConfig?.bind?.(browserSession, result.thread.id);
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
     return { ...result, thread: this.#decorate(result.thread), ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
@@ -1100,8 +1103,9 @@ export class DesktopClient extends EventEmitter {
     return this.#forkChat(thread, lastTurnId);
   }
   async #forkChat(thread, lastTurnId, suffix = 'fork') {
-    const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...this.#browserOptions() });
-    threadId(fork.thread?.id); this.#owned.add(fork.thread.id);
+    const browserSession = `pending-${randomUUID()}`;
+    const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...this.#browserOptions(browserSession) }).catch(error => { this.#browserConfig?.close?.(browserSession); throw error; });
+    threadId(fork.thread?.id); this.#browserConfig?.bind?.(browserSession, fork.thread.id); this.#owned.add(fork.thread.id);
     const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (${suffix})`;
     try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }
     return { thread: this.#decorate(fork.thread) };
@@ -1256,8 +1260,9 @@ export class DesktopClient extends EventEmitter {
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();
-        const fork = await this.#rpc('thread/fork', { threadId: id, model: model ?? thread.model ?? undefined, modelProvider: thread.modelProvider, ...this.#browserOptions() });
-        threadId(fork.thread?.id); this.#owned.add(fork.thread.id);
+        const browserSession = `pending-${randomUUID()}`;
+        const fork = await this.#rpc('thread/fork', { threadId: id, model: model ?? thread.model ?? undefined, modelProvider: thread.modelProvider, ...this.#browserOptions(browserSession) }).catch(error => { this.#browserConfig?.close?.(browserSession); throw error; });
+        threadId(fork.thread?.id); this.#browserConfig?.bind?.(browserSession, fork.thread.id); this.#owned.add(fork.thread.id);
         const continued = { thread: this.#decorate(fork.thread), continuedFrom: id };
         try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); }
         catch (error) {

@@ -11,8 +11,8 @@ const COMMANDS=['action','id','url','body','text','value'];
 // One screenshot sheet holds twelve panels; send these before adding more.
 const MAX_COMMENTS=12;
 
-function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal,Menu,clipboard}) {
-  const tabs=new Map();let activeId=null,visible=false,bounds=null,obscured=false,focusAddress=0,fullView=0,disposed=false,popups=[];
+function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal,Menu,clipboard,sessionId,onChange,presented=true}) {
+  const tabs=new Map();let activeId=null,visible=false,bounds=null,obscured=false,focusAddress=0,fullView=0,disposed=false,popups=[],presentation=0;
   // Annotation mode (the ChatGPT app's "Annotate") follows the active tab; comments belong to their tab.
   let annotating=false,markersVisible=true;const painted=new Map();
   const browserSession=session.fromPartition('persist:elpis-browser');
@@ -26,14 +26,14 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   const commentView=(tab,item)=>({id:item.id,number:item.number,kind:item.kind,label:commentLabel(item),body:item.body});
   const snapshot=()=>{
     const tab=active();
-    return {visible,activeId,focusAddress,fullView,annotating,markersVisible,agent:agent.state(),
+    return {...(sessionId?{sessionId,presentation}:{}),visible,activeId,focusAddress,fullView,annotating,markersVisible,agent:agent.state(),
       annotations:tab?tab.comments.map(item=>commentView(tab,item)):[],
       draft:tab?.draft?{...commentView(tab,tab.draft),editing:!!tab.draft.editing}:null,
       find:tab?{open:tab.find.open,text:tab.find.text,matches:tab.find.matches,active:tab.find.active,focus:tab.find.focus}:{open:false,text:'',matches:0,active:0,focus:0},
       tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.title,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.view.webContents.navigationHistory.canGoForward()}))};
   };
-  const emit=()=>{if(!disposed&&!host.webContents.isDestroyed())host.webContents.send('elpis:browser:state',snapshot());};
-  const agent=createBrowserAgent({tabs,open,select,origin,emit,prepare(){if(annotating)setAnnotating(false);}});
+  const emit=()=>{if(disposed)return;onChange?.();if(presented&&!host.isDestroyed()&&!host.webContents.isDestroyed())host.webContents.send('elpis:browser:state',snapshot());};
+  const agent=createBrowserAgent({tabs,open,select,origin,emit,isPresented:()=>presented,prepare(){if(annotating)setAnnotating(false);}});
   // What the page layer draws: markers for saved comments and the outline of the one being written.
   function syncPage(tab){
     if(!tab||tab.view.webContents.isDestroyed())return;
@@ -45,23 +45,23 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     const size=host.getContentBounds();
     const rectangle=bounds?nativeBounds(bounds,host.webContents.getZoomFactor(),size):null;
     for(const tab of tabs.values()){
-      const show=visible&&!obscured&&tab.id===activeId&&!!rectangle;
+      const show=presented&&visible&&!obscured&&tab.id===activeId&&!!rectangle;
       if(show)tab.view.setBounds(rectangle);
       tab.view.setVisible(show);
     }
   }
-  function focusInput(){focusAddress++;host.webContents.focus();emit();}
+  function focusInput(){focusAddress++;if(presented)host.webContents.focus();emit();}
   function select(id,focus=true){
     if(!tabs.has(id))throw Error('This browser tab is closed.');
     const previous=active();activeId=id;visible=true;place();
     if(previous&&previous.id!==id)syncPage(previous);
     syncPage(tabs.get(id));emit();
-    const tab=tabs.get(id);if(focus&&tab.url!=='about:blank')tab.view.webContents.focus();else if(tab.url==='about:blank')focusInput();
+    const tab=tabs.get(id);if(presented&&focus&&tab.url!=='about:blank')tab.view.webContents.focus();else if(tab.url==='about:blank')focusInput();
   }
   function close(id){
     const tab=tabs.get(id);if(!tab)return;
     const order=[...tabs.keys()],index=order.indexOf(id);tabs.delete(id);
-    host.contentView.removeChildView(tab.view);
+    if(!host.isDestroyed())host.contentView.removeChildView(tab.view);
     if(!tab.view.webContents.isDestroyed())tab.view.webContents.close({waitForBeforeUnload:false});
     if(activeId===id){activeId=order[index+1]??order[index-1]??null;syncPage(active());}
     if(!tabs.size){visible=false;annotating=false;}
@@ -72,11 +72,11 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     // did-fail-load owns page errors; Stop and replaced navigations also reject loadURL.
     void tab.view.webContents.loadURL(tab.url).catch(()=>{});
   }
-  function open(url='about:blank',{focus=false,after=null}={}){
+  function open(url='about:blank',{focus=false,after=null,id=null,restoring=false}={}){
     const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
     const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false}});
     view.setVisible(false);host.contentView.addChildView(view);
-    const tab={id:randomUUID(),url:'about:blank',title:'New tab',loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
+    const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);
     agent.observe(tab);
@@ -100,7 +100,9 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     wc.on('context-menu',(_event,params)=>pageMenu(tab,params));
     wc.on('destroyed',()=>{if(!disposed)close(tab.id);});
     wc.on('before-input-event',(event,input)=>keyboard(event,input,tab));
-    select(tab.id,focus);navigate(tab,target);return tab.id;
+    select(tab.id,focus);
+    if(restoring){tab.url=target;emit();}else navigate(tab,target);
+    return tab.id;
   }
 
   // --- Annotation ---
@@ -183,7 +185,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   function zoom(tab,direction){const wc=tab.view.webContents;wc.setZoomFactor(zoomStep(wc.getZoomFactor(),direction));emit();}
   function openFind(tab){tab.find.open=true;tab.find.focus++;emit();host.webContents.focus();}
   function keyboard(event,input,tab=null){
-    if(input.type!=='keyDown'||!visible)return;
+    if(input.type!=='keyDown'||!visible||!presented)return;
     const key=input.key.toLowerCase(),primary=(input.control||input.meta)&&!input.alt;
     const page=tab??null,act=fn=>{event.preventDefault();fn();};
     if(page&&input.alt&&!input.control&&!input.meta&&(key==='arrowleft'||key==='arrowright'))return act(()=>{const history=page.view.webContents.navigationHistory;if(key==='arrowleft'&&history.canGoBack())history.goBack();else if(key==='arrowright'&&history.canGoForward())history.goForward();});
@@ -206,9 +208,9 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   }
   const rootKeyboard=(event,input)=>keyboard(event,input);
   const resetLayout=(_event,_url,inPlace,isMainFrame)=>{if(isMainFrame&&!inPlace){bounds=null;place();}};
-  host.webContents.on('before-input-event',rootKeyboard);
-  host.webContents.on('did-start-navigation',resetLayout);
-  host.on('resize',place);
+  function detach(){if(!host.isDestroyed()){host.webContents.removeListener('before-input-event',rootKeyboard);host.webContents.removeListener('did-start-navigation',resetLayout);}host.removeListener('resize',place);}
+  function attach(){host.webContents.on('before-input-event',rootKeyboard);host.webContents.on('did-start-navigation',resetLayout);host.on('resize',place);}
+  attach();
   const trusted=event=>{if(!trustedBrowserSender(event,host.webContents,origin))throw Error('Browser controls are available only to Elpis.');};
   const text=(value,limit,label)=>{if(typeof value!=='string'||value.length>limit)throw Error(`Invalid ${label}.`);return value;};
   async function run(input){
@@ -290,11 +292,38 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   };
   ipcMain.on('elpis:browser:layout',layout);
   ipcMain.on('elpis:browser:page',pageMessage);
-  return {open,agent,setBackground,dispose(){
+  return {open,agent,setBackground,snapshot,
+    present(value,nextHost=host){
+      if(value&&(!presented||nextHost!==host))presentation++;
+      if(nextHost!==host){
+        detach();for(const tab of tabs.values()){if(!host.isDestroyed())host.contentView.removeChildView(tab.view);nextHost.contentView.addChildView(tab.view);}
+        host=nextHost;attach();bounds=null;
+      }
+      presented=value;if(!value){bounds=null;obscured=true;}place();if(value)emit();
+    },
+    saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,zoom:tab.view.webContents.getZoomFactor(),
+      history:tab.view.webContents.navigationHistory.getAllEntries?.(),historyIndex:tab.view.webContents.navigationHistory.getActiveIndex?.()}))};},
+    async restore(saved){
+      if(!saved||!Array.isArray(saved.tabs))return;
+      for(const item of saved.tabs.slice(0,20)){
+        try{
+          const history=Array.isArray(item.history)&&item.history.length&&Number.isInteger(item.historyIndex)&&item.historyIndex>=0&&item.historyIndex<item.history.length
+            ?item.history.map(entry=>({...entry,url:browserUrl(entry.url,origin)})):null;
+          const id=open(item.url,{id:item.id,restoring:!!history}),tab=tabs.get(id),wc=tab.view.webContents;
+          if(typeof item.title==='string')tab.title=item.title.slice(0,200);
+          if(Number.isFinite(item.zoom)&&item.zoom>=0.25&&item.zoom<=5)wc.setZoomFactor(item.zoom);
+          // restore itself loads the active entry. A separate loadURL would duplicate it.
+          // Do not wait for a remote site before allowing the user to switch chats.
+          if(history&&wc.navigationHistory.restore)void wc.navigationHistory.restore({entries:history,index:item.historyIndex}).catch(()=>{});
+        }catch{ /* An unavailable or previously blocked address must not expose another session. */ }
+      }
+      if(tabs.has(saved.activeId))activeId=saved.activeId;
+      visible=saved.visible===true&&tabs.size>0;place();emit();
+    },dispose(){
     agent.dispose();
     disposed=true;ipcMain.removeHandler('elpis:browser');ipcMain.removeListener('elpis:browser:layout',layout);ipcMain.removeListener('elpis:browser:page',pageMessage);
-    if(!host.isDestroyed()){host.webContents.removeListener('before-input-event',rootKeyboard);host.webContents.removeListener('did-start-navigation',resetLayout);}host.removeListener('resize',place);
-    for(const tab of tabs.values())tab.view.webContents.close({waitForBeforeUnload:false});tabs.clear();
+    detach();
+    for(const tab of tabs.values()){if(!host.isDestroyed())host.contentView.removeChildView(tab.view);if(!tab.view.webContents.isDestroyed())tab.view.webContents.close({waitForBeforeUnload:false});}tabs.clear();
   }};
 }
 module.exports={createBrowser};

@@ -1,16 +1,18 @@
 'use strict';
 const net = require('node:net');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const { browserUrl } = require('./browser-policy.cjs');
 
 const string = {type:'string'}, number = {type:'number'}, tabId = {type:'string',description:'ID from browser_tabs or browser_open.'};
 const target = {selector:string,nodeId:string};
 const tool = (name,description,properties,required=[]) => ({name,description,inputSchema:{type:'object',properties,required,additionalProperties:false}});
 const tools = [
-  tool('browser_tabs','List the visible in-app browser tabs.',{}),
-  tool('browser_open','Open a URL in a visible in-app tab. Returns tabId.',{url:string},['url']),
+  tool('browser_tabs','List this session’s in-app browser tabs. Other sessions are inaccessible.',{}),
+  tool('browser_open','Open a URL in this session’s in-app browser. Returns tabId.',{url:string},['url']),
   tool('browser_navigate','Navigate this tab. action: goto (requires url), back, forward, reload.',{tabId,url:string,action:{type:'string',enum:['goto','back','forward','reload']}},['tabId']),
   tool('browser_click','Click one visible element by CSS selector, snapshot nodeId, or viewport x/y.',{tabId,...target,x:number,y:number},['tabId']),
   tool('browser_type','Focus a selector/nodeId and type text. clear defaults to true. Omit target to type at the cursor.',{tabId,...target,text:string,clear:{type:'boolean'}},['tabId','text']),
@@ -87,7 +89,7 @@ function validate(name,args) {
   if(args.timeoutMs!==undefined&&(args.timeoutMs<0||args.timeoutMs>30000))throw Error('Invalid timeoutMs.');
 }
 
-function createBrowserAgent({tabs,open,select,origin,emit,prepare}) {
+function createBrowserAgent({tabs,open,select,origin,emit,prepare,isPresented=()=>true}) {
   let enabled=true,tabId=null,epoch=0,disposed=false,queue=Promise.resolve();
   const logs=new Map();
   const state=()=>({enabled,tabId});
@@ -151,9 +153,9 @@ function createBrowserAgent({tabs,open,select,origin,emit,prepare}) {
       }
       case 'browser_type':
         if(args.selector||args.nodeId)await dom('focus');
-        guard(generation);wc.focus();if(args.clear!==false)press(process.platform==='darwin'?'Meta+A':'Control+A');
+        guard(generation);if(isPresented())wc.focus();if(args.clear!==false)press(process.platform==='darwin'?'Meta+A':'Control+A');
         await wc.insertText(args.text);break;
-      case 'browser_press':if(args.selector||args.nodeId)await dom('focus');guard(generation);wc.focus();press(args.key);break;
+      case 'browser_press':if(args.selector||args.nodeId)await dom('focus');guard(generation);if(isPresented())wc.focus();press(args.key);break;
       case 'browser_scroll':return dom('scroll');
       case 'browser_screenshot': {
         // DOM updates can precede Chromium's displayed frame (as with annotation captures).
@@ -181,10 +183,21 @@ function createBrowserAgent({tabs,open,select,origin,emit,prepare}) {
   }};
 }
 
-async function startBrowserAgentSocket() {
+async function startBrowserAgentSocket({connectionFile}={}) {
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-browser-agent-'));
   await fs.chmod(directory,0o700);
-  const socketPath=path.join(directory,'browser.sock'),connections=new Set();let agent=null;
+  const socketPath=path.join(directory,'browser.sock'),connections=new Set(),scopes=new Map(),tokens=new Map();let resolveAgent=()=>null;
+  if(connectionFile){
+    try{const previous=JSON.parse(await fs.readFile(connectionFile,'utf8'));for(const [token,id] of Object.entries(previous.scopes||{}))if(typeof id==='string'){scopes.set(token,id);tokens.set(id,token);}}
+    catch(error){if(error.code!=='ENOENT')throw Error('Could not read the private browser connection record.');}
+  }
+  function persist(){
+    if(!connectionFile)return;
+    fsSync.mkdirSync(path.dirname(connectionFile),{recursive:true,mode:0o700});
+    const pending=`${connectionFile}.${process.pid}.pending`;
+    fsSync.writeFileSync(pending,JSON.stringify({socketPath,scopes:Object.fromEntries(scopes)}),{mode:0o600});
+    fsSync.renameSync(pending,connectionFile);
+  }
   const server=net.createServer(socket=>{
     socket.setEncoding('utf8');
     connections.add(socket);socket.on('close',()=>connections.delete(socket));socket.on('error',()=>{});socket.setTimeout(35000,()=>socket.destroy());
@@ -193,13 +206,22 @@ async function startBrowserAgentSocket() {
       if(accepted)return;buffer+=data.toString('utf8');if(Buffer.byteLength(buffer)>65536){socket.destroy();return;}
       if(!buffer.includes('\n'))return;accepted=true;
       void (async()=>{
-        try{const request=JSON.parse(buffer.slice(0,buffer.indexOf('\n')));if(!agent)throw Error('The desktop browser is unavailable.');const result=await agent.call(request.name,request.arguments);socket.end(JSON.stringify({result})+'\n');}
+        try{const request=JSON.parse(buffer.slice(0,buffer.indexOf('\n')));const owner=scopes.get(request.capability);if(!owner)throw Error('A valid browser session capability is required.');
+          // The MCP host overwrites _meta.threadId on every call, including inherited agent connections.
+          // Tool arguments cannot choose this value. Without host metadata, a capability stays with its owner.
+          const id=request.sessionId??owner;if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(id))throw Error('Invalid browser session metadata.');
+          const agent=await resolveAgent(id);if(!agent)throw Error('This session browser is unavailable.');const result=await agent.call(request.name,request.arguments);socket.end(JSON.stringify({result})+'\n');}
         catch(error){socket.end(JSON.stringify({error:error.message})+'\n');}
       })();
     });
   });
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(socketPath,resolve);});
   await fs.chmod(socketPath,0o600);
-  return {path:socketPath,setAgent(value){agent=value;},async close(){agent=null;for(const socket of connections)socket.destroy();await new Promise(resolve=>server.close(resolve));await fs.rmdir(directory);}};
+  persist();
+  return {path:socketPath,connectionFile,setResolver(value){resolveAgent=value;},
+    scope(id){if(!tokens.has(id)){const token=randomUUID();tokens.set(id,token);scopes.set(token,id);persist();}return tokens.get(id);},
+    rebind(from,to){const token=tokens.get(from);if(token){tokens.delete(from);tokens.set(to,token);scopes.set(token,to);persist();}},
+    revoke(id){tokens.delete(id);for(const [token,owner] of scopes)if(owner===id)scopes.delete(token);persist();},
+    async close(){resolveAgent=()=>null;scopes.clear();tokens.clear();for(const socket of connections)socket.destroy();await new Promise(resolve=>server.close(resolve));await fs.rmdir(directory);}};
 }
 module.exports={tools,createBrowserAgent,startBrowserAgentSocket,pageOperation};

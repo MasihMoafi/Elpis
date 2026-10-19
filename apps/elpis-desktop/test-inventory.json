@@ -222,7 +222,8 @@
     "tests/hud-language.test.cjs",
     "tests/night-workflows.test.cjs",
     "tests/love-spot-saving.test.cjs",
-    "tests/workflows-feedback.test.cjs"
+    "tests/workflows-feedback.test.cjs",
+    "tests/browser-sessions-electron.test.cjs"
   ],
   "opt-in": [
     "tests/love-spot-performance.test.cjs",

@@ -114,6 +114,24 @@ test('desktop browser MCP follows new, resumed and forked desktop chats without 
   } finally {client.close();}
 });
 
+test('browser session capabilities are separate on create/resume/fork and revoked on deletion', async () => {
+  const requested = [], bound = [], closed = [];
+  const browserConfig = {
+    forSession(id) { requested.push(id); return { 'mcp_servers.elpis_browser': { env: { ELPIS_BROWSER_CAPABILITY: `scope-${id}` } } }; },
+    bind(from, to) { bound.push([from, to]); }, close(id) { closed.push(id); },
+  };
+  const { client, socket } = fixture({ browserConfig });
+  try {
+    await client.initialize(); await client.createThread({}); await client.resume(ROOT, {}); await client.forkThread(ROOT, {});
+    const start = socket.sent.find(row => row.method === 'thread/start'), resume = socket.sent.find(row => row.method === 'thread/resume'), fork = socket.sent.find(row => row.method === 'thread/fork');
+    assert.equal(new Set(requested).size, 3, 'each new or resumed session gets its own scope');
+    assert.equal(resume.params.config['mcp_servers.elpis_browser'].env.ELPIS_BROWSER_CAPABILITY, `scope-${ROOT}`);
+    assert.deepEqual(bound, [[requested[0], CREATED], [requested[2], FORK]]);
+    assert.notDeepEqual(start.params.config, fork.params.config);
+    await client.deleteThread(ROOT, {}); assert.ok(closed.includes(ROOT));
+  } finally { client.close(); }
+});
+
 test('a chat that runs the canvas\'s agents turns the multi-agent runtime on for itself only, beside the browser config', async () => {
   // The Ledger's SUBAGENTS switch (features.multi_agent = false) stops a model delegating in ordinary chats; with it the
   // engine refused every canvas run: "multi-agent runtime is disabled; this session cannot run a work graph".
