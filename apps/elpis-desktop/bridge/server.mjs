@@ -178,6 +178,7 @@ export async function startDesktopServer(options = {}) {
           response.on('close', () => { stop(); loveStreams.delete(response); }); return;
         }
         if (url.pathname === '/api/love-spot/agents/run' && method === 'POST') return json(response, 200, await loveAgents.run(await body(request)));
+        if (url.pathname === '/api/love-spot/agents/interview' && method === 'POST') return json(response, 200, await loveAgents.interview(await body(request)));
         if (url.pathname === '/api/love-spot/agents/permission' && method === 'POST') return json(response, 200, loveAgents.answer(await body(request)));
         if (url.pathname === '/api/love-spot/events' && method === 'GET') {
           const hint = url.searchParams.get('revision');
@@ -353,7 +354,7 @@ export async function startDesktopServer(options = {}) {
       await experimentLab.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();
-      loveTalk.close(); await loveTalk.idle(); loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
+      loveTalk.close(); await loveTalk.idle(); await loveAgents.close(); loveSpot.close(); for (const response of loveStreams) response.end(); loveStreams.clear();
       for (const response of listeners) response.end(); listeners.clear();
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
       await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
