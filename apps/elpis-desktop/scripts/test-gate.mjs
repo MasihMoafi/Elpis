@@ -79,14 +79,17 @@ async function main(args) {
     console.log(`${code === 0 ? 'PASS' : 'FAIL'} ${name} (${(testMs / 1000).toFixed(2)}s test; ${((performance.now() - at) / 1000).toFixed(2)}s wall)`);
     if (code !== 0) { console.error(text.slice(-6000)); process.exitCode = 1; }
   }
+  // Fast tests import bundled prompts too; desktop/package tests consume out/.
+  await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge');
+  if (process.exitCode) return;
+  let rendererBuilt = false;
   for (const tier of selected) {
-    if (tier === 'bridge') {
-      await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], tier);
-      if (process.exitCode) return;
-    }
-    if (tier === 'ui') {
+    if (!rendererBuilt && (tier === 'desktop' || tier === 'ui')) {
       await run('renderer-build', 'flock', ['/tmp/elpis-desktop-build.lock', 'npm', 'run', '-s', 'build'], tier);
       if (process.exitCode) return;
+      rendererBuilt = true;
+    }
+    if (tier === 'ui') {
       // Keep every browser file bounded and serialized with the other workstation workers.
       for (const file of inventory.ui) await run(file, 'flock', ['/tmp/elpis-desktop-ui.lock', 'timeout', '--kill-after=5s', '180s', process.execPath, '--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     } else {
