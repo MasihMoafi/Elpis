@@ -1,5 +1,7 @@
 import { characters } from "./agent-characters";
 import { appStorage } from "@/lib/projects";
+import { waits } from "./canvas-delete-flow";
+export { waits };
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
  * sends the graph to the ACP scheduler (POST /api/workflows/run, bridge/client.mjs `runWorkflow`).
@@ -16,8 +18,6 @@ export type CanvasNode = ({ id: string; type: "agent"; position: Position; data:
 /** A wire: by default the target waits for the source (directional); `alongside` (undirectional) means the two work
  * at the same time, each told about the other and kept out of its folders, with no order between them. */
 export type CanvasEdge = { id: string; source: string; target: string; kind?: "alongside"; label?: string; feedback?: boolean };
-/** Whether a wire orders its agents (the target waits for the source). */
-export const waits = (edge: CanvasEdge) => edge.kind !== "alongside" && !edge.feedback;
 /** The Mother's settings, for the whole run: its goal (`brief`), which every agent gets and from which Elpis fills in
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };

@@ -14,6 +14,7 @@ import { summarize, workedFor } from "@/components/transcript";
 import { isoLayout } from "@/lib/iso";
 import { IsoBoard, ViewToggle, type IsoController } from "@/components/agents-iso";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
+import { deleteKeepingFlow } from "@/lib/canvas-delete-flow";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
@@ -909,18 +910,14 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const copy = (ids = selection) => { const clip = takeOut(ids); if (clip.nodes.length) clipboard.current = clip; };
   const paste = (at?: XYPosition) => { if (clipboard.current) putIn(clipboard.current, at ?? (pointer.current ? flow.screenToFlowPosition(pointer.current) : undefined)); };
   const duplicate = (ids = selection) => putIn(takeOut(ids));
-  // Delete keeping the flow (Ctrl+Delete), as in Blender and Node-RED: what waited for a deleted agent now waits for
-  // what that one waited for.
+  // Contract every link kind across removed agents; Mother links remain derived from the surviving roots.
   const removeKeepingFlow = (ids: string[]) => {
+    const gone = graph.nodes.filter(node => node.type !== "mother" && ids.includes(node.id));
+    if (!gone.length) return;
     checkpoint();
-    const gone = new Set(ids.filter(id => id !== MOTHER));
-    setGraph(current => {
-      const kept = current.edges.filter(edge => !gone.has(edge.source) && !gone.has(edge.target));
-      const before = (id: string): string[] => current.edges.filter(edge => waits(edge) && edge.target === id).flatMap(edge => gone.has(edge.source) ? before(edge.source) : [edge.source]);
-      const bridged = current.edges.filter(edge => waits(edge) && gone.has(edge.source) && !gone.has(edge.target)).flatMap(edge => before(edge.source).map(source => ({ id: `${source}->${edge.target}`, source, target: edge.target })));
-      const fresh = bridged.filter((edge, index) => !kept.some(item => item.source === edge.source && item.target === edge.target) && bridged.findIndex(item => item.id === edge.id) === index);
-      return { ...current, nodes: current.nodes.filter(node => !gone.has(node.id)), edges: [...kept, ...fresh] };
-    });
+    const next = deleteKeepingFlow(graph, ids);
+    setNotice(""); setDeleted(`${gone.map(node => node.type === "agent" ? node.data.title : "note").join(", ")} · kept ${next.keptLinks} ${next.keptLinks === 1 ? "link" : "links"}`);
+    setGraph(next.graph);
     setSelection([]);
   };
   const fitAll = () => { if (iso) isoController.current?.fit(); else void flow.fitView({ ...OVERVIEW, duration: 250 }); };
@@ -968,7 +965,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         { label: "Add agents after it", hint: "They wait for it", take: () => openAdder(current.client, { id: only.id, as: "target" }) },
         { label: "Duplicate", keys: "Ctrl+D", take: () => duplicate(ids) },
         { label: "Copy", keys: "Ctrl+C", take: () => copy(ids) },
-        { label: "Delete, keep the flow", hint: "What waited for it waits for what it waited for", keys: "Ctrl+Del", take: () => removeKeepingFlow(ids) },
+        { label: "Delete, keep the flow", hint: "Reconnect its inputs and outputs across every link kind", keys: "Ctrl+Del", take: () => removeKeepingFlow(ids) },
         { label: "Delete", keys: "Delete", take: removeThem }] };
     }
     const what = describe(count, picked.length - count);

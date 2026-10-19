@@ -29,7 +29,8 @@
     "tests/submitted-messages.test.mjs",
     "tests/test-inventory.test.mjs",
     "tests/turn-replacement.test.mjs",
-    "tests/workflow-sources.test.cjs"
+    "tests/workflow-sources.test.cjs",
+    "tests/canvas-delete-flow.test.mjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",
