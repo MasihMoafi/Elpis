@@ -110,7 +110,7 @@ export async function readFileAsset(cwd, target) {
   if (bytes.length > MAX_PREVIEW) throw new BridgeError('This preview is larger than 30 MB.', 413);
   const mimeType = assetMime(real, bytes);
   if (!mimeType) throw new BridgeError('This file does not contain a supported document or image.');
-  return { bytes, mimeType };
+  return { bytes, mimeType, name: path.basename(real) };
 }
 
 /** Saves `content` over an existing file, unless the file changed on disk since it was read (`mtimeMs`). It never creates a

@@ -181,6 +181,8 @@ test('preview assets require the app session and canonical project path and serv
   const { root, outside } = await project(); cleanup(t, root, outside);
   const pdf = Buffer.from('%PDF-1.4\nprivate document bytes\n%%EOF\n');
   await fs.writeFile(path.join(root, 'report.pdf'), pdf);
+  const named = 'گزارش "alpha" (draft)\'s*!.pdf';
+  await fs.writeFile(path.join(root, 'docs', named), pdf);
   await fs.writeFile(path.join(root, 'fake.pdf'), '<script>window.executed=true</script>');
   await fs.writeFile(path.join(root, 'fake.png'), '<html>not an image</html>');
   await fs.writeFile(path.join(root, 'oversized.pdf'), '%PDF-1.4\n');
@@ -200,6 +202,15 @@ test('preview assets require the app session and canonical project path and serv
   assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'self'/);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), pdf);
+  const titled = await fetch(asset(`docs/${named}`), { headers });
+  assert.equal(titled.status, 200);
+  const disposition = titled.headers.get('content-disposition');
+  t.diagnostic(`Document filename header: ${disposition}`);
+  assert.match(disposition, /^inline; filename\*=UTF-8''[\x21-\x7e]+$/);
+  const encoded = disposition.slice("inline; filename*=UTF-8''".length);
+  assert.equal(decodeURIComponent(encoded), named, 'only the actual basename, including Unicode and quotes, reaches the viewer');
+  assert.doesNotMatch(encoded, /["'()*]/, 'RFC5987 punctuation is encoded rather than inserted into headers');
+  assert.equal(response.headers.get('content-disposition'), "inline; filename*=UTF-8''report.pdf");
   for (const target of ['README.md', 'fake.pdf', 'fake.png', 'escape.txt', '../secret.txt']) {
     assert.equal((await fetch(asset(target), { headers })).status, 400, target);
   }

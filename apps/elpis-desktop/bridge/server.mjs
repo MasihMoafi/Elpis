@@ -243,7 +243,8 @@ export async function startDesktopServer(options = {}) {
           // Only these validated passive assets may be framed by the private app. Other routes retain DENY.
           response.setHeader('X-Frame-Options', 'SAMEORIGIN');
           response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'none'");
-          response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Content-Disposition': 'inline', 'Cache-Control': 'no-store' });
+          const filename = encodeURIComponent(asset.name).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+          response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Content-Disposition': `inline; filename*=UTF-8''${filename}`, 'Cache-Control': 'no-store' });
           return response.end(asset.bytes);
         }
         if (url.pathname === '/api/file' && method === 'GET') return json(response, 200, await readFile(cwdOf(url, 'path'), url.searchParams.get('path') ?? ''));
