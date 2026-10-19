@@ -188,7 +188,7 @@ button:disabled { cursor:not-allowed; }
 .error-banner.warning { background:color-mix(in oklch, var(--warning), var(--background) 88%); border-bottom-color:color-mix(in oklch, var(--warning), transparent 60%); }
 /* A notice that is not an error, such as "Deleted …" with its Undo. */
 .error-banner.notice { background:var(--muted); border-bottom-color:var(--border); }
-.chat-scroll { flex:1; min-height:0; overflow:auto; padding:28px 32px 12px; }
+.chat-scroll { --chat-top-inset:28px; flex:1; min-height:0; overflow:auto; padding:var(--chat-top-inset) 32px 12px; }
 /* One chat font role for main/side transcripts, messages in panels and both composers. */
 .chat-content, .side-chat-content, .message, .composer textarea, .side-chat-form textarea { font-family:var(--chat-font, var(--ui-font)); }
 /* Settings → Appearance sets the transcript text size and the columns' width (lib/reading.ts); these are the defaults. */
@@ -226,7 +226,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .page-scroll { flex:1; min-height:0; overflow:auto; padding:24px 28px 40px; }
 .status-line { display:flex; gap:7px; align-items:center; } .status-dot { width:6px; height:6px; border-radius:50%; background:var(--muted-foreground); } .status-dot.connected { background:var(--success); }
-@media(max-width:760px) { .app-shell { grid-template-columns:1fr; } .sidebar { display:none; } .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; } .mobile-menu { display:inline-flex; } .workspace-header { padding:0 12px; } .chat-scroll { padding:20px 16px; } .composer-wrap { padding:6px 12px 12px; } .page-scroll { padding:18px; } .empty-state h2 { font-size:24px; } .composer-hint { display:none; } }
+@media(max-width:760px) { .app-shell { grid-template-columns:1fr; } .sidebar { display:none; } .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; } .mobile-menu { display:inline-flex; } .workspace-header { padding:0 12px; } .chat-scroll { --chat-top-inset:20px; padding:var(--chat-top-inset) 16px; } .composer-wrap { padding:6px 12px 12px; } .page-scroll { padding:18px; } .empty-state h2 { font-size:24px; } .composer-hint { display:none; } }
 
 /* Conversation and activity surfaces share the same quiet hierarchy. */
 .chat-view { display:flex; flex-direction:column; flex:1; min-height:0; }
@@ -529,6 +529,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-group > summary::after { content:"›"; flex-shrink:0; font-size:15px; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 .activity-group[open] > summary::after { transform:rotate(90deg); }
 .activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
+.activity-group[open] > summary { position:sticky; top:calc(-1 * var(--chat-top-inset, 0px)); z-index:1; width:100%; background:var(--background); }
+.activity-group[open] > summary:hover { background:var(--card); }
 .activity-group > summary:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .activity-group-label, .live-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* What the agent viewed and made, as Claude's chats show it (components/file-cards.tsx): thumbnails on a row, a larger
@@ -1190,7 +1192,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .side-panel.full .side-resize { display:none; }
 .full-view > .workspace-content { position:absolute; z-index:6; right:var(--float-gap); bottom:var(--float-gap); display:flex; flex:none; width:var(--float-w); max-width:calc(100% - 2 * var(--float-gap)); height:var(--float-h); max-height:calc(100% - 120px); border:1px solid var(--hud-edge); background:var(--background); box-shadow:var(--shadow); overflow:hidden; }
 .chat-collapsed > .workspace-content { visibility:hidden; }
-.full-view > .workspace-content .chat-scroll { padding:14px 16px 8px; }
+.full-view > .workspace-content .chat-scroll { --chat-top-inset:14px; padding:var(--chat-top-inset) 16px 8px; }
 .full-view > .workspace-content .composer-wrap { padding:6px 12px 12px; }
 /* Toolbar controls wrap with the pane so their labels remain readable. */
 .composer-pill, .composer .model-select { flex-shrink:0; }
