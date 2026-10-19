@@ -11,6 +11,8 @@ import { agentGraph, createLoveAgents, loveNodeSpec } from './love-agents.mjs';
 const TOOLS = fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url));
 const FAKE_AGENT = path.join(TOOLS, 'test/fake-acp-agent.mjs'), FAKE_ENGINE = path.join(TOOLS, 'test/fake-app-server.mjs');
 const ELPIS_AGENT = path.join(TOOLS, 'elpis-acp-agent.mjs');
+// A live Elpis session's bridge must not reach these agents: the scripted app-server answers, never a real model.
+for (const name of ['ELPIS_BRIDGE_SOCKET', 'ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL', 'ELPIS_SHARED_BRIDGE']) delete process.env[name];
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const lines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
 
