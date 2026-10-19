@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, SquareDashedMousePointer, TriangleAlert, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, PenLine, SquareDashedMousePointer, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AnnotationDock, type AttachToChat } from "@/components/browser-annotations";
 import { DevServerPreview } from "@/components/dev-server-preview";
+import { heldDrawing, holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
 import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
 
@@ -42,6 +43,10 @@ export function useBrowser(sessionId: string) {
 }
 export type Browser = ReturnType<typeof useBrowser>;
 
+// Excalidraw is loaded only when Draw is used.
+const BrowserDrawing = lazy(() => import("@/components/browser-drawing"));
+const measure = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => { const image = new Image(); image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight }); image.onerror = () => reject(Error("The screenshot could not be read.")); image.src = src; });
+
 /** The ChatGPT app's menu for a page tab (right-click in the side panel): reload, duplicate, copy the address, open it elsewhere, close. */
 export function browserTabActions(browser: Browser, tab: BrowserTab, close: () => void): MenuAction[] {
   const page = /^https?:/.test(tab.url);
@@ -62,6 +67,10 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
   const [notice, setNotice] = useState("");
   const [edit, setEdit] = useState<{ tab: string; value: string } | null>(null);
   const [modal, setModal] = useState(false);
+  const [drawing, setDrawing] = useState<DrawingDraft | null>(null);
+  const [held, setHeld] = useState(() => !!heldDrawing());
+  const [drawFailure, setDrawFailure] = useState("");
+  const [capturing, setCapturing] = useState(false);
   const viewport = useRef<HTMLDivElement>(null), address = useRef<HTMLInputElement>(null);
   const active = state?.tabs.find(tab => tab.id === state.activeId);
   useEffect(() => {
@@ -82,6 +91,20 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
   }, [api, layout, state?.visible]);
   useEffect(() => { if (state?.visible && state.focusAddress) { address.current?.focus(); address.current?.select(); } }, [state?.focusAddress, state?.visible]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
+  // The page is captured before the drawing hides it; a failed capture leaves the page as it was and can be retried.
+  async function startDrawing() {
+    if (!api || !active || capturing) return;
+    const unsent = heldDrawing();
+    if (unsent) { setDrawing(unsent); return; }
+    setCapturing(true); setDrawFailure("");
+    try {
+      const image = (await api.command("screenshot", { value: "attach" })).result?.image;
+      if (!image) throw Error("The page could not be captured.");
+      setDrawing({ shot: image, url: active.url, title: active.title, ...await measure(image) });
+    } catch (e) { setDrawFailure(e instanceof Error ? e.message : String(e)); }
+    finally { setCapturing(false); }
+  }
+  const drawingBlocked = !onAttach ? "Drawing needs a chat to add to" : !imagesAllowed ? "This model does not accept images" : "";
   if (!api || !state?.visible) return null;
   const value = edit && edit.tab === active?.id ? edit.value : active?.url === "about:blank" ? "" : active?.url ?? "";
   return <section className="browser-panel" aria-label="Built-in browser">
@@ -98,6 +121,10 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
         disabled={!active || !/^https?:/.test(active.url)} onClick={() => void command("annotate")}>
         <SquareDashedMousePointer size={15} aria-hidden="true" /><span className="browser-annotate-label">Annotate</span>{!state.annotating && !!active?.comments && <span className="browser-badge" aria-label={`${active.comments} pending`}>{active.comments}</span>}
       </Button>
+      <Button type="button" variant="ghost" size="sm" className="browser-annotate" aria-label="Draw on this page" title={drawingBlocked || "Draw on this page: arrows, pen, shapes and text over a screenshot"}
+        disabled={!active || !/^https?:/.test(active.url) || !!drawingBlocked || capturing} onClick={() => void startDrawing()}>
+        <PenLine size={15} aria-hidden="true" /><span className="browser-annotate-label">Draw</span>
+      </Button>
       <Button type="button" variant="ghost" size="icon-sm" className="browser-external" aria-label="Open in external browser" title="Open in external browser" disabled={!active || active.url === "about:blank"} onClick={() => void command("external")}><ExternalLink size={14} /></Button>
       <BrowserOptions browser={browser} tab={active} onNotice={setNotice} onAttach={onAttach} imagesAllowed={imagesAllowed} />
     </form>
@@ -109,6 +136,14 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
     {state.find.open && active && <FindBar browser={browser} />}
     {(browser.error || active?.error && !active.failure) && <div role="alert" className="browser-error">{browser.error || active?.error}</div>}
     {notice && <div role="status" className="browser-notice">{notice}</div>}
+    {drawFailure && <div role="alert" className="browser-error flex items-center justify-between gap-3">
+      <span>Drawing could not start: {drawFailure}</span>
+      <span className="flex shrink-0 gap-1"><Button type="button" variant="outline" size="xs" onClick={() => void startDrawing()}>Retry</Button><Button type="button" variant="ghost" size="xs" onClick={() => setDrawFailure("")}>Dismiss</Button></span>
+    </div>}
+    {held && !drawing && <div role="status" className="browser-notice flex items-center justify-between gap-3">
+      <span>A drawing is waiting to be added to your message.</span>
+      <span className="flex shrink-0 gap-1"><Button type="button" variant="outline" size="xs" onClick={() => void startDrawing()}>Resume</Button><Button type="button" variant="ghost" size="xs" onClick={() => { holdDrawing(null); setHeld(false); }}>Discard</Button></span>
+    </div>}
     {active?.url === "about:blank" && <p className="browser-empty">Search or enter a web address.<span>Ctrl+L focuses the address</span></p>}
     <div ref={viewport} className="browser-viewport" id="browser-viewport" role="tabpanel">
       {active?.failure && <div className="browser-failure" role="alert">
@@ -121,6 +156,10 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
       </div>}
     </div>
     <AnnotationDock browser={browser} onAttach={onAttach} imagesAllowed={imagesAllowed} />
+    {drawing && onAttach && <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="fixed inset-0 z-40 grid place-items-center bg-background text-sm text-muted-foreground"><p role="status">Opening the drawing tools…</p></div>}>
+      <BrowserDrawing draft={drawing} dark={document.documentElement.classList.contains("dark")} onAttach={onAttach}
+        onClose={() => { setDrawing(null); setHeld(!!heldDrawing()); }} onAdded={() => { setDrawing(null); setHeld(false); setNotice("Drawing added to your message"); }} />
+    </Suspense>}
   </section>;
 }
 
