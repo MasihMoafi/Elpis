@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useRef, useState, type HTMLAttributes } from "react";
+import { createElement, memo, useRef, useState, type HTMLAttributes } from "react";
 import { Check, Copy } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -62,6 +62,6 @@ const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugin
 const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
 const PLUGINS = [remarkGfm, linkFilePaths];
 
-export function MarkdownText({ text }: { text: string }) {
+export const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
   return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={components} urlTransform={urlTransform}>{text}</Markdown></div>;
-}
+});
