@@ -8,9 +8,11 @@ export type SubmittedMessage = {
 };
 export const entryKey = (entry: Entry) => JSON.stringify([entry.turnId, entry.item.id]);
 export function submittedContent(text: string, files: Attachment[]): NonNullable<Item["content"]> {
-  return [...(text.trim() ? [{ type: "text", text }] : []), ...files.map(file => file.type === "image"
-    ? { type: "image", url: file.dataUrl }
-    : { type: "text", text: `File: ${file.name}\n${file.text}` })];
+  return [...(text.trim() ? [{ type: "text", text }] : []), ...files.map(file => {
+    if (file.type === "image") return { type: "image", url: file.dataUrl };
+    const contents = `File: ${file.name}\n${file.text}`;
+    return { type: "text", text: contents, text_elements: [{ byteRange: { start: 0, end: new TextEncoder().encode(contents).length }, placeholder: `Attachment: ${file.name}` }] };
+  })];
 }
 const textParts = (content: Item["content"]) => JSON.stringify(content?.filter(part => part.type === "text").map(part => part.text) ?? []);
 const imageCount = (content: Item["content"]) => content?.filter(part => part.type === "image" || part.type === "localImage").length ?? 0;
