@@ -14,8 +14,9 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { ChangesPanel } from "@/components/changes-panel";
 import { FilesPane } from "@/components/files-pane";
 import type { AttachToChat } from "@/components/browser-annotations";
-import { attach, detach, onRequest, openRef } from "@/lib/files-pane";
+import { attach, detach, onOpenPage, onRequest, openRef } from "@/lib/files-pane";
 import { mergeOrder, neighbour } from "@/lib/panel-tabs";
+import { api } from "@/lib/api";
 import type { BrowserTab } from "@/lib/desktop";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
@@ -148,6 +149,15 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
   useEffect(() => { attach(cwd); }, [cwd]);
   useEffect(() => detach, []);
   useEffect(() => window.elpisDesktop?.onOpenFile?.(target => { openRef(target); }), []);
+  // An HTML file opens as a page in this session's browser, served from its folder so its CSS and images load; if the
+  // page cannot be served, the file opens as text in the Files tab instead.
+  const { api: browserApi, command } = browser;
+  useEffect(() => browserApi ? onOpenPage(async abs => {
+    try {
+      const { url } = await api<{ url: string }>("/dev-servers/page", { cwd: abs.slice(0, abs.lastIndexOf("/")) || "/", path: abs.slice(abs.lastIndexOf("/") + 1) });
+      await command("new", { url });
+    } catch { openRef({ path: abs }, { asText: true }); }
+  }) : undefined, [browserApi, command]); // eslint-disable-line react-hooks/exhaustive-deps
   const element = useRef<HTMLElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel;

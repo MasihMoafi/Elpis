@@ -124,3 +124,23 @@ test('HTTP preview routes require the private session, validate input and close 
   assert.equal(await (await fetch(server.url)).text(), 'server proof');
   await app.close(); await assert.rejects(fetch(server.url));
 });
+
+test('an HTML file opens over a private local address that serves only its folder, with its CSS and images', async t => {
+  const root = await fs.mkdtemp('/tmp/elpis-html-preview-');
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.mkdir(path.join(root, 'report/assets'), { recursive: true });
+  await fs.writeFile(path.join(root, 'report/index.html'), '<link rel="stylesheet" href="assets/site.css"><h1>Report</h1>');
+  await fs.writeFile(path.join(root, 'report/assets/site.css'), 'h1{color:red}');
+  await fs.writeFile(path.join(root, 'secret.txt'), 'outside');
+  const manager = createDevServers(); t.after(() => manager.close());
+  const { url } = await manager.page(root, 'report/index.html');
+  assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/index\.html$/);
+  const page = await fetch(url); assert.equal(page.status, 200); assert.match(page.headers.get('content-type'), /text\/html/); assert.match(await page.text(), /Report/);
+  const css = await fetch(new URL('assets/site.css', url)); assert.equal(css.status, 200); assert.match(css.headers.get('content-type'), /text\/css/);
+  assert.equal((await fetch(new URL('../secret.txt', url))).status, 404, 'nothing above the page folder');
+  assert.equal((await fetch(new URL(url).origin + '/index.html')).status, 404, 'nothing without the private prefix');
+  assert.equal((await fetch(url.replace(/\/[0-9a-f]{32}\//, '/' + '0'.repeat(32) + '/'))).status, 404, 'a guessed prefix finds nothing');
+  await assert.rejects(manager.page(root, '../etc/passwd'), /project/i);
+  await assert.rejects(manager.page(root, 'secret.txt'), /HTML/);
+  await manager.close(); await assert.rejects(fetch(url));
+});

@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
+import http from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BridgeError, object } from './client.mjs';
@@ -59,8 +61,31 @@ async function killGroup(row) {
 const publicRow = ({ name, command, status, url, pid, logs, error }) => ({ name, command, status, url, pid, logs, error });
 
 /** Owns only process groups started by this bridge; a URL or a port never grants permission to kill a process. */
+/** Types the HTML preview serves; anything else is sent as bytes. */
+const PAGE_TYPES = { '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.webm': 'video/webm' };
+
+/** A local HTML file as a web page the built-in browser can open: a loopback server for its folder only, behind a random
+ * path prefix, so the page loads its own CSS, scripts and images and nothing above that folder. */
+async function servePageFolder(root) {
+  const prefix = randomBytes(16).toString('hex');
+  const server = http.createServer(async (request, response) => {
+    try {
+      const pathname = decodeURIComponent(new URL(request.url, 'http://local').pathname);
+      if (request.method !== 'GET' && request.method !== 'HEAD' || !pathname.startsWith(`/${prefix}/`) || pathname.includes('\0')) throw Error('not found');
+      const target = path.resolve(root, `.${pathname.slice(prefix.length + 1)}`);
+      const real = await fs.realpath(target);
+      if (real !== root && !real.startsWith(root + path.sep) || !(await fs.stat(real)).isFile()) throw Error('not found');
+      response.writeHead(200, { 'Content-Type': PAGE_TYPES[path.extname(real).toLowerCase()] ?? 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      if (request.method === 'HEAD') return response.end();
+      response.end(await fs.readFile(real));
+    } catch { response.writeHead(404, { 'Content-Type': 'text/plain' }); response.end('Not found'); }
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  return { origin: `http://127.0.0.1:${server.address().port}/${prefix}/`, close: () => new Promise(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
+}
+
 export function createDevServers() {
-  const projects = new Map(), pending = new Map(); let closed = false;
+  const projects = new Map(), pending = new Map(), pages = new Map(); let closed = false;
   const folder = async cwd => fs.realpath(await projectDirectory(cwd));
   const state = cwd => ({ servers: [...(projects.get(cwd)?.values() ?? [])].map(publicRow) });
   async function start(cwd, name) {
@@ -118,6 +143,19 @@ export function createDevServers() {
   }
   return {
     async detect(cwd) { return { candidates: await candidatesIn(await folder(cwd)) }; },
+    /** The address that opens `file` (an .html file inside the project `cwd`) in the built-in browser. */
+    async page(cwd, file) {
+      if (closed) throw new BridgeError('Preview service is closed');
+      const project = await folder(cwd);
+      if (typeof file !== 'string' || !file || file.includes('\0')) throw new BridgeError('Choose an HTML file in the project');
+      const real = await fs.realpath(path.resolve(project, file)).catch(() => { throw new BridgeError('That file is not in the project'); });
+      if (real !== project && !real.startsWith(project + path.sep)) throw new BridgeError('That file is not in the project');
+      if (!/\.html?$/i.test(real) || !(await fs.stat(real)).isFile()) throw new BridgeError('Only HTML files open as pages');
+      const root = path.dirname(real);
+      let served = pages.get(root);
+      if (!served) { served = servePageFolder(root); pages.set(root, served); served.catch(() => pages.delete(root)); }
+      return { url: (await served).origin + encodeURI(path.basename(real)) };
+    },
     async status(cwd) { return state(await folder(cwd)); },
     start,
     async stop(cwd, name) {
@@ -125,7 +163,11 @@ export function createDevServers() {
       if (!row) throw new BridgeError('This server was not started by this preview');
       row.status = 'stopped'; await killGroup(row); return state(cwd);
     },
-    async close() { closed = true; await Promise.all([...projects.values()].flatMap(rows => [...rows.values()].map(async row => { row.status = 'stopped'; await killGroup(row); }))); },
+    async close() {
+      closed = true;
+      await Promise.all([...[...projects.values()].flatMap(rows => [...rows.values()].map(async row => { row.status = 'stopped'; await killGroup(row); })),
+        ...[...pages.values()].map(served => served.then(page => page.close(), () => {}))]);
+    },
   };
 }
 
@@ -136,7 +178,7 @@ export async function devServerRequest(manager, method, url, body) {
     return manager.status(url.searchParams.get('cwd'));
   }
   const action = url.pathname.slice('/api/dev-servers/'.length);
-  if (method !== 'POST' || !['detect', 'start', 'stop'].includes(action)) throw new BridgeError('Unknown preview operation', 404);
-  const input = object(body, action === 'detect' ? ['cwd'] : ['cwd', 'name']);
-  return manager[action](input.cwd, input.name);
+  if (method !== 'POST' || !['detect', 'start', 'stop', 'page'].includes(action)) throw new BridgeError('Unknown preview operation', 404);
+  const input = object(body, action === 'detect' ? ['cwd'] : action === 'page' ? ['cwd', 'path'] : ['cwd', 'name']);
+  return action === 'page' ? manager.page(input.cwd, input.path) : manager[action](input.cwd, input.name);
 }

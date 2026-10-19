@@ -134,10 +134,14 @@ export function openFile(cwd: string, path: string, { preview = false, line, end
   if (show && !path.startsWith("/")) reveal(cwd, path);
 }
 /** Opens a local reference in the chat's Files tab, including files outside its folder. */
-export function openRef(ref: FileRef): boolean {
+/** Where an HTML file opens as a page: the side panel registers the session's built-in browser here. */
+let pageOpener: ((abs: string) => void) | null = null;
+export function onOpenPage(open: (abs: string) => void) { pageOpener = open; return () => { if (pageOpener === open) pageOpener = null; }; }
+export function openRef(ref: FileRef, { asText = false }: { asText?: boolean } = {}): boolean {
   const { attached, cwd } = state.host;
   if (!attached || !cwd) return false;
   const found = resolveRef(ref, cwd);
+  if (!asText && pageOpener && /\.html?$/i.test(found.abs) && found.line === undefined) { pageOpener(found.abs); for (const request of requests) request(); return true; }
   openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, show: true });
   for (const request of requests) request();
   return true;

@@ -23,6 +23,7 @@ const PROJECT = {
   'src/app.ts': 'import { parse } from "./lib/parser";\nparse();\n',
   'src/lib/parser.ts': 'export function parse(tokens: string[]) {\n  const tree = [];\n  for (const token of tokens) tree.push(token);\n  return tree;\n}\n',
   'src/lib/lexer.ts': 'export const lex = (s: string) => s.split(" ");\nexport const done = true;\n',
+  'docs/report.html': '<h1>Report</h1>',
 };
 async function writeProject() {
   await fs.rm(CWD, { recursive: true, force: true });
@@ -36,12 +37,13 @@ async function routes() {
     '/api/files/dir': (_body, url) => answer(() => files.listDirectory(url.searchParams.get('cwd'), url.searchParams.get('dir') ?? '', url.searchParams.get('hidden') === '1')),
     '/api/file': (body, url) => answer(() => body ? files.writeFile(body.cwd, body.path, body.content, body.mtimeMs) : files.readFile(url.searchParams.get('cwd'), url.searchParams.get('path'))),
     '/api/files/search': (_body, url) => answer(() => files.searchFiles(url.searchParams.get('cwd'), url.searchParams.get('q'))),
+    '/api/dev-servers/page': body => ({ url: `http://127.0.0.1:4999/${'a'.repeat(32)}/${body.path}`, asked: body }),
   };
 }
 const REPLY = [
   'The parser is in `src/lib/parser.ts:2-3`; `lexer.ts` is a separate file.',
   'See [the lexer](src/lib/lexer.ts#L1-L2), [the app](file:///tmp/parity-fixture/src/app.ts#L1) and /tmp/parity-fixture/docs/guide.md:2 in the guide.',
-  'Run `npm run build`. Outside the project: `/etc/hosts.conf:3`.',
+  'Run `npm run build`. Outside the project: `/etc/hosts.conf:3`. The page: `docs/report.html`.',
 ].join('\n\n');
 const TURNS = [['t1', 'Where is the parser?', REPLY], ['t2', 'Run them.', 'All green.']];
 
@@ -298,6 +300,18 @@ test('code is coloured by its language, as in a code block, and long lines wrap 
     await log.waitFor();
     const box = await log.evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth }));
     assert.ok(box.scroll <= box.client + 1, `a long line wraps instead of running past the pane (${box.scroll} > ${box.client})`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('an HTML file in a reply opens as a page in the built-in browser, served from its folder, not as text', async () => {
+  const f = await open();
+  try {
+    await f.ref('docs/report.html').click();
+    await eventually(async () => assert.deepEqual(await f.page.evaluate(() => window.__commands.filter(command => command.action === 'new').map(command => command.url)), [`http://127.0.0.1:4999/${'a'.repeat(32)}/report.html`]));
+    const asked = f.posts.find(post => post.path === '/api/dev-servers/page');
+    assert.deepEqual(asked.body, { cwd: '/tmp/parity-fixture/docs', path: 'report.html' }, 'its folder is what gets served');
+    assert.equal(await f.side.getByRole('textbox', { name: 'Contents of docs/report.html', exact: true }).count(), 0, 'not opened as text');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
