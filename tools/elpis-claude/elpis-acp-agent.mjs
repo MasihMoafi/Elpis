@@ -25,6 +25,9 @@ let options;
 try { options = parseArgs({ options: { model: { type: "string" }, provider: { type: "string" } } }).values; }
 catch (error) { process.stderr.write(`${error.message}\n${USAGE}\n`); process.exit(2); }
 const ENGINE = process.env.ELPIS_ENGINE_BIN ?? `${process.env.HOME}/.local/bin/elpis`;
+// GPT models run on the OpenAI sign-in unless a provider is named; otherwise the thread would inherit the
+// configured default provider (e.g. Claude credits), which cannot serve them.
+const provider = options.provider ?? (/^gpt-/.test(options.model ?? "") ? "openai" : undefined);
 
 // The options every permission request offers, and the engine decision each one means. A cancelled request (the
 // client cancelled the turn) is `cancel`, which also interrupts the turn; anything unknown is `decline`.
@@ -335,7 +338,7 @@ const app = agent({ name: "elpis" })
     const started = await engine.call("thread/start", {
       cwd: params.cwd,
       ...(options.model ? { model: options.model } : {}),
-      ...(options.provider ? { modelProvider: options.provider } : {}),
+      ...(provider ? { modelProvider: provider } : {}),
       approvalPolicy: "on-request", ...(policy ? { permissions: "elpis-workflow" } : { sandbox: "workspace-write" }),
       ...(policy || Object.keys(config).length ? { config: { ...config, ...(policy ? { "permissions.elpis-workflow": policy.profile } : {}) } } : {}),
       ...(typeof append === "string" && append.trim() ? { developerInstructions: append } : {}),
