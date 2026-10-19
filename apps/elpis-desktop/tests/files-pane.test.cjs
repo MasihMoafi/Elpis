@@ -71,7 +71,7 @@ test('quit safety reads every project document, keeps refused saves dirty, and c
   const disk = new Map([[`${CWD}/src/a.ts`, original], [`${second}/src/b.ts`, original]]); let failSave = false, version = 1, pauseSave = false, releaseSave, saveStarted;
   const pendingSave = new Promise(resolve => saveStarted = resolve);
   const threads = [['chat-a', CWD], ['chat-b', second]].map(([id, cwd]) => ({ id, cwd, name: id, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
-  const f = await fixture({ chat: [['file-guard', 'Show the file', '`src/a.ts`'], ['file-guard-tail', 'Ready', 'All green.']], routes: {
+  const f = await fixture({ cwd: CWD, chat: [['file-guard', 'Show the file', '`src/a.ts`'], ['file-guard-tail', 'Ready', 'All green.']], routes: {
     '/api/threads': (_body, url) => ({ data: url.searchParams.get('archived') === 'true' || url.searchParams.has('ancestorThreadId') ? [] : threads, nextCursor: null }),
     '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'second-file', item: { id: 'second-file', type: 'agentMessage', text: '`src/b.ts`' } }], nextCursor: null }),
     '/api/threads/chat-b/resume': () => ({ thread: threads[1], activeTurnId: null }),
