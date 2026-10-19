@@ -46,7 +46,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   const peerDirectory = path.join(os.tmpdir(), `elpis-shots-${process.getuid?.() ?? 'user'}-${hash(path.resolve(directory)).slice(0, 16)}`);
   const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set();
   let peerServer;
-  let timer, starting, closed = false, running = false, seen, previous, sceneStamp, lastError;
+  let timer, starting, closed = false, running = false, seen, previous, sceneStamp, lastError, syncError;
   const listeners = new Set();
   // Pending pixels stay in memory. Only explicit choices persist as opaque IDs,
   // so separate app processes cannot offer an already placed/dismissed screenshot.
@@ -377,9 +377,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         const current = await read(); sceneStamp = stamp;
         if (current.revision !== previous) { previous = current.revision; for (const listen of listeners) listen({ type: 'scene', ...current }); }
       }
-      lastError = undefined;
+      lastError = undefined; syncError = undefined;
     } catch (e) {
-      if (lastError !== e.message) { lastError = e.message; for (const listen of listeners) listen({ type: 'error', message: e.loveSpot ? e.message : 'Love Spot could not sync the drawing.' }); }
+      syncError = e.loveSpot ? e.message : 'Love Spot could not sync the drawing.';
+      if (lastError !== e.message) { lastError = e.message; for (const listen of listeners) listen({ type: 'error', message: syncError }); }
     } finally { running = false; }
   }
   async function start() {
@@ -397,6 +398,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     listeners.add(listen);
     try { listen({ type: 'scene', ...await read() }); } catch (e) { listen({ type: 'error', message: e.message }); }
     listen({ type: 'screenshots', screenshots: screenshotsList() });
+    if (syncError) listen({ type: 'error', message: syncError });
     return () => { listeners.delete(listen); };
   }
   async function close() {

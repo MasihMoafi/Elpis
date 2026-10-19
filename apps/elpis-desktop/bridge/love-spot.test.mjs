@@ -228,6 +228,24 @@ test('screenshots are captured before any event subscriber and between visits wi
   assert.equal((await f.load()).scene.elements.length, 0);
 });
 
+test('opening Love Spot reports a background screenshot error and clearing it resumes capture', async t => {
+  const f = await fixture(t), store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  t.after(() => store.close()); await store.start();
+  // A directory at the metadata file path produces a real read failure.
+  const blocked = path.join(f.directory, '.screenshot-choices.json');
+  await fs.mkdir(blocked, { recursive: true });
+  await fs.writeFile(path.join(f.screenshots, 'retry-after-error.png'), PNG);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const events = []; await store.watch(event => events.push(event));
+  assert.ok(events.some(e => e.type === 'error' && e.message === 'Love Spot could not sync the drawing.'), 'a background failure must be visible when the board opens');
+  await fs.rmdir(blocked);
+  for (let i = 0; i < 40 && !store.screenshotsList().length; i++) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(store.screenshotsList()[0]?.name, 'retry-after-error.png', 'capture must retry without dropping the new screenshot');
+  assert.equal((await store.read()).scene.elements.length, 0);
+  const recovered = []; await store.watch(event => recovered.push(event));
+  assert.equal(recovered.some(e => e.type === 'error'), false, 'a recovered error must not follow a later subscriber');
+});
+
 test('independent screenshot watchers consume one choice across page switches and keep dismissals private', async t => {
   const f = await fixture(t);
   const a = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
