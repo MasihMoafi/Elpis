@@ -994,6 +994,8 @@ export default function Home() {
     pickedMentions.current = new Map();
     const originalId = selected?.id || newDraftKey.current, originalRequest = request.current, browserDraft = `draft:${tabsRef.current.activeId}`;
     const submissionKey = crypto.randomUUID();
+    const clearsComposer = own === undefined;
+    if (clearsComposer) { setText(""); saveDraft(originalId, ""); setAttachments([]); saveAttachments(originalId, []); }
     const queued = activeTurn && !continues && (followUp ?? preferences.followUp) === "queue";
     if (!queued) {
       stickToBottom.current = true;
@@ -1060,6 +1062,12 @@ export default function Home() {
     } catch (e) {
       updateSubmission({ failed: true });
       for (const mention of sentMentions) pickedMentions.current.set(mention.path, mention);
+      if (clearsComposer) {
+        const key = errorThreadId || originalId, shown = (selectedRef.current?.id || newDraftKey.current) === key;
+        if (shown && !textRef.current.trim() && !attachmentsRef.current.length) { setText(sentText); setAttachments(sentAttachments); }
+        const target = !savedDraft(key).trim() && !savedAttachments(key).length ? key : `recovery-${key}`;
+        saveDraft(target, sentText); saveAttachments(target, sentAttachments);
+      }
       if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
       else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
     } finally {

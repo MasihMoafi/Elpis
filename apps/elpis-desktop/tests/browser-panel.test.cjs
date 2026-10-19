@@ -59,7 +59,7 @@ function fakeDesktop(scoped = false) {
   };
 }
 
-async function fixture(t, { running = false, scoped = false } = {}) {
+async function fixture(t, { running = false, scoped = false, hold = null } = {}) {
   const streams = new Set(), posts = [], errors = [];
   const thread = { id: 'a', name: 'Chat A', cwd: '/tmp/browser-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } };
   const server = http.createServer(async (req, res) => {
@@ -71,7 +71,10 @@ async function fixture(t, { running = false, scoped = false } = {}) {
       if (pathname === '/api/threads') return json({ thread: { ...thread, id: 'fresh', name: 'New chat' } });
       if (/\/resume$/.test(pathname)) return json({ thread: running ? { ...thread, status: { type: 'active', activeFlags: [] } } : thread, activeTurnId: running ? 'turn-0' : null });
       if (/\/steer$/.test(pathname)) return json({ turnId: 'turn-0' });
-      if (/\/turns$/.test(pathname)) return json({ turn: { id: 'turn-1' } });
+      if (/\/turns$/.test(pathname)) {
+        if (hold && await hold() === 'fail') { res.writeHead(502, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'The engine is unavailable.' })); }
+        return json({ turn: { id: `turn-${posts.length}` } });
+      }
       return json({});
     }
     if (pathname === '/api/health') return json({ connected: true, cwd: '/tmp/browser-fixture' });
@@ -126,6 +129,47 @@ test('Annotate: the editor takes a comment and Send gives the chat the comments 
   assert.equal(text.name, 'Browser comments'); assert.match(text.text, /^# Browser comments:/);
   assert.equal(image.name, 'Browser comments.jpg'); assert.match(image.dataUrl, /^data:image\/jpeg;base64,/);
   assert.ok((await commands()).indexOf('annotationsCollect') < (await commands()).indexOf('annotationsSent'));
+  assert.deepEqual(errors, []);
+});
+
+test('A21: Send clears the message and its comments before the server answers, and the next Send carries only its own comments', async t => {
+  let release; const gate = () => new Promise(resolve => { release = resolve; });
+  let waiting = gate();
+  const { page, posts, errors } = await fixture(t, { hold: () => waiting });
+  const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  const cards = page.locator('.composer').getByRole('list', { name: 'Message attachments', exact: true }).getByRole('listitem');
+  const turns = () => posts.filter(post => /\/(turns|steer)$/.test(post.path));
+  const comment = body => page.evaluate(body => window.__push({ annotating: true, annotations: [{ id: body, number: 1, kind: 'element', label: 'link', body }] }), body);
+  await input.fill('make it Elpis like');
+  await comment('first comment');
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  await eventually(async () => assert.equal(turns().length, 1));
+  assert.equal(await input.inputValue(), '', 'the text leaves the composer at once (R2)');
+  assert.equal(await cards.count(), 0, 'the comment cards leave the composer at once (R2)');
+  release(); waiting = Promise.resolve();
+  await page.waitForTimeout(300);
+  assert.equal(await input.inputValue(), ''); assert.equal(await cards.count(), 0);
+  await input.fill('second');
+  await comment('second comment');
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  await eventually(async () => assert.equal(turns().length, 2));
+  const second = turns()[1].body;
+  assert.equal(second.text, 'second');
+  assert.deepEqual(second.attachments.filter(part => part.type === 'text').map(part => part.text.match(/Comment:\n(.*)/)[1]), ['second comment'], 'only this Send’s comments');
+  assert.deepEqual(errors, []);
+});
+
+test('A21: a Send that fails puts the message and its comments back in the composer', async t => {
+  const { page, posts, errors } = await fixture(t, { hold: async () => 'fail' });
+  const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  const cards = page.locator('.composer').getByRole('list', { name: 'Message attachments', exact: true }).getByRole('listitem');
+  await input.fill('keep me');
+  await page.evaluate(() => window.__push({ annotating: true, annotations: [{ id: 'c1', number: 1, kind: 'element', label: 'link', body: 'kept comment' }] }));
+  await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
+  await eventually(async () => assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 1));
+  await eventually(async () => assert.equal(await input.inputValue(), 'keep me'));
+  assert.ok(await cards.count() >= 1, 'the comment cards come back');
+  await page.getByText('The engine is unavailable.').first().waitFor();
   assert.deepEqual(errors, []);
 });
 
