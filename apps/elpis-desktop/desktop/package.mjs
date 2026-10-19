@@ -12,7 +12,7 @@ export const productionFiles = [
   'bridge/rag-command.mjs', 'bridge/rewind-history.mjs', 'bridge/rewind-snapshots.mjs', 'bridge/server.mjs', 'bridge/dev-servers.mjs', 'bridge/tools.mjs', 'bridge/runtime-paths.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs', 'bridge/trash.mjs',
   'bridge/resources/rag.md', 'bridge/resources/personal.md', 'bridge/personal.mjs', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-sessions.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/app-updates.cjs', 'desktop/wayland-ime.cjs', 'desktop/session-windows.cjs', 'desktop/window-ipc.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs', 'desktop/editors.cjs',
-  'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/theme.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html',
+  'desktop/terminal.cjs', 'desktop/open-thread.cjs', 'desktop/tray.cjs', 'desktop/quick-entry.cjs', 'desktop/theme.cjs', 'desktop/copy-keys.cjs', 'desktop/quick-entry-preload.cjs', 'desktop/quick-entry.html',
   'desktop/runtime.mjs', 'desktop/state.cjs', 'desktop/elpis-icon.png', 'lib/agent-runs.mjs', 'lib/chat-worktree.ts', 'lib/turn-replacement.ts', 'lib/thread-deletion.ts', 'lib/approvals.ts', 'bridge/love-spot-store.cjs', 'bridge/love-spot-order.cjs', 'bridge/love-spot-talk.mjs', 'bridge/love-agents.mjs', 'bridge/acp-nodes.mjs', 'bridge/workflow-acp.mjs', 'bridge/workflow-worktrees.mjs', 'lib/love-spot.ts',
 ];
 
