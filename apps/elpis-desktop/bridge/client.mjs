@@ -207,6 +207,7 @@ export class DesktopClient extends EventEmitter {
     this.#socket.send(JSON.stringify({ method: 'initialized', params: {} })); this.#ready = true;
   }
   get connected() { return this.#ready && !this.#closed; }
+  hasLocalActivity() { return this.#mutating.size > 0 || this.#workflowRuns.busy(); }
   #browserOptions(id) { return this.#browserConfig ? { config: this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig } : {}; }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {

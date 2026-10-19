@@ -47,7 +47,7 @@
     document.addEventListener('keyup', event => { if (event.key === 'Escape') quick?.dismiss(); });
     document.body.addEventListener('click', event => { if (!bar.contains(event.target)) { prompt.focus(); quick?.dismiss(); } });
     for (const name of ['dragenter', 'dragover', 'dragleave', 'drop']) prompt.addEventListener(name, event => { event.preventDefault(); event.stopPropagation(); });
-    quick?.onShow(state => { theme(state.dark); setTimeout(() => prompt.focus(), 0); });
+    quick?.onShow(state => { if (typeof state.draft === 'string') prompt.value = state.draft; theme(state.dark); setTimeout(() => prompt.focus(), 0); });
     setTimeout(() => prompt.focus(), 0);
   </script>
 </body>

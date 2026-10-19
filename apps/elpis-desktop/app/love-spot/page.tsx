@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { appStorage } from "@/lib/projects";
+import { AppUpdate } from "@/components/app-update";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
@@ -27,7 +28,7 @@ export default function LoveSpotWindow() {
     return () => { media.removeEventListener("change", refresh); window.removeEventListener("storage", refresh); stop?.(); };
   }, []);
   return <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
-    {desktop && <div className="title-bar shrink-0" aria-hidden="true" />}
+    {desktop && <div className="title-bar shrink-0"><AppUpdate /></div>}
     <ViewBoundary label="Love Spot"><LoveSpot dark={dark} onOpenChat={id => { void window.elpisDesktop?.openSessionWindow?.(id); }} /></ViewBoundary>
   </main>;
 }

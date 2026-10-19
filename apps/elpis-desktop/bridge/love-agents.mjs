@@ -170,6 +170,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
       await Promise.all(pending.map(entry => entry.done));
       await saving.catch(() => {});
     },
+    busy: () => running || interviewing.size > 0,
     async run(input) {
       object(input, ['id', 'cwd', 'confirm']); text(input.id, 'agent ID', 200);
       if (input.confirm !== undefined && typeof input.confirm !== 'boolean') throw new BridgeError('Invalid task confirmation');

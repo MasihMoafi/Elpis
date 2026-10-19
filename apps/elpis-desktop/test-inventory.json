@@ -78,6 +78,7 @@
     "bridge/workflow-acp.test.mjs"
   ],
   "desktop": [
+    "desktop/app-updates.test.cjs",
     "desktop/browser-agent.test.cjs",
     "desktop/browser-annotations.test.cjs",
     "desktop/browser-features.test.cjs",
@@ -231,6 +232,7 @@
     "tests/browser-sessions-electron.test.cjs"
   ],
   "opt-in": [
+    "tests/app-update-native.test.cjs",
     "tests/love-spot-performance.test.cjs",
     "tests/app-fix-2.runtime.mjs",
     "tests/browser.runtime.mjs",

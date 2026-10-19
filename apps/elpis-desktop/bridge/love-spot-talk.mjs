@@ -69,6 +69,7 @@ export function createLoveSpotTalk({ client, store }) {
   };
   client.on('event', event);
   return {
+    busy: () => sending || !!activeTurnId,
     async read() { await load(); return snapshot(); },
     async send(body) {
       object(body, ['text', 'model', 'provider', 'revision']); text(body.text, 'message');

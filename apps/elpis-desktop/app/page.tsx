@@ -31,6 +31,7 @@ import { ContextUsage } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
+import { AppUpdate } from "@/components/app-update";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
@@ -1581,7 +1582,7 @@ export default function Home() {
   for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
-    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
+    {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /><AppUpdate /></div>}
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash done={ready && connected} />}

@@ -5,6 +5,7 @@ const committed = Object.assign(Object.create(null), saved.values ?? {});
 const values = Object.assign(Object.create(null), committed);
 let revision = saved.revision ?? 0;
 const errors = new Set(), listeners = new Set(), pending = [], versions = new Map();
+const writes = new Set(), writeErrors = new Map();
 const failed = error => { for (const callback of errors) callback(String(error.message || error)); };
 function refresh(key) {
   let value = committed[key] ?? null;
@@ -30,7 +31,7 @@ ipcRenderer.on('elpis:state:changed', (_event, change) => adopt(change));
 function write(key, update) {
   const patch = { key, baseRevision: revision, ...update };
   pending.push(patch); refresh(key);
-  return ipcRenderer.invoke('elpis:state:write', patch).then(result => {
+  const operation = ipcRenderer.invoke('elpis:state:write', patch).then(result => {
     if (result.error) {
       const state = result.snapshot;
       if (state?.values && state.revision >= revision) {
@@ -40,7 +41,11 @@ function write(key, update) {
       throw Object.assign(Error(result.error), { code: result.code });
     }
     adopt(result);
-  }).finally(() => { pending.splice(pending.indexOf(patch), 1); refresh(key); });
+    writeErrors.delete(key);
+  }).catch(error => { writeErrors.set(key, error); throw error; })
+    .finally(() => { pending.splice(pending.indexOf(patch), 1); refresh(key); writes.delete(operation); });
+  writes.add(operation);
+  return operation;
 }
 contextBridge.exposeInMainWorld('elpisDesktop',{
   improve: {
@@ -56,6 +61,16 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     patchItem:(key,changes)=>{ write(key,{changes}).catch(failed); },
     onChange:callback=>{ listeners.add(callback); return()=>listeners.delete(callback); },
     onError:callback=>{ errors.add(callback); if(saved.error)callback(saved.error); return()=>errors.delete(callback); },
+    flush:async()=>{
+      while(writes.size)await Promise.allSettled([...writes]);
+      if(saved.error)throw Error(saved.error);
+      if(writeErrors.size)throw writeErrors.values().next().value;
+    },
+  },
+  updates:{
+    status:()=>ipcRenderer.invoke('elpis:updates:status').then(checked),
+    restart:()=>ipcRenderer.invoke('elpis:updates:restart').then(checked),
+    subscribe:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('elpis:updates:changed',listener);return()=>ipcRenderer.removeListener('elpis:updates:changed',listener);},
   },
   openSessionWindow:threadId=>ipcRenderer.invoke('elpis:session-window',threadId).then(checked),
   chooseFolder:()=>ipcRenderer.invoke('elpis:folder'),

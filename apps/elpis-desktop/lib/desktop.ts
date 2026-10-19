@@ -20,6 +20,7 @@ export type DesktopBrowser = {
   subscribe:(callback:(state:BrowserState)=>void)=>()=>void;
 };
 export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> & {
+  flush?:()=>Promise<void>;
   saveItem?:(key:string,value:string)=>Promise<void>;
   /** Atomically merges preference fields; conflicts go to onError. */
   patchItem?:(key:string,changes:Record<string,string|boolean>)=>void;
@@ -42,10 +43,12 @@ export type DesktopTerminal = {
 /** Quick Entry's global shortcut (desktop/quick-entry.cjs): whether this session allows one, and why the saved one does not work. */
 export type QuickEntryStatus = { supported:boolean; reason?:string; shortcut:string; problem:string|null };
 export type DesktopQuickEntry = { status:()=>Promise<QuickEntryStatus>; setShortcut:(accelerator:string)=>Promise<{shortcut:string}> };
+export type AppUpdateState = { available:boolean; desktop:boolean; engine:boolean; restarting:boolean; error:string|null };
+export type DesktopUpdates = { status:()=>Promise<AppUpdateState>; restart:()=>Promise<{restarting:boolean}>; subscribe:(callback:(state:AppUpdateState)=>void)=>()=>void };
 declare global { interface Window { elpisDesktop?:{improve?:{capture:(bounds:{x:number;y:number;width:number;height:number})=>Promise<{image:string}>;try:(id:string)=>Promise<{opened:boolean}>;onPoint?:(callback:(point:{x:number;y:number})=>void)=>()=>void};browser:DesktopBrowser;storage?:DesktopStorage;chooseFolder?:()=>Promise<string|null>;setTheme?:(dark:boolean,details?:{source:"system"|"light"|"dark";background:string})=>void;resolveFolder?:(folder:string)=>Promise<string>;openFile?:(target:string)=>Promise<void>;
   openExternalFile?:(target:string)=>Promise<void>;onOpenFile?:(callback:(target:{path:string;line?:number})=>void)=>()=>void;
   /** The editors "Open in" offers (desktop/editors.cjs; never VS Code) and a file opened in one, at a line. */
   editors?:()=>Promise<{id:string;name:string}[]>;openInEditor?:(target:string,editor:string,line?:number)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>;terminal?:DesktopTerminal;onOpenThread?:(callback:(threadId:string)=>void)=>()=>void;
   /** A new chat from Quick Entry (sent with its text) or the tray's New chat (empty). */
   openSessionWindow?:(threadId?:string)=>Promise<void>;
-  onNewChat?:(callback:(text:string)=>void)=>()=>void; quickEntry?:DesktopQuickEntry} } }
+  onNewChat?:(callback:(text:string)=>void)=>()=>void; quickEntry?:DesktopQuickEntry; updates?:DesktopUpdates} } }

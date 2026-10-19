@@ -7,28 +7,28 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-async function launch(args, flushText, flushBrowsers) {
+async function launch(args, flushText, flushBrowsers, canRestart = async () => true) {
   const app = new EventEmitter(); let ready, lock;
   const identity = {};
   Object.assign(app, { setName: name => { identity.name = name; }, setPath: (key, value) => { identity[key] = value; },
     setDesktopName: name => { identity.desktop = name; }, getPath: () => '/tmp/love-dock-test',
     commandLine: { appendSwitch() {}, getSwitchValue: () => '' },
     requestSingleInstanceLock: data => { lock = data; return true; },
-    whenReady: () => new Promise(resolve => { ready = resolve; }), quit() {} });
+    whenReady: () => new Promise(resolve => { ready = resolve; }), quit() {}, relaunch: value => calls.push(['relaunch', value]) });
   const calls = [], host = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => true, focus: () => calls.push('focus-chat') };
   const openers = { threads: { queue: id => calls.push(['thread', id]) }, newChats: { queue() {} } };
   const sessions = { windows: new Set(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
     open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); } };
-  const electron = { app, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
+  const electron = { app, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
-    sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { close: async () => calls.push('board-close') },
-    require: name => name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
-      : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return {}; } } : require(name) });
+    sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
+    require: name => name === './app-updates.cjs' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
+      : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
   vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
   const settle = () => new Promise(resolve => setImmediate(resolve)); await settle();
-  return { app, calls, lock, settle, identity };
+  return { app, calls, lock, settle, identity, restart: target => vm.runInContext('quitApp', context)(target) };
 }
 
 test('app quit waits for live text before closing the board server; a failure permits retry', async () => {
@@ -169,4 +169,37 @@ test('dock preparation replaces both launch paths, preserves other actions, and 
     const result = spawnSync('bash', ['-c', rollbackCommand(file, old)], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr); assert.equal(fs.readFileSync(file, 'utf8'), old);
   } finally { removeTestTempDir(root); }
+});
+
+
+test('Restart refuses active work and a later idle retry preserves standalone Love Spot mode', async () => {
+  let active = true;
+  const f = await launch(['--love-spot-app'], async () => true, undefined, async () => !active);
+  await assert.rejects(f.restart('/selected/new/launch'), /running chats/);
+  assert.ok(!f.calls.includes('board-close'));
+  active = false; assert.equal(await f.restart('/selected/new/launch'), true);
+  assert.ok(f.calls.includes('board-close'));
+  const relaunched = f.calls.find(call => Array.isArray(call) && call[0] === 'relaunch')[1];
+  assert.equal(relaunched.execPath, '/selected/new/launch');
+  assert.deepEqual(Array.from(relaunched.args), ['--love-spot-app']);
+});
+
+test('a refused final save does not schedule a relaunch or close the board', async () => {
+  let saved = false;
+  const f = await launch([], async () => saved);
+  await assert.rejects(f.restart('/selected/new/launch'), /Text could not be saved/);
+  assert.ok(!f.calls.some(call => Array.isArray(call) && call[0] === 'relaunch'));
+  assert.ok(!f.calls.includes('board-close'));
+  saved = true; assert.equal(await f.restart('/selected/new/launch'), true);
+});
+
+
+test('a Restart requested during an ordinary Quit is retained and schedules only one launch', async () => {
+  let finish;
+  const f = await launch([], () => new Promise(resolve => { finish = resolve; }));
+  f.app.emit('before-quit', { preventDefault() {} }); await f.settle();
+  const restarting = f.restart('/selected/new/launch');
+  finish(true); await restarting;
+  const launches = f.calls.filter(call => Array.isArray(call) && call[0] === 'relaunch');
+  assert.equal(launches.length, 1); assert.equal(launches[0][1].execPath, '/selected/new/launch');
 });

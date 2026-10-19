@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { DesktopClient } from './client.mjs';
+import { startDesktopServer } from './server.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
@@ -22,6 +23,7 @@ function fixture(t, overrides = {}) {
   socket.send = raw => {
     const row = JSON.parse(raw); socket.sent.push(row); if (!row.id) return;
     const result = row.method === 'model/list' ? { data: [{ id: 'm-fast', model: 'm-fast' }] }
+      : row.method === 'thread/list' ? { data: [root], nextCursor: null }
       : row.method === 'thread/read' || row.method === 'thread/resume' ? { thread: root }
       : row.method === 'workGraph/list' ? { data: [] }
       : row.method.startsWith('workGraph/run') ? { graphId: 'native', threadId: ROOT } : {};
@@ -31,7 +33,7 @@ function fixture(t, overrides = {}) {
     const p = path.join(dir, `${id}.jsonl`);
     return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   };
-  const client = new DesktopClient(socket, { workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.model }), ...overrides } });
+  const client = new DesktopClient(socket, { rewindHome: path.join(dir, 'rewind'), workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.model }), ...overrides } });
   t.after(() => { client.close(); removeTestTempDir(tempRoot); });
   const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
   const finished = async id => {
@@ -44,6 +46,45 @@ function fixture(t, overrides = {}) {
   };
   return { client, socket, dir, root, run, log, finished, fakeEnv: overrides.env };
 }
+
+test('Restart waits through local workflow admission and final persistence while engine threads stay idle', { timeout: 20000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  const app = await startDesktopServer({ client: f.client, elpisHome: f.dir, trashFile: path.join(f.dir, 'trash.json'),
+    loveSpot: { directory: path.join(f.dir, 'drawing'), screenshots: path.join(f.dir, 'screenshots') } });
+  const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+  const admission = gate(), admitting = gate(), finish = gate(), finishing = gate();
+  const send = f.socket.send, rename = fs.promises.rename;
+  let holdRead = true, run;
+  f.socket.send = raw => {
+    if (JSON.parse(raw).method === 'thread/read' && holdRead) {
+      admitting.resolve(); void admission.promise.then(() => send(raw));
+    } else send(raw);
+  };
+  fs.promises.rename = async (from, to) => {
+    if (to.startsWith(path.join(f.dir, 'state') + path.sep) && JSON.parse(await fs.promises.readFile(from, 'utf8')).status === 'succeeded') {
+      finishing.resolve(); await finish.promise;
+    }
+    return rename(from, to);
+  };
+  try {
+    assert.equal(await app.canRestart(), true);
+    run = f.run([task('restart-evidence')]);
+    await admitting.promise;
+    assert.equal(await app.canRestart(), false, 'workflow admission has not reached its active runner yet');
+    holdRead = false; admission.resolve(); await run;
+    assert.equal(await app.canRestart(), false, 'local ACP execution is running despite an idle native thread');
+    await finishing.promise;
+    assert.equal(await app.canRestart(), false, 'the last durable workflow result is still pending');
+    finish.resolve();
+    assert.equal((await f.finished((await run).graphId)).status, 'succeeded');
+    assert.equal(f.root.status.type, 'idle');
+    assert.equal(await app.canRestart(), true);
+  } finally {
+    holdRead = false; admission.resolve(); finish.resolve(); fs.promises.rename = rename;
+    try { const started = await run?.catch(() => null); if (started) await f.finished(started.graphId); }
+    finally { await app.close(); }
+  }
+});
 
 test('Workflows uses real ACP and hands only completed dependency answers to the next agent', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();

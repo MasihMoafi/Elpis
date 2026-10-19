@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { startDesktopServer } from './server.mjs';
 
@@ -41,6 +42,40 @@ async function finish(lab) {
   }
   throw Error('Lab did not finish');
 }
+
+test('Restart blocks Lab admission and execution even when the engine reports no active threads', { timeout: 15000 }, async () => {
+  const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
+  const dir = await fs.mkdtemp(path.join(base, 'lab-restart-'));
+  const client = new Client(); client.hang = true; client.close = () => {};
+  client.listThreads = async () => ({ data: [], nextCursor: null });
+  let release, admitted;
+  const admission = new Promise(resolve => { release = resolve; }), admitting = new Promise(resolve => { admitted = resolve; });
+  const providers = client.providers.bind(client);
+  client.providers = async () => { admitted(); await admission; return providers(); };
+  const app = await startDesktopServer({ client, elpisHome: dir, trashFile: path.join(dir, 'trash.json'),
+    loveSpot: { directory: path.join(dir, 'drawing'), screenshots: path.join(dir, 'screenshots') } });
+  let starting;
+  try {
+    const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
+    const session = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+    const cookie = session.headers.get('set-cookie').split(';')[0];
+    const post = body => fetch(`${url.origin}/api/experiment-lab`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) });
+    assert.equal(await app.canRestart(), true);
+    starting = post({ ...input(), repetitions: 1 });
+    await admitting;
+    assert.equal(await app.canRestart(), false, 'Lab is admitting a run before any model thread exists');
+    release(); const response = await starting;
+    assert.equal(response.status, 200); assert.equal((await response.json()).record.status, 'running');
+    assert.equal(await app.canRestart(), false, 'ephemeral Lab work is not represented by thread/list');
+    assert.equal((await post({ action: 'stop' })).status, 200);
+    assert.equal(await app.canRestart(), true);
+    client.auth = 'API key';
+    assert.equal((await post(input())).status, 409);
+    assert.equal(await app.canRestart(), true, 'a rejected admission releases the guard');
+  } finally {
+    release(); await starting?.catch(() => {}); await app.close(); execFileSync('gio', ['trash', dir]);
+  }
+});
 
 test('paired repetitions fix subscription/model/check, alternate order, preserve raw evidence and survive reopening', async () => {
   const { client, lab, file } = await fixture();
@@ -158,7 +193,8 @@ test('an unclean bridge restart marks an unfinished record interrupted instead o
 
 test('the HTTP route requires a private session, returns the record envelope and validates before calling the model', async t => {
   const { client, file } = await fixture(); client.close = () => {};
-  const app = await startDesktopServer({ client, staticDir: path.dirname(file), elpisHome: path.dirname(file), trashFile: path.join(path.dirname(file), 'trash.json') });
+  const app = await startDesktopServer({ client, staticDir: path.dirname(file), elpisHome: path.dirname(file), trashFile: path.join(path.dirname(file), 'trash.json'),
+    loveSpot: { directory: path.join(path.dirname(file), 'drawing'), screenshots: path.join(path.dirname(file), 'screenshots') } });
   t.after(() => app.close());
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const session = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });

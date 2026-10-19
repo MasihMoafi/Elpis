@@ -158,3 +158,23 @@ test('Settings learns why the shortcut does not work: no portal on Wayland, or a
   assert.deepEqual(await taken.quick.status(), { supported: true, shortcut: 'Super+E', problem: null });
   assert.deepEqual(await taken.quick.change('Ctrl+'), { error: 'This shortcut combination isn’t supported. Try a different combination.' });
 });
+
+
+test('hidden Quick Entry text is saved before Quit and restored only on the first show after reopening', async () => {
+  const electron = fakeElectron(); let saved = 'Recovered Quick Entry draft', value = 'Final hidden Quick Entry words', reject = true;
+  const drafts = { read: () => saved, save: async text => { if (reject) throw Error('Private Quick Entry disk unavailable'); saved = text; } };
+  const quick = createQuickEntry({ ...electron, drafts, dark: () => false, onSubmit() {} });
+  await quick.toggle(); const [window] = electron.windows;
+  assert.equal(window.webContents.sent.at(-1)[1].draft, saved);
+  await quick.toggle();
+  window.webContents.executeJavaScript = async () => value;
+  await assert.rejects(quick.flush(), /disk unavailable/);
+  assert.equal(window.isDestroyed(), false);
+  reject = false; await quick.cancelQuit(); await quick.flush();
+  assert.equal(saved, value); quick.dispose();
+  const reopened = fakeElectron(), next = createQuickEntry({ ...reopened, drafts, dark: () => false, onSubmit() {} });
+  await next.toggle(); assert.equal(reopened.windows[0].webContents.sent.at(-1)[1].draft, value);
+  await next.toggle(); await next.toggle();
+  assert.equal('draft' in reopened.windows[0].webContents.sent.at(-1)[1], false, 'later shows preserve current textarea instead of restoring stale saved text');
+  next.dispose();
+});

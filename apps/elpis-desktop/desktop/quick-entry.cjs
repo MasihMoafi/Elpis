@@ -65,8 +65,8 @@ function createShortcut({ app, globalShortcut, onPress }) {
 }
 
 /** The Quick Entry window. `onSubmit` gets the text to open as a new chat. */
-function createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit }) {
-  let window = null, ready = null, position = null;
+function createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit, drafts }) {
+  let window = null, ready = null, position = null, restoreDraft = false;
   const open = () => !!window && !window.isDestroyed();
   const hide = () => { if (open() && window.isVisible()) window.hide(); };
   function centre() {
@@ -82,6 +82,7 @@ function createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit }) {
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());
     const own = window;
+    restoreDraft = true;
     own.on('blur', hide);
     own.on('hide', () => { position = own.getPosition(); });
     own.on('closed', () => { if (window === own) { window = null; ready = null; } });
@@ -95,7 +96,9 @@ function createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit }) {
     await ready;
     if (window !== shown || shown.isDestroyed()) return;
     shown.setPosition(...(position ?? centre()));
-    shown.webContents.send('elpis:quick-entry:show', { dark: dark() });
+    const draft = restoreDraft ? drafts?.read() : undefined;
+    shown.webContents.send('elpis:quick-entry:show', { dark: dark(), ...(typeof draft === 'string' && draft ? { draft } : {}) });
+    restoreDraft = false;
     shown.show(); shown.focus();
   }
   const fromQuickEntry = event => open() && event.sender === window.webContents;
@@ -109,6 +112,14 @@ function createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit }) {
   ipcMain.on('elpis:quick-entry:dismiss', dismiss);
   return {
     toggle, hide,
+    async flush() {
+      if (!open()) return;
+      await ready;
+      const text = await window.webContents.executeJavaScript('document.documentElement.inert = true; document.querySelector("textarea").value');
+      if (!drafts) { if (text) throw Error('Keep Quick Entry open and copy its unsent text before quitting.'); return; }
+      await drafts.save(text);
+    },
+    async cancelQuit() { if (open()) await window.webContents.executeJavaScript('document.documentElement.inert = false; true'); },
     dispose() {
       ipcMain.removeListener('elpis:quick-entry:submit', submit); ipcMain.removeListener('elpis:quick-entry:dismiss', dismiss);
       if (open()) window.destroy();
@@ -118,8 +129,8 @@ function createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit }) {
 }
 
 /** Quick Entry, its shortcut, and what Settings → General shows about it. `start` registers the saved shortcut. */
-function startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark, onSubmit, support = shortcutSupport() }) {
-  const quick = createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit });
+function startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark, onSubmit, drafts, support = shortcutSupport() }) {
+  const quick = createQuickEntry({ BrowserWindow, screen, ipcMain, dark, onSubmit, drafts });
   const shortcut = createShortcut({ app, globalShortcut, onPress: () => void quick.toggle() });
   let problem = null; // Why the saved shortcut is not working, until a new one is set.
   async function change(accelerator) {
@@ -135,7 +146,7 @@ function startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, 
     return { supported, ...(reason ? { reason } : {}), shortcut: shortcut.current() ?? '', problem };
   }
   return {
-    toggle: quick.toggle, status, change,
+    toggle: quick.toggle, flush: quick.flush, cancelQuit: quick.cancelQuit, status, change,
     async start(saved) { const result = await change(saved); problem = result.error ?? null; },
     /** Settings → General's calls; only the app's own page may make them. */
     attach({ host, origin, ipcMain: windowIpc = ipcMain }) {

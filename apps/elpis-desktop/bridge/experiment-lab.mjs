@@ -154,6 +154,7 @@ export function createExperimentLab({ client, file = path.join(process.env.ELPIS
     record.endedAt = new Date().toISOString(); await save();
   }
   return {
+    busy: () => starting || !!running,
     read,
     async start(input) {
       if (starting || running) throw new BridgeError('An experiment is already running', 409);
