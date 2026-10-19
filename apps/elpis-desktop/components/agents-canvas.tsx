@@ -400,13 +400,15 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const [sourceId, setSourceId] = useState<string | null>(null), [labOpen, setLabOpen] = useState(false);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
+  const boxDrag = useRef<{ x: number; y: number; base: string[]; moved: boolean } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number; crossing: boolean } | null>(null);
   useEffect(() => { if (selection.length) setSourceId(null); }, [selection]);
   const [menu, setMenu] = useState<BoardMenu | null>(null), wireMenu = menu?.kind === "wire" ? menu : null;
   // The side panel folds away to give the board the whole width, remembered on this device; choosing an agent or the
   // Mother brings it back.
   const [panelOpen, setPanelOpen] = useState(() => { try { return appStorage().getItem("elpis-canvas-panel") !== "closed"; } catch { return true; } });
   const showPanel = (open: boolean) => { setPanelOpen(open); try { appStorage().setItem("elpis-canvas-panel", open ? "open" : "closed"); } catch { /* kept for this session only */ } setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
-  useEffect(() => { if (selection.length && !panelOpen) showPanel(true); }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (selection.length && !panelOpen && !boxDrag.current) showPanel(true); }, [selection, selectionBox]); // eslint-disable-line react-hooks/exhaustive-deps
   const project = useProjectFolders(cwd);
   const [notice, setNotice] = useState("");
   const [deleted, setDeleted] = useState<string | null>(null);
@@ -733,7 +735,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       if (target && target !== document.body && !target.closest(".agents-canvas")) return;
       // event.code, so it works in any keyboard layout; never inside a field, where Ctrl+A selects the text. On the board
       // Ctrl+A selects every agent and note, as in every editor.
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA" && !typing) { take(); setSelection(graph.nodes.filter(node => node.type !== "mother").map(node => node.id)); }
+      if (event.key === "Escape" && boxDrag.current) { take(); setSelection(boxDrag.current.base); boxDrag.current = null; setSelectionBox(null); }
+      else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA" && !typing) { take(); setSelection(graph.nodes.filter(node => node.type !== "mother").map(node => node.id)); }
       else if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.shiftKey && onBoard && !typing) { take(); openAdder(); }
       else if (!ctrl && !event.altKey && event.code === "KeyA" && onBoard && !typing && !adding) { take(); addAgent(undefined, selected ? { id: selected.id, as: "target" } : undefined); }
       // Space opens workflow patterns; middle drag and scroll pan. F frames selection.
@@ -1070,9 +1073,36 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}>{panelOpen ? <PanelRightClose size={15} /> : <PanelRight size={15} />}</Button>
       <Button size="sm" onClick={() => void start()} disabled={starting || Boolean(run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
     </header>
-    <div className="canvas-board" ref={board} onPointerMove={event => { pointer.current = { x: event.clientX, y: event.clientY }; }}
+    <div className="canvas-board" ref={board}
+      onPointerDownCapture={event => {
+        if (event.button !== 0 || !event.isPrimary || !(event.target instanceof Element) || !event.target.matches(".react-flow__pane")) return;
+        boxDrag.current = { x: event.clientX, y: event.clientY, base: event.shiftKey || event.ctrlKey || event.metaKey ? [...selection] : [], moved: false };
+        event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation();
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      }}
+      onPointerMove={event => {
+        pointer.current = { x: event.clientX, y: event.clientY };
+        const start = boxDrag.current;
+        if (!start || (!start.moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5)) return;
+        start.moved = true;
+        const bounds = event.currentTarget.getBoundingClientRect(), left = Math.min(start.x, event.clientX), top = Math.min(start.y, event.clientY), right = Math.max(start.x, event.clientX), bottom = Math.max(start.y, event.clientY), crossing = event.clientX < start.x;
+        setSelectionBox({ x: left - bounds.left, y: top - bounds.top, width: right - left, height: bottom - top, crossing });
+        const picked = [...event.currentTarget.querySelectorAll<HTMLElement>(".react-flow__node:not(.react-flow__node-father)")].filter(node => {
+          const box = node.getBoundingClientRect();
+          return crossing ? box.left <= right && box.right >= left && box.top <= bottom && box.bottom >= top : box.left >= left && box.right <= right && box.top >= top && box.bottom <= bottom;
+        }).map(node => node.dataset.id!);
+        setSelection([...new Set([...start.base, ...picked])]);
+      }}
+      onPointerUp={event => {
+        const start = boxDrag.current; if (!start) return;
+        boxDrag.current = null; setSelectionBox(null);
+        if (!start.moved) { setSelection(start.base); setMenu(null); }
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onPointerCancel={() => { if (boxDrag.current) setSelection(boxDrag.current.base); boxDrag.current = null; setSelectionBox(null); }}
+      onLostPointerCapture={() => { boxDrag.current = null; setSelectionBox(null); }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
-      onDoubleClick={event => { const target = event.target as Element; if (target.closest(".react-flow") && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
+      onDoubleClick={event => { const target = event.target as Element; if ((target === event.currentTarget || target.closest(".react-flow")) && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
       <div className="canvas-telemetry">
         {run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} /></section>}
         {columns.length > 0 && <section className="canvas-order" aria-label="Run order">
@@ -1088,13 +1118,14 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         onBoardMenu={onPaneContextMenu} onWireMenu={onEdgeClick} /> : <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={({ source, target }) => connect(source, target)} onConnectEnd={onConnectEnd}
         onConnectStart={event => { const spot = "touches" in event ? event.touches[0] : event; connectFrom.current = { x: spot.clientX, y: spot.clientY }; }} connectOnClick={false}
         onNodeDoubleClick={(_, node) => { if (node.type === "agent") setDashboardId(node.id); }}
-        onEdgeClick={(event, edge) => editFlow(event, { id: edge.id, source: edge.source, target: edge.target })} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} selectionOnDrag panOnDrag={[1]} panActivationKeyCode={null} panOnScroll zoomOnScroll={false} zoomActivationKeyCode={["Control", "Meta"]} snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
+        onEdgeClick={(event, edge) => editFlow(event, { id: edge.id, source: edge.source, target: edge.target })} onEdgeContextMenu={(event, edge) => { event.preventDefault(); onEdgeClick(event, edge); }} onNodeContextMenu={onNodeContextMenu} onPaneContextMenu={onPaneContextMenu} multiSelectionKeyCode={["Shift", "Control", "Meta"]} nodeDragThreshold={5} nodeClickDistance={5} paneClickDistance={5} selectionKeyCode={null} panOnDrag={[1]} panActivationKeyCode={null} panOnScroll zoomOnScroll={false} zoomActivationKeyCode={["Control", "Meta"]} snapToGrid snapGrid={[20, 20]} connectionRadius={32} onNodeClick={onNodeClick}
         onNodeDragStart={() => { dragged.current = true; }} onNodeDragStop={() => setTimeout(() => { dragged.current = false; })}
         onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={0.3} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} fitViewOptions={OVERVIEW} />
         <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />
       </ReactFlow>}
+      {selectionBox && <div aria-hidden="true" className={`canvas-selection absolute pointer-events-none z-10 border ${selectionBox.crossing ? "border-dashed border-success bg-success/12" : "border-solid border-primary bg-primary/10"}`} style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height }} />}
       {run && <section className="canvas-log-panel" aria-label="Run capture">
         <p className="hud-menu-title">Run log · {log.length} events</p>
         <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
@@ -1117,7 +1148,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; Tab opens it too">Command <kbd>Tab</kbd></Button>
         <Button variant="ghost" size="sm" aria-label="Arrange by run order" title="Arrange by run order and fit the view" onClick={tidy}><ListOrdered size={14} />Arrange</Button>
         {/* The keys, as Deus Ex's control strip shows them: a few, short; the rest are in each control's tooltip. */}
-        <span className="canvas-toolbar-keys"><span><kbd>Space</kbd>Patterns</span><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Dashboard</span><span><kbd>Shift</kbd>Select several</span><span><kbd>Ctrl+A</kbd>All</span></span>
+        <span className="canvas-toolbar-keys" title={iso ? "Click an agent to select it. Shift adds to the selection. Drag the empty board to pan." : "AutoCAD selection: drag left to right for a solid window (fully inside); right to left for a dashed crossing (touching). Shift adds to the selection."}><span><kbd>Space</kbd>Patterns</span><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Dashboard</span><span><kbd>Shift</kbd>{iso ? "Select several" : "AutoCAD selection"}</span><span><kbd>Ctrl+A</kbd>All</span></span>
       </div>
       {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="input input-sm w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
       {patternCommand !== null && <form className="canvas-pattern-command bg-base-100 text-base-content" aria-label="Workflow command" onSubmit={event => {

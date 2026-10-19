@@ -23,6 +23,7 @@
   --color-accent: var(--muted); --color-accent-foreground: var(--foreground);
   --color-border: var(--border); --color-input: var(--border); --color-ring: var(--primary);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
 }
 /* Light text tokens meet WCAG AA on every light ground, selected rows included: --muted-foreground #636361 is 4.52:1 on a
  * selected sidebar row and 6.0:1 on a card; --success #16703f is 4.61:1 and 6.1:1. */
