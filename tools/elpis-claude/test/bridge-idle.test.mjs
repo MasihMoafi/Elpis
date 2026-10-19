@@ -96,7 +96,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
       const child = terminal ? run(path.join(dir, "elpis-claude"), [], overrides, "/bin/bash")
         : run(path.join(dir, "shared-runtime.mjs"), [path.join(dir, "acp-bridge.mjs")], overrides);
       await once(child, "exit");
-      if (child.exitCode === 0 && !terminal) endpoint = child.output.trim().replace(/^unix:\/\//, "");
+      if (child.exitCode === 0 && !terminal) endpoint = child.output.split("\n")[0].trim().replace(/^unix:\/\//, "");
       return child;
     };
     t.after(async () => {
@@ -211,11 +211,20 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.equal(JSON.parse(fs.readFileSync(f.env.ACP_BRIDGE_STORE)).chat.plan.plan[0].step, "preserved plan");
   });
 
-  test("a different bundle leaves an attached terminal working and keeps the existing message", async t => {
+  test("a terminal from a different bundle joins the attached running one with that bundle's engine", async t => {
     const f = await setup(t, {}, process.env.ELPIS_IDLE_OLD_BUNDLE ?? source); const second = f.bundle("b");
-    assert.equal((await f.launch(f.first)).exitCode, 0); const c = await f.connect();
-    const result = await f.launch(second);
-    assert.equal(result.exitCode, 1); assert.match(result.errors, /different installation/); assert.match(result.errors, /Close the Elpis terminals/);
+    // As the desktop and the shell launcher both start it: with NODE_USE_ENV_PROXY=1.
+    assert.equal((await f.launch(f.first, { NODE_USE_ENV_PROXY: "1" })).exitCode, 0); const c = await f.connect();
+    const running = JSON.parse(fs.readFileSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge", fs.readdirSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge"))[0], "state.json")));
+    const result = await f.launch(second, { NODE_USE_ENV_PROXY: "1" });
+    assert.equal(result.exitCode, 0, result.errors);
+    assert.deepEqual(result.output.trim().split("\n").slice(1), [`engine ${running.engine}`], "the launcher names the running installation's engine");
+    assert.match(result.errors, /using the Elpis already running/);
+    // The shell launcher runs that engine, not this installation's (which would fail loudly here).
+    const wrong = path.join(f.root, "wrong-engine"); fs.writeFileSync(wrong, "#!/bin/sh\necho WRONG_ENGINE; exit 3\n", { mode: 0o755 });
+    const terminal = await f.launch(second, { ELPIS_ENGINE_BIN: wrong }, true);
+    assert.equal(terminal.exitCode, 0, terminal.errors); assert.doesNotMatch(terminal.output, /WRONG_ENGINE/); assert.match(terminal.output, /preserve this answer/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge", fs.readdirSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge"))[0], "state.json"))).pid, running.pid, "the running bridge is kept");
     assert.ok((await c.call("thread/list", {})).result.data.length);
   });
 
@@ -231,7 +240,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     const f = await setup(t); const second = f.bundle("b");
     assert.equal((await f.launch(f.first)).exitCode, 0);
     const result = await f.launch(second, { PATH: f.root });
-    assert.equal(result.exitCode, 1); assert.match(result.errors, /different installation/);
+    assert.equal(result.exitCode, 0, result.errors); assert.match(result.errors, /using the Elpis already running/, "it joins instead of retiring");
     assert.ok((await (await f.connect()).call("thread/list", {})).result.data.length);
   });
 }

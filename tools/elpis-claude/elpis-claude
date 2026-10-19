@@ -3,10 +3,12 @@
 # Everything else (Context Ledger, settings, account) stays on the Elpis engine.
 # One bridge serves every terminal of an ELPIS_HOME and outlives them; shared-runtime.mjs starts it
 # if needed and prints its endpoint. An unattached older installation is stopped gracefully;
-# a different installation with attached terminals is reported.
+# while a different installation has attached clients, this terminal joins it with that installation's engine.
 # Usage: elpis-claude [elpis options], e.g. elpis-claude -a on-request
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 mkdir -p /tmp/acp-bridge
-endpoint="$(NODE_USE_ENV_PROXY=1 node "$here/shared-runtime.mjs" "$here/acp-bridge.mjs")"
-exec "${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}" --elpis-local-bridge --remote "$endpoint" "$@"
+out="$(NODE_USE_ENV_PROXY=1 node "$here/shared-runtime.mjs" "$here/acp-bridge.mjs")"
+endpoint="${out%%$'\n'*}" engine="${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}"
+case "$out" in *$'\n'"engine "*) engine="${out#*$'\n'engine }" ;; esac
+exec "$engine" --elpis-local-bridge --remote "$endpoint" "$@"

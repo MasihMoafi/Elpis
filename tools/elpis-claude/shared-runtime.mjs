@@ -442,6 +442,9 @@ export function codeIdentity(bridgeScript, node = process.execPath) {
   return { hash: sha(JSON.stringify({ script, files, modules, engine, runtime })).slice(0, 16), script, engine: engine.path };
 }
 
+function usable(file) { try { fs.accessSync(file, fs.constants.X_OK); return true; } catch { return false; } }
+// "tui-pointer-20261019-78ef58f2" for an installed bundle, the folder otherwise.
+const versionOf = (script) => /\/versions\/([^/]+)\//.exec(script ?? "")?.[1] ?? path.dirname(script ?? "");
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } }
 
 // A lock file naming its holder's pid and start token; one whose holder is gone is taken over.
@@ -511,6 +514,10 @@ async function ensureBridge(rt, bridgeScript, identity) {
       const config = differingNames(state, process.env);
       if (state.identity === identity.hash && !config.length) return;
       if (state.identity !== identity.hash && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
+      // Like the desktop app, a terminal joins the Elpis that is already running instead of refusing (19 Oct: every
+      // install made while the app was open stopped `elpis` from starting). It uses that installation's engine, so the
+      // pair matches; the newer installation starts once the running one's clients have closed.
+      if (state.identity !== identity.hash && !config.length && usable(state.engine)) return { engine: state.engine, running: state.script };
       const lines = [];
       if (state.identity !== identity.hash) {
         lines.push(`an Elpis bridge for ${rt.home} is already running from a different installation, so this terminal was not started.`,
@@ -570,8 +577,10 @@ async function launcherMain(bridgeScript) {
   const identity = codeIdentity(bridgeScript);
   const rt = runtimeDir();
   const release = await acquireLock(rt.lock);
-  try { await ensureBridge(rt, bridgeScript, identity); } finally { release(); }
-  await new Promise((resolve) => process.stdout.write(`unix://${rt.sock}\n`, resolve));
+  let joined;
+  try { joined = await ensureBridge(rt, bridgeScript, identity); } finally { release(); }
+  if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) starts after Elpis and its terminals restart.\n`);
+  await new Promise((resolve) => process.stdout.write(`unix://${rt.sock}\n${joined ? `engine ${joined.engine}\n` : ""}`, resolve));
 }
 
 const runAsLauncher = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
