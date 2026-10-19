@@ -86,6 +86,7 @@ if [[ "\${ELECTRON_RUN_AS_NODE:-}" == 1 ]]; then
 fi
 test -f "$1/out/index.html"
 test -f "$1/desktop/main.cjs"
+printf 'https-proxy=%s\\nhttp-proxy-lower=%s\\nall-proxy=%s\\n' "\${HTTPS_PROXY:-}" "\${http_proxy:-}" "\${ALL_PROXY:-}"
 printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-proxy=%s\\nno-proxy-lower=%s\\nproxy-mode=%s\\n' "$1" "\${2:-}" "$ELPIS_NODE_BIN" "\${ELECTRON_RUN_AS_NODE:-}" "\${PATH%%:*}" "\${NO_PROXY:-}" "\${no_proxy:-}" "\${NODE_USE_ENV_PROXY:-}"
 `, 0o755);
   for (const name of ['LICENSE', 'LICENSES.chromium.html', 'locales/en-US.pak', 'libEGL.so', 'chrome-sandbox']) {
@@ -171,6 +172,26 @@ test('production package runs after its source and dependency installations move
   assert.equal(fields['proxy-mode'], '1');
   assert.equal(fields['no-proxy'], 'example.test,localhost,127.0.0.1,::1');
   assert.equal(fields['no-proxy-lower'], fields['no-proxy']);
+  // Started from the dock, the app has no shell proxy; GNOME's system proxy (set by the VPN app) stands in for it, in
+  // the form Masih's terminal uses, so the app and a terminal `elpis` share one bridge (Masih, 19 Oct: the terminal
+  // refused the app's bridge over differing proxy variables).
+  const gnome = path.join(options.root, 'gnome-bin');
+  await put(path.join(gnome, 'gsettings'), `#!/bin/bash
+case "$*" in
+  "get org.gnome.system.proxy mode") echo "'manual'" ;;
+  "get org.gnome.system.proxy ignore-hosts") echo "['localhost', '127.0.0.0/8', '::1']" ;;
+  *" host") echo "'127.0.0.1'" ;;
+  *" port") echo 10808 ;;
+esac
+`, 0o755);
+  const viaGnome = await run(path.join(options.destination, 'launch'), [], { env: { PATH: `${gnome}:/usr/bin:/bin`, ELPIS_NODE_BIN: options.node } });
+  const proxied = Object.fromEntries(viaGnome.stdout.trim().split('\n').map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)]; }));
+  assert.deepEqual([proxied['https-proxy'], proxied['http-proxy-lower'], proxied['all-proxy'], proxied['proxy-mode']],
+    ['http://127.0.0.1:10808/', 'http://127.0.0.1:10808/', 'socks://127.0.0.1:10808/', '1']);
+  assert.equal(proxied['no-proxy'], 'localhost,127.0.0.0/8,::1,127.0.0.1');
+  await put(path.join(gnome, 'gsettings'), `#!/bin/bash\n[[ "$*" == "get org.gnome.system.proxy mode" ]] && echo "'none'"\n`, 0o755);
+  const direct = await run(path.join(options.destination, 'launch'), [], { env: { PATH: `${gnome}:/usr/bin:/bin`, ELPIS_NODE_BIN: options.node } });
+  assert.match(direct.stdout, /^https-proxy=$/m, 'with the system proxy off, the app connects directly');
   const inherited = await run(path.join(options.destination, 'launch'), [], { env: { PATH: `${path.dirname(options.node)}:/usr/bin:/bin` } });
   assert(inherited.stdout.includes(`node-bin=${options.node}\n`));
   await assert.rejects(run(path.join(options.destination, 'launch'), [], { env: { PATH: '/usr/bin:/bin', ELPIS_NODE_BIN: '/missing/node' } }), /Elpis requires Node\.js/);
