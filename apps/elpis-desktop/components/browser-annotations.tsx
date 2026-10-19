@@ -55,7 +55,12 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
   useEffect(() => { if (!draft) return; if (draft.editing) setBody(draft.body); field.current?.focus(); }, [draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!draft) setBody(""); }, [!!draft]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!state || !state.annotating && !comments.length) return null;
-  const save = async () => { if (!body.trim()) return false; setError(""); await command("comment", { body }); setBody(""); return true; };
+  const save = async () => {
+    if (!body.trim()) return false;
+    setError("");
+    if (!await command("comment", { body })) return false;
+    setBody(""); return true;
+  };
   async function send(submit: boolean) {
     if (!onAttach || busy) return;
     setBusy(true); setError("");

@@ -34,7 +34,7 @@ function fakeDesktop(scoped = false) {
     annotate: data => ({ annotating: data.value === undefined ? !window.__state.annotating : data.value === true }),
     comment: data => { const draft = window.__state.draft; const annotations = [...window.__state.annotations, { id: draft.id, number: window.__state.annotations.length + 1, kind: 'element', label: draft.label, body: data.body.trim() }]; return { draft: null, annotations, tabs: [{ ...window.__state.tabs[0], comments: annotations.length }] }; },
     commentCancel: () => ({ draft: null }),
-    annotationsCollect: data => ({ result: { count: window.__state.annotations.length, text: `# Browser comments:\n\n## User Comment 1\nBrowser\nComment:\n${window.__state.annotations[0]?.body}\n`, images: data.value === 'images' ? window.__state.annotations.map(item => ({ number: item.number, dataUrl: window.__jpeg })) : [] } }),
+    annotationsCollect: data => ({ result: { count: window.__state.annotations.length, text: '# Browser comments:\n\n' + window.__state.annotations.map(item => `## User Comment ${item.number}\nBrowser\nComment:\n${item.body}\n`).join('\n'), images: data.value === 'images' ? window.__state.annotations.map(item => ({ number: item.number, dataUrl: window.__jpeg })) : [] } }),
     annotationsSent: () => ({ annotations: [], annotating: false, tabs: [{ ...window.__state.tabs[0], comments: 0 }] }),
     findOpen: () => ({ find: { ...window.__state.find, open: true, focus: window.__state.find.focus + 1 } }),
     find: data => ({ find: { ...window.__state.find, open: true, text: data.text, matches: data.text ? 3 : 0, active: data.text ? 1 : 0 } }),
@@ -48,6 +48,7 @@ function fakeDesktop(scoped = false) {
       ...(scoped ? { sessionScoped: true } : {}),
       command: async (action, data = {}) => {
         window.__commands.push({ action, ...data });
+        if (action === 'comment' && window.__rejectComment) throw Error('The browser could not save this comment.');
         if (scoped && action !== 'session' && data.sessionId !== window.__state.sessionId) return { error: 'This browser session is no longer shown.' };
         const { result, ...patch } = commands[action]?.(data) ?? {};
         if (Object.keys(patch).length) window.__push(patch);
@@ -287,5 +288,46 @@ test('Enter in a comment sends it to the chat at once, like the chat box; Shift+
   await eventually(async () => assert.equal(sent().length, 1, 'one Enter sends'));
   assert.match(sent()[0].path, /^\/api\/threads\/a\/(turns|steer)$/);
   assert.equal(sent()[0].body.attachments[0].name, 'Browser comments');
+  assert.deepEqual(errors, []);
+});
+
+for (const key of ['Enter', 'Control+Enter']) test(`a rejected comment keeps its draft and pending comments; ${key} can retry once`, async t => {
+  const { page, posts, commands, errors, shoot } = await fixture(t);
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await page.evaluate(() => {
+    window.__rejectComment = true;
+    window.__push({
+      annotations: [{ id: 'saved', number: 1, kind: 'element', label: 'Saved target', body: 'Previous saved comment' }],
+      draft: { id: 'draft', number: 2, kind: 'element', label: 'New target', body: '', editing: false },
+    });
+  });
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  const text = 'Keep this exact draft — آزمون — before sending.';
+  await comment.fill(text); await comment.press(key);
+  await page.getByText('The browser could not save this comment.', { exact: true }).waitFor();
+  assert.equal(await comment.count(), 1, 'a rejected save keeps the editor open');
+  assert.equal(await comment.inputValue(), text, 'a rejected save never clears typed text');
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads');
+  assert.deepEqual(sent(), [], 'a failed new comment must not send older comments by themselves');
+  assert.equal((await commands()).includes('annotationsCollect'), false, 'collection waits for the current comment to save');
+  assert.equal((await commands()).includes('annotationsSent'), false, 'pending comments stay unsent');
+  assert.deepEqual(await page.evaluate(() => window.__state.annotations.map(item => item.body)), ['Previous saved comment']);
+  await page.emulateMedia({ colorScheme: key === 'Enter' ? 'light' : 'dark' });
+  await shoot(`comment-save-rejected-${key === 'Enter' ? 'light' : 'dark'}`);
+
+  await page.evaluate(() => { window.__rejectComment = false; });
+  await comment.press(key);
+  if (key === 'Control+Enter') {
+    await eventually(async () => assert.deepEqual(await page.evaluate(() => window.__state.annotations.map(item => item.body)), ['Previous saved comment', text]));
+    assert.deepEqual(sent(), [], 'Ctrl+Enter only saves the comment');
+    await page.getByRole('button', { name: 'Send 2 pending annotations' }).click();
+  }
+  await eventually(async () => assert.equal(sent().length, 1, 'retry sends exactly once'));
+  assert.match(sent()[0].path, /^\/api\/threads\/a\/(turns|steer)$/);
+  assert.match(sent()[0].body.attachments[0].text, /Previous saved comment/);
+  assert.ok(sent()[0].body.attachments[0].text.includes(text), 'retry includes the previously rejected draft');
+  await eventually(async () => assert.equal(await page.evaluate(() => window.__state.annotations.length), 0));
   assert.deepEqual(errors, []);
 });
