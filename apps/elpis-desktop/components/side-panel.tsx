@@ -29,7 +29,7 @@ const FILES = "f:files";
 const PRUNE = "p:prune";
 
 /** Narrower than this the browser toolbar could not keep its address field (components/browser-panel.tsx). */
-const MIN_WIDTH = 360;
+const MIN_WIDTH = 380;
 
 /** What the side panel holds: terminals (kept here) and browser pages (kept by Electron, shown through `browser`).
  * The panel follows the browser: a page that opens or comes forward opens the panel on it, and the page stays

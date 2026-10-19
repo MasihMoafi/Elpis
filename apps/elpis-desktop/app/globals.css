@@ -1172,10 +1172,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @container iso-board (max-width:760px) { .iso-keys { display:none; } }
 @media (prefers-reduced-motion:reduce) { .iso-glow, .iso-ring, .iso-chevron { animation:none; } .iso-lift { transition:none; } }
 
-/* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate becomes its icon
+/* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate and Draw become icons
  * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
 .browser-panel { container:browser-panel / inline-size; }
-@container browser-panel (max-width:459px) {
+@container browser-panel (max-width:559px) {
   .browser-annotate-label, .browser-security-text { display:none; }
   .browser-annotate { position:relative; width:28px; padding:0; justify-content:center; }
   .browser-badge { position:absolute; top:-3px; inset-inline-end:-3px; }
