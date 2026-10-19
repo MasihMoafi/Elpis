@@ -151,7 +151,8 @@ for (const colorScheme of ['light', 'dark']) {
   }));
 }
 
-test('the gap under a reply, up to the next message, is tight and does not hold the hidden action row', () => using({}, async f => {
+// 19 Oct (d9f2a0ff4): hover actions hang under a message, so the gap to the next one holds the 28px buttons plus air.
+test('the gap under a reply, up to the next message, holds its hover actions and no more', () => using({}, async f => {
   const { page } = f;
   await f.open('chat-a');
   const gap = await page.evaluate(() => {
@@ -159,7 +160,7 @@ test('the gap under a reply, up to the next message, is tight and does not hold 
     const last = reply.querySelector('.markdown').lastElementChild.getBoundingClientRect();
     return Math.round(next.getBoundingClientRect().top - last.bottom);
   });
-  assert.ok(gap >= 14 && gap <= 40, `the gap is ${gap}px`);
+  assert.ok(gap >= 40 && gap <= 60, `the gap is ${gap}px`);
 }));
 
 test('the new surfaces paint no orange in the light theme: the @ picker, the + menu, a message menu, the prompt rail, the back buttons and the side panel', () => using({ colorScheme: 'light' }, async f => {

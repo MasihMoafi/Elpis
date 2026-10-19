@@ -64,7 +64,7 @@ async function fixture(run, { desktop = false } = {}) {
 }
 
 test('model control identifies the selected provider and distinguishes equal local nicknames', () => fixture(async ({ page, shot }) => {
-  assert.match(await page.getByLabel('Model', { exact: true }).innerText(), /Sol[\s\S]*OpenAI/);
+  assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /Sol · OpenAI/);
   await shot('01-chat-light');
   await page.getByLabel('Model', { exact: true }).click();
   await page.getByRole('tab', { name: 'Lab server', exact: true }).waitFor();
@@ -73,7 +73,7 @@ test('model control identifies the selected provider and distinguishes equal loc
   await page.getByRole('option').filter({ hasText: 'GPT-OSS 120B' }).waitFor();
   await shot('02a-model-list-light');
   await page.getByRole('option').filter({ hasText: 'GPT-OSS 120B' }).click();
-  assert.match(await page.getByLabel('Model', { exact: true }).innerText(), /GPT-OSS 120B[\s\S]*Lab server/);
+  assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /GPT-OSS 120B · Lab server/);
   await page.getByLabel('Model', { exact: true }).click();
   await page.getByRole('tab', { name: 'Home server', exact: true }).click();
   assert.equal(await page.getByRole('option').count(), 0, 'a server without a list must not be given OpenAI’s model list');

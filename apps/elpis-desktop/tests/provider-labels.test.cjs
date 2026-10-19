@@ -60,10 +60,10 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     assert.deepEqual(providerOptions, ['All', 'OpenAI', 'Anthropic', 'Antigravity']);
     await page.getByLabel('Search models', { exact: true }).press('Escape');
     await page.locator('.thread-row[data-thread-id="claude-root"] .thread-link').click();
-    // As in the ChatGPT app, the chat's model and its provider show in the composer's model chip.
+    // The chip names the model only (composer-consistency); its tooltip names the provider beside it.
     const chip = page.getByLabel('Model', { exact: true });
-    await chip.filter({ hasText: 'Anthropic' }).waitFor();
-    assert.match(await chip.innerText(), /^Opus\s+Anthropic$/, 'the route suffix is dropped since the provider shows beside the name');
+    await chip.and(page.locator('[title$="· Anthropic"]')).waitFor();
+    assert.equal(await chip.getAttribute('title'), 'Opus · Anthropic', 'the route suffix is dropped since the provider shows beside the name');
     assert.doesNotMatch(await page.locator('.workspace-header').innerText(), /OpenAI|gpt-6\.1-sol|GPT-6\.1 Sol/);
     await page.getByLabel('Model', { exact: true }).click();
     await page.getByLabel('Search models', { exact: true }).waitFor();
@@ -73,7 +73,7 @@ test('bridged models are labelled by their prefix; providers keep separate sign-
     // A list refresh without model metadata keeps the last reported route.
     const listed = () => new Promise(resolve => { const check = () => listRequests > before ? resolve() : setTimeout(check, 50); const before = listRequests; for (const stream of streams) stream.write(`event: message\ndata: ${JSON.stringify({ method: 'turn/completed', params: { threadId: 'elsewhere', turn: { id: 'turn-elsewhere' } } })}\n\n`); check(); });
     await listed(); await new Promise(resolve => setTimeout(resolve, 300));
-    assert.match(await chip.innerText(), /^Opus\s+Anthropic$/, 'the composer keeps the read model after a list refresh');
+    assert.equal(await chip.getAttribute('title'), 'Opus · Anthropic', 'the composer keeps the read model after a list refresh');
     await openSettings(page);
     await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
     const account = id => page.locator(`.provider-card[data-provider="${id}"]`);

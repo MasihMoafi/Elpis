@@ -80,7 +80,7 @@ test('a changed API default offers its own models and keeps the selected provide
       await page.waitForFunction(() => document.querySelectorAll('[role=tab]')[1]?.textContent === 'Anthropic credits');
       await page.getByLabel('Search models', { exact: true }).press('Escape');
       await screenshot(page, 'pairs-retained-sol');
-      assert.match(await page.getByLabel('Model', { exact: true }).innerText(), /GPT-6\.1 Sol\s+OpenAI/, 'a selected model keeps its provider across a default change');
+      assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /GPT-6\.1 Sol · OpenAI/, 'a selected model keeps its provider across a default change');
       assert.equal(await page.getByLabel('Message Elpis', { exact: true }).inputValue(), 'KEEP_SOL_ROUTE_SENTINEL');
       configuredProviders = bothProviders.filter(provider => provider.id !== 'openai');
       await refreshSettings(page);
@@ -119,7 +119,7 @@ test('a changed API default offers its own models and keeps the selected provide
         await screenshot(page, `pairs-${theme}-catalog`);
         await opus.click();
         const chip = page.getByLabel('Model', { exact: true });
-        assert.match(await chip.innerText(), /Claude Opus 5\.5\s+Anthropic credits/);
+        assert.equal(await chip.getAttribute('title'), 'Claude Opus 5.5 · Anthropic credits');
         await page.getByLabel('Message Elpis', { exact: true }).fill('PRIVATE_PAIR_SENTINEL');
         await page.getByRole('button', { name: 'Send message', exact: true }).click();
         await page.waitForFunction(() => document.querySelector('textarea').value === '');
@@ -128,7 +128,7 @@ test('a changed API default offers its own models and keeps the selected provide
         await chip.click();
         const search = page.getByLabel('Search models', { exact: true }); await search.fill('Sonnet');
         await search.press('ArrowDown'); await search.press('Enter');
-        assert.match(await chip.innerText(), /Claude Sonnet 5\.5\s+Anthropic credits/);
+        assert.equal(await chip.getAttribute('title'), 'Claude Sonnet 5.5 · Anthropic credits');
         await screenshot(page, `pairs-${theme}-keyboard-selected`);
       } finally { await context.close(); }
     }
