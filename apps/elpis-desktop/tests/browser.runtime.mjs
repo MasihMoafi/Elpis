@@ -108,11 +108,16 @@ try {
       const response = await fetch('/api/threads', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:'Second browser session',permissions:'full'}) });
       return (await response.json()).thread;
     });
-    const other = async (name,args={}) => { const result=await rpc('mcpServer/tool/call',{threadId:second.id,server:'elpis_browser',tool:name,arguments:args});if(result.isError)throw Error(result.content[0].text);return JSON.parse(result.content[0].text); };
+    const other = async (name,args={}) => { const result=await rpc('mcpServer/tool/call',{threadId:second.id,server:'elpis_browser',tool:name,arguments:args});if(result.isError)throw Error(result.content[0].text);return result.content[0].type==='image'?result:JSON.parse(result.content[0].text); };
     const [a,b]=await Promise.all([toolCall('browser_open',{url:new URL('/session-a',siteUrl).href}),other('browser_open',{url:new URL('/session-b',siteUrl).href})]);
     await Promise.all([toolCall('browser_wait',{tabId:a.tabId}),other('browser_wait',{tabId:b.tabId})]);
     const [sa,sb]=await Promise.all([toolCall('browser_snapshot',{tabId:a.tabId}),other('browser_snapshot',{tabId:b.tabId})]);
     assert.equal(new URL(sa.url).pathname,'/session-a');assert.equal(new URL(sb.url).pathname,'/session-b');
+    assert.ok(sb.viewport.width>0&&sb.viewport.height>0,'a never-shown engine session has a viewport');
+    await other('browser_type',{tabId:b.tabId,selector:'[name=email]',text:'hidden-session-b@example.invalid'});
+    await other('browser_click',{tabId:b.tabId,selector:'button.primary'});
+    assert.match((await other('browser_snapshot',{tabId:b.tabId})).text,/Signed in as hidden-session-b@example.invalid/);
+    assert.equal((await other('browser_screenshot',{tabId:b.tabId})).content[0].type,'image');
     await assert.rejects(toolCall('browser_snapshot',{tabId:b.tabId}),/closed/);
     assert.deepEqual((await toolCall('browser_tabs')).tabs.map(tab=>tab.id),[a.tabId]);
     assert.deepEqual((await other('browser_tabs')).tabs.map(tab=>tab.id),[b.tabId]);

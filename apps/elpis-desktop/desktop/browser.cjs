@@ -75,7 +75,10 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
   function open(url='about:blank',{focus=false,after=null,id=null,restoring=false}={}){
     const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
     const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,webviewTag:false}});
-    view.setVisible(false);host.contentView.addChildView(view);
+    view.setVisible(false);
+    // A session can receive agent input before its pane has ever been shown.
+    const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
+    host.contentView.addChildView(view);
     const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);

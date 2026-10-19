@@ -39,8 +39,24 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     await page.getByRole('button', { name: 'New side panel tab', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Browser tab', exact: true }).click(); await visit(url);
   };
+  const { callBrowser } = await import('../bridge/browser-mcp.mjs');
   try {
     await launch();
+    const initial = await state();
+    const background = await electron.evaluate(() => ({ path: global.browserSocket.path, capability: global.browserSocket.scope('first-background'), other: global.browserSocket.scope('other-background') }));
+    const backgroundCall = (name, args = {}) => callBrowser(background.path, name, args, background.capability);
+    const backgroundTab = (await backgroundCall('browser_open', { url: `${base}/background` })).tabId;
+    await backgroundCall('browser_wait', { tabId: backgroundTab, selector: 'button' });
+    const backgroundPage = await backgroundCall('browser_snapshot', { tabId: backgroundTab });
+    assert.ok(backgroundPage.viewport.width > 0 && backgroundPage.viewport.height > 0, 'a never-shown session has a usable viewport');
+    await backgroundCall('browser_type', { tabId: backgroundTab, selector: 'input', text: 'FIRST_BACKGROUND_PROOF' });
+    await backgroundCall('browser_click', { tabId: backgroundTab, selector: 'button' });
+    assert.match((await backgroundCall('browser_snapshot', { tabId: backgroundTab })).text, /FIRST_BACKGROUND_PROOF/);
+    assert.equal((await backgroundCall('browser_screenshot', { tabId: backgroundTab })).content[0].type, 'image');
+    await assert.rejects(callBrowser(background.path, 'browser_snapshot', { tabId: backgroundTab }, background.other), /closed/);
+    assert.equal((await state()).sessionId, initial.sessionId, 'background input does not switch the shown session');
+    assert.equal((await state()).tabs.length, 0);
+    await electron.evaluate(() => global.sessionWindows.closeBrowser('first-background'));
     await select('chat-a'); await newPage(`${base}/a`); await visit(`${base}/a-next`);
     const a = (await state()).tabs[0]; assert.equal(a.canGoBack, true);
     await newPage(`${base}/a-extra`); const extra = (await state()).tabs[1];
@@ -67,7 +83,6 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     assert.equal((await state()).tabs.length, 0, 'another new chat must not share the first draft browser');
     await select('chat-b'); assert.equal(await address().inputValue(), `${base}/b`);
 
-    const { callBrowser } = await import('../bridge/browser-mcp.mjs');
     const credentials = await electron.evaluate(() => ({ path: global.browserSocket.path, a: global.browserSocket.scope('chat-a'), b: global.browserSocket.scope('chat-b') }));
     const call = (session, name, args = {}) => callBrowser(credentials.path, name, args, credentials[session]);
     const [ta, tb] = await Promise.all([call('a', 'browser_tabs'), call('b', 'browser_tabs')]);
