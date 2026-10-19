@@ -77,13 +77,14 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
         <Textarea ref={field} aria-label="Comment" placeholder="Add a comment…" value={body} rows={2} onChange={event => setBody(event.target.value)}
           onKeyDown={event => {
             if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); void command("commentCancel"); }
-            else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void send(true); }
-            else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void save(); }
+            // Enter sends, as in the chat box (this comment and any pending ones); Ctrl+Enter keeps it to add another.
+            else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void save(); }
+            else if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(true); }
           }} />
         <div className="annotation-editor-actions">
           <Button type="button" variant="ghost" size="sm" onClick={() => void command("commentCancel")}>Cancel</Button>
           {draft.editing && <Button type="button" variant="ghost" size="sm" onClick={() => void command("commentDelete", { id: draft.id })}>Delete</Button>}
-          <Button type="submit" size="sm" disabled={!body.trim()} title="Enter saves · Ctrl+Enter sends every comment">{draft.editing ? "Save" : "Comment"}</Button>
+          <Button type="submit" size="sm" disabled={!body.trim()} title="Enter sends · Ctrl+Enter keeps it and adds another">{draft.editing ? "Save" : "Comment"}</Button>
         </div>
       </> : <p className="annotation-hint"><SquareDashedMousePointer size={15} aria-hidden="true" />Click anything on the page to comment on it, or drag to select an area. Hold <kbd>Space</kbd> to use the page.</p>}
     </form>}

@@ -355,7 +355,7 @@ async fn ledger_saved_width_is_loaded_at_the_next_start() -> Result<()> {
 }
 
 /// Snapshot the actual owned-screen header after opening with the keyboard and, when
-/// requested, resizing with the mouse. The right margin holds the padded close button.
+/// requested, resizing with the mouse. Close has its own row above the title.
 async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> Result<String> {
     let (mut app, _events, _operations) = make_test_app_with_channels().await;
     attach_thread(&mut app, ThreadId::new());
@@ -402,15 +402,23 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
     let close_x = (0..terminal_width)
         .find(|&x| buffer[(x, y)].symbol() == "✕")
         .expect("Ledger close glyph");
-    let header = (terminal_width - width..terminal_width)
-        .map(|x| buffer[(x, y)].symbol())
-        .collect::<String>();
+    let header = [y, y + 1]
+        .into_iter()
+        .map(|row| {
+            (terminal_width - width..terminal_width)
+                .map(|x| buffer[(x, row)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     for row in 0..size.height {
-        for x in terminal_width - 4..terminal_width {
-            if row != y {
-                assert_eq!(buffer[(x, row)].symbol(), " ", "row {row}, cell {x}");
-            }
-        }
+        assert_eq!(
+            buffer[(terminal_width - 1, row)].symbol(),
+            " ",
+            "right margin, row {row}"
+        );
     }
     // Closing still uses the exact visible button after text truncation.
     app.handle_tui_event(
@@ -427,31 +435,31 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
 
 #[tokio::test]
 async fn ledger_header_gap_narrowest() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│ CONTEXT LEDGER…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│                  ✕ Close\n│ CONTEXT LEDGER  context …");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_default() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│ CONTEXT LEDGER  context not measured ·…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│                                          ✕ Close\n│ CONTEXT LEDGER  context not measured · ≈0 source…");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_80_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│ CONTEXT LEDGER  co…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│                      ✕ Close\n│ CONTEXT LEDGER  context not …");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_120_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│ CONTEXT LEDGER  context not measur…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│                                      ✕ Close\n│ CONTEXT LEDGER  context not measured · ≈0 so…");
     Ok(())
 }
 
 #[tokio::test]
 async fn ledger_header_gap_140_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│ CONTEXT LEDGER  context not measured ·…  ✕ Close");
+    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│                                          ✕ Close\n│ CONTEXT LEDGER  context not measured · ≈0 source…");
     Ok(())
 }
 
@@ -491,5 +499,88 @@ async fn ledger_close_button_has_a_bold_padded_fill_in_both_themes() -> Result<(
         )?;
     }
     tui.set_owned_screen(false)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_close_row_above_title_owned_width_matrix() -> Result<()> {
+    for (terminal_width, preferred) in [(80, None), (120, None), (150, None), (120, Some(28))] {
+        let (mut app, _events, _operations) = make_test_app_with_channels().await;
+        crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+        attach_thread(&mut app, ThreadId::new());
+        let size = Size::new(terminal_width, 40);
+        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+        let mut tui = crate::tui::test_support::make_test_tui_with_size(size)?;
+        tui.set_owned_screen(true)?;
+        app.render_owned_transcript(&mut tui, size)?;
+        if let Some(width) = preferred {
+            let initial = app.chat_widget.context_ledger_width(terminal_width);
+            for event in [
+                mouse(
+                    MouseEventKind::Down(MouseButton::Left),
+                    terminal_width - initial,
+                    10,
+                ),
+                mouse(
+                    MouseEventKind::Drag(MouseButton::Left),
+                    terminal_width - width,
+                    10,
+                ),
+                mouse(
+                    MouseEventKind::Up(MouseButton::Left),
+                    terminal_width - width,
+                    10,
+                ),
+            ] {
+                app.handle_tui_event(&mut tui, &mut server, event).await?;
+            }
+            app.render_owned_transcript(&mut tui, size)?;
+            assert_eq!(app.chat_widget.context_ledger_width(terminal_width), width);
+        }
+        let left = terminal_width - app.chat_widget.context_ledger_width(terminal_width);
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let row = |y| {
+            (left..terminal_width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        };
+        let close_y = (0..size.height)
+            .find(|&y| row(y).contains("✕ Close"))
+            .expect("visible Close");
+        let title_y = (0..size.height)
+            .find(|&y| row(y).contains("CONTEXT LEDGER"))
+            .expect("visible title");
+        assert_eq!(
+            close_y + 1,
+            title_y,
+            "Close owns the row above the title at {terminal_width} columns, preferred {preferred:?}"
+        );
+        assert!(
+            !row(close_y).contains("CONTEXT"),
+            "the Close row contains no title or body"
+        );
+        let close_x = (left..terminal_width)
+            .find(|&x| buffer[(x, close_y)].symbol() == "✕")
+            .expect("Close glyph");
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            mouse(MouseEventKind::Down(MouseButton::Left), close_x, title_y),
+        )
+        .await?;
+        assert!(
+            app.chat_widget.context_ledger_width(terminal_width) > 0,
+            "the title row is not the Close hitbox"
+        );
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            mouse(MouseEventKind::Down(MouseButton::Left), close_x, close_y),
+        )
+        .await?;
+        assert_eq!(app.chat_widget.context_ledger_width(terminal_width), 0);
+        server.shutdown().await?;
+        tui.set_owned_screen(false)?;
+    }
     Ok(())
 }

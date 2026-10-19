@@ -89,12 +89,12 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
 
     // Enter opens the dashboard; double-click now opens the inline name editor.
     await agent('Quillon · Part 1').click(); await page.keyboard.press('Enter');
-    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Part 1 dashboard', exact: true }); await dashboard.waitFor();
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Part 1 info', exact: true }); await dashboard.waitFor();
     await page.keyboard.press('Escape'); await dashboard.waitFor({ state: 'detached' });
     await agent('Nuvani · Join the parts').dblclick();
     await canvas.getByRole('textbox', { name: 'Rename agent', exact: true }).waitFor();
     await page.keyboard.press('Escape'); await agent('Nuvani · Join the parts').click(); await page.keyboard.press('Enter');
-    await canvas.getByRole('dialog', { name: 'Nuvani · Join the parts dashboard', exact: true }).getByRole('button', { name: 'Close dashboard' }).click();
+    await canvas.getByRole('dialog', { name: 'Nuvani · Join the parts info', exact: true }).getByRole('button', { name: 'Close info' }).click();
 
     // Keys: Tab reaches the board; the arrows move between agents in run order.
     const focused = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label')?.split(':')[0] ?? document.activeElement?.tagName);

@@ -232,3 +232,26 @@ test('sidebar pages reorder by drag and drop and by Alt+Arrow, and keep their or
   await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' });
   assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Observability', 'Workflows', 'Ledger'], 'the order is saved');
 });
+
+// P6: during a turn the bridge sends account events (usage updates); each reloads the model list. A "Loading models…"
+// line inserted above the chat for that moment pushed the whole conversation down and back: the shake in Masih's recording.
+test('a background model refresh leaves the chat still: no Loading models line once models are known', async t => {
+  const f = await fixture();
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+  const { page } = f;
+  await f.open('chat-a');
+  await page.getByRole('status').filter({ hasText: 'Loading models' }).waitFor({ state: 'detached' });
+  for (const end = Date.now() + 5000; !f.listening() && Date.now() < end;) await page.waitForTimeout(20);
+  await page.evaluate(() => {
+    window.__loadingLines = 0;
+    new MutationObserver(() => { if ([...document.querySelectorAll('[role=status]')].some(node => node.textContent.includes('Loading models'))) window.__loadingLines++; })
+      .observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
+  const message = page.locator('.message').first(), before = await message.boundingBox();
+  for (let n = 0; n < 3; n++) {
+    const reloaded = page.waitForResponse(response => response.url().endsWith('/api/models'));
+    f.emit('account', {}); await reloaded; await page.waitForTimeout(100);
+  }
+  assert.equal(await page.evaluate(() => window.__loadingLines), 0, 'a refresh with models already shown inserts no line above the chat');
+  assert.deepEqual(await message.boundingBox(), before, 'the conversation does not move');
+});

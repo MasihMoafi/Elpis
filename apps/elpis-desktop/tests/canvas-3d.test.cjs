@@ -14,7 +14,7 @@ test('3D selection, dashboard, shared settings and delete/undo work together', a
     await agent.click(); await canvas.locator('.iso-node[aria-label^="Veyra · Part 2:"]').click({ modifiers: ['Shift'] });
     assert.equal(await canvas.locator('.iso-node[aria-pressed="true"]').count(), 2);
     await agent.click(); await page.keyboard.press('Enter');
-    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Part 1 dashboard', exact: true }); await dashboard.waitFor();
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Part 1 info', exact: true }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Settings', exact: true }).click();
     const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     await panel.getByRole('textbox', { name: 'Prompt', exact: true }).fill('A shared prompt');
@@ -98,6 +98,6 @@ test('3D labels select and open the matching agent', async () => {
     await label.dblclick();
     await f.canvas.getByRole('textbox', { name: 'Rename agent', exact: true }).waitFor();
     await f.page.keyboard.press('Escape'); await label.click(); await f.page.keyboard.press('Enter');
-    await f.canvas.getByRole('dialog', { name: 'Veyra · Part 2 dashboard', exact: true }).waitFor();
+    await f.canvas.getByRole('dialog', { name: 'Veyra · Part 2 info', exact: true }).waitFor();
   } finally { await f.close(); }
 });

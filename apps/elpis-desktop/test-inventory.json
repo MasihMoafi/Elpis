@@ -98,6 +98,7 @@
     "desktop/state.test.cjs",
     "desktop/terminal.test.cjs",
     "desktop/theme.test.cjs",
+    "desktop/copy-keys.test.cjs",
     "desktop/tray.test.cjs",
     "desktop/wayland-ime.test.cjs",
     "desktop/love-spot.test.cjs"

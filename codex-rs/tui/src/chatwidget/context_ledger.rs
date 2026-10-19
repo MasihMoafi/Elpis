@@ -69,10 +69,10 @@ pub(crate) fn ledger_column_width_for(terminal_width: u16, preferred: Option<u16
 }
 
 /// The Ledger column as the startup screen draws it, before a session exists: the rule and the
-/// title, where the live Ledger will be. `column` is the whole column and `title_row` the row the
-/// live Ledger starts on.
-pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &mut Buffer) {
-    let top = title_row.clamp(column.top(), column.bottom());
+/// title, where the live Ledger will be. Reserve the live Close row without showing an inactive
+/// button before startup completes. `column` is the whole column; `top_row` is its live top row.
+pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut Buffer) {
+    let top = top_row.clamp(column.top(), column.bottom());
     let area = Rect {
         y: top,
         height: column.bottom() - top,
@@ -80,8 +80,8 @@ pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &m
     };
     render_ledger_rule(area, &[], buf);
     let content_width =
-        ledger_content_width(area.width, false).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
-    if content_width == 0 || area.height == 0 {
+        ledger_content_width(area.width, true).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+    if content_width == 0 || area.height <= 1 {
         return;
     }
     let muted = Style::default().fg(crate::style::adaptive_palette_color(
@@ -98,7 +98,7 @@ pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &m
     Paragraph::new(Line::from(title)).render(
         Rect::new(
             area.x + LEDGER_LEFT_COLS,
-            area.y,
+            area.y + 1,
             content_width,
             /*height*/ 1,
         ),
@@ -107,14 +107,10 @@ pub(crate) fn render_startup_ledger_column(column: Rect, title_row: u16, buf: &m
 }
 
 /// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
-fn ledger_content_width(ledger_width: u16, close_button: bool) -> u16 {
-    // The owned column reserves the whole button and one cell at the screen edge on every
-    // row, including source rows that scroll to the top. Inline rendering keeps Codex's margin.
-    let right_margin = if close_button {
-        LEDGER_CLOSE_BUTTON_LABEL.width() as u16 + 1
-    } else {
-        LEDGER_RIGHT_MARGIN
-    };
+fn ledger_content_width(ledger_width: u16, owned_column: bool) -> u16 {
+    // Close has its own row in the owned column; source rows need only one edge cell.
+    // Inline rendering keeps Codex's margin.
+    let right_margin = if owned_column { 1 } else { LEDGER_RIGHT_MARGIN };
     ledger_width
         .saturating_sub(LEDGER_LEFT_COLS + right_margin)
         .max(1)
@@ -407,18 +403,20 @@ impl ChatWidget {
     pub(super) fn context_ledger_lines_with_height(
         &self,
         ledger_width: u16,
-        close_button: bool,
+        owned_column: bool,
     ) -> Option<(u16, LedgerLines)> {
         if !self.context_ledger.visible || ledger_width == 0 {
             return None;
         }
         // The rows are wrapped once, with the same wrapper that draws them, so the height is
         // their count and the panel cannot be measured differently from what it draws.
-        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(
-            ledger_width,
-            close_button,
-        )));
-        let height = u16::try_from(ledger_lines.rows.len()).unwrap_or(u16::MAX);
+        let ledger_lines = self.ledger_lines(
+            usize::from(ledger_content_width(ledger_width, owned_column)),
+            owned_column,
+        );
+        let height = u16::try_from(ledger_lines.rows.len())
+            .unwrap_or(u16::MAX)
+            .saturating_add(u16::from(owned_column));
         Some((height, ledger_lines))
     }
 
@@ -654,9 +652,9 @@ impl ChatWidget {
     /// and `render_context_ledger` call this, so the height used to bottom-anchor the
     /// panel can never disagree with what is actually drawn.
     ///
-    /// `content_width` is the width inside the left border, used to right-align each
-    /// row's tokens/state against the same edge instead of stacking them on their own line.
-    fn ledger_lines(&self, content_width: usize) -> LedgerLines {
+    /// `content_width` is the width inside the left border. The owned column preserves full
+    /// source names and places metadata below them when both cannot fit on one row.
+    fn ledger_lines(&self, content_width: usize, owned_column: bool) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
         let accounting_sources = self.accounted_continuity_sources();
@@ -766,11 +764,13 @@ impl ChatWidget {
             ),
         );
         title.extend([Span::raw("  "), Span::styled(context_header, context)]);
-        // The close button sits in the column's wider right margin; one blank column keeps
-        // the title off its padding.
         let title = crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
             Line::from(title),
-            content_width.saturating_sub(1),
+            if owned_column {
+                content_width
+            } else {
+                content_width.saturating_sub(1)
+            },
         );
         lines.extend(vec![
             title,
@@ -1152,14 +1152,20 @@ impl ChatWidget {
                     "≈{} est. tokens {state}",
                     format_source_count(source.estimated_tokens),
                 );
-                // "› " + "[x]" + " " ahead of the name; truncate long names from the
-                // left with '…' so the token count and state stay right-aligned. Widths are
-                // terminal columns, as Codex measures them, not character counts.
+                // Inline rows retain their compact layout. The owned column has room to wrap
+                // full names and keep their metadata on a separate line when necessary.
+                // Widths are terminal columns, not character counts.
                 let fixed = prefix.width() + marker.width() + 1;
                 let name_budget = content_width
                     .saturating_sub(fixed + right.width() + 1)
                     .max(1);
-                let shown_name = truncate_start_to_width(&source.name, name_budget);
+                let shown_name = if owned_column {
+                    source.name.clone()
+                } else {
+                    truncate_start_to_width(&source.name, name_budget)
+                };
+                let stack_metadata =
+                    owned_column && fixed + shown_name.width() + 1 + right.width() > content_width;
                 let pad = content_width
                     .saturating_sub(fixed + shown_name.width())
                     .saturating_sub(right.width())
@@ -1167,8 +1173,11 @@ impl ChatWidget {
                 // The whole row opens the file: ctrl+click anywhere on it, the same
                 // affordance /usage gives. Blank padding cells are skipped by
                 // mark_buffer_hyperlinks, so only the visible text is clickable.
-                if let Ok(destination) = url::Url::from_file_path(&source.path) {
-                    source_links.push((lines.len(), destination.to_string()));
+                let destination = url::Url::from_file_path(&source.path)
+                    .ok()
+                    .map(|destination| destination.to_string());
+                if let Some(destination) = &destination {
+                    source_links.push((lines.len(), destination.clone()));
                 }
                 // The row under the cursor wears the Elpis gradient. Bold brand
                 // text alone was too close to the rows around it to find at a
@@ -1193,8 +1202,18 @@ impl ChatWidget {
                             .underlined(),
                     ));
                 }
+                if stack_metadata {
+                    lines.push(Line::from(row));
+                    if let Some(destination) = destination {
+                        source_links.push((lines.len(), destination));
+                    }
+                    row = vec![Span::raw(
+                        " ".repeat(content_width.saturating_sub(right.width())),
+                    )];
+                } else {
+                    row.push(Span::raw(" ".repeat(pad)));
+                }
                 row.extend(vec![
-                    Span::raw(" ".repeat(pad)),
                     Span::styled(
                         format!(
                             "≈{} est. tokens ",
@@ -1303,10 +1322,11 @@ impl ChatWidget {
 
     #[cfg(test)]
     pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
-        let ledger_lines = self.ledger_lines(usize::from(ledger_content_width(
-            area.width,
-            self.context_ledger.column.get() == Some(area),
-        )));
+        let owned_column = self.context_ledger.column.get() == Some(area);
+        let ledger_lines = self.ledger_lines(
+            usize::from(ledger_content_width(area.width, owned_column)),
+            owned_column,
+        );
         self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
 
@@ -1337,20 +1357,20 @@ impl ChatWidget {
         }
         let content = Rect::new(
             area.x + LEDGER_LEFT_COLS,
-            area.y,
+            area.y + u16::from(owned_column),
             content_width,
-            area.height,
+            area.height.saturating_sub(u16::from(owned_column)),
         );
         let scroll_rows = if self.context_ledger.focused {
             source_row_ranges
                 .get(self.context_ledger.selected)
-                .map(|rows| selected_source_scroll_offset(rows.clone(), area.height))
+                .map(|rows| selected_source_scroll_offset(rows.clone(), content.height))
                 .unwrap_or(0)
         } else {
             0
         };
         if let Some(delay) =
-            self.ledger_title_animation_delay(&title_rows, scroll_rows, area.height)
+            self.ledger_title_animation_delay(&title_rows, scroll_rows, content.height)
         {
             self.frame_requester.schedule_frame_in(delay);
         }
@@ -1358,10 +1378,9 @@ impl ChatWidget {
             .scroll((scroll_rows, 0))
             .render(content, buf);
         // Only the owned column handles mouse input. Keep the native inline Ledger unchanged.
-        let close_button = owned_column.then(|| {
-            let width = LEDGER_CLOSE_BUTTON_LABEL.width() as u16;
-            Rect::new(area.right() - width - 1, area.y, width, 1)
-        });
+        let close_width = LEDGER_CLOSE_BUTTON_LABEL.width() as u16;
+        let close_button = (owned_column && area.width >= LEDGER_LEFT_COLS + close_width + 1)
+            .then(|| Rect::new(area.right() - close_width - 1, area.y, close_width, 1));
         if let Some(button) = close_button {
             buf.set_string(
                 button.x,

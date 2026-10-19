@@ -327,14 +327,17 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
 
     // An agent's dashboard (double-click, or Enter on the selected agent): its wiring, its check and its live work.
     await fit(); await node('Quillon · Part 1').dblclick();
-    const dash = canvas.getByRole('dialog', { name: 'Quillon · Part 1 dashboard' });
+    const dash = canvas.getByRole('dialog', { name: 'Quillon · Part 1 info' });
     await dash.getByText('Quillon · Part 1 is built: the lexer now reads numbers.').waitFor();
     assert.match(await dash.innerText(), /Worked for 1m 4s · Ran a command/);
     assert.match(await dash.innerText(), /Feeds\s+Nuvani · Join the parts/);
     assert.match(await dash.innerText(), /Its check\s+Check passed/);
     await page.keyboard.press('Escape'); await dash.waitFor({ state: 'hidden' });
     await node('Fix the docs').click(); await page.keyboard.press('Enter');
-    await canvas.getByRole('dialog', { name: 'Fix the docs dashboard' }).getByText('Not started. What it does shows here once the graph runs.').waitFor();
+    await canvas.getByRole('dialog', { name: 'Fix the docs info' }).getByText('Not started. What it does shows here once the graph runs.').waitFor();
+    // A click anywhere else on the page closes it, as Escape does.
+    await page.getByRole('heading', { name: 'Workflows', exact: true }).first().click();
+    await canvas.getByRole('dialog', { name: 'Fix the docs info' }).waitFor({ state: 'hidden' });
 
     // Shift+Enter in the command line starts the next agent's prompt; it never adds the agents early.
     await page.keyboard.press('Escape');

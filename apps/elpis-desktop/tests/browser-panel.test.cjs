@@ -115,7 +115,7 @@ test('Annotate: the editor takes a comment and Send gives the chat the comments 
   assert.equal((await page.locator('.annotation-target').innerText()).replace(/\s+/g, ' '), '1 button “Sign in”');
   await comment.fill('Make this the accent colour');
   await shoot('elpis-annotate-editor');
-  await comment.press('Enter');
+  await comment.press('Control+Enter');
   await eventually(async () => assert.deepEqual((await page.evaluate(() => window.__commands)).filter(item => item.action === 'comment'), [{ action: 'comment', body: 'Make this the accent colour' }]));
   const send = page.getByRole('button', { name: 'Send 1 pending annotation' });
   await send.waitFor();
@@ -242,7 +242,7 @@ for (const running of [false, true]) test(`Annotate in an open chat${running ? '
   await page.getByRole('button', { name: 'Annotate this page' }).click();
   await page.evaluate(() => window.__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
   const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
-  await comment.fill('Make this the accent colour'); await comment.press('Enter');
+  await comment.fill('Make this the accent colour'); await comment.press('Control+Enter');
   await page.getByRole('button', { name: 'Send 1 pending annotation' }).click();
   const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads').map(post => post.path);
   await eventually(async () => assert.ok(sent().length, 'Send sends the message'));
@@ -259,7 +259,7 @@ test('Comments made in a chat\'s browser stay with that chat: a new chat tab has
   await eventually(async () => assert.equal(await page.evaluate(() => window.__state.annotating), true));
   await page.evaluate(() => window.__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
   const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
-  await comment.fill('Make this the accent colour'); await comment.press('Enter');
+  await comment.fill('Make this the accent colour'); await comment.press('Control+Enter');
   const send = page.getByRole('button', { name: 'Send 1 pending annotation' });
   await send.waitFor();
   await page.getByRole('button', { name: 'New chat tab', exact: true }).click();
@@ -270,5 +270,22 @@ test('Comments made in a chat\'s browser stay with that chat: a new chat tab has
   const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path) || post.path === '/api/threads').map(post => post.path);
   await eventually(async () => assert.ok(sent().length, 'Send sends the message'));
   assert.deepEqual(sent(), ['/api/threads/a/turns'], 'the comments go to chat A, not a new conversation');
+  assert.deepEqual(errors, []);
+});
+
+test('Enter in a comment sends it to the chat at once, like the chat box; Shift+Enter is a new line', async t => {
+  const { page, posts, errors } = await fixture(t);
+  await page.locator('.thread-row[data-thread-id="a"] .thread-link').click();
+  await page.locator('.thread-row.active[data-thread-id="a"]').waitFor();
+  await page.getByRole('button', { name: 'Annotate this page' }).click();
+  await page.evaluate(() => window.__push({ draft: { id: 'p1', number: 1, kind: 'element', label: 'button “Sign in”', body: '', editing: false } }));
+  const comment = page.getByRole('textbox', { name: 'Comment', exact: true });
+  await comment.fill('Make this'); await comment.press('Shift+Enter'); await comment.pressSequentially('the accent colour');
+  assert.equal(await comment.inputValue(), 'Make this\nthe accent colour');
+  await comment.press('Enter');
+  const sent = () => posts.filter(post => /\/(turns|steer)$/.test(post.path)).map(post => post);
+  await eventually(async () => assert.equal(sent().length, 1, 'one Enter sends'));
+  assert.match(sent()[0].path, /^\/api\/threads\/a\/(turns|steer)$/);
+  assert.equal(sent()[0].body.attachments[0].name, 'Browser comments');
   assert.deepEqual(errors, []);
 });

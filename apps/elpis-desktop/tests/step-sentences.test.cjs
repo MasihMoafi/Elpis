@@ -112,3 +112,43 @@ for (const value of [
     } finally { await f.close(); }
   });
 }
+
+for (const scheme of ['light', 'dark']) for (const input of ['pointer', 'keyboard']) {
+  test(`long tool groups stay collapsible after scrolling (${scheme}, ${input})`, async () => {
+    const work = Array.from({ length: 16 }, (_, index) => command(`long-${index}`, {
+      description: `Inspect fixture file ${index + 1}`,
+      aggregatedOutput: Array.from({ length: 24 }, (_, line) => `File ${index + 1}, output line ${line + 1}`).join('\n'),
+    }));
+    const f = await fixture({ staticDir: process.env.ELPIS_BASELINE_EXPORT || undefined, running: true, height: scheme === 'dark' ? 520 : 760, colorScheme: scheme,
+      chat: [['t4', 'Inspect these files.', 'Inspection continues.', work]] });
+    try {
+      await f.open('chat-a');
+      if (input === 'keyboard') await f.page.setViewportSize({ width: 700, height: scheme === 'dark' ? 520 : 760 });
+      const group = f.page.locator('.activity-group'), head = group.locator('> summary');
+      await head.click();
+      await group.locator('> summary[aria-expanded="true"]').waitFor();
+      await group.locator('.step').last().scrollIntoViewIfNeeded();
+      const scroll = f.page.locator('.chat-scroll'), box = await scroll.boundingBox();
+      // Scroll in the chat's right padding, rather than an individual output's inner scrollbar.
+      await f.page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+      const before = await scroll.evaluate(node => node.scrollTop);
+      await f.page.mouse.wheel(0, -800);
+      await f.page.waitForFunction(start => document.querySelector('.chat-scroll').scrollTop < start - 400, before);
+      const bounds = await head.boundingBox();
+      await fs.mkdir(captures, { recursive: true });
+      await f.page.screenshot({ path: path.join(captures, `tool-collapse-${scheme}-${input}-scrolled.png`) });
+      assert.ok(bounds.y >= box.y - 1 && bounds.y + bounds.height <= box.y + box.height + 1,
+        `collapse header remains within the chat viewport after scrolling: ${JSON.stringify({ bounds, viewport: box })}`);
+      assert.ok(Math.abs(bounds.y - box.y) <= 1, 'the pinned header meets the top edge, without stray tool text above it');
+      assert.ok(bounds.x >= box.x && bounds.x + bounds.width <= box.x + box.width + 1, 'the header fits the chat column');
+      if (input === 'keyboard') { await head.focus(); await head.press(scheme === 'dark' ? 'Space' : 'Enter'); } else await head.click();
+      await group.locator('> summary[aria-expanded="false"]').waitFor();
+      const closed = await head.boundingBox();
+      assert.ok(closed.y >= box.y - 1 && closed.y + closed.height <= box.y + box.height + 1, 'closing keeps the same summary reachable');
+      await head.click();
+      await group.locator('> summary[aria-expanded="true"]').waitFor();
+      assert.equal(await group.locator('.step-card').count(), 16, 'reopening preserves all tool output');
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  });
+}

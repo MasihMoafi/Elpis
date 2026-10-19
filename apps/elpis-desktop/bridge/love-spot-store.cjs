@@ -163,8 +163,15 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
           const ownerFile = directoryHandle ? `/proc/self/fd/${directoryHandle.fd}/owner` : path.join(lock, 'owner');
           try {
             const owner = Number(await fs.readFile(ownerFile, 'utf8'));
-            try { process.kill(owner, 0); }
-            catch (probe) { if (probe.code === 'ESRCH') { await fs.unlink(ownerFile); await fs.rmdir(lock); } }
+            // A crash between creating the owner file and writing its pid leaves it empty, and process.kill(0, 0)
+            // reads as alive forever. After the same grace as an empty lock, the claimant whose rename wins removes it.
+            if ((!Number.isSafeInteger(owner) || owner <= 0) && Date.now() - (await fs.stat(ownerFile)).mtimeMs > 30000) {
+              const claim = `${ownerFile}.${process.pid}.${randomUUID()}`;
+              await fs.rename(ownerFile, claim); await fs.unlink(claim); await fs.rmdir(lock);
+            } else {
+              try { process.kill(owner, 0); }
+              catch (probe) { if (probe.code === 'ESRCH') { await fs.unlink(ownerFile); await fs.rmdir(lock); } }
+            }
           } catch (probe) {
             if (probe.code === 'ENOENT') {
               const stat = directoryHandle ? await directoryHandle.stat() : await fs.stat(lock);
