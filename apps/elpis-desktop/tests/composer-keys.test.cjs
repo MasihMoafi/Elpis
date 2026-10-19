@@ -151,3 +151,15 @@ async function eventually(check) {
   const end = Date.now() + 4000;
   for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await sleep(50); } }
 }
+
+test('a stopped turn says so in the chat, whoever stopped it, so a stop is never silent', () => using({ running: true }, async f => {
+  const { page } = f;
+  for (let tries = 0; f.listening() < 1 && tries < 100; tries++) await sleep(50);
+  f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 't4', status: 'interrupted' } } });
+  await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+  const note = page.getByRole('status').filter({ hasText: 'Stopped' });
+  await note.waitFor();
+  assert.match(await note.innerText(), /Stopped/);
+  f.emit('message', { method: 'turn/started', params: { threadId: 'chat-a', turn: { id: 't5' } } });
+  await note.waitFor({ state: 'detached' });
+}));
