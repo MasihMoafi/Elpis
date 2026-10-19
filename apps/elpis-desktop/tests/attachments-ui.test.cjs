@@ -176,7 +176,7 @@ test('a picture past 2048 px or 3.5 MB is shrunk to a JPEG that fits, a smaller 
 
 test('a queued message edited back into the box keeps every file, with the ones already there', () => using({ running: true }, async f => {
   const { page, composer } = f;
-  await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
   await chooseFiles(page, [text('q1.txt'), picture('q2.png')]);
   await chips(page).nth(1).waitFor();
   await composer.click(); await composer.fill('with two files'); await page.keyboard.press('Control+Enter');

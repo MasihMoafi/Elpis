@@ -333,7 +333,7 @@ try {
     await until(() => fixture.gated, 'turn reached inference');
     await page.locator(`.thread-row[data-thread-id="${started.id}"] .thread-link`).click({ timeout: 15000 });
     await page.getByText('Working…', { exact: true }).waitFor();
-    assert(await page.getByRole('button', { name: 'Stop generation' }).isVisible(), 'its running turn can be stopped from here');
+    assert(await page.getByRole('button', { name: 'Stop response' }).isVisible(), 'its running turn can be stopped from here');
     const loadsBefore = loads; release();
     await page.getByText('ELSEWHERE_REPLY_4242', { exact: true }).waitFor({ timeout: 15000 });
     assert.equal(loads, loadsBefore, 'streamed without reload');

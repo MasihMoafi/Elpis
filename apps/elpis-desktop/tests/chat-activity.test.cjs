@@ -205,7 +205,7 @@ test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does
   try {
     const { page, errors } = await app.open();
     const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     assert.equal(await composer.getAttribute('placeholder'), 'Enter to send, Ctrl+Enter to queue for later');
 
     await composer.fill('steer this'); await composer.press('Enter');
@@ -221,7 +221,7 @@ test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does
     // With Queue chosen in Settings, the keys swap and the hint says so.
     const queue = await app.open({ preferences: { followUp: 'queue' } });
     const box = queue.page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-    await queue.page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    await queue.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     assert.equal(await box.getAttribute('placeholder'), 'Enter to queue for later, Ctrl+Enter to send now');
     await box.fill('queued by Enter'); await box.press('Enter');
     await queue.page.getByRole('list', { name: 'Queued follow-ups', exact: true }).getByText('queued by Enter', { exact: true }).waitFor();
@@ -233,7 +233,7 @@ test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does
     // The Ctrl+Enter send shortcut keeps Enter for new lines: Ctrl+Enter follows the setting, Ctrl+Shift+Enter does the other.
     const mod = await app.open({ preferences: { sendShortcut: 'modEnter' } });
     const modBox = mod.page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-    await mod.page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    await mod.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     assert.equal(await modBox.getAttribute('placeholder'), 'Ctrl+Enter to send, Ctrl+Shift+Enter to queue for later');
     await modBox.fill('line'); await modBox.press('Enter');
     assert.equal(await modBox.inputValue(), 'line\n', 'Enter adds a line');

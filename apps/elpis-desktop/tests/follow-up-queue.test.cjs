@@ -12,7 +12,7 @@ async function using(options, run) {
   const f = await fixture({ running: true, ...options });
   try {
     await f.open('chat-a');
-    await f.page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     await run(f);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

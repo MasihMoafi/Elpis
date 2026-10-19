@@ -9,7 +9,7 @@ async function using(options, run) {
   const f = await fixture(options);
   try {
     await f.open('chat-a');
-    if (options.running) await f.page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    if (options.running) await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     await run(f);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -156,7 +156,7 @@ test('a stopped turn says so in the chat, whoever stopped it, so a stop is never
   const { page } = f;
   for (let tries = 0; f.listening() < 1 && tries < 100; tries++) await sleep(50);
   f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 't4', status: 'interrupted' } } });
-  await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
   const note = page.getByRole('status').filter({ hasText: 'Stopped' });
   await note.waitFor();
   assert.match(await note.innerText(), /Stopped/);

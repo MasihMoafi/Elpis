@@ -10,7 +10,7 @@ import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-m
 import { groupNameProblem, isDefaultView, type ChatGroup, type ChatGroups, type GroupBy, type SortBy } from "@/lib/chat-groups";
 
 const GROUP_BY: [GroupBy, string][] = [["custom", "Custom groups"], ["none", "None"]];
-const SORT_BY: [SortBy, string][] = [["recency", "Last activity"], ["created", "Date created"], ["name", "Name"]];
+const SORT_BY: [SortBy, string][] = [["recency", "Last activity"], ["created", "Date created"], ["name", "Name"], ["manual", "Manual (drag or Alt+Up/Down)"]];
 
 /** The sidebar's "Group and sort" button (Claude's filter button): Group by Custom groups or None, Sort by Last activity,
  * Date created or Name. The menu stays open while choosing, as Claude's does; away from the defaults the button is

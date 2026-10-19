@@ -54,7 +54,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.getByLabel('Message Elpis').fill('Also check the pruning overhead.');await page.getByRole('button',{name:'Send follow-up',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('textarea').value==='');
     assert.deepEqual(calls.find(c=>c.path.endsWith('/steer')).data,{text:'Also check the pruning overhead.',expectedTurnId:'turn-1'});
-    await page.getByRole('button',{name:'Stop generation'}).click();await page.getByRole('button',{name:'Send message',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Stop response'}).click();await page.getByRole('button',{name:'Send message',exact:true}).waitFor();
     await page.getByLabel('Message Elpis').fill('Keep my draft');
     await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).first().click();
     await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();

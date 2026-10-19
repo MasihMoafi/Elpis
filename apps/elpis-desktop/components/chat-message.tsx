@@ -15,6 +15,7 @@ import { Step } from "@/components/step";
 import { unreadable, type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
 import { plainText } from "@/lib/message-copy";
+import "@/components/message-actions.css";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};

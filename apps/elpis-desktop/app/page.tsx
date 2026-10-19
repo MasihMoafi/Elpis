@@ -16,7 +16,7 @@ import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
-import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
+import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
@@ -1376,7 +1376,7 @@ export default function Home() {
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results keep the search's order.
-  const listedRoots = searchTerm ? roots : sortChats(roots, chatGroups.sortBy, title);
+  const listedRoots = searchTerm ? roots : sortChats(roots, chatGroups.sortBy, title, chatGroups.order);
   const pinnedChats = listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = listedRoots.filter(t => !pins.includes(t.id));
   const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
   const recentChats = grouped ? grouped.ungrouped : unpinnedChats;
@@ -1483,7 +1483,11 @@ export default function Home() {
   /** Keys on a focused chat row: D deletes, U changes attention, and Escape clears the marks. */
   function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement, id = rowOf(target);
-    if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey) return;
+    if (event.altKey) {
+      if (event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown") || target.closest(".thread-row.child")) return;
+      event.preventDefault(); reorderBy(id, event.key === "ArrowUp" ? -1 : 1); return;
+    }
     if (event.key === "Escape" && marked.length) setMarked([]);
     else if (letterKey(event) === "u") attentionFor(id).planReady ? attentionFor(id).onComplete() : attentionFor(id).onToggleRead();
     else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
@@ -1509,7 +1513,44 @@ export default function Home() {
       onMove: (groupId: string | null) => { updateGroups(state => moveChats(state, ids, groupId)); setMarked([]); },
       onNew: () => setNewGroupFor(ids) };
   }
-  function threadRow(thread: Thread, depth = 0) {
+  // Manual order: drag a chat onto another (or onto a group's heading, or Recents') or press Alt+Up/Down on it. Pinned chats
+  // stay pinned and others stay unpinned; a drop in another section moves the chat there. The first move makes Sort by Manual.
+  const dragging = useRef<string | null>(null);
+  const [drop, setDrop] = useState<{ id: string; mark: "before" | "after" | "into" } | null>(null);
+  const sectionOf = (id: string) => pins.includes(id) ? "pinned" : chatGroups.groupBy === "custom" && chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? `group:${chatGroups.members[id]}` : "recents";
+  const sectionChats = (section: string) => section === "pinned" ? pinnedChats : section === "recents" ? recentChats : grouped?.groups.find(item => `group:${item.group.id}` === section)?.chats ?? [];
+  const canDrop = (section: string) => !!dragging.current && !searchTerm && (section === "pinned") === (sectionOf(dragging.current) === "pinned");
+  function placeDragged(id: string, section: string, place?: { target: string; after: boolean }) {
+    const ids = listedRoots.map(thread => thread.id);
+    updateGroups(state => placeChat(state, place && place.target !== id ? move(ids, id, place) : ids, id, section === "pinned" ? undefined : section === "recents" ? null : section.slice(6)));
+  }
+  function reorderBy(id: string, by: -1 | 1) {
+    const section = sectionOf(id), list = sectionChats(section), neighbour = list[list.findIndex(thread => thread.id === id) + by];
+    if (!neighbour || searchTerm) return;
+    placeDragged(id, section, { target: neighbour.id, after: by > 0 });
+    requestAnimationFrame(() => threadList.current?.querySelector<HTMLElement>(`.thread-row[data-thread-id="${CSS.escape(id)}"] .thread-link`)?.focus());
+  }
+  /** Where a drag may end on `key` (a chat id, or a section): the heading of a group or of Recents takes the chat at its end or its start. */
+  const dropTarget = (section: string, key: string, onHeading?: boolean) => {
+    const over = (event: React.DragEvent<HTMLElement>) => {
+      if (!canDrop(section) || dragging.current === key) return;
+      event.preventDefault(); event.dataTransfer.dropEffect = "move";
+      const box = event.currentTarget.getBoundingClientRect(), mark = onHeading ? "into" : event.clientY > box.top + box.height / 2 ? "after" : "before";
+      setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
+    };
+    return { onDragEnter: over, onDragOver: over,
+    onDragLeave: (event: React.DragEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDrop(previous => previous?.id === key ? null : previous); },
+    onDrop: (event: React.DragEvent<HTMLElement>) => {
+      const id = dragging.current, mark = drop?.id === key ? drop.mark : null, allowed = canDrop(section); dragging.current = null; setDrop(null);
+      if (!id || !allowed || id === key) return;
+      event.preventDefault();
+      if (!onHeading) { placeDragged(id, section, { target: key, after: mark === "after" }); return; }
+      const others = sectionChats(section).filter(thread => thread.id !== id);
+      placeDragged(id, section, section === "recents" && others[0] ? { target: others[0].id, after: false } : others.at(-1) ? { target: others.at(-1)!.id, after: true } : undefined);
+    },
+    };
+  };
+  function threadRow(thread: Thread, depth = 0, section?: string) {
     const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
@@ -1522,7 +1563,10 @@ export default function Home() {
         catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
         setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
       } } : undefined}
-      area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
+      area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""} data-[drop=before]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[dragging]:opacity-50`} data-thread-id={thread.id} data-drop={drop?.id === thread.id ? drop.mark : undefined} data-dragging={dragging.current === thread.id && drop ? "" : undefined}
+        {...(section && !depth && !searchTerm ? { draggable: true, ...dropTarget(section, thread.id),
+          onDragStart: (event: React.DragEvent<HTMLElement>) => { dragging.current = thread.id; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-chat", thread.id); },
+          onDragEnd: () => { dragging.current = null; setDrop(null); } } : {})} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
       {state === "unread" ? <button className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
@@ -1555,7 +1599,7 @@ export default function Home() {
   }
   useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
   /** A listed chat and, when shown, its agents under it. */
-  const chatRows = (thread: Thread) => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>;
+  const chatRows = (section: string) => (thread: Thread) => <div key={thread.id}>{threadRow(thread, 0, section)}{expanded[thread.id] && descendants(thread.id, 1)}</div>;
   const needsYou = (thread: Thread) => agentState(thread, waitingIds) === "waiting" || !!attention.plans[thread.id];
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
    * closed group holding a chat that needs you says so, as Claude's does. */
@@ -1563,9 +1607,9 @@ export default function Home() {
     const open = !chatGroups.collapsed.includes(group.id), waiting = !open && chats.some(needsYou), note = "A chat in this group is waiting on you";
     return <SidebarGroup key={group.id} kind="chat" name={group.name} icon={<Layers size={14} aria-hidden="true" />} open={open} onToggle={() => updateGroups(state => toggleCollapsed(state, group.id))}
       note={waiting ? <span className="thread-dot" data-state="waiting" role="img" aria-label={note} title={note} /> : undefined}
-      wrap={(area, content) => <GroupActions group={group} state={chatGroups} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length} area={area}
+      wrap={(area, content) => <GroupActions group={group} state={chatGroups} area={cloneElement(area, { className: `${(area.props as { className?: string }).className} data-[drop=into]:bg-[var(--selected)] data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]`, "data-drop": drop?.id === `group:${group.id}` ? "into" : undefined, ...dropTarget(`group:${group.id}`, `group:${group.id}`, true) } as object)} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length}
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
-      empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
+      empty={!chats.length}>{chats.map(chatRows(`group:${group.id}`))}</SidebarGroup>;
   }
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
@@ -1612,12 +1656,12 @@ export default function Home() {
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
               empty={!chats.length}>{chats.map(t => threadRow(t))}</SidebarGroup>; })}
         </section>}
-        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows)}</section>}
+        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows("pinned"))}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
-        {(searchTerm ? recentChats.length > 0 : roots.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"}><div className="section-label-row"><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
+        {(searchTerm ? recentChats.length > 0 : roots.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"}><div className="section-label-row data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]" data-drop={drop?.id === "recents" ? "into" : undefined} {...(grouped ? dropTarget("recents", "recents", true) : {})}><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
-          {recentChats.map(chatRows)}
+          {recentChats.map(chatRows("recents"))}
         </section>}
         {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadRow(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
@@ -1752,7 +1796,7 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="icon" variant="secondary" aria-label="Stop generation" onClick={() => selected && stop(selected)}><Square size={16} /></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
+              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" title="Stop response: stops the agent’s current turn." onClick={() => selected && stop(selected)}><Square size={14} fill="currentColor" aria-hidden="true" />Stop response</Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
           </form>}
           <div className="composer-meta">
             {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}

@@ -73,7 +73,7 @@ test('an existing chat keeps repeated prompts and reconciles an echo after ackno
   assert.equal(await user(f.page).count(), 2, 'old identical prompts stay distinct');
   assert.equal(await f.page.evaluate(() => window.__sentNode.isConnected), true);
   f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 'new-turn', status: 'completed' } } });
-  await f.page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+  await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
   f.turns.push(['new-turn', 'Show this immediately.', 'New answer']);
   await f.open('chat-b'); await f.open('chat-a');
   assert.equal(await user(f.page).count(), 2, 'a later authoritative history read still shows one copy per send');

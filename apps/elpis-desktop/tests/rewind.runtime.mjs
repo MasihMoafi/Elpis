@@ -48,7 +48,7 @@ try {
     });
     await page.goto(app.url); await page.locator(`.thread-row[data-thread-id="${created.thread.id}"] .thread-link`).click();
     const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-    const send = async (prompt, reply) => { provider.actions.push(message(reply)); await composer.fill(prompt); await composer.press('Enter'); await page.getByText(reply, { exact: true }).waitFor({ timeout: 30000 }); await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'hidden' }); };
+    const send = async (prompt, reply) => { provider.actions.push(message(reply)); await composer.fill(prompt); await composer.press('Enter'); await page.getByText(reply, { exact: true }).waitFor({ timeout: 30000 }); await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' }); };
     await page.getByText(`FIRST_REPLY_${mode}`, { exact: true }).waitFor(); await fs.writeFile(path.join(cwd, 'code.txt'), `before second ${mode}\n`);
     await send(`SECOND_${mode}`, `SECOND_REPLY_${mode}`); await fs.writeFile(path.join(cwd, 'code.txt'), `after second ${mode}\n`);
     await page.locator('.message.user', { hasText: `SECOND_${mode}` }).click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();

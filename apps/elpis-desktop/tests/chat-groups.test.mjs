@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS_KEY, addGroup, deleteGroup, emptyGroups, groupNameProblem, groupSections, isDefaultView, moveChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
+import { GROUPS_KEY, addGroup, deleteGroup, emptyGroups, groupNameProblem, groupSections, isDefaultView, moveChats, placeChat, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
 
 const storage = (initial = {}) => { const values = new Map(Object.entries(initial)); return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 const chat = (id, name, createdAt) => ({ id, name, ...(createdAt === undefined ? {} : { createdAt }) });
@@ -11,7 +11,7 @@ test('nothing saved, or something unreadable, is no groups, ungrouped and in las
   assert.deepEqual(readGroups(storage()), emptyGroups());
   assert.deepEqual(readGroups(storage({ [GROUPS_KEY]: '{not json' })), emptyGroups());
   assert.deepEqual(readGroups(storage({ [GROUPS_KEY]: '[1,2]' })), emptyGroups());
-  assert.deepEqual(emptyGroups(), { groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [] });
+  assert.deepEqual(emptyGroups(), { groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [] });
   assert.equal(isDefaultView(emptyGroups()), true);
 });
 
@@ -19,7 +19,7 @@ test('a saved state keeps only what it can use: named groups once each, members 
   const saved = { groups: [{ id: 'g1', name: '  Work  ' }, { id: 'g1', name: 'Again' }, { id: 'g2', name: '' }, { id: 3, name: 'Bad id' }, { id: 'g3', name: 'Home' }],
     members: { a: 'g1', b: 'gone', c: 'g3', d: 7 }, groupBy: 'custom', sortBy: 'name', collapsed: ['g3', 'gone', 'g3'] };
   const state = readGroups(storage({ [GROUPS_KEY]: JSON.stringify(saved) }));
-  assert.deepEqual(state, { groups: [{ id: 'g1', name: 'Work' }, { id: 'g3', name: 'Home' }], members: { a: 'g1', c: 'g3' }, groupBy: 'custom', sortBy: 'name', collapsed: ['g3'] });
+  assert.deepEqual(state, { groups: [{ id: 'g1', name: 'Work' }, { id: 'g3', name: 'Home' }], members: { a: 'g1', c: 'g3' }, groupBy: 'custom', sortBy: 'name', collapsed: ['g3'], order: [] });
   assert.equal(readGroups(storage({ [GROUPS_KEY]: JSON.stringify({ ...saved, groupBy: 'date', sortBy: 'size' }) })).groupBy, 'none', 'an unknown grouping is the default');
   assert.equal(readGroups(storage({ [GROUPS_KEY]: JSON.stringify({ ...saved, sortBy: 'size' }) })).sortBy, 'recency', 'an unknown order is the default');
 });
@@ -86,4 +86,22 @@ test('sections: each group in its order with its chats in list order, then the r
   assert.deepEqual(ids(sections.ungrouped), ['b', 'e']);
   const empty = groupSections([chat('b', 'B')], state);
   assert.deepEqual(empty.groups.map(section => [section.group.name, ids(section.chats)]), [['Work', []], ['Home', []]], 'an empty group is still a section');
+});
+
+test('manual order: unplaced chats first, then the saved order; a stale id is ignored', () => {
+  const list = [chat('n1', 'New1'), chat('a', 'A'), chat('b', 'B'), chat('c', 'C')];
+  assert.deepEqual(ids(sortChats(list, 'manual', nameOf, ['c', 'gone', 'a', 'b'])), ['n1', 'c', 'a', 'b']);
+  assert.deepEqual(ids(sortChats(list, 'manual', nameOf)), ['n1', 'a', 'b', 'c'], 'no saved order keeps the given order');
+});
+
+test('placing a chat saves the order, makes the list manual, keeps unlisted placed chats, and moves it between groups', () => {
+  const start = moveChats(addGroup({ ...emptyGroups(), order: ['old'] }, 'Work', 'g1'), ['a'], 'g1');
+  const moved = placeChat(start, ['b', 'a', 'c'], 'b', undefined);
+  assert.deepEqual([moved.sortBy, moved.order, moved.members], ['manual', ['b', 'a', 'c', 'old'], { a: 'g1' }]);
+  assert.equal(placeChat(start, ['a', 'b'], 'b', 'g1').members.b, 'g1');
+  assert.equal('a' in placeChat(start, ['a', 'b'], 'a', null).members, false);
+  assert.equal(placeChat(start, ['a'], 'a', 'nope').members.a, 'g1', 'an unknown group moves nothing');
+  const store = storage(); writeGroups(moved, store);
+  assert.deepEqual(readGroups(store).order, ['b', 'a', 'c', 'old'], 'the order survives a reload');
+  assert.equal(readGroups(store).sortBy, 'manual');
 });

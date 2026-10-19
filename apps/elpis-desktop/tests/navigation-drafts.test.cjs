@@ -107,7 +107,7 @@ test('unsent inline edits survive navigation, failures and chat switches; cancel
   await expect.poll(() => posts.filter(post => post.path === '/api/threads/a/revert').length).toBe(2);
   assert.deepEqual(posts.filter(post => post.path === '/api/threads/a/revert').map(post => post.body), Array(2).fill({ beforeTurnId: 'turn-a', text: 'Failed revision A' }));
   await expect(edit).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Stop generation', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Stop response', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Refresh conversation', exact: true }).click(); await expect(page.locator('.user-turn')).toContainText('Original A'); await expect(edit).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit message', exact: true }).click(); await expect(edit).toHaveValue('Original A');
   await open('b'); await expect(edit).toHaveValue('Revision B');

@@ -6,17 +6,19 @@
 export type ChatGroup = { id: string; name: string };
 /** "custom": the sidebar draws a section for each group, then Recents for the rest; "none": Recents holds every chat. */
 export type GroupBy = "none" | "custom";
-/** "recency": the bridge's order (last activity first); "created": newest first; "name": A to Z. */
-export type SortBy = "recency" | "created" | "name";
-/** `members`: chat id → group id; `collapsed`: groups drawn closed. */
-export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[] };
+/** "recency": the bridge's order (last activity first); "created": newest first; "name": A to Z; "manual": the person's
+ * own order (`order`), made by dragging a chat or by Alt+Up/Down on it. */
+export type SortBy = "recency" | "created" | "name" | "manual";
+/** `members`: chat id → group id; `collapsed`: groups drawn closed; `order`: chat ids in the person's order, which Pinned,
+ * each group and Recents each show in turn (kept when another sort is chosen, used when "manual" is). */
+export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[] };
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
 const NAME_LIMIT = 60;
-const GROUP_BY: readonly GroupBy[] = ["none", "custom"], SORT_BY: readonly SortBy[] = ["recency", "created", "name"];
+const GROUP_BY: readonly GroupBy[] = ["none", "custom"], SORT_BY: readonly SortBy[] = ["recency", "created", "name", "manual"];
 
-export const emptyGroups = (): ChatGroups => ({ groups: [], members: {}, groupBy: "none", sortBy: "recency", collapsed: [] });
+export const emptyGroups = (): ChatGroups => ({ groups: [], members: {}, groupBy: "none", sortBy: "recency", collapsed: [], order: [] });
 /** The sidebar as it is before anyone changes it: no group sections, the bridge's order. */
 export const isDefaultView = (state: ChatGroups) => state.groupBy === "none" && state.sortBy === "recency";
 
@@ -36,8 +38,9 @@ export function readGroups(storage: Storage): ChatGroups {
   const known = new Set(groups.map(group => group.id));
   const members = Object.fromEntries(Object.entries(record(value.members) ? value.members : {}).filter((entry): entry is [string, string] => typeof entry[1] === "string" && known.has(entry[1])));
   const collapsed = [...new Set((Array.isArray(value.collapsed) ? value.collapsed : []).filter((id: unknown): id is string => typeof id === "string" && known.has(id)))];
+  const order = [...new Set((Array.isArray(value.order) ? value.order : []).filter((id: unknown): id is string => typeof id === "string" && !!id))];
   return {
-    groups, members, collapsed,
+    groups, members, collapsed, order,
     groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? value.groupBy as GroupBy : "none",
     sortBy: SORT_BY.includes(value.sortBy as SortBy) ? value.sortBy as SortBy : "recency",
   };
@@ -85,9 +88,14 @@ export function toggleCollapsed(state: ChatGroups, id: string): ChatGroups {
 }
 
 const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
-/** A sorted copy. Last activity keeps the given order; ties keep their order; a chat without a creation time goes last. */
-export function sortChats<T extends { createdAt?: number }>(threads: T[], sortBy: SortBy, nameOf: (thread: T) => string): T[] {
+/** A sorted copy. Last activity keeps the given order; ties keep their order; a chat without a creation time goes last.
+ * Manual puts the chats the person has not placed (new ones) first, in the given order, then the placed ones in `order`. */
+export function sortChats<T extends { id: string; createdAt?: number }>(threads: T[], sortBy: SortBy, nameOf: (thread: T) => string, order: readonly string[] = []): T[] {
   if (sortBy === "recency") return [...threads];
+  if (sortBy === "manual") {
+    const place = new Map(order.map((id, index) => [id, index]));
+    return [...threads.filter(thread => !place.has(thread.id)), ...threads.filter(thread => place.has(thread.id)).sort((a, b) => place.get(a.id)! - place.get(b.id)!)];
+  }
   const indexed = threads.map((thread, index) => ({ thread, index }));
   const compare = sortBy === "name"
     ? (a: { thread: T }, b: { thread: T }) => byName.compare(nameOf(a.thread), nameOf(b.thread))
@@ -102,4 +110,11 @@ export function groupSections<T extends { id: string }>(threads: T[], state: Cha
     groups: state.groups.map(group => ({ group, chats: threads.filter(thread => state.members[thread.id] === group.id) })),
     ungrouped: threads.filter(thread => !known.has(state.members[thread.id])),
   };
+}
+
+/** The chat after a drag or Alt+Up/Down: the list is now manual, in `order` (every listed chat, the chat moved), and the
+ * chat belongs to `group` when that is given (null: ungrouped). Placed chats the list does not show are kept after it. */
+export function placeChat(state: ChatGroups, order: string[], id: string, group?: string | null): ChatGroups {
+  const next = { ...state, sortBy: "manual" as const, order: [...order, ...state.order.filter(other => !order.includes(other))] };
+  return group === undefined ? next : moveChats(next, [id], group);
 }

@@ -226,7 +226,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .page-scroll { flex:1; min-height:0; overflow:auto; padding:24px 28px 40px; }
 .status-line { display:flex; gap:7px; align-items:center; } .status-dot { width:6px; height:6px; border-radius:50%; background:var(--muted-foreground); } .status-dot.connected { background:var(--success); }
-@media(max-width:760px) { .app-shell { grid-template-columns:1fr; } .sidebar { display:none; } .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; } .mobile-menu { display:inline-flex; } .workspace-header { padding:0 12px; } .chat-scroll { --chat-top-inset:20px; padding:var(--chat-top-inset) 16px; } .composer-wrap { padding:6px 12px 12px; } .page-scroll { padding:18px; } .empty-state h2 { font-size:24px; } .composer-hint { display:none; } }
+@media(max-width:760px) { .app-shell { grid-template-columns:1fr; } .sidebar { display:none; } .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; } .mobile-menu { display:inline-flex; } .workspace-header { padding:0 12px; } .chat-scroll { --chat-top-inset:20px; padding:var(--chat-top-inset) 16px; } .page-scroll { padding:18px; } .empty-state h2 { font-size:24px; } .composer-hint { display:none; } }
 
 /* Conversation and activity surfaces share the same quiet hierarchy. */
 .chat-view { display:flex; flex-direction:column; flex:1; min-height:0; }
@@ -707,7 +707,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
 .composer-pill, .composer .model-select { height:28px; font-size:12px; }
 .composer-pill:hover:not(:disabled), .composer .model-select:hover:not(:disabled) { background:var(--hover); color:var(--foreground); border-color:var(--hairline); }
-.composer .model-trigger-provider { border-inline-start-color:var(--hairline); color:var(--subtle-foreground); }
+.composer .model-trigger-provider { display:none; }
 /* Sidebar */
 /* Group labels in the sidebar and in Settings' navigation. */
 .section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
@@ -852,7 +852,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-right { flex:1 1 auto; flex-wrap:wrap; justify-content:flex-end; }
 .composer .model-picker-trigger { min-width:88px; max-width:none; flex:0 0 auto; }
 .header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
-@container workspace (max-width: 760px) { .composer .model-trigger-provider { display:none; } }
 /* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
 .slash-menu { position:absolute; left:0; right:0; bottom:calc(100% + 6px); z-index:20; max-height:min(320px, 50vh); overflow-y:auto; }
 .slash-option { align-items:baseline; gap:12px; min-width:0; cursor:pointer; font-size:13px; }
@@ -1200,7 +1199,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer .model-select { min-width:64px; }
 .composer-right :is(.dictation-control, .send-button, .context-ring) { flex-shrink:0; }
 .pill-short { display:none; }
-@media(min-width:761px) { @container workspace (max-width:640px) { .pill-long { display:none; } .pill-short { display:inline; } .chat-scroll, .composer-wrap { padding-inline:22px; } } }
+/* Follow the chat pane's width when the browser or another session is beside it. */
+@media(min-width:761px) { @container workspace (max-width:640px) { .chat-scroll { padding-inline:22px; } } }
+@container workspace (max-width:640px) { .composer-wrap { padding-inline:22px; } }
+@container workspace (max-width:560px) { .pill-long { display:none; } .pill-short { display:inline; } }
+@container workspace (max-width:520px) { .composer-wrap { padding-inline:12px; } }
 .effort-short { display:none; }
 @container workspace (min-width:421px) and (max-width:480px) {
   .composer-right .context-ring { display:none; }
@@ -1229,7 +1232,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .session-pane.has-title-bar { grid-template-rows:minmax(0,1fr); }
 .session-pane .workspace-header { min-height:48px; gap:12px; }
 .session-pane .workspace-header h1 { font-size:13.5px; }
-@container workspace (max-width:640px) { .session-pane .pill-long { display:none; } .session-pane .pill-short { display:inline; } }
 .session-split .composer-wrap { padding-inline:12px; }
 .session-split .chat-scroll { padding-inline:20px; }
 .session-split .team-panel { display:none; }

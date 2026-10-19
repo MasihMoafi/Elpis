@@ -116,10 +116,10 @@ test('"/" lists the terminal\'s commands the app can run, in its order: a new ch
     await composer.fill('');
 
     emit('turn/started', { threadId: 'chat', turn: { id: 'running' } });
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     await composer.fill('/'); assert.deepEqual(await names(menu), RUNNING_TURN, 'commands that run the model or rewrite history wait for the turn');
     emit('turn/completed', { threadId: 'chat', turn: { id: 'running', status: 'completed' } });
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
     await composer.fill(''); await composer.fill('/'); assert.deepEqual(await names(menu), OPEN_CHAT, 'and come back when it ends');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
@@ -272,7 +272,7 @@ test('/init sends the terminal\'s own prompt as a message, in a new chat or an o
     await run('/init');
     assert.deepEqual(await posted('/api/threads/created/turns', 1), { text: prompt });
     assert.ok(sentTo('/api/threads').length >= 1, 'a new chat is created for it');
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
     await openChat();
     await run('/init');
     assert.deepEqual(await posted('/api/threads/chat/turns', 1), { text: prompt });
@@ -286,10 +286,10 @@ test('/rag sends the RAG request as a message; /prune turns Smart Prune on throu
     await openChat();
     await run('/rag');
     assert.deepEqual(await posted('/api/threads/chat/turns', 1), { text: '/rag' });
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
     await composer.fill('/rag find the cache notes'); await composer.press('Enter');
     assert.deepEqual(await posted('/api/threads/chat/turns', 2), { text: '/rag find the cache notes' }, 'a request typed after /rag goes as it is');
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
     await run('/prune');
     await page.getByText('Smart Prune is on', { exact: false }).first().waitFor();
     assert.deepEqual(await posted('/api/settings', 1), { version: 'v1', options: { automaticPruning: true } });

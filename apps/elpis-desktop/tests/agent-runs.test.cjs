@@ -138,7 +138,7 @@ for (const colorScheme of ['light', 'dark']) test(`runs open read-only, parent n
     assert.equal(f.posts.filter(post => post.path === '/api/threads/exec-run/continue').length, 1);
     assert.equal(f.posts.filter(post => post.path.endsWith('/turns')).length, 0, 'continuing sends no message');
     await f.composer.fill('I can talk here'); await f.composer.press('Enter');
-    await page.getByRole('button', { name: 'Stop generation', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
     assert.equal(f.posts.filter(post => post.path === '/api/threads/exec-run/turns').length, 0);
     assert.equal(f.posts.filter(post => post.path === '/api/threads/continued/turns').length, 1);
     assert.deepEqual(f.errors, []);

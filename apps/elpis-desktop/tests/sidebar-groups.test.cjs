@@ -192,7 +192,7 @@ test('Group and sort: Name, Date created and Last activity order Pinned, groups 
     assert.equal(await button.getAttribute('data-active'), null);
     await button.click();
     const menu = page.getByRole('menu', { name: 'Group and sort' });
-    assert.deepEqual(await menu.getByRole('menuitemradio').allTextContents(), ['Custom groups', 'None', 'Last activity', 'Date created', 'Name']);
+    assert.deepEqual(await menu.getByRole('menuitemradio').allTextContents(), ['Custom groups', 'None', 'Last activity', 'Date created', 'Name', 'Manual (drag or Alt+Up/Down)']);
     assert.equal(await menu.getByRole('menuitem', { name: 'Reset to defaults' }).count(), 0, 'nothing to reset yet');
     const choose = async name => { await menu.getByRole('menuitemradio', { name, exact: true }).click(); await page.waitForTimeout(50); };
     await choose('Name');
