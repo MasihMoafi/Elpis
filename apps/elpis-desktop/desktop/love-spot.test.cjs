@@ -83,7 +83,7 @@ function sessionFixture() {
   }
   const noop = () => {};
   const stubs = {
-    './browser.cjs': { createBrowser: () => ({ agent: {}, dispose: noop }) },
+    './browser-sessions.cjs': { createBrowserSessions: () => ({ attach: () => ({ open: noop, setBackground: noop, dispose: noop }), drop: noop, flush: async () => {} }) },
     './state.cjs': { registerState: () => noop }, './files.cjs': { registerFiles: () => noop },
     './terminal.cjs': { registerTerminal: () => noop }, './context-menu.cjs': { attachContextMenu: () => noop },
     './theme.cjs': { registerTheme: () => noop }, './improve.cjs': { registerImprove: () => noop },

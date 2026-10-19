@@ -1,5 +1,6 @@
 // What the agent looked at and made, as Claude's chats show it: an image it viewed is a thumbnail on the folded
-// activity row and in the step itself, and each file it created is a card after the reply that opens the file.
+// activity row and in the step itself, and each file it created is a card after the reply that opens the file (an HTML
+// file as a page in the chat's browser).
 // Local bridge fixture (tests/parity-fixture.cjs); no engine.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -12,8 +13,9 @@ const WORK = [
     { path: `${CWD}/src/app.ts`, kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-a\n+b\n' }] },
 ];
 
-test('a viewed image is a thumbnail on its folded row and in its step; a created file is a card that opens it', async () => {
-  const f = await fixture({ chat: [['t1', 'Make the report.', 'The report is ready.', WORK]] });
+test('a viewed image is a thumbnail on its folded row and in its step; a created file is a card that opens it, HTML in the browser', async () => {
+  const PAGE = `http://127.0.0.1:4999/${'a'.repeat(32)}/report.html`;
+  const f = await fixture({ chat: [['t1', 'Make the report.', 'The report is ready.', WORK]], routes: { '/api/dev-servers/page': () => ({ url: PAGE }) } });
   try {
     const { page } = f;
     await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
@@ -45,8 +47,9 @@ test('a viewed image is a thumbnail on its folded row and in its step; a created
     assert.equal(await cards.locator('.file-card-name').innerText(), 'report');
     assert.equal(await cards.locator('.file-card-type').innerText(), 'Code · HTML');
     await cards.getByRole('button', { name: 'Open report.html', exact: true }).click();
-    await page.getByRole('tab', { name: 'report.html', exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => window.__opened), undefined);
+    await page.waitForFunction(url => window.__commands?.some(command => command.action === 'new' && command.url === url), PAGE);
+    assert.deepEqual(f.posts.find(post => post.path === '/api/dev-servers/page').body, { cwd: CWD, path: 'report.html' });
+    assert.equal(await page.evaluate(() => window.__opened), undefined, 'not handed to another app');
     await cards.getByRole('button', { name: 'Show report.html in folder', exact: true }).click();
     assert.equal(await page.evaluate(() => window.__folder), CWD);
     if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/chat-files.png` });

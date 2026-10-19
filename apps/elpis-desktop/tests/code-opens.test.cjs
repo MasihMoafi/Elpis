@@ -110,33 +110,34 @@ test('Changes file paths open Files; the separate diff control retains diff brow
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) for (const width of [1280, 900]) test(`code scrolls horizontally; optional wrap aligns numbers and survives reload (${colorScheme}, ${width})`, async () => {
+// Long lines wrap inside the pane by default (aeb47ccc6); turning wrap off scrolls them sideways, and the choice survives reload.
+for (const colorScheme of ['light', 'dark']) for (const width of [1280, 900]) test(`code wraps by default with aligned numbers; without wrap it scrolls horizontally, and that survives reload (${colorScheme}, ${width})`, async () => {
   const f = await open({ colorScheme, width });
   try {
     await f.page.getByRole('button', { name: 'app', exact: true }).click();
     const text = editor(f.page, 'src/app.ts'); await text.waitFor();
+    assert.equal(await text.getAttribute('wrap'), 'soft');
+    assert.ok(await text.evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'a long line stays inside the pane');
+    await f.page.waitForFunction(() => document.querySelector('.fe-gutter-line')?.getBoundingClientRect().height > 20);
+    const [gutter, line] = await Promise.all([f.page.locator('.fe-gutter-line').first().boundingBox(), f.page.locator('.fe-line').first().boundingBox()]);
+    assert.equal(gutter.height, line.height, 'number rows match wrapped source rows');
+    assert.ok(line.x >= gutter.x + gutter.width, 'continuations stay beyond the gutter');
+    await assertUiFit(f.page.locator('.files-bar'), 'file tabs fit');
+    await assertUiFit(f.page.locator('.file-view-head'), 'file header fits');
+    if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `code-open-${colorScheme}-${width}.png`) }); }
+    await f.page.getByRole('button', { name: 'More file actions', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: 'Disable soft wrap', exact: true }).click();
     assert.equal(await text.evaluate(el => getComputedStyle(el).whiteSpace), 'pre');
     assert.ok(await text.evaluate(el => el.scrollWidth > el.clientWidth + 300));
     await text.click(); await f.page.keyboard.press('Control+Home'); await f.page.keyboard.press('End');
     assert.ok(await text.evaluate(el => el.scrollLeft > 0), 'End reveals the long line');
     assert.equal(await f.page.locator('.fe-gutter-line').nth(1).evaluate(el => el.getBoundingClientRect().height), 20);
-    // Scrollable code is intentionally checked separately: ui-fit treats any textarea with vertical scroll as clipped.
-    await assertUiFit(f.page.locator('.files-bar'), 'file tabs fit');
-    await assertUiFit(f.page.locator('.file-view-head'), 'file header fits');
     await f.page.keyboard.press('Control+Home');
-    if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `code-nowrap-${colorScheme}-${width}.png`) }); }
-    await f.page.getByRole('button', { name: 'More file actions', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'Enable soft wrap', exact: true }).click();
-    assert.equal(await text.getAttribute('wrap'), 'soft');
-    await f.page.waitForFunction(() => document.querySelector('.fe-gutter-line')?.getBoundingClientRect().height > 20);
-    const [gutter, line] = await Promise.all([f.page.locator('.fe-gutter-line').first().boundingBox(), f.page.locator('.fe-line').first().boundingBox()]);
-    assert.equal(gutter.height, line.height, 'number rows match wrapped source rows');
-    assert.ok(line.x >= gutter.x + gutter.width, 'continuations stay beyond the gutter');
-    if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `code-open-${colorScheme}-${width}.png`) }); }
+    if (process.env.ELPIS_SHOTS) await f.page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `code-nowrap-${colorScheme}-${width}.png`) });
     await f.page.reload(); await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
-  await f.page.locator('.message.agent').first().waitFor();
+    await f.page.locator('.message.agent').first().waitFor();
     await f.page.getByRole('button', { name: 'app', exact: true }).click();
-    assert.equal(await editor(f.page, 'src/app.ts').getAttribute('wrap'), 'soft');
+    assert.equal(await editor(f.page, 'src/app.ts').evaluate(el => getComputedStyle(el).whiteSpace), 'pre');
   } finally { await f.close(); }
 });
 
