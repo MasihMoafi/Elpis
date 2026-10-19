@@ -142,10 +142,13 @@ test('the concurrency cap and overlapping writer scopes hold before another proc
     const tasks = ['a', 'b', 'c'].flatMap((id, i) => [{ ...task(id, [], '[hang]'), kind: 'implement', writeScopes: [shared || i === 0 ? 'one' : 'two'] }, { ...task(`${id}-check`, [id]), kind: 'verify' }]);
     const r = await f.run(tasks);
     for (let n = 0; n < 200 && !f.log('a').some(row => row.method === 'session/prompt'); n++) await pause(20);
+    if (!shared) for (let n = 0; n < 500 && !f.log('b').some(row => row.method === 'session/prompt'); n++) await pause(20);
     await pause(250);
     assert.equal(f.log('b').some(row => row.method === 'session/prompt'), !shared);
     assert.equal(f.log('c').length, 0, 'third task cannot exceed the cap');
     await f.client.interrupt(ROOT, {}); assert.equal((await f.finished(r.graphId)).status, 'cancelled');
+    assert.equal(f.log('b').some(row => row.method === 'session/prompt'), !shared, 'overlapping work stays blocked through cancellation');
+    assert.equal(f.log('c').length, 0, 'queued work never starts during cancellation');
   }
 });
 
