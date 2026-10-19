@@ -45,7 +45,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   // without journaling screenshot names or pixels to the board directory.
   const peerDirectory = path.join(os.tmpdir(), `elpis-shots-${process.getuid?.() ?? 'user'}-${hash(path.resolve(directory)).slice(0, 16)}`);
   const peerSocket = path.join(peerDirectory, `${randomUUID()}.sock`), sockets = new Set();
-  let peerServer;
+  const trayError = 'Love Spot could not sync its private screenshot trays between windows. It will retry.';
+  let peerServer, peerError, nextPeerAttempt = 0;
   let timer, starting, closed = false, running = false, seen, previous, sceneStamp, lastError, syncError;
   const listeners = new Set();
   // Pending pixels stay in memory. Only explicit choices persist as opaque IDs,
@@ -79,7 +80,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     peerServer.unref();
   }
   async function receiveScreenshots() {
-    const peers = (await names(peerDirectory)).filter(name => name.endsWith('.sock') && name !== path.basename(peerSocket));
+    let peers;
+    try { peers = (await names(peerDirectory)).filter(name => name.endsWith('.sock') && name !== path.basename(peerSocket)); peerError = undefined; }
+    catch { peerError = trayError; return false; }
     const replies = await Promise.all(peers.map(name => new Promise(resolve => {
       const socket = track(net.createConnection(path.join(peerDirectory, name)));
       let data = '', settled = false;
@@ -98,6 +101,12 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       pending.set(shot.id, { id: shot.id, name: shot.name, bytes, modified: shot.modified }); added = true;
     }
     return added;
+  }
+  async function ensureSharing() {
+    if (closed || peerServer?.listening || Date.now() < nextPeerAttempt) return;
+    nextPeerAttempt = Date.now() + 1000;
+    try { await shareScreenshots(); peerError = undefined; }
+    catch { peerError = trayError; }
   }
   async function screenshotChoices() {
     try {
@@ -361,7 +370,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         // Commit before consuming. Two readers may both merge the same inbox file; the merge is idempotent.
         await exec('gio', ['trash', file]).catch(async e => { try { await fs.access(file); throw e; } catch (missing) { if (missing.code !== 'ENOENT') throw missing; } });
       }
-      let added = await receiveScreenshots();
+      await ensureSharing();
+      let added = peerServer?.listening ? await receiveScreenshots() : false;
       const choices = await screenshotChoices();
       for (const id of pending.keys()) if (choices.has(id)) { pending.delete(id); added = true; }
       if (!seen) seen = new Set(await names(screenshots));
@@ -382,7 +392,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         const current = await read(); sceneStamp = stamp;
         if (current.revision !== previous) { previous = current.revision; for (const listen of listeners) listen({ type: 'scene', ...current }); }
       }
-      lastError = undefined; syncError = undefined;
+      if (peerError && lastError !== peerError) for (const listen of listeners) listen({ type: 'error', message: peerError });
+      lastError = peerError; syncError = peerError;
     } catch (e) {
       syncError = e.loveSpot ? e.message : 'Love Spot could not sync the drawing.';
       if (lastError !== e.message) { lastError = e.message; for (const listen of listeners) listen({ type: 'error', message: syncError }); }
@@ -393,7 +404,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       // Sample once at server startup, never again when a view subscribes.
       // A temporarily unavailable folder retries its baseline in tick().
       try { seen = new Set(await names(screenshots)); } catch {}
-      await shareScreenshots();
+      await ensureSharing(); syncError = peerError;
       if (!closed) { timer = setInterval(() => void tick(), 150); timer.unref(); }
     })();
     return starting;
@@ -412,8 +423,9 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     while (running) await pause(10);
     for (const socket of sockets) socket.destroy();
     if (peerServer?.listening) await new Promise(resolve => peerServer.close(resolve));
-    await fs.unlink(peerSocket).catch(e => { if (e.code !== 'ENOENT') throw e; });
-    await fs.rmdir(peerDirectory).catch(e => { if (!['ENOENT', 'ENOTEMPTY'].includes(e.code)) throw e; });
+    // Temporary peer cleanup must not prevent the app from quitting.
+    await fs.unlink(peerSocket).catch(() => {});
+    await fs.rmdir(peerDirectory).catch(() => {});
     pending.clear();
   }
   return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, start, watch, screenshotsList, chooseScreenshot, close };

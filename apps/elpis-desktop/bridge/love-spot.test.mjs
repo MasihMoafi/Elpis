@@ -246,6 +246,29 @@ test('opening Love Spot reports a background screenshot error and clearing it re
   assert.equal(recovered.some(e => e.type === 'error'), false, 'a recovered error must not follow a later subscriber');
 });
 
+test('unavailable private IPC keeps local capture working, reports the failure and retries sharing', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'love-ipc-failure-'));
+  const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots'); await fs.mkdir(screenshots);
+  const store = createLoveSpot({ directory, screenshots });
+  let other;
+  t.after(async () => { await store.close(); if (other) await other.close(); await fs.rm(root, { recursive: true, force: true }); });
+  const mkdir = fs.mkdir.bind(fs);
+  const blocked = t.mock.method(fs, 'mkdir', async (file, ...args) => {
+    if (path.basename(file).startsWith('elpis-shots-')) throw Object.assign(new Error('Test private IPC unavailable'), { code: 'EACCES' });
+    return mkdir(file, ...args);
+  });
+  const events = []; await store.watch(event => events.push(event));
+  await fs.writeFile(path.join(screenshots, 'local-during-ipc-failure.png'), PNG);
+  for (let i = 0; i < 40 && !store.screenshotsList().length; i++) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(store.screenshotsList()[0]?.name, 'local-during-ipc-failure.png');
+  assert.ok(events.some(e => e.type === 'error' && /screenshot trays/.test(e.message)), 'the unavailable connection must be visible');
+  blocked.mock.restore();
+  other = createLoveSpot({ directory, screenshots }); await other.start();
+  for (let i = 0; i < 100 && !other.screenshotsList().length; i++) await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(other.screenshotsList()[0]?.name, 'local-during-ipc-failure.png', 'sharing must resume without losing the pending screenshot');
+  assert.equal((await store.read()).scene.elements.length, 0);
+});
+
 test('independent screenshot watchers consume one choice across page switches and keep dismissals private', async t => {
   const f = await fixture(t);
   const a = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
