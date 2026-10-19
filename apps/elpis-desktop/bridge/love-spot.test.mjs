@@ -506,6 +506,19 @@ test('empty locks retain their grace and busy timeout, then recover without losi
   await assert.rejects(fs.access(lock), { code: 'ENOENT' });
 });
 
+// 19 Oct 17:11: a crash between creating the owner file and writing its pid left it empty. Number('') is 0, and
+// process.kill(0, 0) succeeds, so the lock looked owned forever and every save said "The drawing is busy".
+test('a lock whose owner file is empty is recovered after the same grace', { timeout: 15000 }, async t => {
+  const f = await fixture(t), lock = path.join(f.directory, '.scene-lock');
+  await f.save({ elements: [element('kept')], files: {} });
+  await fs.mkdir(lock); await fs.writeFile(path.join(lock, 'owner'), '');
+  const old = new Date(Date.now() - 31000); await fs.utimes(path.join(lock, 'owner'), old, old); await fs.utimes(lock, old, old);
+  const store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
+  await store.save({ elements: [element('pending')], files: {} });
+  assert.deepEqual((await f.load()).scene.elements.map(e => e.id).sort(), ['kept', 'pending']);
+  await assert.rejects(fs.access(lock), { code: 'ENOENT' });
+});
+
 test('Love Spot watcher does not reread an unchanged drawing and delivers external replacements', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'love-watcher-'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
