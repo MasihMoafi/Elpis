@@ -135,6 +135,271 @@ fn ledger_alone(chat: &ChatWidget) -> Vec<String> {
 }
 
 #[tokio::test]
+async fn owned_ledger_displays_complete_source_names_at_narrow_widths() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let long_names = ["dev/CODING_GUIDELINES.md", "docs/数据数据_说明文档.md"];
+    for relative in long_names {
+        let path = cwd.join(relative);
+        std::fs::create_dir_all(path.parent().expect("fixture parent"))?;
+        std::fs::write(&path, "Long context filename fixture")?;
+        crate::legacy_core::elpis_context::add_continuity_source(
+            Some(&memories),
+            &cwd,
+            std::path::Path::new(relative),
+        )?;
+    }
+    seed_ledger_from_disk(&mut chat)?;
+    for width in [28, 32, 48, 52] {
+        let area = Rect::new(0, 0, width, 180);
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        chat.render_context_ledger_column(area, &mut buffer);
+        let text = rows(&buffer, 0..width).join("\n");
+        for name in ["MEMORY.md", "Global AGENTS.md", "Project AGENTS.md"] {
+            assert!(
+                text.contains(name),
+                "complete {name} at width {width}:\n{text}"
+            );
+        }
+        let flattened = text
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+        for relative in long_names {
+            assert!(
+                flattened.contains(relative),
+                "wrapped filename stays complete at width {width}: {relative}\n{text}"
+            );
+            let destination = url::Url::from_file_path(cwd.join(relative))
+                .expect("fixture file URL")
+                .to_string();
+            let escape = format!("\x1b]8;;{destination}\x07");
+            let linked_cells = area
+                .positions()
+                .filter(|&position| buffer[position].symbol().contains(&escape))
+                .collect::<Vec<_>>();
+            let linked = linked_cells
+                .iter()
+                .map(|&position| crate::terminal_hyperlinks::strip_osc8(buffer[position].symbol()))
+                .collect::<String>()
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>();
+            assert!(
+                linked.contains(relative),
+                "every wrapped filename segment keeps its file destination at width {width}: {linked}"
+            );
+            assert!(
+                linked.contains("est.tokens"),
+                "the source metadata still links to its file at width {width}: {linked}"
+            );
+            let last = *linked_cells.last().expect("linked metadata row");
+            assert!(
+                linked_cells.first().expect("first linked row").y < last.y,
+                "this fixture must actually wrap"
+            );
+            let path = cwd.join(relative);
+            let before = chat
+                .continuity_sources()
+                .into_iter()
+                .find(|source| source.path == path)
+                .expect("fixture source")
+                .admitted;
+            assert!(
+                !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                    kind: crossterm::event::MouseEventKind::Down(
+                        crossterm::event::MouseButton::Left
+                    ),
+                    column: last.x,
+                    row: last.y,
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                "Ctrl+click stays with the file link"
+            );
+            assert!(
+                chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                    kind: crossterm::event::MouseEventKind::Down(
+                        crossterm::event::MouseButton::Left
+                    ),
+                    column: last.x,
+                    row: last.y,
+                    modifiers: KeyModifiers::NONE,
+                }),
+                "the visible wrapped metadata row toggles its source"
+            );
+            seed_ledger_from_disk(&mut chat)?;
+            assert_ne!(
+                chat.continuity_sources()
+                    .into_iter()
+                    .find(|source| source.path == path)
+                    .expect("fixture source")
+                    .admitted,
+                before,
+                "the click maps back to {relative}"
+            );
+        }
+        assert!(
+            (0..width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
+            "the pinned Close row never inherits a file hyperlink"
+        );
+        let expected_sources = chat.continuity_sources().len();
+        assert_eq!(
+            text.matches("EXCLUDED").count() + text.matches("INCLUDED").count(),
+            expected_sources,
+            "estimates and admission states survive filename wrapping at width {width}"
+        );
+        assert_eq!(text.matches("est. tokens").count(), expected_sources);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    for _ in 0..16 {
+        if chat
+            .selected_continuity_source()
+            .is_some_and(|source| source.name == "ES.md")
+        {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    let selected = chat.selected_continuity_source().expect("selected source");
+    assert_eq!(selected.name, "ES.md");
+    let path = selected.path.clone();
+    let admitted = selected.admitted;
+    let destination = url::Url::from_file_path(&path)
+        .expect("source file URL")
+        .to_string();
+    let escape = format!("\x1b]8;;{destination}\x07");
+    let area = Rect::new(0, 0, 28, 4);
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    chat.render_context_ledger_column(area, &mut buffer);
+    let text = rows(&buffer, 0..area.width).join("\n");
+    assert!(
+        !text.contains("CONTEXT LEDGER"),
+        "the selected source really scrolled: {text}"
+    );
+    assert!(
+        text.contains("ES.md"),
+        "the selected source fits below Close: {text}"
+    );
+    let close_x = (0..area.width)
+        .find(|&x| buffer[(x, 0)].symbol() == "✕")
+        .expect("pinned Close");
+    assert!(
+        (0..area.width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
+        "the Close row has no source file links after scrolling"
+    );
+    let last = area
+        .positions()
+        .filter(|&position| buffer[position].symbol().contains(&escape))
+        .last()
+        .expect("visible linked source metadata");
+    assert_eq!(
+        last.y,
+        area.bottom() - 1,
+        "selection scrolling uses the body height, excluding Close"
+    );
+    assert!(
+        chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: last.x,
+            row: last.y,
+            modifiers: KeyModifiers::NONE,
+        })
+    );
+    seed_ledger_from_disk(&mut chat)?;
+    assert_ne!(
+        chat.continuity_sources()
+            .into_iter()
+            .find(|source| source.path == path)
+            .expect("clicked source")
+            .admitted,
+        admitted,
+        "a scrolled visible metadata click toggles ES.md"
+    );
+    assert!(
+        !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: close_x,
+            row: 0,
+            modifiers: KeyModifiers::CONTROL,
+        })
+    );
+    assert!(
+        chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: close_x,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    );
+    assert_eq!(chat.context_ledger_width(WIDTH), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(WIDTH));
+    for width in [0, 1, 2, 3, 11, 12, 28] {
+        for height in 0..=2 {
+            show_context_ledger(&mut chat);
+            let area = Rect::new(7, 5, width, height);
+            let mut buffer = ratatui::buffer::Buffer::empty(area);
+            chat.render_context_ledger_column(area, &mut buffer);
+            let close = area
+                .positions()
+                .find(|&position| buffer[position].symbol() == "✕");
+            if width >= 12 && height > 0 {
+                let close = close.expect("a full Close button fits");
+                assert_eq!(close.y, area.y);
+                assert!(
+                    chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                        kind: crossterm::event::MouseEventKind::Down(
+                            crossterm::event::MouseButton::Left
+                        ),
+                        column: close.x,
+                        row: close.y,
+                        modifiers: KeyModifiers::NONE,
+                    })
+                );
+                assert_eq!(chat.context_ledger_width(WIDTH), 0);
+            } else {
+                assert!(close.is_none(), "a clipped button is never painted");
+                assert!(
+                    !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                        kind: crossterm::event::MouseEventKind::Down(
+                            crossterm::event::MouseButton::Left
+                        ),
+                        column: area.x,
+                        row: area.y,
+                        modifiers: KeyModifiers::NONE,
+                    })
+                );
+            }
+            if width == 28 && height == 2 {
+                let body = (area.x..area.right())
+                    .map(|x| buffer[(x, area.y + 1)].symbol())
+                    .collect::<String>();
+                assert!(
+                    body.contains("CONTEXT LEDGER"),
+                    "the only body row is the title: {body}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn source_headings_are_teal_and_included_markers_are_olive() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;

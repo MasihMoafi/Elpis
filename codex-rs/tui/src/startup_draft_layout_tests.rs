@@ -64,13 +64,12 @@ fn owned_startup_shows_the_ledger_column_beside_the_composer() {
     let header_row = (0..area.height)
         .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
         .expect("the header stays");
-    // The header is three rows (a blank row, the title, the cwd); the live Ledger starts one
-    // row below it, level with the first line of the transcript.
-    assert_eq!(title_row, header_row + 3);
-    for y in 0..title_row {
+    // The live Ledger starts below the header with a dedicated Close row, then its title.
+    assert_eq!(title_row, header_row + 4);
+    for y in 0..title_row - 1 {
         assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}");
     }
-    for y in title_row..area.height {
+    for y in title_row - 1..area.height {
         assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}");
     }
     let composer_rows = |columns: std::ops::Range<u16>| {
@@ -80,6 +79,31 @@ fn owned_startup_shows_the_ledger_column_beside_the_composer() {
     };
     assert_eq!(composer_rows(0..rule_x), 1);
     assert_eq!(composer_rows(rule_x..area.width), 0);
+}
+
+#[test]
+fn owned_startup_reserves_ledger_close_row() {
+    let pump = crate::startup_draft::tests::quiet_startup_test_pump();
+    let layout = OwnedStartupLayout::new(&pump);
+    let area = Rect::new(0, 0, 120, 30);
+    let buffer = rendered(&layout, area);
+    let rule_x = area.width - crate::chatwidget::ledger_column_width(area.width);
+    let title_y = (0..area.height)
+        .find(|&y| row(&buffer, y, rule_x + 1..area.width).contains("CONTEXT LEDGER"))
+        .expect("Ledger loading title");
+    let header_y = (0..area.height)
+        .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
+        .expect("startup header");
+    assert_eq!(
+        title_y,
+        header_y + 4,
+        "startup reserves the live owned Close row above its heading"
+    );
+    assert_eq!(buffer[(rule_x, title_y - 1)].symbol(), "│");
+    assert!(
+        !row(&buffer, title_y - 1, rule_x + 1..area.width).contains("Close"),
+        "startup paints no dead button"
+    );
 }
 
 #[test]
