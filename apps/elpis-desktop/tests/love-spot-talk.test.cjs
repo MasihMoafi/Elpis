@@ -35,8 +35,9 @@ test('an agent run waits for Talk to finish capturing the board', async () => {
     const { page } = f; await f.open(page);
     await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
+    await page.getByText('What should I help you with?', { exact: true }).waitFor();
+    await page.getByLabel('Agent details').locator('summary').click();
     await page.getByRole('textbox', { name: 'Task', exact: true }).fill('Review this board');
-    await page.getByRole('textbox', { name: 'Task', exact: true }).press('Enter');
     await page.getByRole('button', { name: 'Talk', exact: true }).click();
     await page.waitForTimeout(1200);
     let started;

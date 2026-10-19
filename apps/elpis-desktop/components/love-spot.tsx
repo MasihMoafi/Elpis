@@ -17,7 +17,7 @@ import { applyRemoteScene } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { newer } from "@/bridge/love-spot-order.cjs";
-import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
+import { agentOf, avatar, characters, makeAgent, upgradeAgentArt, type Character, type LoveAgent } from "@/lib/love-agents";
 import { CharacterPicker, LoveAgentPanel } from "./love-agent-panel";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -65,6 +65,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
   const boardArea = useRef<HTMLDivElement>(null);
   const [picker, setPicker] = useState(false);
+  const [placingAgent, setPlacingAgent] = useState(false);
+  const interviewRequests = useRef(new Set<string>());
   const [agents, setAgents] = useState<readonly ExcalidrawElement[]>([]);
   const [selected, setSelected] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -128,7 +130,10 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
 
   useEffect(() => {
     let active = true;
-    api<Saved>("/love-spot").then(data => {
+    api<Saved>("/love-spot").then(async data => {
+      if (!active) return;
+      const art = upgradeAgentArt(data.scene.elements, data.scene.files);
+      if (art) data = await api<Saved>("/love-spot", await lightDrawing({ ...data.scene, ...art }));
       if (!active) return;
       revision.current = data.revision;
       currentPage.current = data.scene.page; setPage(data.scene.page); loadPages();
@@ -162,6 +167,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     const recovered = journal.current!.recover(data.scene.elements, data.scene.page);
     const hasRecovery = versions(recovered) !== versions(data.scene.elements);
     if (hasRecovery) data = { ...data, scene: { ...data.scene, elements: recovered } };
+    const art = upgradeAgentArt(data.scene.elements, data.scene.files);
+    if (art) data = { ...data, scene: { ...data.scene, ...art } };
     revision.current = data.revision;
     const switching = currentPage.current?.session !== data.scene.page.session;
     const renamed = currentPage.current?.name !== data.scene.page.name;
@@ -178,9 +185,9 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() });
       } finally { remote.current = false; }
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
-      setSelected(undefined); setQuote(undefined); setRenaming(false);
+      setSelected(undefined); setQuote(undefined); setRenaming(false); setPlacingAgent(false);
       editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
-      if (hasRecovery || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
+      if (hasRecovery || art || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
       return;
     }
     const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
@@ -212,7 +219,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 });
       } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 });
       // Inbox images and older pages also pass through the same pixel limit once they arrive.
-      if (hasRecovery || files.length) queueMicrotask(() => void saveLatest.current?.());
+      if (hasRecovery || art || files.length) queueMicrotask(() => void saveLatest.current?.());
       // Excalidraw may notify after the merged snapshot is already current.
       schedulePicture();
     }
@@ -393,28 +400,63 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     finally { setPageBusy(false); }
   }
 
-  const add = (character: Character, task: string) => {
+  const add = (character: Character, point?: { x: number; y: number }) => {
     if (!editor) return;
-    const state = editor.getAppState(), zoom = state.zoom.value;
-    const made = makeAgent(character, 260 / zoom - state.scrollX + (agents.length % 2) * 280, 200 / zoom - state.scrollY + Math.floor(agents.length / 2) * 220, task);
-    editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...made.elements], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    const bounds = boardArea.current!.getBoundingClientRect();
+    const centre = point ?? viewportCoordsToSceneCoords({ clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 }, editor.getAppState());
+    const made = makeAgent(character, centre.x - 110, centre.y - 95);
+    editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...made.elements], appState: { selectedElementIds: { [made.id]: true } }, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     editor.addFiles([made.file]);
     setSelected(made.id);
     editor.setActiveTool({ type: "selection" });
     setPicker(false);
+    setPlacingAgent(false);
   };
+  useEffect(() => {
+    if (!editor) return;
+    const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.repeat || !(event.target instanceof Element) || event.target.closest("input, textarea, select, [contenteditable=true], [role=dialog], [role=menu], .love-agent-panel, .love-spot-talk")) return;
+      if (event.key === "Escape") { setPlacingAgent(false); return; }
+      if (event.key.toLowerCase() !== "a" || editor.getAppState().editingTextElement) return;
+      event.preventDefault(); event.stopImmediatePropagation(); setPlacingAgent(true); setPicker(false);
+      editor.setActiveTool({ type: "selection" });
+    };
+    document.addEventListener("keydown", key, true);
+    return () => document.removeEventListener("keydown", key, true);
+  }, [editor]);
   const updateAgent = (change: Partial<LoveAgent>) => {
     if (!editor || !selected) return;
     editor.updateScene({ elements: editor.getSceneElementsIncludingDeleted().map(e => e.id === selected ? newElementWith(e, { customData: { ...e.customData, loveAgent: { ...agentOf(e), ...change } } }) : e), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   };
-  const run = async () => {
+  const interview = async (message?: string) => {
+    if (!editor || !selected || interviewRequests.current.has(selected)) return false;
+    const id = selected, pageSession = currentPage.current?.session;
+    setRunError("");
+    interviewRequests.current.add(id);
+    try {
+      clearTimeout(saveTimer.current); await saving.current;
+      const saved = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
+      if (currentPage.current?.session !== pageSession) return false;
+      receive(saved);
+      await api("/love-spot/agents/interview", { id, ...(message === undefined ? {} : { message }), ...(cwd ? { cwd } : {}) });
+      return true;
+    } catch (e) { if (mounted.current && currentPage.current?.session === pageSession && editor.getSceneElements().some(e => e.id === id)) setRunError(e instanceof Error ? e.message : "The agent could not ask its question."); }
+    finally {
+      interviewRequests.current.delete(id);
+      if (mounted.current && currentPage.current?.session === pageSession) {
+        try { receive(await api<Saved>("/love-spot")); } catch (e) { report(e); }
+      }
+    }
+    return false;
+  };
+  const run = async (confirm = false) => {
     if (!selected || busy) return;
     setBusy(true); setRunError("");
     try {
       clearTimeout(saveTimer.current); await saving.current;
       if (!editor) return;
       receive(await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current))));
-      await api("/love-spot/agents/run", { id: selected, ...(cwd ? { cwd } : {}) });
+      await api("/love-spot/agents/run", { id: selected, ...(confirm ? { confirm: true } : {}), ...(cwd ? { cwd } : {}) });
       receive(await api<Saved>("/love-spot"));
     } catch (e) { if (mounted.current) setRunError(e instanceof Error ? e.message : "The agents could not run."); }
     finally { if (mounted.current) setBusy(false); }
@@ -465,11 +507,14 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
         </form>}
       </div>
-      {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>{agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : agentOf(e)!.status === "waiting" ? " · waiting for you" : ""}</Button>)}</div>}
+      {!!agents.length && <div className="love-agent-list" aria-label="Board agents">{agents.map(e => <Button key={e.id} variant="outline" size="sm" aria-pressed={selected === e.id} aria-label={`Inspect ${agentOf(e)!.name}`} onClick={() => setSelected(e.id)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={avatar(characters.find(c => c.id === agentOf(e)!.preset) ?? characters[0])} alt="" width={32} height={32} />
+        {agentOf(e)!.name}{agentOf(e)!.status === "running" ? " · running" : agentOf(e)!.status === "waiting" ? " · waiting for you" : ""}</Button>)}</div>}
       {editor && <div className="love-agent-toolbar">
         <DropdownMenu open={picker} onOpenChange={setPicker}>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" title="Choose an agent, or type @agent in a text note" />}>Agents</DropdownMenuTrigger>
-          {picker && <CharacterPicker onAdd={add} onCancel={() => setPicker(false)} />}
+          <DropdownMenuTrigger render={<Button variant="outline" size="sm" title="Choose an agent, or press A then click the board" />}>Agents</DropdownMenuTrigger>
+          {picker && <CharacterPicker onAdd={character => add(character)} />}
         </DropdownMenu>
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
@@ -492,7 +537,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       </li>)}</ul>
     </section>}
     {(error || runError) && <div className="love-spot-status" role="alert">{runError || error}<Button variant="ghost" size="sm" onClick={() => { if (runError) setRunError(""); else if (editor) save(); else setAttempt(a => a + 1); }}>{runError ? "Dismiss" : "Retry"}</Button></div>}
-    <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
+    <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} data-placing-agent={placingAgent || undefined} onPointerDownCapture={event => {
+      if (!placingAgent || !editor || event.button !== 0 || !(event.target instanceof HTMLCanvasElement)) return;
+      event.preventDefault(); event.stopPropagation();
+      add(characters[0], viewportCoordsToSceneCoords({ clientX: event.clientX, clientY: event.clientY }, editor.getAppState()));
+    }} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {
       const id = event.dataTransfer.getData(screenshotDrag);
@@ -504,6 +553,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       if (note?.type !== "text") return;
       event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, text: note.originalText || note.text });
     }}>
+      {placingAgent && <div className="love-agent-placement" role="status">Click to add a Researcher · Esc to cancel</div>}
       {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerUp={() => {
         if (!editor) return;
         const ids = editor.getAppState().selectedElementIds;
@@ -512,7 +562,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       }} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"} /> : !error && <p role="status">Opening Love Spot…</p>}
     </div>
     <div className="love-spot-panels" hidden={!talk && !agent}>
-      {agent && <LoveAgentPanel agent={agent} cwd={cwd} busy={busy} onChange={updateAgent} onRun={() => void run()} onClose={() => setSelected(undefined)} onOpenChat={onOpenChat} onAnswer={optionId => void answerPermission(optionId)} />}
+      {agent && <LoveAgentPanel key={selected} agent={agent} cwd={cwd} busy={busy} onChange={updateAgent} onInterview={interview} onRun={confirm => void run(confirm)} onClose={() => setSelected(undefined)} onOpenChat={onOpenChat} onAnswer={optionId => void answerPermission(optionId)} />}
       <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
         onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} sendWithBoard={sendWithBoard} />
     </div>

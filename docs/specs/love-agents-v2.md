@@ -8,6 +8,7 @@ Masih's 19 October worker brief is the acceptance contract. Local candidate only
 - Persist interview turns on the card. Reject malformed/oversized replies visibly, preserve answers on failure, serialize same-card requests, and never restore a deleted card from a late reply. Closing/reopening must not duplicate a question.
 - Refine each current portrait with imagegen (multiple variants, at most four per character), select and trace through SVG Studio multicolour. Keep sources/picks in the requested cache. Embed genuine multicolour paths in the renderer so saved boards remain self-contained.
 - Menu portraits ≥48px, card portraits 96px, readable portraits in tabs. Inspect menu/card/interview in light and dark at normal and narrow widths.
+- Existing default preset portraits upgrade on load; retain tasks, custom image sizes and neighbouring drawings. Canonical SVGs drive menus/tabs; the board uses 512px renders of those SVGs because Excalidraw inverts SVG paint in dark mode.
 
 Plan: failing UI tests using fake ACP → placement/interview implementation → art generation/tracing → affected suites, types, renderer build and desktop/bridge checks → report evidence and commits in the worker brief.
 Boundaries: retain connected-agent execution, permission requests and ordinary drawing. No package installs, external browsing, deployments or real profile changes.

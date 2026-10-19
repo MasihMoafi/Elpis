@@ -44,8 +44,7 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
     for (let i = 0; i < 3; i++) {
       await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
-      await page.getByRole('textbox', { name: 'Task', exact: true }).fill(`Layout task ${i + 1}`);
-      await page.getByRole('textbox', { name: 'Task', exact: true }).press('Enter');
+      await page.getByLabel('Agent details', { exact: true }).waitFor();
       await page.getByRole('button', { name: 'Done', exact: true }).click();
     }
     for (const width of [1600, 1280, 1024, 820]) {
