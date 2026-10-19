@@ -175,3 +175,21 @@ test('a finished chat never keeps offering "Send follow-up": idle status or reop
   await followUp.waitFor({ state: 'detached' });
   assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).count(), 1);
 }));
+
+test('a long chat draws only the turns on screen; off-screen turns skip layout and paint until scrolled to', async () => {
+  const chat = Array.from({ length: 60 }, (_, index) => [`long-${index}`, `Question ${index}`, `Answer ${index}. ${'A sentence of the reply that takes some room. '.repeat(12)}`]);
+  const f = await fixture({ chat });
+  try {
+    await f.open('chat-a');
+    const last = f.page.getByText('Question 59', { exact: true });
+    await last.waitFor();
+    await f.page.waitForTimeout(300);
+    const drawn = text => f.page.getByText(text, { exact: true }).evaluate(node => node.checkVisibility({ contentVisibilityAuto: true }));
+    assert.equal(await drawn('Question 59'), true, 'the newest turn, on screen, is drawn');
+    assert.equal(await drawn('Question 0'), false, 'the first turn, far above, is skipped');
+    await f.page.getByText('Question 0', { exact: true }).scrollIntoViewIfNeeded();
+    await f.page.waitForTimeout(200);
+    assert.equal(await drawn('Question 0'), true, 'scrolled to, it is drawn');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
