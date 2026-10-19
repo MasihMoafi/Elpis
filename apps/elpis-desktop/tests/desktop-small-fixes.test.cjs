@@ -104,7 +104,7 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigati
   const { page } = f, nav = page.locator('aside.sidebar');
   await page.locator('.startup-splash').waitFor({ state: 'detached' });
   const start = nav.getByRole('button', { name: 'New chat', exact: true }); await start.focus();
-  for (const name of ['Workflows', 'Love Spot', 'Ledger', 'Observability']) {
+  for (const name of ['Experiment Lab', 'Workflows', 'Love Spot', 'Ledger', 'Observability']) {
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), name);
   }
