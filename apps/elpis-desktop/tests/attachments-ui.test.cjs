@@ -26,7 +26,8 @@ const plus = page => page.getByRole('button', { name: 'Add files and more', exac
 async function chooseFiles(page, files) {
   await plus(page).click();
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('menuitem', { name: /^Add files or photos/ }).click()]);
-  await chooser.setFiles(files); return chooser;
+  // The over-limit case transfers a 31 MB buffer through Playwright before the app can reject it.
+  await chooser.setFiles(files, { timeout: 30_000 }); return chooser;
 }
 const text = (name, body = `contents of ${name}`) => ({ name, mimeType: 'text/plain', buffer: Buffer.from(body) });
 const picture = (name, buffer = PNG) => ({ name, mimeType: 'image/png', buffer });
