@@ -823,6 +823,9 @@ wss.on("connection", (ws) => {
   const pageFloor = new Map(); // nextCursor -> sort value of the last thread on the page before it
   const previewed = new Set(); // threads the engine lists itself
   const listField = (req) => ({ updated_at: "updatedAt", recency_at: "recencyAt" })[req.sortKey] ?? "createdAt";
+  const previewOf = (first) => first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
+  const runningFirstTurn = (saved) => !saved?.turns?.length && typeof saved?.active?.preview === "string";
+  const processAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
   async function unlistedClaudeThreads(req, page) {
     const field = listField(req);
     const value = (t) => t[field] ?? t.updatedAt ?? 0;
@@ -835,7 +838,7 @@ wss.on("connection", (ws) => {
     const have = new Set(page.data.map((t) => t.id));
     const cwds = req.cwd == null ? null : [req.cwd].flat();
     const candidates = Object.entries(store).filter(([id, saved]) =>
-      !id.startsWith("_") && !have.has(id) && !previewed.has(id) && saved?.turns?.length && !saved.parentThreadId);
+      !id.startsWith("_") && !have.has(id) && !previewed.has(id) && (saved?.turns?.length || runningFirstTurn(saved)) && !saved.parentThreadId);
     const out = new Array(candidates.length);
     let next = 0, failure;
     async function readCandidate(index) {
@@ -852,10 +855,14 @@ wss.on("connection", (ws) => {
       if (/\/archived_sessions\//.test(t.path ?? "") || (cwds && !cwds.includes(t.cwd))) return;
       if (req.modelProviders?.length && !req.modelProviders.includes(t.modelProvider)) return;
       if (value(t) < floor || value(t) >= ceiling) return;
-      const first = saved.turns[0].items?.[0];
-      const preview = first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
+      const preview = saved.turns?.length ? previewOf(saved.turns[0].items?.[0]) : saved.active.preview;
       if (req.searchTerm && ![t.name ?? "", preview].some((text) => text.includes(req.searchTerm))) return;
-      if (preview.trim()) { const listed = { ...t, preview: preview.trim() }; ownModel(listed, store); out[index] = listed; }
+      if (preview.trim()) {
+        const listed = { ...t, preview: preview.trim() }; ownModel(listed, store);
+        // A first turn still running has no saved turn; the store's `active` record, kept by whichever connection runs it, says so.
+        if (runningFirstTurn(saved) && (activeTurns.has(id) || processAlive(saved.active.pid))) listed.status = { type: "active", activeFlags: [] };
+        out[index] = listed;
+      }
     }
     // The engine serializes reads per thread, so independent roots can overlap. Keep the
     // window bounded and retain store order for equal timestamps despite out-of-order replies.
@@ -1598,6 +1605,8 @@ wss.on("connection", (ws) => {
     const userItem = req.kind === "review"
       ? { type: "enteredReviewMode", id: randomUUID(), review: req.reviewHint }
       : { type: "userMessage", id: randomUUID(), clientId: req.params.clientUserMessageId ?? null, content: input };
+    // A chat's first turn is not a saved turn until it ends; this lets any connection list the chat meanwhile.
+    updateStore((st) => { if (!st[threadId]?.turns?.length) st[threadId] = { ...st[threadId], active: { turnId, startedAt, pid: process.pid, preview: previewOf(userItem).trim().slice(0, 500) } }; });
     notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
     notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
 
@@ -1898,7 +1907,7 @@ wss.on("connection", (ws) => {
     const completedAt = Math.floor(now() / 1000);
     {
       const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 });
-      await updateStore((st) => { st[threadId] = { ...st[threadId], turns: [...(st[threadId]?.turns ?? []), record].slice(-200) }; });
+      await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record].slice(-200) }; });
     }
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
