@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
@@ -403,6 +403,104 @@ test('Love Spot independent processes serialize their merges on the same drawing
   const module = new URL('./love-spot-store.cjs', import.meta.url).pathname;
   await Promise.all(Array.from({ length: 8 }, (_, i) => exec(process.execPath, ['-e', `const {createLoveSpot}=require(${JSON.stringify(module)});createLoveSpot({directory:process.argv[1]}).save(JSON.parse(process.argv[2])).catch(e=>{console.error(e);process.exitCode=1});`, f.directory, JSON.stringify({ elements: [element(`process-${i}`)], files: {} })])));
   assert.equal((await f.load()).scene.elements.length, 8);
+});
+
+for (const barrier of ['owner-read', 'owner-unlink', 'empty-claim']) test(`a stale lock waiter cannot reap its live successor after ${barrier}`, { timeout: 15000 }, async t => {
+  const f = await fixture(t), module = fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url));
+  const script = `
+    const fs = require('node:fs/promises'), [directory, role, barrier] = process.argv.slice(1);
+    const { createLoveSpot } = require(${JSON.stringify(module)});
+    const proceed = new Promise(resolve => process.once('message', resolve));
+    const read = fs.readFile, write = fs.writeFile, unlink = fs.unlink, open = fs.open, kill = process.kill;
+    let held = false;
+    fs.open = async (...args) => {
+      if (barrier === 'empty-claim' && args[1] === 'wx' && String(args[0]).endsWith('/owner') && role === 'waiter' && !held) {
+        held = true; process.send('before-claim'); await proceed;
+      }
+      const handle = await open(...args);
+      if (barrier === 'empty-claim' && args[1] === 'wx' && String(args[0]).endsWith('/owner') && role === 'successor' && !held) {
+        held = true; process.send('owns'); await proceed;
+      }
+      return handle;
+    };
+    fs.readFile = async (...args) => {
+      const value = await read(...args);
+      if (role === 'waiter' && barrier === 'owner-read' && String(args[0]).endsWith('/owner') && !held) {
+        held = true; process.send('read-old'); await proceed;
+      }
+      return value;
+    };
+    fs.writeFile = async (...args) => {
+      const result = await write(...args);
+      if (String(args[0]).endsWith('/.scene-lock/owner')) {
+        process.send('owns');
+        if (['first', 'successor'].includes(role) && !held) { held = true; await proceed; }
+      }
+      return result;
+    };
+    fs.unlink = async (...args) => {
+      if (role === 'waiter' && barrier === 'owner-unlink' && String(args[0]).endsWith('/owner') && !held) {
+        held = true; process.send('before-unlink'); await proceed;
+      }
+      return unlink(...args);
+    };
+    process.kill = (...args) => { const result = kill(...args); process.send('probed-live'); return result; };
+    createLoveSpot({ directory }).save({ elements: [{ id: role, type: 'rectangle', version: 1, versionNonce: 0, x: 0, y: 0, width: 10, height: 10 }], files: {} })
+      .then(() => process.disconnect()).catch(error => { console.error(error); process.exitCode = 1; process.disconnect(); });
+  `;
+  const worker = role => {
+    const child = spawn(process.execPath, ['-e', script, f.directory, role, barrier], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+    const messages = []; let stderr = '';
+    child.on('message', value => messages.push(value)); child.stderr.on('data', data => { stderr += data; });
+    const exit = new Promise(resolve => child.once('exit', code => resolve({ code, stderr })));
+    t.after(() => { if (child.exitCode === null) child.kill(); });
+    const wait = async choices => {
+      const end = Date.now() + 5000;
+      while (Date.now() < end) {
+        const message = messages.find(value => choices.includes(value));
+        if (message) return message;
+        if (child.exitCode !== null) throw Error(`Lock worker ${role} exited: ${stderr}`);
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      throw Error(`Lock worker ${role} did not report ${choices}`);
+    };
+    return { child, exit, wait };
+  };
+  const first = worker('first'); await first.wait(['owns']);
+  let waiter;
+  if (barrier === 'owner-read') {
+    waiter = worker('waiter'); await waiter.wait(['read-old']);
+    first.child.send('continue'); assert.equal((await first.exit).code, 0);
+  } else {
+    first.child.send('continue'); assert.equal((await first.exit).code, 0);
+    const lock = path.join(f.directory, '.scene-lock');
+    await fs.mkdir(lock);
+    if (barrier === 'owner-unlink') await fs.writeFile(path.join(lock, 'owner'), String(first.child.pid));
+    else { const old = new Date(Date.now() - 31000); await fs.utimes(lock, old, old); }
+    waiter = worker('waiter'); await waiter.wait([barrier === 'owner-unlink' ? 'before-unlink' : 'before-claim']);
+    if (barrier === 'owner-unlink') { const cleaner = worker('cleaner'); assert.equal((await cleaner.exit).code, 0); }
+  }
+  const successor = worker('successor'); await successor.wait(['owns']);
+  waiter.child.send('continue');
+  assert.equal(await waiter.wait(['owns', 'probed-live']), 'probed-live', 'a stale PID observation must not steal a live successor lock');
+  if (barrier === 'empty-claim') assert.equal(await fs.readFile(path.join(f.directory, '.scene-lock/owner'), 'utf8'), '', 'a failed claimant must leave the winning claim intact');
+  successor.child.send('continue');
+  for (const result of await Promise.all([successor.exit, waiter.exit])) assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual((await f.load()).scene.elements.map(e => e.id).sort(), (barrier === 'owner-unlink' ? ['cleaner', 'first', 'successor', 'waiter'] : ['first', 'successor', 'waiter']));
+});
+
+test('empty locks retain their grace and busy timeout, then recover without losing saved elements', { timeout: 15000 }, async t => {
+  const f = await fixture(t), lock = path.join(f.directory, '.scene-lock');
+  await f.save({ elements: [element('kept')], files: {} });
+  await fs.mkdir(lock);
+  const store = createLoveSpot({ directory: f.directory, screenshots: f.screenshots }), started = Date.now();
+  await assert.rejects(store.save({ elements: [element('pending')], files: {} }), error => error.status === 503 && /drawing is busy/.test(error.message));
+  assert.ok(Date.now() - started >= 5000, 'a fresh empty lock keeps the existing five-second timeout');
+  assert.deepEqual((await f.load()).scene.elements.map(e => e.id), ['kept']);
+  const old = new Date(Date.now() - 31000); await fs.utimes(lock, old, old);
+  await store.save({ elements: [element('pending')], files: {} });
+  assert.deepEqual((await f.load()).scene.elements.map(e => e.id).sort(), ['kept', 'pending']);
+  await assert.rejects(fs.access(lock), { code: 'ENOENT' });
 });
 
 test('Love Spot watcher does not reread an unchanged drawing and delivers external replacements', async t => {

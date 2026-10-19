@@ -155,12 +155,31 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       try { await fs.mkdir(lock); break; }
       catch (e) {
         if (e.code !== 'EEXIST') throw e;
+        let directoryHandle;
         try {
-          const owner = Number(await fs.readFile(path.join(lock, 'owner'), 'utf8'));
-          try { process.kill(owner, 0); } catch (probe) { if (probe.code === 'ESRCH') { await fs.unlink(path.join(lock, 'owner')); await fs.rmdir(lock); } }
+          // Pin Linux cleanup to the directory whose owner was read. Another
+          // process may release it and acquire a new lock at the same path.
+          if (process.platform === 'linux') directoryHandle = await fs.open(lock, 'r');
+          const ownerFile = directoryHandle ? `/proc/self/fd/${directoryHandle.fd}/owner` : path.join(lock, 'owner');
+          try {
+            const owner = Number(await fs.readFile(ownerFile, 'utf8'));
+            try { process.kill(owner, 0); }
+            catch (probe) { if (probe.code === 'ESRCH') { await fs.unlink(ownerFile); await fs.rmdir(lock); } }
+          } catch (probe) {
+            if (probe.code === 'ENOENT') {
+              const stat = directoryHandle ? await directoryHandle.stat() : await fs.stat(lock);
+              if (Date.now() - stat.mtimeMs > 30000) {
+                // Claim the empty generation before removing it. A handle to
+                // an already removed directory cannot create this owner file.
+                const claim = await fs.open(ownerFile, 'wx');
+                try { await claim.writeFile(String(process.pid)); } finally { await claim.close(); }
+                await fs.unlink(ownerFile); await fs.rmdir(lock);
+              }
+            }
+          }
         } catch (probe) {
-          if (probe.code === 'ENOENT') { try { if (Date.now() - (await fs.stat(lock)).mtimeMs > 30000) await fs.rmdir(lock); } catch {} }
-        }
+          if (!['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(probe.code)) throw probe;
+        } finally { await directoryHandle?.close(); }
         if (Date.now() - started > 5000) throw fail('The drawing is busy. Please retry.', 503);
         await pause(10);
       }
