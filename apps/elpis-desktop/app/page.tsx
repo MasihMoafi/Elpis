@@ -630,6 +630,9 @@ export default function Home() {
             if (notice) setRuntimeNotices(prev => ({ ...prev, [threadId]: notice }));
           }
           if (method === "thread/status/changed" && params.status) patchThread(params.threadId, { status: params.status });
+          // The engine's word that a chat is no longer running ends its turn here too, even if that turn's own end was
+          // missed (another window, a reconnect, a dropped stream), so a finished chat never keeps offering a follow-up.
+          if (method === "thread/status/changed" && params.status && params.status.type !== "active") setActiveTurns(prev => without(prev, params.threadId));
           // The engine's applied permission mode, from this or any other client.
           if (method === "thread/settings/updated" && params.permissions) setThreadModes(prev => ({ ...prev, [params.threadId]: params.permissions }));
           if (method === "thread/settings/updated" && params.threadSettings?.model) {

@@ -163,3 +163,15 @@ test('a stopped turn says so in the chat, whoever stopped it, so a stop is never
   f.emit('message', { method: 'turn/started', params: { threadId: 'chat-a', turn: { id: 't5' } } });
   await note.waitFor({ state: 'detached' });
 }));
+
+test('a finished chat never keeps offering "Send follow-up": idle status or reopening clears a turn whose end was missed', () => using({ running: true }, async f => {
+  const { page } = f;
+  const followUp = page.getByRole('button', { name: 'Send follow-up', exact: true });
+  await f.composer.fill('next');
+  await followUp.waitFor();
+  for (let tries = 0; f.listening() < 1 && tries < 100; tries++) await sleep(50);
+  // The turn's own end never arrives (another window, a reconnect, a dropped stream); the engine says the chat is idle.
+  f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-a', status: { type: 'idle' } } });
+  await followUp.waitFor({ state: 'detached' });
+  assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).count(), 1);
+}));
