@@ -46,7 +46,8 @@ async function guardDesktopStore(target) {
     } });
   }, STORE_KEYS.source);
 }
-/** Every orange the light theme paints (hue 15–50°, saturated, mid lightness), as `selector: property value`. The
+/** Every unintended orange the light theme paints (hue 15–50°, saturated, mid lightness), as `selector: property value`.
+ * The shared primary action deliberately has a gold background in both themes; its text and edges still count. The
  * colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
 const oranges = (page, exclude = '') => page.evaluate(exclude => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
@@ -73,7 +74,10 @@ const oranges = (page, exclude = '') => page.evaluate(exclude => {
     for (const side of ['top', 'right', 'bottom', 'left']) if (parseFloat(style[`border-${side}-width`]) > 0) checks.push([`border-${side}-color`, style[`border-${side}-color`]]);
     if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) checks.push(['outline-color', style.outlineColor]);
     if (element instanceof SVGElement) checks.push(['fill', style.fill], ['stroke', style.stroke]);
-    for (const [property, value] of checks) for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+    for (const [property, value] of checks) {
+      if (property === 'background-color' && element.matches('button.primary-cut')) continue;
+      for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+    }
   }
   return [...hits];
 }, exclude);
