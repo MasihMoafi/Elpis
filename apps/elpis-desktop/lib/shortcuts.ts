@@ -10,7 +10,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "next-pane", group: "Navigation", label: "Focus next split view", keys: ["Ctrl+]"] },
   { id: "previous-pane", group: "Navigation", label: "Focus previous split view", keys: ["Ctrl+["] },
   { id: "open-split", group: "Navigation", label: "Open session in split view", keys: ["Alt+click"] },
-  { id: "rename", group: "Chat", label: "Rename chat", keys: ["Ctrl+Alt+R"] },
+  { id: "rename", group: "Chat", label: "Rename chat (F2 on a focused chat in the sidebar)", keys: ["Ctrl+Alt+R", "F2"] },
   { id: "archive", group: "Chat", label: "Archive chat", keys: ["Ctrl+Shift+A"] },
   { id: "pin", group: "Chat", label: "Toggle pin", keys: ["Ctrl+Alt+P"] },
   // Handled by the sidebar's chat list (app/page.tsx), where the row has focus.

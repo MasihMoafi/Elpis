@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { cloneElement, useEffect, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
 import { CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Pencil, PinOff, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,13 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     catch (e) { setError(message(e)); }
     finally { setBusy(false); }
   }
+  /** F2 on the focused row renames that row's chat; text fields, and the menu and dialog (portals), keep F2 to themselves. */
+  const renameKey = (event: KeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (event.key !== "F2" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.defaultPrevented) return;
+    if (!event.currentTarget.contains(target) || target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=menu], [role=dialog], [role=alertdialog]")) return;
+    event.preventDefault(); rename();
+  };
   const many = selection && selection.length > 1 ? selection : null, suffix = many ? ` ${many.length} chats` : "";
   const remove: MenuAction | undefined = onRequestDelete || onDelete ? { id: "delete", label: `Delete${suffix}`, icon: <Trash2 size={14} />, hint: "D", destructive: true, run: () => onRequestDelete ? onRequestDelete(thread) : setDeleting([thread]) } : undefined;
   const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, run: () => { for (const chat of many ?? [thread]) void onArchive(chat); } } : undefined;
@@ -80,7 +87,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     { id: "new-group", label: "New group…", icon: <FolderPlus size={14} />, separated: true, run: group.onNew },
   ] } : undefined;
   const actions = (many ? [move, archive, remove] : [
-    onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, run: rename } : undefined,
+    onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, run: () => onPin(thread) } : undefined,
     move,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
@@ -93,7 +100,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>
-    <RightClickMenu actions={actions} area={area}>
+    <RightClickMenu actions={actions} area={many || !onRename ? area : cloneElement(area as ReactElement<{ onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }>, { onKeyDown: event => { (area.props as { onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }).onKeyDown?.(event); renameKey(event); } })}>
       {children(<MoreMenu actions={actions} className="thread-actions" label={label ?? `Actions for ${current}`} title="Rename, archive or delete" />)}
     </RightClickMenu>
     <AlertDialog open={renaming} onOpenChange={value => { if (!busy && !value) setRenaming(false); }}>

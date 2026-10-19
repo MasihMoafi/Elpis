@@ -105,6 +105,40 @@ test('a chat row opens its "…" menu on right-click, at the pointer, without th
   await eventually(async () => assert.deepEqual(calls.filter(call => call.path.endsWith('/archive')).map(call => call.path), ['/api/threads/delta/archive']));
 }));
 
+test('F2 renames the focused chat row, shows F2 in the Rename item, and leaves typing and other rows alone', () => fixture(async ({ page, row, items, closeMenu, menu, calls }) => {
+  const dialog = page.getByRole('alertdialog'), field = dialog.getByLabel('Conversation name');
+  const link = id => row(id).locator('.thread-link');
+  // Discoverable: the Rename item carries the key.
+  await row('bravo').click({ button: 'right' });
+  await items();
+  assert.equal(await menu().getByRole('menuitem', { name: /^Rename/ }).locator('kbd').textContent(), 'F2');
+  await closeMenu();
+  // Positive: the focused row is the one renamed, not the open chat (Alpha) or a neighbour.
+  await link('charlie').focus(); await page.keyboard.press('F2');
+  await field.waitFor(); assert.equal(await field.inputValue(), 'Charlie');
+  await field.fill('Charlie renamed');
+  await page.keyboard.press('F2'); // inside the dialog's field F2 does nothing more
+  assert.equal(await dialog.count(), 1);
+  await page.keyboard.press('Enter');
+  await eventually(async () => assert.deepEqual(calls.filter(call => call.path.endsWith('/rename')), [{ path: '/api/threads/charlie/rename', data: { name: 'Charlie renamed' } }]));
+  await dialog.waitFor({ state: 'hidden' });
+  // Cancel: Escape closes without saving.
+  await link('delta').focus(); await page.keyboard.press('F2');
+  await field.waitFor(); assert.equal(await field.inputValue(), 'Delta');
+  await field.fill('Never saved'); await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+  assert.equal(calls.filter(call => call.path.endsWith('/rename')).length, 1);
+  // Negative: with focus in the message box (a text field), F2 opens nothing.
+  const composer = page.locator('textarea').first(); await composer.focus(); await page.keyboard.press('F2');
+  await page.waitForTimeout(150); assert.equal(await dialog.count(), 0);
+  // Negative: with Ctrl, Shift or Alt held, or on a menu, F2 is not Rename.
+  await link('bravo').focus();
+  for (const combo of ['Control+F2', 'Shift+F2', 'Alt+F2']) { await page.keyboard.press(combo); await page.waitForTimeout(80); assert.equal(await dialog.count(), 0, combo); }
+  // The open menu's F2 picks Rename for the row whose menu it is.
+  await row('bravo').click({ button: 'right' }); await menu().waitFor(); await page.keyboard.press('F2');
+  await field.waitFor(); assert.equal(await field.inputValue(), 'Bravo');
+  await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+}));
+
 test('right-click on a chat inside a Ctrl/Shift selection acts on the whole selection, as D does', () => fixture(async ({ page, row, items, closeMenu, popup, shot, calls }) => {
   const link = id => row(id).locator('.thread-link');
   await link('alpha').click(); await link('charlie').click({ modifiers: ['Control'] }); await link('delta').click({ modifiers: ['Control'] });

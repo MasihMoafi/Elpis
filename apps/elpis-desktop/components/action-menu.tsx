@@ -46,7 +46,7 @@ export const letterKey = (event: KeyboardEvent<HTMLElement>) => /^Key[A-Z]$/.tes
 
 /** The key shown beside an item picks it, as a click does (D for Delete, as in Claude's chat menu). */
 function hintKeys(event: KeyboardEvent<HTMLElement>) {
-  if (event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+  if (event.ctrlKey || event.metaKey || event.altKey || (event.key.length !== 1 && event.key !== "F2")) return;
   const item = event.currentTarget.querySelector<HTMLElement>(`[data-hint="${CSS.escape(letterKey(event))}"]`);
   if (!item) return;
   event.preventDefault(); item.click();
