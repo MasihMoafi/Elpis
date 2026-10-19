@@ -28,8 +28,49 @@ async function launch(args, flushText, flushBrowsers, canRestart = async () => t
   vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
   const settle = () => new Promise(resolve => setImmediate(resolve)); await settle();
-  return { app, calls, lock, settle, identity, restart: target => vm.runInContext('quitApp', context)(target) };
+  return { app, calls, lock, settle, identity, sessions, quit: () => vm.runInContext('quitApp', context)(), restart: target => vm.runInContext('quitApp', context)(target) };
 }
+
+function editableHost(control, calls) {
+  const webContents = Object.assign(new EventEmitter(), { executeJavaScript: async script => {
+    if (script.includes('__elpisHasUnsavedFiles')) { calls.push('files-check'); if (control.readFailure) throw Error('Private file status read failed'); return control.dirty; }
+    if (script.includes('__elpisFlushWorkflow')) { calls.push('workflow-flush'); return control.workflowSaved; }
+    if (script.includes('inert = true')) control.inert = true;
+    if (script.includes('inert = false')) control.inert = false;
+    if (script.includes('storage')) calls.push('storage-flush');
+    return true;
+  } });
+  return { isDestroyed: () => false, webContents };
+}
+for (const action of ['quit', 'restart']) test(`explicit ${action} keeps all windows open for hidden source edits and permits a clean retry`, async () => {
+  const f = await launch([], async () => true), clean = { dirty: false, workflowSaved: true }, hidden = { dirty: true, workflowSaved: true };
+  f.sessions.windows.add(editableHost(clean, f.calls)); f.sessions.windows.add(editableHost(hidden, f.calls));
+  const run = () => action === 'quit' ? f.quit() : f.restart('/selected/new/launch');
+  await assert.rejects(run(), /Save or revert file edits/);
+  assert.equal(hidden.dirty, true); assert.equal(clean.inert, false); assert.equal(hidden.inert, false);
+  assert.ok(!f.calls.includes('board-close')); assert.ok(!f.calls.includes('storage-flush'));
+  hidden.dirty = false; assert.equal(await run(), true); assert.ok(f.calls.includes('board-close'));
+});
+test('explicit quit flushes the latest workflow before native storage and refuses a failed graph save', async () => {
+  const f = await launch([], async () => true), control = { dirty: false, workflowSaved: false };
+  f.sessions.windows.add(editableHost(control, f.calls));
+  await assert.rejects(f.quit(), /Workflow could not be saved/);
+  assert.ok(!f.calls.includes('storage-flush')); assert.ok(!f.calls.includes('board-close')); assert.equal(control.inert, false);
+  control.workflowSaved = true; assert.equal(await f.quit(), true);
+  assert.ok(f.calls.lastIndexOf('workflow-flush') < f.calls.indexOf('storage-flush'));
+  assert.ok(f.calls.indexOf('storage-flush') < f.calls.indexOf('board-close'));
+});
+for (const dirty of [undefined, null, 1, 'false']) test(`an invalid installed file status (${String(dirty)}) refuses explicit quit`, async () => {
+  const f = await launch([], async () => true), control = { dirty, workflowSaved: true };
+  f.sessions.windows.add(editableHost(control, f.calls));
+  await assert.rejects(f.quit(), /Save or revert file edits/); assert.equal(control.inert, false); assert.ok(!f.calls.includes('board-close'));
+});
+test('a failed file status read restores editing and permits retry after the renderer recovers', async () => {
+  const f = await launch([], async () => true), control = { dirty: false, workflowSaved: true, readFailure: true };
+  f.sessions.windows.add(editableHost(control, f.calls));
+  await assert.rejects(f.quit(), /Private file status read failed/); assert.equal(control.inert, false); assert.ok(!f.calls.includes('board-close'));
+  control.readFailure = false; assert.equal(await f.quit(), true);
+});
 
 test('app quit waits for live text before closing the board server; a failure permits retry', async () => {
   let release, saves = 0;

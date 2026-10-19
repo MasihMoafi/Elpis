@@ -12,7 +12,7 @@ os.homedir = () => root;
 const reopened = process.env.APP_UPDATE_REOPENED === '1';
 const stage = reopened ? 'reopened' : 'initial';
 const log = value => fs.appendFileSync(path.join(root, 'events.jsonl'), JSON.stringify({ stage, pid: process.pid, ...value }) + '\n');
-const control = { failWrites: false, canRestart: true, errors: [], trayMenu: null };
+const control = { failWrites: false, failWorkflowWrites: false, canRestart: true, errors: [], trayMenu: null };
 const appDirectory = path.resolve(__dirname, '..');
 const mainFile = path.join(appDirectory, 'desktop/main.cjs');
 const localRequire = createRequire(mainFile);
@@ -40,6 +40,7 @@ const load = name => {
     const store = state.createStateStore(file), patch = store.patch;
     store.patch = async (...args) => {
       if (control.failWrites && args[0]?.key?.startsWith('elpis-draft-v1:')) throw Error('Private workspace save refused');
+      if (control.failWorkflowWrites && args[0]?.key === 'elpis-workflow-draft-v1') throw Error('Private workflow save refused');
       return patch(...args);
     };
     control.store = store; return store;

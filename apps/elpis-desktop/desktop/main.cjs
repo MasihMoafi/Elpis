@@ -108,6 +108,10 @@ async function quitApp(restartTarget) {
       if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('Wait for running chats and agents to finish before restarting.');
       // Freeze input until every final draft is acknowledged. Failed saves restore editing below.
       await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('document.documentElement.inert = true; true')));
+      const dirtyFiles = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisHasUnsavedFiles" in window) ? window.__elpisHasUnsavedFiles : false')));
+      if (dirtyFiles.some(dirty => dirty !== false)) throw Error('Save or revert file edits in every window before quitting or restarting.');
+      const workflowsSaved = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisFlushWorkflow" in window) ? window.__elpisFlushWorkflow() : true')));
+      if (workflowsSaved.some(saved => saved !== true)) throw Error('Workflow could not be saved. Keep this window open and retry.');
       await quickEntry?.flush?.();
       if (await sessionWindows?.flushText() === false) throw Error('Text could not be saved. Keep this window open and press Ctrl+S before retrying.');
       await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('window.elpisDesktop?.storage?.flush?.() ?? true')));

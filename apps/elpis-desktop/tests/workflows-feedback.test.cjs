@@ -8,6 +8,22 @@ const agent = (id, x = 0, y = 0, extra = {}) => ({ id, type: 'agent', position: 
 const wire = (source, target, extra = {}) => ({ id: `${source}->${target}`, source, target, ...extra });
 const selected = f => f.canvas.locator('.react-flow__node.selected').evaluateAll(nodes => nodes.map(n => n.dataset.id).sort());
 
+test('explicit workflow flush saves an edit before its debounce and reports a refused save for retry', async () => {
+  const f = await openCanvas({ graph: { name: 'Before explicit flush', nodes: [], edges: [] }, desktop: true });
+  try {
+    await f.page.clock.install(); await f.page.clock.pauseAt(new Date());
+    await f.canvas.getByRole('textbox', { name: 'Graph name', exact: true }).fill('Latest workflow verdict 824');
+    const flushed = await f.page.evaluate(() => window.__elpisFlushWorkflow?.());
+    assert.equal(flushed, true); assert.equal(await f.page.evaluate(() => JSON.parse(window.elpisDesktop.storage.getItem('elpis-workflow-draft-v1')).name), 'Latest workflow verdict 824');
+    await f.page.evaluate(() => { window.__workingSetItem = window.elpisDesktop.storage.setItem; window.elpisDesktop.storage.setItem = () => { throw Error('Private graph storage refused'); }; });
+    await f.canvas.getByRole('textbox', { name: 'Graph name', exact: true }).fill('Exact retry workflow verdict 825');
+    assert.equal(await f.page.evaluate(() => window.__elpisFlushWorkflow()), false);
+    await f.page.evaluate(() => { window.elpisDesktop.storage.setItem = window.__workingSetItem; });
+    assert.equal(await f.page.evaluate(() => window.__elpisFlushWorkflow()), true);
+    assert.equal(await f.page.evaluate(() => JSON.parse(window.elpisDesktop.storage.getItem('elpis-workflow-draft-v1')).name), 'Exact retry workflow verdict 825'); assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 for (const middle of [false, true]) test(`bottom + adds only a successor: ${middle ? 'middle agent with folded panel' : 'root agent'}`, async () => {
   const original = { name: 'One successor', nodes: [agent('Start', 260), agent('Existing', 520), { id: 'note', type: 'note', position: { x: 520, y: 140 }, data: { text: 'Keep this space clear' } }, ...(middle ? [agent('Input', 0)] : [])], edges: [wire('Start', 'Existing'), ...(middle ? [wire('Input', 'Start')] : [])] };
   const f = await openCanvas({ graph: original, width: middle ? 1100 : 1440 });

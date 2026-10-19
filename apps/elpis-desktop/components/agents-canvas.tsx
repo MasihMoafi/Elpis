@@ -440,7 +440,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   useEffect(() => { const timer = setTimeout(() => { if (!saveGraph(graph)) setNotice("Could not keep the graph on this device."); }, 300); return () => clearTimeout(timer); }, [graph]);
   // A change made just before the window closes or reloads is kept too: the page saves the latest board on its way out.
   const latest = useRef(graph); latest.current = graph;
-  useEffect(() => { const flush = () => saveGraph(latest.current); window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, []);
+  useEffect(() => { const flush = () => saveGraph(latest.current); window.__elpisFlushWorkflow = flush; window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); if (window.__elpisFlushWorkflow === flush) delete window.__elpisFlushWorkflow; window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, []);
 
   // The existing provider catalog, shared by Add and the inspector; execution uses ACP.
   const choices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null).filter(choice => !choice.id.endsWith("/")), [models, settings]);

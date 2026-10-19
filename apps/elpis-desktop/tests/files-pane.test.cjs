@@ -66,6 +66,55 @@ const REPLY = [
 ].join('\n\n');
 const TURNS = [['t1', 'Where is the parser?', REPLY], ['t2', 'Run them.', 'All green.']];
 
+test('quit safety reads every project document, keeps refused saves dirty, and clears only after save or revert', async () => {
+  const second = '/tmp/second-file-project', original = 'export const exact = 1;\n', changed = 'export const exact = 821; // متن فارسی\n';
+  const disk = new Map([[`${CWD}/src/a.ts`, original], [`${second}/src/b.ts`, original]]); let failSave = false, version = 1, pauseSave = false, releaseSave, saveStarted;
+  const pendingSave = new Promise(resolve => saveStarted = resolve);
+  const threads = [['chat-a', CWD], ['chat-b', second]].map(([id, cwd]) => ({ id, cwd, name: id, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
+  const f = await fixture({ chat: [['file-guard', 'Show the file', '`src/a.ts`'], ['file-guard-tail', 'Ready', 'All green.']], routes: {
+    '/api/threads': (_body, url) => ({ data: url.searchParams.get('archived') === 'true' || url.searchParams.has('ancestorThreadId') ? [] : threads, nextCursor: null }),
+    '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'second-file', item: { id: 'second-file', type: 'agentMessage', text: '`src/b.ts`' } }], nextCursor: null }),
+    '/api/threads/chat-b/resume': () => ({ thread: threads[1], activeTurnId: null }),
+    '/api/files/dir': (_body, url) => ({ data: url.searchParams.get('cwd') === second ? [{ name: 'b.ts', dir: false }] : [] }),
+    '/api/file': async (body, url) => {
+      if (body && failSave) return { __http: 409, error: 'Private file save refused' };
+      const key = body ? `${body.cwd}/${body.path}` : `${url.searchParams.get('cwd')}/${url.searchParams.get('path')}`;
+      if (body && pauseSave) { saveStarted(); await new Promise(resolve => releaseSave = resolve); }
+      if (body) { disk.set(key, body.content); return { mtimeMs: ++version }; }
+      return { content: disk.get(key), size: disk.get(key)?.length ?? 0, mtimeMs: version };
+    },
+  } });
+  const dirty = () => f.page.evaluate(() => window.__elpisHasUnsavedFiles);
+  const editor = file => f.page.getByRole('textbox', { name: `Contents of ${file}`, exact: true });
+  const saveFile = () => f.page.getByRole('region', { name: 'File viewer' }).getByRole('button', { name: 'Save', exact: true }).click();
+  try {
+    await f.open('chat-a'); await f.page.locator('.message.agent').getByRole('button', { name: 'src/a.ts', exact: true }).click();
+    await editor('src/a.ts').fill(changed); assert.equal(await dirty(), true, 'actual typed file edits are exposed');
+    assert.equal(await f.page.evaluate(() => Reflect.set(window, '__elpisHasUnsavedFiles', false)), false, 'the status is read-only'); assert.equal(await dirty(), true);
+    assert.equal(disk.get(`${CWD}/src/a.ts`), original, 'the safety probe never writes source files');
+    await f.page.getByRole('button', { name: 'Close side panel', exact: true }).click(); assert.equal(await dirty(), true, 'hidden pane edits remain dirty');
+    await f.open('chat-b'); await f.page.locator('.message.agent').getByRole('button', { name: 'src/b.ts', exact: true }).click();
+    await editor('src/b.ts').fill(changed); await saveFile();
+    await eventually(async () => assert.equal(disk.get(`${second}/src/b.ts`), changed));
+    assert.equal(await dirty(), true, 'saving the current project cannot hide edits in another project');
+    await f.open('chat-a'); assert.equal(await editor('src/a.ts').inputValue(), changed);
+    failSave = true; await saveFile(); await f.page.getByRole('alert').filter({ hasText: 'Private file save refused' }).waitFor();
+    assert.equal(await dirty(), true); assert.equal(await editor('src/a.ts').inputValue(), changed); assert.equal(disk.get(`${CWD}/src/a.ts`), original);
+    failSave = false; await saveFile(); await f.page.waitForFunction(() => window.__elpisHasUnsavedFiles === false);
+    assert.equal(disk.get(`${CWD}/src/a.ts`), changed);
+    await editor('src/a.ts').fill(changed + '// deliberately reverted\n'); assert.equal(await dirty(), true);
+    await f.page.getByRole('button', { name: 'Revert changes', exact: true }).click(); assert.equal(await dirty(), false); assert.equal(await editor('src/a.ts').inputValue(), changed);
+    pauseSave = true; await editor('src/a.ts').fill(changed + '// pending save\n'); await saveFile(); await pendingSave;
+    await f.page.getByRole('button', { name: 'Revert changes', exact: true }).click();
+    assert.equal(await editor('src/a.ts').inputValue(), changed); assert.equal(await dirty(), true, 'a write still in flight blocks even when current text equals its old saved text');
+    releaseSave(); await f.page.getByRole('button', { name: 'Save', exact: true }).waitFor();
+    assert.equal(await dirty(), true, 'acknowledging different sent text keeps the current local text dirty');
+    await f.page.getByRole('button', { name: 'Revert changes', exact: true }).click(); assert.equal(await dirty(), false);
+    assert.equal(await editor('src/a.ts').inputValue(), changed + '// pending save\n');
+    assert.deepEqual(f.errors, []);
+  } finally { releaseSave?.(); await f.close(); }
+});
+
 /** The desktop calls the pane makes, recorded in the page: the system's app, the folder, the editors installed and one started. */
 const prepare = (page, editors) => page.evaluate(editors => {
   window.__opened = []; window.__edited = [];

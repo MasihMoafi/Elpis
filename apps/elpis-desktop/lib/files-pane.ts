@@ -28,6 +28,10 @@ const enc = encodeURIComponent;
 export const docKey = (cwd: string, path: string) => `${cwd}\0${path}`;
 export const dirKey = (cwd: string, dir: string, hidden: boolean) => `${cwd}\0${dir}\0${hidden ? 1 : 0}`;
 export const isDirty = (doc: Doc | undefined) => doc?.status === "ready" && doc.text !== doc.saved;
+// Quit inspects every project, even when its Files pane is hidden or detached. Source files are never autosaved here.
+if (typeof window !== "undefined") Object.defineProperty(window, "__elpisHasUnsavedFiles", { configurable: true,
+  get: () => Object.values(state.docs).some(doc => isDirty(doc) || (doc.status === "ready" && doc.saving)),
+});
 const idle = blank();
 const paneOf = (cwd: string): Pane => state.panes[cwd] ?? idle;
 /** The Files tab's state for a folder (what a folder not opened yet starts with). */
