@@ -184,8 +184,16 @@ impl AgentsOverviewProjectGroup {
     }
 }
 
+#[derive(Clone, Copy)]
+enum AgentsOverviewMouseTarget {
+    Task(ThreadId),
+    ShowMore,
+    Filter(usize),
+}
+
 #[derive(Default)]
 pub(super) struct AgentsOverviewViewState {
+    mouse_targets: Vec<(Rect, AgentsOverviewMouseTarget)>,
     scroll: usize,
     page_height: usize,
     status_filter: usize,
@@ -498,6 +506,10 @@ impl AgentsOverviewView {
 }
 
 impl BottomPaneView for AgentsOverviewView {
+    fn handle_mouse_event(&mut self, event: crossterm::event::MouseEvent) -> bool {
+        self.command_center_mouse(event)
+    }
+
     fn view_id(&self) -> Option<&'static str> {
         Some(AGENTS_OVERVIEW_VIEW_ID)
     }

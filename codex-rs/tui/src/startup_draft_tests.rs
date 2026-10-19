@@ -926,3 +926,70 @@ async fn startup_draft_preserves_large_pastes_without_attaching_images() {
     assert_eq!(draft.cursor, draft.text.len());
     assert!(draft.local_images.is_empty());
 }
+
+#[tokio::test]
+async fn tui_pointer_startup_draft_drag_copies_exact_text_and_survives_draws() -> std::io::Result<()>
+{
+    use crate::clipboard_copy::CopyStatus;
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    let text = "DRAFT_SELECT alpha beta gamma";
+    for (protected, pending) in [(false, false), (false, true), (true, false)] {
+        let mut pump = quiet_startup_test_pump();
+        pump.submission_pending = pending;
+        let mut tui = crate::tui::test_support::make_test_tui()?;
+        tui.set_owned_screen(true)?;
+        pump.bottom_pane.insert_str(text);
+        pump.handle_event(&mut tui, TuiEvent::Draw)?;
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let (x, y) = buffer
+            .content()
+            .chunks(usize::from(buffer.area.width))
+            .enumerate()
+            .find_map(|(y, row)| {
+                let line = row
+                    .iter()
+                    .map(ratatui::buffer::Cell::symbol)
+                    .collect::<String>();
+                line.find("alpha").map(|offset| {
+                    (
+                        unicode_width::UnicodeWidthStr::width(&line[..offset]) as u16,
+                        y as u16,
+                    )
+                })
+            })
+            .expect("rendered startup draft");
+        if protected {
+            pump.initial_screen = StartupDraftInitialScreen::SessionPicker;
+        }
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), x),
+            (MouseEventKind::Drag(MouseButton::Left), x + 5),
+            (MouseEventKind::Up(MouseButton::Left), x + 5),
+        ] {
+            pump.handle_event(
+                &mut tui,
+                TuiEvent::Mouse(MouseEvent {
+                    kind,
+                    column,
+                    row: y,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            )?;
+            pump.handle_event(&mut tui, TuiEvent::Draw)?;
+        }
+        let mut copied = None;
+        let result = pump.bottom_pane.copy_composer_selection(
+            &TuiEvent::Key(KeyEvent::new(KeyCode::Insert, KeyModifiers::CONTROL)),
+            |selected| {
+                copied = Some(selected.to_owned());
+                Ok(CopyStatus::Unconfirmed)
+            },
+        );
+        assert_eq!(copied.as_deref(), (!protected).then_some("alpha"));
+        assert_eq!(result.is_some(), !protected);
+        assert_eq!(pump.bottom_pane.composer_text(), text);
+        assert_eq!(pump.submission_pending, pending);
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
+}

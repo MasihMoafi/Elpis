@@ -2,6 +2,7 @@
 //!
 //! Terminal input stays with the original pump through startup. Paste-newline ambiguity is
 //! preserved, protected screens do not consume draft input, and confirmation never removes text.
+//! The owned startup composer shares live draft selection, copying and clipboard feedback.
 
 use std::io;
 use tokio::time::Instant;
@@ -23,6 +24,26 @@ use crate::tui::TuiEvent;
 impl StartupDraftPump {
     pub(super) fn handle_event(&mut self, tui: &mut Tui, event: TuiEvent) -> io::Result<()> {
         let screen_size = tui.screen_size_for_event(&event)?;
+        let visible =
+            self.initial_screen == StartupDraftInitialScreen::Composer && tui.is_owned_screen();
+        if !visible || matches!(event, TuiEvent::FocusLost | TuiEvent::Resume) {
+            self.bottom_pane.end_composer_drag();
+        }
+        if let Some(completion) = tui.clipboard.poll()
+            && self
+                .bottom_pane
+                .finish_composer_copy(completion, visible)
+                .is_some()
+        {
+            self.bottom_pane.show_clipboard_flash(&completion.1);
+        }
+        // A selected draft owns copy before Ctrl+C can clear or cancel startup.
+        if visible && matches!(event, TuiEvent::Key(_)) && self.copy_startup_selection(tui, &event)
+        {
+            self.key_chord_matcher.cancel();
+            self.draw(tui, screen_size)?;
+            return Ok(());
+        }
         if let Some((started_at, mut newlines)) = self.pending_paste_newline.take() {
             let continues_paste = match &event {
                 TuiEvent::Key(KeyEvent {
@@ -163,8 +184,16 @@ impl StartupDraftPump {
                 self.key_chord_matcher.cancel();
                 return Ok(());
             }
-            // Nothing on the startup screen takes the mouse.
-            TuiEvent::Mouse(_) => return Ok(()),
+            TuiEvent::Mouse(mouse) => {
+                if !visible {
+                    return Ok(());
+                }
+                let ready = self.bottom_pane.prepare_composer_mouse(mouse);
+                self.draw(tui, screen_size)?;
+                if ready && !self.copy_startup_selection(tui, &TuiEvent::Mouse(mouse)) {
+                    self.bottom_pane.handle_composer_mouse(mouse);
+                }
+            }
         }
         crate::startup_recovery::remember(self.bottom_pane.composer_recovery_snapshot());
         if self.initial_screen == StartupDraftInitialScreen::Composer {
@@ -172,6 +201,16 @@ impl StartupDraftPump {
         }
         while self.app_event_rx.try_recv().is_ok() {}
         Ok(())
+    }
+
+    fn copy_startup_selection(&mut self, tui: &mut Tui, event: &TuiEvent) -> bool {
+        let Some((_, result)) = self.bottom_pane.copy_composer_selection(event, |text| {
+            tui.copy_transcript_selection(text, crate::clipboard_copy::CopyFormat::PlainText)
+        }) else {
+            return false;
+        };
+        self.bottom_pane.show_clipboard_flash(&result);
+        true
     }
 }
 

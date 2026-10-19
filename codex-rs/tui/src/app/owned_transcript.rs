@@ -394,6 +394,10 @@ impl App {
                 let size = tui.prepare_draw_size()?;
                 self.render_owned_transcript(tui, size)?;
             }
+            if self.chat_widget.handle_active_view_mouse(*mouse) {
+                tui.frame_requester().schedule_frame();
+                return Ok(true);
+            }
             if self.chat_widget.no_modal_or_popup_active()
                 && self.chat_widget.handle_context_ledger_divider_mouse(*mouse)
             {

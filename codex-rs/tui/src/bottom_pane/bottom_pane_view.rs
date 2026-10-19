@@ -5,6 +5,7 @@ use crate::keymap::KeymapContextSet;
 use crate::render::renderable::Renderable;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use crossterm::event::KeyEvent;
+use crossterm::event::MouseEvent;
 use std::time::Instant;
 
 use super::CancellationEvent;
@@ -34,6 +35,11 @@ pub(crate) trait BottomPaneView: Renderable {
     /// Handle a key event while the view is active. A redraw is always
     /// scheduled after this call.
     fn handle_key_event(&mut self, _key_event: KeyEvent) {}
+
+    /// Handle a pointer event using the view's last rendered hit targets.
+    fn handle_mouse_event(&mut self, _mouse_event: MouseEvent) -> bool {
+        false
+    }
 
     /// Return the keymap contexts whose handlers are active in this view.
     fn keymap_contexts(&self) -> KeymapContextSet {

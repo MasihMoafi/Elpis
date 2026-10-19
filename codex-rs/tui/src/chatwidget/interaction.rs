@@ -19,6 +19,14 @@ impl ChatWidget {
         self.bottom_pane.end_composer_drag();
     }
 
+    pub(crate) fn handle_active_view_mouse(&mut self, event: crossterm::event::MouseEvent) -> bool {
+        let handled = self.bottom_pane.handle_active_view_mouse(event);
+        if handled && self.bottom_pane.no_modal_or_popup_active() {
+            self.on_modal_or_popup_closed();
+        }
+        handled
+    }
+
     pub(crate) fn copy_composer_selection(
         &mut self,
         event: &crate::tui::TuiEvent,

@@ -34,12 +34,7 @@ impl ChatWidget {
     }
 
     pub(super) fn show_clipboard_flash(&mut self, result: &CopyResult) {
-        let line = match result {
-            Ok(status) => Line::from(status.message("selection").dim()),
-            Err(error) => Line::from(format!("Copy failed: {error}").red()),
-        };
-        self.bottom_pane
-            .show_footer_flash(line, Duration::from_secs(/*secs*/ 3));
+        self.bottom_pane.show_clipboard_flash(result);
     }
 
     pub(crate) fn finish_clipboard(

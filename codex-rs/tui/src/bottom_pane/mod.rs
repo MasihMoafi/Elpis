@@ -1802,6 +1802,26 @@ impl BottomPane {
         self.can_launch_external_editor()
     }
 
+    /// Only the topmost view receives pointer input, matching keyboard ownership.
+    pub(crate) fn handle_active_view_mouse(&mut self, event: crossterm::event::MouseEvent) -> bool {
+        if self.warnings_active() {
+            return false;
+        }
+        let Some(view) = self.view_stack.last_mut() else {
+            return false;
+        };
+        let handled = view.handle_mouse_event(event);
+        let complete = view.is_complete();
+        let completion = view.completion();
+        if complete {
+            self.pop_active_view_with_completion(completion);
+        }
+        if handled || complete {
+            self.request_redraw();
+        }
+        handled || complete
+    }
+
     pub(crate) fn end_composer_drag(&mut self) {
         self.composer.end_mouse_drag();
     }
@@ -2370,6 +2390,17 @@ impl BottomPane {
             flex2.push(/*flex*/ 0, composer);
             RenderableItem::Owned(Box::new(flex2))
         }
+    }
+
+    pub(crate) fn show_clipboard_flash(
+        &mut self,
+        result: &crate::clipboard_copy::worker::CopyResult,
+    ) {
+        let line = match result {
+            Ok(status) => Line::from(status.message("selection").dim()),
+            Err(error) => Line::from(format!("Copy failed: {error}").red()),
+        };
+        self.show_footer_flash(line, Duration::from_secs(/*secs*/ 3));
     }
 
     pub(crate) fn show_footer_flash(&mut self, line: Line<'static>, duration: Duration) {

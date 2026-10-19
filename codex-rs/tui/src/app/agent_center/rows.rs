@@ -138,6 +138,13 @@ impl AgentsOverviewView {
                 CenterRow::Gap => continue,
                 CenterRow::ShowMore => {
                     let rect = row(viewport, offset as u16, /*height*/ 1);
+                    state.mouse_targets.push((
+                        Rect {
+                            width: row_width,
+                            ..rect
+                        },
+                        AgentsOverviewMouseTarget::ShowMore,
+                    ));
                     let selected = self.selected == usize::MAX;
                     let style = if selected {
                         selection_style()
@@ -213,6 +220,13 @@ impl AgentsOverviewView {
                 line(format!("{group}  {count}").dim(), rect, buf);
                 continue;
             }
+            state.mouse_targets.push((
+                Rect {
+                    width: row_width,
+                    ..rect
+                },
+                AgentsOverviewMouseTarget::Task(task.thread_id),
+            ));
             let style = if index == self.selected {
                 selection_style()
             } else {

@@ -786,3 +786,251 @@ async fn child_rows_stay_with_root_across_groupings_and_open_their_own_chat() {
     let view = app.agents_overview_view(threads, None);
     assert_eq!(view.thread_ids(), vec![other]);
 }
+
+/// Drive the same app entry point as crossterm mouse events, using painted titles as targets.
+#[tokio::test]
+async fn tui_pointer_selects_visible_agents_and_updates_the_conversation() -> Result<()> {
+    use crate::tui::TuiEvent;
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Size;
+
+    for (width, height, filtered) in [(190, 40, false), (95, 16, true)] {
+        let mut app = make_test_app().await;
+        let threads = (0..36)
+            .map(|index| {
+                let mut thread = overview_thread(
+                    ThreadId::from_u128(1000 + index),
+                    None,
+                    &format!("Pointer task {index:02}"),
+                    ThreadStatus::Idle,
+                );
+                thread.preview = format!("CONVERSATION_ONLY_{index:02}");
+                thread.updated_at -= index as i64;
+                if index % 2 == 1 {
+                    thread.name = Some(format!("Hidden task {index:02}"));
+                }
+                thread
+            })
+            .collect();
+        let mut view = app.agents_overview_view(threads, Some(ThreadId::from_u128(1000)));
+        if filtered {
+            view.handle_key_event(KeyCode::Char('/').into());
+            view.handle_paste("Pointer".into());
+        }
+        let ids = view
+            .rows
+            .iter()
+            .map(|row| row.thread_id)
+            .collect::<Vec<_>>();
+        app.chat_widget.show_bottom_pane_view(Box::new(view));
+        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+        let mut tui = crate::tui::test_support::make_test_tui_with_size(Size::new(width, height))?;
+        tui.set_owned_screen(true)?;
+        app.render_owned_transcript(&mut tui, Size::new(width, height))?;
+        if filtered {
+            app.handle_tui_event(
+                &mut tui,
+                &mut server,
+                TuiEvent::Key(KeyCode::PageDown.into()),
+            )
+            .await?;
+            app.render_owned_transcript(&mut tui, Size::new(width, height))?;
+        }
+        let before = app
+            .chat_widget
+            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
+            .unwrap();
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let target = buffer
+            .content()
+            .chunks(usize::from(width))
+            .enumerate()
+            .find_map(|(y, row)| {
+                let text = row
+                    .iter()
+                    .take(60)
+                    .map(ratatui::buffer::Cell::symbol)
+                    .collect::<String>();
+                let x = text.find("Pointer task ")?;
+                if text.trim_start().starts_with('›') {
+                    return None;
+                }
+                let number = text[x + 13..].get(..2)?.parse::<u128>().ok()?;
+                Some((
+                    x as u16,
+                    y as u16,
+                    ThreadId::from_u128(1000 + number),
+                    number,
+                ))
+            })
+            .expect("a visible unselected row");
+        let click = |x, y| {
+            TuiEvent::Mouse(MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: x,
+                row: y,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        // Headings, margins and the details column must not choose a task.
+        for (x, y) in [(0, 0), (8, 0), (width - 1, target.1)] {
+            app.handle_tui_event(&mut tui, &mut server, click(x, y))
+                .await?;
+            assert_eq!(
+                app.chat_widget
+                    .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+                Some(before)
+            );
+        }
+        app.handle_tui_event(&mut tui, &mut server, click(target.0, target.1))
+            .await?;
+        let selected = app
+            .chat_widget
+            .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
+            .unwrap();
+        assert_eq!(
+            ids[selected], target.2,
+            "click must choose the painted filtered/scrolled task"
+        );
+        app.render_owned_transcript(&mut tui, Size::new(width, height))?;
+        if !filtered {
+            let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+            let text = buffer
+                .content()
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>();
+            assert!(
+                text.contains(&format!("CONVERSATION_ONLY_{:02}", target.3)),
+                "preview follows selection"
+            );
+        }
+        // Tabs use the same painted labels, even while a search is active.
+        for (label, empty) in [("Working 0", true), ("All 36", false)] {
+            let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+            let (x, y) = buffer
+                .content()
+                .chunks(usize::from(width))
+                .enumerate()
+                .find_map(|(y, row)| {
+                    let line = row
+                        .iter()
+                        .map(ratatui::buffer::Cell::symbol)
+                        .collect::<String>();
+                    line.find(label).map(|offset| {
+                        (
+                            unicode_width::UnicodeWidthStr::width(&line[..offset]) as u16,
+                            y as u16,
+                        )
+                    })
+                })
+                .expect("visible filter tab");
+            app.handle_tui_event(&mut tui, &mut server, click(x, y))
+                .await?;
+            app.render_owned_transcript(&mut tui, Size::new(width, height))?;
+            let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+            let text = buffer
+                .content()
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>();
+            assert_eq!(
+                text.contains("No matching tasks"),
+                empty,
+                "painted filter tab {label}"
+            );
+        }
+        if !filtered {
+            app.handle_tui_event(
+                &mut tui,
+                &mut server,
+                TuiEvent::Key(KeyCode::Char('r').into()),
+            )
+            .await?;
+            let selected = app
+                .chat_widget
+                .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID);
+            app.handle_tui_event(&mut tui, &mut server, click(target.0, target.1))
+                .await?;
+            assert_eq!(
+                app.chat_widget
+                    .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+                selected,
+                "rename owns pointer input"
+            );
+            app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Esc.into()))
+                .await?;
+            app.handle_tui_event(
+                &mut tui,
+                &mut server,
+                TuiEvent::Key(KeyCode::Char('?').into()),
+            )
+            .await?;
+            app.handle_tui_event(&mut tui, &mut server, click(target.0, target.1))
+                .await?;
+            assert_eq!(
+                app.chat_widget
+                    .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+                selected,
+                "help hides the row targets"
+            );
+            app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Esc.into()))
+                .await?;
+            struct BlockingPointerDialog;
+            impl crate::render::renderable::Renderable for BlockingPointerDialog {
+                fn desired_height(&self, _width: u16) -> u16 {
+                    3
+                }
+                fn render(&self, area: Rect, buffer: &mut ratatui::buffer::Buffer) {
+                    buffer.set_string(
+                        area.x,
+                        area.y,
+                        "Confirmation dialog",
+                        ratatui::style::Style::default(),
+                    );
+                }
+            }
+            impl crate::bottom_pane::BottomPaneView for BlockingPointerDialog {
+                fn presentation(&self) -> crate::bottom_pane::ViewPresentation {
+                    crate::bottom_pane::ViewPresentation::Centered
+                }
+            }
+            app.chat_widget
+                .show_bottom_pane_view(Box::new(BlockingPointerDialog));
+            app.handle_tui_event(&mut tui, &mut server, click(target.0, target.1))
+                .await?;
+            assert_eq!(
+                app.chat_widget
+                    .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID),
+                selected,
+                "topmost modal owns pointer input"
+            );
+        }
+        server.shutdown().await?;
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn tui_pointer_provider_names_follow_the_actual_bridge_route() {
+    let app = make_test_app().await;
+    for (model, provider, expected) in [
+        ("claude/opus", "openai", "Claude subscription"),
+        ("agy/gemini", "openai", "Antigravity"),
+        ("gpt-6-luna", "openai", "OpenAI"),
+        ("claude-opus-5-5", "anthropic", "Anthropic"),
+        ("claude-opus-5-5", "anthropic-credits", "Anthropic"),
+        ("anthropic/claude-opus", "openrouter", "openrouter"),
+    ] {
+        let mut thread =
+            overview_thread(ThreadId::new(), None, "Provider route", ThreadStatus::Idle);
+        thread.model = Some(model.into());
+        thread.model_provider = provider.into();
+        let view = app.agents_overview_view(vec![thread], None);
+        assert!(
+            screen(&view, 190, 18).contains(&format!(" · {expected} · asked by you")),
+            "{model} through {provider} must show {expected}"
+        );
+    }
+}

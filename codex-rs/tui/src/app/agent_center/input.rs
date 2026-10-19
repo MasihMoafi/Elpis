@@ -2,8 +2,63 @@
 
 use super::*;
 use crossterm::event::KeyEventKind;
+use crossterm::event::MouseButton;
+use crossterm::event::MouseEvent;
+use crossterm::event::MouseEventKind;
+use ratatui::layout::Position;
 
 impl AgentsOverviewView {
+    pub(in crate::app::agents_overview_view) fn command_center_mouse(
+        &mut self,
+        event: MouseEvent,
+    ) -> bool {
+        if event.kind != MouseEventKind::Down(MouseButton::Left) || !event.modifiers.is_empty() {
+            return false;
+        }
+        let mut state = self.state();
+        if state.help || state.editor_target().is_some() || state.stop_target.is_some() {
+            return false;
+        }
+        let point = Position::new(event.column, event.row);
+        let target = state
+            .mouse_targets
+            .iter()
+            .find_map(|(area, target)| area.contains(point).then_some(*target));
+        match target {
+            Some(AgentsOverviewMouseTarget::Filter(index)) => {
+                state.status_filter = index;
+                state.scroll = 0;
+                drop(state);
+                self.reconcile_command_center_selection();
+            }
+            Some(AgentsOverviewMouseTarget::Task(thread_id)) => {
+                drop(state);
+                let visible = self.selectable_indices();
+                let Some(index) = self
+                    .rows
+                    .iter()
+                    .position(|row| row.thread_id == thread_id)
+                    .filter(|index| visible.contains(index))
+                else {
+                    return false;
+                };
+                self.selected = index;
+                self.state().show_more_selected = false;
+            }
+            Some(AgentsOverviewMouseTarget::ShowMore) => {
+                let online = state.connection_notice.is_none() && !state.creating_worktree;
+                state.show_more_selected = true;
+                drop(state);
+                self.selected = usize::MAX;
+                if online {
+                    self.activate();
+                }
+            }
+            None => return false,
+        }
+        true
+    }
+
     pub(in crate::app::agents_overview_view) fn rename_key(&mut self, key: KeyEvent) -> bool {
         let mut state = self.state();
         if state.editor_target().is_none() {

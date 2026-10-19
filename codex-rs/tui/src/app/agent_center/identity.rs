@@ -5,6 +5,14 @@ use ratatui::style::Color;
 
 impl AgentsOverviewView {
     pub(super) fn provider_label(row: &AgentsOverviewRow) -> &str {
+        if let Some(bridged) = row
+            .thread
+            .model
+            .as_deref()
+            .and_then(crate::chatwidget::bridged_provider_of_model)
+        {
+            return bridged.name;
+        }
         let provider = row.thread.model_provider.to_ascii_lowercase();
         if provider.contains("anthropic") || provider.contains("claude") {
             "Anthropic"
@@ -34,12 +42,12 @@ impl AgentsOverviewView {
         let background = Self::surface_background(surface);
         let light = background.is_some_and(crate::color::is_light);
         let preferred = match (Self::provider_label(row), light) {
-            ("Anthropic", true) => (180, 83, 42),
-            ("Anthropic", false) => (236, 164, 121),
+            ("Anthropic" | "Claude subscription", true) => (180, 83, 42),
+            ("Anthropic" | "Claude subscription", false) => (236, 164, 121),
             ("OpenAI", true) => (11, 122, 94),
             ("OpenAI", false) => (87, 204, 160),
-            ("Google", true) => (26, 95, 208),
-            ("Google", false) => (117, 173, 255),
+            ("Google" | "Antigravity", true) => (26, 95, 208),
+            ("Google" | "Antigravity", false) => (117, 173, 255),
             (_, true) => (109, 63, 181),
             (_, false) => (191, 153, 246),
         };

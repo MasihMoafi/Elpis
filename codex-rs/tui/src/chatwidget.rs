@@ -345,6 +345,7 @@ pub(crate) use self::elpis_providers::BridgedProvider;
 pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
 pub(crate) use self::elpis_providers::bridged_provider;
+pub(crate) use self::elpis_providers::bridged_provider_of_model;
 pub(crate) use self::elpis_providers::elpis_chat_model_providers;
 pub(crate) use self::elpis_providers::elpis_lists_from_app_server;
 pub(crate) use self::elpis_providers::elpis_picker_providers;
