@@ -16,6 +16,10 @@ const routes = { '/api/threads': (body, url) => body ? { thread: chat('chat-new'
 
 const menu = page => page.getByRole('dialog', { name: 'Command menu' });
 const input = page => menu(page).getByRole('combobox', { name: 'Search or start a chat' });
+const typeInMenu = async (page, text) => {
+  await page.waitForFunction(() => document.activeElement?.matches('[role="combobox"][aria-label="Search or start a chat"]'));
+  await page.keyboard.type(text);
+};
 const active = page => menu(page).locator('[role="option"][aria-selected="true"]');
 const names = page => menu(page).locator('[role="option"] .command-name').allTextContents();
 const sections = page => menu(page).locator('[role="group"]').evaluateAll(groups => groups.map(group => group.getAttribute('aria-label')));
@@ -46,7 +50,7 @@ test('Ctrl+K opens recent chats and actions; ↑/↓ wrap, Enter opens, Esc retu
     assert.equal(await composer.inputValue(), 'draft');
 
     await page.keyboard.press('Control+k');
-    await page.keyboard.type('docs');
+    await typeInMenu(page, 'docs');
     assert.deepEqual(await sections(page), ['Chats', 'New chat']);
     assert.equal(await active(page).locator('.command-name').textContent(), 'Write the docs');
     await page.keyboard.press('Enter');
@@ -61,19 +65,19 @@ test('typing filters the actions; Enter runs one; text that matches nothing star
   try {
     await f.open('chat-a');
     await page.keyboard.press('Control+k');
-    await page.keyboard.type('pin');
+    await typeInMenu(page, 'pin');
     assert.equal(await active(page).locator('.command-name').textContent(), 'Pin chat');
     await page.keyboard.press('Enter');
     await page.locator('aside.sidebar section[aria-label="Pinned"] .thread-row[data-thread-id="chat-a"]').waitFor();
 
     await page.keyboard.press('Control+k');
-    await page.keyboard.type('SETT');
+    await typeInMenu(page, 'SETT');
     assert.equal(await active(page).locator('.command-name').textContent(), 'Settings', 'matching ignores case');
     await page.keyboard.press('Enter');
     await page.getByRole('button', { name: 'Back to app', exact: true }).click();
 
     await page.keyboard.press('Control+k');
-    await page.keyboard.type('Write a haiku about lexers');
+    await typeInMenu(page, 'Write a haiku about lexers');
     assert.deepEqual(await sections(page), ['New chat']);
     assert.equal(await active(page).locator('.command-detail').textContent(), 'Write a haiku about lexers');
     const sent = page.waitForResponse(response => response.url().endsWith('/api/threads/chat-new/turns'));
@@ -106,7 +110,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
     assert.equal(new Set(rows.map(row => row.height)).size, 1, 'every row has one height');
     await assertUiFit(menu(page), 'command menu fits');
     if (shots) await page.screenshot({ path: path.join(shots, `command-menu-${colorScheme}-${width}.png`) });
-    await page.keyboard.type('re');
+    await typeInMenu(page, 're');
     await assertUiFit(menu(page), 'filtered command menu fits');
     if (shots) await page.screenshot({ path: path.join(shots, `command-menu-typed-${colorScheme}-${width}.png`) });
     assert.deepEqual(f.errors, []);
