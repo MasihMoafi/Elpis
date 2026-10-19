@@ -292,7 +292,7 @@ function CountField({ label, value, min, max, why, onChange }: { label: string; 
   </label>;
 }
 
-/** One agent's dashboard (Enter or double-click): what it is, what it waits for and feeds, and, once it runs, what it
+/** One agent's info panel (Enter or double-click): what it is, what it waits for and feeds, and, once it runs, what it
  * has done so far from its own chat, refreshed while it works. */
 /** What a chat has done so far, read from it, and again every 2 s while it works: an agent's, or the Mother's. */
 function LiveFeed({ chat, working, idle }: { chat: string | null; working: boolean; idle: string }) {
@@ -360,11 +360,17 @@ function RunClock({ since, until }: { since: number; until?: number }) {
 const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
 
 function AgentDashboard({ node, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
-  const data = node.data;
-  return <div className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} dashboard`} data-kind="agent" data-status={status}
+  const data = node.data, panel = useRef<HTMLDivElement>(null);
+  // A click anywhere else on the page closes it, as Escape does.
+  useEffect(() => {
+    const away = (event: PointerEvent) => { if (!panel.current?.contains(event.target as Element)) onClose(); };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [onClose]);
+  return <div ref={panel} className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} info`} data-kind="agent" data-status={status}
     onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
     <header><span className="agent-node-kind">Agent{wave ? ` · wave ${wave}` : ""} · {STATUS_LABEL[status]}</span><strong>{data.title || "Untitled"}</strong>
-      <button type="button" aria-label="Close dashboard" autoFocus onClick={onClose}><X size={14} /></button></header>
+      <button type="button" aria-label="Close info" autoFocus onClick={onClose}><X size={14} /></button></header>
     <dl>
       <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking` : ""}</dd></div>
       <div><dt>Inputs needed</dt><dd>{waitsFor.length ? waitsFor.join(", ") : "All inputs captured"}</dd></div>
@@ -978,7 +984,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if (picked.length === 1 && picked[0].type === "agent") {
       const only = picked[0];
       return { name: `Agent ${only.data.title || "Untitled"}`, title: "Agent", detail: only.data.title || "Untitled", onDelete: removeThem, items: [
-        { label: "Dashboard", keys: "Enter", take: () => setDashboardId(only.id) },
+        { label: "Info", keys: "Enter", take: () => setDashboardId(only.id) },
         { label: "Rename", keys: "F2", take: rename },
         { label: "Add agents after it", hint: "They wait for it", take: () => openAdder(current.client, { id: only.id, as: "target" }) },
         { label: "Duplicate", keys: "Ctrl+D", take: () => duplicate(ids) },

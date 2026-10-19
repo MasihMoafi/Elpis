@@ -215,7 +215,7 @@ for (const iso of [false, true]) test(`${iso ? 'isometric' : 'flat'} provider fi
     await chooseOption(model, ''); assert.equal(await controlValue(model), 'anthropic-credits|claude-opus-5-5', 'Default model belongs to the selected provider');
     await chooseOption(model, 'anthropic-credits|claude-sonnet-5');
     await node.click(); await f.page.keyboard.press('Enter');
-    const dashboard = f.canvas.getByRole('dialog', { name: 'Answer 1 dashboard', exact: true });
+    const dashboard = f.canvas.getByRole('dialog', { name: 'Answer 1 info', exact: true });
     await dashboard.getByText('Sonnet 5', { exact: true }).waitFor();
     await dashboard.getByRole('button', { name: 'Settings', exact: true }).click();
     await chooseOption(provider, ''); assert.equal(await controlValue(model), '|gpt-6.1-sol', 'configured main default wins over first catalog item');

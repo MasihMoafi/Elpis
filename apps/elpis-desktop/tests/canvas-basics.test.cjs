@@ -144,7 +144,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     // Right-click menus preserve their actions and append Improve Elpis's "Change this…".
     await node('Quillon · Step 1: the base').click({ button: 'right' });
     const agentMenu = canvas.getByRole('menu', { name: 'Agent Quillon · Step 1: the base', exact: true });
-    assert.deepEqual(await agentMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Dashboard', 'Rename', 'Add agents after it', 'Duplicate', 'Copy', 'Delete, keep the flow', 'Delete', 'Change this…']);
+    assert.deepEqual(await agentMenu.getByRole('menuitem').allInnerTexts().then(list => list.map(item => item.split('\n')[0])), ['Info', 'Rename', 'Add agents after it', 'Duplicate', 'Copy', 'Delete, keep the flow', 'Delete', 'Change this…']);
     await agentMenu.getByRole('menuitem', { name: /^Duplicate/ }).click();
     await agentCount(3, 'duplicated from the menu');
     // On the board: add, paste, arrange and fit.

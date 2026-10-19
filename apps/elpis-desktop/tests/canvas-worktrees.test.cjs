@@ -61,7 +61,7 @@ test('a clash at the end of the run stops it: the files are listed and the agent
     await canvas.getByRole('status').filter({ hasText: /Finished · 2 of 3 done/ }).waitFor();
     // The agent's dashboard lists every clashing file.
     await node('Veyra · Part 2').dblclick();
-    const dashboard = canvas.getByRole('dialog', { name: 'Veyra · Part 2 dashboard' });
+    const dashboard = canvas.getByRole('dialog', { name: 'Veyra · Part 2 info' });
     assert.equal(await dashboard.locator('dt', { hasText: 'Merge clash' }).locator('xpath=following-sibling::dd').innerText(), 'src/app.ts\nREADME.md');
     assert.deepEqual(errors, []);
   } finally { await close(); }

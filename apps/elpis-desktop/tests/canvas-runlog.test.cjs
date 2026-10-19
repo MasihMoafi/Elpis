@@ -36,11 +36,11 @@ test('the complete chronological log retains starts, tasks, checks and actual re
     assert.ok(texts.findIndex(text => /AGENT STARTED.*Tally/.test(text)) > texts.findIndex(text => /CHECK PASSED.*Orilo · Answer 3/.test(text)));
     const times = await log.locator('time').allTextContents(); assert.deepEqual(times, [...times].sort());
     await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).click();
-    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Answer 1 dashboard' }); await dashboard.waitFor();
-    await dashboard.getByRole('button', { name: 'Close dashboard' }).click();
+    const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Answer 1 info' }); await dashboard.waitFor();
+    await dashboard.getByRole('button', { name: 'Close info' }).click();
     await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
     await log.getByRole('button', { name: /CHECK PASSED.*Tally/ }).focus(); await page.keyboard.press('Enter');
-    await canvas.getByRole('dialog', { name: 'Nuvani · Tally the answers dashboard' }).waitFor();
+    await canvas.getByRole('dialog', { name: 'Nuvani · Tally the answers info' }).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -100,8 +100,8 @@ test('failed checks stay in the log, explain blocked inputs, and stop the clock 
     const log = f.canvas.getByRole('log', { name: 'Run log' }); await log.getByRole('button', { name: /CHECK FAILED/ }).first().waitFor();
     assert.equal(await log.getByRole('button', { name: /REPORT RECEIVED/ }).count(), 0);
     await log.getByRole('button', { name: /CHECK FAILED/ }).first().click();
-    const dashboard = f.canvas.getByRole('dialog', { name: /dashboard/ }); await dashboard.waitFor();
-    await dashboard.getByRole('button', { name: 'Close dashboard' }).click();
+    const dashboard = f.canvas.getByRole('dialog', { name: / info$/ }); await dashboard.waitFor();
+    await dashboard.getByRole('button', { name: 'Close info' }).click();
     await log.getByRole('button', { name: /INPUT BLOCKED.*Nuvani · Join the parts/ }).first().click();
     assert.match(await f.canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Part 1 \(Check failed\)/);
     const clock = f.canvas.getByRole('region', { name: 'Run clock' }); const ended = await clock.locator('strong').innerText();
