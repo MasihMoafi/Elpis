@@ -6,12 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { OptionSelect } from "@/components/ui/option-select";
 import { api } from "@/lib/api";
-import { TEMPLATES, type CanvasGraph } from "@/lib/canvas";
+import { initialGraph, TEMPLATES, type CanvasGraph } from "@/lib/canvas";
 import { labStages, labSummary, type LabRecord } from "@/lib/experiment-lab";
 import styles from "./experiment-lab.module.css";
 type LabResponse = { record: LabRecord | null };
 
-export function ExperimentLab({ graph }: { graph: CanvasGraph }) {
+export function ExperimentLab() {
+  const [graph, setGraph] = useState<CanvasGraph | null>(null);
+  // Read after the departing Workflows page flushes its latest edits on unmount.
+  useEffect(() => { setGraph(initialGraph()); }, []);
+  return graph ? <Lab graph={graph} /> : null;
+}
+
+function Lab({ graph }: { graph: CanvasGraph }) {
   const [pattern, setPattern] = useState(graph.template === "blank" ? "current" : graph.template ?? "current");
   const [task, setTask] = useState(""), [expected, setExpected] = useState(""), [repetitions, setRepetitions] = useState("3");
   const [record, setRecord] = useState<LabRecord | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [loaded, setLoaded] = useState(false);
@@ -49,7 +56,7 @@ export function ExperimentLab({ graph }: { graph: CanvasGraph }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const status = record ? ({ running: "Running", completed: "Completed", stopped: "Stopped", failed: "Failed", interrupted: "Interrupted" }[record.status]) : "Ready";
-  return <section aria-label="Experiment Lab" className={styles.lab}>
+  return <section aria-label="Experiment Lab" className={`min-h-0 flex-1 ${styles.lab}`}>
     <div className={styles.intro}><h1>Experiment Lab</h1><p>Does a pattern earn its extra calls? Compare it with one agent on the same task.</p>
       <p className={styles.muted}>ChatGPT subscription · gpt-6-luna · low thinking · fresh context for every stage</p></div>
     <form className={styles.form} onSubmit={event => { event.preventDefault(); if (valid && !running && !busy) void action(); }}>

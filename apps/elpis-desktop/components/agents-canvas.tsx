@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowSources } from "@/components/workflow-sources";
-import { ExperimentLab } from "@/components/experiment-lab";
 import { summarize, workedFor } from "@/components/transcript";
 import { isoLayout } from "@/lib/iso";
 import { IsoBoard, ViewToggle, type IsoController } from "@/components/agents-iso";
@@ -21,7 +20,7 @@ import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { characters, type Character } from "@/lib/agent-characters";
 import { portraits } from "@/lib/love-characters";
-import { PATTERNS, applyPattern, agent, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, readGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, applyPattern, agent, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -396,8 +395,8 @@ const catalogs = new Map<string, { version: string; models?: Model[]; error?: st
 function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
-  const [graph, setGraph] = useState<CanvasGraph>(() => readGraph() ?? { ...withMother(TEMPLATES[0].build()), template: TEMPLATES[0].id });
-  const [sourceId, setSourceId] = useState<string | null>(null), [labOpen, setLabOpen] = useState(false);
+  const [graph, setGraph] = useState<CanvasGraph>(initialGraph);
+  const [sourceId, setSourceId] = useState<string | null>(null);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
   const pendingProviderDefaults = useRef(new Map<string, { provider: string | null; model: string | null; effort: string | null }>());
@@ -744,7 +743,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (labOpen) return;
       const take = () => { event.preventDefault(); event.stopPropagation(); };
       const target = event.target as HTMLElement | null, typing = target?.closest?.("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']");
       const onBoard = !target || target === document.body || Boolean(target.closest?.(".react-flow, .iso-board")), ctrl = event.ctrlKey || event.metaKey;
@@ -1071,10 +1069,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const chat = selected ? states[selected.id]?.chat : null;
   // Both views share the graph, selection, settings and connection callbacks.
   const [iso, setIso] = useState(false);
-  if (labOpen) return <section className="agents-canvas" aria-label="Workflows" data-panel="closed">
-    <header className="canvas-header"><Button variant="ghost" size="sm" onClick={() => setLabOpen(false)}>Back to Workflows</Button>{projectMenu}</header>
-    <ExperimentLab graph={graph} />
-  </section>;
   return <section className="agents-canvas" aria-label="Workflows" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
@@ -1082,7 +1076,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
-      <Button variant="ghost" size="sm" onClick={() => setLabOpen(true)}>Experiment Lab</Button>
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} />Auto-arrange</Button>

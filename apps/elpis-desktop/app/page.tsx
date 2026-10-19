@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { cloneElement, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArchiveIcon, ChatIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Activity, Archive, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -37,6 +37,7 @@ import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMes
 import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
+import { ExperimentLab } from "@/components/experiment-lab";
 import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
@@ -91,7 +92,7 @@ const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerT
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 function ObservabilityView() { return <div className="page-scroll" data-view="observability" />; }
-type View = "chat" | "agentsGuide" | "canvas" | "loveSpot" | "customize" | "observability" | "settings";
+type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -1504,7 +1505,7 @@ export default function Home() {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
   }
-  useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
+  useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Experiment Lab · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
   /** A listed chat and, when shown, its agents under it. */
   const chatRows = (thread: Thread) => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>;
   const needsYou = (thread: Thread) => agentState(thread, waitingIds) === "waiting" || !!attention.plans[thread.id];
@@ -1518,7 +1519,7 @@ export default function Home() {
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
       empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Experiment Lab", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [selected.agentNickname, selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -1527,7 +1528,7 @@ export default function Home() {
     return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
   commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
-  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
+  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Experiment Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /></div>}
@@ -1543,6 +1544,7 @@ export default function Home() {
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
+        <Button className="btn btn-ghost" variant="ghost" aria-current={view === "experimentLab" ? "page" : undefined} onClick={() => show("experimentLab")}><ExperimentLabIcon size={16} />Experiment Lab</Button>
         <Button variant="ghost" aria-current={view === "canvas" ? "page" : undefined} onClick={() => show("canvas")}><WorkflowsIcon size={16} />Workflows</Button>
         <Button variant="ghost" aria-current={view === "loveSpot" ? "page" : undefined} onClick={() => show("loveSpot")}><LoveSpotIcon size={16} />Love Spot</Button>
         <Button variant="ghost" aria-current={view === "customize" ? "page" : undefined} onClick={() => show("customize")}><Blocks size={16} />Ledger</Button>
@@ -1631,6 +1633,7 @@ export default function Home() {
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
+      {view === "experimentLab" && <ViewBoundary label="Experiment Lab"><ExperimentLab /></ViewBoundary>}
       {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={newChatFolder(cwd) || undefined} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
