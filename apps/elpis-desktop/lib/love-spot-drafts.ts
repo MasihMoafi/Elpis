@@ -85,7 +85,7 @@ export function createTextJournal(report: (error: unknown) => void) {
         // conflicting drafts become separate notes, preserving both versions.
         if (!draft.originalText.trim()) continue;
         if (!current || (!current.isDeleted && current.version <= draft.version)) {
-          result.set(draft.id, newElementWith({ ...draft, version: Math.max(draft.version, current?.version ?? 0) }, { isDeleted: false }));
+          result.set(draft.id, newElementWith({ ...draft, version: Math.max(draft.version, current?.version ?? 0) }, { isDeleted: false }, true));
         } else {
           result.set(entry.recoveryId, { ...draft, id: entry.recoveryId, version: 1, versionNonce: 0, isDeleted: false,
             y: draft.y + draft.height + 40, containerId: null, boundElements: null });
@@ -123,7 +123,7 @@ export async function saveWithTextDrafts<T extends { elements: readonly Excalidr
     if (!missing.length) return saved;
     const elements = new Map(saved.scene.elements.map(e => [e.id, e]));
     for (const element of missing) elements.set(element.id, newElementWith({ ...element,
-      version: Math.max(element.version, elements.get(element.id)?.version ?? 0) }, { isDeleted: element.isDeleted }));
+      version: Math.max(element.version, elements.get(element.id)?.version ?? 0) }, { isDeleted: element.isDeleted }, true));
     outgoing = { ...drawing, elements: [...elements.values()] };
   }
   throw new Error("Text is changing in another window. Your draft is kept here. Press Ctrl+S to retry.");

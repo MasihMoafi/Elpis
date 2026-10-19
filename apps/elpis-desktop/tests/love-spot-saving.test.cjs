@@ -16,6 +16,7 @@ async function startText(page, text) {
 
 test('a competing edit of the same note cannot replace the active verdict', async () => {
   const f = await loveSpotFixture();
+  let release, held;
   try {
     await f.open(f.page); await startText(f.page, 'Agent asks for a verdict'); await f.page.keyboard.press('Escape');
     await f.waitFor(s => s.elements.some(e => e.text === 'Agent asks for a verdict'), 'seed did not save');
@@ -23,19 +24,32 @@ test('a competing edit of the same note cannot replace the active verdict', asyn
     await other.locator('.excalidraw').click({ position: { x: 900, y: 650 } });
     await other.keyboard.press('ControlOrMeta+a'); await other.keyboard.press('Enter');
     await other.locator('textarea.excalidraw-wysiwyg').waitFor();
+    const gate = new Promise(resolve => { release = resolve; });
+    await f.page.route('**/api/love-spot', async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      const drawing = route.request().postDataJSON();
+      if (!held && drawing.elements.some(e => e.text === 'My verdict')) { held = drawing; await gate; }
+      return route.continue();
+    });
     await f.page.keyboard.press('Enter'); await f.page.locator('textarea.excalidraw-wysiwyg').waitFor();
     await f.page.keyboard.press('ControlOrMeta+a'); await f.page.keyboard.type('My verdict');
+    await f.waitFor(() => held, 'the local verdict save was not held');
     // A genuine stale editor makes many changes, then commits empty text.
     await other.keyboard.press('ControlOrMeta+a'); await other.keyboard.type('stale '.repeat(15), { delay: 1 });
     await other.keyboard.press('ControlOrMeta+a'); await other.keyboard.press('Backspace'); await other.keyboard.press('Escape');
+    const mine = held.elements.find(e => e.text === 'My verdict');
+    const remote = (await f.waitFor(s => s.elements.some(e => e.id === mine.id && e.isDeleted), 'the competing empty edit did not save')).elements.find(e => e.id === mine.id);
+    assert.ok(remote.version > mine.version, 'the eval must exercise a winning remote version');
     await f.page.waitForTimeout(500);
     const input = f.page.locator('textarea.excalidraw-wysiwyg');
     assert.equal(await input.count(), 1, 'remote text replacement ended the active edit');
     assert.equal(await input.inputValue(), 'My verdict', 'remote text replacement erased the active verdict');
+    release(); await f.page.keyboard.press('Control+s');
+    await f.waitFor(s => s.elements.some(e => e.text === 'My verdict' && !e.isDeleted), 'Ctrl+S did not preserve text above the competing version');
     await f.page.keyboard.type(' remains here'); await f.page.keyboard.press('Control+s');
     await f.page.keyboard.press('Escape');
     await f.waitFor(s => s.elements.some(e => e.text === 'My verdict remains here' && !e.isDeleted), 'the winning remote version discarded the local verdict');
-  } finally { await f.close(); }
+  } finally { release?.(); await f.close(); }
 });
 
 for (const colorScheme of ['light', 'dark']) test(`active text survives two-window updates and Ctrl+S · ${colorScheme}`, async () => {
@@ -63,6 +77,12 @@ for (const colorScheme of ['light', 'dark']) test(`active text survives two-wind
     assert.equal(await input.inputValue(), 'Revised verdict');
     const output = path.join(os.homedir(), '.cache/elpis-tests/lsave'); await fs.mkdir(output, { recursive: true });
     await f.page.screenshot({ path: path.join(output, `saved-${colorScheme}.png`) });
+    if (colorScheme === 'dark') {
+      await f.page.setViewportSize({ width: 760, height: 800 });
+      const status = await f.page.getByRole('status', { name: 'Drawing save status' }).boundingBox();
+      assert.ok(status && status.x >= 0 && status.x + status.width <= 760, 'save status must fit a narrow window');
+      await f.page.screenshot({ path: path.join(output, 'saved-narrow.png') });
+    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -113,7 +133,10 @@ test('a remote page switch defers until the edit ends and flushes to the origina
     await f.page.waitForTimeout(250);
     assert.equal(await f.page.locator('textarea.excalidraw-wysiwyg').inputValue(), 'Keep this page verdict');
     await f.page.keyboard.type(' with final words'); await f.page.keyboard.press('Control+s');
-    await f.page.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();
+    await f.waitFor(async () => {
+      const old = JSON.parse(await fs.readFile(path.join(f.directory, 'pages/Current page.excalidraw'), 'utf8'));
+      return old.elements.some(e => e.text === 'Keep this page verdict with final words' && !e.isDeleted);
+    }, 'the original page lost the text typed after a remote page switch');
     await f.page.keyboard.press('Escape');
     await f.page.getByRole('button', { name: 'Pages', exact: true }).filter({ hasText: 'Page 2' }).waitFor();
     const old = JSON.parse(await fs.readFile(path.join(f.directory, 'pages/Current page.excalidraw'), 'utf8'));

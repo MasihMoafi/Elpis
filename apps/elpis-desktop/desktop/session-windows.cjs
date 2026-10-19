@@ -118,12 +118,14 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     return window;
   }
   const flushText = async () => {
-    const results = await Promise.all([...windows].filter(host => !host.isDestroyed()).map(async host => {
+    const hosts = [...windows].filter(host => !host.isDestroyed());
+    const results = await Promise.all(hosts.map(async host => {
       const saved = await host.webContents.executeJavaScript?.('window.__elpisFlushLoveSpot?.() ?? true');
-      if (saved !== false) savedText.add(host);
       return saved !== false;
     }));
-    return results.every(Boolean);
+    const saved = results.every(Boolean);
+    if (saved) for (const host of hosts) savedText.add(host);
+    return saved;
   };
   return { open, openLoveSpot, windows, flushText, openersFor: host => openers.get(host), closeBrowser: browsers.drop, flushBrowsers: browsers.flush };
 }

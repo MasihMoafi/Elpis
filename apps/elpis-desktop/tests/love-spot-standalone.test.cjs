@@ -17,7 +17,7 @@ async function nativeCopy(electron, standalone) {
   try { return JSON.parse(text).elements.filter(e => !e.isDeleted); } catch { return []; }
 }
 
-async function standaloneFixture(t, { delaySaves = false, holdIncoming = false } = {}) {
+async function standaloneFixture(t, { delaySaves = false, holdIncoming = false, failSaves = false } = {}) {
   const reference = process.env.LOVE_SPOT_STANDALONE_DIR || path.join(os.homedir(), '.local/lib/excalidraw-local');
   const f = await loveSpotFixture();
   let electron, xvfb;
@@ -55,6 +55,16 @@ async function standaloneFixture(t, { delaySaves = false, holdIncoming = false }
       if (delayed) fs.writeFileSync(path.join(__dirname, 'save-result.json'), JSON.stringify(saved));
       return saved;
     });`));
+  }
+  if (failSaves) {
+    const mainFile = path.join(app, 'main.cjs'), main = await fs.readFile(mainFile, 'utf8');
+    const handler = "ipcMain.handle('save', (_event, text) => board.save(JSON.parse(text)));";
+    assert.ok(main.includes(handler));
+    await fs.writeFile(mainFile, main.replace(handler, `ipcMain.handle('save', (_event, text) => {
+      if (fs.readFileSync(path.join(__dirname, 'save-mode'), 'utf8') === 'refuse') throw Error('Test native disk unavailable');
+      return board.save(JSON.parse(text));
+    });`));
+    await fs.writeFile(path.join(app, 'save-mode'), 'refuse');
   }
   const bootstrap = path.join(app, 'bootstrap.cjs');
   await fs.writeFile(bootstrap, `const {app}=require('electron'); app.setPath('userData', ${JSON.stringify(path.join(f.root, 'profile'))}); app.setPath('pictures', ${JSON.stringify(path.dirname(f.screenshots))}); require('./main.cjs');`);
@@ -132,6 +142,8 @@ test('standalone journals live text, Ctrl+S saves without ending it, and app qui
   await standalone.keyboard.type(' survives remote saves'); await standalone.keyboard.press('Control+s');
   await standalone.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();
   assert.equal(await input.inputValue(), 'Native verdict survives remote saves');
+  const output = path.join(os.homedir(), '.cache/elpis-tests/lsave'); await fs.mkdir(output, { recursive: true });
+  await standalone.screenshot({ path: path.join(output, 'native-saved.png') });
   // Persist a journal even when the real store refuses its ordinary save.
   await standalone.evaluate(() => { window.__nativeJournal = localStorage.getItem('elpis-draft-v1:love-spot-text-journal'); });
   assert.match(await standalone.evaluate(() => window.__nativeJournal), /Native verdict survives remote saves/);
@@ -139,6 +151,25 @@ test('standalone journals live text, Ctrl+S saves without ending it, and app qui
   await electron.evaluate(({ app }) => { app.quit(); });
   await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict survives remote saves and app quit' && !e.isDeleted), 'native quit lost final text');
   assert.deepEqual(standaloneErrors, []); assert.deepEqual(f.errors, []);
+});
+
+test('a native failed save blocks quit and its journal restores the interrupted text', async t => {
+  const { f, app, electron, standalone } = await standaloneFixture(t, { failSaves: true });
+  try {
+    const bounds = await standalone.locator('.excalidraw').boundingBox();
+    await standalone.mouse.click(bounds.x + 450, bounds.y + 220); await standalone.keyboard.press('t');
+    await standalone.mouse.click(bounds.x + 450, bounds.y + 220);
+    await standalone.locator('textarea.excalidraw-wysiwyg').waitFor();
+    await standalone.keyboard.type('Unsent native verdict'); await standalone.keyboard.press('Control+s');
+    await standalone.getByRole('alert').filter({ hasText: 'Test native disk unavailable' }).waitFor();
+    assert.ok(!(await f.scene()).elements.some(e => e.text === 'Unsent native verdict'), 'negative case must block the real store');
+    await electron.evaluate(({ app }) => { app.quit(); }); await standalone.waitForTimeout(100);
+    assert.equal(standalone.isClosed(), false, 'failed save must leave the window open');
+    assert.equal(await standalone.locator('textarea.excalidraw-wysiwyg').inputValue(), 'Unsent native verdict');
+    await fs.writeFile(path.join(app, 'save-mode'), 'allow');
+    await standalone.reload(); await standalone.locator('.excalidraw canvas').first().waitFor();
+    await f.waitFor(s => s.elements.some(e => e.text === 'Unsent native verdict' && !e.isDeleted), 'native journal did not restore after interrupted edit');
+  } finally { await fs.writeFile(path.join(app, 'save-mode'), 'allow'); }
 });
 
 test('a remote deletion arriving in a real arrow-key batch never becomes undoable', async t => {
