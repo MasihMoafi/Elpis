@@ -118,7 +118,7 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigati
   assert.equal(await page.evaluate(() => document.activeElement.closest('.thread-row')?.dataset.threadId), 'chat-c');
   await page.keyboard.press('Enter'); await page.locator('.thread-row.active[data-thread-id="chat-c"]').first().waitFor();
   await page.keyboard.press('Home'); assert.equal(await start.evaluate(node => node === document.activeElement), true);
-  await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
   await page.getByRole('toolbar', { name: 'Add to Workflows', exact: true }).waitFor();
   await start.click();
   await nav.getByLabel('Search conversations').fill('parser'); await page.keyboard.press('Home');
