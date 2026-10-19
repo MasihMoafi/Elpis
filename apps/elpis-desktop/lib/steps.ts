@@ -177,6 +177,12 @@ export function stepLabel(item: Item, running = item.status === "inProgress"): s
 }
 
 /** A step that failed: so reported, or a command that exited with an error. */
+/** The reasoning a step recorded (summary, then content), or "" when it recorded none. */
+export function reasoningOf(item: Item): string {
+  return [item.summary, item.content].flatMap(value => Array.isArray(value) ? value : [])
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim())).join("\n\n");
+}
+
 export const stepFailed = (item: Item) => item.status === "failed" || (item.type === "commandExecution" && typeof item.exitCode === "number" && item.exitCode !== 0);
 
 /** A running step's elapsed time as Claude's row reads it (Intl narrow units): "39s", "1m 2s", "1h 2m 3s". */

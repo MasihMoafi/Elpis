@@ -163,7 +163,8 @@ export function choiceOf(thread: Thread, choices: ProviderChoice[]) {
   const subscription = subscriptionOf(thread.model);
   return choices.find(choice => subscription ? choice.id === subscription.prefix : !!thread.modelProvider && (choice.id === thread.modelProvider || choice.provider === thread.modelProvider))
     ?? (subscription ? { id: subscription.prefix, label: subscription.label, models: [] }
-      : thread.modelProvider ? { id: thread.modelProvider, provider: thread.modelProvider, label: providerLabel(thread.model, thread.modelProvider), models: [] } : choices[0]);
+      // Until provider settings arrive the engine's choice has no ID and stands for whatever provider the chat names.
+      : thread.modelProvider && choices[0]?.id !== "" ? { id: thread.modelProvider, provider: thread.modelProvider, label: providerLabel(thread.model, thread.modelProvider), models: [] } : choices[0]);
 }
 /** The provider a chat runs on, as the microphone needs it: a subscription by its model prefix, else the chat's own provider, else the engine's default (ChatGPT). */
 export const chatProvider = (model: string | null | undefined, provider: string | null | undefined, main: string | null | undefined) => subscriptionOf(model)?.id ?? (provider || main || "openai");

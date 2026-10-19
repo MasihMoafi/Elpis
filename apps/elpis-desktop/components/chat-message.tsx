@@ -15,7 +15,7 @@ import { Step } from "@/components/step";
 import { unreadable, type Item, type Thread, taskFromPath, title } from "@/lib/api";
 import { inlineMediaUrl } from "@/lib/attachments";
 import { plainText } from "@/lib/message-copy";
-import { shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
+import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -137,7 +137,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     return <Activity label={activityLabel??(agentTool||readable(text(item.tool))||"Agent activity")} status={item.status}>{text(item.prompt)&&<p className="step-note">{text(item.prompt)}</p>}{text(item.model)&&<p className="step-note">{text(item.model)}</p>}<div className="step-agents">{ids.filter(Boolean).map(id=><Button key={id} variant="outline" size="sm" onClick={()=>onOpenThread?.(id)} disabled={!onOpenThread}>{threads.some(t=>t.id===id)?title(threads.find(t=>t.id===id)!):"Open agent conversation"}</Button>)}</div></Activity>;
   }
   if(item.type==="reasoning"){
-    const reasoning=[...list(item.summary),...list(item.content)].filter((v):v is string=>typeof v==="string"&&Boolean(v.trim())).join("\n\n");
+    const reasoning=reasoningOf(item);
     return <Activity label="Reasoning" open>{reasoning?<MarkdownText text={reasoning}/>:<p className="step-note">No reasoning summary was recorded for this step.</p>}</Activity>;
   }
   if(item.type==="webSearch"){

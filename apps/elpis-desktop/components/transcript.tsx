@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { pruneOf } from "@/lib/smart-prune";
 import type { Entry, Item } from "@/lib/api";
-import { elapsed, stepLabel, summarize, summaryParts } from "@/lib/steps";
+import { elapsed, reasoningOf, stepLabel, summarize, summaryParts } from "@/lib/steps";
 import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
 import { Counts } from "@/components/diff-view";
 import { TurnChanges } from "@/components/edit-rows";
@@ -103,6 +103,9 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
   const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
   const views = entries.filter(entry => entry.item.type === "imageView" && typeof entry.item.path === "string" && mediaOf?.(entry)).slice(0, 3);
   const edits = running ? null : turnEdits(items);
+  // A blank reasoning step says "no summary recorded" only when the group has no recorded reasoning to show.
+  const recorded = items.some(item => item.type === "reasoning" && reasoningOf(item));
+  const shown = recorded ? entries.filter(entry => entry.item.type !== "reasoning" || reasoningOf(entry.item)) : entries;
   return <details className="activity-group" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary aria-expanded={open}>
       {running
@@ -111,7 +114,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
       {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
     </summary>
-    <div className="activity-group-body">{entries.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}</div>
+    <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}</div>
   </details>;
 }
 

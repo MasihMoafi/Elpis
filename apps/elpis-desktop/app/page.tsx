@@ -73,7 +73,7 @@ import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/li
 import { readAttention, saveAttention, type Attention } from "@/lib/attention";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
-import { onRequest as onFileRequest, openFile } from "@/lib/files-pane";
+import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
 import { PersonalTip, usePersonal } from "@/components/personal-tip";
 import { SidePanel, useSidePanel } from "@/components/side-panel";
 import { SideChat, type SideRequest } from "@/components/side-chat";
@@ -1264,7 +1264,8 @@ export default function Home() {
   const idle = !busy && !activeTurn && selected?.status?.type !== "active";
   const writable = !!selected && !continues;
   const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
-  const personal = usePersonal(ready && !selected, path => { openFile(selected?.cwd || cwd, path); side.openFiles(); }, setError);
+  // The profile opens as source: /personal is for editing it.
+  const personal = usePersonal(ready && !selected, path => { const at = selected?.cwd || cwd; openFile(at, path); setFileView(at, path, "source"); side.openFiles(); }, setError);
   const chooseEffort = (level?: string) => {
     if (!level) { openComposerControl("Reasoning effort"); return; }
     const match = turnEfforts.find(item => item.toLowerCase() === level.toLowerCase());
