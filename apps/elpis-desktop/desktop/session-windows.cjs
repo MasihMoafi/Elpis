@@ -19,6 +19,7 @@ const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: {
 function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, improvements, mayClose, onDark, onClosed, onFocused }) {
   const { BrowserWindow, WebContentsView, session, ipcMain: globalIpc, Menu, clipboard, shell, dialog, nativeTheme } = electron;
   const windows = new Set();
+  const savedText = new WeakSet();
   const openers = new Map();
   const windowIpc = createWindowIpc(globalIpc);
   let loveSpotWindow, openingLoveSpot;
@@ -93,9 +94,20 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
       ipcMain.removeHandler('elpis:session-window');
       detachContextMenu(); disposeImprove(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeState(); browser.dispose(); disposeTheme();
     };
+    let flushingText = false;
     window.on('close', event => {
       if (windows.size === 1 && closeToTray.hides(event, host)) return;
       if (!mayClose(host)) { event.preventDefault(); return; }
+      if (!savedText.has(window) && window.webContents.executeJavaScript) {
+        event.preventDefault();
+        if (!flushingText) {
+          flushingText = true;
+          window.webContents.executeJavaScript('window.__elpisFlushLoveSpot?.() ?? true').then(saved => {
+            if (saved !== false && !window.isDestroyed()) { savedText.add(window); window.close(); }
+          }).catch(error => console.error('Could not save before closing:', error)).finally(() => { flushingText = false; });
+        }
+        return;
+      }
       dispose();
     });
     window.on('closed', () => { dispose(); windows.delete(window); openers.delete(window); onClosed?.(window); if (!windows.size) closeToTray.closed(); });
@@ -105,7 +117,15 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     await window.loadURL(target.href);
     return window;
   }
-  return { open, openLoveSpot, windows, openersFor: host => openers.get(host) };
+  const flushText = async () => {
+    const results = await Promise.all([...windows].filter(host => !host.isDestroyed()).map(async host => {
+      const saved = await host.webContents.executeJavaScript?.('window.__elpisFlushLoveSpot?.() ?? true');
+      if (saved !== false) savedText.add(host);
+      return saved !== false;
+    }));
+    return results.every(Boolean);
+  };
+  return { open, openLoveSpot, windows, flushText, openersFor: host => openers.get(host) };
 }
 const sessionWindowMenu = open => ({ label: 'New Session in New Window', accelerator: 'CommandOrControl+Shift+N', click: () => { void open(); } });
 module.exports = { createSessionWindows, sessionWindowMenu };

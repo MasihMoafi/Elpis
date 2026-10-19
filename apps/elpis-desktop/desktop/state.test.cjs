@@ -117,6 +117,17 @@ test('stale preference fields rebase; overlapping fields conflict and restore th
   assert.equal(a.preferences.readPreferences().turnNotifications, 'always');
 });
 
+test('Love Spot journals merge independent element drafts across delayed native windows', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2), key = 'elpis-draft-v1:love-spot-text-journal';
+  f.delay(true);
+  a.storage.patchItem(key, { 'page:note:a': 'Masih verdict' }); await f.settle();
+  b.storage.patchItem(key, { 'page:note:b': 'Other edit' }); await f.settle();
+  assert.deepEqual(JSON.parse(f.store.read()[key]), { 'page:note:a': 'Masih verdict', 'page:note:b': 'Other edit' });
+  assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+  b.storage.patchItem('elpis-draft-v1:chat-1', { text: 'not a journal' }); await f.settle();
+  assert.match(b.errors.at(-1), /Unsupported workspace patch/);
+});
+
 test('rapid own edits remain ordered; stale shared drafts conflict rather than silently replacing another window', async t => {
   const f = windows(t), a = f.open(1), b = f.open(2), key = 'elpis-draft-v1:chat-1';
   a.storage.setItem(key, 'first'); a.storage.setItem(key, 'second'); await f.settle();

@@ -14,6 +14,7 @@ import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { applyRemoteScene } from "@/lib/love-spot-history";
+import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { agentOf, characters, makeAgent, type Character, type LoveAgent } from "@/lib/love-agents";
@@ -46,6 +47,7 @@ async function savePicture(data: Saved) {
 export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null }) {
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
   const [runError, setRunError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
@@ -72,11 +74,16 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const viewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const saving = useRef<Promise<void>>(Promise.resolve());
-  const saveLatest = useRef<((picture?: boolean) => void) | undefined>(undefined);
+  const saveLatest = useRef<((picture?: boolean, finishEdit?: boolean) => Promise<boolean>) | undefined>(undefined);
+  const journal = useRef<ReturnType<typeof createTextJournal>>(undefined);
+  const deferred = useRef<Saved>(undefined);
+  const editingId = useRef<string>(undefined);
+  const recoveryPending = useRef(false);
   const mounted = useRef(true);
   const remote = useRef(false);
   const placingScreenshot = useRef<string>(undefined);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
+  if (!journal.current && typeof window !== "undefined") journal.current = createTextJournal(report);
   // A page list that fails is shown in the Pages menu it belongs to; the shared message line is cleared by every save.
   const loadPages = useCallback(() => { void api<PageList>("/love-spot/pages").then(data => {
     if (!Array.isArray(data?.pages)) throw unreadable("Love Spot pages");
@@ -125,8 +132,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       if (!active) return;
       revision.current = data.revision;
       currentPage.current = data.scene.page; setPage(data.scene.page); loadPages();
-      setInitial({ elements: data.scene.elements, files: data.scene.files, scrollToContent: true,
+      journal.current!.acknowledge(data.scene.elements, data.scene.page);
+      const elements = journal.current!.recover(data.scene.elements, data.scene.page);
+      setInitial({ elements, files: data.scene.files, scrollToContent: true,
         appState: { ...data.scene.appState, currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } });
+      recoveryPending.current = versions(elements) !== versions(data.scene.elements);
       setError("");
     }).catch(report);
     return () => { active = false; };
@@ -144,6 +154,14 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   }, [editor, report]);
 
   const receive = useCallback((data: Saved) => {
+    // Updating any scene can detach Excalidraw's live textarea. Admit the
+    // newest complete remote scene only after the local edit is committed.
+    if (editor?.getAppState().editingTextElement || document.querySelector("textarea.excalidraw-wysiwyg")) {
+      deferred.current = data; return;
+    }
+    const recovered = journal.current!.recover(data.scene.elements, data.scene.page);
+    const hasRecovery = versions(recovered) !== versions(data.scene.elements);
+    if (hasRecovery) data = { ...data, scene: { ...data.scene, elements: recovered } };
     revision.current = data.revision;
     const switching = currentPage.current?.session !== data.scene.page.session;
     const renamed = currentPage.current?.name !== data.scene.page.name;
@@ -162,7 +180,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
       setSelected(undefined); setQuote(undefined); setRenaming(false);
       editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
-      if (Object.keys(data.scene.files).length) queueMicrotask(() => saveLatest.current?.());
+      if (hasRecovery || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
       return;
     }
     const shown = new Map(editor.getSceneElementsIncludingDeleted().map(e => [e.id, e]));
@@ -194,23 +212,46 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         editor.scrollToContent(screenshot, { fitToViewport: true, viewportZoomFactor: 0.9 });
       } else if (reply) editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 });
       // Inbox images and older pages also pass through the same pixel limit once they arrive.
-      if (files.length) queueMicrotask(() => saveLatest.current?.());
+      if (hasRecovery || files.length) queueMicrotask(() => void saveLatest.current?.());
       // Excalidraw may notify after the merged snapshot is already current.
       schedulePicture();
     }
   }, [editor, loadPages, schedulePicture]);
 
-  const save = useCallback((picture = false) => {
-    const drawing = latest.current;
-    if (!drawing) return;
+  const capture = useCallback(() => {
+    const value = editorRef.current, page = currentPage.current;
+    if (!value || !page) return latest.current;
+    const draft = journal.current!.capture(value, page);
+    const elements = value.getSceneElementsIncludingDeleted();
+    return snapshot(draft ? elements.map(e => e.id === draft.id ? draft : e) : elements, value.getAppState(), value.getFiles(), page);
+  }, []);
+
+  const save = useCallback((picture = false, finishEdit = false) => {
+    clearTimeout(saveTimer.current);
+    const drawing = capture();
+    if (!drawing) return Promise.resolve(false);
+    const protectedIds = journal.current!.protectedIds(drawing.elements, drawing.page);
+    if (mounted.current) setSaveStatus("Saving…");
+    let succeeded = false;
     saving.current = saving.current.catch(() => {}).then(async () => {
-      if (drawing.page?.session !== currentPage.current?.session) return;
-      const data = await api<Saved>("/love-spot", await lightDrawing(drawing));
-      if (drawing.page?.session !== currentPage.current?.session) return;
-      if (mounted.current) { receive(data); setError(""); }
+      const data = await saveWithTextDrafts(drawing, protectedIds, async outgoing => api<Saved>("/love-spot", await lightDrawing(outgoing)).catch(async e => {
+        if (!(e instanceof Error) || !e.message.includes("page changed")) throw e;
+        return api<Saved>("/love-spot/text", { page: outgoing.page, elements: outgoing.elements.filter(e => e.type === "text") });
+      }));
+      journal.current!.acknowledge(data.scene.elements, data.scene.page, finishEdit ? undefined : editorRef.current?.getAppState().editingTextElement?.id);
+      if (mounted.current && drawing.page?.session === currentPage.current?.session) {
+        const unchanged = versions(editorRef.current?.getSceneElementsIncludingDeleted() ?? []) === versions(drawing.elements);
+        // An archived-page save reply must not replace a deferred remote page
+        // switch. The event stream owns remote admission during an edit.
+        if (!editorRef.current?.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg")) receive(data);
+        setError("");
+        setSaveStatus(unchanged ? "Saved" : "Unsaved");
+      }
+      succeeded = true;
       if (picture) await savePicture(data);
-    }).catch(report);
-  }, [receive, report]);
+    }).catch(e => { if (mounted.current) setSaveStatus("Save failed"); report(e); });
+    return saving.current.then(() => succeeded);
+  }, [capture, receive, report]);
   useEffect(() => { saveLatest.current = save; }, [save]);
 
   useEffect(() => {
@@ -222,7 +263,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         const data: Update = JSON.parse(event.data);
         if (data.type === "error") setError(data.message);
         else if (data.type === "screenshots") setScreenshots(data.screenshots);
-        else { if (data.revision !== revision.current) receive(data); setError(""); }
+        else if (data.revision !== revision.current) receive(data);
       } catch (e) { report(e); }
     };
     events.onerror = () => setError("Love Spot is reconnecting… Your drawing is still here.");
@@ -230,9 +271,42 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   }, [editor, receive, report]);
 
   useEffect(() => {
+    const input = (event: Event) => {
+      if (!(event.target instanceof HTMLTextAreaElement) || !event.target.matches(".excalidraw-wysiwyg")) return;
+      capture(); // Synchronous journal before debounce, blur, or unload.
+    };
+    const flush = () => { void saveLatest.current?.(); };
+    const unload = () => {
+      const drawing = capture();
+      if (drawing?.page) {
+        // Text-only keepalive is bounded independently of large board images.
+        const elements = drawing.elements.filter(e => e.type === "text");
+        void fetch("/api/love-spot/text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page: drawing.page, elements }), keepalive: true }).catch(() => {});
+      }
+      flush();
+    };
+    const keydown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault(); event.stopImmediatePropagation(); flush();
+      }
+    };
+    const storageError = window.elpisDesktop?.storage?.onError(report);
+    window.__elpisFlushLoveSpot = () => saveLatest.current?.(false, true) ?? Promise.resolve(true);
+    document.addEventListener("input", input);
+    document.addEventListener("keydown", keydown, true);
+    window.addEventListener("blur", flush);
+    window.addEventListener("beforeunload", unload);
+    return () => {
+      document.removeEventListener("input", input); document.removeEventListener("keydown", keydown, true);
+      window.removeEventListener("blur", flush); window.removeEventListener("beforeunload", unload); storageError?.();
+      delete window.__elpisFlushLoveSpot;
+    };
+  }, [capture, report]);
+
+  useEffect(() => {
     mounted.current = true;
     // Acquiring the editor changes `save`; that is not a view unmount.
-    return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); saveLatest.current?.(true); };
+    return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); saveLatest.current?.(true, true); };
   }, []);
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
@@ -241,6 +315,15 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     // writer would resurrect a shape the user just deleted.
     const all = editorRef.current?.getSceneElementsIncludingDeleted() ?? elements;
     latest.current = snapshot(all, appState, files, currentPage.current);
+    if (recoveryPending.current) { recoveryPending.current = false; queueMicrotask(() => void saveLatest.current?.()); }
+    const editing = appState.editingTextElement && all.find(e => e.id === appState.editingTextElement?.id);
+    const endedEdit = editingId.current && !editing;
+    editingId.current = editing?.id;
+    if (!remote.current && editing && currentPage.current) journal.current!.record(editing, currentPage.current);
+    if (!editing && deferred.current) {
+      const pending = deferred.current; deferred.current = undefined;
+      queueMicrotask(() => { if (mounted.current) receive(pending); });
+    }
     const cards = elements.filter(e => agentOf(e));
     setAgents(previous => versions(previous) === versions(cards) ? previous : cards);
     const note = !appState.editingTextElement && elements.find(e => e.type === "text" && !e.containerId && /(?:^|\s)@agent\b/i.test(e.text) && !converting.current.has(e.id));
@@ -261,10 +344,12 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
     const drawingChanged = before && (filesChanged || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
     if (!remote.current && drawingChanged) {
+      setSaveStatus("Unsaved");
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
     }
+    if (!remote.current && endedEdit) queueMicrotask(() => void saveLatest.current?.());
     if (drawingChanged) schedulePicture();
-  }, [editor, save, schedulePicture]);
+  }, [editor, receive, save, schedulePicture]);
 
   const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>) => {
     clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
@@ -301,7 +386,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     setPageBusy(true);
     try {
       clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
-      save(); await saving.current;
+      if (!await save()) return;
       receive(await api<Saved>("/love-spot/pages", { action, ...(name === undefined ? {} : { name }), page: currentPage.current }));
       setRenaming(false); setError(""); loadPages();
     } catch (e) { report(e); }
@@ -389,6 +474,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>
+      {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
     </div>;
   return <section className="love-spot" aria-label="Love Spot">
     {toolbarHost ? createPortal(tools, toolbarHost) : tools}

@@ -43,7 +43,37 @@ export async function syncLoveSpot(directory, { build = true } = {}) {
     await fs.writeFile(path.join(directory, 'src/app.jsx'), renderer);
   }
   if (!renderer.includes('// Love Spot pages protocol.') && (!renderer.includes('getSceneElementsIncludingDeleted') || !renderer.includes('board.onIncoming'))) throw new Error('Standalone renderer changed; review the pages integration before updating it.');
+  if (!main.includes('// Flush live text before closing.')) {
+    main = replace(main, "  app.on('before-quit', () => board.close());", `  // Flush live text before closing.
+  const saveScene = board.save;
+  board.save = async drawing => {
+    try { return await saveScene(drawing); }
+    catch (error) {
+      if (!error.message.includes('page changed')) throw error;
+      return board.saveText({ page: drawing.page, elements: drawing.elements.filter(e => e.type === 'text') });
+    }
+  };
+  let quitting = false, flushing = false;
+  const flush = () => win?.webContents.executeJavaScript('window.__elpisFlushLoveSpot?.() ?? true');
+  app.on('before-quit', event => {
+    if (quitting) return;
+    event.preventDefault();
+    if (flushing) return;
+    flushing = true;
+    Promise.resolve(flush()).then(saved => { if (saved) { quitting = true; board.close(); app.quit(); } }).catch(console.error).finally(() => { flushing = false; });
+  });`);
+    main = replace(main, "  win.webContents.setWindowOpenHandler", `  win.on('close', event => {
+    if (quitting) return;
+    event.preventDefault();
+    if (flushing) return;
+    flushing = true;
+    Promise.resolve(flush()).then(saved => { if (saved) { quitting = true; board.close(); win.close(); } }).catch(console.error).finally(() => { flushing = false; });
+  });
+  win.webContents.setWindowOpenHandler`);
+    await fs.writeFile(path.join(directory, 'main.cjs'), main);
+  }
   await fs.copyFile(new URL('./love-spot-standalone.jsx', import.meta.url), path.join(directory, 'src/app.jsx'));
+  await fs.copyFile(new URL('../lib/love-spot-drafts.ts', import.meta.url), path.join(directory, 'src/love-spot-drafts.ts'));
   await fs.copyFile(new URL('../lib/love-spot-history.ts', import.meta.url), path.join(directory, 'src/love-spot-history.ts'));
   await fs.copyFile(new URL('../lib/love-spot.ts', import.meta.url), path.join(directory, 'src/love-spot.ts'));
   await fs.copyFile(new URL('../bridge/love-spot-store.cjs', import.meta.url), path.join(directory, 'love-spot-store.cjs'));

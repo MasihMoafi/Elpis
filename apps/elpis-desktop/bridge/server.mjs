@@ -153,6 +153,7 @@ export async function startDesktopServer(options = {}) {
           response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
           return response.end(JSON.stringify(value));
         }
+        if (url.pathname === '/api/love-spot/text' && method === 'POST') return json(response, 200, await loveSpot.saveText(await body(request)));
         if (url.pathname === '/api/love-spot/pages' && ['GET', 'POST'].includes(method)) {
           const value = method === 'GET' ? await loveSpot.listPages() : await loveSpot.changePage(await body(request));
           response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

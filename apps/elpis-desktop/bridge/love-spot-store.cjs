@@ -117,6 +117,25 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return { scene, revision: hash(text) };
     });
   }
+  // A closing editor may belong to the page another window just left.
+  // Flush only its text to that exact archived page, without switching anyone.
+  async function saveText(incoming) {
+    validate(incoming);
+    if (Object.keys(incoming).some(key => !['elements', 'page'].includes(key)) || incoming.elements.some(e => e.type !== 'text')
+      || !record(incoming.page) || typeof incoming.page.session !== 'string' || !incoming.page.session) throw fail('Invalid text draft');
+    pageName(incoming.page.name);
+    return locked(async () => {
+      const current = await read();
+      if (incoming.page.session === current.scene.page.session) return persist(merge(current.scene, incoming));
+      let scene;
+      try { scene = validate(JSON.parse(await fs.readFile(pageFile(incoming.page.name), 'utf8'))); }
+      catch { throw fail('The original text page could not be read. Your draft is still local.', 409); }
+      samePage(incoming.page, scene.page);
+      const merged = merge(scene, incoming), text = JSON.stringify(merged);
+      await atomic(pageFile(scene.page.name), text);
+      return { scene: merged, revision: hash(text) };
+    });
+  }
   async function listPages() {
     const current = await read(), listed = new Map();
     for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
@@ -303,6 +322,6 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     listen({ type: 'screenshots', screenshots: screenshotsList() });
     return () => { listeners.delete(listen); if (!listeners.size) { clearInterval(timer); timer = undefined; } };
   }
-  return { read, save, listPages, changePage, picture, boardPicture, chat, reply, watch, screenshotsList, chooseScreenshot, close() { clearInterval(timer); timer = undefined; listeners.clear(); pending.clear(); } };
+  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, watch, screenshotsList, chooseScreenshot, close() { clearInterval(timer); timer = undefined; listeners.clear(); pending.clear(); } };
 }
 module.exports = { createLoveSpot, newer, merge };

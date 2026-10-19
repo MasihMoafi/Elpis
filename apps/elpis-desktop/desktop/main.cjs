@@ -119,8 +119,12 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
     event.preventDefault();
     if (sessionWindows && ![...sessionWindows.windows].every(host => mayClose(host))) return;
     closing = true;
-    // Detach this UI only. The shared Elpis runtime owns running conversations.
-    Promise.all([store?.flush(), server.close(), browserAgentSocket?.close()]).finally(() => app.quit());
+    // The renderer must save live text while its board server is still open.
+    Promise.resolve(sessionWindows?.flushText()).then(async saved => {
+      if (saved === false) { closing = false; return; }
+      await Promise.all([store?.flush(), server.close(), browserAgentSocket?.close()]);
+      app.quit();
+    }).catch(error => { closing = false; console.error('Could not save before quitting:', error); });
   });
 }
 

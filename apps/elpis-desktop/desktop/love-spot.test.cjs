@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-async function launch(args) {
+async function launch(args, flushText) {
   const app = new EventEmitter(); let ready, lock;
   const identity = {};
   Object.assign(app, { setName: name => { identity.name = name; }, setPath: (key, value) => { identity[key] = value; },
@@ -16,19 +16,31 @@ async function launch(args) {
     whenReady: () => new Promise(resolve => { ready = resolve; }), quit() {} });
   const calls = [], host = { isDestroyed: () => false, isMinimized: () => false, isVisible: () => true, focus: () => calls.push('focus-chat') };
   const openers = { threads: { queue: id => calls.push(['thread', id]) }, newChats: { queue() {} } };
-  const sessions = { windows: new Set(), openersFor: () => openers,
+  const sessions = { windows: new Set(), flushText, openersFor: () => openers,
     open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); } };
   const electron = { app, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
-    sessions, openers, testStore: { get: () => null },
+    sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { close: async () => calls.push('board-close') },
     require: name => name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
       : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return {}; } } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
-  vm.runInContext('server = {}; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
+  vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
   const settle = () => new Promise(resolve => setImmediate(resolve)); await settle();
   return { app, calls, lock, settle, identity };
 }
+
+test('app quit waits for live text before closing the board server; a failure permits retry', async () => {
+  let release, saves = 0;
+  const f = await launch([], () => { saves++; return new Promise(resolve => { release = resolve; }); });
+  let prevented = 0, quit = 0; f.app.quit = () => { quit++; };
+  const request = () => f.app.emit('before-quit', { preventDefault() { prevented++; } });
+  request(); await f.settle();
+  assert.equal(saves, 1); assert.equal(prevented, 1); assert.ok(!f.calls.includes('board-close')); assert.equal(quit, 0);
+  release(false); await f.settle(); assert.equal(quit, 0); assert.ok(!f.calls.includes('board-close'));
+  request(); await f.settle(); assert.equal(saves, 2);
+  release(true); await f.settle(); assert.ok(f.calls.includes('board-close')); assert.equal(quit, 1);
+});
 
 test('cold --love-spot launch opens only the drawing window and carries the flag through the lock', async () => {
   const f = await launch(['--love-spot']);

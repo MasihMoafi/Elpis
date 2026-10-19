@@ -120,6 +120,27 @@ test('a delayed standalone keyboard edit cannot revive an equal-version Elpis de
   assert.deepEqual(standaloneErrors, []); assert.deepEqual(f.errors, []);
 });
 
+test('standalone journals live text, Ctrl+S saves without ending it, and app quit flushes', async t => {
+  const { f, electron, standalone, standaloneErrors } = await standaloneFixture(t);
+  const bounds = await standalone.locator('.excalidraw').boundingBox();
+  await standalone.mouse.click(bounds.x + 450, bounds.y + 220); await standalone.keyboard.press('t');
+  await standalone.mouse.click(bounds.x + 450, bounds.y + 220);
+  const input = standalone.locator('textarea.excalidraw-wysiwyg'); await input.waitFor();
+  await standalone.keyboard.type('Native verdict');
+  await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict' && !e.isDeleted), 'native live keystrokes did not save');
+  await f.draw(f.page, 200);
+  await standalone.keyboard.type(' survives remote saves'); await standalone.keyboard.press('Control+s');
+  await standalone.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();
+  assert.equal(await input.inputValue(), 'Native verdict survives remote saves');
+  // Persist a journal even when the real store refuses its ordinary save.
+  await standalone.evaluate(() => { window.__nativeJournal = localStorage.getItem('elpis-draft-v1:love-spot-text-journal'); });
+  assert.match(await standalone.evaluate(() => window.__nativeJournal), /Native verdict survives remote saves/);
+  await standalone.keyboard.type(' and app quit');
+  await electron.evaluate(({ app }) => { app.quit(); });
+  await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict survives remote saves and app quit' && !e.isDeleted), 'native quit lost final text');
+  assert.deepEqual(standaloneErrors, []); assert.deepEqual(f.errors, []);
+});
+
 test('a remote deletion arriving in a real arrow-key batch never becomes undoable', async t => {
   const { f, electron, standalone, standaloneErrors } = await standaloneFixture(t, { holdIncoming: true });
   await f.draw(f.page);

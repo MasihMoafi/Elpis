@@ -71,6 +71,19 @@ test('Love Spot load/save unions stale windows, keeps newest versions and deleti
   assert.equal(JSON.parse(await fs.readFile(path.join(f.directory, 'scene.excalidraw'), 'utf8')).elements.length, 2);
 });
 
+test('text flush reaches its archived page without changing the page another window selected', async t => {
+  const f = await fixture(t), original = (await f.load()).scene.page;
+  const next = await (await f.request('/pages', { action: 'new', page: original })).json();
+  const text = element('verdict', 3, { type: 'text', text: 'My final verdict', originalText: 'My final verdict' });
+  const saved = await f.request('/text', { page: original, elements: [text] });
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).scene.elements[0].text, text.text);
+  assert.equal((await f.load()).scene.page.session, next.scene.page.session);
+  assert.equal((await f.load()).scene.elements.length, 0, 'old text must not enter the new page');
+  assert.equal((await f.request('/text', { page: original, elements: [element('shape')] })).status, 400);
+  assert.equal((await f.request('/text', { page: { ...original, session: 'unrelated' }, elements: [text] })).status, 409);
+});
+
 test('two Love Spot stores converge on equal-version deletes in either order, but allow newer undo and redo', async t => {
   const f = await fixture(t);
   const other = createLoveSpot({ directory: f.directory, screenshots: f.screenshots });
