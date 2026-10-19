@@ -2,6 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { createBrowser } = require('./browser.cjs');
+const { createBrowserSessions } = require('./browser-sessions.cjs');
+
+test('a window link is policy-checked before its session browser is initialized', async () => {
+  const host = Object.assign(new EventEmitter(), { isDestroyed: () => false, webContents: { isDestroyed: () => false } });
+  const store = { read: () => ({}), set: async () => {}, flush: async () => {} };
+  const sessions = createBrowserSessions({ store });
+  const browser = sessions.attach({ host, origin: 'http://127.0.0.1:4000', ipcMain: { handle() {}, on() {}, removeHandler() {}, removeListener() {} } });
+  for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'http://127.0.0.1:4000/settings']) assert.throws(() => browser.open(url), /HTTP or HTTPS/);
+  browser.dispose(); await sessions.flush();
+});
 
 test('stopping a navigation does not turn its rejected load promise into a page error', async () => {
   const origin = 'http://127.0.0.1:4000', states = [], handlers = new Map(); let page;

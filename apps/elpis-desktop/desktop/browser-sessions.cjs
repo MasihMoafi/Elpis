@@ -1,7 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { createBrowser } = require('./browser.cjs');
-const { trustedBrowserSender } = require('./browser-policy.cjs');
+const { browserUrl, trustedBrowserSender } = require('./browser-policy.cjs');
 
 const KEY = 'elpis-browser-sessions-v1';
 const valid = id => typeof id === 'string' && /^[A-Za-z0-9:_-]{1,240}$/.test(id);
@@ -98,7 +98,11 @@ function createBrowserSessions({ store, browserAgentSocket }) {
     const pageMessage = (event, input) => { for (const entry of entries.values()) if (entry.host === host) entry.listeners.get('elpis:browser:page')?.(event, input); };
     const focus = () => { if (window.entry) void activate().catch(() => {}); };
     ipcMain.on('elpis:browser:layout', layout); ipcMain.on('elpis:browser:page', pageMessage); host.on('focus', focus);
-    return { open(url) { if (window.entry) return window.entry.browser.open(url); void activate().then(() => window.entry?.browser.open(url)); },
+    return { open(url) {
+        const target = browserUrl(url, origin), id = window.id;
+        if (window.entry) return window.entry.browser.open(target);
+        void activate(id).then(() => { if (window.id === id) window.entry?.browser.open(target); }).catch(() => {});
+      },
       setBackground(color) { window.background = color; if (window.entry?.owner === window) window.entry.browser.setBackground(color); },
       dispose() {
         windows.delete(window); host.removeListener('focus', focus);
