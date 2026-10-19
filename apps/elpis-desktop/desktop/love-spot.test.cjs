@@ -58,6 +58,70 @@ test('app quit waits for browser persistence and permits retry after a failed sa
   assert.ok(f.calls.includes('board-close')); assert.equal(quit, 1);
 });
 
+function sessionFixture() {
+  class Window extends EventEmitter {
+    constructor() {
+      super(); this.text = 'First words'; this.saved = ''; this.saves = 0;
+      this.webContents = Object.assign(new EventEmitter(), {
+        session: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} },
+        setWindowOpenHandler() {},
+        executeJavaScript: async () => {
+          this.saves++;
+          if (this.failure === 'throw') throw Error('Test disk unavailable');
+          if (this.failure === 'refuse') return false;
+          this.saved = this.text; return true;
+        },
+      });
+    }
+    isDestroyed() { return !!this.destroyed; }
+    async loadURL(url) { this.url = url; }
+    close() {
+      let prevented = false;
+      this.emit('close', { preventDefault() { prevented = true; } });
+      if (!prevented) { this.destroyed = true; this.emit('closed'); }
+    }
+  }
+  const noop = () => {};
+  const stubs = {
+    './browser.cjs': { createBrowser: () => ({ agent: {}, dispose: noop }) },
+    './state.cjs': { registerState: () => noop }, './files.cjs': { registerFiles: () => noop },
+    './terminal.cjs': { registerTerminal: () => noop }, './context-menu.cjs': { attachContextMenu: () => noop },
+    './theme.cjs': { registerTheme: () => noop }, './improve.cjs': { registerImprove: () => noop },
+    './open-thread.cjs': { createThreadOpener: () => ({ attach: () => noop }), createNewChatOpener: () => ({ attach: () => noop }) },
+    './window-ipc.cjs': { createWindowIpc: () => () => ({ handle: noop, removeHandler: noop }) },
+  };
+  const module = { exports: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'session-windows.cjs'), 'utf8'), {
+    __dirname, module, console: { ...console, error: noop }, URL, require: name => stubs[name] ?? require(name),
+  });
+  return module.exports.createSessionWindows({ electron: { BrowserWindow: Window }, url: 'http://127.0.0.1:4000/',
+    closeToTray: { hides: () => false, closed: noop }, mayClose: () => true });
+}
+
+for (const failure of ['refuse', 'throw']) test(`a partly failed quit still flushes later text when another window closes (${failure})`, async () => {
+  const sessions = sessionFixture(), embedded = await sessions.open(), standalone = await sessions.openLoveSpot();
+  standalone.failure = failure;
+  if (failure === 'throw') await assert.rejects(sessions.flushText(), /Test disk unavailable/);
+  else assert.equal(await sessions.flushText(), false);
+  assert.equal(embedded.isDestroyed(), false);
+  embedded.text = 'Final verdict after cancelled quit';
+  embedded.close(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(embedded.saved, embedded.text, 'cancelled quit must not let the next close skip its new text');
+  assert.equal(embedded.isDestroyed(), true);
+  standalone.close(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(standalone.isDestroyed(), false, 'a refused save keeps its window and text');
+  assert.equal(standalone.text, 'First words');
+});
+
+test('a completely successful quit closes both windows without duplicate flushes', async () => {
+  const sessions = sessionFixture(), embedded = await sessions.open(), standalone = await sessions.openLoveSpot();
+  assert.equal(await sessions.flushText(), true);
+  embedded.close(); standalone.close();
+  assert.equal(embedded.saved, embedded.text); assert.equal(standalone.saved, standalone.text);
+  assert.equal(embedded.saves, 1); assert.equal(standalone.saves, 1);
+  assert.equal(sessions.windows.size, 0);
+});
+
 test('cold --love-spot launch opens only the drawing window and carries the flag through the lock', async () => {
   const f = await launch(['--love-spot']);
   assert.equal(f.lock.loveSpot, true);

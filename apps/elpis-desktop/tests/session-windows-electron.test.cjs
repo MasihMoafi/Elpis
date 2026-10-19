@@ -6,8 +6,57 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fixture } = require('./parity-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cjs');
+
+test('native Love Spot dock and embedded windows retain live text after a cancelled quit', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
+  const f = await loveSpotFixture(); let electron, standalone, release;
+  try {
+    const nativeEnv = { ...process.env, XDG_SESSION_TYPE: 'x11', ELECTRON_OZONE_PLATFORM_HINT: 'x11', ELPIS_HOME: path.join(f.root, 'elpis-home'),
+      ELPIS_DESKTOP_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_PROFILE: path.join(f.root, 'profile'), SESSION_WINDOW_URL: f.url };
+    delete nativeEnv.WAYLAND_DISPLAY;
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: nativeEnv });
+    const embedded = await electron.firstWindow(); embedded.setDefaultTimeout(10000); await f.open(embedded);
+    const opened = electron.waitForEvent('window');
+    await electron.evaluate(async () => { await global.sessionWindows.openLoveSpot(); });
+    standalone = await opened; standalone.setDefaultTimeout(10000);
+    await standalone.locator('.excalidraw canvas').first().waitFor();
+    for (const page of [embedded, standalone]) page.on('pageerror', error => f.errors.push(error.message));
+    assert.match(new URL(standalone.url()).pathname, /love-spot\.html$/);
+    const bounds = await embedded.locator('.excalidraw').boundingBox();
+    await embedded.mouse.click(bounds.x + 450, bounds.y + 220); await embedded.keyboard.press('t');
+    await embedded.mouse.click(bounds.x + 450, bounds.y + 220);
+    const input = embedded.locator('textarea.excalidraw-wysiwyg'); await input.waitFor();
+    await embedded.keyboard.type('Native verdict'); await embedded.keyboard.press('Control+s');
+    await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict' && !e.isDeleted), 'native Ctrl+S did not save active text');
+    await f.draw(standalone, 180);
+    await embedded.bringToFront(); await embedded.keyboard.type(' after remote update'); await embedded.keyboard.press('Control+s');
+    assert.equal(await input.inputValue(), 'Native verdict after remote update');
+    await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict after remote update' && !e.isDeleted), 'remote update lost the native verdict');
+    await standalone.route('**/api/love-spot', route => route.request().method() === 'POST'
+      ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test native disk unavailable' }) }) : route.continue());
+    assert.equal(await electron.evaluate(async () => global.sessionWindows.flushText()), false);
+    assert.equal(embedded.isClosed(), false); assert.equal(standalone.isClosed(), false);
+    await standalone.getByRole('alert').filter({ hasText: 'Test native disk unavailable' }).waitFor();
+    const gate = new Promise(resolve => { release = resolve; });
+    await embedded.route('**/api/love-spot', async route => {
+      if (route.request().method() === 'POST') await gate;
+      return route.continue();
+    });
+    await embedded.keyboard.type(' and final words');
+    const id = await (await electron.browserWindow(embedded)).evaluate(window => window.id);
+    const closed = embedded.waitForEvent('close');
+    assert.equal(await electron.evaluate(({ BrowserWindow }, id) => {
+      const window = BrowserWindow.fromId(id); window.close(); return window.isDestroyed();
+    }, id), false, 'closing must wait for the text written after the failed quit');
+    release(); await closed;
+    await f.waitFor(s => s.elements.some(e => e.text === 'Native verdict after remote update and final words' && !e.isDeleted), 'native close lost the final text');
+    await standalone.unroute('**/api/love-spot');
+    assert.equal(await electron.evaluate(async () => global.sessionWindows.flushText()), true);
+    assert.deepEqual(f.errors, []);
+  } finally { release?.(); if (standalone && !standalone.isClosed()) await standalone.unroute('**/api/love-spot'); if (electron) await electron.close(); await f.close(); }
+});
 
 test('native settings changes update both windows without reverting another preference', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'session-settings-'));
