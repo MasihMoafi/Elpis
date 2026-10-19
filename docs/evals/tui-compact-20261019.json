@@ -1,0 +1,167 @@
+{
+  "task": "T6",
+  "status": "measured experimental candidate; not installed",
+  "base": "8b3a75c793158c259c7b647d1d3d4c6774433e12",
+  "buildSource": {
+    "HEAD": "333cc1e116fff6119f1c7257ab0816d0de8d10a3",
+    "HEAD:codex-rs": "ae7cdcc0130eedec15856b69698e5d415ffb73c3",
+    "HEAD:scripts/build-elpis-local": "a57539338073e009db91be8a4b23c2053ec4928f",
+    "HEAD:codex-rs/Cargo.lock": "beea0906eba65619c65b7d0be07f8a5b0cf2bfab",
+    "HEAD:codex-rs/rust-toolchain.toml": "910c65114ec128a8317ee8257428451f3cd28230"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.95.0\nLLVM version: 22.1.2",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)"
+  },
+  "features": "codex-cli defaults; no extra features",
+  "profiles": {
+    "fast": {
+      "LTO": "false",
+      "OPT_LEVEL": "1",
+      "CODEGEN_UNITS": "256",
+      "INCREMENTAL": "true",
+      "DEBUG": "none",
+      "STRIP": "symbols"
+    },
+    "compact": {
+      "LTO": "thin",
+      "OPT_LEVEL": "s",
+      "CODEGEN_UNITS": "4",
+      "INCREMENTAL": "false",
+      "DEBUG": "none",
+      "STRIP": "symbols"
+    }
+  },
+  "artifacts": {
+    "fast": {
+      "path": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast/codex",
+      "bytes": 252874208,
+      "sha256": "89592419f87395b33b427c03c02acc3d589bcf8b5ef9160b5a5bdf526e57c96a"
+    },
+    "compact": {
+      "path": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact/codex",
+      "bytes": 182849856,
+      "sha256": "328c793c903b5b7fd0365af2d080bc81a6b891212043d7588f41025c85ec3305"
+    }
+  },
+  "savedBytes": 70024352,
+  "savedPercent": 27.691377682930796,
+  "builds": {
+    "fast": {
+      "elapsedSeconds": 783.6954308099994,
+      "cgroupPeakBytes": 12023697408,
+      "helperSummary": "build_result status=ok mode=next-cargo profile=release jobs=6 elapsed_ms=783575 peak_c=75.0 artifact_bytes=0 pause_count=0 cooling_ms=0 limit_hold_count=0",
+      "individualProcessMaxRssKiB": 3822664,
+      "userSeconds": 3757.09,
+      "systemSeconds": 125.39
+    },
+    "compact": {
+      "elapsedSeconds": 1066.8426363360013,
+      "cgroupPeakBytes": 9322713088,
+      "helperSummary": "build_result status=ok mode=next-cargo profile=release jobs=6 elapsed_ms=1066741 peak_c=74.0 artifact_bytes=0 pause_count=0 cooling_ms=0 limit_hold_count=0",
+      "individualProcessMaxRssKiB": 5455100,
+      "userSeconds": 5257.27,
+      "systemSeconds": 222.4
+    }
+  },
+  "checks": {
+    "helpVersionMatch": true,
+    "pairedWarmVersionSamplesPerProfile": 12,
+    "warmVersionMediansMs": {
+      "fast": 50.948262,
+      "compact": 48.9407975
+    },
+    "nativeThemeProfileScenariosPassed": 12,
+    "bridgeTestsPassed": 12,
+    "inspectedCaptures": [
+      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-dark.png",
+      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-light.png",
+      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-owned-dark-draft-copied.png",
+      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/compact-owned-light-draft-copied.png",
+      "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/bench/fast-owned-dark-draft-copied.png"
+    ],
+    "externalModelCalls": 0
+  },
+  "cleanup": {
+    "trashedPrivateHomes": 10,
+    "rawTerminalProofsKept": 8,
+    "dependencyLinkRemoved": true,
+    "sharedDependencyTargetIntact": true,
+    "ownedProcessesRemaining": 0
+  },
+  "installedOriginal": {
+    "path": "/home/masih/.local/lib/elpis-next/versions/tui-pointer-20261019-78ef58f2/package/bin/codex",
+    "sha256": "78ef58f2b630930a55ec891e2e4c767e12a44a7ce7e478b7629975a851dfc24b",
+    "unchangedAfterRuntime": true
+  },
+  "experimentalSharedTarget": {
+    "path": "/home/masih/Desktop/p/Elpis-wt-continuity/codex-rs/target/release/codex",
+    "sha256": "328c793c903b5b7fd0365af2d080bc81a6b891212043d7588f41025c85ec3305",
+    "installed": false,
+    "profileDefaultsChanged": false
+  },
+  "evidenceRoot": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww",
+  "limits": [
+    "Warm --version timing measures CLI process startup, not interactive or inference speed.",
+    "Engine only; code-mode host, bridge tools and package overhead unchanged and unmeasured.",
+    "Runtime fixture checks are separate; no installation or release-profile default change.",
+    "Build times are single observed builds: fast dependencies were already cached; no cold-cache equivalence is claimed.",
+    "TUI startup/typing/scroll timings have one sample per theme and 100 ms polling; functional checks are stronger than speed claims.",
+    "Code-mode was disabled in fixture configuration; no actual inference, code-mode host, daily-use or OS clipboard acceptance tested.",
+    "User cgroup has no io controller; both runs used kernel-verified best-effort ionice7 with mandatory CPU/memory/swap limits."
+  ],
+  "limitsVerification": {
+    "fast": {
+      "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/elpis-t6-fast-20261019.service",
+      "applied": {
+        "memory.high": "12884901888",
+        "memory.max": "17179869184",
+        "memory.swap.max": "0",
+        "cpu.max": "600000 100000",
+        "cpu.weight": "100",
+        "io.weight": null
+      },
+      "lock": "/tmp/elpis-rust-build.lock",
+      "exclusiveLockAcquired": true,
+      "ioControllerTelemetry": "not delegated",
+      "ionice": "best-effort: prio 7",
+      "startup": "corrected attempt2; attempt1 never compiled"
+    },
+    "compact": {
+      "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/elpis-t6-compact-20261019.service",
+      "applied": {
+        "memory.high": "12884901888",
+        "memory.max": "17179869184",
+        "memory.swap.max": "0",
+        "cpu.max": "600000 100000",
+        "cpu.weight": "100",
+        "io.weight": null
+      },
+      "lock": "/tmp/elpis-rust-build.lock",
+      "exclusiveLockAcquired": true,
+      "ioControllerTelemetry": "not delegated",
+      "ionice": "best-effort: prio 7",
+      "startup": "corrected attempt2; attempt1 never compiled"
+    }
+  },
+  "buildCommands": {
+    "fast": {
+      "fullLaunch": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast-launch.json",
+      "capturedInputs": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast/command.json",
+      "log": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/fast-build.log"
+    },
+    "compact": {
+      "fullLaunch": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact-launch.json",
+      "capturedInputs": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact/command.json",
+      "log": "/home/masih/.cache/elpis-tests/tui-compact-20261019-c2hcogww/compact-build.log"
+    }
+  },
+  "startupHistory": {
+    "precompilerInstrumentationFailure": "attempt1: missing delegated io.weight; Cargo/rustc never started",
+    "correction": "Root authorized optional I/O telemetry plus ionice7; mandatory limits unchanged",
+    "actualCompilerAttempts": {
+      "fast": 1,
+      "compact": 1
+    }
+  }
+}
