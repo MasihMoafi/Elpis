@@ -81,7 +81,9 @@ jobs:
         run: |
           set -o pipefail
           cargo +1.95.0 test --profile dev-small --locked -p codex-tui --lib ledger_ -- --test-threads=2 2>&1 | tee "$RUNNER_TEMP/t7-tests.log"
-          cargo +1.95.0 test --profile dev-small --locked -p codex-tui --lib startup_draft_layout_tests -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/t7-tests.log"
+          cargo +1.95.0 test --profile dev-small --locked -p codex-tui --lib startup_draft::layout::tests -- --list > "$RUNNER_TEMP/t7-startup-tests.list"
+          rg -q '^startup_draft::layout::tests::owned_startup_keeps_the_live_bottom_geometry: test$' "$RUNNER_TEMP/t7-startup-tests.list"
+          cargo +1.95.0 test --profile dev-small --locked -p codex-tui --lib startup_draft::layout::tests -- --test-threads=2 2>&1 | tee -a "$RUNNER_TEMP/t7-tests.log"
       - name: Collect Rust test output for review
         if: always()
         run: |
