@@ -6,6 +6,7 @@ const { registerFiles } = require('./files.cjs');
 const { registerTerminal } = require('./terminal.cjs');
 const { attachContextMenu } = require('./context-menu.cjs');
 const { registerTheme } = require('./theme.cjs');
+const { registerCopyKeys } = require('./copy-keys.cjs');
 const { appPermission } = require('./media-policy.cjs');
 const { trustedBrowserSender } = require('./browser-policy.cjs');
 const { createThreadOpener, createNewChatOpener, threadId: validThreadId } = require('./open-thread.cjs');
@@ -75,6 +76,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     };
     window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => callback(permits(contents, permission, details)));
     window.webContents.session.setPermissionCheckHandler((contents, permission, _requestingOrigin, details) => permits(contents, permission, details));
+    registerCopyKeys(window.webContents);
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.on('will-navigate', (event, target) => {
       if (new URL(target).origin !== origin) event.preventDefault();
