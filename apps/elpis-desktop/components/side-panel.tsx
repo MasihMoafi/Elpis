@@ -106,6 +106,7 @@ export function useSidePanel(browser: Browser) {
   }, [open, shown, openFiles, closePanel]);
   // Ctrl+Shift+F on a page reaches the window as a count in the browser's state; each step is one press.
   const presses = browser.state?.fullView, seen = useRef<number | null>(null);
+  useEffect(() => { seen.current = null; }, [browser.sessionId]);
   useEffect(() => {
     if (presses === undefined) return;
     if (seen.current !== null && presses !== seen.current) toggleFull();

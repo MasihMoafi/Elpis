@@ -349,7 +349,7 @@ export default function Home() {
   const [windowAvailable, setWindowAvailable] = useState(false);
   const sessionWindowApi = () => window.elpisDesktop?.openSessionWindow ?? (window.parent !== window && new URLSearchParams(location.search).get("pane") === "1" ? window.parent.elpisDesktop?.openSessionWindow : undefined);
   useEffect(() => { setWindowAvailable(!!sessionWindowApi()); }, []);
-  const browser = useBrowser();
+  const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
   const side = useSidePanel(browser);
   useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
@@ -424,7 +424,7 @@ export default function Home() {
   const upsertThread = useCallback((thread: Thread) => setThreads(prev => prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
     for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
-    for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); }
+    for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); browser.closeSession(id); }
     if (permanent) {
       for (const id of ids) for (const key of [id, `recovery-${id}`]) { delete drafts.current[key]; writeDraft(key, ""); delete attachmentDrafts.current[key]; writeAttachmentDraft(key, []); }
       setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
@@ -434,7 +434,7 @@ export default function Home() {
     setMarked(prev => prev.some(id => ids.has(id)) ? prev.filter(id => !ids.has(id)) : prev);
     setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
     if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
-  }, [select, setText, savedDraft, restoreAttachments, updateTabs]);
+  }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
   const refreshThreads = useCallback(async () => {
     const routesAtRequest = { ...settingsOf.current };
     const statusesAtRequest = { ...statusRevisions.current };
@@ -828,6 +828,8 @@ export default function Home() {
   function closeChatTab(id: string) {
     const before = tabsRef.current, next = closeTab(before, id);
     if (next === before) return;
+    const closed = before.tabs.find(tab => tab.id === id);
+    if (closed) browser.closeSession(closed.threadId ?? `draft:${closed.id}`);
     updateTabs(next);
     if (id === before.activeId) openTab(activeTab(next));
   }
@@ -971,7 +973,7 @@ export default function Home() {
     const sentText = outgoing, sentAttachments = [...files];
     const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
     pickedMentions.current = new Map();
-    const originalId = selected?.id || newDraftKey.current, originalRequest = request.current;
+    const originalId = selected?.id || newDraftKey.current, originalRequest = request.current, browserDraft = `draft:${tabsRef.current.activeId}`;
     const submissionKey = crypto.randomUUID();
     const queued = activeTurn && !continues && (followUp ?? preferences.followUp) === "queue";
     if (!queued) {
@@ -989,6 +991,7 @@ export default function Home() {
         const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
         thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
         updateSubmission({ scope: thread.id });
+        await browser.adoptSession(browserDraft, thread.id);
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
         saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
         if (originalRequest === request.current) { saveDraft(originalId, ""); saveAttachments(originalId, []); select(thread); }
@@ -1051,11 +1054,12 @@ export default function Home() {
     if (attachmentsRef.current.length) { setFileNotice("Bash mode is on. Return to chat to send attachments."); return; }
     setBusy(true); setError("");
     let thread = selectedRef.current;
-    const originalId = thread?.id || newDraftKey.current;
+    const originalId = thread?.id || newDraftKey.current, browserDraft = `draft:${tabsRef.current.activeId}`;
     try {
       if (!thread) {
         const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
         thread = result.thread; upsertThread(thread);
+        await browser.adoptSession(browserDraft, thread.id);
         if (request.current === originalRequest) { saveDraft(originalId, ""); saveDraft(thread.id, command); shellCreated.current = thread.id; select(thread); }
       }
       await api(`/threads/${encodeURIComponent(thread.id)}/shell`, { command });

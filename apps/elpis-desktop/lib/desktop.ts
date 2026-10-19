@@ -5,16 +5,18 @@ export type BrowserTab = { id:string; url:string; title:string; loading:boolean;
 /** A comment on the active page (annotation mode); `draft` is the one being written. */
 export type BrowserComment = { id:string; number:number; kind:"element"|"region"|"text"; label:string; body:string };
 export type BrowserState = { visible:boolean; activeId:string|null; focusAddress:number; tabs:BrowserTab[]; annotating:boolean; markersVisible:boolean; annotations:BrowserComment[]; draft:(BrowserComment&{editing:boolean})|null;
+  sessionId?:string; presentation?:number; error?:string;
   agent?:{enabled:boolean;tabId:string|null};
   /** Counts Ctrl+Shift+F pressed on a page (the page has the key, not the window): each step asks the window to toggle full view. */
   fullView?:number;
   find:{ open:boolean; text:string; matches:number; active:number; focus:number } };
 /** Commands that return more than the state: annotationsCollect and screenshot. */
 export type BrowserResult = { count?:number; text?:string; images?:{number:number;dataUrl:string}[]; image?:string|null; copied?:boolean };
-export type BrowserCommand = { id?:string; url?:string; body?:string; text?:string; value?:string|boolean };
+export type BrowserCommand = { id?:string; url?:string; body?:string; text?:string; value?:string|boolean; sessionId?:string; fromSessionId?:string };
 export type DesktopBrowser = {
+  sessionScoped?:boolean;
   command:(action:string,data?:BrowserCommand)=>Promise<BrowserState&{result?:BrowserResult}>;
-  layout:(value:{bounds:{x:number;y:number;width:number;height:number};obscured:boolean})=>void;
+  layout:(value:{bounds:{x:number;y:number;width:number;height:number};obscured:boolean;sessionId?:string})=>void;
   subscribe:(callback:(state:BrowserState)=>void)=>()=>void;
 };
 export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> & {

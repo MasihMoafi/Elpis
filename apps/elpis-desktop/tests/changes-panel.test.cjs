@@ -119,6 +119,17 @@ test('Changes tab: the working-tree file list with status and +/- counts, and th
     assert.ok(widths.length > 3 && Math.max(...widths) - Math.min(...widths) <= 1, `every line is as wide as the longest, so the colours end together (${widths})`);
     assert.equal(await rows.nth(2).locator('.change-row').getAttribute('aria-current'), 'true', 'the shown file is marked in the list');
     assert.deepEqual(await oranges(page), [], 'light theme, Changes tab: no orange');
+    // The shared gold primary background is intentional. Other orange surfaces and primary text remain detectable.
+    await page.evaluate(() => {
+      const probe = document.createElement('div'); probe.id = 'orange-guard-probe';
+      probe.innerHTML = '<span style="background:rgb(242,169,59)">surface</span><button class="primary-cut" style="color:rgb(242,169,59)">text</button>';
+      document.body.append(probe);
+    });
+    try {
+      const hits = await oranges(page);
+      assert.ok(hits.some(hit => hit.startsWith('span: background-color ')), 'unintended orange surfaces still fail');
+      assert.ok(hits.some(hit => hit.startsWith('button.primary-cut: color ')), 'orange primary text still fails');
+    } finally { await page.locator('#orange-guard-probe').evaluate(node => node.remove()); }
     await shoot('changes-light');
   });
 });

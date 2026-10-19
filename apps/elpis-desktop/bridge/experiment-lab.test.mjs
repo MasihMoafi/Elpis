@@ -171,8 +171,14 @@ test('the HTTP route requires a private session, returns the record envelope and
   assert.deepEqual(await initial.json(), { record: null });
   const response = await post({ ...input(), repetitions: 1 });
   assert.equal(response.status, 200); assert.equal((await response.json()).record.status, 'running');
-  await new Promise(resolve => setTimeout(resolve, 30));
-  const result = await fetch(`${url.origin}/api/experiment-lab`, { headers: { Cookie: cookie } });
-  assert.equal((await result.json()).record.trials.length, 2);
+  const deadline = Date.now() + 10000;
+  let record;
+  do {
+    const result = await fetch(`${url.origin}/api/experiment-lab`, { headers: { Cookie: cookie } });
+    record = (await result.json()).record;
+    if (record.trials.length === 2) break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  } while (Date.now() < deadline);
+  assert.equal(record.trials.length, 2);
   assert.equal((await post({ action: 'stop', unexpected: true })).status, 400);
 });

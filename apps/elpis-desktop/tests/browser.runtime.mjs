@@ -16,11 +16,13 @@ const { Provider, message: modelMessage, call: modelCall } = require('../../../s
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];
 const approvalEval = process.argv.includes('--approvals') || process.argv.includes('--only-approvals');
+const sessionsOnly = process.argv.includes('--only-sessions');
 assert(binary && path.isAbsolute(binary), 'Give the absolute path of an Elpis executable');
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const shots = process.argv.includes('--shots') ? path.resolve(process.argv[process.argv.indexOf('--shots') + 1]) : await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-browser-shots-'));
 await fs.mkdir(shots, { recursive: true });
-const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-browser-profile-'));
+const profiles = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(profiles, { recursive: true });
+const root = await fs.mkdtemp(path.join(profiles, 'elpis-browser-profile-'));
 const home = path.join(root, 'home'), config = path.join(root, 'config'); for (const dir of [home, config]) await fs.mkdir(dir);
 const provider = new Provider();
 if (approvalEval) {
@@ -69,9 +71,10 @@ try {
   await until(() => fs.stat(socket).then(() => true), 'engine socket');
   // The engine links the given path to its socket; the app connects to the private socket itself.
   await fs.chmod(socket, 0o600); const bridge = await fs.realpath(socket); existingSocket(bridge);
-  desktop = await _electron.launch({ executablePath: path.join(appRoot, 'node_modules/electron/dist/electron'), args: [appRoot, '--disable-gpu'], cwd: appRoot,
+  const launchDesktop = () => _electron.launch({ executablePath: path.join(appRoot, 'node_modules/electron/dist/electron'), args: [appRoot, '--disable-gpu', '--ozone-platform=x11'], cwd: appRoot,
     env: { PATH: process.env.PATH, DISPLAY: display, HOME: home, XDG_CONFIG_HOME: config, TMPDIR: root, ELPIS_NODE_BIN: process.execPath, ELPIS_APP_BRIDGE_SOCKET: bridge, ELPIS_HOME: home, LANG: 'C.UTF-8' } });
-  const app = await desktop.firstWindow();
+  desktop = await launchDesktop();
+  let app = await desktop.firstWindow();
   windowBox = await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getContentBounds());
   const focusPage = url => desktop.evaluate(({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL().startsWith(url))?.focus(), url);
   app.setDefaultTimeout(8000);
@@ -97,6 +100,55 @@ try {
     const browser=listed.data.find(server=>server.name==='elpis_browser');
     assert(browser,'registered browser server');assert.equal(Object.keys(browser.tools).length,11);
     toolCall=async(name,args={})=>{const value=await rpc('mcpServer/tool/call',{threadId,server:'elpis_browser',tool:name,arguments:args});if(value.isError)throw Error(value.content[0].text);return value.content[0].type==='image'?value:JSON.parse(value.content[0].text);};
+    const target=new URL(app.url());target.searchParams.set('session',threadId);await app.goto(target.href);
+    await app.getByRole('textbox',{name:'Message Elpis',exact:true}).waitFor();
+  });
+  if (sessionsOnly) await check('two actual engine MCP processes retain separate browsers during concurrent calls and switching', async () => {
+    const second = await app.evaluate(async () => {
+      const response = await fetch('/api/threads', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:'Second browser session',permissions:'full'}) });
+      return (await response.json()).thread;
+    });
+    const other = async (name,args={}) => { const result=await rpc('mcpServer/tool/call',{threadId:second.id,server:'elpis_browser',tool:name,arguments:args});if(result.isError)throw Error(result.content[0].text);return result.content[0].type==='image'?result:JSON.parse(result.content[0].text); };
+    const [a,b]=await Promise.all([toolCall('browser_open',{url:new URL('/session-a',siteUrl).href}),other('browser_open',{url:new URL('/session-b',siteUrl).href})]);
+    await Promise.all([toolCall('browser_wait',{tabId:a.tabId}),other('browser_wait',{tabId:b.tabId})]);
+    const [sa,sb]=await Promise.all([toolCall('browser_snapshot',{tabId:a.tabId}),other('browser_snapshot',{tabId:b.tabId})]);
+    assert.equal(new URL(sa.url).pathname,'/session-a');assert.equal(new URL(sb.url).pathname,'/session-b');
+    assert.ok(sb.viewport.width>0&&sb.viewport.height>0,'a never-shown engine session has a viewport');
+    await other('browser_type',{tabId:b.tabId,selector:'[name=email]',text:'hidden-session-b@example.invalid'});
+    await other('browser_click',{tabId:b.tabId,selector:'button.primary'});
+    assert.match((await other('browser_snapshot',{tabId:b.tabId})).text,/Signed in as hidden-session-b@example.invalid/);
+    assert.equal((await other('browser_screenshot',{tabId:b.tabId})).content[0].type,'image');
+    await assert.rejects(toolCall('browser_snapshot',{tabId:b.tabId}),/closed/);
+    assert.deepEqual((await toolCall('browser_tabs')).tabs.map(tab=>tab.id),[a.tabId]);
+    assert.deepEqual((await other('browser_tabs')).tabs.map(tab=>tab.id),[b.tabId]);
+    const forged = await rpc('mcpServer/tool/call',{threadId:browserFixtureThread.id,server:'elpis_browser',tool:'browser_tabs',arguments:{},meta:{threadId:second.id}});
+    assert.deepEqual(JSON.parse(forged.content[0].text).tabs.map(tab=>tab.id),[a.tabId],'the engine overwrites a forged host session');
+    await app.getByRole('textbox',{name:'Search or enter a URL'}).waitFor();
+    assert.match(await app.getByRole('textbox',{name:'Search or enter a URL'}).inputValue(),/\/session-a$/);
+    const target=new URL(app.url());target.searchParams.set('session',second.id);await app.goto(target.href);
+    await until(async()=>/\/session-b$/.test(await app.getByRole('textbox',{name:'Search or enter a URL'}).inputValue()),'second session address');
+  });
+  if (sessionsOnly) await check('an inherited MCP capability still uses the calling engine thread, never its parent pages', async () => {
+    const profile=await desktop.evaluate(({app})=>app.getPath('userData'));
+    const connectionFile=path.join(profile,'browser-connection.json'), connection=JSON.parse(await fs.readFile(connectionFile,'utf8'));
+    const capability=Object.keys(connection.scopes).find(token=>connection.scopes[token]===browserFixtureThread.id);
+    const { browserMcpConfig }=await import('../bridge/browser-mcp.mjs');
+    const child=(await rpc('thread/start',{cwd:root,config:browserMcpConfig(connection.socketPath,process.execPath,capability,connectionFile)})).thread;
+    const inherited=async(name,args={})=>{const value=await rpc('mcpServer/tool/call',{threadId:child.id,server:'elpis_browser',tool:name,arguments:args});if(value.isError)throw Error(value.content[0].text);return JSON.parse(value.content[0].text);};
+    assert.deepEqual((await inherited('browser_tabs')).tabs,[]);
+    const tab=await inherited('browser_open',{url:new URL('/child-session',siteUrl).href});await inherited('browser_wait',{tabId:tab.tabId});
+    assert.match((await inherited('browser_snapshot',{tabId:tab.tabId})).url,/\/child-session$/);
+    assert.equal((await toolCall('browser_tabs')).tabs.length,1);
+    await assert.rejects(toolCall('browser_snapshot',{tabId:tab.tabId}),/closed/);
+  });
+  if (sessionsOnly) await check('desktop restart restores pages and reconnects the browser tools of still-loaded engine sessions', async () => {
+    await rpc('thread/resume',{threadId:browserFixtureThread.id,excludeTurns:true});
+    await desktop.close(); desktop = await launchDesktop(); app = await desktop.firstWindow(); app.setDefaultTimeout(8000);
+    await app.getByRole('textbox',{name:'Message Elpis',exact:true}).waitFor();
+    const target=new URL(app.url());target.searchParams.set('session',browserFixtureThread.id);await app.goto(target.href);
+    await until(async()=>/\/session-a$/.test(await app.getByRole('textbox',{name:'Search or enter a URL'}).inputValue()),'restored first session address');
+    const listed=await toolCall('browser_tabs');assert.equal(listed.tabs.length,1);assert.match(listed.tabs[0].url,/\/session-a$/);
+    const snapshot=await toolCall('browser_snapshot',{tabId:listed.tabs[0].id});assert.match(snapshot.url,/\/session-a$/);
   });
   if (approvalEval) await check('Ask browser call succeeds through the card; session approval avoids repeated prompts',async()=>{
     provider.actions.push({type:'tool_search_call',call_id:'discover_browser',execution:'client',arguments:{query:'elpis_browser browser_open',limit:1}});
@@ -119,7 +171,7 @@ try {
     await app.getByRole('textbox',{name:'Message Elpis',exact:true}).fill('Open the fixture again in this chat.');await app.getByRole('textbox',{name:'Message Elpis',exact:true}).press('Enter');
     await until(()=>provider.requests.length===5,'second browser result');await app.locator('aside').getByRole('button',{name:'Browser tool fixture',exact:true}).click();await app.getByText('BROWSER_SESSION_FIXTURE',{exact:true}).waitFor({timeout:20000});repeated=await observer.evaluate(value=>{value.observer.disconnect();return value.state.count;});await observer.dispose();assert.equal(repeated,0,'session grant must not ask again');assert.equal(provider.requests.length,5);assert.equal(provider.error,undefined);
   });
-  if (!process.argv.includes('--only-approvals')) {
+  if (!process.argv.includes('--only-approvals') && !sessionsOnly) {
   await check('agent tools open, snapshot, fill and click the visible fixture; screenshot is an MCP image',async()=>{
     agentTab=(await toolCall('browser_open',{url:siteUrl})).tabId;
     await toolCall('browser_wait',{tabId:agentTab,selector:'[name=email]'});
