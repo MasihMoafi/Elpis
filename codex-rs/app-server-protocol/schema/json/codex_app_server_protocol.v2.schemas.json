@@ -1471,6 +1471,20 @@
       },
       "type": "object"
     },
+    "BrowserUseExtensionRequirements": {
+      "properties": {
+        "requestHeaders": {
+          "items": {
+            "$ref": "#/definitions/RequestHeader"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "BrowserUseOriginPolicy": {
       "properties": {
         "access": {
@@ -1621,6 +1635,16 @@
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "extension": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BrowserUseExtensionRequirements"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "origins": {
@@ -1952,6 +1976,30 @@
             },
             "method": {
               "enum": [
+                "thread/approval/review"
+              ],
+              "title": "Thread/approval/reviewRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadApprovalReviewParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/approval/reviewRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/goal/set"
               ],
               "title": "Thread/goal/setRequestMethod",
@@ -2087,6 +2135,30 @@
             "params"
           ],
           "title": "Thread/attachment/listRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/attachmentOwner/list"
+              ],
+              "title": "Thread/attachmentOwner/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadAttachmentOwnerListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/attachmentOwner/listRequest",
           "type": "object"
         },
         {
@@ -2520,6 +2592,78 @@
             "params"
           ],
           "title": "Thread/injectItemsRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/elpisInstructions/read"
+              ],
+              "title": "Thread/elpisInstructions/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadElpisInstructionsReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/elpisInstructions/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/contextFiles/list"
+              ],
+              "title": "Thread/contextFiles/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadContextFilesListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/contextFiles/listRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/contextFiles/set"
+              ],
+              "title": "Thread/contextFiles/setRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadContextFilesSetParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/contextFiles/setRequest",
           "type": "object"
         },
         {
@@ -4285,8 +4429,7 @@
       "title": "ClientRequest"
     },
     "CodexErrorInfo": {
-      "description": "This translation layer make sure that we expose codex error code in camel case.\n\nWhen an upstream HTTP status is available (for example, from the Responses API or a provider), it is forwarded in `httpStatusCode` on the relevant `codexErrorInfo` variant.",
-      "oneOf": [
+      "anyOf": [
         {
           "enum": [
             "contextWindowExceeded",
@@ -4423,8 +4566,15 @@
           ],
           "title": "ActiveTurnNotSteerableCodexErrorInfo",
           "type": "object"
+        },
+        {
+          "type": [
+            "string",
+            "object"
+          ]
         }
-      ]
+      ],
+      "description": "This translation layer make sure that we expose codex error code in camel case.\n\nWhen an upstream HTTP status is available (for example, from the Responses API or a provider), it is forwarded in `httpStatusCode` on the relevant `codexErrorInfo` variant."
     },
     "CodexResponseHandoffMode": {
       "enum": [
@@ -6024,6 +6174,14 @@
             }
           ],
           "description": "Null if no requirements are configured (e.g. no requirements.toml/MDM entries)."
+        },
+        "supportsIndependentSpeedModes": {
+          "default": null,
+          "description": "Whether Fast and Ultra Fast requirements are enforced independently. Older servers omit this field and use Fast mode as a shared speed gate.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "title": "ConfigRequirementsReadResponse",
@@ -6592,7 +6750,7 @@
       "type": "object"
     },
     "CyberAccessProgram": {
-      "description": "Requested cyber treatment for a ChatGPT-authenticated Codex turn. Authorization and model-tier restrictions remain server-owned.",
+      "description": "Requested cyber treatment for an OpenAI model turn. Authorization and model-tier restrictions remain server-owned.",
       "enum": [
         "standard",
         "daybreakBlue",
@@ -6811,6 +6969,21 @@
         "threadId"
       ],
       "title": "EnvironmentConnectionNotification",
+      "type": "object"
+    },
+    "EnvironmentSkillsParams": {
+      "properties": {
+        "required": {
+          "description": "Exact catalog names that must be available from this environment.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "ErrorNotification": {
@@ -8632,6 +8805,10 @@
       "properties": {
         "refreshToken": {
           "description": "When `true`, requests a proactive token refresh before returning.\n\nIn managed auth mode this triggers the normal refresh-token flow. In external auth mode this flag is ignored. Clients should refresh tokens themselves and call `account/login/start` with `chatgptAuthTokens`.",
+          "type": "boolean"
+        },
+        "skipWorkspaceRouting": {
+          "description": "When `true`, returns the account as the server already knows it, without waiting for workspace routing discovery, which needs the network and can take many seconds. `workspaceRouting` is then `null`. The server keeps discovering in the background and sends `account/updated` once routing is known.",
           "type": "boolean"
         }
       },
@@ -10894,6 +11071,13 @@
             "null"
           ]
         },
+        "loginId": {
+          "description": "Identifies the explicit login attempt. Older servers omit this field.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -10965,6 +11149,14 @@
       "properties": {
         "authorizationUrl": {
           "type": "string"
+        },
+        "loginId": {
+          "default": null,
+          "description": "Identifies this login attempt across the response and completion notification. Older servers omit this field; current servers always return it.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -11313,7 +11505,7 @@
       "type": "string"
     },
     "MessagePhase": {
-      "description": "Classifies an assistant message as interim commentary or final answer text.\n\nProviders do not emit this consistently, so callers must treat `None` as \"phase unknown\" and keep compatibility behavior for legacy models.",
+      "description": "Classifies assistant text as commentary, a partial answer, or a terminal answer.\n\nProviders do not emit this consistently, so callers must treat `None` as \"phase unknown\" and keep compatibility behavior for legacy models.",
       "oneOf": [
         {
           "description": "Mid-turn assistant text (for example preamble/progress narration).\n\nAdditional tool calls or assistant output may follow before turn completion.",
@@ -11323,7 +11515,14 @@
           "type": "string"
         },
         {
-          "description": "The assistant's terminal answer text for the current turn.",
+          "description": "Stable answer text that may be followed by more assistant output or tools.",
+          "enum": [
+            "partial_answer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The assistant's declared terminal answer text for the current turn.",
           "enum": [
             "final_answer"
           ],
@@ -11402,6 +11601,13 @@
         },
         "errorType": {
           "description": "Open-ended classification; clients must accept categories added by Responses.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewTarget": {
+          "description": "Opaque server-issued block target. Presence alone does not enable target-based continuation.",
           "type": [
             "string",
             "null"
@@ -11667,16 +11873,12 @@
         "imageGeneration": {
           "type": "boolean"
         },
-        "namespaceTools": {
-          "type": "boolean"
-        },
         "webSearch": {
           "type": "boolean"
         }
       },
       "required": [
         "imageGeneration",
-        "namespaceTools",
         "webSearch"
       ],
       "title": "ModelProviderCapabilitiesReadResponse",
@@ -12065,7 +12267,8 @@
     "NonSteerableTurnKind": {
       "enum": [
         "review",
-        "compact"
+        "compact",
+        "workGraph"
       ],
       "type": "string"
     },
@@ -13888,6 +14091,21 @@
       ],
       "type": "string"
     },
+    "PrunerProviderChoice": {
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayName",
+        "id"
+      ],
+      "type": "object"
+    },
     "QueuedSubmission": {
       "properties": {
         "clientUserMessageId": {
@@ -14501,6 +14719,21 @@
       "title": "RemoteControlStatusChangedNotification",
       "type": "object"
     },
+    "RequestHeader": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
     "RequestId": {
       "anyOf": [
         {
@@ -14682,6 +14915,37 @@
     },
     "ResponseItem": {
       "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "type": "string"
+            },
+            "tools": {
+              "items": true,
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "additional_tools"
+              ],
+              "title": "AdditionalToolsResponseItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "role",
+            "tools",
+            "type"
+          ],
+          "title": "AdditionalToolsResponseItem",
+          "type": "object"
+        },
         {
           "properties": {
             "content": {
@@ -16288,6 +16552,26 @@
             "params"
           ],
           "title": "Thread/goal/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "thread/prediction/updated"
+              ],
+              "title": "Thread/prediction/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadPredictionUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/prediction/updatedNotification",
           "type": "object"
         },
         {
@@ -18017,7 +18301,7 @@
           "type": "string"
         },
         "path": {
-          "$ref": "#/definitions/AbsolutePathBuf"
+          "$ref": "#/definitions/LegacyAppPathString"
         },
         "pluginId": {
           "description": "Owning plugin ID, matching `PluginSummary.id`, when known.",
@@ -18090,7 +18374,7 @@
         "path": {
           "anyOf": [
             {
-              "$ref": "#/definitions/AbsolutePathBuf"
+              "$ref": "#/definitions/LegacyAppPathString"
             },
             {
               "type": "null"
@@ -18278,6 +18562,55 @@
         "data"
       ],
       "title": "SkillsListResponse",
+      "type": "object"
+    },
+    "SmartPruneEvent": {
+      "description": "One completed admission attempt, attached to its tool call in conversation history. Exact output stays in the immutable audit, loaded only when the user opens it.",
+      "properties": {
+        "admittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "callId": {
+          "type": "string"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kept": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurredAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "sourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "admittedTokens",
+        "attemptId",
+        "callId",
+        "occurredAtMs",
+        "sourceTokens",
+        "tool"
+      ],
       "type": "object"
     },
     "SortDirection": {
@@ -18745,6 +19078,55 @@
       ],
       "type": "string"
     },
+    "ThreadApprovalReviewDecision": {
+      "enum": [
+        "approved",
+        "denied"
+      ],
+      "type": "string"
+    },
+    "ThreadApprovalReviewParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "reason",
+        "threadId"
+      ],
+      "title": "ThreadApprovalReviewParams",
+      "type": "object"
+    },
+    "ThreadApprovalReviewResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "decision": {
+          "$ref": "#/definitions/ThreadApprovalReviewDecision"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "rationale"
+      ],
+      "title": "ThreadApprovalReviewResponse",
+      "type": "object"
+    },
     "ThreadApproveGuardianDeniedActionParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -18934,6 +19316,85 @@
       ],
       "type": "string"
     },
+    "ThreadAttachmentOwner": {
+      "description": "A thread that currently owns an attachment with the requested identity.",
+      "properties": {
+        "archived": {
+          "description": "Whether the owning thread is archived, not whether it is currently executing a turn.",
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "archived",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadAttachmentOwnerListParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Parameters for reverse lookup by attachment identity within this server's store.",
+      "properties": {
+        "archived": {
+          "description": "Omitted or null returns all matches; false returns non-archived threads only.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "attachmentType": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "identityKey": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attachmentType",
+        "identityKey"
+      ],
+      "title": "ThreadAttachmentOwnerListParams",
+      "type": "object"
+    },
+    "ThreadAttachmentOwnerListResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "One page of matching owners, including threads without their own user messages.",
+      "properties": {
+        "data": {
+          "items": {
+            "$ref": "#/definitions/ThreadAttachmentOwner"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "title": "ThreadAttachmentOwnerListResponse",
+      "type": "object"
+    },
     "ThreadAttachmentRemoveParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "description": "Parameters for deleting an attachment by its stable thread-local identity.",
@@ -19103,6 +19564,122 @@
       ],
       "type": "object"
     },
+    "ThreadContextFile": {
+      "properties": {
+        "estimatedTokens": {
+          "description": "The core Ledger's capped estimate, rather than provider token accounting.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "group": {
+          "$ref": "#/definitions/ThreadContextFileGroup"
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "estimatedTokens",
+        "group",
+        "included",
+        "name",
+        "path",
+        "reason",
+        "selectable"
+      ],
+      "type": "object"
+    },
+    "ThreadContextFileGroup": {
+      "enum": [
+        "sessionContinuity",
+        "durableMemory",
+        "instructions"
+      ],
+      "type": "string"
+    },
+    "ThreadContextFilesListParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Lists the thread's currently discoverable Ledger sources, including excluded files.",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadContextFilesListParams",
+      "type": "object"
+    },
+    "ThreadContextFilesListResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/definitions/ThreadContextFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "title": "ThreadContextFilesListResponse",
+      "type": "object"
+    },
+    "ThreadContextFilesSetParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Changes an existing Ledger source. Admission is shared by threads in the workspace, just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.",
+      "properties": {
+        "included": {
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The exact path returned by thread/contextFiles/list. Unknown paths are refused.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "included",
+        "path",
+        "threadId"
+      ],
+      "title": "ThreadContextFilesSetParams",
+      "type": "object"
+    },
+    "ThreadContextFilesSetResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Returns the refreshed list because more than one instruction file can share a switch.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/definitions/ThreadContextFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "title": "ThreadContextFilesSetResponse",
+      "type": "object"
+    },
     "ThreadDeleteParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -19132,6 +19709,49 @@
         "threadId"
       ],
       "title": "ThreadDeletedNotification",
+      "type": "object"
+    },
+    "ThreadElpisInstructionsReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Reads the Elpis instruction text a thread's next model request carries, so a client that runs the thread's turns on another engine can give that model the same instructions.",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadElpisInstructionsReadParams",
+      "type": "object"
+    },
+    "ThreadElpisInstructionsReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Each field is `null` when the thread's model receives nothing from that source.",
+      "properties": {
+        "agentsMd": {
+          "description": "The global and project AGENTS.md text the Context Ledger admits.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "continuity": {
+          "description": "The admitted continuity section: MEMORY.md, development rules, GOAL.md, ES.md and files added with `/add`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "developerInstructions": {
+          "description": "The thread's configured `developer_instructions`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "ThreadElpisInstructionsReadResponse",
       "type": "object"
     },
     "ThreadEnvironment": {
@@ -19403,6 +20023,17 @@
     "ThreadGoalClearParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadGoalMutationOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Missing provenance does not supply user authorization."
+        },
         "threadId": {
           "type": "string"
         }
@@ -19469,6 +20100,14 @@
       "title": "ThreadGoalGetResponse",
       "type": "object"
     },
+    "ThreadGoalMutationOrigin": {
+      "description": "Distinguishes explicit user actions from automatic goal lifecycle mutations.",
+      "enum": [
+        "user",
+        "automatic"
+      ],
+      "type": "string"
+    },
     "ThreadGoalSetParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -19477,6 +20116,17 @@
             "string",
             "null"
           ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadGoalMutationOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Missing provenance does not supply user authorization."
         },
         "status": {
           "anyOf": [
@@ -19588,6 +20238,30 @@
     },
     "ThreadItem": {
       "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "prune": {
+              "$ref": "#/definitions/SmartPruneEvent"
+            },
+            "type": {
+              "enum": [
+                "smartPrune"
+              ],
+              "title": "SmartPruneThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "prune",
+            "type"
+          ],
+          "title": "SmartPruneThreadItem",
+          "type": "object"
+        },
         {
           "properties": {
             "clientId": {
@@ -20198,6 +20872,24 @@
             },
             "kind": {
               "$ref": "#/definitions/SubAgentActivityKind"
+            },
+            "model": {
+              "description": "Resolved model at sub-agent creation; absent from older records and other activities.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoningEffort": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ReasoningEffort"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resolved reasoning effort at sub-agent creation, when known."
             },
             "type": {
               "enum": [
@@ -20880,6 +21572,69 @@
         "threadId"
       ],
       "title": "ThreadNameUpdatedNotification",
+      "type": "object"
+    },
+    "ThreadPredictionResult": {
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "completed"
+              ],
+              "title": "CompletedThreadPredictionResultType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "CompletedThreadPredictionResult",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "failed"
+              ],
+              "title": "FailedThreadPredictionResultType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "FailedThreadPredictionResult",
+          "type": "object"
+        }
+      ]
+    },
+    "ThreadPredictionUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/ThreadPredictionResult"
+        },
+        "sourceTurnId": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "result",
+        "sourceTurnId",
+        "threadId"
+      ],
+      "title": "ThreadPredictionUpdatedNotification",
       "type": "object"
     },
     "ThreadProjectUpdatedNotification": {
@@ -22298,6 +23053,12 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "latencyMs": {
           "format": "uint64",
           "minimum": 0.0,
@@ -23428,6 +24189,13 @@
           "default": "full",
           "description": "Describes how much of `items` has been loaded for this turn."
         },
+        "rootTurnId": {
+          "description": "ID of the first turn in the chain of work that led to this turn. Pass this as `rootTurnId` when starting work on behalf of this turn. May be null in older history or a `review/start` response.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "startedAt": {
           "description": "Unix timestamp (in seconds) when the turn started.",
           "format": "int64",
@@ -23840,6 +24608,13 @@
         "outputSchema": {
           "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
         },
+        "parentTurnId": {
+          "description": "ID of the turn that caused this new turn to start.\n\nSet this when starting work on behalf of another turn, such as delegated work in a different thread. Leave unset for work started directly by the user. Ignored when this request adds input to an active turn.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "personality": {
           "anyOf": [
             {
@@ -23850,6 +24625,13 @@
             }
           ],
           "description": "@deprecated `friendly` and `pragmatic` no longer select a style. Changing this does not rewrite the thread's existing instructions."
+        },
+        "rootTurnId": {
+          "description": "ID of the first turn in the chain of work that led to this new turn.\n\nWhen setting `parentTurnId`, set this to the parent turn's `rootTurnId` when known. This keeps descendant work attributed to the original turn. If omitted, the new turn becomes its own root. Ignored when this request adds input to an active turn.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "sandboxPolicy": {
           "anyOf": [
@@ -24583,6 +25365,12 @@
       "title": "WindowsWorldWritableWarningNotification",
       "type": "object"
     },
+    "WorkGraphIsolation": {
+      "enum": [
+        "worktree"
+      ],
+      "type": "string"
+    },
     "WorkGraphListParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -24611,6 +25399,88 @@
       ],
       "title": "WorkGraphListResponse",
       "type": "object"
+    },
+    "WorkGraphRunTask": {
+      "properties": {
+        "acceptanceCriteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependsOn": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "environmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/WorkGraphRunTaskKind"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Reasoning effort for this task's worker. Omitted or null inherits the coordinator's effort. A task model that does not offer the effort is refused before the run starts."
+        },
+        "title": {
+          "type": "string"
+        },
+        "writeScopes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "instruction",
+        "kind",
+        "title"
+      ],
+      "type": "object"
+    },
+    "WorkGraphRunTaskKind": {
+      "enum": [
+        "explore",
+        "implement",
+        "verify",
+        "fix"
+      ],
+      "type": "string"
     },
     "WorkGraphSummary": {
       "properties": {
@@ -24644,6 +25514,13 @@
             "$ref": "#/definitions/WorkGraphTaskSummary"
           },
           "type": "array"
+        },
+        "worktreeReport": {
+          "description": "For a worktree-isolated run: its worktree paths, branches, and merge outcome.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -24687,6 +25564,18 @@
         },
         "kind": {
           "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "result": true,
         "status": {

@@ -1,22 +1,23 @@
 ---
 source: tui/src/app/owned_transcript_input_tests.rs
+assertion_line: 279
 expression: scrolled
 ---
-  • Plan step 28
-  • Plan step 29
-  • Plan step 30
-  • Plan step 31
-  • Plan step 32
-  • Plan step 33
-  • Plan step 34
-  • Plan step 35
-  • Plan step 36
-  • Plan step 37
-  • Plan step 38
-  • Plan step 39
-  • Plan step 40
+  • Plan step 27                                                               │
+  • Plan step 28                                                               │
+  • Plan step 29                                                               │
+  • Plan step 30                                                               │
+  • Plan step 31                                                               │
+  • Plan step 32                                                               │
+  • Plan step 33                                                               │
+  • Plan step 34                                                               │
+  • Plan step 35                                                               │
+  • Plan step 36                                                               ┃
+  • Plan step 37                                                               ┃
+  • Plan step 38                                                               ┃
+  • Plan step 39                                                               ┃
+  • Plan step 40                                                               ┃
 
- Elpis · model gpt-5.6-sol medium · location /tmp/project
 
   Implement this plan?
 

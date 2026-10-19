@@ -1,21 +1,23 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
-assertion_line: 71
+assertion_line: 77
 expression: "render_bottom_popup(&chat, 110)"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-
   Update Model Permissions
 
 
-› 1. Ask for approval (current)  Read and edit workspace files and run commands, with approval required for
-                                 internet access or edits outside the workspace
-     Approve for me (disabled)   Only ask for actions detected as potentially unsafe (disabled: Disabled by
-                                 requirements)
-     Full Access (disabled)      Use with caution: Elpis can edit files outside this workspace and access the
-                                 internet without approval (disabled: Disabled by requirements)
-     Read Only (disabled)        Read workspace files, with approval required for edits or internet access
-                                 (disabled: Disabled by requirements)
-  2. server-only                 Description from the connected server.
+› 1. Ask for approval (current)     Read and edit workspace files and run commands, with approval required for
+                                    internet access or edits outside the workspace
+     Approve for me (disabled)      Only ask for actions detected as potentially unsafe (disabled: Disabled by
+                                    requirements)
+     Full Access (disabled)         Use with caution: Elpis can edit files outside this workspace and access
+                                    the internet without approval (disabled: Disabled by requirements)
+     Bypass permissions (disabled)  Elpis will run anything without asking: any command, any file, the
+                                    internet, even commands it would otherwise refuse (such as rm -rf). Only
+                                    your own rules, hooks and managed policy can still stop it. (disabled:
+                                    Disabled by requirements)
+     Read Only (disabled)           Read workspace files, with approval required for edits or internet access
+                                    (disabled: Disabled by requirements)
+  2. server-only                    Description from the connected server.
 
   enter select · esc back

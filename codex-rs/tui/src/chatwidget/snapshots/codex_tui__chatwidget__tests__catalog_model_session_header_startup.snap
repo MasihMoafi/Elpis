@@ -1,9 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/app_server.rs
-assertion_line: 100
+assertion_line: 99
 expression: rendered
 ---
-Elpis (v0.4.1-dev)
+Elpis (v<VERSION>)
 model: GPT-5.6 Luna high
 directory: /tmp/thread-settings
 
@@ -13,4 +13,3 @@ directory: /tmp/thread-settings
   /usage - show this session's usage and limits
   /permissions - choose what Elpis is allowed to do
   /model - choose what model and reasoning effort to use
-  /review - review any changes and find issues

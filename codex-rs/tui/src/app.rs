@@ -194,6 +194,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use toml::Value as TomlValue;
 use uuid::Uuid;
+mod account_status;
 mod agent_message_consolidation;
 mod agent_navigation;
 mod agent_picker;
@@ -211,6 +212,7 @@ mod activity_groups;
 mod app_server_event_targets;
 mod app_server_events;
 pub(crate) mod app_server_requests;
+mod app_server_thread_ownership;
 mod backend_banner_fallback;
 mod background_requests;
 mod composer_hints;
@@ -225,8 +227,8 @@ mod elpis_continuity;
 // Elpis: the App side of the Context Ledger.
 mod elpis_ledger;
 // Elpis: the work graph under /agent.
+mod daybreak;
 mod elpis_work_graph;
-mod empty_state_policy;
 mod event_dispatch;
 mod exit_summary;
 mod experimental_features;
@@ -267,6 +269,7 @@ mod session_lifecycle;
 mod session_picker;
 mod side;
 mod startup;
+pub(crate) mod startup_bootstrap;
 mod startup_prompts;
 mod startup_warnings;
 mod thread_event_buffer;
@@ -666,8 +669,12 @@ pub(crate) struct App {
     /// Keeps that boundary armed while a startup approval waits for the typing-idle timer.
     startup_pending_protected_request: bool,
     /// Invalidates in-flight full rate-limit reads when a newer rolling hard stop arrives.
+    account_email_request_id: Option<uuid::Uuid>,
     rate_limit_hard_stop_generation: u64,
     rate_limit_refresh_state: rate_limit_refresh::RateLimitRefreshState,
+    pending_mcp_login_start: Option<PendingMcpLoginStart>,
+    // Latest accepted attempt per server; stale retry completions must not update the UI.
+    active_mcp_login_ids: HashMap<String, String>,
     // Serialize plugin enablement writes per plugin so stale completions cannot
     // overwrite a newer toggle, even if the plugin is toggled from different
     // cwd contexts.
@@ -679,6 +686,13 @@ pub(crate) struct App {
     // App fixtures keep their home alive across widget replacement; drop it last.
     #[cfg(test)]
     _test_codex_home: Option<tempfile::TempDir>,
+}
+
+struct PendingMcpLoginStart {
+    request_id: String,
+    name: String,
+    thread_id: ThreadId,
+    completions: Vec<codex_app_server_protocol::McpServerOauthLoginCompletedNotification>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -860,13 +874,6 @@ impl App {
         {
             return Ok(AppRunControl::Continue);
         }
-        // Resume arrives after suspension; retain the last painted phase across hidden owners.
-        if matches!(&event, TuiEvent::Resume) || !tui.is_owned_screen() || self.overlay.is_some() {
-            self.chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .pause_clock();
-        }
         let transcript_owns_input = match (&event, &self.overlay) {
             (TuiEvent::Key(key), Some(Overlay::Transcript(overlay))) => {
                 overlay.owns_interaction_key(*key)
@@ -1043,6 +1050,11 @@ impl App {
             }
             TuiEvent::FocusGained => {
                 self.recap.note_focus_gained();
+                if tui.refresh_terminal_palette() {
+                    self.transcript_view.invalidate_rendered_styles();
+                    self.chat_widget.refresh_status_line();
+                    self.backtrack_render_pending = !tui.is_owned_screen();
+                }
             }
             _ => {}
         }
@@ -1101,6 +1113,7 @@ impl App {
                         owner.refresh_realtime_microphone_level();
                     }
                     self.chat_widget.pre_draw_tick();
+                    self.refresh_agents_overview_conversation(app_server, tui.frame_requester());
                     self.refresh_agents_overview_usage(app_server, tui.frame_requester());
                     let rendered_area = self.render_chat_widget_frame(tui, screen_size)?;
                     if tui.is_owned_screen()
@@ -1173,13 +1186,8 @@ impl App {
         if tui.is_owned_screen() {
             return self.render_owned_transcript(tui, screen_size);
         }
-        // Elpis: inline mode always shows the Ledger.
-        self.chat_widget
-            .fit_context_ledger_to_screen(/*screen*/ None);
-        self.chat_widget
-            .empty_state_animation
-            .borrow_mut()
-            .pause_clock();
+        // Elpis: leave transcript space in inline mode too.
+        self.chat_widget.fit_context_ledger_to_screen(screen_size);
         self.chat_widget.sync_warnings(&self.transcript_cells);
         let dashboard_visible = self
             .chat_widget
@@ -1199,6 +1207,7 @@ impl App {
             self.schedule_immediate_resize_reflow(tui);
             self.maybe_run_resize_reflow(tui, screen_size)?;
         }
+        let frame_requester = tui.frame_requester();
         self.with_chat_widget_frame(screen_size.width, |desired_height, chat_widget| {
             let desired_height = if dashboard_visible {
                 screen_size.height
@@ -1214,6 +1223,9 @@ impl App {
                 if let Some((x, y)) = chat_widget.cursor_pos(area) {
                     frame.set_cursor_style(chat_widget.cursor_style(area));
                     frame.set_cursor_position((x, y));
+                }
+                if self.chat_widget.is_agent_turn_running() && frame.redraw_if_empty() {
+                    frame_requester.schedule_frame_in(Duration::from_millis(100));
                 }
             })?;
             Ok(rendered_area)

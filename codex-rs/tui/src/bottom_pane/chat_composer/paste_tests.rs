@@ -11,6 +11,7 @@ fn paste_burst_tabs_preserve_multiline_draft() {
     for running in [false, true] {
         for first_line in ["x", "界", "first line\n"] {
             let (mut composer, _rx) = new_test_composer();
+            composer.queue_keys = vec![key_hint::plain(KeyCode::Tab)];
             composer.set_task_running(running);
             let mut now = Instant::now();
             let payload = format!("{first_line}\t\tsecond line\n\tthird line\n");
@@ -106,6 +107,7 @@ fn paste_burst_tab_does_not_accept_a_completion() {
 #[test]
 fn paste_burst_expired_before_tab_still_queues() {
     let (mut composer, _rx) = new_test_composer();
+    composer.queue_keys = vec![key_hint::plain(KeyCode::Tab)];
     composer.set_task_running(/*running*/ true);
     composer.handle_input_basic_with_time(
         KeyEvent::from(KeyCode::Char('x')),

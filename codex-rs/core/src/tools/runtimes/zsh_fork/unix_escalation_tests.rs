@@ -456,6 +456,7 @@ async fn preapproved_additional_permissions_escalate_intercepted_exec() -> anyho
         approval_sandbox_permissions: SandboxPermissions::UseDefault,
         prompt_permissions: Some(requested_permissions),
         stopwatch: codex_shell_escalation::Stopwatch::new(Duration::from_secs(1)),
+        bypass_permissions_active: false,
     };
 
     let action = codex_shell_escalation::EscalationPolicy::determine_action(
@@ -492,26 +493,15 @@ async fn execve_permission_request_hook_short_circuits_prompt() -> anyhow::Resul
         .config
         .codex_home
         .join("permission_request_hook_log.jsonl");
-    std::fs::write(
+    codex_utils_cargo_bin::write_executable(
         &script_path,
-        format!(
+        &format!(
             "#!/bin/sh\ncat > {log_path}\nprintf '%s\\n' '{response}'\n",
             log_path = shlex::try_quote(log_path.to_string_lossy().as_ref())?,
             response = "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\"}}}",
         ),
     )
     .with_context(|| format!("write hook script to {}", script_path.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = std::fs::metadata(&script_path)
-            .with_context(|| format!("read hook script metadata from {}", script_path.display()))?
-            .permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&script_path, permissions)
-            .with_context(|| format!("set hook script permissions on {}", script_path.display()))?;
-    }
     std::fs::write(
         turn_context.config.codex_home.join("hooks.json"),
         serde_json::json!({
@@ -624,6 +614,7 @@ async fn execve_permission_request_hook_short_circuits_prompt() -> anyhow::Resul
         approval_sandbox_permissions: SandboxPermissions::RequireEscalated,
         prompt_permissions: None,
         stopwatch: codex_shell_escalation::Stopwatch::new(Duration::from_secs(1)),
+        bypass_permissions_active: false,
     };
 
     let action = tokio::time::timeout(
@@ -687,6 +678,7 @@ fn evaluate_intercepted_exec_policy_uses_wrapper_command_when_shell_wrapper_pars
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             enable_shell_wrapper_parsing: enable_intercepted_exec_policy_shell_wrapper_parsing,
+            bypass_permissions_active: false,
         },
     );
 
@@ -738,6 +730,7 @@ fn evaluate_intercepted_exec_policy_matches_inner_shell_commands_when_enabled() 
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             enable_shell_wrapper_parsing: enable_intercepted_exec_policy_shell_wrapper_parsing,
+            bypass_permissions_active: false,
         },
     );
 
@@ -780,6 +773,7 @@ host_executable(name = "git", paths = ["{git_path_literal}"])
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             enable_shell_wrapper_parsing: false,
+            bypass_permissions_active: false,
         },
     );
 
@@ -835,6 +829,7 @@ prefix_rule(pattern = ["{cat_path_literal}"], decision = "allow")
         approval_sandbox_permissions: SandboxPermissions::UseDefault,
         prompt_permissions: None,
         stopwatch: codex_shell_escalation::Stopwatch::new(Duration::from_secs(1)),
+        bypass_permissions_active: false,
     };
 
     let action = codex_shell_escalation::EscalationPolicy::determine_action(
@@ -878,6 +873,7 @@ async fn denied_reads_keep_granular_sandbox_rejection_for_escalation() -> anyhow
         approval_sandbox_permissions: SandboxPermissions::RequireEscalated,
         prompt_permissions: None,
         stopwatch: codex_shell_escalation::Stopwatch::new(Duration::from_secs(1)),
+        bypass_permissions_active: false,
     };
 
     let action = codex_shell_escalation::EscalationPolicy::determine_action(
@@ -918,6 +914,7 @@ fn intercepted_exec_policy_treats_preapproved_additional_permissions_as_default(
                 /*additional_permissions_preapproved*/ true,
             ),
             enable_shell_wrapper_parsing: false,
+            bypass_permissions_active: false,
         },
     );
     let fresh_request = evaluate_intercepted_exec_policy(
@@ -930,6 +927,7 @@ fn intercepted_exec_policy_treats_preapproved_additional_permissions_as_default(
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::WithAdditionalPermissions,
             enable_shell_wrapper_parsing: false,
+            bypass_permissions_active: false,
         },
     );
 
@@ -963,6 +961,7 @@ host_executable(name = "git", paths = ["{allowed_git_literal}"])
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             enable_shell_wrapper_parsing: false,
+            bypass_permissions_active: false,
         },
     );
 

@@ -501,3 +501,7 @@ fn memories_settings_hint_line(keymap: &ListKeymap) -> Line<'static> {
     }
     Line::from(spans)
 }
+
+#[cfg(test)]
+#[path = "memories_settings_view_tests.rs"]
+mod tests;

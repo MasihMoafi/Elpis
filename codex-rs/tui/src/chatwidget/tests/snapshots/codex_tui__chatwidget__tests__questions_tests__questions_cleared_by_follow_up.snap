@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/questions_tests.rs
-assertion_line: 139
 expression: "render_bottom_popup(&chat, 80).lines().next().unwrap()"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
+› Ask Elpis to do anything

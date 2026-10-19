@@ -7,6 +7,7 @@ use codex_app_server_protocol::PermissionProfileListResponse;
 use codex_app_server_protocol::PermissionProfileSummary;
 use codex_core::config::set_project_trust_level;
 use codex_protocol::config_types::TrustLevel;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -69,6 +70,11 @@ description = "Inspect without writes."
                 },
                 PermissionProfileSummary {
                     id: BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string(),
+                    description: None,
+                    allowed: true,
+                },
+                PermissionProfileSummary {
+                    id: BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS.to_string(),
                     description: None,
                     allowed: true,
                 },
@@ -163,11 +169,18 @@ description = "Project-scoped profile."
     assert_eq!(
         second,
         PermissionProfileListResponse {
-            data: vec![PermissionProfileSummary {
-                id: "project".to_string(),
-                description: Some("Project-scoped profile.".to_string()),
-                allowed: true,
-            }],
+            data: vec![
+                PermissionProfileSummary {
+                    id: BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS.to_string(),
+                    description: None,
+                    allowed: true,
+                },
+                PermissionProfileSummary {
+                    id: "project".to_string(),
+                    description: Some("Project-scoped profile.".to_string()),
+                    allowed: true,
+                },
+            ],
             next_cursor: None,
         }
     );
@@ -224,6 +237,11 @@ description = "Project-scoped profile."
                 },
                 PermissionProfileSummary {
                     id: BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string(),
+                    description: None,
+                    allowed: true,
+                },
+                PermissionProfileSummary {
+                    id: BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS.to_string(),
                     description: None,
                     allowed: true,
                 },

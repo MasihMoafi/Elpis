@@ -1,12 +1,9 @@
 //! Session headers, onboarding guidance, and transcript cards.
 
-use std::sync::Arc;
-use std::sync::OnceLock;
-
 use super::*;
-use crate::empty_state_animation::Greeting;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crate::style::BYPASS_PERMISSIONS_LABEL;
 use crate::style::accent_color;
 use crate::width::display_width;
 
@@ -53,11 +50,26 @@ pub(crate) fn codex_title(version: &str) -> Vec<Span<'static>> {
     } else {
         version
     };
-    vec![
-        Span::from("◆ ").style(crate::elpis_motion::accent_style()),
-        Span::from(crate::branding::CODEX_RUNTIME_TITLE).style(crate::elpis_motion::accent_style()),
-        format!(" (v{version})").dim(),
-    ]
+    codex_title_with_palette(
+        version,
+        crate::branding::wordmark_palette(crate::terminal_palette::default_bg()),
+    )
+}
+
+fn codex_title_with_palette(version: &str, palette: [(u8, u8, u8); 5]) -> Vec<Span<'static>> {
+    let mut spans = vec![">_ ".fg(accent_color())];
+    spans.extend(
+        crate::branding::CODEX_RUNTIME_TITLE
+            .chars()
+            .zip(palette.into_iter().cycle())
+            .map(|(letter, color)| {
+                Span::from(letter.to_string())
+                    .fg(crate::terminal_palette::best_color(color))
+                    .bold()
+            }),
+    );
+    spans.push(format!(" (v{version})").dim());
+    spans
 }
 
 #[derive(Debug)]
@@ -117,14 +129,17 @@ impl HistoryCell for SessionNoticeCell {
 #[derive(Debug)]
 pub struct SessionInfoCell(CompositeHistoryCell);
 
-/// Bind provisional and configured banners to the thread's chosen greeting.
-pub(crate) fn set_session_greeting(cell: &mut dyn HistoryCell, greeting: &Arc<OnceLock<Greeting>>) {
-    if let Some(header) = cell.as_any_mut().downcast_mut::<SessionHeaderHistoryCell>() {
-        header.greeting = Arc::clone(greeting);
-    } else if let Some(info) = cell.as_any_mut().downcast_mut::<SessionInfoCell>() {
-        for part in &mut info.0.parts {
-            set_session_greeting(part.as_mut(), greeting);
+impl SessionInfoCell {
+    pub(crate) fn with_personal_tip(mut self, home: &std::path::Path) -> Self {
+        if codex_skills::personal::show_tip(home) {
+            self.0.parts.push(Box::new(PlainHistoryCell {
+                lines: vec![
+                    Line::from(format!("  {}", codex_skills::personal::TIP)),
+                    Line::from("  /personal dismiss to hide this tip".dim()),
+                ],
+            }));
         }
+        self
     }
 }
 
@@ -185,6 +200,13 @@ impl HistoryCell for SessionInfoCell {
     fn raw_lines(&self) -> Vec<Line<'static>> {
         self.0.raw_lines()
     }
+
+    fn transcript_animation_tick(&self) -> Option<u64> {
+        self.0
+            .parts
+            .iter()
+            .find_map(|part| part.transcript_animation_tick())
+    }
 }
 
 #[expect(
@@ -208,9 +230,15 @@ pub(crate) fn new_session_info(
         config.cwd.to_path_buf(),
         CODEX_CLI_VERSION,
     )
+    .with_animations(local_settings.tui.animations && local_settings.tui.effects.shimmer)
     .with_yolo_mode(has_yolo_permissions(
         session.approval_policy,
         &session.permission_profile,
+    ))
+    .with_bypass_mode(codex_protocol::models::bypass_permissions_active(
+        session.approval_policy.to_core(),
+        &session.permission_profile,
+        session.active_permission_profile.as_ref(),
     ));
     let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
 
@@ -243,11 +271,6 @@ pub(crate) fn new_session_info(
                 "/model".into(),
                 " - choose what model and reasoning effort to use".dim(),
             ]),
-            Line::from(vec![
-                "  ".into(),
-                "/review".into(),
-                " - review any changes and find issues".dim(),
-            ]),
         ];
 
         parts.push(Box::new(PlainHistoryCell { lines: help_lines }));
@@ -279,6 +302,31 @@ pub(crate) fn is_yolo_mode(config: &Config) -> bool {
     )
 }
 
+/// Elpis: "Permissions updated to …", in red when the new mode is Bypass permissions.
+pub(crate) fn new_permissions_updated_event(label: &str, bypass: bool) -> PlainHistoryCell {
+    let message = format!("Permissions updated to {label}");
+    if !bypass {
+        return new_info_event(message, /*hint*/ None);
+    }
+    PlainHistoryCell {
+        lines: vec![Line::from(vec![
+            "• ".dim(),
+            Span::from(message).style(crate::style::status_style(
+                crate::style::StatusTone::Failure,
+            )),
+        ])],
+    }
+}
+
+/// Elpis: whether this config runs in Bypass permissions, shown in red in the header.
+pub(crate) fn is_bypass_mode(config: &Config) -> bool {
+    codex_protocol::models::bypass_permissions_active(
+        config.permissions.approval_policy.value(),
+        config.permissions.permission_profile(),
+        config.permissions.active_permission_profile().as_ref(),
+    )
+}
+
 pub(crate) fn has_yolo_permissions(
     approval_policy: AskForApproval,
     permission_profile: &PermissionProfile,
@@ -301,7 +349,9 @@ pub(crate) struct SessionHeaderHistoryCell {
     reasoning_effort: Option<ReasoningEffortConfig>,
     directory: PathBuf,
     yolo_mode: bool,
-    greeting: Arc<OnceLock<Greeting>>,
+    /// Elpis: Bypass permissions replaces the YOLO line with a red one.
+    bypass_mode: bool,
+    animation_origin: Option<Instant>,
 }
 
 impl SessionHeaderHistoryCell {
@@ -318,12 +368,23 @@ impl SessionHeaderHistoryCell {
             reasoning_effort,
             directory,
             yolo_mode: false,
-            greeting: Default::default(),
+            bypass_mode: false,
+            animation_origin: None,
         }
+    }
+
+    pub(crate) fn with_animations(mut self, enabled: bool) -> Self {
+        self.animation_origin = enabled.then(Instant::now);
+        self
     }
 
     pub(crate) fn with_yolo_mode(mut self, yolo_mode: bool) -> Self {
         self.yolo_mode = yolo_mode;
+        self
+    }
+
+    pub(crate) fn with_bypass_mode(mut self, bypass_mode: bool) -> Self {
+        self.bypass_mode = bypass_mode;
         self
     }
 
@@ -362,10 +423,21 @@ impl SessionHeaderHistoryCell {
 }
 
 impl HistoryCell for SessionHeaderHistoryCell {
+    fn transcript_animation_tick(&self) -> Option<u64> {
+        self.animation_origin
+            .map(|origin| (origin.elapsed().as_millis() / 100) as u64)
+    }
+
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let width = usize::from(width);
         let mut title = vec!["  ".into()];
-        title.extend(codex_title(self.version));
+        let palette = crate::branding::wordmark_palette_at(
+            crate::terminal_palette::default_bg(),
+            self.animation_origin
+                .map(|origin| origin.elapsed().as_millis())
+                .unwrap_or(0),
+        );
+        title.extend(codex_title_with_palette(self.version, palette));
         let mut lines = vec![
             Line::default(),
             Line::from(title),
@@ -375,7 +447,14 @@ impl HistoryCell for SessionHeaderHistoryCell {
                     .dim(),
             ]),
         ];
-        if self.yolo_mode {
+        if self.bypass_mode {
+            lines.push(Line::from(vec![
+                "  permissions: ".dim(),
+                Span::from(BYPASS_PERMISSIONS_LABEL).style(crate::style::status_style(
+                    crate::style::StatusTone::Failure,
+                )),
+            ]));
+        } else if self.yolo_mode {
             lines.push(Line::from(vec![
                 "  permissions: ".dim(),
                 // Elpis: YOLO reads as a warning, as in v0.3.0.
@@ -384,13 +463,6 @@ impl HistoryCell for SessionHeaderHistoryCell {
                 )),
             ]));
         }
-        if let Some(greeting) = self.greeting.get() {
-            // The tip/help that follows has its own normal composite separator.
-            lines.extend([
-                Line::default(),
-                Line::from(vec!["  ".into(), greeting.phrase.fg(accent_color())]),
-            ]);
-        }
         lines
             .into_iter()
             .map(|line| truncate_line_with_ellipsis_if_overflow(line, width))
@@ -398,13 +470,6 @@ impl HistoryCell for SessionHeaderHistoryCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        if self.greeting.get().is_some() {
-            return self
-                .display_lines(u16::MAX)
-                .into_iter()
-                .map(|line| Line::from(line.to_string()))
-                .collect();
-        }
         let mut lines = vec![
             // Elpis: product title.
             Line::from(format!(
@@ -424,7 +489,11 @@ impl HistoryCell for SessionHeaderHistoryCell {
                 self.format_directory(/*max_width*/ None)
             )),
         ];
-        if self.yolo_mode {
+        if self.bypass_mode {
+            lines.push(Line::from(format!(
+                "permissions: {BYPASS_PERMISSIONS_LABEL}"
+            )));
+        } else if self.yolo_mode {
             lines.push(Line::from("permissions: YOLO mode"));
         }
         lines

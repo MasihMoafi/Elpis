@@ -80,6 +80,21 @@ pub(crate) fn candidates(body: &Value, decisions: &Decisions) -> Vec<Candidate> 
     selected
 }
 
+/// Each `tool_result` block of the body that holds text, with its approximate tokens.
+pub(crate) fn tool_results(body: &Value) -> Vec<(String, usize)> {
+    body.get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        .flat_map(content_blocks)
+        .filter_map(|block| {
+            let id = block_id(block)?;
+            Some((id.to_string(), approx_token_count(&block_text(block)?)))
+        })
+        .collect()
+}
+
 /// The optimizer input. It has the same shape as the input of an Elpis session, so one
 /// prompt serves both paths.
 pub(crate) fn admission_input(body: &Value, candidates: &[Candidate]) -> String {

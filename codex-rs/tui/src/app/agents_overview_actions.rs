@@ -12,10 +12,15 @@ use crate::chatwidget::ChatWidget;
 use crate::render::renderable::Renderable;
 use crate::tui;
 use crate::wrapping::word_wrap_lines;
+use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::ThreadLoadedListParams;
+use codex_app_server_protocol::ThreadSectionMoveParams;
+use codex_app_server_protocol::ThreadSectionMoveResponse;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SubAgentSource;
+use codex_state::PINNED_THREAD_SECTION_ID;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
@@ -25,6 +30,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
+use uuid::Uuid;
 
 struct LifecycleHeader(Vec<Line<'static>>);
 
@@ -104,6 +110,173 @@ async fn run_lifecycle_modal<T>(
 }
 
 impl App {
+    pub(super) async fn steer_agents_overview_thread(
+        &mut self,
+        app_server: &mut AppServerSession,
+        thread_id: ThreadId,
+        message: String,
+    ) {
+        let result = async {
+            let metadata = app_server.thread_read(thread_id, false).await.map_err(|error| error.to_string())?;
+            if metadata.can_accept_direct_input == Some(false) {
+                return Err("This agent is controlled by its parent. Open the parent to give it directions.".to_string());
+            }
+            let handle = app_server.request_handle();
+            if metadata.status == codex_app_server_protocol::ThreadStatus::NotLoaded {
+                handle.request_typed::<codex_app_server_protocol::ThreadResumeResponse>(ClientRequest::ThreadResume {
+                    request_id: RequestId::String(Uuid::new_v4().to_string()),
+                    params: codex_app_server_protocol::ThreadResumeParams { thread_id: thread_id.to_string(), ..Default::default() },
+                }).await.map_err(|error| error.to_string())?;
+            }
+            handle.request_typed::<codex_app_server_protocol::TurnStartResponse>(ClientRequest::TurnStart {
+                request_id: RequestId::String(Uuid::new_v4().to_string()),
+                params: codex_app_server_protocol::TurnStartParams {
+                    thread_id: thread_id.to_string(), client_user_message_id: Some(format!("{}{}", super::agents_overview::HUMAN_STEER_ID_PREFIX, Uuid::new_v4())),
+                    input: vec![codex_app_server_protocol::UserInput::Text { text: message.clone(), text_elements: Vec::new() }],
+                    ..Default::default()
+                },
+            }).await.map_err(|error| error.to_string())?;
+            Ok::<_, String>(())
+        }.await;
+        match result {
+            Ok(()) => {
+                self.append_message_history_entry(thread_id, message);
+                self.agents_overview.refresh_thread_ids.insert(thread_id);
+                self.refresh_changed_agents_overview_threads(app_server);
+            }
+            Err(error) => {
+                let mut state = self
+                    .agents_overview
+                    .view_state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                state.steer_target = Some(thread_id);
+                state.set_rename_input(&message, &self.keymap);
+                drop(state);
+                self.add_agents_overview_error(format!("Failed to steer task: {error}"));
+            }
+        }
+    }
+
+    pub(super) fn refresh_agents_overview_conversation(
+        &mut self,
+        app_server: &AppServerSession,
+        frame_requester: crate::tui::FrameRequester,
+    ) {
+        let Some(thread_id) = self
+            .chat_widget
+            .selected_index_for_present_view(super::AGENTS_OVERVIEW_VIEW_ID)
+            .and_then(|index| self.agents_overview.visible_thread_ids.get(index))
+            .copied()
+        else {
+            self.agents_overview.conversation_preview_thread_id = None;
+            return;
+        };
+        if self
+            .agents_overview
+            .threads
+            .values()
+            .flatten()
+            .any(|thread| {
+                matches!(
+                    thread.status,
+                    codex_app_server_protocol::ThreadStatus::Active { .. }
+                )
+            })
+        {
+            frame_requester.schedule_frame_in(std::time::Duration::from_secs(1));
+        }
+        if self.agents_overview.conversation_preview_thread_id != Some(thread_id) {
+            self.agents_overview.conversation_preview_thread_id = Some(thread_id);
+            self.agents_overview.refresh_thread_ids.insert(thread_id);
+            self.refresh_changed_agents_overview_threads(app_server);
+        }
+    }
+
+    pub(super) fn toggle_agents_overview_pin(
+        &mut self,
+        app_server: &AppServerSession,
+        thread_id: ThreadId,
+        pinned: bool,
+    ) {
+        if self.agents_overview.pending_pin_change.is_some() {
+            return;
+        }
+        let request_id = Uuid::new_v4();
+        self.agents_overview.pending_pin_change = Some(request_id);
+        let request_handle = app_server.request_handle();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let result = request_handle
+                .request_typed::<ThreadSectionMoveResponse>(ClientRequest::ThreadSectionMove {
+                    request_id: RequestId::String(Uuid::new_v4().to_string()),
+                    params: ThreadSectionMoveParams {
+                        thread_id: thread_id.to_string(),
+                        section_id: pinned.then(|| PINNED_THREAD_SECTION_ID.to_string()),
+                        before_thread_id: None,
+                    },
+                })
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string());
+            app_event_tx.send(AppEvent::AgentsOverviewPinToggled {
+                request_id,
+                thread_id,
+                pinned,
+                result,
+            });
+        });
+    }
+
+    pub(super) fn complete_agents_overview_pin(
+        &mut self,
+        app_server: &AppServerSession,
+        request_id: Uuid,
+        thread_id: ThreadId,
+        pinned: bool,
+        result: Result<(), String>,
+    ) {
+        if self.agents_overview.pending_pin_change != Some(request_id) {
+            return;
+        }
+        self.agents_overview.pending_pin_change = None;
+        match result {
+            Ok(()) => {
+                if let Some(pinned_thread_ids) = self.agents_overview.pinned_thread_ids.as_mut() {
+                    if pinned {
+                        if !pinned_thread_ids.contains(&thread_id) {
+                            pinned_thread_ids.push(thread_id);
+                        }
+                    } else {
+                        pinned_thread_ids.retain(|id| *id != thread_id);
+                    }
+                }
+            }
+            Err(error) => {
+                self.add_agents_overview_error(format!(
+                    "Failed to {} task: {error}",
+                    if pinned { "pin" } else { "unpin" }
+                ));
+            }
+        }
+        let restore_show_more = self.agents_overview.refresh_show_more;
+        if let Some(refresh) = self.agents_overview.refresh_task.take() {
+            refresh.abort();
+        }
+        self.agents_overview.request_id = None;
+        self.agents_overview.refresh_show_more = false;
+        self.agents_overview.refresh_notifications.clear();
+        let refresh_thread_ids =
+            std::mem::take(&mut self.agents_overview.active_refresh_thread_ids);
+        self.agents_overview
+            .refresh_thread_ids
+            .extend(refresh_thread_ids);
+        self.agents_overview.refresh_pending = false;
+        self.agents_overview.show_more_requested |= restore_show_more;
+        self.refresh_agents_overview_threads(app_server);
+        self.repaint_agents_overview();
+    }
+
     pub(super) fn confirm_agents_overview_action(
         &mut self,
         thread_id: ThreadId,
@@ -157,7 +330,7 @@ impl App {
                     ..Default::default()
                 },
             ],
-            ..SelectionViewParams::picker()
+            ..SelectionViewParams::confirmation()
         });
     }
 
@@ -227,6 +400,8 @@ impl App {
                 refresh.abort();
             }
             self.agents_overview.request_id = None;
+            self.agents_overview.refresh_show_more = false;
+            self.agents_overview.active_refresh_thread_ids.clear();
             self.agents_overview
                 .view_state
                 .lock()
@@ -268,6 +443,7 @@ impl App {
             {
                 removed.insert(primary);
             }
+            self.prepare_agents_overview_removal(&removed);
             for removed_id in removed {
                 self.remove_agents_overview_thread(removed_id);
                 self.agents_overview.activity.remove(&removed_id);

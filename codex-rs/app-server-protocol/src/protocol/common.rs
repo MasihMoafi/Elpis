@@ -225,6 +225,7 @@ macro_rules! client_request_definitions {
     ) => {
         /// Request from the client to the server.
         #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+        #[allow(clippy::large_enum_variant)]
         #[serde(tag = "method", rename_all = "camelCase")]
         pub enum ClientRequest {
             $(
@@ -605,6 +606,17 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadSetNameResponse,
     },
+    #[experimental("thread/prediction/request")]
+    ThreadPredictionRequest => "thread/prediction/request" {
+        params: v2::ThreadPredictionRequestParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadPredictionRequestResponse,
+    },
+    ThreadApprovalReview => "thread/approval/review" {
+        params: v2::ThreadApprovalReviewParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadApprovalReviewResponse,
+    },
     ThreadGoalSet => "thread/goal/set" {
         params: v2::ThreadGoalSetParams,
         serialization: thread_id(params.thread_id),
@@ -671,6 +683,11 @@ client_request_definitions! {
         params: v2::ThreadAttachmentListParams,
         serialization: None,
         response: v2::ThreadAttachmentListResponse,
+    },
+    ThreadAttachmentOwnerList => "thread/attachmentOwner/list" {
+        params: v2::ThreadAttachmentOwnerListParams,
+        serialization: None,
+        response: v2::ThreadAttachmentOwnerListResponse,
     },
     ThreadAttachmentRemove => "thread/attachment/remove" {
         params: v2::ThreadAttachmentRemoveParams,
@@ -854,6 +871,19 @@ client_request_definitions! {
         serialization: thread_id(params.root_thread_id),
         response: v2::WorkGraphListResponse,
     },
+    #[experimental("workGraph/run")]
+    WorkGraphRun => "workGraph/run" {
+        params: v2::WorkGraphRunParams,
+        serialization: thread_id(params.root_thread_id),
+        response: v2::WorkGraphRunResponse,
+    },
+    #[experimental("workGraph/runWithProviders")]
+    WorkGraphRunWithProviders => "workGraph/runWithProviders" {
+        params: v2::WorkGraphRunParams,
+        serialization: thread_id(params.root_thread_id),
+        manual_payload_conversion: manual,
+        response: v2::WorkGraphRunResponse,
+    },
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,
         // Explicitly concurrent: this primarily reads append-only rollout storage.
@@ -871,6 +901,23 @@ client_request_definitions! {
         params: v2::ThreadInjectItemsParams,
         serialization: thread_id(params.thread_id),
         response: v2::ThreadInjectItemsResponse,
+    },
+    // Elpis: the instruction text a thread's model receives, for a client that runs the
+    // thread's turns on another engine (v2/elpis_context.rs).
+    ThreadElpisInstructionsRead => "thread/elpisInstructions/read" {
+        params: v2::ThreadElpisInstructionsReadParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadElpisInstructionsReadResponse,
+    },
+    ThreadContextFilesList => "thread/contextFiles/list" {
+        params: v2::ThreadContextFilesListParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadContextFilesListResponse,
+    },
+    ThreadContextFilesSet => "thread/contextFiles/set" {
+        params: v2::ThreadContextFilesSetParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::ThreadContextFilesSetResponse,
     },
     SkillsList => "skills/list" {
         params: v2::SkillsListParams,
@@ -1052,6 +1099,12 @@ client_request_definitions! {
         inspect_params: true,
         serialization: thread_id(params.thread_id),
         response: v2::TurnSteerResponse,
+    },
+    #[experimental("turn/steer/cancel")]
+    TurnSteerCancel => "turn/steer/cancel" {
+        params: v2::TurnSteerCancelParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::TurnSteerCancelResponse,
     },
     TurnInterrupt => "turn/interrupt" {
         params: v2::TurnInterruptParams,
@@ -1300,6 +1353,13 @@ client_request_definitions! {
         response: v2::BedrockSetupResponse,
     },
 
+    #[experimental("account/bedrock/checkGovCloudRequirements")]
+    BedrockCheckGovCloudRequirements => "account/bedrock/checkGovCloudRequirements" {
+        params: v2::BedrockCheckGovCloudRequirementsParams,
+        serialization: global("account-auth"),
+        response: v2::BedrockCheckGovCloudRequirementsResponse,
+    },
+
     CancelLoginAccount => "account/login/cancel" {
         params: v2::CancelLoginAccountParams,
         serialization: global("account-auth"),
@@ -1406,6 +1466,19 @@ client_request_definitions! {
         params: v2::ConfigReadParams,
         serialization: global_shared_read("config"),
         response: v2::ConfigReadResponse,
+    },
+    #[experimental("pruner/read")]
+    PrunerRead => "pruner/read" {
+        params: v2::PrunerReadParams,
+        serialization: global_shared_read("config"),
+        response: v2::PrunerReadResponse,
+    },
+    #[experimental("pruner/write")]
+    PrunerWrite => "pruner/write" {
+        params: v2::PrunerWriteParams,
+        serialization: global("config"),
+        manual_payload_conversion: manual,
+        response: v2::PrunerReadResponse,
     },
     ExternalAgentConfigDetect => "externalAgentConfig/detect" {
         params: v2::ExternalAgentConfigDetectParams,
@@ -1933,6 +2006,8 @@ server_notification_definitions! {
     ThreadNameUpdated => "thread/name/updated" (v2::ThreadNameUpdatedNotification),
     ThreadAttachmentUpdated => "thread/attachment/updated" (v2::ThreadAttachmentUpdatedNotification),
     ThreadGoalUpdated => "thread/goal/updated" (v2::ThreadGoalUpdatedNotification),
+    #[experimental("thread/prediction/updated")]
+    ThreadPredictionUpdated => "thread/prediction/updated" (v2::ThreadPredictionUpdatedNotification),
     ThreadGoalCleared => "thread/goal/cleared" (v2::ThreadGoalClearedNotification),
     #[experimental("thread/queue/changed")]
     ThreadQueueChanged => "thread/queue/changed" (v2::ThreadQueueChangedNotification),
@@ -2515,6 +2590,7 @@ mod tests {
             request_id: request_id(),
             params: v2::GetAccountParams {
                 refresh_token: false,
+                skip_workspace_routing: false,
             },
         };
         assert_eq!(
@@ -2525,6 +2601,7 @@ mod tests {
         let thread_goal_set = ClientRequest::ThreadGoalSet {
             request_id: request_id(),
             params: v2::ThreadGoalSetParams {
+                origin: None,
                 thread_id: "goal-thread".to_string(),
                 objective: Some("ship it".to_string()),
                 status: None,
@@ -2577,6 +2654,7 @@ mod tests {
         let environment_add = ClientRequest::EnvironmentAdd {
             request_id: request_id(),
             params: v2::EnvironmentAddParams {
+                skills: None,
                 auth_bearer_token: None,
                 environment_id: "remote-a".to_string(),
                 exec_server_url: "ws://127.0.0.1:8765".to_string(),
@@ -3559,6 +3637,7 @@ mod tests {
             request_id: RequestId::Integer(6),
             params: v2::GetAccountParams {
                 refresh_token: false,
+                skip_workspace_routing: false,
             },
         };
         assert_eq!(
@@ -3573,6 +3652,7 @@ mod tests {
             request_id: RequestId::Integer(7),
             params: v2::GetAccountParams {
                 refresh_token: true,
+                skip_workspace_routing: false,
             },
         };
         assert_eq!(
@@ -3831,6 +3911,7 @@ mod tests {
         let request = ClientRequest::EnvironmentAdd {
             request_id: RequestId::Integer(9),
             params: v2::EnvironmentAddParams {
+                skills: None,
                 auth_bearer_token: Some("private-executor-token".into()),
                 environment_id: "remote-a".to_string(),
                 exec_server_url: "ws://127.0.0.1:8765".to_string(),
@@ -3846,7 +3927,8 @@ mod tests {
                     "environmentId": "remote-a",
                     "execServerUrl": "ws://127.0.0.1:8765",
                     "connectTimeoutMs": 300000,
-                    "authBearerToken": "private-executor-token"
+                    "authBearerToken": "private-executor-token",
+                    "skills": null
                 }
             }),
             serde_json::to_value(&request)?,
@@ -4371,6 +4453,7 @@ mod tests {
         let request = ClientRequest::EnvironmentAdd {
             request_id: RequestId::Integer(1),
             params: v2::EnvironmentAddParams {
+                skills: None,
                 auth_bearer_token: None,
                 environment_id: "remote-a".to_string(),
                 exec_server_url: "ws://127.0.0.1:8765".to_string(),
@@ -4443,6 +4526,7 @@ mod tests {
         let set_request = ClientRequest::ThreadGoalSet {
             request_id: RequestId::Integer(1),
             params: v2::ThreadGoalSetParams {
+                origin: None,
                 thread_id: "thr_123".to_string(),
                 objective: Some("ship goal mode".to_string()),
                 status: Some(v2::ThreadGoalStatus::Active),
@@ -4458,6 +4542,7 @@ mod tests {
         let clear_request = ClientRequest::ThreadGoalClear {
             request_id: RequestId::Integer(3),
             params: v2::ThreadGoalClearParams {
+                origin: None,
                 thread_id: "thr_123".to_string(),
             },
         };

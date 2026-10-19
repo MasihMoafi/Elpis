@@ -1,22 +1,21 @@
 ---
 source: tui/src/status_indicator_widget.rs
-assertion_line: 525
 expression: "frames.join(\"\\n\")"
 ---
-126 columns:
-"Elpising… (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(109, " "), (111, " "), (113, " "), (116, " "), (118, " ")]
-"  └ existing details                                                                                                          "
-
 125 columns:
-"Elpising… (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close                             "
-"  └ checking 日本語 ｶﾞﾊﾟ policy                                                                                              " Hidden by multi-width symbols: [(14, " "), (16, " "), (18, " "), (21, " "), (23, " ")]
+"Elpising (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(108, " "), (110, " "), (112, " "), (115, " "), (117, " ")]
 "  └ existing details                                                                                                         "
 
+124 columns:
+"Elpising (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close                             "
+"  └ checking 日本語 ｶﾞﾊﾟ policy                                                                                             " Hidden by multi-width symbols: [(14, " "), (16, " "), (18, " "), (21, " "), (23, " ")]
+"  └ existing details                                                                                                        "
+
 24 columns:
-"Elpising… (0s • esc to …"
+"Elpising (0s • esc to i…"
 "  └ checking 日本語 ｶﾞ… " Hidden by multi-width symbols: [(14, " "), (16, " "), (18, " "), (21, " ")]
 "  └ existing details    "
 
-126 columns:
-"Elpising… (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(109, " "), (111, " "), (113, " "), (116, " "), (118, " ")]
-"  └ existing details                                                                                                          "
+125 columns:
+"Elpising (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(108, " "), (110, " "), (112, " "), (115, " "), (117, " ")]
+"  └ existing details                                                                                                         "

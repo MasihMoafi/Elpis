@@ -14,6 +14,7 @@ use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
 use crate::bottom_pane::picker_option_row;
+use crate::bottom_pane::render_menu_surface;
 use crate::key_hint::KeyBindingListExt;
 use crate::onboarding::keys;
 use crate::onboarding::onboarding_screen::KeyboardHandler;
@@ -198,8 +199,13 @@ impl WidgetRef for &TrustDirectoryWidget {
             column.push(flex, child);
         }
 
-        // Elpis: content stays inside the popup border.
-        crate::bottom_pane::render_bordered_panel(area, buf, &column);
+        let panel = Rect {
+            height: column.desired_height(area.width).min(area.height),
+            ..area
+        };
+        render_menu_surface(panel, buf);
+        // The column owns flexible vertical padding; row highlights span the full panel.
+        column.render(panel, buf);
     }
 }
 

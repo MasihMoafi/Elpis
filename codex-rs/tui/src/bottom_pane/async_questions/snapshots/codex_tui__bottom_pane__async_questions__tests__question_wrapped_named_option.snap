@@ -1,21 +1,14 @@
 ---
 source: tui/src/bottom_pane/async_questions/state_tests.rs
-assertion_line: 327
 expression: buffer_text(&buffer)
 ---
-┌──────────────────────────────────┐
-│ Second                           │
-│                                  │
-│ › 1. A suggested answer that is  │
-│      long enough to wrap across  │
-│      multiple rows               │
-│   2. Other                       │
-│                                  │
-│ enter submit   ctrl+] skip       │
-│ shift+→ main prompt              │
-│                                  │
-│                                  │
-│                                  │
-│                                  │
-│                                  │
-└──────────────────────────────────┘
+
+  Second
+
+  › 1. A suggested answer that is
+       long enough to wrap across
+       multiple rows
+    2. Other
+
+  enter submit   ⌃] skip
+  ⇧→ main prompt

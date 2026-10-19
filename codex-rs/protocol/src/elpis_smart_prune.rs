@@ -46,6 +46,9 @@ pub struct SmartPruneAttemptSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audit_path: Option<String>,
     pub status: String,
+    /// Safe explanation for display; raw provider errors remain in the local audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
     pub model_slug: String,
     pub reasoning_effort: String,
     pub candidate_outputs: u64,
@@ -76,4 +79,53 @@ pub struct SmartPruneAdmissionSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_usage: Option<TokenUsage>,
     pub response_linkage_verified: bool,
+}
+
+/// One completed admission attempt, attached to its tool call in conversation history.
+/// Exact output stays in the immutable audit, loaded only when the user opens it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct SmartPruneEvent {
+    pub attempt_id: String,
+    pub call_id: String,
+    pub tool: String,
+    #[ts(type = "number")]
+    pub occurred_at_ms: i64,
+    #[ts(type = "number")]
+    pub source_tokens: u64,
+    #[ts(type = "number")]
+    pub admitted_tokens: u64,
+    pub kept: Option<String>,
+    pub failure_reason: Option<String>,
+}
+
+impl SmartPruneEvent {
+    pub fn item_id(&self) -> String {
+        format!("smart-prune:{}:{}", self.attempt_id, self.call_id)
+    }
+
+    pub fn summary(&self) -> String {
+        let clean = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if let Some(why) = &self.failure_reason {
+            return format!(
+                "✂ Smart Prune failed · kept the full output · {}",
+                clean(why)
+            );
+        }
+        let tokens = |count: u64| {
+            if count >= 1000 {
+                format!("{:.1}k", count as f64 / 1000.0)
+            } else {
+                count.to_string()
+            }
+        };
+        format!(
+            "✂ Smart Prune · {} · {} → {} tokens · kept: {}",
+            clean(&self.tool),
+            tokens(self.source_tokens),
+            tokens(self.admitted_tokens),
+            clean(self.kept.as_deref().unwrap_or("reason unavailable"))
+        )
+    }
 }

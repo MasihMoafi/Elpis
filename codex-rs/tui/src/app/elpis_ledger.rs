@@ -17,6 +17,7 @@ use crate::elpis_ledger_events::ManualMemoryStatusCompletion;
 use crate::elpis_ledger_events::ManualMemoryStorageTarget;
 use crate::elpis_ledger_events::ManualMemoryUnavailableReason;
 use crate::elpis_ledger_events::ManualMemoryViewKey;
+use crate::pager_overlay::escape_first_pager_keymap;
 
 #[derive(Debug, Default)]
 pub(crate) struct ManualMemoryStatusCoordinator {
@@ -55,18 +56,6 @@ pub(super) enum ManualMemoryCompletionDisposition {
     Ignored,
     Detached,
     Refresh(ManualMemoryRequestTarget),
-}
-
-/// A pager keymap whose close binding starts with Escape.
-///
-/// The configured default closes on `q`/`Ctrl+C` only, so a report shown without
-/// this would leave Escape to prime backtrack when idle or interrupt a running turn.
-fn escape_first_pager_keymap(pager: &crate::keymap::PagerKeymap) -> crate::keymap::PagerKeymap {
-    let mut keymap = pager.clone();
-    let escape = crate::key_hint::plain(KeyCode::Esc);
-    keymap.close.retain(|binding| binding != &escape);
-    keymap.close.insert(0, escape);
-    keymap
 }
 
 fn manual_memory_same_view_ignoring_epoch(
@@ -227,6 +216,7 @@ impl App {
             instruction_source_paths,
             dev_rule_roots,
             Some(&status),
+            Some(&target.view.displayed_thread_id.to_string()),
         ) {
             Ok(sources) => ManualMemoryStatusCompletion::Ready { status, sources },
             Err(_) => ManualMemoryStatusCompletion::Unavailable(
@@ -567,16 +557,12 @@ impl App {
     ) {
         match completion {
             ManualMemoryMutationCompletion::Succeeded => {
-                let message = match mutation {
-                    ManualMemoryMutation::Create => "Manual Memory created.",
-                    ManualMemoryMutation::Admission { admitted: true } => {
-                        "Manual Memory will be included on the next turn."
-                    }
-                    ManualMemoryMutation::Admission { admitted: false } => {
-                        "Manual Memory will be excluded on the next turn."
-                    }
-                };
-                self.chat_widget.add_info_message(message.to_string(), None);
+                // The Ledger already reflects successful admission changes. Keep clicks
+                // out of the conversation while preserving creation and failure notices.
+                if matches!(mutation, ManualMemoryMutation::Create) {
+                    self.chat_widget
+                        .add_info_message("Manual Memory created.".to_string(), None);
+                }
             }
             ManualMemoryMutationCompletion::Failed(reason) => {
                 let message = match reason {
@@ -714,10 +700,62 @@ impl App {
             | ElpisAppEvent::OpenDashboard
             | ElpisAppEvent::WorkGraphLoaded(_)
             | ElpisAppEvent::RefreshDashboard
+            | ElpisAppEvent::RefreshDashboardAgents
+            | ElpisAppEvent::LoadSmartPruneLog(_, _)
+            | ElpisAppEvent::SmartPruneLogLoaded(_, _, _)
+            | ElpisAppEvent::OpenSmartPruneRecord(_)
             | ElpisAppEvent::OpenUsage(_) => {
                 unreachable!("handled in app/elpis_events.rs")
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod quiet_memory_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn memory_admission_success_is_quiet_but_creation_and_errors_are_visible() {
+        let (mut app, mut events, _) = super::super::tests::make_test_app_with_channels().await;
+        while events.try_recv().is_ok() {}
+        for admitted in [true, false, true, false, true, false] {
+            app.present_manual_memory_mutation_completion(
+                ManualMemoryMutation::Admission { admitted },
+                ManualMemoryMutationCompletion::Succeeded,
+            );
+        }
+        assert!(
+            !std::iter::from_fn(|| events.try_recv().ok())
+                .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+        );
+        for (mutation, completion, expected) in [
+            (
+                ManualMemoryMutation::Create,
+                ManualMemoryMutationCompletion::Succeeded,
+                "created",
+            ),
+            (
+                ManualMemoryMutation::Admission { admitted: true },
+                ManualMemoryMutationCompletion::Failed(
+                    ManualMemoryMutationFailure::PersistenceFailed,
+                ),
+                "could not be saved",
+            ),
+        ] {
+            app.present_manual_memory_mutation_completion(mutation, completion);
+            let cells = std::iter::from_fn(|| events.try_recv().ok())
+                .filter_map(|event| match event {
+                    AppEvent::InsertHistoryCell(cell) => Some(cell),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(cells.iter().any(|cell| {
+                cell.display_lines(120)
+                    .iter()
+                    .any(|line| line.to_string().contains(expected))
+            }));
+        }
     }
 }

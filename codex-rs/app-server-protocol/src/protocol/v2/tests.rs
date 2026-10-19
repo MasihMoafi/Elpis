@@ -33,6 +33,7 @@ use codex_protocol::models::ImageReference as CoreImageReference;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::NetworkPermissions as CoreNetworkPermissions;
 use codex_protocol::models::WebSearchAction as CoreWebSearchAction;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemAccessMode as CoreFileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath as CoreFileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry as CoreFileSystemSandboxEntry;
@@ -97,6 +98,22 @@ fn managed_hooks_requirements_default_interrupt_to_empty() {
         serde_json::from_value(value).expect("deserialize managed hooks requirements");
 
     assert_eq!(parsed.interrupt, Vec::new());
+}
+
+#[test]
+fn mcp_oauth_login_response_accepts_older_servers_without_login_id() {
+    let response = serde_json::from_value::<McpServerOauthLoginResponse>(json!({
+        "authorizationUrl": "https://example.com/authorize",
+    }))
+    .expect("older login response should deserialize");
+
+    assert_eq!(
+        response,
+        McpServerOauthLoginResponse {
+            authorization_url: "https://example.com/authorize".to_string(),
+            login_id: None,
+        }
+    );
 }
 
 #[test]
@@ -3314,12 +3331,9 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
         source: CoreExecCommandSource::Agent,
         interaction_input: None,
         status: CoreCommandExecutionStatus::Completed,
-        stdout: Some("done\n".to_string()),
-        stderr: Some(String::new()),
         aggregated_output: Some("done\n".to_string()),
         exit_code: Some(0),
         duration: Some(Duration::from_millis(5)),
-        formatted_output: Some("done\n".to_string()),
     });
 
     assert_eq!(
@@ -3433,8 +3447,10 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
     );
 
     let sub_agent_activity_item = TurnItem::SubAgentActivity(SubAgentActivityItem {
+        model: Some("gpt-5".into()),
+        reasoning_effort: Some(ReasoningEffort::High),
         id: "activity-1".to_string(),
-        kind: CoreSubAgentActivityKind::Completed,
+        kind: CoreSubAgentActivityKind::Started,
         agent_thread_id: receiver_thread_id,
         agent_path: codex_protocol::AgentPath::root()
             .join("worker")
@@ -3444,11 +3460,33 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
     assert_eq!(
         ThreadItem::from(sub_agent_activity_item),
         ThreadItem::SubAgentActivity {
+            model: Some("gpt-5".into()),
+            reasoning_effort: Some(ReasoningEffort::High),
             id: "activity-1".to_string(),
-            kind: SubAgentActivityKind::Completed,
+            kind: SubAgentActivityKind::Started,
             agent_thread_id: receiver_thread_id.to_string(),
             agent_path: "/root/worker".to_string(),
         }
+    );
+
+    let old_activity: SubAgentActivityItem = serde_json::from_value(json!({
+        "id": "old-activity",
+        "kind": "started",
+        "agent_thread_id": receiver_thread_id,
+        "agent_path": "/root/worker",
+    }))
+    .unwrap();
+    let old_wire_activity: ThreadItem = serde_json::from_value(json!({
+        "type": "subAgentActivity",
+        "id": "old-activity",
+        "kind": "started",
+        "agentThreadId": receiver_thread_id,
+        "agentPath": "/root/worker",
+    }))
+    .unwrap();
+    assert_eq!(
+        ThreadItem::from(TurnItem::SubAgentActivity(old_activity)),
+        old_wire_activity
     );
 
     let search_item = TurnItem::WebSearch(CoreWebSearchItem {
@@ -4765,6 +4803,67 @@ fn core_error_info_converts_to_camel_case() {
     }
 }
 
+/// The catchall must keep the existing `other` string stable in both directions.
+#[test]
+fn codex_error_info_other_round_trips_as_string() {
+    assert_eq!(
+        serde_json::to_value(CodexErrorInfo::Other).unwrap(),
+        json!("other")
+    );
+    assert_eq!(
+        serde_json::from_value::<CodexErrorInfo>(json!("other")).unwrap(),
+        CodexErrorInfo::Other
+    );
+}
+
+/// Future unit variants must not prevent older clients from handling errors.
+#[test]
+fn codex_error_info_deserializes_unknown_string_as_other() {
+    assert_eq!(
+        serde_json::from_value::<CodexErrorInfo>(json!("futureError")).unwrap(),
+        CodexErrorInfo::Other
+    );
+}
+
+/// Future structured variants must fall back without retaining their unknown payload.
+#[test]
+fn codex_error_info_deserializes_unknown_object_as_other() {
+    assert_eq!(
+        serde_json::from_value::<CodexErrorInfo>(json!({
+            "futureError": {
+                "detail": "unknown",
+                "retryAfterSeconds": 30,
+            }
+        }))
+        .unwrap(),
+        CodexErrorInfo::Other
+    );
+}
+
+/// The catchall must not replace known structured variants with `Other`.
+#[test]
+fn codex_error_info_deserializes_known_object_without_falling_back() {
+    assert_eq!(
+        serde_json::from_value::<CodexErrorInfo>(json!({
+            "httpConnectionFailed": {
+                "httpStatusCode": 503,
+            }
+        }))
+        .unwrap(),
+        CodexErrorInfo::HttpConnectionFailed {
+            http_status_code: Some(503),
+        }
+    );
+}
+
+/// Only the two supported error wire shapes may reach the catchall.
+#[test]
+fn codex_error_info_rejects_unsupported_wire_shapes() {
+    for value in [json!(null), json!(true), json!(42), json!([])] {
+        assert!(serde_json::from_value::<CodexErrorInfo>(value).is_err());
+    }
+}
+
 #[test]
 fn codex_error_info_serializes_active_turn_not_steerable_turn_kind_in_camel_case() {
     let value = CodexErrorInfo::ActiveTurnNotSteerable {
@@ -4986,6 +5085,8 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
         client_user_message_id: None,
         input: vec![],
         turn_trigger: None,
+        parent_turn_id: None,
+        root_turn_id: None,
         tool_output: None,
         responsesapi_client_metadata: None,
         additional_context: None,
@@ -5345,4 +5446,63 @@ fn tool_request_user_input_params_default_legacy_missing_is_blocking_to_true() {
             auto_resolution_ms: Some(60_000),
         }
     );
+}
+
+#[test]
+fn work_graph_run_task_carries_an_optional_reasoning_effort() {
+    let task = |extra: serde_json::Value| {
+        let mut task = json!({
+            "id": "inspect", "kind": "explore", "title": "Inspect", "instruction": "Read",
+            "provider": null, "model": "gpt-5.5", "dependsOn": [],
+            "environmentId": null, "writeScopes": [], "acceptanceCriteria": ["Report"],
+        });
+        task.as_object_mut()
+            .expect("task object")
+            .extend(extra.as_object().expect("extra object").clone());
+        task
+    };
+
+    let high: WorkGraphRunTask =
+        serde_json::from_value(task(json!({"reasoningEffort": "high"}))).expect("task");
+    assert_eq!(high.reasoning_effort, Some(ReasoningEffort::High));
+    assert_eq!(
+        serde_json::to_value(&high).expect("task json")["reasoningEffort"],
+        json!("high")
+    );
+
+    for inherited in [json!({}), json!({"reasoningEffort": null})] {
+        let task: WorkGraphRunTask = serde_json::from_value(task(inherited)).expect("task");
+        assert_eq!(task.reasoning_effort, None);
+    }
+}
+
+#[test]
+fn work_graph_run_params_carry_an_optional_worktree_isolation() {
+    let params = |extra: serde_json::Value| {
+        let mut params = json!({
+            "rootThreadId": "thread", "name": "Isolated", "tasks": [],
+            "maxConcurrency": null, "maxRuntimeSeconds": null,
+        });
+        params
+            .as_object_mut()
+            .expect("params object")
+            .extend(extra.as_object().expect("extra object").clone());
+        serde_json::from_value::<WorkGraphRunParams>(params)
+    };
+
+    let isolated = params(json!({"isolation": "worktree"})).expect("isolated params");
+    assert_eq!(
+        serde_json::to_value(&isolated).expect("params json")["isolation"],
+        json!("worktree")
+    );
+    for shared in [json!({}), json!({"isolation": null})] {
+        let shared = params(shared).expect("shared params");
+        assert_eq!(
+            serde_json::to_value(&shared).expect("params json")["isolation"],
+            JsonValue::Null
+        );
+    }
+    for unknown in ["copy", "Worktree", ""] {
+        assert!(params(json!({"isolation": unknown})).is_err(), "{unknown}");
+    }
 }

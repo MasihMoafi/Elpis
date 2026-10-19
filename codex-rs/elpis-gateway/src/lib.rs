@@ -14,6 +14,7 @@ mod anthropic;
 mod catalog;
 mod chat;
 mod conversation;
+mod credits_budget;
 mod emitter;
 mod gemini;
 mod keys;
@@ -94,6 +95,7 @@ impl GatewayHandle {
 struct GatewayState {
     token: Arc<str>,
     home: Arc<PathBuf>,
+    credits_budget_file: Option<PathBuf>,
     /// Honors proxy variables: vendors are reached the way the owner's network requires.
     client: reqwest::Client,
     /// Never proxied, for a vendor on this machine (a local server, a test fixture).
@@ -136,6 +138,21 @@ fn http_clients() -> std::io::Result<(reqwest::Client, reqwest::Client)> {
 /// Starts a gateway on an ephemeral loopback port. It serves until the runtime shuts down.
 /// `home` is the Elpis home that holds saved provider keys.
 pub async fn start(home: PathBuf) -> std::io::Result<GatewayHandle> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")));
+    start_with_budget_file(
+        home,
+        config.map(|root| root.join("elpis/anthropic-credits-budget.env")),
+    )
+    .await
+}
+
+async fn start_with_budget_file(
+    home: PathBuf,
+    credits_budget_file: Option<PathBuf>,
+) -> std::io::Result<GatewayHandle> {
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
     let origin = format!("http://{}", listener.local_addr()?);
     let token = uuid::Uuid::new_v4().simple().to_string();
@@ -143,6 +160,7 @@ pub async fn start(home: PathBuf) -> std::io::Result<GatewayHandle> {
     let state = GatewayState {
         token: Arc::from(token.as_str()),
         home: Arc::new(home),
+        credits_budget_file,
         client,
         direct,
     };
@@ -309,6 +327,7 @@ async fn serve_responses(
     body: &[u8],
 ) -> Result<Response, GatewayError> {
     let route = Route::from_headers(headers, &state.token)?;
+    credits_budget::check(&route, state.credits_budget_file.as_deref())?;
     let request: Value = serde_json::from_slice(body)
         .map_err(|error| GatewayError::bad_request(format!("the request is not JSON: {error}")))?;
     let conversation = Conversation::from_request(&request)?;

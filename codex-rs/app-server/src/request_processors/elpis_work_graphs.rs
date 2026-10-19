@@ -3,14 +3,84 @@
 
 use super::thread_processor::ThreadRequestProcessor;
 use crate::error_code::internal_error;
+use crate::error_code::invalid_request;
+use crate::outgoing_message::ConnectionRequestId;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::WorkGraphListParams;
 use codex_app_server_protocol::WorkGraphListResponse;
+use codex_app_server_protocol::WorkGraphRunParams;
+use codex_app_server_protocol::WorkGraphRunResponse;
 use codex_app_server_protocol::WorkGraphSummary;
 use codex_app_server_protocol::WorkGraphTaskSummary;
 
 impl ThreadRequestProcessor {
+    pub(crate) async fn work_graph_run(
+        &self,
+        _request_id: &ConnectionRequestId,
+        params: WorkGraphRunParams,
+        allow_task_routes: bool,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        if !allow_task_routes
+            && params.tasks.iter().any(|task| {
+                task.provider.is_some() || task.model.is_some() || task.reasoning_effort.is_some()
+            })
+        {
+            return Err(invalid_request(
+                "per-task provider/model/reasoning-effort selection requires workGraph/runWithProviders"
+                    .to_string(),
+            ));
+        }
+        let (thread_id, thread) = self.load_thread(&params.root_thread_id).await?;
+        super::thread_input::ensure_direct_input_allowed(&thread).await?;
+        let tasks: Vec<_> = params
+            .tasks
+            .into_iter()
+            .map(|task| {
+                serde_json::json!({
+                    "id": task.id, "kind": task.kind, "title": task.title,
+                    "instruction": task.instruction, "depends_on": task.depends_on,
+                    "provider": task.provider, "model": task.model,
+                    "reasoning_effort": task.reasoning_effort,
+                    "environment_id": task.environment_id, "write_scopes": task.write_scopes,
+                    "acceptance_criteria": task.acceptance_criteria,
+                })
+            })
+            .collect();
+        let arguments = serde_json::json!({
+            "name": params.name, "tasks": tasks,
+            "max_concurrency": params.max_concurrency,
+            "max_runtime_seconds": params.max_runtime_seconds,
+            "isolation": params.isolation,
+        })
+        .to_string();
+        let started = thread
+            .run_work_graph(arguments)
+            .await
+            .map_err(|err| match err {
+                codex_protocol::protocol::WorkGraphStartError::ThreadBusy => {
+                    let mut error = invalid_request(
+                        "thread is busy; wait for its current turn before running a workflow",
+                    );
+                    error.data = Some(serde_json::json!({"reason": "threadBusy"}));
+                    error
+                }
+                codex_protocol::protocol::WorkGraphStartError::Rejected(message) => {
+                    invalid_request(message)
+                }
+            })?;
+        let response = WorkGraphRunResponse {
+            graph_id: started.graph_id,
+            thread_id: thread_id.to_string(),
+            turn_id: started.turn_id,
+        };
+        Ok(Some(if allow_task_routes {
+            ClientResponsePayload::WorkGraphRunWithProviders(response)
+        } else {
+            response.into()
+        }))
+    }
+
     pub(crate) async fn work_graph_list(
         &self,
         params: WorkGraphListParams,
@@ -36,16 +106,19 @@ impl ThreadRequestProcessor {
                     status: task.status.as_str().to_string(),
                     dependencies: task.dependencies,
                     assigned_thread_id: task.assigned_thread_id,
+                    provider: task.provider,
+                    model: task.model,
                     result: task.result,
                     evidence: task.evidence,
                     failure_reason: task.failure_reason,
                 })
                 .collect();
-            let event_count = state_db
+            let events = state_db
                 .list_work_graph_events(graph.id.as_str())
                 .await
-                .map_err(|err| internal_error(format!("failed to list work graph events: {err}")))?
-                .len();
+                .map_err(|err| {
+                    internal_error(format!("failed to list work graph events: {err}"))
+                })?;
             data.push(WorkGraphSummary {
                 id: graph.id,
                 name: graph.name,
@@ -54,8 +127,9 @@ impl ThreadRequestProcessor {
                     .map_err(|_| internal_error("work graph concurrency is too large"))?,
                 error: graph.last_error,
                 tasks,
-                event_count: u32::try_from(event_count)
+                event_count: u32::try_from(events.len())
                     .map_err(|_| internal_error("work graph event count is too large"))?,
+                worktree_report: codex_state::latest_worktree_report(&events),
             });
         }
         Ok(Some(WorkGraphListResponse { data }.into()))

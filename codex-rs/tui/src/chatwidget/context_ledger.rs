@@ -1,12 +1,15 @@
 //! Persistent, user-controlled view of Elpis-owned portable context.
 
+use super::context_usage::CONTEXT_CATEGORY_MARKER;
+use super::context_usage::category_bar_spans;
 use super::context_usage::context_used_percent;
 use super::context_usage::reconcile_context_categories;
 use super::context_usage::run_built_context_categories;
-use super::context_usage::weighted_cell_counts;
 use super::elpis_ledger_glue::ManualMemoryCache;
 use super::elpis_ledger_glue::ManualMemoryPhase;
 use super::elpis_ledger_glue::elpis_memory_dir;
+use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
+use super::elpis_providers::bridged_provider_of_model;
 use super::*;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_ledger_events::ManualMemoryMutation;
@@ -14,17 +17,104 @@ use crate::elpis_ledger_events::ManualMemoryRequestTarget;
 use crate::elpis_ledger_events::ManualMemoryStatusCompletion;
 use ratatui::style::Color;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
-use ratatui::widgets::Borders;
+use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 use crate::color::is_light;
 use crate::terminal_palette::StdoutColorLevel;
-use crate::terminal_palette::best_color_for_level;
 use crate::terminal_palette::default_bg;
-use crate::terminal_palette::stdout_color_level;
+use crate::terminal_palette::default_fg;
+use crate::terminal_palette::effective_stdout_color_level;
 
+const CONTEXT_LEDGER_TITLE: &str = "CONTEXT LEDGER";
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
 const LEDGER_WIDTH: u16 = 52;
+/// A dragged Ledger keeps at least this many columns, so its rows stay readable...
+const LEDGER_MIN_WIDTH: u16 = 28;
+/// ...and leaves the transcript and composer at least this many.
+const LEDGER_MIN_MAIN_WIDTH: u16 = 40;
+/// Drag eight columns beyond the readable minimum to preview closing the pane.
+const LEDGER_CLOSE_WIDTH: i32 = (LEDGER_MIN_WIDTH - 8) as i32;
+/// The rule and the blank column beside it are the handle for resizing the Ledger.
+const LEDGER_HANDLE_COLS: u16 = 2;
+/// The rule column and one blank column before the text.
+const LEDGER_LEFT_COLS: u16 = 2;
+/// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
+/// edge. The native inline Ledger keeps the same margin.
+const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
+const LEDGER_CLOSE_BUTTON_LABEL: &str = " ✕ Close ";
+
+/// Columns of the Ledger column on a terminal `terminal_width` wide: none below
+/// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
+#[cfg(test)]
+pub(crate) fn ledger_column_width(terminal_width: u16) -> u16 {
+    ledger_column_width_for(terminal_width, /*preferred*/ None)
+}
+
+/// The same, for a Ledger the user has resized to `preferred` columns. The width is clamped so
+/// both the Ledger and the transcript stay usable on this terminal.
+pub(crate) fn ledger_column_width_for(terminal_width: u16, preferred: Option<u16>) -> u16 {
+    if terminal_width < LEDGER_MIN_TERMINAL_WIDTH {
+        return 0;
+    }
+    match preferred {
+        Some(width) => width.clamp(
+            LEDGER_MIN_WIDTH,
+            terminal_width
+                .saturating_sub(LEDGER_MIN_MAIN_WIDTH)
+                .max(LEDGER_MIN_WIDTH),
+        ),
+        None => LEDGER_WIDTH.min(terminal_width * 2 / 5),
+    }
+}
+
+/// The Ledger column as the startup screen draws it, before a session exists: the rule and the
+/// title, where the live Ledger will be. Reserve the live Close row without showing an inactive
+/// button before startup completes. `column` is the whole column; `top_row` is its live top row.
+pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut Buffer) {
+    let top = top_row.clamp(column.top(), column.bottom());
+    let area = Rect {
+        y: top,
+        height: column.bottom() - top,
+        ..column
+    };
+    render_ledger_rule(area, &[], buf);
+    let content_width =
+        ledger_content_width(area.width, true).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+    if content_width == 0 || area.height <= 1 {
+        return;
+    }
+    let muted = Style::default().fg(crate::style::adaptive_palette_color(
+        default_bg(),
+        (80, 81, 75),
+        (133, 134, 128),
+    ));
+    let mut title = crate::status_indicator_widget::ledger_title_shimmer(
+        CONTEXT_LEDGER_TITLE,
+        std::time::Duration::ZERO,
+        crate::motion::MotionMode::Reduced,
+    );
+    title.extend([Span::raw("  "), Span::styled("loading", muted)]);
+    Paragraph::new(Line::from(title)).render(
+        Rect::new(
+            area.x + LEDGER_LEFT_COLS,
+            area.y + 1,
+            content_width,
+            /*height*/ 1,
+        ),
+        buf,
+    );
+}
+
+/// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
+fn ledger_content_width(ledger_width: u16, owned_column: bool) -> u16 {
+    // Close has its own row in the owned column; source rows need only one edge cell.
+    // Inline rendering keeps Codex's margin.
+    let right_margin = if owned_column { 1 } else { LEDGER_RIGHT_MARGIN };
+    ledger_width
+        .saturating_sub(LEDGER_LEFT_COLS + right_margin)
+        .max(1)
+}
 /// User-facing grouping for portable sources. Core categories retain their
 /// admission semantics; this layer only keeps manually selected files from
 /// being presented as Elpis-owned session continuity.
@@ -64,38 +154,34 @@ impl LedgerSourceGroup {
             Self::Instructions => "INSTRUCTIONS",
         }
     }
-
-    fn color(self) -> Color {
-        let index = match self {
-            Self::SessionContinuity => 0,
-            Self::UserFiles => 1,
-            Self::DurableMemory => 2,
-            Self::Instructions => 3,
-        };
-        source_group_colors(default_bg(), stdout_color_level())[index]
-    }
-
-    fn marker(self) -> &'static str {
-        match self {
-            Self::SessionContinuity => "⬟",
-            Self::UserFiles => "●",
-            Self::DurableMemory => "◆",
-            Self::Instructions => "✦",
-        }
-    }
 }
 
-/// The ledger's rendered content: the lines themselves, the line range each source
-/// occupies (for selection scrolling), and `(line index, file:// destination)` for
-/// every source row that maps to a real file on disk.
+/// The ledger's rendered content: its rows, already wrapped to the content width with Codex's
+/// wrapper, the row range each source occupies (for selection scrolling), and
+/// `(row index, file:// destination)` for each row of a source that is a real file on disk.
 pub(super) struct LedgerLines {
-    lines: Vec<Line<'static>>,
-    source_line_ranges: Vec<std::ops::Range<usize>>,
+    rows: Vec<Line<'static>>,
+    title_rows: std::ops::Range<usize>,
+    source_row_ranges: Vec<std::ops::Range<usize>>,
     source_links: Vec<(usize, String)>,
-    smart_prune_line: usize,
-    smart_prune_columns: std::ops::Range<usize>,
-    subagents_line: usize,
-    subagents_columns: std::ops::Range<usize>,
+    click_targets: Vec<(std::ops::Range<usize>, LedgerClickTarget)>,
+}
+
+/// What a plain left click on a Ledger row does: the same as Space on that row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LedgerClickTarget {
+    Close,
+    SmartPrune,
+    Subagents,
+    Source(usize),
+}
+
+/// Where the last drawn Ledger sits on screen, so a click can be traced back to its row.
+struct LedgerClickMap {
+    close_button: Option<Rect>,
+    content: Rect,
+    scroll_rows: u16,
+    targets: Vec<(std::ops::Range<usize>, LedgerClickTarget)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -104,8 +190,18 @@ pub(super) struct PendingContextAdmission {
     desired: bool,
 }
 
+/// A captured divider drag survives the preview that temporarily hides its column.
+struct LedgerResize {
+    pressed_at: u16,
+    width_then: u16,
+    terminal_width: u16,
+    restore_width: Option<u16>,
+    collapsed: bool,
+}
+
 pub(super) struct ContextLedgerState {
     visible: bool,
+    title_started_at: Instant,
     focused: bool,
     selected: usize,
     /// The Smart Prune switch sits above the source rows and is part of the same
@@ -117,15 +213,16 @@ pub(super) struct ContextLedgerState {
     pending_g: bool,
     why_visible: bool,
     /// Full screen only: the Ledger would leave the transcript too few rows, so it hides
-    /// until Tab or Alt+C focuses it.
+    /// until Alt+C focuses it.
     crowded: std::cell::Cell<bool>,
-    last_area: std::cell::Cell<Option<Rect>>,
-    last_scroll: std::cell::Cell<u16>,
-    last_source_ranges: std::cell::RefCell<Vec<(usize, std::ops::Range<usize>)>>,
-    last_smart_prune_row: std::cell::Cell<Option<u16>>,
-    last_smart_prune_columns: std::cell::Cell<Option<(u16, u16)>>,
-    last_subagents_row: std::cell::Cell<Option<u16>>,
-    last_subagents_columns: std::cell::Cell<Option<(u16, u16)>>,
+    /// Full screen only, where Elpis owns the mouse: written by each draw, read by a click.
+    click_map: std::cell::RefCell<Option<LedgerClickMap>>,
+    /// The width the user dragged the Ledger to; `None` keeps the default for the terminal.
+    pub(super) preferred_width: Option<u16>,
+    /// Full screen only: the column as last drawn, for hit-testing its rule.
+    pub(super) column: std::cell::Cell<Option<Rect>>,
+    /// The captured drag, including the preference to restore if it snaps closed.
+    resize_anchor: Option<LedgerResize>,
     pub(super) pending_smart_prune_enabled: Option<bool>,
     pub(super) pending_subagents_enabled: Option<bool>,
     pub(super) projected_token_delta: i64,
@@ -139,6 +236,7 @@ impl Default for ContextLedgerState {
         Self {
             // Visible by default; keyboard focus stays in the composer.
             visible: true,
+            title_started_at: Instant::now(),
             focused: false,
             selected: 0,
             smart_prune_selected: false,
@@ -146,13 +244,10 @@ impl Default for ContextLedgerState {
             pending_g: false,
             why_visible: false,
             crowded: std::cell::Cell::new(false),
-            last_area: std::cell::Cell::new(None),
-            last_scroll: std::cell::Cell::new(0),
-            last_source_ranges: std::cell::RefCell::new(Vec::new()),
-            last_smart_prune_row: std::cell::Cell::new(None),
-            last_smart_prune_columns: std::cell::Cell::new(None),
-            last_subagents_row: std::cell::Cell::new(None),
-            last_subagents_columns: std::cell::Cell::new(None),
+            click_map: std::cell::RefCell::new(None),
+            preferred_width: None,
+            column: std::cell::Cell::new(None),
+            resize_anchor: None,
             pending_smart_prune_enabled: None,
             pending_subagents_enabled: None,
             projected_token_delta: 0,
@@ -162,49 +257,123 @@ impl Default for ContextLedgerState {
     }
 }
 
-impl ContextLedgerState {
-    fn clear_rendered_geometry(&self) {
-        self.last_area.set(None);
-        self.last_scroll.set(0);
-        self.last_source_ranges.borrow_mut().clear();
-        self.last_smart_prune_row.set(None);
-        self.last_smart_prune_columns.set(None);
-        self.last_subagents_row.set(None);
-        self.last_subagents_columns.set(None);
-    }
-}
-
 impl ChatWidget {
     pub(crate) fn context_ledger_has_focus(&self) -> bool {
         self.context_ledger.visible && self.context_ledger.focused
     }
 
-    /// The ledger is a sidebar shown by default and toggled with `Tab` or `Alt+C`:
-    /// Tab focuses a visible sidebar, then closes it; Alt+C always toggles it.
+    pub(crate) fn unfocus_context_ledger(&mut self) {
+        self.context_ledger.focused = false;
+        self.context_ledger.pending_g = false;
+    }
+
+    /// The ledger is a sidebar shown by default and controlled with `Alt+C`:
+    /// Alt+C focuses the sidebar, then closes it. Tab closes only a focused sidebar.
     /// On narrower terminals it takes a proportional slice instead of a fixed
     /// 52 columns so the composer keeps room.
-    pub(super) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
+    ///
+    /// A modal view (a menu, a prompt) hides it. The warnings panel does not: it sits above the
+    /// composer, and a startup warning must not make the Ledger look missing.
+    pub(crate) fn context_ledger_width(&self, terminal_width: u16) -> u16 {
         if !self.context_ledger.visible
-            || self.bottom_pane.has_active_view()
-            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
+            || self
+                .context_ledger
+                .resize_anchor
+                .as_ref()
+                .is_some_and(|drag| drag.collapsed)
+            || self.bottom_pane.has_active_modal()
             || (self.context_ledger.crowded.get() && !self.context_ledger.focused)
         {
             return 0;
         }
-        LEDGER_WIDTH.min(terminal_width * 2 / 5)
+        ledger_column_width_for(terminal_width, self.context_ledger.preferred_width)
     }
 
-    /// Full screen keeps at least this many transcript rows above the Ledger.
-    const FULL_SCREEN_MIN_TRANSCRIPT_ROWS: u16 = 8;
+    /// Resizing the Ledger by its rule (full screen, where Elpis owns the mouse). A press on the
+    /// rule starts a drag, moving it left or right sets the width, and releasing ends it. Returns
+    /// whether the event was part of that drag; a press anywhere else is not.
+    pub(crate) fn handle_context_ledger_divider_mouse(
+        &mut self,
+        mouse: crossterm::event::MouseEvent,
+    ) -> bool {
+        use crossterm::event::MouseButton::Left;
+        use crossterm::event::MouseEventKind::Down;
+        use crossterm::event::MouseEventKind::Drag;
+        use crossterm::event::MouseEventKind::Up;
 
-    /// Full screen only: an unfocused Ledger that would leave the transcript fewer than
-    /// `FULL_SCREEN_MIN_TRANSCRIPT_ROWS` rows hides; Tab or Alt+C still opens it whole.
-    /// Inline mode passes `None`, which always shows the Ledger.
-    pub(crate) fn fit_context_ledger_to_screen(&self, screen: Option<ratatui::layout::Size>) {
+        match mouse.kind {
+            Down(Left) => {
+                let Some(column) = self.context_ledger.column.get() else {
+                    return false;
+                };
+                let on_handle = self.context_ledger_width(column.right()) > 0
+                    && mouse.modifiers.is_empty()
+                    && (column.x..column.x + LEDGER_HANDLE_COLS).contains(&mouse.column)
+                    && (column.top()..column.bottom()).contains(&mouse.row);
+                self.context_ledger.resize_anchor = on_handle.then_some(LedgerResize {
+                    pressed_at: mouse.column,
+                    width_then: column.width,
+                    terminal_width: column.right(),
+                    restore_width: self.context_ledger.preferred_width,
+                    collapsed: false,
+                });
+                on_handle
+            }
+            Drag(Left) | Up(Left) => {
+                let Some(mut drag) = self.context_ledger.resize_anchor.take() else {
+                    return false;
+                };
+                self.update_context_ledger_resize(&mut drag, mouse.column);
+                if mouse.kind == Up(Left) {
+                    if drag.collapsed {
+                        self.context_ledger.preferred_width = drag.restore_width;
+                        self.close_context_ledger();
+                    } else if self.context_ledger.preferred_width != drag.restore_width
+                        && let Some(width) = self.context_ledger.preferred_width
+                    {
+                        self.local_settings.tui.context_ledger_width = Some(width);
+                        self.app_event_tx
+                            .send(AppEvent::PersistContextLedgerWidth(width));
+                    }
+                } else {
+                    self.context_ledger.resize_anchor = Some(drag);
+                }
+                self.request_redraw();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn update_context_ledger_resize(&mut self, drag: &mut LedgerResize, pointer: u16) {
+        let width = i32::from(drag.width_then) + i32::from(drag.pressed_at) - i32::from(pointer);
+        if width <= LEDGER_CLOSE_WIDTH {
+            drag.collapsed = true;
+            self.context_ledger.preferred_width = drag.restore_width;
+        } else if drag.collapsed {
+            // Re-entering the open region restores the saved width immediately. Subsequent
+            // movement resizes from here, without making the pointer jump to the restored rule.
+            drag.collapsed = false;
+            self.context_ledger.preferred_width = drag.restore_width;
+            drag.pressed_at = pointer;
+            drag.width_then = ledger_column_width_for(drag.terminal_width, drag.restore_width);
+        } else if pointer == drag.pressed_at {
+            self.context_ledger.preferred_width = drag.restore_width;
+        } else {
+            self.context_ledger.preferred_width = Some(ledger_column_width_for(
+                drag.terminal_width,
+                Some(u16::try_from(width.max(0)).unwrap_or(0)),
+            ));
+        }
+    }
+
+    /// Keep at least this many transcript rows above the Ledger in either terminal mode.
+    const MIN_TRANSCRIPT_ROWS: u16 = 8;
+
+    /// An unfocused Ledger that would leave the transcript fewer than `MIN_TRANSCRIPT_ROWS`
+    /// rows hides; Alt+C still opens it whole.
+    pub(crate) fn fit_context_ledger_to_screen(&self, screen: ratatui::layout::Size) {
         self.context_ledger.crowded.set(false);
-        let Some(screen) = screen else {
-            return;
-        };
         let width = self.context_ledger_width(screen.width);
         if width == 0 || self.context_ledger.focused {
             return;
@@ -212,11 +381,17 @@ impl ChatWidget {
         let height = self.context_ledger_desired_height(width);
         self.context_ledger
             .crowded
-            .set(height + Self::FULL_SCREEN_MIN_TRANSCRIPT_ROWS > screen.height);
+            .set(height + Self::MIN_TRANSCRIPT_ROWS > screen.height);
+    }
+
+    /// Full screen gives the Ledger its own full-height column, so its height never takes
+    /// rows from the transcript and it is never crowded out.
+    pub(crate) fn fit_context_ledger_column(&self) {
+        self.context_ledger.crowded.set(false);
     }
 
     pub(super) fn context_ledger_desired_height(&self, ledger_width: u16) -> u16 {
-        self.context_ledger_lines_with_height(ledger_width)
+        self.context_ledger_lines_with_height(ledger_width, false)
             .map(|(height, _)| height)
             .unwrap_or(0)
     }
@@ -228,23 +403,20 @@ impl ChatWidget {
     pub(super) fn context_ledger_lines_with_height(
         &self,
         ledger_width: u16,
+        owned_column: bool,
     ) -> Option<(u16, LedgerLines)> {
         if !self.context_ledger.visible || ledger_width == 0 {
-            self.context_ledger.clear_rendered_geometry();
             return None;
         }
-        // Build the real lines and measure them with the same wrap settings the
-        // renderer uses. Hand-counting rows here is what mis-anchored the panel: the
-        // estimate had to mirror the renderer by hand, and it silently missed wrapped
-        // rows and the expanded "WHY INCLUDED" block.
-        let content_width = ledger_width.saturating_sub(1).max(1);
-        let ledger_lines = self.ledger_lines(content_width as usize);
-        let height = u16::try_from(
-            Paragraph::new(ledger_lines.lines.clone())
-                .wrap(Wrap { trim: true })
-                .line_count(content_width),
-        )
-        .unwrap_or(u16::MAX);
+        // The rows are wrapped once, with the same wrapper that draws them, so the height is
+        // their count and the panel cannot be measured differently from what it draws.
+        let ledger_lines = self.ledger_lines(
+            usize::from(ledger_content_width(ledger_width, owned_column)),
+            owned_column,
+        );
+        let height = u16::try_from(ledger_lines.rows.len())
+            .unwrap_or(u16::MAX)
+            .saturating_add(u16::from(owned_column));
         Some((height, ledger_lines))
     }
 
@@ -253,13 +425,29 @@ impl ChatWidget {
             return false;
         }
         let is_tab = matches!(key_event.code, KeyCode::Tab) && key_event.modifiers.is_empty();
-        let is_toggle_key = is_tab || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
+        // Voice mute and chords are routed by App first. Menus and explicit user
+        // bindings keep Ctrl+X; Alt+C remains the existing Ledger shortcut.
+        let is_ctrl_x = key_hint::ctrl(KeyCode::Char('x')).is_press(key_event)
+            && self.bottom_pane.no_modal_or_popup_active()
+            && !crate::keymap::configured_main_surface_alias_is_used(
+                &self.local_settings.tui.keymap,
+                "ctrl-x",
+            );
+        // Elpis: Tab moves between the composer and the Ledger unless a menu, popup or pasted
+        // text owns it, or the user explicitly bound Tab to queueing.
+        let tab_toggles = is_tab
+            && (self.context_ledger.focused
+                || (self.bottom_pane.no_modal_or_popup_active()
+                    && !self.bottom_pane.is_in_paste_burst()
+                    && !self.bottom_pane.is_composer_queue_key(key_event)));
+        let is_toggle_key =
+            tab_toggles || key_hint::alt(KeyCode::Char('c')).is_press(key_event) || is_ctrl_x;
         if is_toggle_key {
             let crowded_out = self.context_ledger.crowded.get() && !self.context_ledger.focused;
-            if !self.context_ledger.visible
-                || crowded_out
-                || (is_tab && !self.context_ledger.focused && !self.bottom_pane.has_active_view())
-            {
+            if !self.context_ledger.visible || crowded_out || !self.context_ledger.focused {
+                if !self.context_ledger.visible || crowded_out {
+                    self.context_ledger.title_started_at = Instant::now();
+                }
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
                 // Start at the top row on screen rather than wherever the
@@ -274,7 +462,6 @@ impl ChatWidget {
                 self.context_ledger.focused = false;
                 self.context_ledger.smart_prune_selected = false;
                 self.context_ledger.subagents_selected = false;
-                self.context_ledger.clear_rendered_geometry();
             }
             self.context_ledger.pending_g = false;
             self.request_redraw();
@@ -344,7 +531,7 @@ impl ChatWidget {
                     self.context_ledger.why_visible = !self.context_ledger.why_visible;
                 }
                 _ => {
-                    if matches!(key_event.code, KeyCode::Char(_)) {
+                    if matches!(key_event.code, KeyCode::Char(_) | KeyCode::Backspace) {
                         self.context_ledger.focused = false;
                     }
                     return false;
@@ -444,12 +631,13 @@ impl ChatWidget {
                     return false;
                 }
             }
-            KeyCode::Backspace | KeyCode::Delete => {
+            KeyCode::Delete => {
                 let source = sources[self.context_ledger.selected].clone();
                 self.remove_context_source(&source, &selectable);
             }
             _ => {
-                if matches!(key_event.code, KeyCode::Char(_)) {
+                // Typing, Backspace included, belongs to the draft.
+                if matches!(key_event.code, KeyCode::Char(_) | KeyCode::Backspace) {
                     self.context_ledger.focused = false;
                 }
                 return false;
@@ -464,9 +652,9 @@ impl ChatWidget {
     /// and `render_context_ledger` call this, so the height used to bottom-anchor the
     /// panel can never disagree with what is actually drawn.
     ///
-    /// `content_width` is the width inside the left border, used to right-align each
-    /// row's tokens/state against the same edge instead of stacking them on their own line.
-    fn ledger_lines(&self, content_width: usize) -> LedgerLines {
+    /// `content_width` is the width inside the left border. The owned column preserves full
+    /// source names and places metadata below them when both cannot fit on one row.
+    fn ledger_lines(&self, content_width: usize, owned_column: bool) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
         let accounting_sources = self.accounted_continuity_sources();
@@ -477,6 +665,8 @@ impl ChatWidget {
             .sum::<u64>();
         // Labels and values identify categories; the palette follows Elpis appearance.
         let brand = crate::style::brand_style().not_bold();
+        let context = crate::style::context_style();
+        let section = crate::style::section_style();
         let background = default_bg();
         let light = background.is_some_and(is_light);
         let muted = Style::default().fg(crate::style::adaptive_palette_color(
@@ -528,7 +718,7 @@ impl ChatWidget {
             })
             .collect::<Vec<_>>();
         if attribution_segments.is_empty() && has_request_snapshot && used_tokens > 0 {
-            attribution_segments.push((used_tokens, Color::DarkGray));
+            attribution_segments.push((used_tokens, context.fg.unwrap_or(Color::Reset)));
         }
         let source_change_status = if !self.context_ledger.pending_context_admissions.is_empty() {
             Some("changes queued")
@@ -562,15 +752,28 @@ impl ChatWidget {
         let interaction_hint = if self.context_ledger.focused {
             "Up/Down move · Space/Enter toggle · p prune · s subagents · i all · w why · Tab/Esc close"
         } else {
-            "Tab controls · Alt+C hide · Ctrl+click open file"
+            "Alt+C controls · Ctrl+click open file"
         };
         let mut lines = self.agent_ledger_lines(content_width);
+        let title_line = lines.len();
+        let mut title = crate::status_indicator_widget::ledger_title_shimmer(
+            CONTEXT_LEDGER_TITLE,
+            self.context_ledger.title_started_at.elapsed(),
+            crate::motion::MotionMode::from_animations_enabled(
+                self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
+            ),
+        );
+        title.extend([Span::raw("  "), Span::styled(context_header, context)]);
+        let title = crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
+            Line::from(title),
+            if owned_column {
+                content_width
+            } else {
+                content_width.saturating_sub(1)
+            },
+        );
         lines.extend(vec![
-            Line::from(vec![
-                Span::styled("CONTEXT LEDGER", brand.bold()),
-                Span::raw("  "),
-                Span::styled(context_header, brand),
-            ]),
+            title,
             Line::from(Span::styled(interaction_hint, muted)),
             Line::from(""),
         ]);
@@ -594,64 +797,36 @@ impl ChatWidget {
             if self.context_ledger.focused && self.context_ledger.smart_prune_selected {
                 "› "
             } else {
-                // Paragraph wrapping trims leading blanks; do not count an invisible cursor.
+                // An idle row has no cursor and no leading blanks.
                 ""
             };
         let smart_prune_pad = content_width
             .saturating_sub(
-                smart_prune_cursor.chars().count()
-                    + smart_prune_label.chars().count()
-                    + smart_prune_button.chars().count(),
+                smart_prune_cursor.width() + smart_prune_label.width() + smart_prune_button.width(),
             )
             .max(1);
-        let smart_prune_line = lines.len();
-        let smart_prune_column_start = smart_prune_cursor.chars().count()
-            + smart_prune_label.chars().count()
-            + smart_prune_pad;
-        let smart_prune_columns =
-            smart_prune_column_start..smart_prune_column_start + smart_prune_button.chars().count();
-        let [violet, teal, emerald, green] =
-            smart_prune_on_colors(default_bg(), stdout_color_level());
-        let toggle_label_spans = |label, enabled| {
-            if enabled {
-                // These rows repaint only when the ledger's own state changes,
-                // so reading a clock here strands the label at whatever phase
-                // the last rebuild happened to catch. Hold the gradient still.
-                let mut spans = crate::elpis_motion::text(label);
-                for span in &mut spans {
-                    span.style = span.style.add_modifier(ratatui::style::Modifier::BOLD);
-                }
-                spans
-            } else {
-                vec![Span::styled(label, brand.bold())]
-            }
-        };
         let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
-            vec![Span::styled(
-                smart_prune_button,
-                Style::default().fg(teal).bold(),
-            )]
+            vec![Span::styled(smart_prune_button, section.bold())]
         } else if smart_prune_enabled {
-            vec![
-                Span::styled("[", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(violet)),
-                Span::styled("━", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(emerald)),
-                Span::styled("●] ON", Style::default().fg(green).bold()),
-            ]
+            vec![Span::styled("[━━━●] ON", context)]
         } else {
             vec![Span::styled(smart_prune_button, muted)]
         };
         let mut smart_prune_spans = vec![Span::styled(smart_prune_cursor, brand.bold())];
-        smart_prune_spans.extend(toggle_label_spans(
-            smart_prune_label,
-            smart_prune_enabled
-                && (self.smart_prune_synced || pending_smart_prune_enabled.is_some()),
-        ));
+        smart_prune_spans.push(Span::styled(smart_prune_label, section.bold()));
         smart_prune_spans.push(Span::raw(" ".repeat(smart_prune_pad)));
         smart_prune_spans.extend(switch_spans);
+        let smart_prune_line = lines.len();
         lines.push(Line::from(smart_prune_spans));
-        let smart_prune_detail = if pending_smart_prune_enabled.is_some() {
+        // Elpis: a Claude chat's requests go through the Claude bridge's Smart Prune proxy while
+        // the switch is on (`tools/elpis-claude`); an Antigravity chat's go to Google unseen.
+        let bridged = bridged_provider_of_model(self.current_model());
+        let smart_prune_detail = if bridged.is_some_and(|b| b.id != CLAUDE_SUBSCRIPTION_PROVIDER_ID)
+        {
+            "Does not apply to Antigravity chats".to_string()
+        } else if bridged.is_some() && smart_prune_enabled {
+            "Large tool results shrink through the Claude proxy".to_string()
+        } else if pending_smart_prune_enabled.is_some() {
             "Saving setting · the active turn keeps its current policy".to_string()
         } else if !self.smart_prune_synced {
             "Reading current thread state".to_string()
@@ -817,31 +992,19 @@ impl ChatWidget {
             };
         let subagents_pad = content_width
             .saturating_sub(
-                subagents_cursor.chars().count()
-                    + subagents_label.chars().count()
-                    + subagents_button.chars().count(),
+                subagents_cursor.width() + subagents_label.width() + subagents_button.width(),
             )
             .max(1);
-        let subagents_line = lines.len();
-        let subagents_column_start =
-            subagents_cursor.chars().count() + subagents_label.chars().count() + subagents_pad;
-        let subagents_columns =
-            subagents_column_start..subagents_column_start + subagents_button.chars().count();
         let subagents_switch_spans = if subagents_enabled {
-            vec![
-                Span::styled("[", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(violet)),
-                Span::styled("━", Style::default().fg(teal)),
-                Span::styled("━", Style::default().fg(emerald)),
-                Span::styled("●] ON", Style::default().fg(green).bold()),
-            ]
+            vec![Span::styled("[━━━●] ON", context)]
         } else {
             vec![Span::styled(subagents_button, muted)]
         };
         let mut subagents_spans = vec![Span::styled(subagents_cursor, brand.bold())];
-        subagents_spans.extend(toggle_label_spans(subagents_label, subagents_enabled));
+        subagents_spans.push(Span::styled(subagents_label, section.bold()));
         subagents_spans.push(Span::raw(" ".repeat(subagents_pad)));
         subagents_spans.extend(subagents_switch_spans);
+        let subagents_line = lines.len();
         lines.push(Line::from(subagents_spans));
         // One line, not a block: the ledger's own height is what the owner sees
         // of their sources, and this setting has nothing to report beyond its
@@ -859,7 +1022,7 @@ impl ChatWidget {
         lines.push(Line::from(""));
 
         lines.push(Line::from(vec![
-            Span::styled("CONTEXT WINDOW", brand.bold()),
+            Span::styled("CONTEXT WINDOW", context.bold()),
             Span::raw("  "),
             Span::styled(
                 if let (true, Some(window)) = (has_request_snapshot, context_window) {
@@ -874,7 +1037,7 @@ impl ChatWidget {
                 } else {
                     "usage unavailable".to_string()
                 },
-                muted,
+                context,
             ),
         ]));
         if let (true, Some(window)) = (has_request_snapshot, context_window) {
@@ -902,13 +1065,14 @@ impl ChatWidget {
                     ),
                     None => format!("≈{}", format_tokens(category.tokens)),
                 };
+                let marker = format!("{CONTEXT_CATEGORY_MARKER} ");
                 let pad = content_width
-                    .saturating_sub(2 + 2 + category.label.chars().count() + right.chars().count())
+                    .saturating_sub(2 + marker.width() + category.label.width() + right.width())
                     .max(1);
                 lines.push(Line::from(vec![
                     Span::raw("  "),
                     Span::styled(
-                        format!("{} ", category.marker()),
+                        marker,
                         Style::default()
                             .fg(super::context_usage::context_display_color(category.color)),
                     ),
@@ -950,9 +1114,9 @@ impl ChatWidget {
                 .filter(|(_, source)| source.admitted)
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
-            let cat_style = Style::default().fg(group.color());
+            let cat_style = source_heading_style();
             lines.push(Line::from(vec![
-                Span::styled(format!("{} ", group.marker()), cat_style),
+                Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
                 Span::raw("  "),
                 Span::styled(
@@ -979,14 +1143,8 @@ impl ChatWidget {
                 } else {
                     "EXCLUDED"
                 };
-                let state_style = if source.admitted {
-                    cat_style
-                } else if light {
-                    muted
-                } else {
-                    cat_style.dim()
-                };
-                let marker_style = if source.admitted { cat_style } else { muted };
+                let state_style = if source.admitted { context } else { muted };
+                let marker_style = if source.admitted { context } else { muted };
                 let prefix = if selected { "› " } else { "  " };
                 // Per-source estimates stay exact so similarly sized files remain
                 // distinguishable; category and context totals remain compact.
@@ -994,29 +1152,32 @@ impl ChatWidget {
                     "≈{} est. tokens {state}",
                     format_source_count(source.estimated_tokens),
                 );
-                // "› " + "[x]" + " " ahead of the name; truncate long names from the
-                // left with '…' so the token count and state stay right-aligned.
-                let fixed = prefix.chars().count() + marker.chars().count() + 1;
+                // Inline rows retain their compact layout. The owned column has room to wrap
+                // full names and keep their metadata on a separate line when necessary.
+                // Widths are terminal columns, not character counts.
+                let fixed = prefix.width() + marker.width() + 1;
                 let name_budget = content_width
-                    .saturating_sub(fixed + right.chars().count() + 1)
+                    .saturating_sub(fixed + right.width() + 1)
                     .max(1);
-                let name_chars = source.name.chars().count();
-                let shown_name = if name_chars > name_budget {
-                    let tail_start = name_chars - name_budget.saturating_sub(1);
-                    let tail: String = source.name.chars().skip(tail_start).collect();
-                    format!("…{tail}")
-                } else {
+                let shown_name = if owned_column {
                     source.name.clone()
+                } else {
+                    truncate_start_to_width(&source.name, name_budget)
                 };
+                let stack_metadata =
+                    owned_column && fixed + shown_name.width() + 1 + right.width() > content_width;
                 let pad = content_width
-                    .saturating_sub(fixed + shown_name.chars().count())
-                    .saturating_sub(right.chars().count())
+                    .saturating_sub(fixed + shown_name.width())
+                    .saturating_sub(right.width())
                     .max(1);
                 // The whole row opens the file: ctrl+click anywhere on it, the same
                 // affordance /usage gives. Blank padding cells are skipped by
                 // mark_buffer_hyperlinks, so only the visible text is clickable.
-                if let Ok(destination) = url::Url::from_file_path(&source.path) {
-                    source_links.push((lines.len(), destination.to_string()));
+                let destination = url::Url::from_file_path(&source.path)
+                    .ok()
+                    .map(|destination| destination.to_string());
+                if let Some(destination) = &destination {
+                    source_links.push((lines.len(), destination.clone()));
                 }
                 // The row under the cursor wears the Elpis gradient. Bold brand
                 // text alone was too close to the rows around it to find at a
@@ -1041,8 +1202,18 @@ impl ChatWidget {
                             .underlined(),
                     ));
                 }
+                if stack_metadata {
+                    lines.push(Line::from(row));
+                    if let Some(destination) = destination {
+                        source_links.push((lines.len(), destination));
+                    }
+                    row = vec![Span::raw(
+                        " ".repeat(content_width.saturating_sub(right.width())),
+                    )];
+                } else {
+                    row.push(Span::raw(" ".repeat(pad)));
+                }
                 row.extend(vec![
-                    Span::raw(" ".repeat(pad)),
                     Span::styled(
                         format!(
                             "≈{} est. tokens ",
@@ -1060,7 +1231,7 @@ impl ChatWidget {
                     } else {
                         "Excluded; when enabled, included"
                     };
-                    lines.push(Line::from(Span::styled("WHY INCLUDED", brand.bold())));
+                    lines.push(Line::from(Span::styled("WHY INCLUDED", section.bold())));
                     lines.push(Line::from(Span::styled(source.name.clone(), brand)));
                     lines.push(Line::from(Span::styled(
                         format!("{inclusion} because {}.", source.reason),
@@ -1105,136 +1276,139 @@ impl ChatWidget {
             lines.pop();
         }
 
+        let (rows, row_starts) = wrap_ledger_rows(&lines, content_width);
+        let row_of = |line: usize| row_starts[line.min(lines.len())];
+        let mut click_targets = vec![
+            (
+                row_of(smart_prune_line)..row_of(smart_prune_line + 1),
+                LedgerClickTarget::SmartPrune,
+            ),
+            (
+                row_of(subagents_line)..row_of(subagents_line + 1),
+                LedgerClickTarget::Subagents,
+            ),
+        ];
+        click_targets.extend(
+            source_line_ranges
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| sources[*index].selectable)
+                .map(|(index, range)| {
+                    (
+                        row_of(range.start)..row_of(range.end),
+                        LedgerClickTarget::Source(index),
+                    )
+                }),
+        );
+        let source_row_ranges = source_line_ranges
+            .into_iter()
+            .map(|range| row_of(range.start)..row_of(range.end))
+            .collect();
+        // Each row of a linked line opens the same file.
+        let source_links = source_links
+            .into_iter()
+            .flat_map(|(line, destination)| {
+                (row_of(line)..row_of(line + 1)).map(move |row| (row, destination.clone()))
+            })
+            .collect();
         LedgerLines {
-            lines,
-            source_line_ranges,
+            title_rows: row_of(title_line)..row_of(title_line + 1),
+            rows,
+            source_row_ranges,
             source_links,
-            smart_prune_line,
-            smart_prune_columns,
-            subagents_line,
-            subagents_columns,
+            click_targets,
         }
     }
 
     #[cfg(test)]
     pub(super) fn render_context_ledger(&self, area: Rect, buf: &mut Buffer) {
-        let content_width = area.width.saturating_sub(1).max(1);
-        self.render_context_ledger_lines(area, buf, self.ledger_lines(content_width as usize));
+        let owned_column = self.context_ledger.column.get() == Some(area);
+        let ledger_lines = self.ledger_lines(
+            usize::from(ledger_content_width(area.width, owned_column)),
+            owned_column,
+        );
+        self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
 
+    /// Draws the Ledger in `area`: its rule in the first column, then its rows after one blank
+    /// column, so that Codex's right margin stays free. `box_rules` holds the rows of the top
+    /// and bottom rules of each box that ends on the Ledger's rule.
     pub(super) fn render_context_ledger_lines(
         &self,
         area: Rect,
         buf: &mut Buffer,
         ledger_lines: LedgerLines,
+        box_rules: &[(u16, u16)],
     ) {
-        let content_width = area.width.saturating_sub(1).max(1);
         let LedgerLines {
-            lines,
-            source_line_ranges,
+            rows,
+            title_rows,
+            source_row_ranges,
             source_links,
-            smart_prune_line,
-            smart_prune_columns,
-            subagents_line,
-            subagents_columns,
+            click_targets,
         } = ledger_lines;
+        self.forget_context_ledger_clicks();
+        render_ledger_rule(area, box_rules, buf);
+        let owned_column = self.context_ledger.column.get() == Some(area);
+        let content_width = ledger_content_width(area.width, owned_column)
+            .min(area.width.saturating_sub(LEDGER_LEFT_COLS));
+        if content_width == 0 || area.height == 0 {
+            return;
+        }
+        let content = Rect::new(
+            area.x + LEDGER_LEFT_COLS,
+            area.y + u16::from(owned_column),
+            content_width,
+            area.height.saturating_sub(u16::from(owned_column)),
+        );
+        let scroll_rows = if self.context_ledger.focused {
+            source_row_ranges
+                .get(self.context_ledger.selected)
+                .map(|rows| selected_source_scroll_offset(rows.clone(), content.height))
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        if let Some(delay) =
+            self.ledger_title_animation_delay(&title_rows, scroll_rows, content.height)
+        {
+            self.frame_requester.schedule_frame_in(delay);
+        }
+        Paragraph::new(rows.clone())
+            .scroll((scroll_rows, 0))
+            .render(content, buf);
+        // Only the owned column handles mouse input. Keep the native inline Ledger unchanged.
+        let close_width = LEDGER_CLOSE_BUTTON_LABEL.width() as u16;
+        let close_button = (owned_column && area.width >= LEDGER_LEFT_COLS + close_width + 1)
+            .then(|| Rect::new(area.right() - close_width - 1, area.y, close_width, 1));
+        if let Some(button) = close_button {
+            buf.set_string(
+                button.x,
+                button.y,
+                LEDGER_CLOSE_BUTTON_LABEL,
+                crate::style::user_message_style().bold(),
+            );
+        }
+        *self.context_ledger.click_map.borrow_mut() = Some(LedgerClickMap {
+            close_button,
+            content,
+            scroll_rows,
+            targets: click_targets,
+        });
 
-        let scroll_lines = self
-            .context_ledger
-            .focused
-            .then(|| {
-                source_line_ranges
-                    .get(self.context_ledger.selected)
-                    .map(|range| {
-                        selected_source_scroll_offset(
-                            &lines,
-                            range.clone(),
-                            content_width,
-                            area.height.max(1),
-                        )
-                    })
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
-        self.context_ledger.last_area.set(Some(area));
-        self.context_ledger.last_scroll.set(scroll_lines);
-        let rows_before_smart_prune = Paragraph::new(lines[..smart_prune_line].to_vec())
-            .wrap(Wrap { trim: true })
-            .line_count(content_width);
-        let visible_smart_prune_row = u16::try_from(rows_before_smart_prune)
-            .ok()
-            .and_then(|row| row.checked_sub(scroll_lines))
-            .filter(|row| *row < area.height)
-            .map(|row| area.y.saturating_add(row));
-        self.context_ledger
-            .last_smart_prune_row
-            .set(visible_smart_prune_row);
-        let switch_start = u16::try_from(smart_prune_columns.start)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        let switch_end = u16::try_from(smart_prune_columns.end)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        self.context_ledger
-            .last_smart_prune_columns
-            .set(switch_start.zip(switch_end));
-        let rows_before_subagents = Paragraph::new(lines[..subagents_line].to_vec())
-            .wrap(Wrap { trim: true })
-            .line_count(content_width);
-        let visible_subagents_row = u16::try_from(rows_before_subagents)
-            .ok()
-            .and_then(|row| row.checked_sub(scroll_lines))
-            .filter(|row| *row < area.height)
-            .map(|row| area.y.saturating_add(row));
-        self.context_ledger
-            .last_subagents_row
-            .set(visible_subagents_row);
-        let subagents_switch_start = u16::try_from(subagents_columns.start)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        let subagents_switch_end = u16::try_from(subagents_columns.end)
-            .ok()
-            .map(|column| area.x.saturating_add(1).saturating_add(column));
-        self.context_ledger
-            .last_subagents_columns
-            .set(subagents_switch_start.zip(subagents_switch_end));
-        let tracked_ranges = source_line_ranges
-            .into_iter()
-            .enumerate()
-            .filter(|(_, r)| !r.is_empty())
-            .map(|(index, range)| {
-                let start =
-                    wrapped_line_count(&lines[..range.start.min(lines.len())], content_width);
-                let end = wrapped_line_count(&lines[..range.end.min(lines.len())], content_width);
-                (index, usize::from(start)..usize::from(end))
-            })
-            .collect();
-        *self.context_ledger.last_source_ranges.borrow_mut() = tracked_ranges;
-
-        Paragraph::new(lines.clone())
-            .block(
-                Block::default()
-                    .borders(Borders::LEFT)
-                    .border_style(crate::style::rule_style()),
-            )
-            .wrap(Wrap { trim: true })
-            .scroll((scroll_lines, 0))
-            .render(area, buf);
-
-        // Attach OSC 8 destinations to the already-drawn cells. Done against the inner
-        // area (past the left border) so columns line up with the rendered text.
-        if !source_links.is_empty() && area.width > 1 {
-            let inner = Rect::new(area.x + 1, area.y, content_width, area.height);
+        // Attach OSC 8 destinations to the cells just drawn. Each row fits the content width,
+        // so one row of text is one row on screen.
+        if !source_links.is_empty() {
             let links: std::collections::HashMap<usize, String> =
                 source_links.into_iter().collect();
-            let hyperlink_lines = lines
+            let hyperlink_lines = rows
                 .into_iter()
                 .enumerate()
                 .map(|(index, line)| {
                     let mut hyperlink_line = crate::terminal_hyperlinks::HyperlinkLine::new(line);
                     if let Some(destination) = links.get(&index) {
                         let mut hyperlink = crate::terminal_hyperlinks::TerminalHyperlink::web(
-                            0..content_width as usize,
+                            0..usize::from(content_width),
                             destination.clone(),
                         );
                         // Ledger rows link files Elpis itself chose, never model output.
@@ -1250,11 +1424,97 @@ impl ChatWidget {
                 .collect::<Vec<_>>();
             crate::terminal_hyperlinks::mark_buffer_hyperlinks(
                 buf,
-                inner,
+                content,
                 &hyperlink_lines,
-                scroll_lines as usize,
+                usize::from(scroll_rows),
             );
         }
+    }
+
+    pub(super) fn forget_context_ledger_clicks(&self) {
+        self.context_ledger.click_map.borrow_mut().take();
+    }
+
+    /// Full screen only, where Elpis owns the mouse: a plain left click on a switch or a
+    /// source row does what Space does on that row. Ctrl+click stays with the row's file
+    /// link, and every other click falls through to the composer and the transcript.
+    pub(crate) fn handle_context_ledger_mouse(
+        &mut self,
+        mouse: crossterm::event::MouseEvent,
+    ) -> bool {
+        if mouse.kind != crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+            || !mouse.modifiers.is_empty()
+            || !self
+                .last_rendered_width
+                .get()
+                .is_some_and(|width| self.context_ledger_width(width) > 0)
+        {
+            return false;
+        }
+        let target = {
+            let map = self.context_ledger.click_map.borrow();
+            let Some(map) = map.as_ref() else {
+                return false;
+            };
+            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+            if map
+                .close_button
+                .is_some_and(|button| button.contains(position))
+            {
+                Some(LedgerClickTarget::Close)
+            } else if map.content.contains(position) {
+                let row = usize::from(mouse.row - map.content.y + map.scroll_rows);
+                map.targets
+                    .iter()
+                    .find(|(rows, _)| rows.contains(&row))
+                    .map(|(_, target)| *target)
+            } else {
+                None
+            }
+        };
+        match target {
+            Some(LedgerClickTarget::Close) => self.close_context_ledger(),
+            Some(LedgerClickTarget::SmartPrune) => {
+                self.toggle_smart_prune();
+            }
+            Some(LedgerClickTarget::Subagents) => {
+                self.toggle_subagents();
+            }
+            Some(LedgerClickTarget::Source(index)) => {
+                let sources = self.continuity_sources();
+                let Some(source) = sources.get(index).filter(|source| source.selectable) else {
+                    return false;
+                };
+                self.context_ledger.selected = index;
+                self.set_context_source_admitted(source, !source.admitted);
+            }
+            None => return false,
+        }
+        self.request_redraw();
+        true
+    }
+
+    fn ledger_title_animation_delay(
+        &self,
+        title_rows: &std::ops::Range<usize>,
+        scroll_rows: u16,
+        visible_rows: u16,
+    ) -> Option<Duration> {
+        let scroll = usize::from(scroll_rows);
+        (self.context_ledger.visible
+            && self.local_settings.tui.animations
+            && self.local_settings.tui.effects.shimmer
+            && effective_stdout_color_level() == StdoutColorLevel::TrueColor
+            && default_bg().is_some()
+            && default_fg().is_some()
+            && visible_rows > 0
+            && title_rows.start < scroll + usize::from(visible_rows)
+            && title_rows.end > scroll)
+            .then(|| {
+                crate::status_indicator_widget::next_summary_shimmer_frame(
+                    self.context_ledger.title_started_at.elapsed(),
+                )
+            })
     }
 
     /// The source under the cursor, if the cursor is on a source rather than on
@@ -1548,12 +1808,14 @@ impl ChatWidget {
     }
 
     pub(super) fn close_context_ledger(&mut self) {
+        if let Some(drag) = self.context_ledger.resize_anchor.take() {
+            self.context_ledger.preferred_width = drag.restore_width;
+        }
         self.context_ledger.visible = false;
         self.context_ledger.focused = false;
         self.context_ledger.smart_prune_selected = false;
         self.context_ledger.subagents_selected = false;
         self.context_ledger.pending_g = false;
-        self.context_ledger.clear_rendered_geometry();
     }
 
     /// Position 0 is the Smart Prune switch; the selectable sources follow it.
@@ -1637,7 +1899,7 @@ impl ChatWidget {
         }
     }
 
-    /// Backspace/Delete on a manually added row drops it from the ledger for good.
+    /// Delete on a manually added row drops it from the ledger for good.
     /// Discovered rows (project rules, goal, checkpoint) are rediscovered on the next
     /// scan, so deleting them would silently reappear — those stay toggle-only.
     fn remove_context_source(
@@ -1916,8 +2178,7 @@ fn usage_bar_line(
     context_window: u64,
     segments: &[(u64, Color)],
 ) -> Line<'static> {
-    let bar_width = content_width.saturating_sub(2).max(10);
-    let mut spans = vec![Span::raw("  ")];
+    let bar_width = content_width.max(1);
     let total_tokens = segments
         .iter()
         .map(|(tokens, _)| *tokens)
@@ -1926,18 +2187,7 @@ fn usage_bar_line(
     let cells_used = ((total_tokens as u128 * bar_width as u128
         + u128::from(context_window.max(1)) / 2)
         / u128::from(context_window.max(1))) as usize;
-    let counts = weighted_cell_counts(
-        &segments
-            .iter()
-            .map(|(tokens, _)| *tokens)
-            .collect::<Vec<_>>(),
-        cells_used,
-    );
-    for ((_, color), cells) in segments.iter().zip(counts) {
-        if cells > 0 {
-            spans.push(Span::styled("█".repeat(cells), Style::default().fg(*color)));
-        }
-    }
+    let mut spans = category_bar_spans(segments, cells_used);
     if cells_used < bar_width {
         spans.push(Span::styled(
             "░".repeat(bar_width - cells_used),
@@ -1979,94 +2229,75 @@ fn format_source_count(value: u64) -> String {
     grouped
 }
 
-/// The switched-on state: teal, dim to bright.
-fn smart_prune_on_colors(
-    terminal_bg: Option<(u8, u8, u8)>,
-    color_level: StdoutColorLevel,
-) -> [Color; 4] {
-    ledger_palette(
-        terminal_bg,
-        color_level,
-        Color::Cyan,
-        [(34, 122, 106), (26, 110, 96), (20, 94, 82), (16, 84, 72)],
-        [
-            (96, 162, 150),
-            (130, 196, 182),
-            (160, 216, 203),
-            (200, 240, 230),
-        ],
-    )
+fn source_heading_style() -> Style {
+    crate::style::section_style()
 }
 
-/// Source group headings: the Deus Ex gold family (style/elpis.rs primary color).
-fn source_group_colors(
-    terminal_bg: Option<(u8, u8, u8)>,
-    color_level: StdoutColorLevel,
-) -> [Color; 4] {
-    ledger_palette(
-        terminal_bg,
-        color_level,
-        Color::Yellow,
-        [(128, 88, 10), (110, 76, 6), (140, 96, 12), (96, 70, 20)],
-        [
-            (229, 187, 104),
-            (245, 205, 128),
-            (214, 170, 90),
-            (196, 160, 96),
-        ],
-    )
-}
-
-fn ledger_palette(
-    terminal_bg: Option<(u8, u8, u8)>,
-    color_level: StdoutColorLevel,
-    ansi16_on_dark: Color,
-    light: [(u8, u8, u8); 4],
-    dark: [(u8, u8, u8); 4],
-) -> [Color; 4] {
-    if terminal_bg.is_none() {
-        return [Color::Reset; 4];
+/// The Ledger's left rule. The top and bottom rules of each box beside it end on it, so it
+/// joins them.
+fn render_ledger_rule(area: Rect, box_rules: &[(u16, u16)], buf: &mut Buffer) {
+    if area.width == 0 {
+        return;
     }
-    if matches!(
-        color_level,
-        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown
-    ) {
-        return [if terminal_bg.is_some_and(is_light) {
-            Color::Black
+    let style = crate::style::rule_style();
+    for y in area.top()..area.bottom() {
+        let joins = box_rules
+            .iter()
+            .any(|(top, bottom)| y == *top || y == *bottom);
+        let (up, down) = (y > area.top(), y + 1 < area.bottom());
+        let symbol = match (joins, up, down) {
+            (false, _, _) => "│",
+            (true, true, true) => "┤",
+            (true, false, true) => "┐",
+            (true, true, false) => "┘",
+            (true, false, false) => "─",
+        };
+        buf[(area.x, y)].set_symbol(symbol).set_style(style);
+    }
+}
+
+/// Wraps each line to `width` with Codex's own wrapper. Returns the rows and, for each line,
+/// the index of its first row, followed by the row count.
+fn wrap_ledger_rows(lines: &[Line<'static>], width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
+    let mut rows = Vec::new();
+    let mut row_starts = Vec::with_capacity(lines.len() + 1);
+    for line in lines {
+        row_starts.push(rows.len());
+        let wrapped = crate::wrapping::word_wrap_lines(std::iter::once(line), width.max(1));
+        if wrapped.is_empty() {
+            rows.push(Line::default());
         } else {
-            ansi16_on_dark
-        }; 4];
+            rows.extend(wrapped);
+        }
     }
-    let palette = if terminal_bg.is_some_and(is_light) {
-        light
-    } else {
-        dark
-    };
-    palette.map(|color| best_color_for_level(color, color_level))
+    row_starts.push(rows.len());
+    (rows, row_starts)
 }
 
-fn selected_source_scroll_offset(
-    lines: &[Line<'_>],
-    source_range: std::ops::Range<usize>,
-    width: u16,
-    visible_rows: u16,
-) -> u16 {
-    let start = source_range.start.min(lines.len());
-    let end = source_range.end.max(start).min(lines.len());
-    let selected_start = wrapped_line_count(&lines[..start], width);
-    let selected_end = wrapped_line_count(&lines[..end], width);
-    selected_end
-        .saturating_sub(visible_rows.max(1))
-        .min(selected_start)
+/// `text` cut from the left to `max_width` terminal columns, with "…" in front when it is cut.
+fn truncate_start_to_width(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width {
+        return text.to_string();
+    }
+    let budget = max_width.saturating_sub(1);
+    let mut width = 0;
+    let mut start = text.len();
+    for (index, character) in text.char_indices().rev() {
+        let character_width = character.width().unwrap_or(0);
+        if width + character_width > budget {
+            break;
+        }
+        width += character_width;
+        start = index;
+    }
+    format!("…{}", &text[start..])
 }
 
-fn wrapped_line_count(lines: &[Line<'_>], width: u16) -> u16 {
-    u16::try_from(
-        Paragraph::new(lines.to_vec())
-            .wrap(Wrap { trim: true })
-            .line_count(width.max(1)),
-    )
-    .unwrap_or(u16::MAX)
+/// The scroll that shows the selected source's rows in `visible_rows`.
+fn selected_source_scroll_offset(source_rows: std::ops::Range<usize>, visible_rows: u16) -> u16 {
+    let start = u16::try_from(source_rows.start).unwrap_or(u16::MAX);
+    let end = u16::try_from(source_rows.end.max(source_rows.start)).unwrap_or(u16::MAX);
+    end.saturating_sub(visible_rows.max(1)).min(start)
 }
 
 fn format_duration_ms(milliseconds: u64) -> String {
@@ -2082,36 +2313,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dark_ledger_accents_have_readable_contrast_and_distinct_brightness() {
-        let luminance = |rgb: (u8, u8, u8)| {
-            let linear = |v: u8| {
-                let v = f64::from(v) / 255.0;
-                if v <= 0.04045 {
-                    v / 12.92
-                } else {
-                    ((v + 0.055) / 1.055).powf(2.4)
-                }
-            };
-            0.2126 * linear(rgb.0) + 0.7152 * linear(rgb.1) + 0.0722 * linear(rgb.2)
-        };
-        let mut levels = Vec::new();
-        for color in smart_prune_on_colors(Some((17, 18, 20)), StdoutColorLevel::TrueColor) {
-            let Color::Rgb(r, g, b) = color else {
-                panic!("expected truecolor")
-            };
-            let level = luminance((r, g, b));
-            assert!((level + 0.05) / (luminance((17, 18, 20)) + 0.05) >= 4.5);
-            levels.push(level);
-        }
-        levels.sort_by(f64::total_cmp);
-        assert!(
-            levels[3] - levels[0] > 0.35,
-            "categories need distinct brightness"
-        );
-    }
-
-    #[test]
-    fn ledger_source_palette_stays_in_the_gold_family() {
+    fn ledger_sections_and_admitted_states_have_distinct_roles() {
         for bg in [(255, 255, 255), (17, 18, 20)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
@@ -2119,65 +2321,51 @@ mod tests {
                     bg,
                 },
                 || {
-                    for color in LedgerSourceGroup::ALL.map(LedgerSourceGroup::color) {
-                        match color {
-                            Color::Rgb(r, g, b) => assert!(r >= g && g > b),
-                            Color::Black if is_light(bg) => {}
-                            Color::Yellow | Color::Indexed(_) => {}
-                            other => panic!("unexpected ledger accent: {other:?}"),
-                        }
-                    }
+                    let Some(Color::Rgb(r, g, b)) = source_heading_style().fg else {
+                        panic!("expected truecolor teal");
+                    };
+                    assert!(g > r && b > r);
+                    assert_ne!(source_heading_style().fg, crate::style::context_style().fg);
+                    assert_ne!(source_heading_style().fg, crate::style::brand_style().fg);
                 },
             );
         }
     }
 
-    #[test]
-    fn smart_prune_palette_uses_a_readable_low_color_fallback() {
-        for level in [
-            StdoutColorLevel::TrueColor,
-            StdoutColorLevel::Ansi256,
-            StdoutColorLevel::Ansi16,
-            StdoutColorLevel::Unknown,
-        ] {
-            assert_eq!(smart_prune_on_colors(None, level), [Color::Reset; 4]);
-        }
-        assert_eq!(
-            smart_prune_on_colors(
-                Some((0, 0, 0)),
-                crate::terminal_palette::StdoutColorLevel::Ansi16,
-            ),
-            [Color::Cyan; 4]
-        );
-        assert_eq!(
-            smart_prune_on_colors(Some((255, 255, 255)), StdoutColorLevel::Ansi16),
-            [Color::Black; 4]
-        );
-    }
-
-    #[test]
-    fn smart_prune_palette_adapts_for_a_light_terminal() {
-        assert_eq!(
-            smart_prune_on_colors(
-                Some((255, 255, 255)),
-                crate::terminal_palette::StdoutColorLevel::TrueColor,
-            ),
-            [
-                Color::Rgb(34, 122, 106),
-                Color::Rgb(26, 110, 96),
-                Color::Rgb(20, 94, 82),
-                Color::Rgb(16, 84, 72),
-            ]
+    #[tokio::test]
+    async fn ledger_title_only_requests_motion_while_visible_and_enabled() {
+        let (mut chat, _sender, _rx, _op_rx) =
+            crate::chatwidget::tests::make_chatwidget_manual_with_sender().await;
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (16, 16, 16),
+                bg: (255, 255, 255),
+            },
+            || {
+                chat.context_ledger.visible = true;
+                chat.local_settings.tui.animations = true;
+                chat.local_settings.tui.effects.shimmer = true;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_some());
+                assert!(chat.ledger_title_animation_delay(&(2..3), 3, 4).is_none());
+                assert!(chat.ledger_title_animation_delay(&(4..5), 0, 4).is_none());
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 0).is_none());
+                chat.local_settings.tui.effects.shimmer = false;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_none());
+                chat.local_settings.tui.effects.shimmer = true;
+                chat.local_settings.tui.animations = false;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_none());
+                chat.local_settings.tui.animations = true;
+                chat.context_ledger.visible = false;
+                assert!(chat.ledger_title_animation_delay(&(2..3), 0, 4).is_none());
+            },
         );
     }
 
     #[test]
     fn selected_source_scrolls_into_a_short_ledger() {
-        let lines = (0..8)
-            .map(|index| Line::from(format!("line {index}")))
-            .collect::<Vec<_>>();
-        assert_eq!(selected_source_scroll_offset(&lines, 1..3, 52, 4), 0);
-        assert_eq!(selected_source_scroll_offset(&lines, 6..8, 52, 4), 4);
+        assert_eq!(selected_source_scroll_offset(1..3, 4), 0);
+        assert_eq!(selected_source_scroll_offset(6..8, 4), 4);
+        assert_eq!(selected_source_scroll_offset(0..0, 4), 0);
     }
 
     #[test]
@@ -2191,16 +2379,26 @@ mod tests {
             Line::from("[x] a source name that wraps on a narrow ledger"),
             Line::from("tokens"),
         ];
-        let wide = selected_source_scroll_offset(&lines, 5..7, 52, 4);
-        let narrow = selected_source_scroll_offset(&lines, 5..7, 12, 4);
-        assert!(narrow > wide);
-        assert_eq!(selected_source_scroll_offset(&[], 0..4, 52, 4), 0);
+        let offset = |width| {
+            let (_, starts) = wrap_ledger_rows(&lines, width);
+            selected_source_scroll_offset(starts[5]..starts[7], 4)
+        };
+        assert!(offset(12) > offset(52));
+    }
+
+    #[test]
+    fn wide_names_are_cut_by_columns_from_the_left() {
+        let name = "数据数据数据.md";
+        let shown = truncate_start_to_width(name, 8);
+        assert_eq!(shown, "…数据.md");
+        assert!(shown.width() <= 8);
+        assert_eq!(truncate_start_to_width("short.md", 8), "short.md");
     }
 
     #[test]
     fn usage_bar_never_fills_more_cells_than_total_usage() {
         let line = usage_bar_line(
-            12,
+            10,
             1_000,
             &[
                 (25, Color::Blue),
@@ -2212,8 +2410,45 @@ mod tests {
         let filled = line
             .spans
             .iter()
-            .map(|span| span.content.matches('█').count())
-            .sum::<usize>();
+            .filter(|span| !span.content.contains('░'))
+            .count();
         assert_eq!(filled, 1, "100/1000 of a ten-cell bar is one cell");
+    }
+
+    #[test]
+    fn usage_bar_aligns_with_ledger_text_and_fits_the_available_width() {
+        for width in [1, 10, 32, 48] {
+            let line = usage_bar_line(width, 100, &[(25, Color::Blue)]);
+            let text: String = line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect();
+            assert!(text.starts_with(['█', '░']));
+            assert_eq!(text.width(), width);
+        }
+    }
+
+    #[test]
+    fn usage_bar_keeps_allocated_width_at_low_full_and_excess_usage() {
+        for width in [1, 2, 10, 32, 48] {
+            for tokens in [0, 1, 25, 50, 100] {
+                let line =
+                    usage_bar_line(width, 100, &[(tokens, Color::Blue), (tokens, Color::Red)]);
+                let text: String = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect();
+                let used = (((tokens * 2).min(100) as usize * width + 50) / 100).min(width);
+                assert_eq!(line.width(), width);
+                assert_eq!(text.chars().filter(|c| *c != '░').count(), used);
+                assert_eq!(text.matches('░').count(), width - used);
+                // One cell holds both halves; from two cells on, the last cell is all red.
+                if used >= 2 {
+                    assert_eq!(text.chars().nth(used - 1), Some('█'), "{text}");
+                }
+            }
+        }
     }
 }

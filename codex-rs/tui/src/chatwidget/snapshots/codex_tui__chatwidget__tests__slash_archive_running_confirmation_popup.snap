@@ -1,0 +1,12 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+expression: popup
+---
+• El  Archive this session?
+      This will stop the current turn and archive the session.
+
+› As
+    › 1. No, don't archive  Return to the current session
+  GP  2. Yes, archive       Archive this session now
+
+      enter select · esc back

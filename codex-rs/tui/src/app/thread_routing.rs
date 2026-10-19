@@ -12,6 +12,8 @@ use codex_app_server_protocol::ThreadStartedNotification;
 use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::WarningNotification;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 
 // Leave time for side-thread cleanup and unsubscribe inside the two-second exit budget.
 const REALTIME_STOP_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 1);
@@ -747,7 +749,6 @@ impl App {
                 service_tier,
                 final_output_json_schema,
                 collaboration_mode,
-                personality,
             } => {
                 let mut should_start_turn = true;
                 if let Some(turn_id) = self.active_turn_id_for_thread(thread_id).await {
@@ -827,8 +828,34 @@ impl App {
                     }
                 }
                 if should_start_turn {
+                    let enabled = self.chat_widget.daybreak_enabled
+                        && !self.chat_widget.side_conversation_active()
+                        && !self.side_threads.contains_key(&thread_id);
+                    let eligible_account = self.chat_widget.daybreak_turn_eligible(enabled);
+                    let cyber_access_program = match crate::daybreak::program_for_turn(
+                        &self.chat_widget.model_catalog().models,
+                        model,
+                        eligible_account,
+                        enabled,
+                    ) {
+                        Ok(program) => program,
+                        Err(message) => {
+                            if !self
+                                .chat_widget
+                                .handle_turn_start_rejection(message.clone())
+                            {
+                                self.chat_widget.add_error_message(message);
+                            }
+                            return Ok(true);
+                        }
+                    };
                     let config = self.chat_widget.config_ref();
-                    let selected_profile = self.pending_server_profiles.get(&thread_id);
+                    let selected_profile =
+                        self.pending_server_profiles.get(&thread_id).or_else(|| {
+                            self.agents_overview
+                                .requested_permission_profiles
+                                .get(&thread_id)
+                        });
                     let selected_active = selected_profile
                         .map(|profile| ActivePermissionProfile::new(profile.profile_id.clone()));
                     let (turn_approval_policy, turn_approvals_reviewer) =
@@ -886,8 +913,8 @@ impl App {
                             *summary,
                             service_tier.clone(),
                             collaboration_mode.clone(),
-                            *personality,
                             final_output_json_schema.clone(),
+                            cyber_access_program.map(Into::into),
                         )
                         .await?;
                     if self.active_thread_id == Some(thread_id)
@@ -1205,6 +1232,11 @@ impl App {
                 &notification,
                 ServerNotification::ItemStarted(_) | ServerNotification::ItemCompleted(_)
             );
+        if matches!(&notification, ServerNotification::Error(error) if !error.will_retry) {
+            self.agents_overview
+                .pending_yolo_defaults
+                .remove(&thread_id);
+        }
         let mut confirmed_profile = None;
         if let ServerNotification::ThreadSettingsUpdated(notification) = &notification {
             self.apply_thread_settings_to_cached_session(thread_id, &notification.thread_settings)
@@ -1212,6 +1244,11 @@ impl App {
             if self
                 .pending_server_profiles
                 .get(&thread_id)
+                .or_else(|| {
+                    self.agents_overview
+                        .requested_permission_profiles
+                        .get(&thread_id)
+                })
                 .is_some_and(|selected| {
                     notification
                         .thread_settings
@@ -1226,7 +1263,11 @@ impl App {
                         })
                 })
             {
-                confirmed_profile = self.pending_server_profiles.remove(&thread_id);
+                confirmed_profile = self.pending_server_profiles.remove(&thread_id).or_else(|| {
+                    self.agents_overview
+                        .requested_permission_profiles
+                        .remove(&thread_id)
+                });
             }
         }
         let inferred_session = if let ServerNotification::ThreadStarted(started) = &notification
@@ -1317,41 +1358,24 @@ impl App {
                 .on_thread_settings_updated(settings.clone());
             notification = None;
         }
-        if let Some(selected) = confirmed_profile {
-            if self.chat_widget.thread_id() == Some(thread_id) {
-                if selected.approvals_reviewer.is_some() {
-                    self.runtime_approvals_reviewer_override = None;
-                }
-                self.runtime_permission_profile_override = None;
-            }
-            if self.chat_widget.thread_id() == Some(thread_id)
-                && let Some(profile) = self
-                    .chat_widget
-                    .config_ref()
-                    .permissions
-                    .active_permission_profile()
-                && profile.id.starts_with(':')
+        if let Some(profile) = confirmed_profile {
+            if let Some(config) = self
+                .agents_overview
+                .pending_yolo_defaults
+                .remove(&thread_id)
+                && profile.profile_id == BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
+                && profile.approval_policy == Some(AskForApproval::Never)
             {
-                let config = self.chat_widget.config_ref();
-                let network = config
-                    .network_proxy_spec_for_active_permission_profile(
-                        &profile,
-                        config.permissions.permission_profile(),
-                    )
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(%err, "failed to refresh local permission network settings");
-                        None
-                    });
-                self.chat_widget.set_permission_network(network);
-                self.config.permissions = self.chat_widget.config_ref().permissions.clone();
-                self.config.approvals_reviewer = self.chat_widget.config_ref().approvals_reviewer;
-                self.runtime_approval_policy_override =
-                    Some(RuntimeApprovalPolicyOverride::Explicit(
-                        self.config.permissions.approval_policy.value().into(),
+                self.save_confirmed_yolo_default(config).await;
+            }
+            if self.chat_widget.thread_id() == Some(thread_id) {
+                self.adopt_server_permissions();
+                let bypass = profile.profile_id == BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
+                self.chat_widget
+                    .add_to_history(history_cell::new_permissions_updated_event(
+                        &profile.display_label,
+                        bypass,
                     ));
-                self.runtime_approvals_reviewer_override = Some(self.config.approvals_reviewer);
-                self.runtime_permission_profile_override =
-                    Some(RuntimePermissionProfileOverride::from_config(&self.config));
             }
             self.app_event_tx.send(AppEvent::SettingsSelectionSettled);
         }
@@ -1435,6 +1459,7 @@ impl App {
     ) -> Option<ThreadSessionState> {
         let mut session = self.primary_session_configured.clone()?;
         session.thread_id = thread_id;
+        session.daybreak_enabled = notification.thread.daybreak_enabled.unwrap_or(false);
         session.windows_sandbox_host = crate::windows_sandbox::host_from_environments(
             notification.thread.environments.as_deref(),
         );
@@ -1593,6 +1618,9 @@ impl App {
 
         let thread_id = session.thread_id;
         self.pending_server_profiles.remove(&thread_id);
+        self.agents_overview
+            .requested_permission_profiles
+            .remove(&thread_id);
         if self.primary_thread_id != Some(thread_id) {
             self.recap.reset_for_new_thread(Instant::now());
         }
@@ -1664,6 +1692,9 @@ impl App {
                 }
                 ThreadBufferedEvent::FeedbackSubmission(event) => {
                     self.enqueue_thread_feedback_event(thread_id, event).await;
+                }
+                ThreadBufferedEvent::PendingSteersRecalled(result) => {
+                    self.enqueue_pending_steer_recall(thread_id, result).await;
                 }
             }
         }
@@ -2122,6 +2153,9 @@ impl App {
             ThreadBufferedEvent::FeedbackSubmission(event) => {
                 self.handle_feedback_thread_event(event);
             }
+            ThreadBufferedEvent::PendingSteersRecalled(result) => {
+                self.chat_widget.finish_pending_steer_recall(result);
+            }
         }
         if needs_refresh {
             self.refresh_status_line();
@@ -2151,6 +2185,9 @@ impl App {
             }
             ThreadBufferedEvent::FeedbackSubmission(event) => {
                 self.handle_feedback_thread_event(event);
+            }
+            ThreadBufferedEvent::PendingSteersRecalled(result) => {
+                self.chat_widget.finish_pending_steer_recall(result);
             }
         }
     }

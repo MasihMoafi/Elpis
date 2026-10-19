@@ -141,6 +141,8 @@ pub struct WorkGraphTask {
     pub ordinal: i64,
     pub title: String,
     pub instruction: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
     pub kind: WorkGraphTaskKind,
     pub status: WorkGraphTaskStatus,
     pub dependencies: Vec<String>,
@@ -184,6 +186,8 @@ pub struct WorkGraphTaskCreateParams {
     pub ordinal: i64,
     pub title: String,
     pub instruction: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
     pub kind: WorkGraphTaskKind,
     pub dependencies: Vec<String>,
     pub write_scopes: Vec<String>,
@@ -219,6 +223,8 @@ pub(crate) struct WorkGraphTaskRow {
     pub(crate) ordinal: i64,
     pub(crate) title: String,
     pub(crate) instruction: String,
+    pub(crate) provider: Option<String>,
+    pub(crate) model: Option<String>,
     pub(crate) task_kind: String,
     pub(crate) status: String,
     pub(crate) write_scopes_json: String,
@@ -275,6 +281,8 @@ impl WorkGraphTaskRow {
             ordinal: self.ordinal,
             title: self.title,
             instruction: self.instruction,
+            provider: self.provider,
+            model: self.model,
             kind: WorkGraphTaskKind::parse(self.task_kind.as_str())?,
             status: WorkGraphTaskStatus::parse(self.status.as_str())?,
             dependencies,
@@ -326,6 +334,19 @@ impl TryFrom<WorkGraphEventRow> for WorkGraphEvent {
             created_at: millis_to_datetime(value.created_at_ms)?,
         })
     }
+}
+
+/// Elpis: the event holding a worktree-isolated run's report, `{"text": ...}`.
+pub const WORKTREE_REPORT_EVENT: &str = "worktree_report";
+
+/// The newest worktree report among a graph's events.
+pub fn latest_worktree_report(events: &[WorkGraphEvent]) -> Option<String> {
+    events
+        .iter()
+        .rev()
+        .find(|event| event.event_type == WORKTREE_REPORT_EVENT)
+        .and_then(|event| event.payload.as_ref()?.get("text")?.as_str())
+        .map(str::to_string)
 }
 
 pub fn validate_work_graph_tasks(tasks: &[WorkGraphTaskCreateParams]) -> Result<()> {
@@ -530,6 +551,8 @@ mod tests {
             ordinal: 0,
             title: id.to_string(),
             instruction: format!("Implement {id}"),
+            provider: Some("fixture-provider".to_string()),
+            model: Some("fixture-model".to_string()),
             kind: WorkGraphTaskKind::Explore,
             dependencies: dependencies
                 .iter()

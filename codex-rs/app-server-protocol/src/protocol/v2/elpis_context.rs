@@ -104,6 +104,9 @@ pub struct ThreadSmartPruneAttemptSnapshot {
     #[ts(optional)]
     pub audit_path: Option<String>,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub failure_reason: Option<String>,
     pub model_slug: String,
     pub reasoning_effort: String,
     #[ts(type = "number")]
@@ -212,6 +215,7 @@ impl From<CoreSmartPruneAttemptSnapshot> for ThreadSmartPruneAttemptSnapshot {
             attempt_id: value.attempt_id,
             audit_path: value.audit_path,
             status: value.status,
+            failure_reason: value.failure_reason,
             model_slug: value.model_slug,
             reasoning_effort: value.reasoning_effort,
             candidate_outputs: value.candidate_outputs,
@@ -240,5 +244,119 @@ impl From<CoreSmartPruneAdmissionSnapshot> for ThreadSmartPruneAdmissionSnapshot
             response_usage: value.response_usage.map(Into::into),
             response_linkage_verified: value.response_linkage_verified,
         }
+    }
+}
+
+/// Reads the Elpis instruction text a thread's next model request carries, so a client that
+/// runs the thread's turns on another engine can give that model the same instructions.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadElpisInstructionsReadParams {
+    pub thread_id: String,
+}
+
+/// Each field is `null` when the thread's model receives nothing from that source.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadElpisInstructionsReadResponse {
+    /// The thread's configured `developer_instructions`.
+    pub developer_instructions: Option<String>,
+    /// The global and project AGENTS.md text the Context Ledger admits.
+    pub agents_md: Option<String>,
+    /// The admitted continuity section: MEMORY.md, development rules, GOAL.md, ES.md and
+    /// files added with `/add`.
+    pub continuity: Option<String>,
+}
+
+/// Lists the thread's currently discoverable Ledger sources, including excluded files.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesListParams {
+    pub thread_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesListResponse {
+    pub files: Vec<ThreadContextFile>,
+}
+
+/// Changes an existing Ledger source. Admission is shared by threads in the workspace,
+/// just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesSetParams {
+    pub thread_id: String,
+    /// The exact path returned by thread/contextFiles/list. Unknown paths are refused.
+    pub path: String,
+    pub included: bool,
+}
+
+/// Returns the refreshed list because more than one instruction file can share a switch.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFilesSetResponse {
+    pub files: Vec<ThreadContextFile>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum ThreadContextFileGroup {
+    SessionContinuity,
+    DurableMemory,
+    Instructions,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadContextFile {
+    pub name: String,
+    pub path: String,
+    pub group: ThreadContextFileGroup,
+    /// The core Ledger's capped estimate, rather than provider token accounting.
+    #[ts(type = "number")]
+    pub estimated_tokens: u64,
+    pub included: bool,
+    pub reason: String,
+    pub selectable: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prune_failure_reason_survives_conversion_and_old_snapshots_still_load() {
+        let mut core: serde_json::Value = serde_json::json!({
+            "attempt_id": "attempt",
+            "status": "model_error",
+            "model_slug": "fixture-pruner",
+            "reasoning_effort": "low",
+            "candidate_outputs": 1,
+            "admitted_outputs": 0,
+            "approx_saved_tokens": 0,
+            "latency_ms": 10
+        });
+        let old: CoreSmartPruneAttemptSnapshot =
+            serde_json::from_value(core.clone()).expect("old snapshot");
+        let old_wire = serde_json::to_value(ThreadSmartPruneAttemptSnapshot::from(old))
+            .expect("wire snapshot");
+        assert!(old_wire.get("failureReason").is_none());
+
+        core["failure_reason"] = serde_json::json!("Provider authentication failed.");
+        let current: CoreSmartPruneAttemptSnapshot =
+            serde_json::from_value(core).expect("new snapshot");
+        let wire = serde_json::to_value(ThreadSmartPruneAttemptSnapshot::from(current))
+            .expect("wire snapshot");
+        assert_eq!(wire["failureReason"], "Provider authentication failed.");
+        assert_eq!(wire["modelSlug"], "fixture-pruner");
     }
 }

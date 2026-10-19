@@ -25,12 +25,20 @@ pub(crate) struct TranscriptOverlay {
     content_area: Rect,
     cursor: Option<(u16, u16)>,
     notice: Option<String>,
+    pub(crate) pending_prune_link: Option<String>,
     pub(crate) key_chord_hint: Option<Vec<(String, String)>>,
     pub(crate) browsing_footer: Option<Line<'static>>,
     is_done: bool,
 }
 
 impl TranscriptOverlay {
+    pub(crate) fn attach_smart_prune(
+        &mut self,
+        prune: &codex_protocol::elpis_smart_prune::SmartPruneEvent,
+    ) {
+        crate::chatwidget::smart_prune_log::attach_to_tool(&mut self.cells, prune);
+    }
+
     pub(crate) fn bookmark(&mut self) -> TranscriptBookmark {
         self.view.bookmark(&self.cells)
     }
@@ -62,6 +70,7 @@ impl TranscriptOverlay {
             content_area: Rect::default(),
             cursor: None,
             notice: None,
+            pending_prune_link: None,
             key_chord_hint: None,
             browsing_footer: None,
             is_done: false,
@@ -123,7 +132,7 @@ impl TranscriptOverlay {
                 .map(|column| (status.x + column, status.y));
             if let Some(notice) = &self.notice {
                 let notice = Line::from(notice.clone()).dim();
-                if self.view.is_search_active() {
+                if self.view.is_search_editing() {
                     footer.text.lines.truncate(/*len*/ 1);
                     footer.text.lines.push(notice);
                 } else {
@@ -139,7 +148,13 @@ impl TranscriptOverlay {
                 Line::from(notice.as_str()).dim().render(status, buf);
             } else {
                 self.view
-                    .status_line_with_navigation("Ctrl+Space select", self.motion)
+                    .status_line_with_navigation(
+                        &format!(
+                            "{} select",
+                            crate::key_hint::ctrl(KeyCode::Char(' ')).display_label()
+                        ),
+                        self.motion,
+                    )
                     .render(status, buf);
             }
             self.render_hints(hints, buf);
@@ -208,7 +223,7 @@ impl TranscriptOverlay {
                 self.view.handle_mouse(mouse, &self.cells)
             }
             TuiEvent::Paste(text) => {
-                if self.view.is_search_active() {
+                if self.view.is_search_editing() {
                     self.view.end_selection(&self.cells);
                 }
                 self.view.paste_search(&text).then_some(ViewAction::Changed)
@@ -246,8 +261,8 @@ impl TranscriptOverlay {
         self.view.begin_search();
     }
 
-    pub(crate) fn is_search_active(&self) -> bool {
-        self.view.is_search_active()
+    pub(crate) fn is_search_editing(&self) -> bool {
+        self.view.is_search_editing()
     }
 
     pub(crate) fn owns_interaction_key(&self, key: KeyEvent) -> bool {
@@ -391,6 +406,15 @@ impl TranscriptOverlay {
         self.view.sync_live_tail(width, key, compute_lines)
     }
 
+    pub(crate) fn sync_search_live_tail(
+        &mut self,
+        width: u16,
+        key: Option<ActiveCellTranscriptKey>,
+        compute_lines: impl FnOnce(u16) -> Option<Vec<HyperlinkLine>>,
+    ) {
+        self.view.sync_search_live_tail(width, key, compute_lines);
+    }
+
     pub(crate) fn set_highlight_cell(&mut self, cell: Option<usize>) {
         self.highlight_cell = cell.filter(|index| *index < self.cells.len());
         self.pending_highlight = self.highlight_cell;
@@ -409,7 +433,7 @@ impl TranscriptOverlay {
         if key.kind == KeyEventKind::Release {
             return None;
         }
-        if !self.view.is_search_active()
+        if !self.view.is_search_editing()
             && (!self.view.has_active_interaction() || !self.view.owns_interaction_key(key))
             && self.keymap.find.is_pressed(key)
         {
@@ -459,6 +483,10 @@ impl TranscriptOverlay {
                 });
             }
             ViewAction::OpenLink(url) => {
+                if url.starts_with(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX) {
+                    self.pending_prune_link = Some(url);
+                    return;
+                }
                 if let Err(error) = webbrowser::open(&url) {
                     self.notice = Some(format!("Could not open link: {error}"));
                 }

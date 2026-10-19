@@ -1,9 +1,11 @@
-//! Status tabs, task rows and read-only details share a simple wide/narrow layout.
+//! Status tabs, task rows, the rename editor and details share a wide/narrow layout.
 
 use super::hints::hint_line;
 use super::*;
 use crate::bottom_pane::render_filled_tab_bar;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crossterm::cursor::SetCursorStyle;
+use ratatui::widgets::WidgetRef;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn row(area: Rect, offset: u16, height: u16) -> Rect {
@@ -57,15 +59,19 @@ impl AgentsOverviewView {
             .inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
         let [list, gap, details] = if body.width >= 90 {
             Layout::horizontal([
-                Constraint::Min(46),
+                Constraint::Percentage(57),
                 Constraint::Length(3),
-                Constraint::Length(38),
+                Constraint::Min(38),
             ])
             .areas(body)
         } else {
             [body, Rect::default(), Rect::default()]
         };
-        let search = row(list, /*offset*/ 0, u16::from(state.editing_metadata()));
+        let search = row(
+            list,
+            /*offset*/ 0,
+            u16::from(state.editing_metadata() || state.stop_target.is_some()),
+        );
         let list = row(
             list,
             search.height,
@@ -87,20 +93,28 @@ impl Renderable for AgentsOverviewView {
         24
     }
 
+    fn cursor_style(&self, _area: Rect) -> SetCursorStyle {
+        let state = self.state();
+        if state.editor_target().is_some() && state.input.uses_vim_insert_cursor() {
+            SetCursorStyle::SteadyBar
+        } else {
+            SetCursorStyle::DefaultUserShape
+        }
+    }
+
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
         let layout = self.center_layout(area);
         let state = self.state();
         if state.editing_metadata() && !layout.search.is_empty() {
-            let input = if state.rename_target.is_some() {
-                &state.input
-            } else {
-                &state.search
-            };
-            let prefix = if state.rename_target.is_some() {
-                "Rename › "
-            } else {
-                "Search › "
-            };
+            if state.editor_target().is_some() {
+                let mut area = layout.search;
+                let prefix_width = (state.editor_label().width() as u16).min(area.width);
+                area.x += prefix_width;
+                area.width -= prefix_width;
+                return state.input.cursor_pos(area);
+            }
+            let input = &state.search;
+            let prefix = "Search › ";
             let available = usize::from(layout.search.width).saturating_sub(prefix.width() + 1);
             return Some((
                 layout.search.x
@@ -119,7 +133,8 @@ impl Renderable for AgentsOverviewView {
         let inset =
             |area: Rect| area.inner(Margin::new(/*horizontal*/ 2, /*vertical*/ 0));
         let footer_hints = self.center_footer_hints();
-        let state = self.state();
+        let mut state = self.state();
+        state.mouse_targets.clear();
         let filter_keys = if state.editing_metadata() {
             String::new()
         } else {
@@ -139,6 +154,7 @@ impl Renderable for AgentsOverviewView {
             vec![
                 "Agent command center".bold(),
                 format!("  Group: {grouping}  {group_key}").dim(),
+                "  View: list".dim(),
             ],
             inset(layout.header),
             buf,
@@ -164,11 +180,15 @@ impl Renderable for AgentsOverviewView {
             );
             tabs.width = tabs.width.saturating_sub(hint_width + 2);
         }
-        render_filled_tab_bar(
+        let tabs = render_filled_tab_bar(
             &labels.iter().map(String::as_str).collect::<Vec<_>>(),
             state.status_filter,
             tabs,
             buf,
+        );
+        state.mouse_targets.extend(
+            tabs.into_iter()
+                .map(|(index, area)| (area, AgentsOverviewMouseTarget::Filter(index))),
         );
         line(
             "─"
@@ -177,22 +197,42 @@ impl Renderable for AgentsOverviewView {
             inset(row(layout.header, /*offset*/ 2, /*height*/ 1)),
             buf,
         );
-        if state.editing_metadata() {
-            let (label, input) = if state.rename_target.is_some() {
-                ("Rename › ", &state.input)
-            } else {
-                ("Search › ", &state.search)
-            };
-            let available = usize::from(layout.search.width).saturating_sub(label.width() + 1);
+        if let Some(target) = state.stop_target {
+            let title = self
+                .rows
+                .iter()
+                .find(|row| row.thread_id == target)
+                .map(|row| display_title(&row.thread))
+                .unwrap_or("this task");
+            line(format!("Stop {title}?").bold(), layout.search, buf);
+        } else if state.editing_metadata() {
             buf.set_style(layout.search, crate::bottom_pane::active_tab_style());
-            line(
-                vec![
-                    label.cyan().bold(),
-                    visible_suffix(input, available).to_owned().into(),
-                ],
-                layout.search,
-                buf,
-            );
+            if state.editor_target().is_some() {
+                line(
+                    Span::styled(
+                        state.editor_label(),
+                        crate::bottom_pane::active_tab_style().bold(),
+                    ),
+                    layout.search,
+                    buf,
+                );
+                let mut area = layout.search;
+                let prefix_width = (state.editor_label().width() as u16).min(area.width);
+                area.x += prefix_width;
+                area.width -= prefix_width;
+                WidgetRef::render_ref(&&state.input, area, buf);
+            } else {
+                let label = "Search › ";
+                let available = usize::from(layout.search.width).saturating_sub(label.width() + 1);
+                line(
+                    vec![
+                        Span::styled(label, crate::bottom_pane::active_tab_style().bold()),
+                        visible_suffix(&state.search, available).to_owned().into(),
+                    ],
+                    layout.search,
+                    buf,
+                );
+            }
         }
         let notice = state
             .connection_notice

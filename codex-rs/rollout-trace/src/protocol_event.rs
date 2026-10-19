@@ -220,12 +220,9 @@ struct ExecCommandEndTracePayload<'a> {
     source: ExecCommandSource,
     #[serde(skip_serializing_if = "Option::is_none")]
     interaction_input: Option<&'a str>,
-    stdout: &'a str,
-    stderr: &'a str,
     aggregated_output: &'a str,
     exit_code: i32,
     duration: Duration,
-    formatted_output: &'a str,
     status: &'a ExecCommandStatus,
 }
 
@@ -243,12 +240,9 @@ impl<'a> From<&'a ExecCommandEndEvent> for ExecCommandEndTracePayload<'a> {
             parsed_cmd,
             source,
             interaction_input,
-            stdout,
-            stderr,
             aggregated_output,
             exit_code,
             duration,
-            formatted_output,
             status,
         } = event;
         Self {
@@ -263,12 +257,9 @@ impl<'a> From<&'a ExecCommandEndEvent> for ExecCommandEndTracePayload<'a> {
             parsed_cmd,
             source: *source,
             interaction_input: interaction_input.as_deref(),
-            stdout,
-            stderr,
             aggregated_output,
             exit_code: *exit_code,
             duration: *duration,
-            formatted_output,
             status,
         }
     }
@@ -381,6 +372,7 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
         | EventMsg::TurnStarted(_)
         | EventMsg::ThreadSettingsApplied(_)
         | EventMsg::TurnComplete(_)
+        | EventMsg::SmartPrune(_)
         | EventMsg::TokenCount(_)
         | EventMsg::AgentMessage(_)
         | EventMsg::UserMessage(_)
@@ -459,6 +451,7 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         | EventMsg::ThreadSettingsApplied(_)
         | EventMsg::EnvironmentConnected(_)
         | EventMsg::EnvironmentDisconnected(_)
+        | EventMsg::SmartPrune(_)
         | EventMsg::TokenCount(_)
         | EventMsg::AgentMessage(_)
         | EventMsg::UserMessage(_)

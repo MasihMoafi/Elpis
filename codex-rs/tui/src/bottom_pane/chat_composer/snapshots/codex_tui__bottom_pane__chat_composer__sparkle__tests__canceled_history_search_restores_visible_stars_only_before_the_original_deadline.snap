@@ -4,34 +4,34 @@ expression: "snapshots.join(\"\\n\\n\")"
 ---
 expires while open: false
 initial:
-┌──────────────────────────────────────────────────────────────────────────────┐
-›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+                            ⠈     ⢀     ⠁                 ⠂
+›⠁Ask Elpis to do anything         ⠈      ⠁
+       ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+  ? for shortcuts                                            100% context left
 searching:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› stored draft                                                                 │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+› stored draft
+
   reverse-i-search: stored  enter accept · esc cancel
 after escape:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                   ⠈                 │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+                                        ⠁               ⡀   ⠄           ⠄   ⠄
+› Ask Elpis to do anything                                   ⠈
+      ⠠                             ⠠        ⢀ ⢀     ⡀                         ⠄
+  ? for shortcuts                                            100% context left
 
 expires while open: true
 initial:
-┌──────────────────────────────────────────────────────────────────────────────┐
-›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+                            ⠈     ⢀     ⠁                 ⠂
+›⠁Ask Elpis to do anything         ⠈      ⠁
+       ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+  ? for shortcuts                                            100% context left
 searching:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› stored draft                                                                 │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+› stored draft
+
   reverse-i-search: stored  enter accept · esc cancel
 after escape:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  ? for shortcuts                                            100% context left

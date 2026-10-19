@@ -4,6 +4,7 @@ use crate::config::Constrained;
 use crate::config::ConstraintError;
 use crate::config::ConstraintResult;
 use codex_config::ConfigRequirements;
+use codex_features::Features;
 use codex_models_manager::ModelsManagerConfig;
 use codex_models_manager::manager::ModelsManager;
 use codex_otel::SessionTelemetry;
@@ -57,22 +58,42 @@ impl ResolvedStepSettings {
     pub(super) fn new(
         selected: Arc<StepSettings>,
         model_info: Arc<ModelInfo>,
-        fast_mode_enabled: bool,
+        features: &Features,
     ) -> Self {
         let reasoning_summary = selected
             .reasoning_summary
             .unwrap_or(model_info.default_reasoning_summary);
-        let service_tier = super::get_service_tier(
-            selected.service_tier.clone(),
-            fast_mode_enabled,
-            &model_info,
-        );
+        let service_tier =
+            super::get_service_tier(selected.service_tier.clone(), features, &model_info);
         Self {
             selected,
             model_info,
             reasoning_summary,
             service_tier,
             mcp_approvals_reviewer_override: None,
+        }
+    }
+
+    /// Elpis: an approval policy accepted after these settings were captured. The policy must
+    /// satisfy the same constraint as the captured one.
+    pub(super) fn with_approval_policy(&self, policy: AskForApproval) -> ConstraintResult<Self> {
+        let mut selected = self.selected.as_ref().clone();
+        selected.approval_policy.set(policy)?;
+        Ok(Self {
+            selected: Arc::new(selected),
+            ..self.clone()
+        })
+    }
+
+    /// Elpis: a reviewer accepted after these settings were captured. Like 0.162's live
+    /// reviewer update, it also binds MCP.
+    pub(super) fn with_approvals_reviewer(&self, reviewer: ApprovalsReviewer) -> Self {
+        let mut selected = self.selected.as_ref().clone();
+        selected.approvals_reviewer = reviewer;
+        Self {
+            selected: Arc::new(selected),
+            mcp_approvals_reviewer_override: Some(reviewer),
+            ..self.clone()
         }
     }
 
@@ -122,25 +143,23 @@ impl ResolvedStepSettings {
     }
 
     /// Applies sparse edits to the retained selection, preserving pinned metadata
-    /// unless model or personality selection changes, then resolves request values.
+    /// unless the model changes, then resolves request values.
     pub(super) async fn apply_update(
         &self,
         update: &StepSettingsUpdate,
         constraints: &StepSettingsConstraints<'_>,
         models_manager: &dyn ModelsManager,
         overrides: &ModelInfoOverrides,
-        fast_mode_enabled: bool,
+        features: &Features,
     ) -> ConstraintResult<Self> {
         let selected = self.selected.apply(update, constraints)?;
-        let model_info = if selected.collaboration_mode.model()
-            == self.selected.collaboration_mode.model()
-            && selected.personality == self.selected.personality
-        {
-            Arc::clone(&self.model_info)
-        } else {
-            Arc::new(selected.resolve_model_info(models_manager, overrides).await)
-        };
-        let mut next = Self::new(Arc::new(selected), model_info, fast_mode_enabled);
+        let model_info =
+            if selected.collaboration_mode.model() == self.selected.collaboration_mode.model() {
+                Arc::clone(&self.model_info)
+            } else {
+                Arc::new(selected.resolve_model_info(models_manager, overrides).await)
+            };
+        let mut next = Self::new(Arc::new(selected), model_info, features);
         next.mcp_approvals_reviewer_override = update
             .approvals_reviewer
             .or(self.mcp_approvals_reviewer_override);

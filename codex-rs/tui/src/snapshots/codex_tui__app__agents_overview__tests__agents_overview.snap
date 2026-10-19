@@ -1,30 +1,29 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 1264
+assertion_line: 1465
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  3\"),\n&normalized_project_group).replace(&project, \"/tmp/project\")"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-  Agent command center  Group: Project  g
-   All 3   Needs you 1   Working 1   Ready 0   Inactive 1                 tab/shift+tab filter
+  Agent command center  Group: Project  g  View: list
+   All 4   Needs you 2   Working 1   Ready 0   Done 0   Inactive 1             tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                           │ Task details
-  /tmp/project  3                                     │
-  › ● Build the dashboard                             │ Build the dashboard
-    ● Repair authentication                           │ ● Needs input
-    ○ Review yesterday's changes                      │
+      Tasks                   Model                   │ ● Build the dashboard
+  /tmp/project  4                                     │ GPT-6.1-Sol · OpenAI · asked by you
+  › ● Build the dashboard     GPT-6.1-Sol             │ ──────────────────────────────────────
+    └─● Inspect keyboard sh…  Unknown                 │ you → GPT-6.1-Sol  ask
+    ● Repair authentication   Unknown                 │ Build the dashboard
+    ● Review yesterday's ch…  Unknown                 │
+                                                      │ ▎ GPT-6.1-Sol  ! needs you
+                                                      │
                                                       │ Agent: Inspect keyboard shortcuts
                                                       │ Open task to review.
                                                       │ Waiting for approval.
                                                       │
-                                                      │ Project
-                                                      │ /tmp/project
-                                                      │ Model: Unknown
-                                                      │
-                                                      │ Prompt
-                                                      │ Build the dashboard
                                                       │
                                                       │
                                                       │
                                                       │
                                                       │
-  ? help  esc back  ↑/↓ move  enter open  n new
+                                                      │
+                                                      │
+                                                      │
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

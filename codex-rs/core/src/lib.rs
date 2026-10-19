@@ -33,6 +33,8 @@ pub use turn_metadata::detached_memory_responses_metadata;
 mod codex_thread;
 // Elpis: `/compact <text>` guidance for one compaction.
 mod compact_instructions;
+mod turn_extension_data;
+pub use turn_extension_data::WithTurnExtensionData;
 mod compact_model_fallback;
 mod compact_remote_history;
 mod compact_remote_v2;
@@ -49,6 +51,7 @@ pub use codex_protocol::protocol::EnvironmentConfig;
 pub use codex_thread::BackgroundTerminalInfo;
 pub use codex_thread::CodexThread;
 pub use codex_thread::CodexThreadSettingsOverrides;
+pub use codex_thread::ConfigRefreshOutcome;
 pub use codex_thread::GuardianAuthorizationVersion;
 pub use codex_thread::GuardianRootMessage;
 pub use codex_thread::GuardianRootSnapshot;
@@ -90,12 +93,16 @@ pub mod pressure_compaction;
 // Elpis: Smart Prune. The pure admission logic, the pruner model and provider, and the
 // `/pruner-model` settings the TUI saves through app-server-client.
 pub(crate) mod smart_prune;
+pub mod smart_prune_log;
+pub mod log_redaction;
+mod jev_prune;
 #[cfg(test)]
 mod smart_prune_tests;
 pub(crate) mod context_pruner;
 pub mod pruner_settings;
 // Elpis: the model's request follows the Context Ledger.
 pub mod elpis_admission;
+pub mod elpis_personal;
 // Elpis: the responding agent saves MEMORY.md / ES.md through the guarded `save_memory` tool.
 pub mod elpis_memory;
 pub mod memory_save;
@@ -164,6 +171,10 @@ pub use codex_prompts as review_prompts;
 mod thread_manager;
 pub(crate) mod web_search;
 pub(crate) mod windows_sandbox_read_grants;
+pub use thread_manager::AgentTreeShutdown;
+pub use thread_manager::AgentTreeShutdownFailure;
+pub use thread_manager::AgentTreeShutdownFailureReason;
+pub use thread_manager::AgentTreeShutdownReport;
 pub use thread_manager::ForkSnapshot;
 pub use thread_manager::InternalSessionParent;
 pub use thread_manager::NewThread;

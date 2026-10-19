@@ -4,34 +4,34 @@ expression: "snapshots.join(\"\\n\\n\")"
 ---
 gpt-6-astra
 searching with an explicit pasted query:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› history prompt                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+› history prompt
+
   reverse-i-search: history  enter accept · esc cancel
 after canceling and erasing the slash:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                   ⠈                 │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+                                        ⠁               ⡀   ⠄           ⠄   ⠄
+› Ask Elpis to do anything                                   ⠈
+      ⠠                             ⠠        ⢀ ⢀     ⡀                         ⠄
+  ? for shortcuts                                            100% context left
 after /model selects Astra:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                   ⠈                 │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+                                        ⠁               ⡀   ⠄           ⠄   ⠄
+› Ask Elpis to do anything                                   ⠈
+      ⠠                             ⠠        ⢀ ⢀     ⡀                         ⠄
+  ? for shortcuts                                            100% context left
 
 gpt-5.5
 searching with an explicit pasted query:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› history prompt                                                               │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+› history prompt
+
   reverse-i-search: history  enter accept · esc cancel
 after canceling and erasing the slash:
-┌──────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+
+› Ask Elpis to do anything
+
+  ? for shortcuts                                            100% context left
 after /model selects Astra:
-┌──────────────────────────────────────────────────────────────────────────────┐
-›⠁Ask Elpis to do anything         ⠈      ⠁                                    │
-└──────────────────────────────────────────────────────────────────────────────┘
-  ? for shortcuts                       100% context left · Tab Context Ledger
+                            ⠈     ⢀     ⠁                 ⠂
+›⠁Ask Elpis to do anything         ⠈      ⠁
+       ⢀            ⠠     ⠄         ⠠          ⢀    ⠠     ⡀
+  ? for shortcuts                                            100% context left

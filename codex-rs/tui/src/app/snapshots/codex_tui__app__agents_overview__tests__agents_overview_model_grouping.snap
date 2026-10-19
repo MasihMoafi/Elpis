@@ -1,23 +1,21 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 1170
+assertion_line: 1253
 expression: "render_bottom_popup(&app.chat_widget,\n100).replace(&test_path_display(\"/tmp/project\"),\n\"/tmp/project\").replace(\"fwd del\", \"del\")"
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-  Agent command center  Group: Model  g
-   All 4   Needs you 0   Working 0   Ready 4   Inactive 0                     tab/shift+tab filter
+  Agent command center  Group: Model  g  View: list
+   All 4   Needs you 0   Working 0   Ready 4   Done 0   Inactive 0                 tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                               │ Task details
-  Unknown  1                                              │
-  › ○ Legacy task                                         │ Legacy task
-                                                          │ ○ Ready
-  model-a  2                                              │
-    ○ Recent task                                         │ Project
-    ○ Older task                                          │ /tmp/project
-                                                          │ Model: Unknown
+      Tasks                     Model                     │ ● Legacy task
+  Unknown  1                                              │ Unknown · OpenAI · asked by you
+  › ● Legacy task               Unknown                   │ ──────────────────────────────────────
+                                                          │ you → Unknown  ask
+  model-a  2                                              │ Legacy task
+    ● Recent task               model-a                   │
+    ● Older task                model-a                   │ ▎ Unknown  ◇ ready
+                                                          │
   model-b  1                                              │
-    ○ Other model                                         │ Prompt
-                                                          │ Legacy task
+    ● Other model               model-b                   │
                                                           │
                                                           │
                                                           │
@@ -27,4 +25,5 @@ expression: "render_bottom_popup(&app.chat_widget,\n100).replace(&test_path_disp
                                                           │
                                                           │
                                                           │
-  ? help  esc back  ↑/↓ move  enter open  n new
+                                                          │
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

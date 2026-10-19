@@ -5,11 +5,13 @@ use std::io;
 use std::sync::LazyLock;
 
 use crate::bottom_pane::picker_option_list;
+use crate::bottom_pane::render_menu_surface;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::KeyBindingListExt;
 use crate::render::Insets;
 use crate::render::renderable::FlexRenderable;
+use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
 use crate::render::renderable::RenderableItem;
 use codex_http_client::HttpClient;
@@ -260,8 +262,12 @@ impl WidgetRef for &OssSelectionWidget<'_> {
             .inset(Insets::vh(/*v*/ 0, /*h*/ 2)),
         );
         column.push(/*flex*/ 1, RenderableItem::Borrowed(&""));
-        // Elpis: content stays inside the popup border.
-        crate::bottom_pane::render_bordered_panel(area, buf, &column);
+        let panel = Rect {
+            height: column.desired_height(area.width).min(area.height),
+            ..area
+        };
+        render_menu_surface(panel, buf);
+        column.render(panel, buf);
     }
 }
 

@@ -32,6 +32,7 @@ pub(super) use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
 pub(super) use codex_app_server_protocol::AdditionalFileSystemPermissions as AppServerAdditionalFileSystemPermissions;
 pub(super) use codex_app_server_protocol::AdditionalNetworkPermissions as AppServerAdditionalNetworkPermissions;
 pub(super) use codex_app_server_protocol::AdditionalPermissionProfile as AppServerAdditionalPermissionProfile;
+pub(super) use codex_app_server_protocol::AppSummary;
 pub(super) use codex_app_server_protocol::AutoReviewDecisionSource as AppServerGuardianApprovalReviewDecisionSource;
 pub(super) use codex_app_server_protocol::CodexErrorInfo;
 pub(super) use codex_app_server_protocol::CollabAgentState as AppServerCollabAgentState;
@@ -69,6 +70,10 @@ pub(super) use codex_app_server_protocol::ItemCompletedNotification;
 pub(super) use codex_app_server_protocol::ItemGuardianApprovalReviewCompletedNotification;
 pub(super) use codex_app_server_protocol::ItemGuardianApprovalReviewStartedNotification;
 pub(super) use codex_app_server_protocol::ItemStartedNotification;
+pub(super) use codex_app_server_protocol::MarketplaceAddResponse;
+pub(super) use codex_app_server_protocol::MarketplaceInterface;
+pub(super) use codex_app_server_protocol::MarketplaceUpgradeErrorInfo;
+pub(super) use codex_app_server_protocol::MarketplaceUpgradeResponse;
 pub(super) use codex_app_server_protocol::McpServerStartupState;
 pub(super) use codex_app_server_protocol::McpServerStatusDetail;
 pub(super) use codex_app_server_protocol::McpServerStatusUpdatedNotification;
@@ -79,6 +84,15 @@ pub(super) use codex_app_server_protocol::NonSteerableTurnKind;
 pub(super) use codex_app_server_protocol::PatchApplyStatus as AppServerPatchApplyStatus;
 pub(super) use codex_app_server_protocol::PatchChangeKind;
 pub(super) use codex_app_server_protocol::PermissionsRequestApprovalParams as AppServerPermissionsRequestApprovalParams;
+pub(super) use codex_app_server_protocol::PluginAuthPolicy;
+pub(super) use codex_app_server_protocol::PluginDetail;
+pub(super) use codex_app_server_protocol::PluginInstallPolicy;
+pub(super) use codex_app_server_protocol::PluginInterface;
+pub(super) use codex_app_server_protocol::PluginListResponse;
+pub(super) use codex_app_server_protocol::PluginMarketplaceEntry;
+pub(super) use codex_app_server_protocol::PluginReadResponse;
+pub(super) use codex_app_server_protocol::PluginSource;
+pub(super) use codex_app_server_protocol::PluginSummary;
 pub(super) use codex_app_server_protocol::RateLimitReachedType;
 pub(super) use codex_app_server_protocol::RateLimitSnapshot;
 pub(super) use codex_app_server_protocol::RateLimitWindow;
@@ -86,6 +100,7 @@ pub(super) use codex_app_server_protocol::ReasoningSummaryTextDeltaNotification;
 pub(super) use codex_app_server_protocol::ReviewTarget;
 pub(super) use codex_app_server_protocol::ServerNotification;
 pub(super) use codex_app_server_protocol::SkillMetadata;
+pub(super) use codex_app_server_protocol::SkillSummary;
 pub(super) use codex_app_server_protocol::ThreadClosedNotification;
 pub(super) use codex_app_server_protocol::ThreadItem as AppServerThreadItem;
 pub(super) use codex_app_server_protocol::ToolRequestUserInputOption;
@@ -106,6 +121,7 @@ pub(super) use codex_config::ConstraintError;
 pub(super) use codex_config::RequirementSource;
 pub(super) use codex_config::types::ApprovalsReviewer;
 pub(super) use codex_config::types::Notifications;
+pub(super) use codex_core_plugins::OPENAI_CURATED_MARKETPLACE_NAME;
 pub(super) use codex_features::Feature;
 pub(super) use codex_git_utils::CommitLogEntry;
 pub(super) use codex_models_manager::test_support::construct_model_info_offline_for_tests;
@@ -123,7 +139,6 @@ pub(super) use codex_protocol::approvals::GuardianRiskLevel;
 pub(super) use codex_protocol::approvals::GuardianUserAuthorization;
 pub(super) use codex_protocol::config_types::CollaborationMode;
 pub(super) use codex_protocol::config_types::ModeKind;
-pub(super) use codex_protocol::config_types::Personality;
 pub(super) use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 pub(super) use codex_protocol::config_types::ServiceTier;
 pub(super) use codex_protocol::models::ActivePermissionProfile;
@@ -234,10 +249,10 @@ mod copy_export_picker_tests;
 mod dynamic_activity_tests;
 // Elpis: evals for `/compact N` and `/compact <text>`.
 mod elpis_compact;
-// Elpis: evals for the v0.3.0 composer behaviour.
-mod elpis_composer;
 // Elpis: Context Ledger evals.
 mod elpis_context_ledger;
+// Elpis: evals for /effort.
+mod elpis_effort;
 // Elpis: evals for what the dashboard reads.
 mod elpis_dashboard;
 // Elpis: evals for the Elpis look.
@@ -273,6 +288,8 @@ mod permission_picker_tests;
 mod permission_shortcuts_tests;
 mod permissions;
 mod plan_mode;
+#[path = "tests/plugin_catalog_tests.rs"]
+mod plugin_catalog;
 mod popups_and_settings;
 #[path = "tests/rate_limit_recovery_tests.rs"]
 mod rate_limit_recovery_tests;
@@ -287,6 +304,7 @@ mod review_picker_tests;
 mod session_model_selection_tests;
 mod side;
 mod slash_commands;
+mod smart_prune_log;
 #[path = "tests/sparkle_submission_tests.rs"]
 mod sparkle_submission_tests;
 #[path = "tests/startup_submission_tests.rs"]

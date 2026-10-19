@@ -3,115 +3,207 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/dashboard.css">
   <script src="/dashboard.js" defer></script>
-  <title>Elpis · Session dashboard</title>
+  <script src="/dashboard_workflows.js" defer></script>
+  <title>Elpis</title>
 </head>
 <body>
-  <div class="atmosphere" aria-hidden="true"></div>
-  <header class="navbar dashboard-navbar" aria-label="Elpis dashboard header">
-    <div class="navbar-start min-w-0">
-      <div class="brand-glyph" aria-hidden="true"><span></span><span></span><span></span></div>
-      <div class="min-w-0"><p class="brand-kicker">ELPIS / LIVE EVIDENCE</p><h1 class="brand-title">Session intelligence</h1></div>
-    </div>
-    <div class="navbar-center model-summary" id="model-line">Waiting for the first valid state</div>
+  <div class="dashboard-app">
+    <aside class="dashboard-sidebar" aria-label="Elpis navigation">
+      <div class="app-brand">
+        <div class="brand-glyph" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h1 class="brand-title">Elpis</h1>
+      </div>
+      <nav aria-label="Workspace views">
+        <ul class="menu dashboard-tabs" role="tablist" aria-label="Dashboard views" aria-orientation="vertical">
+          <li class="menu-title">Workspace</li>
+          <li><button class="tab tab-active" id="tab-agents" type="button" role="tab" aria-selected="true" aria-controls="panel-agents" tabindex="0" data-tab="agents">Conversations &amp; agents</button></li>
+          <li><button class="tab" id="tab-activity" type="button" role="tab" aria-selected="false" aria-controls="panel-activity" tabindex="-1" data-tab="activity">Activity</button></li>
+          <li><button class="tab" id="tab-workflows" type="button" role="tab" aria-selected="false" aria-controls="panel-workflows" tabindex="-1" data-tab="workflows">Workflow drafts</button></li>
+          <li class="menu-title">Session</li>
+          <li><button class="tab" id="tab-context" type="button" role="tab" aria-selected="false" aria-controls="panel-context" tabindex="-1" data-tab="context">Context</button></li>
+          <li><button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" tabindex="-1" data-tab="tokens">Tokens</button></li>
+          <li class="menu-title">Settings</li>
+          <li><button class="tab" id="tab-models" type="button" role="tab" aria-selected="false" aria-controls="panel-models" tabindex="-1" data-tab="models">Models</button></li>
+          <li><button class="tab" id="tab-smart-prune" type="button" role="tab" aria-selected="false" aria-controls="panel-smart-prune" tabindex="-1" data-tab="smart-prune">Smart Prune <span class="badge badge-warning badge-xs">Experimental</span></button></li>
+          <li><button class="tab" id="tab-providers" type="button" role="tab" aria-selected="false" aria-controls="panel-providers" tabindex="-1" data-tab="providers">API keys</button></li>
+        </ul>
+      </nav>
+    </aside>
+    <div class="dashboard-workspace">
+
+  <header class="navbar dashboard-navbar" aria-label="Session status and controls">
+    <div class="navbar-center model-summary" id="model-line">Waiting for Elpis</div>
     <div class="navbar-end transport-actions" aria-label="Dashboard polling controls">
-      <div class="transport-copy"><span class="status status-neutral" id="transport-signal" aria-hidden="true"></span><span id="transport-status" role="status" aria-live="polite">Connecting</span><span class="freshness" id="freshness-status">Freshness unavailable</span></div>
+      <div class="transport-copy"><span class="status status-neutral" id="transport-signal" aria-hidden="true"></span><span id="transport-status" role="status" aria-live="polite">Connecting</span><span class="freshness" id="freshness-status">Not connected yet</span></div>
       <button class="btn btn-ghost btn-sm" id="poll-toggle" type="button">Pause</button>
+      <button class="btn btn-sm" id="theme-toggle" type="button" aria-label="Switch to light theme">Light</button>
       <button class="btn btn-primary btn-sm" id="refresh-now" type="button">Refresh</button>
     </div>
   </header>
 
   <main class="dashboard-shell">
+    <div class="alert alert-warning mb-4" id="connection-warning" role="status" hidden>Connection lost. The values below are the last received data and may be out of date. Use Refresh to reconnect.</div>
     <section class="card session-ribbon" aria-label="Session overview"><div class="card-body ribbon-body">
-      <div><p class="section-kicker">CURRENT THREAD</p><p class="ribbon-title" id="ribbon-title">Waiting for live evidence</p></div>
-      <div class="ribbon-metrics"><div><span>Context</span><strong id="ribbon-context">Unavailable</strong></div><div><span>Last turn</span><strong id="ribbon-turn">Unavailable</strong></div><div><span>Smart Prune</span><strong id="ribbon-prune">Syncing</strong></div></div>
+      <div><p class="section-kicker">This chat</p><p class="ribbon-title" id="ribbon-title">Waiting for Elpis</p></div>
+      <div class="ribbon-metrics"><div><span>Chat model</span><strong id="ribbon-model">Unavailable</strong></div><div><span>Context used</span><strong id="ribbon-context">Unavailable</strong></div><div><span>Last answer took</span><strong id="ribbon-turn">Unavailable</strong></div><div><span>Smart Prune</span><strong id="ribbon-prune">Checking</strong></div></div>
     </div></section>
 
-    <nav class="tabs tabs-box dashboard-tabs" role="tablist" aria-label="Dashboard views" aria-orientation="horizontal">
-      <button class="tab tab-active" id="tab-activity" type="button" role="tab" aria-selected="true" aria-controls="panel-activity" tabindex="0" data-tab="activity">Activity</button>
-      <button class="tab" id="tab-context" type="button" role="tab" aria-selected="false" aria-controls="panel-context" tabindex="-1" data-tab="context">Context</button>
-      <button class="tab" id="tab-tokens" type="button" role="tab" aria-selected="false" aria-controls="panel-tokens" tabindex="-1" data-tab="tokens">Tokens</button>
-      <button class="tab" id="tab-smart-prune" type="button" role="tab" aria-selected="false" aria-controls="panel-smart-prune" tabindex="-1" data-tab="smart-prune">Smart Prune <span class="badge badge-warning badge-xs">Experimental</span></button>
-      <button class="tab" id="tab-providers" type="button" role="tab" aria-selected="false" aria-controls="panel-providers" tabindex="-1" data-tab="providers">Providers</button>
-    </nav>
 
-    <section class="dashboard-panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0">
-      <header class="panel-heading"><div><p class="section-kicker">TURN ACTIVITY</p><h2>What Elpis is doing now</h2></div><p id="activity-summary">Waiting for activity data.</p></header>
+
+    <section class="dashboard-panel" id="panel-models" role="tabpanel" aria-labelledby="tab-models" tabindex="0" hidden>
+      <header class="panel-heading"><div><p class="section-kicker">Models</p><h2>Choose the models Elpis uses</h2></div><p>Pick a provider, then a model from its list. The change applies to the next request and is saved for new chats.</p></header>
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <article class="card surface-card"><div class="card-body compact-card-body">
+          <div><p class="section-kicker">Chat</p><h3 class="m-0 mt-1.5 text-base font-semibold">Chat model</h3></div>
+          <p class="m-0 text-sm leading-6 model-help">Answers your messages. A model on another provider continues this chat in a copy on that provider.</p>
+          <p class="m-0 text-sm">Now: <strong class="font-mono break-all" id="model-current-chat">Unavailable</strong></p>
+          <fieldset class="fieldset" id="model-fields-chat" data-role="chat" data-default="" disabled>
+            <label class="label text-base-content/75!" for="model-provider-chat">Provider</label>
+            <select class="select w-full" id="model-provider-chat"></select>
+            <label class="label text-base-content/75!" for="model-filter-chat">Find a model</label>
+            <input class="input w-full" id="model-filter-chat" type="search" placeholder="Type part of a name" autocomplete="off" spellcheck="false">
+            <label class="label text-base-content/75!" for="model-list-chat">Model</label>
+            <select class="select w-full" id="model-list-chat"></select>
+            <button class="btn btn-secondary mt-2" id="model-save-chat" type="button">Use this model</button>
+          </fieldset>
+        </div></article>
+        <article class="card surface-card"><div class="card-body compact-card-body">
+          <div><p class="section-kicker">Background</p><h3 class="m-0 mt-1.5 text-base font-semibold">Background model</h3></div>
+          <p class="m-0 text-sm leading-6 model-help">Smart Prune uses this fallback when it has no model of its own. Chat naming follows Codex. Memory is saved by the responding chat agent.</p>
+          <p class="m-0 text-sm">Now: <strong class="font-mono break-all" id="model-current-background">Unavailable</strong></p>
+          <fieldset class="fieldset" id="model-fields-background" data-role="background" data-default="Built-in default" disabled>
+            <label class="label text-base-content/75!" for="model-provider-background">Provider</label>
+            <select class="select w-full" id="model-provider-background"></select>
+            <label class="label text-base-content/75!" for="model-filter-background">Find a model</label>
+            <input class="input w-full" id="model-filter-background" type="search" placeholder="Type part of a name" autocomplete="off" spellcheck="false">
+            <label class="label text-base-content/75!" for="model-list-background">Model</label>
+            <select class="select w-full" id="model-list-background"></select>
+            <button class="btn btn-secondary mt-2" id="model-save-background" type="button">Use this model</button>
+          </fieldset>
+        </div></article>
+        <article class="card surface-card"><div class="card-body compact-card-body">
+          <div><p class="section-kicker">Smart prune</p><h3 class="m-0 mt-1.5 text-base font-semibold">Smart Prune model</h3></div>
+          <p class="m-0 text-sm leading-6 model-help">Makes long tool results shorter before the chat model reads them. The chat model does not change.</p>
+          <p class="m-0 text-sm">Now: <strong class="font-mono break-all" id="model-current-pruner">Unavailable</strong></p>
+          <fieldset class="fieldset" id="model-fields-pruner" data-role="pruner" data-default="Same as the background model" disabled>
+            <label class="label text-base-content/75!" for="model-provider-pruner">Provider</label>
+            <select class="select w-full" id="model-provider-pruner"></select>
+            <label class="label text-base-content/75!" for="model-filter-pruner">Find a model</label>
+            <input class="input w-full" id="model-filter-pruner" type="search" placeholder="Type part of a name" autocomplete="off" spellcheck="false">
+            <label class="label text-base-content/75!" for="model-list-pruner">Model</label>
+            <select class="select w-full" id="model-list-pruner"></select>
+            <button class="btn btn-secondary mt-2" id="model-save-pruner" type="button">Use this model</button>
+          </fieldset>
+        </div></article>
+      </div>
+      <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Limits</p><h3>Usage limits</h3></div><span class="badge badge-ghost" id="limits-summary">Unavailable</span></div><p class="empty-state" id="limits-empty">Limits unavailable</p><div class="token-table" id="limits-rows" hidden></div></div></article>
+      <p class="m-0 text-sm model-help" id="models-feedback" role="status" aria-live="polite">Open the dashboard with /dashboard in Elpis to change models.</p>
+    </section>
+
+    <section class="dashboard-panel" id="panel-agents" role="tabpanel" aria-labelledby="tab-agents" tabindex="0">
+      <header class="panel-heading"><div><p class="section-kicker">Agents</p><h2>Conversations and agents</h2></div><p>Each card shows a conversation or agent and its model. Connections show recorded parent-child relationships. Independent conversations remain separate.</p></header>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div class="fieldset w-full sm:max-w-md">
+          <label class="label text-base-content/75!" for="agents-conversation">Conversation</label>
+          <select class="select w-full" id="agents-conversation" aria-describedby="agents-feedback"></select>
+        </div>
+        <p class="m-0 text-sm model-help" id="agents-feedback" role="status">Select a conversation to inspect its agents.</p>
+      </div>
+      <article class="card surface-card"><div class="card-body compact-card-body">
+        <p class="empty-state" id="agents-empty">No conversations or agents are available yet.</p>
+        <div class="overflow-x-auto" id="agent-map-scroll" hidden><svg id="agent-map" role="group" aria-label="Conversations and their recorded agent relationships"></svg></div>
+        <div id="agent-details" class="border-t border-base-content/10 pt-4 text-sm" hidden></div>
+        <section id="agent-chat" class="border-t border-base-content/10 pt-4" hidden aria-label="Conversation transcript"><div class="flex flex-wrap items-center justify-between gap-3"><h3 id="agent-chat-title" class="text-base font-semibold">Conversation</h3><div class="flex gap-2"><button id="agent-chat-refresh" class="btn btn-sm" type="button">Refresh chat</button><button id="agent-chat-close" class="btn btn-ghost btn-sm" type="button">Close</button></div></div><p id="agent-chat-status" class="text-sm model-help" role="status"></p><button id="agent-chat-older" class="btn btn-sm my-3" type="button" hidden>Load earlier messages</button><div id="agent-chat-items" class="flex flex-col gap-5 py-4"></div></section>
+      </div></article>
+    </section>
+
+    <section class="dashboard-panel" id="panel-workflows" role="tabpanel" aria-labelledby="tab-workflows" tabindex="0" hidden></section>
+
+    <section class="dashboard-panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0" hidden>
+      <header class="panel-heading"><div><p class="section-kicker">Turn activity</p><h2>What Elpis is doing now</h2></div><p id="activity-summary">Waiting for Elpis.</p></header>
       <article class="card current-card">
-        <div class="current-copy"><span class="badge badge-outline" id="current-status">Unavailable</span><h3 id="current-title">No live turn reported</h3><p>Elapsed time updates locally. Pausing this page freezes the display, not Elpis.</p><progress class="progress progress-primary current-progress" id="current-progress" max="100" value="0"></progress></div>
+        <div class="current-copy"><span class="badge badge-outline" id="current-status">Unavailable</span><h3 id="current-title">No live turn reported</h3><p>Pause stops this page from updating. It does not stop Elpis.</p><progress class="progress progress-primary current-progress" id="current-progress" max="100" value="0"></progress></div>
         <dl class="stats stats-vertical lg:stats-horizontal current-stats"><div class="stat"><dt class="stat-title">Elapsed</dt><dd class="stat-value metric" id="current-elapsed">Unavailable</dd></div><div class="stat"><dt class="stat-title">Started</dt><dd class="stat-value metric" id="current-started">Unavailable</dd></div><div class="stat"><dt class="stat-title">Cost</dt><dd class="stat-value metric-small" id="current-cost">Cost not reported</dd></div></dl>
       </article>
-      <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">RECENT</p><h3>Turn history</h3></div><span class="badge badge-ghost" id="recent-count">No turns</span></div><div class="activity-list" id="activity-recent"><p class="empty-state">Recent activity is unavailable.</p></div></div></article>
+      <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Recent</p><h3>Recent answers</h3></div><span class="badge badge-ghost" id="recent-count">No turns</span></div><div class="activity-list" id="activity-recent"><p class="empty-state">No answers yet.</p></div></div></article>
     </section>
 
     <section class="dashboard-panel" id="panel-context" role="tabpanel" aria-labelledby="tab-context" tabindex="0" hidden>
-      <header class="panel-heading"><div><p class="section-kicker">CONTEXT</p><h2>One window. One denominator.</h2></div><p>The bar combines the measured total and estimated category attribution; every unfilled cell is real remaining capacity.</p></header>
+      <header class="panel-heading"><div><p class="section-kicker">Context</p><h2>How full the context window is</h2></div><p>Each colored cell is part of the window in use. Gray cells are free space.</p></header>
       <div class="measurement-grid">
-        <article class="card measurement-card context-window-card"><div class="card-body"><div class="measurement-head"><span class="badge badge-primary badge-outline">MEASURED + ATTRIBUTED</span><span id="ctx-used-percent">Usage unavailable</span></div><h3>Context window</h3><p class="measurement-value"><strong id="ctx-used">Unavailable</strong><span> / </span><span id="ctx-window">Unavailable</span></p><div class="composition-track" id="ctx-composition" aria-label="Context window usage by category"></div><p class="measurement-note">Segment proportions come from the latest built request and reconcile to the measured active total. The remainder is free space.</p></div></article>
+        <article class="card measurement-card context-window-card"><div class="card-body"><div class="measurement-head"><span class="badge badge-primary badge-outline">Latest request</span><span id="ctx-used-percent">Usage unavailable</span></div><h3>Context window</h3><p class="measurement-value"><strong id="ctx-used">Unavailable</strong><span> / </span><span id="ctx-window">Unavailable</span></p><div class="composition-track" id="ctx-composition" aria-label="Context window usage by category"></div><p class="measurement-note">The colors show what filled the latest request. Hold the pointer on a cell to see its kind.</p></div></article>
       </div>
-      <dl class="stats context-stats"><div class="stat"><dt class="stat-title">Approx. saved</dt><dd class="stat-value metric" id="ctx-saved">Unavailable</dd><p class="stat-desc">Historical pruning, excluded from attribution</p></div><div class="stat"><dt class="stat-title">Backtrack points</dt><dd class="stat-value metric" id="ctx-checkpoints">Unavailable</dd><p class="stat-desc">Available conversation forks</p></div><div class="stat"><dt class="stat-title">Composition rows</dt><dd class="stat-value metric" id="ctx-category-count">Unavailable</dd><p class="stat-desc">Distinct request categories</p></div></dl>
+      <dl class="stats context-stats"><div class="stat"><dt class="stat-title">Approx. removed</dt><dd class="stat-value metric" id="ctx-saved">Unavailable</dd><p class="stat-desc">Source tokens · excludes pruner usage</p></div><div class="stat"><dt class="stat-title">Checkpoints</dt><dd class="stat-value metric" id="ctx-checkpoints">Unavailable</dd><p class="stat-desc">Points you can go back to</p></div><div class="stat"><dt class="stat-title">Kinds of content</dt><dd class="stat-value metric" id="ctx-category-count">Unavailable</dd><p class="stat-desc">In the latest request</p></div></dl>
       <div class="context-detail-grid">
-        <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">COMPOSITION</p><h3>Latest request attribution</h3></div><span class="badge badge-ghost" id="ctx-composition-total">Unavailable</span></div><div class="category-list" id="ctx-bar" aria-label="Estimated token usage by category"></div><p class="legend-note" id="ctx-legend">Category usage unavailable.</p></div></article>
-        <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">SOURCES</p><h3>Portable context admission</h3></div><span class="badge badge-ghost" id="source-summary">Unavailable</span></div><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th scope="col">Source</th><th scope="col">Category</th><th scope="col">Est. tokens</th><th scope="col">State</th></tr></thead><tbody id="source-rows"><tr><td colspan="4">Source data unavailable</td></tr></tbody></table></div></div></article>
+        <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">By kind</p><h3>What fills the window</h3></div><span class="badge badge-ghost" id="ctx-composition-total">Unavailable</span></div><div class="category-list" id="ctx-bar" aria-label="Estimated token usage by category"></div><p class="legend-note" id="ctx-legend">Category usage unavailable.</p></div></article>
+        <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Sources</p><h3>Files Elpis loads</h3></div><span class="badge badge-ghost" id="source-summary">Unavailable</span></div><div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th scope="col">Source</th><th scope="col">Category</th><th scope="col">About (tokens)</th><th scope="col">In context</th></tr></thead><tbody id="source-rows"><tr><td colspan="4">Source data unavailable</td></tr></tbody></table></div></div></article>
       </div>
     </section>
 
     <section class="dashboard-panel" id="panel-tokens" role="tabpanel" aria-labelledby="tab-tokens" tabindex="0" hidden>
-      <header class="panel-heading"><div><p class="section-kicker">PROVIDER USAGE</p><h2>Reported tokens without invented cost</h2></div><p>Unknown remains unavailable. A provider-reported zero remains zero.</p></header>
+      <header class="panel-heading"><div><p class="section-kicker">Tokens</p><h2>Tokens used</h2></div><p>Usage reported for chat requests. Pruner requests are shown separately in Smart Prune. Unavailable values were not reported.</p></header>
       <div class="token-grid">
-        <article class="card surface-card token-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">THREAD</p><h3>Cumulative usage</h3></div><span class="badge badge-primary badge-outline">LIVE</span></div><div class="token-table"><div><span>Input</span><strong id="session-input">Unavailable</strong></div><div><span>Cached input</span><strong id="session-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="session-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="session-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="session-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="session-total">Unavailable</strong></div></div></div></article>
-        <article class="card surface-card token-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">LATEST</p><h3>Last turn</h3></div><span class="badge badge-secondary badge-outline">TURN</span></div><div class="token-table"><div><span>Input</span><strong id="last-input">Unavailable</strong></div><div><span>Cached input</span><strong id="last-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="last-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="last-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="last-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="last-total">Unavailable</strong></div></div></div></article>
+        <article class="card surface-card token-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">This chat</p><h3>All answers</h3></div><span class="badge badge-primary badge-outline">Reported</span></div><div class="token-table"><div><span>Input</span><strong id="session-input">Unavailable</strong></div><div><span>Cached input</span><strong id="session-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="session-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="session-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="session-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="session-total">Unavailable</strong></div></div></div></article>
+        <article class="card surface-card token-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Latest</p><h3>Last answer</h3></div><span class="badge badge-secondary badge-outline">Latest</span></div><div class="token-table"><div><span>Input</span><strong id="last-input">Unavailable</strong></div><div><span>Cached input</span><strong id="last-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="last-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="last-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="last-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="last-total">Unavailable</strong></div></div></div></article>
       </div>
-      <div class="alert token-truth-alert" role="note"><span class="truth-icon" aria-hidden="true">i</span><span>Subscription price is unavailable unless the backend reports a price. Token counts are evidence; they are not a fabricated dollar estimate.</span></div>
+      <div class="alert token-truth-alert" role="note"><span class="truth-icon" aria-hidden="true">i</span><span>Elpis shows a price only when the provider reports one. It does not guess a price from token counts.</span></div>
     </section>
 
     <section class="dashboard-panel" id="panel-smart-prune" role="tabpanel" aria-labelledby="tab-smart-prune" tabindex="0" hidden>
-      <article class="card surface-card"><div class="card-body compact-card-body">
-        <h2 class="text-base font-semibold">Pruner settings</h2>
-        <p>Saved for this Elpis home. Applies to the next Smart Prune request; the chat model is unchanged. In-flight requests keep their original settings.</p>
-        <fieldset class="fieldset" id="pruner-fields" disabled>
-          <label class="label" for="pruner-model">Model ID (empty uses the provider default)</label>
-          <input class="input w-full" id="pruner-model" type="text" maxlength="200" autocomplete="off" spellcheck="false">
-          <label class="label" for="pruner-prompt">System prompt</label>
-          <textarea class="textarea w-full" id="pruner-prompt" rows="12" spellcheck="false"></textarea>
-          <p>Changing this prompt can change what the optimizer retains. The model ID selects the primary optimizer; existing provider fallback remains in effect. Credentials and automatic-pruning defaults are unchanged.</p>
-          <div class="flex flex-wrap gap-3"><button class="btn" id="pruner-save" type="button">Save pruner settings</button><button class="btn btn-ghost" id="pruner-reset" type="button">Restore default prompt</button><button class="btn btn-ghost" id="pruner-reload" type="button">Reload saved settings</button></div>
-        </fieldset>
-        <p id="pruner-feedback" role="status" aria-live="polite">Open a fresh /dashboard link to edit pruner settings.</p>
-      </div></article>
-      <div class="card surface-card"><div class="card-body compact-card-body"><h2 class="text-base font-semibold">Readable evidence</h2><div id="evidence-links" class="flex flex-wrap gap-4 text-sm">Open a fresh /dashboard link from Elpis to access private reports.</div></div></div>
-      <header class="panel-heading"><div><p class="section-kicker">SMART PRUNE / EXPERIMENTAL</p><h2>Admission, savings, and optimizer cost</h2></div><div class="prune-state"><span class="badge badge-outline" id="smart-state-pill">Unavailable</span><span id="smart-configured">Configured: unavailable</span><span id="smart-thread">Thread: syncing</span></div></header>
-      <div class="alert prune-explainer" role="note"><span class="truth-icon" aria-hidden="true">↳</span><span>Fresh eligible tool results are optimized before first main-model exposure. Sent history stays byte-stable; failures preserve the original output.</span></div>
-      <dl class="stats prune-stats"><div class="stat"><dt class="stat-title">Examined</dt><dd class="stat-value metric" id="smart-examined">Unavailable</dd></div><div class="stat"><dt class="stat-title">Admitted</dt><dd class="stat-value metric success-metric" id="smart-admitted">Unavailable</dd></div><div class="stat"><dt class="stat-title">Unchanged</dt><dd class="stat-value metric" id="smart-unchanged">Unavailable</dd></div><div class="stat"><dt class="stat-title">Failed batches</dt><dd class="stat-value metric warning-metric" id="smart-failed">Unavailable</dd><p class="stat-desc">Originals preserved</p></div><div class="stat"><dt class="stat-title">Approx. source</dt><dd class="stat-value metric" id="smart-source">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. admitted</dt><dd class="stat-value metric" id="smart-kept">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. saved</dt><dd class="stat-value metric success-metric" id="smart-saved">Unavailable</dd></div><div class="stat"><dt class="stat-title">Optimizer wait</dt><dd class="stat-value metric" id="smart-latency">Unavailable</dd></div></dl>
+      <header class="panel-heading"><div><p class="section-kicker">Smart prune</p><h2>Smart Prune in this chat</h2></div><div class="prune-state"><span class="badge badge-outline" id="smart-state-pill">Unavailable</span><span id="smart-thread">This chat: checking</span></div></header>
+      <div class="alert prune-explainer" role="note"><span class="truth-icon" aria-hidden="true">↳</span><span>Smart Prune tries to shorten new tool results before the chat model reads them. Failed attempts keep the original result. Turn it on or off with /smart-prune in Elpis.</span></div>
+      <article class="card surface-card"><div class="card-body compact-card-body sm:flex-row sm:items-center sm:justify-between"><div><p class="section-kicker">Configured for the next attempt</p><p class="m-0 mt-2 font-mono text-sm break-all font-semibold" id="smart-configured-model">Unavailable</p></div><button class="btn btn-sm" id="pruner-change-model" type="button">Change model or provider</button></div></article>
       <div class="prune-detail-grid">
-        <article class="card attempt-card" id="attempt-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">LATEST EVIDENCE</p><h3>Last optimizer attempt</h3></div><span class="badge badge-ghost" id="attempt-status">Unavailable</span></div><p class="empty-state" id="attempt-empty">No optimizer attempt observed in this dashboard state.</p><div id="attempt-details" hidden><div class="attempt-route"><div><span>Model</span><strong id="attempt-model">Unavailable</strong></div><div><span>Effort</span><strong id="attempt-effort">Unavailable</strong></div><div><span>Latency</span><strong id="attempt-latency">Unavailable</strong></div></div><dl class="attempt-facts"><div><dt>Candidates</dt><dd id="attempt-candidates">Unavailable</dd></div><div><dt>Admitted</dt><dd id="attempt-admitted">Unavailable</dd></div><div><dt>Saved</dt><dd id="attempt-saved">Unavailable</dd></div><div><dt>Usage</dt><dd id="attempt-usage">Unavailable</dd></div></dl><div class="alert alert-warning attempt-warning" id="attempt-warning" hidden><span>Optimizer failed open. The exact original output continued to the main model.</span></div></div></div></article>
-        <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">OVERHEAD</p><h3>Optimizer usage</h3></div><span class="badge badge-ghost" id="optimizer-coverage">Usage unavailable</span></div><div class="token-table optimizer-table"><div><span>Requests</span><strong id="optimizer-requests">Unavailable</strong></div><div><span>Input</span><strong id="optimizer-input">Unavailable</strong></div><div><span>Cached input</span><strong id="optimizer-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="optimizer-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="optimizer-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="optimizer-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="optimizer-total">Unavailable</strong></div></div></div></article>
-        <article class="card surface-card latest-admission-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">ADMISSION</p><h3>Latest compact result</h3></div><span class="badge badge-ghost">LOCAL LINKAGE</span></div><p class="empty-state" id="smart-latest-empty">No admission observed in this dashboard state.</p><div class="admission-layout" id="smart-latest" hidden><dl class="evidence-list"><div><dt>Admitted / examined</dt><dd id="latest-outputs">Unavailable</dd></div><div><dt>Approx. source</dt><dd id="latest-source">Unavailable</dd></div><div><dt>Approx. admitted</dt><dd id="latest-admitted">Unavailable</dd></div><div><dt>Approx. saved</dt><dd id="latest-saved">Unavailable</dd></div><div><dt>Request linkage</dt><dd id="latest-request-link">Unavailable</dd></div><div><dt>Response linkage</dt><dd id="latest-response-link">Unavailable</dd></div></dl><dl class="evidence-list"><div><dt>Response input</dt><dd id="response-input">Unavailable</dd></div><div><dt>Cached input</dt><dd id="response-cached">Unavailable</dd></div><div><dt>Cache write</dt><dd id="response-cache-write">Unavailable</dd></div><div><dt>Output</dt><dd id="response-output">Unavailable</dd></div><div><dt>Reasoning</dt><dd id="response-reasoning">Unavailable</dd></div><div><dt>Total</dt><dd id="response-total">Unavailable</dd></div></dl></div></div></article>
+        <article class="card attempt-card" id="attempt-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Latest attempt</p><h3>What happened last</h3></div><span class="badge badge-ghost" id="attempt-status">Unavailable</span></div><p class="empty-state" id="attempt-empty">No optimizer attempt observed in this chat yet.</p><div id="attempt-details" hidden><div class="attempt-route"><div><span>Model used for this attempt</span><strong id="attempt-model">Unavailable</strong></div><div><span>Effort</span><strong id="attempt-effort">Unavailable</strong></div><div><span>Time</span><strong id="attempt-latency">Unavailable</strong></div></div><dl class="attempt-facts"><div><dt>Checked</dt><dd id="attempt-candidates">Unavailable</dd></div><div><dt>Shortened</dt><dd id="attempt-admitted">Unavailable</dd></div><div><dt>Removed (approx.)</dt><dd id="attempt-saved">Unavailable</dd></div><div><dt>Pruner tokens</dt><dd id="attempt-usage">Unavailable</dd></div></dl><div class="alert alert-warning attempt-warning" id="attempt-warning" hidden><div><strong id="attempt-failure-reason">Failure reason unavailable.</strong><p class="m-0 mt-1">The original tool result was kept. Check the model and provider in Models before trying again.</p></div></div></div></div></article>
+        <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Pruner overhead</p><h3>Tokens spent on pruning</h3></div><span class="badge badge-ghost" id="optimizer-coverage">Unavailable</span></div><div class="token-table optimizer-table"><div><span>Requests</span><strong id="optimizer-requests">Unavailable</strong></div><div><span>Input</span><strong id="optimizer-input">Unavailable</strong></div><div><span>Cached input</span><strong id="optimizer-cached">Unavailable</strong></div><div><span>Cache write</span><strong id="optimizer-cache-write">Unavailable</strong></div><div><span>Output</span><strong id="optimizer-output">Unavailable</strong></div><div><span>Reasoning</span><strong id="optimizer-reasoning">Unavailable</strong></div><div class="token-total"><span>Total</span><strong id="optimizer-total">Unavailable</strong></div></div><p class="m-0 text-sm model-help">These are additional model requests. Removed source tokens alone do not establish lower total usage, cost, or better answers.</p></div></article>
       </div>
-      <header class="panel-heading"><div><p class="section-kicker">ELPIS CLAUDE</p><h2>Claude Code requests</h2></div><div class="prune-state"><span class="badge badge-outline" id="claude-state-pill">No records</span></div></header>
-      <div class="alert prune-explainer" role="note"><span class="truth-icon" aria-hidden="true">↳</span><span>Large tool results from Claude Code, run with <code>elpis claude</code>, shrink before Claude reads them. Counts only; this page never shows their text.</span></div>
-      <dl class="stats prune-stats"><div class="stat"><dt class="stat-title">Results</dt><dd class="stat-value metric" id="claude-results">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. source</dt><dd class="stat-value metric" id="claude-source">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. sent</dt><dd class="stat-value metric" id="claude-sent">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. saved</dt><dd class="stat-value metric success-metric" id="claude-saved">Unavailable</dd><p class="stat-desc" id="claude-saved-share">Unavailable</p></div></dl>
-      <article class="card surface-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">RECENT</p><h3>Latest Claude Code results</h3></div><span class="badge badge-ghost">SOURCE → SENT</span></div><p class="empty-state" id="claude-empty">No elpis claude records in this Elpis home.</p><div class="token-table" id="claude-recent" hidden></div></div></article>
+      <dl class="stats prune-stats"><div class="stat"><dt class="stat-title">Results checked</dt><dd class="stat-value metric" id="smart-examined">Unavailable</dd></div><div class="stat"><dt class="stat-title">Made shorter</dt><dd class="stat-value metric success-metric" id="smart-admitted">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. removed</dt><dd class="stat-value metric success-metric" id="smart-saved">Unavailable</dd><p class="stat-desc">Source tokens · not net savings</p></div><div class="stat"><dt class="stat-title">Failed batches</dt><dd class="stat-value metric warning-metric" id="smart-failed">Unavailable</dd><p class="stat-desc">Full results sent instead</p></div></dl>
+      <details class="collapse collapse-arrow surface-card" id="prune-details">
+        <summary class="collapse-title font-semibold">Source counts and evidence</summary>
+        <div class="collapse-content flex flex-col gap-4">
+          <dl class="stats prune-stats"><div class="stat"><dt class="stat-title">Unchanged</dt><dd class="stat-value metric" id="smart-unchanged">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. before</dt><dd class="stat-value metric" id="smart-source">Unavailable</dd></div><div class="stat"><dt class="stat-title">Approx. after</dt><dd class="stat-value metric" id="smart-kept">Unavailable</dd></div><div class="stat"><dt class="stat-title">Time waited</dt><dd class="stat-value metric" id="smart-latency">Unavailable</dd></div></dl>
+          <div class="card surface-card"><div class="card-body compact-card-body"><h3 class="m-0 text-base font-semibold">Records you can read</h3><div id="evidence-links" class="flex flex-wrap gap-4 text-sm">Open the dashboard with /dashboard in Elpis to read the records.</div></div></div>
+          <div class="prune-detail-grid">
+
+
+            <article class="card surface-card latest-admission-card"><div class="card-body compact-card-body"><div class="card-heading"><div><p class="section-kicker">Latest result</p><h3>Latest shortened result</h3></div><span class="badge badge-ghost">This chat</span></div><p class="empty-state" id="smart-latest-empty">No shortened result in this chat yet.</p><div class="admission-layout" id="smart-latest" hidden><dl class="evidence-list"><div><dt>Shortened / checked</dt><dd id="latest-outputs">Unavailable</dd></div><div><dt>Approx. before</dt><dd id="latest-source">Unavailable</dd></div><div><dt>Approx. after</dt><dd id="latest-admitted">Unavailable</dd></div><div><dt>Approx. removed</dt><dd id="latest-saved">Unavailable</dd></div><div><dt>Matched to the request</dt><dd id="latest-request-link">Unavailable</dd></div><div><dt>Matched to the answer</dt><dd id="latest-response-link">Unavailable</dd></div></dl><dl class="evidence-list"><div><dt>Answer input</dt><dd id="response-input">Unavailable</dd></div><div><dt>Cached input</dt><dd id="response-cached">Unavailable</dd></div><div><dt>Cache write</dt><dd id="response-cache-write">Unavailable</dd></div><div><dt>Output</dt><dd id="response-output">Unavailable</dd></div><div><dt>Reasoning</dt><dd id="response-reasoning">Unavailable</dd></div><div><dt>Total</dt><dd id="response-total">Unavailable</dd></div></dl></div></div></article>
+          </div>
+        </div>
+      </details>
+      <details class="collapse collapse-arrow surface-card"><summary class="collapse-title font-semibold">Edit pruning instructions</summary><div class="collapse-content">
+        <h3 class="m-0 text-base font-semibold">Smart Prune instructions</h3>
+        <p class="m-0 text-sm leading-6 model-help">The instructions the Smart Prune model gets. A change applies to its next request. Requests already running keep the old instructions.</p>
+        <fieldset class="fieldset" id="pruner-fields" disabled>
+          <label class="label text-base-content/75!" for="pruner-prompt">Instructions</label>
+          <textarea class="textarea w-full" id="pruner-prompt" rows="12" spellcheck="false"></textarea>
+          <p class="m-0 text-sm model-help">Different instructions can change which facts Smart Prune keeps.</p>
+          <div class="flex flex-wrap gap-3"><button class="btn" id="pruner-save" type="button">Save instructions</button><button class="btn btn-ghost" id="pruner-reset" type="button">Restore the default</button><button class="btn btn-ghost" id="pruner-reload" type="button">Reload saved instructions</button></div>
+        </fieldset>
+        <p class="m-0 text-sm model-help" id="pruner-feedback" role="status" aria-live="polite">Open the dashboard with /dashboard in Elpis to edit the instructions.</p>
+      </div></details>
     </section>
 
     <section class="dashboard-panel" id="panel-providers" role="tabpanel" aria-labelledby="tab-providers" tabindex="0" hidden>
-      <header class="panel-heading"><div><p class="section-kicker">PROVIDER KEYS</p><h2>Paste a key here instead of exporting it</h2></div><p>Saved for this Elpis home in an owner-only file and applied to the next request. A key saved here takes precedence over the environment variable. Only a masked value is ever shown; a saved key is never sent back to this page.</p></header>
+      <header class="panel-heading"><div><p class="section-kicker">Api keys</p><h2>Paste a provider's API key</h2></div><p>Elpis saves the key on this computer, in a file only you can read, and uses it from the next request. A saved key comes before the environment variable. This page never shows a saved key.</p></header>
       <article class="card surface-card"><div class="card-body compact-card-body">
-        <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th scope="col">Provider</th><th scope="col">Environment variable</th><th scope="col">Key</th><th scope="col">Source</th></tr></thead><tbody id="provider-key-rows"><tr><td colspan="4">Open a fresh /dashboard link from Elpis to manage provider keys.</td></tr></tbody></table></div>
+        <div class="overflow-x-auto"><table class="table table-sm"><thead><tr><th scope="col">Provider</th><th scope="col">Environment variable</th><th scope="col">Key</th><th scope="col">Where the key comes from</th></tr></thead><tbody id="provider-key-rows"><tr><td colspan="4">Open the dashboard with /dashboard in Elpis to manage API keys.</td></tr></tbody></table></div>
         <fieldset class="fieldset" id="provider-key-fields" disabled>
-          <label class="label" for="provider-key-select">Provider</label>
+          <label class="label text-base-content/75!" for="provider-key-select">Provider</label>
           <select class="select w-full" id="provider-key-select"></select>
-          <label class="label" for="provider-key-value">API key</label>
+          <label class="label text-base-content/75!" for="provider-key-value">API key</label>
           <input class="input w-full" id="provider-key-value" type="password" maxlength="8192" autocomplete="off" spellcheck="false">
-          <div class="flex flex-wrap gap-3"><button class="btn" id="provider-key-save" type="button">Save key</button><button class="btn btn-ghost" id="provider-key-clear" type="button">Clear stored key</button><button class="btn btn-ghost" id="provider-key-reload" type="button">Reload</button></div>
+          <div class="flex flex-wrap gap-3"><button class="btn" id="provider-key-save" type="button">Save key</button><button class="btn btn-ghost" id="provider-key-clear" type="button">Remove saved key</button><button class="btn btn-ghost" id="provider-key-reload" type="button">Reload</button></div>
         </fieldset>
-        <p id="provider-key-feedback" role="status" aria-live="polite">Open a fresh /dashboard link to enter provider keys.</p>
+        <p class="m-0 text-sm model-help" id="provider-key-feedback" role="status" aria-live="polite">Open the dashboard with /dashboard in Elpis to enter API keys.</p>
       </div></article>
     </section>
   </main>
-  <footer class="dashboard-footer"><span id="state-meta">No valid state received</span><span>Local-only · optimizer settings editable · private evidence requires this session link</span></footer>
+  <footer class="dashboard-footer"><span id="state-meta">Nothing received from Elpis yet</span><span>This page runs only on this computer. Changes need the link that /dashboard opened.</span></footer>
+    </div>
+  </div>
 </body>
 </html>

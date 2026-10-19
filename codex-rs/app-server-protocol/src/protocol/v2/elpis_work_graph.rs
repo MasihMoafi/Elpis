@@ -1,6 +1,7 @@
 //! Elpis: deterministic work graphs (`workGraph/list`), copied from v0.3.0.
 use crate::JsonSchema;
 use crate::TS;
+use codex_protocol::openai_models::ReasoningEffort;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -30,6 +31,8 @@ pub struct WorkGraphSummary {
     pub error: Option<String>,
     pub tasks: Vec<WorkGraphTaskSummary>,
     pub event_count: u32,
+    /// For a worktree-isolated run: its worktree paths, branches, and merge outcome.
+    pub worktree_report: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -42,7 +45,73 @@ pub struct WorkGraphTaskSummary {
     pub status: String,
     pub dependencies: Vec<String>,
     pub assigned_thread_id: Option<String>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
     pub result: Option<JsonValue>,
     pub evidence: Vec<String>,
     pub failure_reason: Option<String>,
+}
+
+/// Run a deterministic workflow on an already loaded, idle root thread.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct WorkGraphRunParams {
+    pub root_thread_id: String,
+    pub name: String,
+    pub tasks: Vec<WorkGraphRunTask>,
+    pub max_concurrency: Option<u32>,
+    pub max_runtime_seconds: Option<u64>,
+    /// `worktree` runs each implement/fix task in its own git worktree beside the repository
+    /// and merges the results into the checked-out branch once the whole graph has succeeded.
+    /// Omitted or null runs every task in its selected environment.
+    pub isolation: Option<WorkGraphIsolation>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "v2/")]
+pub enum WorkGraphIsolation {
+    Worktree,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct WorkGraphRunTask {
+    pub id: String,
+    pub kind: WorkGraphRunTaskKind,
+    pub title: String,
+    pub instruction: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    /// Reasoning effort for this task's worker. Omitted or null inherits the coordinator's
+    /// effort. A task model that does not offer the effort is refused before the run starts.
+    pub reasoning_effort: Option<ReasoningEffort>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    pub environment_id: Option<String>,
+    #[serde(default)]
+    pub write_scopes: Vec<String>,
+    #[serde(default)]
+    pub acceptance_criteria: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export_to = "v2/")]
+pub enum WorkGraphRunTaskKind {
+    Explore,
+    Implement,
+    Verify,
+    Fix,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct WorkGraphRunResponse {
+    pub graph_id: String,
+    pub thread_id: String,
+    pub turn_id: String,
 }

@@ -68,11 +68,12 @@ fn admitted_agents_md_for(
 ) -> Option<Arc<LoadedAgentsMd>> {
     let admission_failed = Cell::new(false);
     let admitted = loaded.admitted_by(&|path| {
-        elpis_context::instruction_source_admitted(Some(memories_root), cwd, path)
-            .unwrap_or_else(|_| {
+        elpis_context::instruction_source_admitted(Some(memories_root), cwd, path).unwrap_or_else(
+            |_| {
                 admission_failed.set(true);
                 false
-            })
+            },
+        )
     });
     if admission_failed.get() {
         return None;
@@ -107,6 +108,41 @@ impl ElpisContinuityConfig {
             eligible,
         }
     }
+
+    /// The thread's continuity settings, unless it has none or is not eligible.
+    fn for_thread(thread_store: &ExtensionData) -> Option<Arc<Self>> {
+        thread_store.get::<Self>().filter(|config| config.eligible)
+    }
+
+    async fn body(&self, thread_id: &str) -> Option<String> {
+        elpis_context::build_continuity_prompt_with_dev_rule_roots(
+            Some(self.memories_root.as_path()),
+            self.cwd.as_path(),
+            &self.dev_rule_roots,
+            Some(thread_id),
+        )
+        .await
+    }
+}
+
+/// The Elpis instruction text a thread's next model request carries, for a client that runs
+/// the thread's turns on another engine (`thread/elpisInstructions/read`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ElpisInstructions {
+    /// The thread's configured `developer_instructions`.
+    pub developer_instructions: Option<String>,
+    /// The global and project AGENTS.md text the Context Ledger admits.
+    pub agents_md: Option<String>,
+    /// The admitted continuity section (MEMORY.md, development rules, GOAL.md, ES.md and
+    /// files added with `/add`), exactly as the `elpis_continuity` World State section sends it.
+    pub continuity: Option<String>,
+}
+
+/// The continuity text the thread's next request carries, if any.
+pub(crate) async fn thread_continuity(thread_store: &ExtensionData) -> Option<String> {
+    ElpisContinuityConfig::for_thread(thread_store)?
+        .body(thread_store.level_id())
+        .await
 }
 
 impl ContextContributor for ElpisContinuityExtension {
@@ -115,19 +151,12 @@ impl ContextContributor for ElpisContinuityExtension {
         input: WorldStateContributionInput<'a>,
     ) -> ExtensionFuture<'a, Vec<WorldStateSectionContribution>> {
         Box::pin(async move {
-            let Some(config) = input.thread_store.get::<ElpisContinuityConfig>() else {
+            let Some(config) = ElpisContinuityConfig::for_thread(input.thread_store) else {
                 return Vec::new();
             };
-            if !config.eligible {
-                return Vec::new();
-            }
-            let body = elpis_context::build_continuity_prompt_with_dev_rule_roots(
-                Some(config.memories_root.as_path()),
-                config.cwd.as_path(),
-                &config.dev_rule_roots,
-            )
-            .await;
-            vec![continuity_section(body)]
+            vec![continuity_section(
+                config.body(input.thread_store.level_id()).await,
+            )]
         })
     }
 }
@@ -135,24 +164,22 @@ impl ContextContributor for ElpisContinuityExtension {
 /// One single-slot section holding the admitted continuity text, if any.
 fn continuity_section(body: Option<String>) -> WorldStateSectionContribution {
     let has_model_visible_content = body.is_some();
-    let snapshot_body = body.clone();
-    WorldStateSectionContribution::new(
-        ELPIS_CONTINUITY_WORLD_STATE_ID,
-        json!({ "body": snapshot_body }),
-        move |previous| {
-            if matches!(
-                previous,
-                PreviousWorldStateSection::Known(previous)
-                    if previous.get("body").and_then(serde_json::Value::as_str)
-                        == body.as_deref()
-            ) {
-                return None;
-            }
-            body.as_ref().map(|body| {
-                RenderedWorldStateFragment::new("developer", ("", ""), body.clone())
-            })
-        },
-    )
+    WorldStateSectionContribution::new(ELPIS_CONTINUITY_WORLD_STATE_ID, move |previous| {
+        // A withdrawn body persists as an empty section; the slot reconciliation removes
+        // the earlier copy.
+        let snapshot = Some(json!({ "body": body }));
+        if matches!(
+            previous,
+            PreviousWorldStateSection::Known(previous)
+                if previous.get("body").and_then(serde_json::Value::as_str) == body.as_deref()
+        ) {
+            return (snapshot, None);
+        }
+        let fragment = body
+            .as_ref()
+            .map(|body| RenderedWorldStateFragment::new("developer", ("", ""), body.clone()));
+        (snapshot, fragment)
+    })
     .with_retained_fragment_matcher(is_elpis_continuity_fragment)
     .with_single_history_slot(has_model_visible_content)
 }

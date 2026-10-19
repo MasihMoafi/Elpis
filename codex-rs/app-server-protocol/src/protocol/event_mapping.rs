@@ -35,6 +35,18 @@ pub fn item_event_to_server_notification(
     let thread_id = thread_id.to_string();
     let turn_id = turn_id.to_string();
     match msg {
+        EventMsg::SmartPrune(prune) => {
+            let completed_at_ms = prune.occurred_at_ms;
+            ServerNotification::ItemCompleted(ItemCompletedNotification {
+                thread_id,
+                turn_id,
+                item: ThreadItem::SmartPrune {
+                    id: prune.item_id(),
+                    prune,
+                },
+                completed_at_ms,
+            })
+        }
         EventMsg::DynamicToolCallResponse(response) => {
             let status = if response.success {
                 DynamicToolCallStatus::Completed
@@ -183,6 +195,8 @@ pub fn item_event_to_server_notification(
         }
         EventMsg::SubAgentActivity(activity) => {
             let item = ThreadItem::SubAgentActivity {
+                model: activity.model,
+                reasoning_effort: activity.reasoning_effort,
                 id: activity.event_id,
                 kind: activity.kind.into(),
                 agent_thread_id: activity.agent_thread_id.to_string(),
@@ -475,6 +489,43 @@ mod tests {
     use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
     use codex_protocol::protocol::ExecOutputStream;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn smart_prune_live_and_replayed_items_match_and_deduplicate() {
+        let prune = codex_protocol::elpis_smart_prune::SmartPruneEvent {
+            attempt_id: "attempt-1".into(),
+            call_id: "call-1".into(),
+            tool: "cargo test -p core".into(),
+            occurred_at_ms: 1_790_000_000_000,
+            source_tokens: 6300,
+            admitted_tokens: 182,
+            kept: Some("the 2 failing tests".into()),
+            failure_reason: None,
+        };
+        let event = EventMsg::SmartPrune(prune.clone());
+        let ServerNotification::ItemCompleted(live) =
+            item_event_to_server_notification(event.clone(), "chat-1", "turn-1")
+        else {
+            panic!("completed prune item");
+        };
+        let mut history = crate::protocol::thread_history::ThreadHistoryBuilder::new();
+        history.handle_event(&EventMsg::TurnStarted(
+            codex_protocol::protocol::TurnStartedEvent {
+                turn_attribution: None,
+                turn_id: "turn-1".into(),
+                root_turn_id: None,
+                trace_id: None,
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            },
+        ));
+        history.handle_event(&event);
+        history.handle_event(&event);
+        let restored = history.active_turn_snapshot().unwrap();
+        assert_eq!(restored.items, vec![live.item]);
+        assert_eq!(restored.items[0].id(), prune.item_id());
+    }
 
     fn assert_item_started_server_notification(
         notification: ServerNotification,

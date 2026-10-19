@@ -652,3 +652,65 @@ async fn status_command_remains_visible_when_thread_changes_during_usage_refresh
     ));
     assert!(drain_insert_history(&mut rx).is_empty());
 }
+
+/// A Claude or Antigravity chat answers on that subscription, so /status names its account
+/// (recorded by the bridge in Elpis's home), not the ChatGPT one.
+#[tokio::test]
+async fn status_names_the_subscription_account_of_a_bridged_chat() {
+    let (mut chat, mut rx, _op_rx) =
+        make_chatwidget_manual(Some("agy/gemini-3.8-flash-high")).await;
+    chat.status_account_display = Some(StatusAccountDisplay::ChatGpt {
+        email: Some("gpt@example.com".to_string()),
+        plan: Some("Pro".to_string()),
+    });
+    let bridge_dir = chat.config.codex_home.join("elpis-claude");
+    std::fs::create_dir_all(&bridge_dir).expect("bridge dir");
+    std::fs::write(
+        bridge_dir.join("accounts.json"),
+        r#"{"agy":{"email":"gemini@example.com"},"claude":{"email":"claude@example.com","plan":"Max"}}"#,
+    )
+    .expect("accounts file");
+
+    chat.dispatch_command(SlashCommand::Status);
+
+    let rendered = match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            lines_to_single_string(&cell.display_lines(/*width*/ 100))
+        }
+        other => panic!("expected status output, got {other:?}"),
+    };
+    assert!(rendered.contains("gemini@example.com"), "{rendered}");
+    assert!(rendered.contains("Antigravity"), "{rendered}");
+    assert!(!rendered.contains("gpt@example.com"), "{rendered}");
+}
+
+/// Signed in to ChatGPT, a Gemini chat's /usage shows Antigravity's limits (streamed by the
+/// bridge), not the ChatGPT plan's, and no ChatGPT usage link.
+#[tokio::test]
+async fn usage_card_of_a_bridged_chat_shows_that_subscriptions_limits() {
+    let (mut chat, mut rx, _op_rx) =
+        make_chatwidget_manual(Some("agy/gemini-3.8-flash-high")).await;
+    set_chatgpt_auth(&mut chat);
+    let mut chatgpt = snapshot(/*percent*/ 2.0);
+    chatgpt.limit_id = Some("codex".to_string());
+    chatgpt.limit_name = Some("ChatGPT plan".to_string());
+    chat.on_rate_limit_snapshot(Some(chatgpt));
+    let mut gemini = snapshot(/*percent*/ 37.0);
+    gemini.limit_id = Some("antigravity-gemini-models".to_string());
+    gemini.limit_name = Some("Antigravity Gemini Models".to_string());
+    chat.on_rolling_rate_limit_snapshot(gemini);
+    drain_insert_history(&mut rx);
+
+    chat.dispatch_command(SlashCommand::Status);
+
+    let rendered = match rx.try_recv() {
+        Ok(AppEvent::InsertHistoryCell(cell)) => {
+            lines_to_single_string(&cell.display_lines(/*width*/ 100))
+        }
+        other => panic!("expected status output, got {other:?}"),
+    };
+    assert!(rendered.contains("Antigravity Gemini Models"), "{rendered}");
+    assert!(rendered.contains("63% left"), "{rendered}");
+    assert!(!rendered.contains("ChatGPT plan"), "{rendered}");
+    assert!(!rendered.contains("chatgpt.com"), "{rendered}");
+}

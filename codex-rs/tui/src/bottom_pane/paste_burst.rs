@@ -433,18 +433,6 @@ impl PasteBurst {
         Some(out)
     }
 
-    // Elpis: U20 line continuation reads the held character (v0.3.0).
-    /// Returns the lone ASCII character held for flicker suppression, if no paste buffer is
-    /// active. This lets callers distinguish normal typed input from paste content before deciding
-    /// whether a following non-character key gives the held character special meaning.
-    pub fn pending_typed_char(&self) -> Option<char> {
-        if self.is_active_internal() {
-            None
-        } else {
-            self.pending_first_char.map(|(ch, _)| ch)
-        }
-    }
-
     /// Clear only the timing window and any pending first-char.
     ///
     /// Does not emit or clear the buffered text itself; callers should have

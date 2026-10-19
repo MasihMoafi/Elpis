@@ -1,140 +1,46 @@
-//! The blossom welcome animation for onboarding, with a full-color final pose.
-//! Visible time pauses while hidden. Fresh conversations start settled and can replay on a click.
+//! The welcome frame player, retained from the blossom's visible-time scheduler.
+//! Geometry and lighting are generated from the desktop's Elpis SVG instead.
 
-mod geometry;
-mod greetings;
-mod lighting;
-mod paths;
-mod policy;
-mod renderer;
-mod sequence;
-
-use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::Instant;
 
-use crossterm::event::MouseButton;
-use crossterm::event::MouseEvent;
-use crossterm::event::MouseEventKind;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 
-use crate::motion::MotionMode;
-use crate::terminal_palette;
-pub(crate) use greetings::Greeting;
-use lighting::Lighting;
-pub(crate) use policy::Presentation;
-pub(crate) use policy::is_startup_cell;
-use renderer::MAX_COLUMNS;
-use renderer::MAX_ROWS;
-use renderer::Renderer;
-
-pub(crate) const FRAME_INTERVAL: Duration = Duration::from_millis(/*millis*/ 50);
-// The preview's first visible pose (10.8s / 7.2s), also the start of an idle-screen replay.
-const SETTLED_BLOSSOM: f64 = 0.5;
+pub(crate) const FRAME_INTERVAL: Duration = Duration::from_millis(50);
+const SPIN_DURATION: Duration = Duration::from_millis(10_800);
+pub(crate) const WIDTH: u16 = 60;
+pub(crate) const HEIGHT: u16 = 21;
+const FRAME_BYTES: usize = WIDTH as usize * HEIGHT as usize * 4;
+const FRAMES: &[u8] = include_bytes!("frames/elpis.bin");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ComposerState {
-    Empty,
-    Draft,
+pub(crate) enum Presentation {
+    Animated,
+    Static,
+    Hidden,
 }
 
 #[derive(Default)]
 pub(crate) struct EmptyStateAnimation {
-    eligible: bool,
-    // Initialized once for fresh threads; never initialized for a resumed or forked thread.
-    // Headers retain the selection after the temporary blossom is dismissed.
-    pub(crate) greeting: Arc<OnceLock<Greeting>>,
     spin_elapsed: Duration,
     last_frame: Option<Instant>,
-    fade_elapsed: Duration,
-    static_mark: Option<bool>,
-    opacity: f32,
-    fade_from: f32,
-    renderer: Option<Renderer>,
-    stage: Option<Rect>,
-    replaying: bool,
 }
 
 impl EmptyStateAnimation {
-    pub(crate) fn is_eligible(&self) -> bool {
-        self.eligible
-    }
-
-    pub(crate) fn start_fresh(&mut self) {
-        self.cancel_replay();
-        self.eligible = true;
-        self.greeting.get_or_init(Greeting::choose);
-        self.spin_elapsed = Duration::ZERO;
-        self.last_frame = None;
-        self.fade_elapsed = Duration::ZERO;
-        self.static_mark = None;
-        self.opacity = 1.0;
-    }
-
-    /// Keep the provisional pose and phrase in headers already bound to the live thread.
-    pub(crate) fn continue_from(&mut self, source: &mut Self) {
-        let mut previous = std::mem::take(source);
-        if !previous.is_eligible() {
-            previous.start_fresh();
-        }
-        if let Some(greeting) = previous.greeting.get() {
-            let _ = self.greeting.set(*greeting);
-        }
-        previous.greeting = Arc::clone(&self.greeting);
-        *self = previous;
-    }
-
-    pub(crate) fn dismiss(&mut self) {
-        self.eligible = false;
-        self.cancel_replay();
-    }
-
-    pub(crate) fn cancel_replay(&mut self) {
-        self.stage = None;
-        self.replaying = false;
-        self.pause_clock();
-    }
-
-    /// Replay only on the drawn blossom; unrelated gestures keep their normal owner.
-    pub(crate) fn handle_mouse(&mut self, mouse: MouseEvent) -> bool {
-        let inside = self
-            .stage
-            .is_some_and(|stage| stage.contains(Position::new(mouse.column, mouse.row)))
-            && mouse.modifiers.is_empty();
-        match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) if inside => {
-                self.start_fresh();
-                self.spin_elapsed =
-                    Duration::from_secs_f64(SETTLED_BLOSSOM * sequence::LOOP_SECONDS);
-                self.opacity = sequence::STATIC_OPACITY;
-                self.static_mark = Some(true);
-                self.replaying = true;
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Stop visible time at the last painted frame, including when no hidden frame was drawn.
-    /// Resume (after process suspension) may call this after the interruption; phase is retained.
     pub(crate) fn pause_clock(&mut self) {
         self.last_frame = None;
     }
 
-    /// Paint the shared logo sequence inside a caller-owned, reserved rectangle.
-    /// The caller clears the stage and keeps its layout stable after motion finishes.
     pub(crate) fn render_in(
         &mut self,
         area: Rect,
         buffer: &mut Buffer,
         presentation: Presentation,
     ) -> Option<Duration> {
-        let now = Instant::now();
-        self.render_in_at(area, buffer, presentation, now)
+        self.render_in_at(area, buffer, presentation, Instant::now())
     }
 
     fn render_in_at(
@@ -144,160 +50,137 @@ impl EmptyStateAnimation {
         presentation: Presentation,
         now: Instant,
     ) -> Option<Duration> {
-        if !self.eligible
-            || presentation == Presentation::Hidden
-            || area.is_empty()
-            || area.width > MAX_COLUMNS
-            || area.height > MAX_ROWS
+        if presentation == Presentation::Hidden
+            || area.width != WIDTH
+            || area.height != HEIGHT
             || area.intersection(buffer.area) != area
         {
             self.pause_clock();
             return None;
         }
-        let static_mark = presentation == Presentation::Faded;
-        let previous_frame = self.last_frame.replace(now);
-        if self.static_mark != Some(static_mark) {
-            self.fade_elapsed = if self.static_mark.is_none() {
-                sequence::STATIC_FADE
-            } else {
-                Duration::ZERO
-            };
-            self.fade_from = self.opacity;
-        } else if let Some(previous) = previous_frame {
-            let elapsed = now.saturating_duration_since(previous);
-            self.fade_elapsed += elapsed;
-            if !static_mark {
-                self.spin_elapsed += elapsed;
-            }
+        if presentation == Presentation::Static {
+            self.pause_clock();
+            Self::paint_frame(area, buffer, FRAMES.len() / FRAME_BYTES - 1);
+            return None;
         }
-        self.static_mark = Some(static_mark);
-        let finished = self.spin_elapsed >= sequence::SPIN_DURATION;
-        let phase =
-            self.spin_elapsed.min(sequence::SPIN_DURATION).as_secs_f64() / sequence::LOOP_SECONDS;
-        let settling = !finished && static_mark && self.fade_elapsed < sequence::STATIC_FADE;
-        self.opacity = if finished && self.replaying {
-            sequence::static_opacity(
-                self.spin_elapsed - sequence::SPIN_DURATION,
-                /*from*/ 1.0,
-            )
-        } else if finished {
-            1.0
-        } else if static_mark {
-            sequence::static_opacity(self.fade_elapsed, self.fade_from)
-        } else {
-            1.0
-        };
-        if !static_mark && !finished {
-            self.opacity = self.fade_from
-                + (self.opacity - self.fade_from)
-                    * sequence::progress(self.fade_elapsed, sequence::STATIC_FADE) as f32;
+        if let Some(previous) = self.last_frame.replace(now) {
+            self.spin_elapsed += now.saturating_duration_since(previous);
         }
-        self.paint_frame(area, buffer, phase, self.opacity);
-        ((!finished && (!static_mark || settling))
-            || (self.replaying
-                && self.spin_elapsed < sequence::SPIN_DURATION + sequence::STATIC_FADE))
-            .then_some(FRAME_INTERVAL)
+        let frame = (self.spin_elapsed.min(SPIN_DURATION).as_millis() / FRAME_INTERVAL.as_millis())
+            as usize;
+        Self::paint_frame(area, buffer, frame);
+        (self.spin_elapsed < SPIN_DURATION).then_some(FRAME_INTERVAL)
     }
 
-    /// Draw only in space the caller has cleared and owns. The centered blossom returns
-    /// on clear, without restarting or scheduling animation.
-    pub(crate) fn render_first_screen(
-        &mut self,
-        available: Rect,
-        buffer: &mut Buffer,
-        composer: Option<ComposerState>,
-        motion: MotionMode,
-    ) -> Option<Duration> {
-        const STAGE_ROWS: u16 = 21;
-        const MIN_STAGE_ROWS: u16 = 14;
-        let screen = buffer.area;
-        let width = screen.width.saturating_sub(/*rhs*/ 4).min(MAX_COLUMNS);
-        let height = width * STAGE_ROWS / MAX_COLUMNS;
-        if motion == MotionMode::Reduced
-            || composer != Some(ComposerState::Empty)
-            || height < MIN_STAGE_ROWS
-            || height > screen.height
+    fn paint_frame(area: Rect, buffer: &mut Buffer, frame: usize) {
+        let light = crate::terminal_palette::default_bg().is_some_and(crate::color::is_light);
+        let colors = crate::terminal_palette::effective_stdout_color_level();
+        for (index, cell) in FRAMES[frame * FRAME_BYTES..(frame + 1) * FRAME_BYTES]
+            .chunks_exact(4)
+            .enumerate()
+            .filter(|(_, cell)| cell[0] != 0)
         {
-            self.cancel_replay();
-            return None;
-        }
-        let stage = Rect::new(
-            screen.x + (screen.width - width) / 2,
-            screen.y + (screen.height - height) / 2,
-            width,
-            height,
-        );
-        if stage.intersection(available) != stage {
-            self.cancel_replay();
-            return None;
-        }
-        self.stage = Some(stage);
-        if self.replaying {
-            if let Some(delay) = self.render_in(stage, buffer, Presentation::Animated) {
-                return Some(delay);
-            }
-            // The replay has faded back to the idle pose and no longer needs redraws.
-            self.replaying = false;
-        }
-        self.paint_frame(stage, buffer, SETTLED_BLOSSOM, sequence::STATIC_OPACITY);
-        None
-    }
-
-    fn paint_frame(&mut self, area: Rect, buffer: &mut Buffer, phase: f64, opacity: f32) {
-        let background = terminal_palette::default_bg();
-        let color_level = if background.is_some() {
-            terminal_palette::effective_stdout_color_level()
-        } else {
-            terminal_palette::StdoutColorLevel::Unknown
-        };
-        let background = background.unwrap_or((15, 20, 37));
-        let light = Lighting::terminal(
-            terminal_palette::default_fg().unwrap_or((210, 221, 235)),
-            background,
-        );
-        let cells = self.renderer.get_or_insert_with(Renderer::default).frame(
-            area.width,
-            area.height,
-            phase,
-            &light,
-        );
-        for (i, cell) in cells.iter().enumerate().filter(|(_, cell)| cell.dots != 0) {
-            let [_, r, g, b] = cell.rgb.to_be_bytes();
-            let target = &mut buffer[(
-                area.x + i as u16 % area.width,
-                area.y + i as u16 / area.width,
-            )];
-            target.set_char(char::from_u32(0x2800 + u32::from(cell.dots)).unwrap_or(' '));
-            let color = crate::color::blend((r, g, b), background, opacity);
-            let color = if color_level == terminal_palette::StdoutColorLevel::Ansi256 {
-                // Four bits per channel bound the cache and avoid palette searches each frame.
+            let rgb = (cell[1], cell[2], cell[3]);
+            // The SVG's pale gold needs a darker pigment against a light terminal.
+            let rgb = if light {
+                crate::color::blend(rgb, (0, 0, 0), 0.5)
+            } else {
+                rgb
+            };
+            let color = if colors == crate::terminal_palette::StdoutColorLevel::Ansi256 {
+                // Retain the blossom player's bounded palette cache so searches
+                // do not compete with keyboard handling on every frame.
                 static COLORS: [OnceLock<Color>; 4096] = [const { OnceLock::new() }; 4096];
-                let (r, g, b) = (color.0 >> 4, color.1 >> 4, color.2 >> 4);
+                let (r, g, b) = (rgb.0 >> 4, rgb.1 >> 4, rgb.2 >> 4);
                 let index = usize::from(r) * 256 + usize::from(g) * 16 + usize::from(b);
                 *COLORS[index].get_or_init(|| {
-                    terminal_palette::best_color_for_level(
+                    crate::terminal_palette::best_color_for_level(
                         (r * 16 + 8, g * 16 + 8, b * 16 + 8),
-                        color_level,
+                        colors,
                     )
                 })
             } else {
-                terminal_palette::best_color_for_level(color, color_level)
+                crate::terminal_palette::best_color_for_level(rgb, colors)
             };
-            target.set_fg(color);
-            // Default-color terminals can only step between normal and dim intensity.
-            if opacity < 0.5
-                && matches!(
-                    color_level,
-                    terminal_palette::StdoutColorLevel::Ansi16
-                        | terminal_palette::StdoutColorLevel::Unknown
-                )
-            {
-                target.set_style(target.style().dim());
-            }
+            buffer[(area.x + index as u16 % WIDTH, area.y + index as u16 / WIDTH)]
+                .set_char(char::from_u32(0x2800 + u32::from(cell[0])).unwrap_or(' '))
+                .set_fg(color);
         }
     }
 }
 
 #[cfg(test)]
-#[path = "empty_state_animation_tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn welcome_player_advances_settles_and_pauses_while_hidden() {
+        let area = Rect::new(0, 0, WIDTH, HEIGHT);
+        let mut buffer = Buffer::empty(area);
+        let mut animation = EmptyStateAnimation::default();
+        let start = Instant::now();
+        assert_eq!(
+            animation.render_in_at(area, &mut buffer, Presentation::Animated, start),
+            Some(FRAME_INTERVAL)
+        );
+        assert_eq!(
+            animation.render_in_at(
+                area,
+                &mut buffer,
+                Presentation::Animated,
+                start + Duration::from_millis(1250)
+            ),
+            Some(FRAME_INTERVAL)
+        );
+        let elapsed = animation.spin_elapsed;
+        assert_eq!(
+            animation.render_in_at(
+                area,
+                &mut buffer,
+                Presentation::Hidden,
+                start + Duration::from_secs(50)
+            ),
+            None
+        );
+        animation.render_in_at(
+            area,
+            &mut buffer,
+            Presentation::Animated,
+            start + Duration::from_secs(100),
+        );
+        assert_eq!(animation.spin_elapsed, elapsed);
+        assert_eq!(
+            animation.render_in_at(
+                area,
+                &mut buffer,
+                Presentation::Animated,
+                start + Duration::from_secs(111)
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn welcome_frames_keep_the_mark_visible_during_the_sweep() {
+        assert_eq!(FRAMES.len(), 217 * FRAME_BYTES);
+        let first = &FRAMES[..FRAME_BYTES];
+        let last = &FRAMES[216 * FRAME_BYTES..];
+        assert_eq!(first, last);
+        assert_ne!(first, &FRAMES[40 * FRAME_BYTES..41 * FRAME_BYTES]);
+        for frame in FRAMES.chunks_exact(FRAME_BYTES) {
+            assert!(frame.chunks_exact(4).filter(|cell| cell[0] != 0).count() > 300);
+        }
+    }
+
+    #[test]
+    fn welcome_static_player_never_schedules_redraws() {
+        let area = Rect::new(0, 0, WIDTH, HEIGHT);
+        let mut buffer = Buffer::empty(area);
+        assert_eq!(
+            EmptyStateAnimation::default().render_in(area, &mut buffer, Presentation::Static),
+            None
+        );
+        assert!(buffer.content.iter().any(|cell| cell.symbol() != " "));
+    }
+}

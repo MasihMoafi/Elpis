@@ -295,3 +295,136 @@ async fn the_login_reaches_the_upstream_and_no_record() {
         assert!(!record.to_string().contains("sk-ant-oat"));
     }
 }
+
+#[tokio::test]
+async fn real_proxy_records_redact_secrets_but_optimizer_and_upstream_keep_them() {
+    let fixtures: Value = serde_json::from_str(include_str!(
+        "../../../tools/elpis-claude/test/fixtures/log-secrets.json"
+    ))
+    .unwrap();
+    for (index, fixture) in fixtures.as_array().unwrap().iter().enumerate() {
+        let original = fixture["input"].as_str().unwrap().to_string();
+        let wanted = original.clone();
+        let optimizer = Arc::new(FakeOptimizer {
+            reply: Box::new(move |input| {
+                let input: Value = serde_json::from_str(input)?;
+                let source = input["items"][0]["source_output"].as_str().unwrap();
+                assert!(
+                    source.starts_with(&wanted),
+                    "optimizer sees real fixture {index}"
+                );
+                Ok(json!({"items": [{"call_id": "toolu_1", "decision": "compact", "content": wanted}]}).to_string())
+            }),
+            calls: AtomicUsize::new(0),
+        });
+        let harness = harness(true, optimizer.clone()).await;
+        let mut body = first_turn();
+        body["messages"][2]["content"][0]["content"] =
+            json!(format!("{original}\n{}", tool_output()));
+        harness.send(body.to_string().as_bytes()).await;
+        harness.send(body.to_string().as_bytes()).await;
+        let requests = harness.received().await;
+        let forwarded = tool_result(&requests[0]);
+        assert!(
+            forwarded["content"]
+                .as_str()
+                .unwrap()
+                .starts_with(&original),
+            "upstream sees real fixture {index}"
+        );
+        assert_eq!(tool_result(&requests[1]), forwarded);
+        assert_eq!(optimizer.calls.load(Ordering::SeqCst), 1);
+        let records = harness.records();
+        assert_eq!(records.len(), 1);
+        let raw: Value =
+            serde_json::from_str(records[0]["raw_response"].as_str().unwrap()).unwrap();
+        assert!(
+            raw["items"][0]["content"] == fixture["expected"],
+            "stored response fixture {index}"
+        );
+        let admitted = records[0]["items"][0]["admitted"].as_str().unwrap();
+        assert!(
+            admitted.starts_with(fixture["expected"].as_str().unwrap()),
+            "stored compact fixture {index}"
+        );
+        let restored = load_decisions(harness.log_dir.path());
+        if admitted.contains("[redacted:") {
+            assert!(
+                restored.is_empty(),
+                "redacted decisions must be reconsidered {index}"
+            );
+        }
+    }
+}
+
+impl Harness {
+    async fn session(&self) -> Value {
+        reqwest::get(format!("{}/elpis/session.json", self.proxy.origin()))
+            .await
+            .expect("get")
+            .json()
+            .await
+            .expect("json")
+    }
+}
+
+#[tokio::test]
+async fn the_session_page_shows_this_session_and_sends_no_text() {
+    let harness = harness(true, compacting()).await;
+    // A record of an earlier session counts only in the totals for all sessions.
+    std::fs::write(
+        harness.log_dir.path().join("earlier.json"),
+        json!({"model_slug": "fake", "items": [
+            {"tool_use_id": "toolu_old", "source_tokens": 5000, "saved_tokens": 4000}
+        ]})
+        .to_string(),
+    )
+    .expect("write");
+    let start = harness.session().await;
+    assert_eq!(
+        (&start["requests"], &start["results"], &start["checked"]),
+        (&json!(0), &json!(0), &json!(0))
+    );
+
+    // One large result, which Elpis compacts, and one small result, which it sends unchanged.
+    let mut body = first_turn();
+    body["messages"][2]["content"]
+        .as_array_mut()
+        .expect("content")
+        .push(json!({"type": "tool_result", "tool_use_id": "toolu_2", "content": "ok"}));
+    harness.send(body.to_string().as_bytes()).await;
+    harness.send(second_turn().to_string().as_bytes()).await;
+
+    let session = harness.session().await;
+    assert_eq!(session["requests"], json!(2));
+    assert_eq!(session["results"], json!(2));
+    assert_eq!(session["small_results"], json!(1));
+    assert_eq!(session["checked"], json!(1));
+    assert_eq!(session["compacted"], json!(1));
+    assert_eq!(session["min_source_tokens"], json!(MIN_TOKENS_FOR_TEST));
+    let saved = session["saved_tokens"].as_u64().expect("saved");
+    assert!(saved > 1000, "{session}");
+    assert_eq!(session["recent"][0]["outcome"], json!("compacted"));
+    assert_eq!(session["all"]["results"], json!(2));
+    assert!(session["all"]["saved_tokens"].as_u64().expect("all saved") >= saved + 4000);
+    assert!(!session.to_string().contains("NEEDLE"), "{session}");
+
+    let page = reqwest::get(format!("{}/elpis", harness.proxy.origin()))
+        .await
+        .expect("page");
+    assert_eq!(page.status(), 200);
+    assert!(
+        page.text()
+            .await
+            .expect("text")
+            .contains("/elpis/session.json")
+    );
+    let css = reqwest::get(format!("{}/elpis/dashboard.css", harness.proxy.origin()))
+        .await
+        .expect("css");
+    assert_eq!(css.status(), 200);
+    // The page routes never reach Anthropic.
+    assert_eq!(harness.received().await.len(), 2);
+}
+
+const MIN_TOKENS_FOR_TEST: usize = codex_core::MIN_SOURCE_TOKENS;

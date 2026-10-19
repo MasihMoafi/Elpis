@@ -1,5 +1,6 @@
-//! Copied from v0.3.0 `dashboard_server_tests.rs`, less the provider key tests (no key page in
-//! this build) and the turn profile and backend price cases (nothing here produces them).
+//! Copied from v0.3.0 `dashboard_server_tests.rs`, less the turn profile and backend price
+//! cases (nothing here produces them). The Models, provider key and Smart Prune prompt pages are
+//! tested in `dashboard_write_tests.rs`.
 
 use super::*;
 
@@ -40,6 +41,13 @@ fn context() -> DashboardContext {
             admitted: true,
         }],
         backtrack_points: 2,
+        models: DashboardModels {
+            chat: DashboardModelChoice {
+                provider: Some("openai".to_string()),
+                model: Some("gpt-safe".to_string()),
+            },
+            ..Default::default()
+        },
     }
 }
 
@@ -91,6 +99,7 @@ fn smart_prune(
         }),
         latest_attempt: Some(DashboardSmartPruneAttempt {
             status: "admitted".to_string(),
+            failure_reason: None,
             model: "gpt-5.6-luna".to_string(),
             reasoning_effort: "low".to_string(),
             candidate_outputs: 3,
@@ -150,6 +159,7 @@ fn state() -> DashboardState {
         tokens(),
         empty_activity(),
         smart_prune(true, Some(true)),
+        Vec::new(),
         1_000,
     ));
     slot.expect("first publication creates state")
@@ -213,6 +223,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         empty_activity(),
         base_smart_prune.clone(),
+        Vec::new(),
         1_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.schema_version), Some(1));
@@ -225,6 +236,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         empty_activity(),
         base_smart_prune.clone(),
+        Vec::new(),
         2_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(1));
@@ -236,6 +248,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         running_activity(Some(12), None),
         base_smart_prune.clone(),
+        Vec::new(),
         3_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
@@ -252,6 +265,7 @@ fn semantic_publication_versions_only_changed_facts() {
         base_tokens.clone(),
         completed_activity(None),
         base_smart_prune.clone(),
+        Vec::new(),
         4_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
@@ -264,6 +278,7 @@ fn semantic_publication_versions_only_changed_facts() {
             TurnCostAvailability::CostObservationDisabled
         ))),
         base_smart_prune,
+        Vec::new(),
         5_000,
     ));
     let state = slot.as_ref().expect("state remains present");
@@ -286,6 +301,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         1_000,
     ));
 
@@ -297,6 +313,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         2_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(2));
@@ -309,6 +326,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         changed_tokens.clone(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         3_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(3));
@@ -319,6 +337,7 @@ fn context_token_and_smart_prune_changes_each_increment_once() {
         changed_tokens,
         empty_activity(),
         smart_prune(true, Some(false)),
+        Vec::new(),
         4_000,
     ));
     assert_eq!(slot.as_ref().map(|state| state.revision), Some(4));
@@ -336,6 +355,7 @@ fn cache_write_unreported_and_reported_zero_are_distinct_semantic_states() {
         unreported,
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         1_000,
     ));
     let unreported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -350,6 +370,7 @@ fn cache_write_unreported_and_reported_zero_are_distinct_semantic_states() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         2_000,
     ));
     let reported = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -366,6 +387,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
         tokens(),
         empty_activity(),
         smart_prune(true, None),
+        Vec::new(),
         1_000,
     ));
     let unsynced = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -381,6 +403,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
         tokens(),
         empty_activity(),
         smart_prune(true, Some(false)),
+        Vec::new(),
         2_000,
     ));
     let synced = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -397,6 +420,7 @@ fn smart_prune_configured_and_current_thread_states_are_independent_and_safe() {
         tokens(),
         empty_activity(),
         smart_prune(false, Some(false)),
+        Vec::new(),
         3_000,
     ));
     let reconfigured = serde_json::to_value(slot.as_ref().expect("state")).expect("serialize");
@@ -494,9 +518,12 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
         tokens(),
         running_activity(
             Some(i64::MAX),
-            Some(unavailable(TurnCostAvailability::SubscriptionAuthentication)),
+            Some(unavailable(
+                TurnCostAvailability::SubscriptionAuthentication
+            )),
         ),
         smart_prune(true, Some(true)),
+        Vec::new(),
         1_000,
     ));
 
@@ -516,6 +543,7 @@ fn activity_wire_mapping_is_snake_case_and_checked() {
             TurnCostAvailability::CostObservationDisabled
         ))),
         smart_prune(true, Some(true)),
+        Vec::new(),
         2_000,
     ));
     let value = serde_json::to_value(slot.expect("state")).expect("serialize state");
@@ -657,11 +685,11 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         "id=\"refresh-now\"",
         "Smart Prune",
         "Experimental",
-        "One window. One denominator.",
-        "measured total and estimated category attribution",
-        "Reported tokens without invented cost",
-        "Approx. saved",
-        "Latest request attribution",
+        "How full the context window is",
+        "Gray cells are free space",
+        "Tokens used",
+        "Approx. removed",
+        "What fills the window",
     ] {
         assert!(
             INDEX_HTML.contains(required),
@@ -669,6 +697,10 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
         );
     }
     for forbidden in [
+        "One window. One denominator.",
+        "Admission",
+        "linkage",
+        "Session intelligence",
         "aria-label=\"Active context occupancy\"",
         "aria-label=\"Latest request composition\"",
         "Two measurements, clearly separated",
@@ -762,6 +794,79 @@ fn dashboard_asset_exposes_live_activity_and_accessible_polling_controls() {
     }
 }
 
+/// Positive: Agents opens first; Models offers a list for each role, never a typed model id.
+/// Negative: only supporting details start collapsed; the latest attempt stays visible.
+#[test]
+fn dashboard_asset_opens_agents_keeps_model_lists_and_tucks_the_details_away() {
+    let agent_tab = INDEX_HTML
+        .lines()
+        .find(|line| line.contains("id=\"tab-agents\""))
+        .expect("Agents tab");
+    assert!(
+        agent_tab.contains("data-tab=\"agents\"")
+            && agent_tab.contains("role=\"tab\"")
+            && agent_tab.contains("aria-selected=\"true\""),
+        "Conversations and agents must open first"
+    );
+    let models_tab = INDEX_HTML
+        .lines()
+        .find(|line| line.contains("id=\"tab-models\""))
+        .expect("Models tab");
+    assert!(
+        models_tab.contains("data-tab=\"models\"") && models_tab.contains("role=\"tab\""),
+        "Models must remain directly reachable"
+    );
+    for role in ["chat", "background", "pruner"] {
+        for id in ["model-provider", "model-list"] {
+            assert!(
+                INDEX_HTML.contains(&format!(
+                    "<select class=\"select w-full\" id=\"{id}-{role}\""
+                )),
+                "missing {id}-{role} list"
+            );
+        }
+        assert!(INDEX_HTML.contains(&format!("id=\"model-save-{role}\"")));
+    }
+    assert!(
+        !INDEX_HTML.contains("id=\"pruner-model\""),
+        "a free text model box survived"
+    );
+    assert!(
+        INDEX_HTML.contains(
+            "<details class=\"collapse collapse-arrow surface-card\" id=\"prune-details\">"
+        )
+    );
+    assert!(!INDEX_HTML.contains("id=\"prune-details\" open"));
+    let attempt = INDEX_HTML
+        .find("id=\"attempt-model\"")
+        .expect("attempt model");
+    let details = INDEX_HTML
+        .find("id=\"prune-details\"")
+        .expect("supporting details");
+    assert!(
+        attempt < details,
+        "the latest attempt must remain outside collapsed supporting details"
+    );
+    assert!(!INDEX_HTML.contains("Latest Claude Code results"));
+    assert!(
+        !DASHBOARD_JS.contains("/claude.json"),
+        "current-thread dashboard must not fetch global historical records"
+    );
+    assert!(DASHBOARD_JS.contains(".failure_reason"));
+
+    for required in [
+        "function renderModels(models)",
+        "role, provider: model ? provider : null, model: model || null",
+        "`/models/${token}`",
+        "system_prompt: prompt === defaultPrunerPrompt ? null : prompt",
+    ] {
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing Models contract: {required}"
+        );
+    }
+}
+
 #[test]
 fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt() {
     for required in [
@@ -769,7 +874,7 @@ fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt(
         "href=\"/dashboard.css\"",
         "src=\"/dashboard.js\"",
         "class=\"navbar",
-        "class=\"tabs tabs-box",
+        "class=\"menu dashboard-tabs\"",
         "class=\"card",
         "class=\"stats",
         "class=\"stat",
@@ -777,13 +882,17 @@ fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt(
         "id=\"smart-failed\"",
         "id=\"attempt-status\"",
         "id=\"attempt-model\"",
+        "id=\"attempt-failure-reason\"",
+        "id=\"smart-configured-model\"",
+        "id=\"pruner-change-model\"",
+        "id=\"theme-toggle\"",
         "id=\"attempt-effort\"",
         "id=\"attempt-candidates\"",
         "id=\"attempt-admitted\"",
         "id=\"attempt-saved\"",
         "id=\"attempt-latency\"",
         "id=\"attempt-usage\"",
-        "Last optimizer attempt",
+        "Model used for this attempt",
         "No optimizer attempt observed",
     ] {
         assert!(
@@ -826,9 +935,7 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
         "style.background = category.color",
         "setInterval(refresh",
         "setInterval(poll",
-        "http://",
         "https://",
-        "color-scheme: light",
         "--bg: #f7f4ee",
         "'unsafe-inline'",
     ] {
@@ -837,6 +944,13 @@ fn dashboard_asset_keeps_untrusted_data_out_of_html_and_legacy_evidence_fields()
             "unsafe dashboard source: {forbidden}"
         );
     }
+    assert!(
+        !DASHBOARD_JS
+            .replace("http://www.w3.org/2000/svg", "")
+            .contains("http://"),
+        "dashboard scripts must not contact external HTTP endpoints"
+    );
+    assert!(!INDEX_HTML.contains("http://"));
     assert!(!CSP.contains("'unsafe-inline'"));
 }
 
@@ -856,6 +970,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
         },
         empty_activity(),
         smart_prune(false, None),
+        Vec::new(),
         1_000,
     ));
     let value = serde_json::to_value(slot.expect("state")).expect("serialize state");
@@ -866,6 +981,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
             "activity",
             "context",
             "generated_at",
+            "limits",
             "revision",
             "schema_version",
             "smart_prune",
@@ -879,6 +995,7 @@ fn unknown_facts_remain_null_and_state_has_only_safe_fields() {
             "backtrack_points",
             "categories",
             "model",
+            "models",
             "saved_tokens",
             "sources",
             "used_percent",
@@ -1087,42 +1204,6 @@ fn failed_server_start_does_not_latch_and_success_is_reused() {
 }
 
 #[test]
-fn smart_prune_settings_and_provider_keys_say_they_are_not_in_this_build() {
-    for (path, message) in [
-        (
-            "/pruner-settings/0123",
-            "Smart Prune is not in this Elpis build yet.",
-        ),
-        (
-            "/provider-keys/0123",
-            "Provider keys are not in this Elpis build yet.",
-        ),
-    ] {
-        let response = response_for_at(
-            &request(Method::Get, path, &["127.0.0.1:43123"]),
-            PORT,
-            Some(state()),
-            2_000,
-        );
-        assert_eq!(response.status_code(), 503, "path={path}");
-        assert_security_headers(&response);
-        assert_eq!(
-            String::from_utf8(body(response)).expect("utf-8 body"),
-            message
-        );
-
-        // A foreign host learns nothing, not even that the page is missing.
-        let foreign = response_for_at(
-            &request(Method::Get, path, &["evil.example:43123"]),
-            PORT,
-            Some(state()),
-            2_000,
-        );
-        assert_eq!(foreign.status_code(), 403, "path={path}");
-    }
-}
-
-#[test]
 fn the_running_server_listens_on_loopback_only_and_serves_the_page() {
     use std::io::Read;
     use std::io::Write;
@@ -1152,7 +1233,8 @@ fn the_running_server_listens_on_loopback_only_and_serves_the_page() {
 
     let page = get(&format!("127.0.0.1:{port}"), "/");
     assert!(page.starts_with("HTTP/1.1 200"), "{page}");
-    assert!(page.contains("Elpis · Session dashboard"));
+    assert!(page.contains("<title>Elpis</title>"));
+    assert!(page.contains("Conversations &amp; agents"));
     let foreign = get("evil.example", "/");
     assert!(foreign.starts_with("HTTP/1.1 403"), "{foreign}");
 }
@@ -1210,4 +1292,155 @@ fn evidence_http_route_opens_only_registered_reports() {
     }
     assert!(!get("/data.json", &host, "").contains("REGISTERED_EVIDENCE_HTTP_MARKER"));
     assert!(!get("/", &host, "").contains(url.path().split('/').nth(2).unwrap()));
+}
+
+#[path = "dashboard_write_tests.rs"]
+mod write_tests;
+
+#[test]
+fn the_served_state_carries_limits_and_a_limit_change_is_a_new_revision() {
+    let claude_5h = DashboardLimit {
+        label: "Claude 5h".to_string(),
+        used_percent: 42,
+        resets_at: Some("14:30".to_string()),
+    };
+    let mut slot = None;
+    assert!(publish_state_into(
+        &mut slot,
+        context(),
+        tokens(),
+        empty_activity(),
+        smart_prune(true, Some(true)),
+        Vec::new(),
+        1_000,
+    ));
+    assert!(publish_state_into(
+        &mut slot,
+        context(),
+        tokens(),
+        empty_activity(),
+        smart_prune(true, Some(true)),
+        vec![claude_5h],
+        2_000,
+    ));
+    let state = slot.expect("state");
+    assert_eq!(state.revision, 2);
+
+    let served = response_for_at(
+        &request(Method::Get, "/data.json", &["127.0.0.1:43123"]),
+        PORT,
+        Some(state),
+        3_000,
+    );
+    let value: Value = serde_json::from_slice(&body(served)).expect("served JSON");
+    assert_eq!(
+        value["state"]["limits"],
+        serde_json::json!([{ "label": "Claude 5h", "used_percent": 42, "resets_at": "14:30" }])
+    );
+}
+
+#[test]
+fn dashboard_asset_shows_limits_or_says_they_are_unavailable() {
+    for required in [
+        "id=\"limits-rows\"",
+        "id=\"limits-empty\"",
+        ">Limits unavailable<",
+    ] {
+        assert!(INDEX_HTML.contains(required), "missing {required}");
+    }
+    for required in [
+        "function renderLimits(limits)",
+        "renderLimits(state.limits);",
+    ] {
+        assert!(DASHBOARD_JS.contains(required), "missing {required}");
+    }
+}
+
+#[test]
+fn agents_route_serves_the_published_tree() {
+    let empty: Value = serde_json::from_slice(&agents_body(&[])).expect("agents JSON");
+    assert_eq!(empty, serde_json::json!({ "agents": [] }));
+    publish_agents(vec![
+        DashboardAgent {
+            id: "chat".to_string(),
+            parent_id: None,
+            title: "Fix the token count".to_string(),
+            model: Some("Claude Opus 5.5 · xhigh".to_string()),
+            color: Some("#b4532a".to_string()),
+            status: DashboardAgentStatus::Working,
+            status_label: "Working".to_string(),
+        },
+        DashboardAgent {
+            id: "helper".to_string(),
+            parent_id: Some("chat".to_string()),
+            title: "Find where usage is emitted".to_string(),
+            model: None,
+            color: None,
+            status: DashboardAgentStatus::NeedsYou,
+            status_label: "Needs input".to_string(),
+        },
+    ]);
+    let response = response_for_at(
+        &request(Method::Get, "/agents.json", &["127.0.0.1:43123"]),
+        PORT,
+        None,
+        0,
+    );
+    assert_eq!(response.status_code().0, 200);
+    let served: Value = serde_json::from_slice(&body(response)).expect("agents JSON");
+    assert_eq!(
+        served,
+        serde_json::json!({ "agents": [
+            { "id": "chat", "parent_id": null, "title": "Fix the token count",
+              "model": "Claude Opus 5.5 · xhigh", "color": "#b4532a",
+              "status": "working", "status_label": "Working" },
+            { "id": "helper", "parent_id": "chat", "title": "Find where usage is emitted",
+              "model": null, "color": null, "status": "needs_you", "status_label": "Needs input" },
+        ] })
+    );
+}
+
+#[test]
+fn dashboard_asset_draws_the_agent_map() {
+    // The page's contracts: the route it reads, the field Elpis sends, the words it shows.
+    assert!(
+        INDEX_HTML.contains("Conversations &amp; agents"),
+        "the conversations and agents tab"
+    );
+    for required in [
+        "fetch('/agents.json'",
+        "agent.status_label",
+        "child.parent_id === agent.id",
+        "positions.get(n.parent)",
+        "'data-parent-id': p.agent.id",
+        "'data-child-id': n.agent.id",
+    ] {
+        assert!(
+            DASHBOARD_JS.contains(required),
+            "missing agent map JS: {required}"
+        );
+    }
+}
+
+#[test]
+fn failed_prune_attempt_includes_safe_reason_and_model() {
+    let mut prune = smart_prune(true, Some(true));
+    let attempt = prune.latest_attempt.as_mut().expect("attempt");
+    attempt.status = "model_error".to_string();
+    attempt.model = "configured-pruner".to_string();
+    attempt.failure_reason = Some(
+        "Provider authentication failed. Check the selected provider's sign-in or API key."
+            .to_string(),
+    );
+    let value = serde_json::to_value(attempt).expect("serialize attempt");
+    assert_eq!(value["model"], "configured-pruner");
+    assert_eq!(
+        value["failure_reason"],
+        "Provider authentication failed. Check the selected provider's sign-in or API key."
+    );
+
+    // Successful attempts do not retain a stale failure explanation.
+    let admitted = serde_json::to_value(smart_prune(true, Some(true)).latest_attempt)
+        .expect("serialize admitted");
+    assert!(admitted.get("failure_reason").is_none());
 }

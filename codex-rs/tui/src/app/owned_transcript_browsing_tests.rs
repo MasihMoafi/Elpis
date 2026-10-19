@@ -8,8 +8,6 @@ use pretty_assertions::assert_eq;
 #[tokio::test]
 async fn escape_restores_reading_origin_after_details_navigation_and_resize() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
-    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
-    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![
         user_cell("first prompt"),
@@ -103,11 +101,13 @@ async fn browsing_search_and_selection_consume_escape_before_mode_exit() -> Resu
     app.transcript_view.begin_search();
     app.handle_tui_event(&mut tui, &mut server, TuiEvent::Paste("first".to_string()))
         .await?;
-    app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Esc.into()))
+    app.handle_tui_event(&mut tui, &mut server, TuiEvent::Draw)
+        .await?;
+    app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Enter.into()))
         .await?;
     assert_eq!(
         (
-            app.transcript_view.is_search_active(),
+            app.transcript_view.is_search_editing(),
             app.backtrack.overlay_preview_active
         ),
         (false, true)
@@ -122,6 +122,9 @@ async fn browsing_search_and_selection_consume_escape_before_mode_exit() -> Resu
     }
     assert!(app.transcript_view.has_active_interaction());
     assert_eq!(app.backtrack.nth_user_message, 1);
+    app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Esc.into()))
+        .await?;
+    assert!(app.transcript_view.has_active_interaction());
     app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Esc.into()))
         .await?;
     assert_eq!(
@@ -242,8 +245,6 @@ async fn inline_browsing_is_compact_and_escape_restores_the_existing_overlay() -
 #[tokio::test]
 async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
-    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
-    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![
         user_cell("first prompt"),
@@ -264,7 +265,7 @@ async fn browsing_details_use_the_remapped_chord_without_cancelling_preview() ->
                 .expect("footer")
                 .text
                 .to_string()
-                .contains("ctrl+x ctrl+t")
+                .contains("⌃x ⌃t")
         );
         for (keys, expected_details) in [
             (
@@ -474,8 +475,6 @@ async fn browsing_requires_fresh_escape_presses_and_ignores_confirmation_repeats
 #[tokio::test]
 async fn browsing_arrows_and_vim_keys_navigate_without_editing_the_draft() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
-    // Elpis: the Context Ledger takes the bottom rows, so the owned screen is tested without it.
-    crate::app::test_support::hide_context_ledger(&mut app);
     attach_thread(&mut app, ThreadId::new());
     app.transcript_cells = vec![
         user_cell("first prompt"),

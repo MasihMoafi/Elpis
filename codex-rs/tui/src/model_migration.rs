@@ -2,11 +2,13 @@
 //! Mandatory and optional migration outcomes retain their existing keyboard policy.
 
 use crate::bottom_pane::picker_option_list;
+use crate::bottom_pane::render_menu_surface;
 use crate::key_hint;
 use crate::markdown_render::render_markdown_text_with_width;
 use crate::render::Insets;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::FlexRenderable;
+use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;
@@ -16,6 +18,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use ratatui::layout::Rect;
 use ratatui::prelude::Stylize as _;
 use ratatui::prelude::Widget;
 use ratatui::text::Line;
@@ -307,8 +310,12 @@ impl WidgetRef for &ModelMigrationScreen {
                 .inset(Insets::vh(/*v*/ 0, /*h*/ 2)),
         );
         column.push(/*flex*/ 1, RenderableItem::Borrowed(&""));
-        // Elpis: content stays inside the popup border.
-        crate::bottom_pane::render_bordered_panel(area, buf, &column);
+        let panel = Rect {
+            height: column.desired_height(area.width).min(area.height),
+            ..area
+        };
+        render_menu_surface(panel, buf);
+        column.render(panel, buf);
     }
 }
 
@@ -474,60 +481,6 @@ mod tests {
         }
         terminal.flush().expect("flush");
         assert_snapshot!("model_migration_prompt_gpt5_family", terminal.backend());
-    }
-
-    #[test]
-    fn prompt_snapshot_gpt5_codex() {
-        let backend = VT100Backend::new(/*width*/ 60, /*height*/ 22);
-        let mut terminal = Terminal::with_options(backend).expect("terminal");
-        terminal.set_viewport_area(Rect::new(0, 0, 60, 22));
-
-        let screen = ModelMigrationScreen::new(
-            FrameRequester::test_dummy(),
-            migration_copy_for_models(
-                "gpt-5-codex",
-                "gpt-5.1-codex-max",
-                Some("https://www.codex.com/models/gpt-5.1-codex-max".to_string()),
-                /*migration_copy*/ None,
-                /*migration_markdown*/ None,
-                "gpt-5.1-codex-max".to_string(),
-                Some("Codex-optimized flagship for deep and fast reasoning.".to_string()),
-                /*can_opt_out*/ false,
-            ),
-        );
-        {
-            let mut frame = terminal.get_frame();
-            frame.render_widget_ref(&screen, frame.area());
-        }
-        terminal.flush().expect("flush");
-        assert_snapshot!("model_migration_prompt_gpt5_codex", terminal.backend());
-    }
-
-    #[test]
-    fn prompt_snapshot_gpt5_codex_mini() {
-        let backend = VT100Backend::new(/*width*/ 60, /*height*/ 22);
-        let mut terminal = Terminal::with_options(backend).expect("terminal");
-        terminal.set_viewport_area(Rect::new(0, 0, 60, 22));
-
-        let screen = ModelMigrationScreen::new(
-            FrameRequester::test_dummy(),
-            migration_copy_for_models(
-                "gpt-5-codex-mini",
-                "gpt-5.1-codex-mini",
-                Some("https://www.codex.com/models/gpt-5.1-codex-mini".to_string()),
-                /*migration_copy*/ None,
-                /*migration_markdown*/ None,
-                "gpt-5.1-codex-mini".to_string(),
-                Some("Optimized for codex. Cheaper, faster, but less capable.".to_string()),
-                /*can_opt_out*/ false,
-            ),
-        );
-        {
-            let mut frame = terminal.get_frame();
-            frame.render_widget_ref(&screen, frame.area());
-        }
-        terminal.flush().expect("flush");
-        assert_snapshot!("model_migration_prompt_gpt5_codex_mini", terminal.backend());
     }
 
     #[test]

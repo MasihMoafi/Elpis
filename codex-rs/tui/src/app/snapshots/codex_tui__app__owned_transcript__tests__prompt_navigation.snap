@@ -1,20 +1,21 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
+assertion_line: 1313
 expression: "normalize_snapshot_paths(buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal)))"
 ---
+                                                                               ┃
+› first question                                                               ┃
+                                                                               ┃
+                                                                               ┃
+                                                                               ┃
+› second question                                                              ┃
+                                                                               ┃
+                                                                               ┃
+                                                                               ┃
+› third question                                                               ┃
 
-› first question
 
+› Ask Elpis to do anything
 
-
-› second question
-
-
-
-› third question
- Elpis · model gpt-test default · location /tmp/project
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-› Ask Elpis to do anything                                                     │
-└──────────────────────────────────────────────────────────────────────────────┘
-  Browsing · ↑↓/jk scroll · ←→/hl prompts · ctrl+t details · ↵ rewind · esc back
+  gpt-test default · /tmp/project
+  Browsing · ↑↓/jk scroll · ←→/hl prompts · ⌃t details · ↵ rewind · esc back

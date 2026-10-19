@@ -4,6 +4,7 @@
 //! Windows-specific sandbox prompting lives beside it in
 //! `windows_sandbox_prompts`.
 
+use super::permissions_menu::bypass_permissions_style;
 use super::permissions_menu::permission_preset_description;
 use super::*;
 use crate::style::accent_color;
@@ -17,7 +18,8 @@ impl ChatWidget {
 
     /// Open a popup to choose the permissions mode.
     pub(crate) fn open_permissions_popup(&mut self) {
-        if self.config.explicit_permission_profile_mode
+        if self.thread_id.is_some()
+            || self.config.explicit_permission_profile_mode
             || self.permission_profiles_menu_opened
             || self
                 .config
@@ -39,6 +41,12 @@ impl ChatWidget {
         let current_permission_profile = self.config.permissions.permission_profile().clone();
         let guardian_approval_enabled = self.config.features.enabled(Feature::GuardianApproval);
         let current_review_policy = self.config.approvals_reviewer;
+        // Elpis: Full Access and Bypass permissions share a profile; only the active id differs.
+        let bypass_active = codex_protocol::models::bypass_permissions_active(
+            self.config.permissions.approval_policy.value(),
+            &current_permission_profile,
+            self.config.permissions.active_permission_profile().as_ref(),
+        );
         let mut items: Vec<SelectionItem> = Vec::new();
         let presets: Vec<ApprovalPreset> = builtin_approval_presets();
 
@@ -148,13 +156,20 @@ impl ChatWidget {
             } else {
                 items.push(SelectionItem {
                     name: base_name,
+                    name_style: (preset.id == "bypass-permissions").then(bypass_permissions_style),
                     description: base_description,
-                    is_current: Self::preset_matches_current(
-                        current_approval,
-                        &current_permission_profile,
-                        self.config.cwd.as_path(),
-                        &preset,
-                    ),
+                    is_current: match preset.id {
+                        "bypass-permissions" => bypass_active,
+                        _ => {
+                            !bypass_active
+                                && Self::preset_matches_current(
+                                    current_approval,
+                                    &current_permission_profile,
+                                    self.config.cwd.as_path(),
+                                    &preset,
+                                )
+                        }
+                    },
                     actions: default_actions,
                     dismiss_on_select: true,
                     disabled_reason: default_disabled_reason,
@@ -283,7 +298,6 @@ impl ChatWidget {
                 /*summary*/ None,
                 /*service_tier*/ None,
                 /*collaboration_mode*/ None,
-                /*personality*/ None,
             )));
             tx.send(AppEvent::UpdateAskForApprovalPolicy(approval));
             tx.send(AppEvent::UpdateActivePermissionProfile(
@@ -291,9 +305,10 @@ impl ChatWidget {
             ));
             tx.send(AppEvent::UpdateApprovalsReviewer(approvals_reviewer));
             tx.send(AppEvent::InsertHistoryCell(Box::new(
-                history_cell::new_info_event(
-                    format!("Permissions updated to {label}"),
-                    /*hint*/ None,
+                history_cell::new_permissions_updated_event(
+                    &label,
+                    active_permission_profile.id
+                        == codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS,
                 ),
             )));
         })]
@@ -337,8 +352,8 @@ impl ChatWidget {
                 Self::permission_profile_selection_actions,
             )
         };
-        let requires_confirmation =
-            approvals_reviewer == ApprovalsReviewer::User && preset.id == "full-access";
+        let requires_confirmation = approvals_reviewer == ApprovalsReviewer::User
+            && matches!(preset.id, "full-access" | "bypass-permissions");
         #[cfg(target_os = "windows")]
         if preset.id == "auto"
             && matches!(
@@ -399,6 +414,8 @@ impl ChatWidget {
 
         match preset.id {
             "full-access" => matches!(current_permission_profile, PermissionProfile::Disabled),
+            // Elpis: Bypass needs its own profile id, which callers compare directly.
+            "bypass-permissions" => false,
             "read-only" => {
                 let file_system_policy = current_permission_profile.file_system_sandbox_policy();
                 matches!(
@@ -429,6 +446,14 @@ impl ChatWidget {
         return_to_permissions: bool,
         profile_selection: Option<PermissionProfileSelection>,
     ) {
+        if preset.id == "bypass-permissions" {
+            self.open_bypass_permissions_confirmation(
+                preset,
+                return_to_permissions,
+                profile_selection,
+            );
+            return;
+        }
         let selected_name = preset.label.to_string();
         let approval = AskForApproval::from(preset.approval);
         let is_cyber_model = self.model_catalog.try_list_models().is_ok_and(|models| {
@@ -512,7 +537,73 @@ impl ChatWidget {
         self.bottom_pane.show_selection_view(SelectionViewParams {
             items,
             header: Box::new(header),
-            ..SelectionViewParams::picker()
+            ..SelectionViewParams::confirmation()
+        });
+    }
+
+    /// Elpis: Bypass permissions is root access. Ask once, in red, every time it is chosen;
+    /// unlike Full Access there is no setting that hides this question.
+    fn open_bypass_permissions_confirmation(
+        &mut self,
+        preset: ApprovalPreset,
+        return_to_permissions: bool,
+        profile_selection: Option<PermissionProfileSelection>,
+    ) {
+        let header = Paragraph::new(vec![
+            Line::from("Enable Bypass permissions?").style(bypass_permissions_style()),
+            Line::from(
+                "Elpis will run anything without asking: any command, any file on this computer, the internet. It also runs commands it would otherwise refuse, such as rm -rf, and in new sessions it runs enabled hooks you have not reviewed.",
+            )
+            .red(),
+            Line::default(),
+            Line::from(
+                "Only your own rules, hooks and managed policy can still stop it. Use it only where you would give Elpis root access.",
+            ),
+        ])
+        .wrap(Wrap { trim: false });
+
+        let accept_actions = profile_selection.map_or_else(
+            || {
+                Self::approval_preset_actions(
+                    AskForApproval::from(preset.approval),
+                    preset.permission_profile.clone(),
+                    preset.active_permission_profile.clone(),
+                    preset.label.to_string(),
+                    ApprovalsReviewer::User,
+                )
+            },
+            Self::permission_profile_selection_actions,
+        );
+        let deny_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
+            if return_to_permissions {
+                tx.send(AppEvent::OpenPermissionsPopup);
+            } else {
+                tx.send(AppEvent::OpenApprovalsPopup);
+            }
+        })];
+
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            items: vec![
+                SelectionItem {
+                    name: "Cancel".to_string(),
+                    description: Some("Go back without bypassing permissions".to_string()),
+                    actions: deny_actions,
+                    dismiss_on_select: true,
+                    ..Default::default()
+                },
+                SelectionItem {
+                    name: "Yes, bypass permissions".to_string(),
+                    name_style: Some(bypass_permissions_style()),
+                    description: Some("Run anything without asking in this session".to_string()),
+                    actions: accept_actions,
+                    dismiss_on_select: true,
+                    // A number key only highlights it; Enter confirms.
+                    require_explicit_confirmation: true,
+                    ..Default::default()
+                },
+            ],
+            header: Box::new(header),
+            ..SelectionViewParams::confirmation()
         });
     }
 }

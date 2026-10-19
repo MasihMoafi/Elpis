@@ -27,6 +27,88 @@ use wiremock::matchers::path;
 
 const UNSET_VARIABLE: &str = "ELPIS_GATEWAY_TEST_VARIABLE_THAT_IS_NEVER_SET";
 
+#[tokio::test]
+async fn credits_budget_blocks_before_vendor_and_rereads_the_snapshot() {
+    let vendor = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "saved-credits-key"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(anthropic_tool_stream(), "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&vendor)
+        .await;
+    let home = tempfile::tempdir().expect("tempdir");
+    let budget = home.path().join("budget.env");
+    save_provider_key(home.path(), "anthropic-credits", "saved-credits-key").expect("save");
+    save_provider_key(home.path(), "anthropic", "wrong-provider-key").expect("save other provider");
+    let gateway = start_with_budget_file(home.path().to_path_buf(), Some(budget.clone()))
+        .await
+        .expect("gateway");
+    let headers = route_headers(
+        &gateway,
+        "anthropic_messages",
+        &format!("{}/v1", vendor.uri()),
+        "anthropic-credits",
+    );
+    let url = format!("{}/v1/responses", gateway.origin());
+    let request = responses_request(user_turn(), core_tools());
+    for contents in [
+        None,
+        Some("ANTHROPIC_CREDITS_LEFT_USD=8\nANTHROPIC_CREDITS_BUFFER_USD=8\n"),
+        Some("ANTHROPIC_CREDITS_LEFT_USD=NaN\nANTHROPIC_CREDITS_BUFFER_USD=8\n"),
+        Some("ANTHROPIC_CREDITS_LEFT_USD=63\nANTHROPIC_CREDITS_BUFFER_USD=-1\n"),
+    ] {
+        if let Some(contents) = contents {
+            std::fs::write(&budget, contents).expect("budget");
+        }
+        let (status, text) =
+            send(reqwest::Method::POST, url.clone(), &headers, Some(&request)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{text}");
+        assert!(text.contains("credits budget"), "{text}");
+        assert!(!text.contains("saved-credits-key"), "{text}");
+        assert!(
+            vendor
+                .received_requests()
+                .await
+                .expect("requests")
+                .is_empty()
+        );
+    }
+    std::fs::write(&budget, "# manual snapshot\nANTHROPIC_CREDITS_LEFT_USD=63\nANTHROPIC_CREDITS_BUFFER_USD=8\nANTHROPIC_CREDITS_SPENT_AT_SNAPSHOT_USD=68.63\n").expect("budget");
+    let (status, text) = send(reqwest::Method::POST, url.clone(), &headers, Some(&request)).await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert!(completed(&parse_sse(&text)).is_some());
+    std::fs::write(
+        &budget,
+        "ANTHROPIC_CREDITS_LEFT_USD=7.99\nANTHROPIC_CREDITS_BUFFER_USD=8\n",
+    )
+    .expect("budget");
+    let (status, text) = send(reqwest::Method::POST, url, &headers, Some(&request)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{text}");
+
+    // Discovery is free, and still uses this configured provider's saved key when blocked.
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(header("x-api-key", "saved-credits-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{"id": "claude-opus-5-5", "display_name": "Claude Opus 5.5"}]
+        })))
+        .expect(1)
+        .mount(&vendor)
+        .await;
+    let (status, text) = send(
+        reqwest::Method::GET,
+        format!("{}/v1/models", gateway.origin()),
+        &headers,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert!(text.contains("claude-opus-5-5"), "{text}");
+}
+
 fn client() -> reqwest::Client {
     // The tests talk to loopback servers; an inherited proxy must not intercept them.
     reqwest::Client::builder()

@@ -1,13 +1,14 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 5212
 expression: terminal.backend()
 ---
-"┌──────────────────────────────────────┐"
-"› Test                                 │"
-"│                                      │"
-"│                                      │"
-"│                                      │"
-"│                                      │"
-"│                                      │"
-"└──────────────────────────────────────┘"
-"  enter to queue message · Plan mode    "
+"                                        "
+"› Test                                  "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"                                        "
+"  Plan mode           98% context left  "

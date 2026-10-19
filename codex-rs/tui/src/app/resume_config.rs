@@ -113,36 +113,41 @@ impl App {
         if self.reject_remote_resume_permission_override(&resume_config.0) {
             return Err(AppRunControl::Continue);
         }
-        let resumed_thread =
-            if matches!(self.app_server_target, AppServerTarget::LocalDaemon { .. }) {
-                Some(
-                    app_server
-                        .thread_read(target_session.thread_id, /*include_turns*/ false)
-                        .await
-                        .map_err(|error| {
-                            self.add_session_picker_error(format!(
-                                "Unable to check resumed folder: {error}"
-                            ));
-                            AppRunControl::Continue
-                        })?,
-                )
-            } else {
-                None
-            };
+        let resumed_thread = if matches!(
+            self.app_server_target,
+            AppServerTarget::LocalDaemon { .. } | AppServerTarget::LocalBridge { .. }
+        ) {
+            Some(
+                app_server
+                    .thread_read(target_session.thread_id, /*include_turns*/ false)
+                    .await
+                    .map_err(|error| {
+                        self.add_session_picker_error(format!(
+                            "Unable to check resumed folder: {error}"
+                        ));
+                        AppRunControl::Continue
+                    })?,
+            )
+        } else {
+            None
+        };
         let trust_cwd = resume_config.0.cwd.to_path_buf();
-        self.confirm_directory_trust(
-            tui,
-            app_server,
-            &mut resume_config.0,
-            &trust_cwd,
-            crate::onboarding::DirectoryTrustOptions {
-                resumed_thread: resumed_thread.as_ref(),
-                ..Default::default()
-            },
-            /*startup_draft*/ None,
-        )
-        .await?;
-        resume_config.1 = self.local_settings.reloaded(&resume_config.0);
+        if let Some(local_settings) = self
+            .confirm_directory_trust(
+                tui,
+                app_server,
+                &mut resume_config.0,
+                &trust_cwd,
+                crate::onboarding::DirectoryTrustOptions {
+                    resumed_thread: resumed_thread.as_ref(),
+                    ..Default::default()
+                },
+                /*startup_draft*/ None,
+            )
+            .await?
+        {
+            resume_config.1 = local_settings;
+        }
         Ok(resume_config)
     }
 
@@ -154,12 +159,12 @@ impl App {
         cwd: &Path,
         options: crate::onboarding::DirectoryTrustOptions<'_>,
         mut startup_draft: Option<&mut StartupDraftPump>,
-    ) -> std::result::Result<(), AppRunControl> {
+    ) -> std::result::Result<Option<crate::local_settings::LocalSettings>, AppRunControl> {
         // Keep the existing explicit remote --cd gate, including retries after cancellation.
         // Other remote destinations await authoritative trust-root metadata.
         let cwd = if self.app_server_target.uses_remote_workspace() {
             let Some(cwd) = app_server.remote_cwd_override() else {
-                return Ok(());
+                return Ok(None);
             };
             cwd
         } else {
@@ -221,7 +226,10 @@ impl App {
                     config.cwd.to_path_buf(),
                 );
                 let hooks = if let Some(draft) = startup_draft {
-                    draft.apply_config(config);
+                    draft.apply_settings(
+                        &crate::local_settings::LocalSettings::from(&*config),
+                        config.cwd.as_path(),
+                    );
                     async {
                         let hooks = draft.run_until(tui, load_hooks).await?;
                         draft.flush_pending_events(tui).await?;
@@ -258,7 +266,8 @@ impl App {
                     }
                 }
             }
+            return Ok(Some(self.local_settings.reloaded(config)));
         }
-        Ok(())
+        Ok(None)
     }
 }

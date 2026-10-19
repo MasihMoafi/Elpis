@@ -17,6 +17,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tempfile::TempDir;
 use test_case::test_case;
 use tokio::sync::Notify;
@@ -63,6 +64,7 @@ async fn read(server: &mut TestAppServer) -> Result<Value> {
     let request = server
         .send_get_account_request(GetAccountParams {
             refresh_token: false,
+            skip_workspace_routing: false,
         })
         .await?;
     timeout(READ_TIMEOUT, server.read_response(request)).await?
@@ -221,6 +223,7 @@ async fn stable_clients_do_not_treat_failed_workspace_discovery_as_unrestricted(
     let request = server
         .send_get_account_request(GetAccountParams {
             refresh_token: false,
+            skip_workspace_routing: false,
         })
         .await?;
     let error = timeout(
@@ -312,7 +315,7 @@ async fn unavailable_or_malformed_discovery_never_returns_unrestricted_success()
         config(&home, &backend).await?;
         write_chatgpt_auth(home.path(), ChatGptAuthFixture::new("token").account_id("selected"), AuthCredentialsStoreMode::File)?;
         let mut server = start(&home).await?;
-        let request = server.send_get_account_request(GetAccountParams { refresh_token: false }).await?;
+        let request = server.send_get_account_request(GetAccountParams { refresh_token: false, skip_workspace_routing: false }).await?;
         let error = timeout(READ_TIMEOUT, server.read_stream_until_error_message(RequestId::Integer(request))).await??;
         assert!(error.error.message.contains("routing"), "{error:?}");
         backend.reset().await;
@@ -425,6 +428,7 @@ async fn failed_workspace_requirements_do_not_fall_back_to_startup_config() -> R
     let request = server
         .send_get_account_request(GetAccountParams {
             refresh_token: false,
+            skip_workspace_routing: false,
         })
         .await?;
     let error = timeout(
@@ -489,5 +493,105 @@ async fn backend_config_changed_during_discovery_is_retried_with_fresh_config() 
         routing("selected", "https://new.example", "us")
     );
     new_backend.verify().await;
+    Ok(())
+}
+
+/// Saved ChatGPT login for the workspace `selected`, with the proxy variables cleared.
+async fn start_signed_in(home: &TempDir) -> Result<TestAppServer> {
+    write_chatgpt_auth(
+        home.path(),
+        ChatGptAuthFixture::new("token")
+            .account_id("selected")
+            .email("user@example.com")
+            .plan_type("pro"),
+        AuthCredentialsStoreMode::File,
+    )?;
+    let mut env_overrides = vec![("OPENAI_API_KEY", None), ("CODEX_API_KEY", None)];
+    env_overrides.extend(codex_network_proxy::PROXY_ENV_KEYS.iter().map(|key| (*key, None)));
+    TestAppServer::builder()
+        .with_codex_home(home.path())
+        .with_env_overrides(&env_overrides)
+        .build_initialized_with_timeout(READ_TIMEOUT)
+        .await
+}
+
+fn selected_workspace_found() -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({"accounts": [{
+        "id": "selected", "workspace_backend_origin": "https://chatgpt.com",
+        "account_routing_override": "NO_CONSTRAINT"
+    }]}))
+}
+
+#[tokio::test]
+async fn account_read_can_skip_slow_discovery_and_routing_lands_in_the_background() -> Result<()> {
+    let backend = MockServer::start().await;
+    Mock::given(method("GET")).and(path("/backend-api/wham/accounts/check"))
+        .respond_with(selected_workspace_found().set_delay(Duration::from_secs(/*secs*/ 6)))
+        .mount(&backend).await;
+    let home = TempDir::new()?;
+    config(&home, &backend).await?;
+    let mut server = start_signed_in(&home).await?;
+
+    let started = Instant::now();
+    let request = server
+        .send_raw_request("account/read", Some(json!({"skipWorkspaceRouting": true})))
+        .await?;
+    let response: Value = timeout(READ_TIMEOUT, server.read_response(request)).await??;
+
+    assert!(started.elapsed() < Duration::from_secs(/*secs*/ 3), "waited {:?}", started.elapsed());
+    assert_eq!(
+        response,
+        json!({"account": {"type": "chatgpt", "email": "user@example.com", "planType": "pro"},
+            "requiresOpenaiAuth": true, "workspaceRouting": null})
+    );
+    // The discovery the connection started keeps running and announces itself when it lands.
+    let notification = timeout(
+        READ_TIMEOUT,
+        server.read_stream_until_notification_message("account/updated"),
+    )
+    .await??;
+    assert_eq!(
+        notification.params,
+        Some(json!({"authMode": "chatgpt", "planType": "pro"}))
+    );
+    assert_eq!(
+        read(&mut server).await?["workspaceRouting"],
+        routing("selected", "https://chatgpt.com", "NO_CONSTRAINT")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_startup_discovery_is_retried_in_the_background() -> Result<()> {
+    let backend = MockServer::start().await;
+    Mock::given(method("GET")).and(path("/backend-api/wham/accounts/check"))
+        .respond_with(ResponseTemplate::new(503))
+        // The server prefetches at startup and again when the client connects; both fail.
+        .up_to_n_times(2)
+        .with_priority(1)
+        .mount(&backend).await;
+    Mock::given(method("GET")).and(path("/backend-api/wham/accounts/check"))
+        .respond_with(selected_workspace_found())
+        .with_priority(2)
+        .mount(&backend).await;
+    let home = TempDir::new()?;
+    config(&home, &backend).await?;
+    let mut server = start_signed_in(&home).await?;
+
+    let notification = timeout(
+        Duration::from_secs(/*secs*/ 30),
+        server.read_stream_until_notification_message("account/updated"),
+    )
+    .await
+    .expect("the failed discovery is retried without any client request")?;
+
+    assert_eq!(
+        notification.params,
+        Some(json!({"authMode": "chatgpt", "planType": "pro"}))
+    );
+    assert_eq!(
+        read(&mut server).await?["workspaceRouting"],
+        routing("selected", "https://chatgpt.com", "NO_CONSTRAINT")
+    );
     Ok(())
 }

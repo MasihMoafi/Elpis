@@ -1,14 +1,15 @@
 ---
 source: tui/src/app/agent_center_tests.rs
+assertion_line: 531
 expression: "screen(&view, area.width, area.height)"
 ---
-  Agent command center  Group: Project  g
-   All 1   Needs you 0   Working 0   Ready 1   Inactive 0
+  Agent command center  Group: Project  g  View: list
+   All 1   Needs you 0   Working 0   Ready 1   Done 0   Inactive 0
   ────────────────────────────────────────────────────────────────────────────────────
   Search › find
-      Tasks                                                    Status         Updated
+      Tasks                        Model                       Status         Updated
   /tmp/project  1
-  › ○ Task to find                                             Ready           2m ago
+  › ● Task to find                 Unknown                     ◇ Ready         2m ago
 
 
 

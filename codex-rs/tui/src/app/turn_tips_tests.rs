@@ -4,6 +4,7 @@ use super::*;
 use crate::app::owned_transcript::tests::attach_thread;
 use crate::app::owned_transcript::tests::buffer_text;
 use crate::app::owned_transcript::tests::user_cell;
+use chrono::Timelike;
 use pretty_assertions::assert_eq;
 
 fn notification(method: &str, thread: ThreadId, turn: usize, status: &str) -> ServerNotification {
@@ -84,6 +85,22 @@ async fn turn_tip_placements_and_completion_barrier() -> Result<()> {
             match event {
                 AppEvent::InsertHistoryCell(cell) => {
                     assert!(!saw_barrier);
+                    // Clock and elapsed-width changes must not alter this placement fixture.
+                    let cell = if cell.as_any().is::<history_cell::FinalMessageSeparator>() {
+                        Box::new(
+                            history_cell::FinalMessageSeparator::new(Some(1), None)
+                                .with_completed_at(
+                                    chrono::Local::now()
+                                        .with_hour(12)
+                                        .unwrap()
+                                        .with_minute(0)
+                                        .unwrap(),
+                                    crate::clock_format::ClockFormat::TwentyFourHour,
+                                ),
+                        ) as Box<dyn HistoryCell>
+                    } else {
+                        cell
+                    };
                     app.insert_history_cell(&mut tui, cell);
                 }
                 AppEvent::TurnTipReady { thread_id, turn_id } => {

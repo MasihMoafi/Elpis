@@ -1,6 +1,7 @@
 //! Route session-only permission shortcuts through the shared selection flow.
 
 use super::*;
+use codex_utils_approval_presets::builtin_approval_presets;
 
 impl App {
     pub(super) async fn apply_permission_shortcut(
@@ -15,7 +16,30 @@ impl App {
             self.chat_widget.complete_permission_shortcut(thread_id);
             return;
         }
-        self.select_permission_profile(app_server, selection).await;
+        // Elpis: both unsandboxed modes are confirmed before they apply.
+        let confirmed_preset = match selection.profile_id.as_str() {
+            ":danger-full-access" => Some("full-access"),
+            codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS => {
+                Some("bypass-permissions")
+            }
+            _ => None,
+        };
+        if let Some(confirmed_preset) = confirmed_preset {
+            if let Some(preset) = builtin_approval_presets()
+                .into_iter()
+                .find(|preset| preset.id == confirmed_preset)
+            {
+                self.chat_widget.open_full_access_confirmation(
+                    preset,
+                    /*return_to_permissions*/ true,
+                    Some(selection),
+                );
+            }
+        } else {
+            self.select_permission_profile(app_server, selection).await;
+        }
+        // The modal now owns input. Neither Cancel nor Escape submits a selection, so
+        // release the shortcut guard here rather than waiting for a settings notification.
         self.chat_widget.complete_permission_shortcut(thread_id);
     }
 }

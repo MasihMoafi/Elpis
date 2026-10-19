@@ -1,6 +1,8 @@
 use super::*;
 use codex_app_server_protocol::ImageGenerationItem;
+use codex_app_server_protocol::PluginAvailability;
 use codex_utils_absolute_path::test_support::PathExt;
+use pretty_assertions::assert_eq;
 
 pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     // Start from the built-in defaults so tests do not inherit host/system config.
@@ -17,12 +19,31 @@ pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     // Keep generic UI snapshots stable when the bundled catalog default changes.
     config.model = Some("gpt-5.6-sol".to_string());
     config.codex_home = codex_home.path().abs();
+    // Generic transcript snapshots model an established user; personal's tests use a fresh home.
+    codex_skills::personal::dismiss_tip(codex_home.path()).expect("dismiss personal tip");
     config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
     config.log_dir = codex_home.path().join("log");
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
+    // Elpis leaves composer.queue unbound because Tab belongs to the Context Ledger. These
+    // fixtures bind Tab explicitly so queueing stays covered.
+    config.tui_keymap.composer.queue = Some(codex_config::types::KeybindingsSpec::One(
+        codex_config::types::KeybindingSpec("tab".to_string()),
+    ));
     (codex_home, config)
+}
+
+/// Elpis: the Context Ledger is visible by default and takes the right of a wide composer. The
+/// harness hides it so that tests compare the native composer rows against Codex's snapshots;
+/// the Ledger's own tests call `show_context_ledger`.
+pub(crate) fn show_context_ledger(chat: &mut ChatWidget) {
+    chat.context_ledger = Default::default();
+}
+
+/// Reapply the native-composer fixture after a test replaces its chat widget.
+pub(crate) fn hide_context_ledger(chat: &mut ChatWidget) {
+    chat.close_context_ledger();
 }
 
 pub(super) fn test_project_path() -> PathBuf {
@@ -256,6 +277,7 @@ pub(super) async fn make_chatwidget_manual_with_auth(
     widget.transcript.active_cell = None;
     widget.transcript.active_cell_revision = 0;
     widget.set_model(&resolved_model);
+    hide_context_ledger(&mut widget);
     (widget, rx, op_rx)
 }
 
@@ -1130,6 +1152,7 @@ pub(super) fn app_server_turn(
 ) -> AppServerTurn {
     AppServerTurn {
         id: turn_id.to_string(),
+        root_turn_id: None,
         items_view: codex_app_server_protocol::TurnItemsView::Full,
         items: Vec::new(),
         status,
@@ -1327,10 +1350,7 @@ pub(super) fn render_bottom_first_row(chat: &ChatWidget, width: u16) -> String {
                 row.push_str(s);
             }
         }
-        if !row.trim().is_empty()
-            && !row.trim_start().starts_with("Elpis ·")
-            && !row.trim_start().starts_with('┌')
-        {
+        if !row.trim().is_empty() {
             return row;
         }
     }
@@ -1351,7 +1371,7 @@ pub(crate) fn render_bottom_popup(chat: &ChatWidget, width: u16) -> String {
                 if symbol.is_empty() {
                     line.push(' ');
                 } else {
-                    line.push_str(symbol);
+                    line.push_str(&crate::terminal_hyperlinks::strip_osc8(symbol));
                 }
             }
             line.trim_end().to_string()
@@ -1400,6 +1420,295 @@ pub(super) fn strip_osc8_for_snapshot(text: &str) -> String {
     }
 
     stripped
+}
+
+pub(super) fn plugins_test_absolute_path(path: &str) -> AbsolutePathBuf {
+    std::env::temp_dir()
+        .join("codex-plugin-menu-tests")
+        .join(path)
+        .abs()
+}
+
+pub(super) fn plugins_test_personal_marketplace_path() -> AbsolutePathBuf {
+    dirs::home_dir()
+        .expect("home directory should be available")
+        .join(".agents/plugins/marketplace.json")
+        .abs()
+}
+
+pub(super) fn plugins_test_interface(
+    display_name: Option<&str>,
+    short_description: Option<&str>,
+    long_description: Option<&str>,
+) -> PluginInterface {
+    PluginInterface {
+        display_name: display_name.map(str::to_string),
+        short_description: short_description.map(str::to_string),
+        long_description: long_description.map(str::to_string),
+        developer_name: None,
+        category: None,
+        capabilities: Vec::new(),
+        website_url: None,
+        privacy_policy_url: None,
+        terms_of_service_url: None,
+        default_prompt: None,
+        brand_color: None,
+        composer_icon: None,
+        composer_icon_url: None,
+        logo: None,
+        logo_dark: None,
+        logo_url: None,
+        logo_url_dark: None,
+        screenshots: Vec::new(),
+        screenshot_urls: Vec::new(),
+    }
+}
+
+pub(super) fn plugins_test_summary(
+    id: &str,
+    name: &str,
+    display_name: Option<&str>,
+    description: Option<&str>,
+    installed: bool,
+    enabled: bool,
+    install_policy: PluginInstallPolicy,
+) -> PluginSummary {
+    PluginSummary {
+        id: id.to_string(),
+        remote_plugin_id: None,
+        version: None,
+        local_version: None,
+        name: name.to_string(),
+        share_context: None,
+        source: PluginSource::Local {
+            path: plugins_test_absolute_path(&format!("plugins/{name}")),
+        },
+        installed,
+        installed_at: None,
+        enabled,
+        install_policy,
+        install_policy_source: None,
+        must_show_installation_interstitial: None,
+        auth_policy: PluginAuthPolicy::OnInstall,
+        availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
+        interface: Some(plugins_test_interface(
+            display_name,
+            description,
+            /*long_description*/ None,
+        )),
+        keywords: Vec::new(),
+    }
+}
+
+pub(super) fn plugins_test_remote_summary(
+    remote_plugin_id: &str,
+    name: &str,
+    display_name: Option<&str>,
+    description: Option<&str>,
+    installed: bool,
+) -> PluginSummary {
+    PluginSummary {
+        id: remote_plugin_id.to_string(),
+        remote_plugin_id: Some(remote_plugin_id.to_string()),
+        version: None,
+        local_version: None,
+        name: name.to_string(),
+        share_context: None,
+        source: PluginSource::Remote,
+        installed,
+        installed_at: None,
+        enabled: true,
+        install_policy: PluginInstallPolicy::Available,
+        install_policy_source: None,
+        must_show_installation_interstitial: None,
+        auth_policy: PluginAuthPolicy::OnInstall,
+        availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
+        interface: Some(plugins_test_interface(
+            display_name,
+            description,
+            /*long_description*/ None,
+        )),
+        keywords: Vec::new(),
+    }
+}
+
+pub(super) fn plugins_test_remote_marketplace(
+    name: &str,
+    display_name: &str,
+    plugins: Vec<PluginSummary>,
+) -> PluginMarketplaceEntry {
+    PluginMarketplaceEntry {
+        name: name.to_string(),
+        path: None,
+        interface: Some(MarketplaceInterface {
+            display_name: Some(display_name.to_string()),
+        }),
+        plugins,
+    }
+}
+
+pub(super) fn plugins_test_curated_marketplace(
+    plugins: Vec<PluginSummary>,
+) -> PluginMarketplaceEntry {
+    PluginMarketplaceEntry {
+        name: OPENAI_CURATED_MARKETPLACE_NAME.to_string(),
+        path: Some(plugins_test_absolute_path("marketplaces/chatgpt")),
+        interface: Some(MarketplaceInterface {
+            display_name: Some("ChatGPT Marketplace".to_string()),
+        }),
+        plugins,
+    }
+}
+
+pub(super) fn plugins_test_repo_marketplace(plugins: Vec<PluginSummary>) -> PluginMarketplaceEntry {
+    PluginMarketplaceEntry {
+        name: "repo".to_string(),
+        path: Some(plugins_test_absolute_path("marketplaces/repo")),
+        interface: Some(MarketplaceInterface {
+            display_name: Some("Repo Marketplace".to_string()),
+        }),
+        plugins,
+    }
+}
+
+pub(super) fn plugins_test_response(
+    marketplaces: Vec<PluginMarketplaceEntry>,
+) -> PluginListResponse {
+    PluginListResponse {
+        marketplaces,
+        marketplace_load_errors: Vec::new(),
+        featured_plugin_ids: Vec::new(),
+    }
+}
+
+pub(super) fn render_loaded_plugins_popup(
+    chat: &mut ChatWidget,
+    mut response: PluginListResponse,
+) -> String {
+    let cwd = chat.config.cwd.clone();
+    let remote_marketplaces = response
+        .marketplaces
+        .iter()
+        .filter(|marketplace| marketplace.path.is_none())
+        .cloned()
+        .collect();
+    response
+        .marketplaces
+        .retain(|marketplace| marketplace.path.is_some());
+    let response_for_refresh = response.clone();
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(response));
+    chat.add_plugins_output();
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(response_for_refresh));
+    chat.on_plugin_remote_sections_loaded(cwd.to_path_buf(), remote_marketplaces, Vec::new());
+    render_bottom_popup(chat, /*width*/ 100)
+}
+
+pub(super) fn plugins_test_detail(
+    summary: PluginSummary,
+    description: Option<&str>,
+    skills: &[&str],
+    hooks: &[(codex_app_server_protocol::HookEventName, usize)],
+    apps: &[&str],
+    mcp_servers: &[&str],
+) -> PluginDetail {
+    PluginDetail {
+        onboarding_skill: None,
+        marketplace_name: "ChatGPT Marketplace".to_string(),
+        marketplace_path: Some(plugins_test_absolute_path("marketplaces/chatgpt")),
+        summary,
+        share_url: None,
+        description: description.map(str::to_string),
+        skills: skills
+            .iter()
+            .map(|name| SkillSummary {
+                name: (*name).to_string(),
+                description: format!("{name} description"),
+                short_description: None,
+                interface: None,
+                path: Some(plugins_test_absolute_path(&format!("skills/{name}/SKILL.md")).into()),
+                enabled: true,
+            })
+            .collect(),
+        hooks: hooks
+            .iter()
+            .enumerate()
+            .flat_map(|(event_index, (event_name, handler_count))| {
+                (0..*handler_count).map(move |handler_index| {
+                    codex_app_server_protocol::PluginHookSummary {
+                        key: format!("plugin:{event_index}:{handler_index}"),
+                        event_name: *event_name,
+                    }
+                })
+            })
+            .collect(),
+        apps: apps
+            .iter()
+            .map(|name| AppSummary {
+                id: format!("{name}-id"),
+                name: (*name).to_string(),
+                description: Some(format!("{name} app")),
+                install_url: Some(format!("https://example.test/{name}")),
+                category: None,
+            })
+            .collect(),
+        app_templates: Vec::new(),
+        mcp_servers: mcp_servers.iter().map(|name| (*name).to_string()).collect(),
+        scheduled_tasks: None,
+    }
+}
+
+pub(super) fn plugins_test_remote_detail(
+    marketplace_name: &str,
+    summary: PluginSummary,
+    description: Option<&str>,
+) -> PluginDetail {
+    PluginDetail {
+        onboarding_skill: None,
+        marketplace_name: marketplace_name.to_string(),
+        marketplace_path: None,
+        summary,
+        share_url: None,
+        description: description.map(str::to_string),
+        skills: Vec::new(),
+        hooks: Vec::new(),
+        apps: Vec::new(),
+        app_templates: Vec::new(),
+        mcp_servers: Vec::new(),
+        scheduled_tasks: None,
+    }
+}
+
+pub(super) fn plugins_test_popup_row_position(popup: &str, needle: &str) -> usize {
+    popup
+        .find(needle)
+        .unwrap_or_else(|| panic!("expected popup to contain {needle}: {popup}"))
+}
+
+pub(super) fn select_plugins_tab_containing(
+    chat: &mut ChatWidget,
+    width: u16,
+    visible_text: &str,
+) -> String {
+    for _ in 0..8 {
+        let popup = render_bottom_popup(chat, width);
+        if popup.contains(visible_text) {
+            return popup;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Right));
+    }
+
+    let popup = render_bottom_popup(chat, width);
+    panic!("expected plugins tab containing {visible_text:?}, got:\n{popup}");
+}
+
+pub(super) fn type_plugins_search_query(chat: &mut ChatWidget, query: &str) {
+    for ch in query.chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
 }
 
 pub(super) fn handle_hook_started(chat: &mut ChatWidget, run: AppServerHookRunSummary) {
@@ -1463,11 +1772,10 @@ pub(super) fn hook_run(
     }
 }
 
-pub(super) async fn assert_hook_events_snapshot(
+pub(super) async fn assert_hook_events(
     event_name: codex_app_server_protocol::HookEventName,
     run_id: &str,
     status_message: &str,
-    snapshot_name: &str,
 ) {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.on_task_started();
@@ -1498,9 +1806,7 @@ pub(super) async fn assert_hook_events_snapshot(
     assert!(
         running
             .lines()
-            .skip_while(|line| !line.contains("Elpising…"))
-            .take(2)
-            .any(|line| line.contains(status_message)),
+            .any(|line| line.contains("Elpising") && line.contains(status_message)),
         "hook start should render its status in the activity row: {running}"
     );
 
@@ -1530,7 +1836,7 @@ pub(super) async fn assert_hook_events_snapshot(
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_chatwidget_snapshot!(snapshot_name, combined);
+    assert_eq!(combined, "↳ Hook · Heads up from the hook\n");
 }
 
 /// Normalize timestamps only in structurally identified completion footer cells.
@@ -1541,9 +1847,10 @@ pub(crate) fn normalize_completion_timestamps(
     if !cell.as_any().is::<history_cell::FinalMessageSeparator>() {
         return value.to_string();
     }
+    // The padding may end in the full-screen transcript's scrollbar column.
     static COMPLETION_FOOTER: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(
         || {
-            regex_lite::Regex::new(r"(?m)^(?P<indent>[ \t]*)(?P<duration>Worked for (?:<1s|(?:[0-9]+h )?(?:[0-9]+m )?[0-9]+s) • )?(?:[A-Z][a-z]{2} [0-9]{1,2}(?:, [0-9]{4})? at )?[0-9]{1,2}:[0-9]{2}(?: (?:AM|PM))?(?P<padding>[ \t]*)$")
+            regex_lite::Regex::new(r"(?m)^(?P<indent>[ \t]*)(?P<duration>Worked for (?:<1s|(?:[0-9]+h )?(?:[0-9]+m )?[0-9]+s) • )?(?:[A-Z][a-z]{2} [0-9]{1,2}(?:, [0-9]{4})? at )?[0-9]{1,2}:[0-9]{2}(?: (?:AM|PM))?(?P<padding>[ \t]*[│┃]?)$")
                 .expect("valid completion footer pattern")
         },
     );

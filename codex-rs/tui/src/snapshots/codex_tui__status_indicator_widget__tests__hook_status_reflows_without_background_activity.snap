@@ -1,22 +1,21 @@
 ---
 source: tui/src/status_indicator_widget.rs
-assertion_line: 525
 expression: "frames.join(\"\\n\")"
 ---
-63 columns:
-"Elpising… (0s • esc to interrupt) · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(46, " "), (48, " "), (50, " "), (53, " "), (55, " ")]
-"  └ existing details                                           "
-
 62 columns:
-"Elpising… (0s • esc to interrupt)                             "
-"  └ checking 日本語 ｶﾞﾊﾟ policy                               " Hidden by multi-width symbols: [(14, " "), (16, " "), (18, " "), (21, " "), (23, " ")]
+"Elpising (0s • esc to interrupt) · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(45, " "), (47, " "), (49, " "), (52, " "), (54, " ")]
 "  └ existing details                                          "
 
+61 columns:
+"Elpising (0s • esc to interrupt)                             "
+"  └ checking 日本語 ｶﾞﾊﾟ policy                              " Hidden by multi-width symbols: [(14, " "), (16, " "), (18, " "), (21, " "), (23, " ")]
+"  └ existing details                                         "
+
 24 columns:
-"Elpising… (0s • esc to …"
+"Elpising (0s • esc to i…"
 "  └ checking 日本語 ｶﾞ… " Hidden by multi-width symbols: [(14, " "), (16, " "), (18, " "), (21, " ")]
 "  └ existing details    "
 
-63 columns:
-"Elpising… (0s • esc to interrupt) · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(46, " "), (48, " "), (50, " "), (53, " "), (55, " ")]
-"  └ existing details                                           "
+62 columns:
+"Elpising (0s • esc to interrupt) · checking 日本語 ｶﾞﾊﾟ policy" Hidden by multi-width symbols: [(45, " "), (47, " "), (49, " "), (52, " "), (54, " ")]
+"  └ existing details                                          "

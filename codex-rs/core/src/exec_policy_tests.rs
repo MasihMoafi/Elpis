@@ -1179,6 +1179,7 @@ fn unmatched_granular_policy_still_prompts_for_restricted_sandbox_escalation() {
                 windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::RequireEscalated,
                 command_origin: ExecPolicyCommandOrigin::Generic,
+                bypass_permissions_active: false,
             },
         )
     );
@@ -1198,6 +1199,7 @@ fn unmatched_on_request_uses_permission_profile_file_system_policy_for_escalatio
                 windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::RequireEscalated,
                 command_origin: ExecPolicyCommandOrigin::Generic,
+                bypass_permissions_active: false,
             },
         )
     );
@@ -1217,6 +1219,7 @@ fn known_safe_on_request_still_prompts_for_restricted_sandbox_escalation() {
                 windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
                 sandbox_permissions: SandboxPermissions::RequireEscalated,
                 command_origin: ExecPolicyCommandOrigin::Generic,
+                bypass_permissions_active: false,
             },
         )
     );
@@ -1451,6 +1454,7 @@ async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision()
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1490,6 +1494,7 @@ async fn forced_rm_preserves_rule_rejection_when_granular_rules_are_disabled() {
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1516,6 +1521,7 @@ async fn exec_approval_requirement_falls_back_to_heuristics() {
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1543,6 +1549,7 @@ async fn empty_bash_lc_script_falls_back_to_original_command() {
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1574,6 +1581,7 @@ async fn whitespace_bash_lc_script_falls_back_to_original_command() {
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1605,6 +1613,7 @@ async fn request_rule_uses_prefix_rule() {
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1639,6 +1648,7 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await;
 
@@ -1680,6 +1690,7 @@ async fn heuristics_apply_when_other_commands_match_policy() {
                 sandbox_permissions: SandboxPermissions::UseDefault,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
+                bypass_permissions_active: false,
             })
             .await,
         ExecApprovalRequirement::NeedsApproval {
@@ -2117,6 +2128,93 @@ fn vec_str(items: &[&str]) -> Vec<String> {
     items.iter().map(std::string::ToString::to_string).collect()
 }
 
+/// Elpis: the decision for one command with no sandbox and approvals set to never,
+/// in Full Access (`bypass` false) or Bypass permissions (`bypass` true).
+async fn unsandboxed_never_ask_requirement(
+    manager: &ExecPolicyManager,
+    environment_policy: Option<&RequirementsExecPolicy>,
+    command: &[&str],
+    bypass: bool,
+) -> ExecApprovalRequirement {
+    let command = vec_str(command);
+    manager
+        .create_exec_approval_requirement_for_command(ExecApprovalRequest {
+            command: &command,
+            approval_policy: AskForApproval::Never,
+            permission_profile: PermissionProfile::Disabled,
+            environment_policy,
+            windows_sandbox_level: WindowsSandboxLevel::Disabled,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+            allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: bypass,
+        })
+        .await
+}
+
+#[tokio::test]
+async fn bypass_permissions_runs_what_full_access_refuses_but_keeps_explicit_rules() {
+    let manager = ExecPolicyManager::new(policy_from_src(Some(
+        r#"
+prefix_rule(pattern=["shred"], decision="forbidden")
+prefix_rule(pattern=["git", "push"], decision="prompt")
+"#,
+    )));
+
+    // Full Access refuses the built-in dangerous-command class without asking...
+    for command in [
+        &["rm", "-rf", "/tmp/elpis-build"][..],
+        &["bash", "-lc", "rm -f /tmp/elpis-build/out.o"][..],
+    ] {
+        assert!(
+            matches!(
+                unsandboxed_never_ask_requirement(&manager, None, command, /*bypass*/ false).await,
+                ExecApprovalRequirement::Forbidden { ref reason } if reason.contains("rm -f style commands are not permitted")
+            ),
+            "{command:?}"
+        );
+        // ...and Bypass permissions runs it, still without asking.
+        assert!(
+            matches!(
+                unsandboxed_never_ask_requirement(&manager, None, command, /*bypass*/ true).await,
+                ExecApprovalRequirement::Skip { .. }
+            ),
+            "{command:?}"
+        );
+    }
+
+    // Explicit rules still decide under Bypass: `forbidden` stays forbidden, and a
+    // `prompt` rule cannot ask, so it is refused as in Full Access.
+    for command in [&["shred", "secrets.txt"][..], &["git", "push"][..]] {
+        for bypass in [false, true] {
+            assert!(
+                matches!(
+                    unsandboxed_never_ask_requirement(&manager, None, command, bypass).await,
+                    ExecApprovalRequirement::Forbidden { .. }
+                ),
+                "{command:?} bypass={bypass}"
+            );
+        }
+    }
+
+    // A managed (requirements) rule wins over Bypass too.
+    let mut managed = Policy::empty();
+    managed
+        .add_prefix_rule(&["rm".to_string()], Decision::Forbidden)
+        .expect("managed rule");
+    let managed = RequirementsExecPolicy::new(managed);
+    assert!(matches!(
+        unsandboxed_never_ask_requirement(
+            &manager,
+            Some(&managed),
+            &["rm", "-rf", "/tmp/elpis-build"],
+            /*bypass*/ true,
+        )
+        .await,
+        ExecApprovalRequirement::Forbidden { ref reason } if reason.contains("policy forbids")
+    ));
+}
+
 #[tokio::test]
 async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
     let policy = ExecPolicyManager::new(Arc::new(Policy::empty()));
@@ -2141,6 +2239,7 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
                 sandbox_permissions: permissions,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
+                bypass_permissions_active: false,
             })
             .await,
         r#"On all platforms, a forbidden command should require approval
@@ -2164,6 +2263,7 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
                 sandbox_permissions: permissions,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
+                bypass_permissions_active: false,
             })
             .await,
         r#"On all platforms, a forbidden command should require approval
@@ -2224,6 +2324,7 @@ async fn verify_approval_requirement_for_unsafe_powershell_command() {
                 sandbox_permissions: permissions,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
+                bypass_permissions_active: false,
             })
             .await,
         "{pwsh_approval_reason}"
@@ -2318,6 +2419,7 @@ async fn exec_approval_requirement_for_command(
             sandbox_permissions,
             prefix_rule,
             allow_prefix_rules: AllowPrefixRules::Honor,
+            bypass_permissions_active: false,
         })
         .await
 }

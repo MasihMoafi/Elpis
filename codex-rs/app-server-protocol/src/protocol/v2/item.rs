@@ -234,6 +234,10 @@ impl CommandAction {
 #[ts(tag = "type")]
 #[ts(export_to = "v2/")]
 pub enum ThreadItem {
+    SmartPrune {
+        id: String,
+        prune: codex_protocol::elpis_smart_prune::SmartPruneEvent,
+    },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     UserMessage {
@@ -395,6 +399,10 @@ pub enum ThreadItem {
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     SubAgentActivity {
+        /// Resolved model at sub-agent creation; absent from older records and other activities.
+        model: Option<String>,
+        /// Resolved reasoning effort at sub-agent creation, when known.
+        reasoning_effort: Option<ReasoningEffort>,
         id: String,
         kind: SubAgentActivityKind,
         agent_thread_id: String,
@@ -450,7 +458,8 @@ pub struct HookPromptFragment {
 impl ThreadItem {
     pub fn id(&self) -> &str {
         match self {
-            ThreadItem::UserMessage { id, .. }
+            ThreadItem::SmartPrune { id, .. }
+            | ThreadItem::UserMessage { id, .. }
             | ThreadItem::HookPrompt { id, .. }
             | ThreadItem::AgentMessage { id, .. }
             | ThreadItem::FunctionCallOutput { id, .. }
@@ -978,6 +987,8 @@ impl From<CoreTurnItem> for ThreadItem {
                     .collect(),
             },
             CoreTurnItem::SubAgentActivity(activity) => ThreadItem::SubAgentActivity {
+                model: activity.model,
+                reasoning_effort: activity.reasoning_effort,
                 id: activity.id,
                 kind: activity.kind.into(),
                 agent_thread_id: activity.agent_thread_id.to_string(),

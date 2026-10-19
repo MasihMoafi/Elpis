@@ -1,0 +1,50 @@
+---
+source: tui/src/chatwidget/realtime/recording_controls_tests.rs
+expression: "states.join(\"\\n\\n\")"
+---
+connecting:
+ voice ◌ connecting                                                 /voice stop
+
+› Ask Elpis to do anything
+
+  status line stays visible
+
+listening:
+ voice ● listening                                      ⌃x mute     /voice stop
+   mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
+
+› Ask Elpis to do anything
+
+  status line stays visible
+
+speaking:
+ voice ● speaking                                       ⌃x mute     /voice stop
+   mic ▁▁▇▇▇▇  codex ▁▁████
+
+› Ask Elpis to do anything
+
+  status line stays visible
+
+muted:
+ voice ◌ muted                                          ⌃x unmute   /voice stop
+   mic ▁▁▁▁▁▁  codex ▁▁▇▇▇▇
+
+› Ask Elpis to do anything
+
+  status line stays visible
+
+transcript:
+ voice ● speaking                                       ⌃x mute     /voice stop
+   mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
+
+› Ask Elpis to do anything
+
+  status line stays visible
+
+interrupted:
+ voice ● heard                                          ⌃x mute     /voice stop
+   mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
+
+› Ask Elpis to do anything
+
+  status line stays visible

@@ -1,0 +1,11 @@
+---
+source: tui/src/chatwidget/realtime_settings_tests.rs
+expression: "render_bottom_popup(&chat, 80)"
+---
+  Voice settings
+
+
+› 1. Set sound devices
+  2. Choose a voice
+
+  enter select · esc back

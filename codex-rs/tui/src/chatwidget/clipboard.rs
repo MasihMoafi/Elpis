@@ -4,6 +4,8 @@
 use super::*;
 use crate::clipboard_copy::worker::CopyResult;
 
+pub(super) const IMAGE_PASTE_REPEAT_WINDOW: Duration = Duration::from_millis(/*millis*/ 250);
+
 pub(super) enum PendingCopy {
     Message(u64, String),
     Selection(u64),
@@ -28,15 +30,11 @@ impl ChatWidget {
                 )));
             }
         }
+        self.suppress_image_paste_until = Instant::now() + IMAGE_PASTE_REPEAT_WINDOW;
     }
 
     pub(super) fn show_clipboard_flash(&mut self, result: &CopyResult) {
-        let line = match result {
-            Ok(status) => Line::from(status.message("selection").dim()),
-            Err(error) => Line::from(format!("Copy failed: {error}").red()),
-        };
-        self.bottom_pane
-            .show_footer_flash(line, Duration::from_secs(/*secs*/ 3));
+        self.bottom_pane.show_clipboard_flash(result);
     }
 
     pub(crate) fn finish_clipboard(

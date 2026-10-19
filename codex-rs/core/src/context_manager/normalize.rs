@@ -16,6 +16,10 @@ use crate::util::error_or_panic;
 use tracing::info;
 
 // Changing this value would change model-visible IDs and invalidate prompt caches.
+/// Elpis: the text that replaces a tool screenshot too old to send again.
+pub(crate) const OLD_SCREENSHOT_NOTE: &str =
+    "[Earlier screenshot removed to keep the request small. Take a new one if you need it.]";
+
 const SYNTHETIC_OUTPUT_ID_NAMESPACE: Uuid = Uuid::from_u128(0x90d38d3e_6a5b_4d52_bfe2_2f1e634bfac4);
 
 pub(crate) fn ensure_call_outputs_present(items: &mut Vec<ResponseItemEnvelope>) {
@@ -372,6 +376,52 @@ pub(crate) fn strip_images_when_unsupported(
                 result.clear();
             }
             _ => {}
+        }
+    }
+}
+
+/// Elpis: the newest tool screenshots the prompt keeps. Older ones leave in blocks of this size,
+/// so between `KEPT_SCREENSHOTS` and twice that minus one are sent, and the prompt prefix changes
+/// only once per block (the provider's prompt cache survives the other requests).
+const KEPT_SCREENSHOTS: usize = 4;
+
+/// Elpis: replaces old screenshots in tool outputs with a short note. Every request resends the
+/// whole history, so each kept screenshot is uploaded again on every turn; a chat with 100
+/// screenshots sent over 20 MB per request. Images the user attached are never removed.
+pub(crate) fn drop_old_tool_screenshots(items: &mut [ResponseItemEnvelope]) {
+    let is_screenshot = |content: &FunctionCallOutputContentItem| {
+        matches!(content, FunctionCallOutputContentItem::InputImage { .. })
+    };
+    let total: usize = items
+        .iter()
+        .filter_map(|envelope| match &envelope.item {
+            ResponseItem::FunctionCallOutput { output, .. }
+            | ResponseItem::CustomToolCallOutput { output, .. } => output.content_items(),
+            _ => None,
+        })
+        .map(|content| content.iter().filter(|item| is_screenshot(item)).count())
+        .sum();
+    let mut to_drop =
+        (total.saturating_sub(KEPT_SCREENSHOTS) / KEPT_SCREENSHOTS) * KEPT_SCREENSHOTS;
+    for envelope in items.iter_mut() {
+        if to_drop == 0 {
+            return;
+        }
+        let (ResponseItem::FunctionCallOutput { output, .. }
+        | ResponseItem::CustomToolCallOutput { output, .. }) = &mut envelope.item
+        else {
+            continue;
+        };
+        let Some(content) = output.content_items_mut() else {
+            continue;
+        };
+        for item in content.iter_mut() {
+            if to_drop > 0 && is_screenshot(item) {
+                *item = FunctionCallOutputContentItem::InputText {
+                    text: OLD_SCREENSHOT_NOTE.to_string(),
+                };
+                to_drop -= 1;
+            }
         }
     }
 }

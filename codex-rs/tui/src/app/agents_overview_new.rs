@@ -61,7 +61,10 @@ impl App {
         if let Some(cwd) = cwd.as_ref() {
             display_config.cwd = cwd.clone();
         }
-        draft.apply_config(&display_config);
+        draft.apply_settings(
+            &crate::local_settings::LocalSettings::from(&display_config),
+            display_config.cwd.as_path(),
+        );
         draft.show(tui)?;
         // Keep the large session-start future off the TUI's stack in dev builds.
         let result = Box::pin(self.start_agents_overview_session(
@@ -74,10 +77,6 @@ impl App {
         .await;
         if self.current_displayed_thread_id() != previous_thread {
             draft.flush_pending_paste_newline(tui).await?;
-            self.chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .continue_from(&mut draft.blossom.borrow_mut());
             self.chat_widget.restore_startup_draft(draft.take_draft());
         } else {
             // Retain edits if setup fails so retrying `n` does not lose the draft.
@@ -121,6 +120,13 @@ impl App {
             return Ok(AppRunControl::Continue);
         };
         let selected_profile = self.chat_widget.thread_id().and_then(|thread_id| {
+            if let Some(selection) = self
+                .agents_overview
+                .requested_permission_profiles
+                .get(&thread_id)
+            {
+                return Some(selection.clone());
+            }
             let source = self.chat_widget.config_ref();
             let active = source.permissions.active_permission_profile()?;
             (self
@@ -137,7 +143,7 @@ impl App {
         });
         let local_settings = self.local_settings.reloaded(&config);
         if let Some(draft) = startup_draft.as_deref_mut() {
-            draft.apply_config(&config);
+            draft.apply_settings(&local_settings, config.cwd.as_path());
         }
         let result = StartupDraftPump::run_with_optional_draft(
             startup_draft.as_deref_mut(),

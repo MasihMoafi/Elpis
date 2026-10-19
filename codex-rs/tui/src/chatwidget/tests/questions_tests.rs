@@ -74,13 +74,13 @@ async fn async_question_answers_preserve_ambiguous_skill_selection_and_dismiss_r
         short_description: None,
         interface: None,
         dependencies: None,
-        path: test_path_buf("/tmp/route/SKILL.md").abs(),
+        path: test_path_buf("/tmp/route/SKILL.md").abs().into(),
         scope: crate::test_support::skill_scope_repo(),
         enabled: true,
         plugin_id: None,
     };
     let mut duplicate = skill.clone();
-    duplicate.path = test_path_buf("/tmp/other-route/SKILL.md").abs();
+    duplicate.path = test_path_buf("/tmp/other-route/SKILL.md").abs().into();
     chat.set_skills(Some(vec![skill.clone(), duplicate]));
     chat.add_async_questions("message", &questions());
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
@@ -99,7 +99,7 @@ async fn async_question_answers_preserve_ambiguous_skill_selection_and_dismiss_r
             },
             UserInput::Skill {
                 name: skill.name,
-                path: skill.path.to_path_buf()
+                path: PathBuf::from(skill.path.as_str())
             },
         ]
     );
@@ -121,7 +121,11 @@ async fn ordinary_follow_up_clears_unanswered_questions_after_accepted_input() {
         }
         chat.bottom_pane
             .set_composer_text("New prompt".into(), Vec::new(), Vec::new());
-        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+        chat.handle_key_event(KeyEvent::from(if queued {
+            KeyCode::Tab
+        } else {
+            KeyCode::Enter
+        }));
 
         assert_eq!(question_count(&chat), 0);
         if queued {
@@ -171,7 +175,7 @@ async fn queued_prompt_clears_questions_arriving_after_enqueue_when_it_starts() 
     chat.add_async_questions("old", &questions());
     chat.bottom_pane
         .set_composer_text("New prompt".into(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert_eq!(question_count(&chat), 0);
 
     chat.add_async_questions("late", &questions());
@@ -451,7 +455,7 @@ async fn selected_answers_preserve_long_labels_and_reject_oversized_submissions(
             chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
             assert_eq!(question_count(&chat), saved);
             let rendered = render_bottom_popup(&chat, /*width*/ 80);
-            insta::assert_snapshot!(rendered.lines().find(|line| line.contains("Answer too long")).unwrap(), @"│ Answer too long; shorten it before sending   ││SMART PRUNE          [···] SYNC");
+            insta::assert_snapshot!(rendered.lines().find(|line| line.contains("Answer too long")).unwrap(), @"  Answer too long; shorten it before sending");
         } else {
             assert_answer(ops.try_recv().unwrap(), &format!("> What next?\n\n{label}"));
         }
@@ -662,19 +666,15 @@ fn open_questions(chat: &mut ChatWidget, options: Option<Vec<String>>) {
 }
 
 #[tokio::test]
-async fn configured_question_queue_key_does_not_steer_the_running_turn() {
+async fn question_queue_key_does_not_steer_the_running_turn() {
     let (mut chat, _rx, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
-    let config =
-        serde_json::from_value(serde_json::json!({"composer": {"queue": "ctrl-q"}})).unwrap();
-    let keymap = RuntimeKeymap::from_config(&config).unwrap();
-    chat.apply_keymap_update(config, &keymap);
     open_questions(&mut chat, /*options*/ None);
     chat.on_task_started();
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
     chat.bottom_pane.handle_paste("kept".into());
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
     chat.bottom_pane.handle_paste("  later  ".into());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     assert_eq!(
         crate::async_question_reply::display_text(
             &chat.input_queue.queued_user_messages.front().unwrap().text
@@ -682,7 +682,7 @@ async fn configured_question_queue_key_does_not_steer_the_running_turn() {
         .unwrap(),
         "> First?\n\nlater"
     );
-    let mut repeat = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+    let mut repeat = KeyEvent::from(KeyCode::Tab);
     repeat.kind = KeyEventKind::Repeat;
     chat.handle_key_event(repeat);
     assert_eq!(question_count(&chat), 1);
@@ -822,28 +822,15 @@ async fn single_question_spacing_with_working_status() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
     chat.bottom_pane.handle_paste("A typed answer".into());
     let rendered = render_bottom_popup(&chat, /*width*/ 80);
-    let left_width = 80 - chat.context_ledger_width(80);
-    let rows: Vec<String> = rendered
-        .lines()
-        .map(|line| line.chars().take(left_width as usize).collect())
-        .collect();
+    let rows: Vec<_> = rendered.lines().collect();
     let question = rows
         .iter()
-        .position(|line| {
-            line.trim_matches(|c: char| c.is_whitespace() || c == '│') == "Only question?"
-        })
+        .position(|line| line.trim() == "Only question?")
         .unwrap();
     assert!(rows[question - 2].contains("Queued follow-up inputs"));
-    assert!(rows[question - 1].starts_with('┌'));
-    assert_eq!(
-        rows[question + 2].trim_matches(|c: char| c.is_whitespace() || c == '│'),
-        "A typed answer"
-    );
-    assert!(
-        rows[question + 3]
-            .trim_matches(|c: char| c.is_whitespace() || c == '│')
-            .is_empty()
-    );
+    assert!(rows[question - 1].is_empty());
+    assert_eq!(rows[question + 2].trim(), "A typed answer");
+    assert!(rows[question + 3].is_empty());
     insta::assert_snapshot!("single_question_working_spacing", rendered);
 }
 
@@ -872,7 +859,7 @@ fn question(title: &str, options: Option<Vec<String>>) -> AsyncUserInputQuestion
 }
 
 #[tokio::test]
-async fn questions_keep_resolved_shortcut_and_queue_uses_up() {
+async fn questions_and_queued_messages_share_the_resolved_shortcut() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.input_queue
         .queued_user_messages
@@ -880,7 +867,10 @@ async fn questions_keep_resolved_shortcut_and_queue_uses_up() {
     chat.refresh_pending_input_preview();
     let forward_hint = key_hint::shift(KeyCode::Left).display_label();
     let backward_hint = key_hint::shift(KeyCode::Right).display_label();
-    assert!(render_bottom_popup(&chat, /*width*/ 100).contains("↑ edit all · enter send"));
+    assert!(
+        render_bottom_popup(&chat, /*width*/ 100)
+            .contains(&format!("{forward_hint} edit last queued message"))
+    );
     chat.add_async_questions("message", &questions());
     assert!(
         render_bottom_popup(&chat, /*width*/ 100).contains(&format!("{forward_hint} to answer"))

@@ -14,7 +14,7 @@ async fn elpis_delete_shortcut_opens_confirmation_without_deleting() {
         path: None,
         preview: "Saved answer".into(),
         thread_id: Some(ThreadId::new()),
-        thread_name: Some("Harbor retrieval".into()),
+        thread_name: Some("Lawera retrieval".into()),
         created_at: None,
         updated_at: None,
         cwd: None,
@@ -27,10 +27,10 @@ async fn elpis_delete_shortcut_opens_confirmation_without_deleting() {
         .map(|line| line.to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(hints.contains("ctrl+d delete"), "{hints}");
+    assert!(hints.contains("backspace delete"), "{hints}");
     assert!(
         state
-            .handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL))
+            .handle_key(KeyEvent::from(KeyCode::Backspace))
             .await
             .unwrap()
             .is_none()
@@ -64,7 +64,7 @@ fn delete_picker() -> (PickerState, Arc<Mutex<Vec<ThreadId>>>, ThreadId) {
     );
     let thread_id = ThreadId::new();
     state.ingest_page(PickerPage {
-        rows: vec![delete_row(thread_id, "Harbor retrieval")],
+        rows: vec![delete_row(thread_id, "Lawera retrieval")],
         history_modes: HashMap::new(),
         next_cursor: None,
         num_scanned_files: 1,
@@ -103,10 +103,8 @@ async fn elpis_delete_cancel_preserves_search_selection_and_session() {
         KeyCode::Char('N'),
     ] {
         let (mut state, requests, thread_id) = delete_picker();
-        state.query = "Harbor".into();
-        state.apply_filter();
         state
-            .handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL))
+            .handle_key(KeyEvent::from(KeyCode::Backspace))
             .await
             .unwrap();
         state.handle_paste("Accidental paste".into());
@@ -116,7 +114,7 @@ async fn elpis_delete_cancel_preserves_search_selection_and_session() {
             .unwrap();
         state.handle_key(KeyEvent::from(key)).await.unwrap();
         assert_eq!(state.delete_state, DeleteState::Idle);
-        assert_eq!(state.query, "Harbor");
+        assert!(state.query.is_empty());
         assert_eq!(
             state.filtered_rows[state.selected].thread_id,
             Some(thread_id)
@@ -129,7 +127,7 @@ async fn elpis_delete_cancel_preserves_search_selection_and_session() {
 async fn elpis_delete_yes_sends_once_and_keeps_target_until_server_success() {
     let (mut state, requests, thread_id) = delete_picker();
     state
-        .handle_key(KeyEvent::new(KeyCode::Char('\u{0004}'), KeyModifiers::NONE))
+        .handle_key(KeyEvent::from(KeyCode::Backspace))
         .await
         .unwrap();
     for key in [
@@ -210,25 +208,34 @@ async fn elpis_delete_rejects_current_session_empty_rows_and_busy_archive() {
     state.filtered_rows.clear();
     state.request_delete_for_selected_session();
     assert_eq!(state.delete_state, DeleteState::Idle);
-    assert!(!footer(&state, 220).contains("ctrl+d delete"));
+    assert!(!footer(&state, 220).contains("backspace delete"));
     assert!(requests.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
-async fn elpis_delete_respects_custom_ctrl_d_navigation_and_fork_picker() {
+async fn elpis_delete_respects_custom_backspace_navigation_and_fork_picker() {
     let (mut state, requests, _thread_id) = delete_picker();
-    state.keymap.list.page_down = vec![crate::key_hint::ctrl(KeyCode::Char('d'))];
+    let next_thread = ThreadId::new();
     state
-        .handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL))
+        .all_rows
+        .push(delete_row(next_thread, "Other saved session"));
+    state.apply_filter();
+    state.keymap.list.page_down = vec![crate::key_hint::plain(KeyCode::Backspace)];
+    state
+        .handle_key(KeyEvent::from(KeyCode::Backspace))
         .await
         .unwrap();
     assert_eq!(state.delete_state, DeleteState::Idle);
-    assert!(!footer(&state, 220).contains("ctrl+d delete"));
+    assert!(!footer(&state, 220).contains("backspace delete"));
+    assert_eq!(
+        state.filtered_rows[state.selected].thread_id,
+        Some(next_thread)
+    );
     state.keymap = RuntimeKeymap::defaults();
     state.action = SessionPickerAction::Fork;
     state.request_delete_for_selected_session();
     assert_eq!(state.delete_state, DeleteState::Idle);
-    assert!(!footer(&state, 220).contains("ctrl+d delete"));
+    assert!(!footer(&state, 220).contains("backspace delete"));
     assert!(requests.lock().unwrap().is_empty());
 }
 
@@ -293,7 +300,7 @@ async fn elpis_delete_success_preserves_other_selection_and_rejects_stale_page()
     assert!(!state.thread_history_modes.contains_key(&thread_id));
     assert!(state.expanded_thread_id.is_none());
     state.ingest_page(PickerPage {
-        rows: vec![delete_row(thread_id, "Harbor retrieval")],
+        rows: vec![delete_row(thread_id, "Lawera retrieval")],
         history_modes: HashMap::new(),
         next_cursor: None,
         num_scanned_files: 1,
@@ -320,7 +327,7 @@ fn elpis_delete_prompt_renders_target_warning_and_cancel_keys() {
         terminal.flush().unwrap();
         let screen = terminal.backend().vt100().screen().contents();
         println!("Delete prompt at {width} columns:\n{screen}\n");
-        assert!(screen.contains("Harbor retrieval"), "{screen}");
+        assert!(screen.contains("Lawera retrieval"), "{screen}");
         assert!(screen.contains("subagent"), "{screen}");
         assert!(screen.contains("cannot undo"), "{screen}");
         assert!(screen.contains("y delete"), "{screen}");
@@ -401,15 +408,11 @@ async fn elpis_delete_picker_uses_real_delete_rpc_and_preserves_other_chat()
         } else {
             SessionStatus::Active
         };
-        state
-            .handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL))
-            .await?;
+        state.handle_key(KeyEvent::from(KeyCode::Backspace)).await?;
         state.handle_key(KeyEvent::from(KeyCode::Esc)).await?;
         assert!(target_path.exists());
         assert_eq!(std::fs::read(&other_path)?, other_bytes);
-        state
-            .handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL))
-            .await?;
+        state.handle_key(KeyEvent::from(KeyCode::Backspace)).await?;
         state.handle_key(KeyEvent::from(KeyCode::Char('y'))).await?;
         let event = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
             .await?
@@ -428,12 +431,14 @@ async fn elpis_delete_respects_chords_and_confirmation_owns_keys() {
     use codex_config::types::{KeybindingSpec, KeybindingsSpec, TuiKeymap};
     let (mut state, requests, thread_id) = delete_picker();
     let mut config = TuiKeymap::default();
-    config.list.jump_top = Some(KeybindingsSpec::One(KeybindingSpec("ctrl-d home".into())));
+    config.list.jump_top = Some(KeybindingsSpec::One(KeybindingSpec(
+        "backspace home".into(),
+    )));
     state.keymap = RuntimeKeymap::from_config(&config).unwrap();
     assert!(!state.delete_shortcut_available());
     assert!(
         state
-            .route_key_chord(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL))
+            .route_key_chord(KeyEvent::from(KeyCode::Backspace))
             .is_none()
     );
     assert!(requests.lock().unwrap().is_empty());
@@ -487,4 +492,72 @@ async fn elpis_delete_confirmation_keeps_original_target_when_page_changes() {
         state.filtered_rows[state.selected].thread_id,
         Some(other_id)
     );
+}
+
+#[tokio::test]
+async fn elpis_backspace_edits_nonempty_search_before_offering_delete() {
+    let (mut state, requests, thread_id) = delete_picker();
+    state.set_query("Lawera".into());
+    assert!(!footer(&state, 220).contains("backspace delete"));
+    state
+        .handle_key(KeyEvent::from(KeyCode::Backspace))
+        .await
+        .unwrap();
+    assert_eq!(state.query, "Lawer");
+    assert_eq!(state.delete_state, DeleteState::Idle);
+    assert!(requests.lock().unwrap().is_empty());
+    assert_eq!(
+        state.filtered_rows[state.selected].thread_id,
+        Some(thread_id)
+    );
+
+    state.set_query("L".into());
+    state
+        .handle_key(KeyEvent::from(KeyCode::Backspace))
+        .await
+        .unwrap();
+    assert!(state.query.is_empty());
+    assert_eq!(state.delete_state, DeleteState::Idle);
+    state
+        .handle_key(KeyEvent::new_with_kind(
+            KeyCode::Backspace,
+            KeyModifiers::NONE,
+            KeyEventKind::Repeat,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(state.delete_state, DeleteState::Idle);
+    state
+        .handle_key(KeyEvent::from(KeyCode::Backspace))
+        .await
+        .unwrap();
+    assert!(matches!(state.delete_state, DeleteState::Confirming { .. }));
+    assert!(requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn elpis_delete_requires_a_plain_backspace_press_without_ctrl_d_alias() {
+    let (mut state, requests, _thread_id) = delete_picker();
+    for event in [
+        KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+        KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+        KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT),
+        KeyEvent::new(KeyCode::Backspace, KeyModifiers::SHIFT),
+        KeyEvent::new_with_kind(KeyCode::Backspace, KeyModifiers::NONE, KeyEventKind::Repeat),
+        KeyEvent::new_with_kind(
+            KeyCode::Backspace,
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        ),
+    ] {
+        state.handle_key(event).await.unwrap();
+        assert_eq!(state.delete_state, DeleteState::Idle);
+        assert!(state.query.is_empty());
+    }
+    assert!(requests.lock().unwrap().is_empty());
+    state
+        .handle_key(KeyEvent::from(KeyCode::Backspace))
+        .await
+        .unwrap();
+    assert!(matches!(state.delete_state, DeleteState::Confirming { .. }));
 }

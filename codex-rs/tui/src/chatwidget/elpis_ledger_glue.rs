@@ -2,7 +2,7 @@
 //!
 //! Copied from v0.3.0 `chatwidget.rs` (the Manual Memory cache), `settings.rs` (the Smart
 //! Prune and Subagents switches), `slash_dispatch.rs` (`/add`), `session_flow.rs` (the reset
-//! on thread change) and `interaction.rs` (the Tab/Alt+C toggle). Upstream files reach this
+//! on thread change) and `interaction.rs` (the Alt+C toggle). Upstream files reach this
 //! module through one-line seams marked `Elpis:`.
 
 use std::path::PathBuf;
@@ -68,20 +68,10 @@ fn clean_dropped_path(raw: &str) -> String {
 }
 
 impl ChatWidget {
-    /// Tab and Alt+C open, focus and hide the ledger before any modal sees the key.
-    ///
-    /// With a popup open (for example the slash-command list) Tab still belongs to it.
+    /// Alt+C opens the Context Ledger without changing Codex's submission keys.
     pub(super) fn handle_context_ledger_pre_modal_key(&mut self, key_event: KeyEvent) -> bool {
-        if key_hint::plain(KeyCode::Tab).is_press(key_event)
-            && !self.bottom_pane.has_active_view()
-            && !self.bottom_pane.no_modal_or_popup_active()
-        {
-            self.bottom_pane.handle_key_event(key_event);
-            return true;
-        }
-        let ledger_toggle = key_hint::plain(KeyCode::Tab).is_press(key_event)
-            || key_hint::alt(KeyCode::Char('c')).is_press(key_event);
-        ledger_toggle && self.handle_context_ledger_key_event(key_event)
+        key_hint::alt(KeyCode::Char('c')).is_press(key_event)
+            && self.handle_context_ledger_key_event(key_event)
     }
 
     /// Asks to switch Smart Prune on or off for subsequent turns. The switch shows the
@@ -196,7 +186,7 @@ impl ChatWidget {
             Ok(paths) if paths.len() == 1 => self.add_info_message(
                 format!("Added {} to the Context Ledger.", paths[0].display()),
                 Some(
-                    "It is enabled for the next turn. Open the ledger with Tab to toggle it."
+                    "It is enabled for the next turn. Open the ledger with Alt+C to toggle it."
                         .to_string(),
                 ),
             ),
@@ -206,7 +196,7 @@ impl ChatWidget {
                     paths.len()
                 ),
                 Some(
-                    "They are enabled for the next turn. Open the ledger with Tab to toggle them."
+                    "They are enabled for the next turn. Open the ledger with Alt+C to toggle them."
                         .to_string(),
                 ),
             ),
@@ -233,6 +223,25 @@ impl ChatWidget {
     pub(crate) fn width_beside_context_ledger(&self, width: u16) -> u16 {
         width.saturating_sub(self.context_ledger_width(width))
     }
+
+    /// Full screen: the Ledger as a column at the right edge of the screen, from the top of
+    /// `area` down. Its rule runs the area's full height; taller content scrolls with the selection.
+    pub(crate) fn render_context_ledger_column(
+        &self,
+        area: ratatui::layout::Rect,
+        buf: &mut ratatui::buffer::Buffer,
+    ) {
+        self.context_ledger.column.set(Some(area));
+        match self.context_ledger_lines_with_height(area.width, true) {
+            Some((_, ledger_lines)) => {
+                self.render_context_ledger_lines(area, buf, ledger_lines, &[]);
+            }
+            None => {
+                self.context_ledger.column.set(None);
+                self.forget_context_ledger_clicks();
+            }
+        }
+    }
 }
 
 /// The bottom pane with the Context Ledger to its right.
@@ -257,67 +266,29 @@ impl BesideContextLedger<'_> {
     }
 }
 
-/// A box beside the Ledger shares the Ledger rule as its right edge, so the two rules
-/// never stand side by side. Only cells in the rule color change; text stays as drawn.
-fn join_boxes_to_ledger_rule(
-    pane: ratatui::layout::Rect,
-    ledger_height: u16,
-    buf: &mut ratatui::buffer::Buffer,
-) {
-    if pane.width == 0 || ledger_height == 0 || pane.right() >= buf.area.right() {
-        return;
-    }
-    // Without a known terminal background the rule is the plain terminal color; then
-    // a rule cannot be told apart from text, so nothing is joined.
-    let Some(rule) = crate::style::rule_style()
-        .fg
-        .filter(|color| *color != ratatui::style::Color::Reset)
-    else {
-        return;
-    };
-    let (edge_x, rule_x) = (pane.right() - 1, pane.right());
-    let (top, bottom) = (pane.y, pane.y + ledger_height - 1);
-    for y in top..=bottom {
-        if buf[(edge_x, y)].fg != rule {
-            continue;
-        }
-        let joins = match buf[(edge_x, y)].symbol() {
-            "┐" | "┘" => true,
-            "│" => false,
-            _ => continue,
-        };
-        buf[(edge_x, y)].set_symbol(if joins { "─" } else { " " });
-        if joins {
-            buf[(rule_x, y)].set_symbol(match (y > top, y < bottom) {
-                (true, true) => "┤",
-                (false, true) => "┐",
-                (true, false) => "┘",
-                (false, false) => "─",
-            });
-        }
-    }
-}
-
 impl crate::render::renderable::Renderable for BesideContextLedger<'_> {
     fn render(&self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         let (pane, ledger_width) = self.split(area);
-        self.bottom_pane.render(pane, buf);
-        if let Some((ledger_height, ledger_lines)) = self
+        let Some((ledger_height, ledger_lines)) = self
             .chat_widget
-            .context_ledger_lines_with_height(ledger_width)
-        {
-            self.chat_widget.render_context_ledger_lines(
-                ratatui::layout::Rect::new(
-                    pane.right(),
-                    area.y,
-                    ledger_width,
-                    ledger_height.min(area.height),
-                ),
-                buf,
-                ledger_lines,
-            );
-            join_boxes_to_ledger_rule(pane, ledger_height.min(area.height), buf);
-        }
+            .context_ledger_lines_with_height(ledger_width, false)
+        else {
+            self.chat_widget.forget_context_ledger_clicks();
+            self.bottom_pane.render(pane, buf);
+            return;
+        };
+        self.bottom_pane.render(pane, buf);
+        self.chat_widget.render_context_ledger_lines(
+            ratatui::layout::Rect::new(
+                pane.right(),
+                area.y,
+                ledger_width,
+                ledger_height.min(area.height),
+            ),
+            buf,
+            ledger_lines,
+            &[],
+        );
     }
 
     fn desired_height(&self, width: u16) -> u16 {

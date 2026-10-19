@@ -11,10 +11,6 @@ use codex_protocol::openai_models::ModelsResponse;
 use serde_json::Value;
 use serde_json::json;
 
-/// Anthropic's list reports no context window. This is Anthropic's published window for its
-/// current models; the beta 1M window needs a header Elpis does not send.
-const ANTHROPIC_DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
-
 /// The keys an OpenAI-compatible `/models` row may use for its context window: OpenRouter and
 /// Together use `context_length`, Groq `context_window`, Mistral `max_context_length`.
 const CONTEXT_WINDOW_KEYS: &[&str] = &["context_length", "context_window", "max_context_length"];
@@ -105,7 +101,7 @@ fn model_row(
     row
 }
 
-/// `GET /v1/models`: `{"data":[{"id":…,"display_name":…}]}`.
+/// `GET /v1/models`: `{"data":[{"id":…,"display_name":…,"max_input_tokens":…}]}`.
 fn anthropic_models(body: &Value) -> Vec<Value> {
     let Some(entries) = body.get("data").and_then(Value::as_array) else {
         return Vec::new();
@@ -119,12 +115,16 @@ fn anthropic_models(body: &Value) -> Vec<Value> {
                 .get("display_name")
                 .and_then(Value::as_str)
                 .unwrap_or(slug);
+            let context_window = entry
+                .get("max_input_tokens")
+                .and_then(Value::as_u64)
+                .filter(|window| *window > 0 && i64::try_from(*window).is_ok());
             // The listing does not say which models think, and the Messages wire carries no
             // thinking budget yet, so no effort levels are offered.
             Some(model_row(
                 slug,
                 display_name,
-                Some(ANTHROPIC_DEFAULT_CONTEXT_WINDOW),
+                context_window,
                 index,
                 /*reasons*/ false,
             ))

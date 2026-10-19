@@ -1,9 +1,11 @@
+use crate::agent::api::AgentControl;
+use crate::agent_communication::PENDING_MAILBOX_MESSAGES;
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
 use crate::state::TurnState;
-use codex_diagnostics::Gauge;
 use codex_diagnostics::GaugeGuard;
 use codex_history::ResponseItemEnvelope;
+use codex_protocol::ThreadId;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::turn_input::TurnStartOptions;
@@ -16,8 +18,6 @@ use tokio::sync::Mutex;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
-
-static PENDING_MAILBOX_MESSAGES: Gauge = Gauge::new("core.mailbox.pending");
 
 /// Host capture metadata belonging to one input, including steers within another turn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,11 +94,12 @@ pub(crate) struct TurnInputQueue {
 /// Session-scoped pending input storage and active-turn mailbox delivery coordination.
 pub(crate) struct InputQueue {
     activity_tx: watch::Sender<InputQueueActivity>,
+    controller: Option<(ThreadId, Arc<dyn AgentControl>, watch::Receiver<bool>)>,
     mailbox_pending_mails: Mutex<VecDeque<PendingMailboxCommunication>>,
 }
 
-struct PendingMailboxCommunication {
-    communication: InterAgentCommunication,
+pub(crate) struct PendingMailboxCommunication {
+    pub(crate) communication: InterAgentCommunication,
     start_options: TurnStartOptions,
     _diagnostics_guard: GaugeGuard,
 }
@@ -108,7 +109,41 @@ impl InputQueue {
         let (activity_tx, _) = watch::channel(InputQueueActivity::Mailbox);
         Self {
             activity_tx,
+            controller: None,
             mailbox_pending_mails: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    pub(crate) fn with_controller(thread_id: ThreadId, control: Arc<dyn AgentControl>) -> Self {
+        let updates = control.watch_mailbox(thread_id);
+        Self {
+            controller: Some((thread_id, control, updates)),
+            ..Self::new()
+        }
+    }
+
+    pub(crate) fn mailbox_updates(&self) -> Option<watch::Receiver<bool>> {
+        self.controller
+            .as_ref()
+            .map(|(_, _, updates)| updates.clone())
+    }
+
+    pub(crate) fn notify_mailbox(&self) {
+        self.activity_tx.send_replace(InputQueueActivity::Mailbox);
+    }
+
+    fn read_mailbox(&self, pending: &mut VecDeque<PendingMailboxCommunication>) {
+        if let Some((thread_id, control, _)) = &self.controller {
+            pending.extend(
+                control
+                    .take_mailbox(*thread_id)
+                    .into_iter()
+                    .map(|communication| PendingMailboxCommunication {
+                        communication,
+                        start_options: TurnStartOptions::default(),
+                        _diagnostics_guard: PENDING_MAILBOX_MESSAGES.track(),
+                    }),
+            );
         }
     }
 
@@ -143,9 +178,16 @@ impl InputQueue {
         &self,
         active_turn: &Mutex<Option<ActiveTurn>>,
         communication: InterAgentCommunication,
+        expected_turn_id: Option<&str>,
     ) -> bool {
         let active = active_turn.lock().await;
-        let Some(active_turn) = active.as_ref().filter(|turn| turn.task.is_some()) else {
+        let Some(active_turn) = active.as_ref().filter(|turn| {
+            turn.task.as_ref().is_some_and(|task| {
+                expected_turn_id.is_none_or(|id| {
+                    task.turn_context.sub_id == id && !task.cancellation_token.is_cancelled()
+                })
+            })
+        }) else {
             return false;
         };
         let mut turn_state = active_turn.turn_state.lock().await;
@@ -165,19 +207,23 @@ impl InputQueue {
         communication: InterAgentCommunication,
         start_options: TurnStartOptions,
     ) {
-        self.mailbox_pending_mails
-            .lock()
-            .await
-            .push_back(PendingMailboxCommunication {
-                communication,
-                start_options,
-                _diagnostics_guard: PENDING_MAILBOX_MESSAGES.track(),
-            });
+        let mut pending = self.mailbox_pending_mails.lock().await;
+        // Mail retained while unloaded precedes new submissions to the loaded session.
+        self.read_mailbox(&mut pending);
+        pending.push_back(PendingMailboxCommunication {
+            communication,
+            start_options,
+            _diagnostics_guard: PENDING_MAILBOX_MESSAGES.track(),
+        });
         self.activity_tx.send_replace(InputQueueActivity::Mailbox);
     }
 
     pub(crate) async fn has_pending_mailbox_items(&self) -> bool {
         !self.mailbox_pending_mails.lock().await.is_empty()
+            || self
+                .controller
+                .as_ref()
+                .is_some_and(|(_, _, updates)| *updates.borrow())
     }
 
     pub(crate) async fn has_trigger_turn_mailbox_items(&self) -> bool {
@@ -188,13 +234,14 @@ impl InputQueue {
             .any(|mail| mail.communication.trigger_turn)
     }
 
+    pub(crate) async fn drain_mailbox(&self) -> Vec<PendingMailboxCommunication> {
+        let mut pending = self.mailbox_pending_mails.lock().await;
+        self.read_mailbox(&mut pending);
+        pending.drain(..).collect()
+    }
+
     pub(crate) async fn drain_mailbox_input_items(&self) -> (Vec<TurnInput>, TurnStartOptions) {
-        let pending_mails = self
-            .mailbox_pending_mails
-            .lock()
-            .await
-            .drain(..)
-            .collect::<Vec<_>>();
+        let pending_mails = self.drain_mailbox().await;
         // A later follow-up supersedes the earlier choice, including an omitted choice.
         let mut start_options = pending_mails
             .iter()
@@ -339,6 +386,41 @@ impl InputQueue {
         turn_state.lock().await.pending_input.items.extend(input);
     }
 
+    /// Cancel only inputs still owned by the active turn's queue, under the same locks
+    /// as draining. Delivered inputs can never be acknowledged as cancelled.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn lookup and pending input removal must remain atomic"
+    )]
+    pub(crate) async fn cancel_pending_user_inputs(
+        &self,
+        active_turn: &Mutex<Option<ActiveTurn>>,
+        client_ids: &[String],
+    ) -> Vec<String> {
+        let active = active_turn.lock().await;
+        let Some(active) = active.as_ref() else {
+            return Vec::new();
+        };
+        let mut state = active.turn_state.lock().await;
+        let mut cancelled = Vec::new();
+        state.pending_input.items.retain(|input| {
+            if let TurnInput::UserInput {
+                client_id: Some(id),
+                ..
+            } = input
+                && client_ids.contains(id)
+            {
+                if !cancelled.contains(id) {
+                    cancelled.push(id.clone());
+                }
+                false
+            } else {
+                true
+            }
+        });
+        cancelled
+    }
+
     pub(crate) async fn take_pending_input_for_turn_state(
         &self,
         turn_state: &Mutex<TurnState>,
@@ -450,6 +532,92 @@ mod tests {
     use codex_protocol::AgentPath;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
+
+    fn queued_user_input(client_id: Option<&str>) -> TurnInput {
+        TurnInput::UserInput {
+            content: Vec::new(),
+            client_id: client_id.map(str::to_owned),
+            metadata: UserInputMetadata::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_pending_user_inputs_preserves_other_inputs_and_threads() {
+        let queue = InputQueue::new();
+        let turn = ActiveTurn::default();
+        let retained = vec![
+            queued_user_input(Some("keep")),
+            queued_user_input(None),
+            TurnInput::ResponseItem(ResponseItem::Other.into()),
+        ];
+        turn.turn_state.lock().await.pending_input.items = [
+            vec![
+                queued_user_input(Some("one")),
+                queued_user_input(Some("two")),
+            ],
+            retained.clone(),
+        ]
+        .concat();
+        let active = Mutex::new(Some(turn));
+        let other_turn = ActiveTurn::default();
+        other_turn.turn_state.lock().await.pending_input.items =
+            vec![queued_user_input(Some("one"))];
+        let other_active = Mutex::new(Some(other_turn));
+
+        let cancelled = queue
+            .cancel_pending_user_inputs(
+                &active,
+                &["two".into(), "one".into(), "missing".into(), "one".into()],
+            )
+            .await;
+
+        assert_eq!(cancelled, vec!["one".to_owned(), "two".to_owned()]);
+        assert_eq!(queue.get_pending_input(&active).await.0, retained);
+        assert_eq!(
+            queue.get_pending_input(&other_active).await.0,
+            vec![queued_user_input(Some("one"))]
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_pending_user_inputs_never_acknowledges_delivered_or_idle_inputs() {
+        let queue = InputQueue::new();
+        let turn = ActiveTurn::default();
+        let input = queued_user_input(Some("delivered"));
+        turn.turn_state.lock().await.pending_input.items = vec![input.clone()];
+        let active = Mutex::new(Some(turn));
+        assert_eq!(queue.get_pending_input(&active).await.0, vec![input]);
+
+        assert!(
+            queue
+                .cancel_pending_user_inputs(&active, &["delivered".into()])
+                .await
+                .is_empty()
+        );
+        assert!(
+            queue
+                .cancel_pending_user_inputs(&Mutex::new(None), &["delivered".into()])
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelling_and_draining_cannot_both_take_the_same_input() {
+        let queue = InputQueue::new();
+        let turn = ActiveTurn::default();
+        turn.turn_state.lock().await.pending_input.items = vec![queued_user_input(Some("racing"))];
+        let active = Mutex::new(Some(turn));
+        let ids = vec!["racing".to_owned()];
+
+        let (cancelled, (delivered, _)) = tokio::join!(
+            queue.cancel_pending_user_inputs(&active, &ids),
+            queue.get_pending_input(&active),
+        );
+
+        assert_eq!(cancelled.len() + delivered.len(), 1);
+        assert!(queue.get_pending_input(&active).await.0.is_empty());
+    }
 
     #[test_case::test_case("ResponseItem", TurnInput::ResponseItem)]
     #[test_case::test_case("FunctionCallOutput", TurnInput::FunctionCallOutput)]

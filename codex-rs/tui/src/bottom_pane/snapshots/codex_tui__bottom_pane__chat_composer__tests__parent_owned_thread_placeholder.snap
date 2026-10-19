@@ -2,12 +2,12 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"┌──────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"› Viewing sub-agent — direct input is disabled                                                     │"
-"│                                                                                                  │"
-"│                                                                                                  │"
-"│                                                                                                  │"
-"│                                                                                                  │"
-"│                                                                                                  │"
-"└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-"  ? for shortcuts                                           100% context left · Tab Context Ledger  "
+"                                                                                                    "
+"› Viewing sub-agent — direct input is disabled                                                      "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"  ? for shortcuts                                                                100% context left  "

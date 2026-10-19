@@ -25,6 +25,9 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
     let mut messages = Vec::<Value>::new();
     let mut current_role: Option<&str> = None;
     let mut current_content = Vec::<Value>::new();
+    // System text since the last message: if the conversation would end on an assistant
+    // message, it becomes the closing user message instead.
+    let mut trailing_system = 0usize;
 
     let flush = |messages: &mut Vec<Value>, role: &mut Option<&str>, content: &mut Vec<Value>| {
         if let Some(role) = role.take()
@@ -38,6 +41,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         let (role, block) = match turn {
             Turn::System(text) => {
                 system.push(text.clone());
+                trailing_system += 1;
                 continue;
             }
             Turn::User(text) => ("user", json!({"type": "text", "text": text})),
@@ -64,6 +68,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 }),
             ),
         };
+        trailing_system = 0;
         if current_role != Some(role) {
             flush(&mut messages, &mut current_role, &mut current_content);
             current_role = Some(role);
@@ -71,6 +76,19 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         current_content.push(block);
     }
     flush(&mut messages, &mut current_role, &mut current_content);
+    // Current Claude models refuse assistant prefill: a request must end with a user message.
+    if messages
+        .last()
+        .is_some_and(|message| message["role"] == "assistant")
+    {
+        let closing = system.split_off(system.len() - trailing_system);
+        let text = if closing.iter().all(|text| text.trim().is_empty()) {
+            "Continue.".to_string()
+        } else {
+            closing.join("\n\n")
+        };
+        messages.push(json!({"role": "user", "content": [{"type": "text", "text": text}]}));
+    }
 
     let system: Vec<Value> = system
         .into_iter()
@@ -82,6 +100,7 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
         "max_tokens": ANTHROPIC_MAX_TOKENS,
         "stream": true,
         "messages": messages,
+        "cache_control": {"type": "ephemeral"},
     });
     if !system.is_empty() {
         body["system"] = Value::Array(system);
@@ -92,16 +111,68 @@ pub(crate) fn request(conversation: &Conversation) -> Result<Value, GatewayError
                 .tools
                 .iter()
                 .map(|tool| {
+                    let (description, input_schema) =
+                        anthropic_input_schema(&tool.description, &tool.parameters);
                     json!({
                         "name": tool.name,
-                        "description": tool.description,
-                        "input_schema": tool.parameters,
+                        "description": description,
+                        "input_schema": input_schema,
                     })
                 })
                 .collect(),
         );
     }
     Ok(body)
+}
+
+/// Anthropic refuses `anyOf`, `oneOf` and `allOf` at the top of an input schema, where MCP
+/// servers put rules such as "give `doc_path` or `workspace_id`". Each branch's properties join
+/// the object's, `allOf` branches add their required fields, and the rule itself moves into the
+/// description so the model still sees it.
+fn anthropic_input_schema(description: &str, parameters: &Value) -> (String, Value) {
+    let mut description = description.to_string();
+    let mut schema = parameters.clone();
+    let Some(object) = schema.as_object_mut() else {
+        return (description, schema);
+    };
+    for (keyword, rule) in [
+        ("allOf", "all"),
+        ("anyOf", "at least one"),
+        ("oneOf", "exactly one"),
+    ] {
+        let Some(branches) = object.remove(keyword) else {
+            continue;
+        };
+        for branch in branches.as_array().into_iter().flatten() {
+            if let Some(properties) = branch.get("properties").and_then(Value::as_object)
+                && let Some(merged) = object
+                    .entry("properties")
+                    .or_insert_with(|| json!({}))
+                    .as_object_mut()
+            {
+                for (name, property) in properties {
+                    merged.entry(name.clone()).or_insert_with(|| property.clone());
+                }
+            }
+            if keyword == "allOf"
+                && let Some(required) = branch.get("required").and_then(Value::as_array)
+            {
+                let merged = object.entry("required").or_insert_with(|| json!([]));
+                if let Some(merged) = merged.as_array_mut() {
+                    for field in required {
+                        if !merged.contains(field) {
+                            merged.push(field.clone());
+                        }
+                    }
+                }
+            }
+        }
+        description.push_str(&format!(
+            "\n\nThe input must also match {rule} of these JSON schemas: {branches}"
+        ));
+    }
+    object.insert("type".to_string(), json!("object"));
+    (description, schema)
 }
 
 pub(crate) fn parse_object(text: &str, label: &str) -> Result<Value, GatewayError> {

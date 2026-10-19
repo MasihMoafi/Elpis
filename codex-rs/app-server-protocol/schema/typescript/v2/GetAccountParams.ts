@@ -10,4 +10,11 @@ export type GetAccountParams = {
  * external auth mode this flag is ignored. Clients should refresh tokens
  * themselves and call `account/login/start` with `chatgptAuthTokens`.
  */
-refreshToken?: boolean, };
+refreshToken?: boolean,
+/**
+ * When `true`, returns the account as the server already knows it, without waiting for
+ * workspace routing discovery, which needs the network and can take many seconds.
+ * `workspaceRouting` is then `null`. The server keeps discovering in the background
+ * and sends `account/updated` once routing is known.
+ */
+skipWorkspaceRouting?: boolean, };

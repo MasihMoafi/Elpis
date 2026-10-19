@@ -33,6 +33,13 @@
             "$ref": "#/definitions/WorkGraphTaskSummary"
           },
           "type": "array"
+        },
+        "worktreeReport": {
+          "description": "For a worktree-isolated run: its worktree paths, branches, and merge outcome.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -76,6 +83,18 @@
         },
         "kind": {
           "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "result": true,
         "status": {

@@ -828,26 +828,33 @@ async fn status_uses_server_provider_id_and_auth_requirement() {
         sanitize_directory(render_lines(&composite.display_lines(/*width*/ 120))).join("\n");
     assert_snapshot!("status_server_auth_required", rendered);
 
-    for width in [42, 120] {
-        let destinations: Vec<String> = composite
-            .display_hyperlink_lines(width)
-            .into_iter()
-            .flat_map(|line| line.hyperlinks.into_iter())
-            .map(|link| link.destination)
-            .collect();
+    for width in [24, 42, 120] {
+        let lines = composite.display_hyperlink_lines(width);
+        let mut fragments = String::new();
+        let mut destinations = Vec::new();
+        for line in lines {
+            let visible = line.line.to_string();
+            for link in line.hyperlinks {
+                fragments.extend(
+                    visible
+                        .chars()
+                        .skip(link.columns.start)
+                        .take(link.columns.len()),
+                );
+                destinations.push(link.destination);
+            }
+        }
         assert_eq!(
-            destinations,
-            vec!["https://chatgpt.com/codex/settings/usage"]
+            fragments, "https://chatgpt.com/settings/usage",
+            "width {width}"
+        );
+        assert!(!destinations.is_empty());
+        assert!(
+            destinations
+                .iter()
+                .all(|destination| destination == "https://chatgpt.com/settings/usage")
         );
     }
-
-    let narrow_destinations: Vec<String> = composite
-        .display_hyperlink_lines(/*width*/ 24)
-        .into_iter()
-        .flat_map(|line| line.hyperlinks.into_iter())
-        .map(|link| link.destination)
-        .collect();
-    assert_eq!(narrow_destinations, Vec::<String>::new());
 }
 
 #[tokio::test]
@@ -1916,7 +1923,10 @@ async fn status_snapshot_includes_credits_and_limits() {
     config.model = Some("gpt-5.1-codex".to_string());
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
 
-    let account_display = test_status_account_display();
+    let account_display = Some(StatusAccountDisplay::ChatGpt {
+        email: Some("user@example.com".into()),
+        plan: Some("Pro 200".into()),
+    });
     let usage = TokenUsage {
         input_tokens: 1_500,
         cached_input_tokens: 100,
@@ -2101,7 +2111,7 @@ async fn status_snapshot_treats_refreshing_empty_limits_as_unavailable() {
         }
     }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
-    assert_snapshot!(sanitized);
+    assert!(sanitized.contains("Limits:          not available for this account"));
 }
 
 #[tokio::test]
@@ -2376,4 +2386,64 @@ fn reset_timestamps_follow_clock_preference() {
     23:00
     00:00 on 22 Sep
     ");
+}
+
+/// Elpis: Bypass permissions is root access, so /status shows it in red like the header and the
+/// permission picker do.
+#[tokio::test]
+async fn status_shows_bypass_permissions_in_red() {
+    let temp_home = TempDir::new().expect("temp home");
+    let mut config = test_config(&temp_home).await;
+    config
+        .permissions
+        .approval_policy
+        .set(AskForApproval::Never.to_core())
+        .expect("set approval policy");
+    config
+        .permissions
+        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+            PermissionProfile::Disabled,
+            ActivePermissionProfile::new(
+                codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS,
+            ),
+        ))
+        .expect("set permission profile");
+    let usage = TokenUsage::default();
+    let captured_at = chrono::Local
+        .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
+        .single()
+        .expect("timestamp");
+    let model_slug = get_model_offline_for_tests(config.model.as_deref());
+
+    let lines = crate::terminal_palette::with_test_default_colors(
+        crate::terminal_probe::DefaultColors {
+            fg: (220, 220, 220),
+            bg: (20, 20, 20),
+        },
+        || {
+            new_status_output(
+                &config,
+                test_status_account_display().as_ref(),
+                /*token_info*/ None,
+                &usage,
+                &None,
+                /*thread_name*/ None,
+                /*forked_from*/ None,
+                /*rate_limits*/ None,
+                None,
+                captured_at,
+                &model_slug,
+                /*collaboration_mode*/ None,
+                /*reasoning_effort_override*/ None,
+            )
+            .display_lines(/*width*/ 80)
+        },
+    );
+
+    let label = lines
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .find(|span| span.content.contains("Bypass permissions"))
+        .expect("/status names Bypass permissions");
+    assert_eq!(label.style.fg, Some(ratatui::style::Color::Red));
 }

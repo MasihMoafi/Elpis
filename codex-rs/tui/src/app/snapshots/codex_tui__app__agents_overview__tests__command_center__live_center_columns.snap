@@ -1,26 +1,27 @@
 ---
 source: tui/src/app/agent_center_tests.rs
+assertion_line: 83
 expression: "screen(&view, 160, 22)"
 ---
-  Agent command center  Group: Project  g
-   All 6   Needs you 2   Working 1   Ready 2   Inactive 1                                                                                 tab/shift+tab filter
+  Agent command center  Group: Project  g  View: list
+   All 7   Needs you 3   Working 1   Ready 2   Done 0   Inactive 1                                                                             tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                                                                                   Status         Updated  │ Task details
-  /tmp/project  6                                                                                                     │
-  › ○ Current task                                                                            Ready              now  │ Current task
-    ○ A longer task title that uses the available column                              voice   Ready           5m ago  │ ○ Ready
-    ! Failed task                                                                             Error           1h ago  │
-    ● Needs an answer                                                                         Needs input     2h ago  │ Project
-    ● Working task                                                                            Working         1d ago  │ /tmp/project
-    ○ Unloaded task                                                                           Inactive        2d ago  │ Model: Unknown
-                                                                                                                      │
-                                                                                                                      │ Prompt
-                                                                                                                      │ Current task
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
-                                                                                                                      │
-  ? help  esc back  ↑/↓ move  enter open  n new
+      Tasks                             Model                       Status         Updated  │ ● Current task
+  Pinned  7                                                                                 │ Unknown · OpenAI · asked by you
+  › ● Current task                      Unknown                     ! Needs you        now  │ ────────────────────────────────────────────────────────────────
+    ├─● A longer task title that uses…  Unknown                     ◇ Ready         5m ago  │ you → Unknown  ask
+    │ └─● Child                 voice   Unknown                     ◇ Ready         2m ago  │ Current task
+    ├─● Needs an answer                 Unknown                     ! Needs you     2h ago  │
+    ├─● Unloaded task                   Unknown                     ○ Inactive      2d ago  │ ▎ Unknown  ! needs you
+    ├─● Working task                    Unknown                     ◐ Working       1d ago  │
+    └─● Failed task                     Unknown                     ! Error         1h ago  │ Agent: Needs an answer
+                                                                                            │ Open task to review.
+                                                                                            │ Waiting for your response.
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+                                                                                            │
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="elpis-dashboard">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/elpis/dashboard.css">
+  <title>Elpis · Claude Code</title>
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="navbar dashboard-navbar" aria-label="Elpis Claude Code header">
+    <div class="navbar-start min-w-0">
+      <div class="brand-glyph" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="min-w-0"><p class="brand-kicker">ELPIS / CLAUDE CODE</p><h1 class="brand-title">Smart Prune for this session</h1></div>
+    </div>
+    <div class="navbar-end transport-actions">
+      <div class="transport-copy"><span class="status status-neutral" id="signal" aria-hidden="true"></span><span id="live" role="status" aria-live="polite">Connecting</span><span class="freshness" id="started">Session start unavailable</span></div>
+    </div>
+  </header>
+
+  <main class="dashboard-shell">
+    <dl class="stats prune-stats">
+      <div class="stat"><dt class="stat-title">Claude requests</dt><dd class="stat-value metric" id="requests">0</dd></div>
+      <div class="stat"><dt class="stat-title">Tool results</dt><dd class="stat-value metric" id="results">0</dd><p class="stat-desc" id="small">0 too small to prune</p></div>
+      <div class="stat"><dt class="stat-title">Pruned</dt><dd class="stat-value metric" id="compacted">0</dd><p class="stat-desc" id="checked">0 checked</p></div>
+      <div class="stat"><dt class="stat-title">Approx. tokens saved</dt><dd class="stat-value metric success-metric" id="saved">0</dd><p class="stat-desc" id="saved-share">of 0 checked</p></div>
+    </dl>
+
+    <div class="alert prune-explainer" role="note"><span class="truth-icon" aria-hidden="true">↳</span><span id="explainer">Waiting for Claude Code.</span></div>
+
+    <article class="card surface-card"><div class="card-body compact-card-body">
+      <div class="card-heading"><div><p class="section-kicker">THIS SESSION</p><h3>Checked tool results</h3></div><span class="badge badge-ghost">SOURCE → SENT</span></div>
+      <p class="empty-state" id="empty">No tool result in this session was large enough to check yet.</p>
+      <div class="token-table" id="recent" hidden></div>
+    </div></article>
+  </main>
+  <footer class="dashboard-footer"><span id="all">All elpis claude sessions: unavailable</span><span>Local-only · counts only, never the text of a result</span></footer>
+
+  <script>
+  'use strict';
+  const byId = id => document.getElementById(id);
+  const set = (id, text) => { byId(id).textContent = text; };
+  const compact = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+  const percent = (part, whole) => whole > 0 ? Math.round(part * 1000 / whole) / 10 + '%' : '0%';
+  const outcomes = { compacted: 'pruned', kept: 'kept as is', error: 'optimizer error, sent as is' };
+
+  function render(s) {
+    set('started', 'Started ' + new Date(s.started_at * 1000).toLocaleTimeString());
+    set('requests', String(s.requests));
+    set('results', String(s.results));
+    set('small', s.small_results + ' under ' + s.min_source_tokens.toLocaleString() + ' tokens, sent as is');
+    set('compacted', String(s.compacted));
+    set('checked', s.checked + ' checked');
+    set('saved', compact(s.saved_tokens));
+    set('saved-share', percent(s.saved_tokens, s.source_tokens) + ' of ' + compact(s.source_tokens) + ' checked');
+    set('explainer', !s.prune
+      ? 'Pruning is off for this session (--no-prune). Each request goes to Claude unchanged.'
+      : 'Elpis checks each tool result over ' + s.min_source_tokens.toLocaleString() +
+        ' tokens before Claude reads it, and sends a short form when the optimizer finds one. Smaller results go unchanged.');
+    const rows = s.recent.map(r => {
+      const line = document.createElement('div');
+      const label = document.createElement('span');
+      label.textContent = new Date(r.at * 1000).toLocaleTimeString() + ' · ' + (outcomes[r.outcome] || r.outcome) + (r.model ? ' · ' + r.model : '');
+      const value = document.createElement('strong');
+      value.textContent = compact(r.source_tokens) + ' → ' + compact(r.sent_tokens);
+      line.append(label, value);
+      return line;
+    });
+    byId('recent').replaceChildren(...rows);
+    byId('recent').hidden = rows.length === 0;
+    byId('empty').hidden = rows.length > 0;
+    set('all', 'All elpis claude sessions: ' + s.all.results + ' results checked · ' + compact(s.all.saved_tokens) + ' tokens saved');
+  }
+
+  async function poll() {
+    try {
+      const response = await fetch('/elpis/session.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(response.status);
+      render(await response.json());
+      set('live', 'Live · ' + new Date().toLocaleTimeString());
+      byId('signal').className = 'status status-success';
+    } catch {
+      set('live', 'Session ended: elpis claude is not running');
+      byId('signal').className = 'status status-neutral';
+    }
+  }
+  poll();
+  setInterval(poll, 2000);
+  </script>
+</body>
+</html>

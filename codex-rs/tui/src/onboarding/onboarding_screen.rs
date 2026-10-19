@@ -416,13 +416,16 @@ impl WidgetRef for &OnboardingScreen {
         let logo_presentation = if suppress_animations {
             Presentation::Hidden
         } else if self.text_entry_context().active {
-            Presentation::Faded
+            Presentation::Static
         } else {
             Presentation::Animated
         };
         for step in self.current_steps() {
             match step {
-                Step::Welcome(widget) => widget.set_presentation(logo_presentation),
+                Step::Welcome(widget) => {
+                    widget.update_layout_area(area);
+                    widget.set_presentation(logo_presentation);
+                }
                 Step::Auth(widget) => widget.set_animations_suppressed(suppress_animations),
                 Step::TrustDirectory(_) => {}
             }
@@ -471,9 +474,6 @@ impl WidgetRef for &OnboardingScreen {
             }
             let scratch_area = Rect::new(0, 0, width, max_h);
             let mut scratch = Buffer::empty(scratch_area);
-            if let Step::Welcome(widget) = step {
-                widget.update_layout_area(scratch_area);
-            }
             step.render_ref(scratch_area, &mut scratch);
             let h = used_rows(&scratch, width, max_h).min(max_h);
             if h > 0 {
@@ -663,14 +663,6 @@ async fn run_onboarding_screen_inner(
                                 }
                                 pending_copy = None;
                             }
-                            for step in &onboarding_screen.steps {
-                                if let Step::Welcome(widget) = step {
-                                    if matches!(&event, TuiEvent::Resume) {
-                                        widget.set_presentation(crate::empty_state_animation::Presentation::Hidden);
-                                    }
-                                    widget.set_focused(tui.is_terminal_focused());
-                                }
-                            }
                             if !did_full_clear_after_success
                                 && onboarding_screen.steps.iter().any(|step| {
                                     if let Step::Auth(w) = step {
@@ -836,6 +828,10 @@ async fn persist_selected_trust(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "welcome_preview_tests.rs"]
+mod welcome_preview_tests;
 
 #[cfg(test)]
 mod tests {

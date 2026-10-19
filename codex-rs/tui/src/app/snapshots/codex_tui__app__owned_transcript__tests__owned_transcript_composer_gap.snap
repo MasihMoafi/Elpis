@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/owned_transcript_tests.rs
+assertion_line: 415
 expression: "snapshots.join(\"\\n\\n\")"
 ---
 Latest
@@ -9,58 +10,57 @@ Transcript row 37
 Transcript row 38
 Transcript row 39
 Transcript row 40
- Elpis · model gpt-test default · location /tmp/project
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-› draft                                                                        │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                        100% context left · Tab Context Ledger
+
+› draft
+
+  gpt-test default · /tmp/project
+
 
 Reading
-Transcript row 30
-Transcript row 31
-Transcript row 32
-Transcript row 33
-Transcript row 34
-Transcript row 35
- Elpis · model gpt-test default · location /tmp/project
+Transcript row 30                                                              │
+Transcript row 31                                                              │
+Transcript row 32                                                              │
+Transcript row 33                                                              │
+Transcript row 34                                                              ┃
+Transcript row 35                                                              ┃
                              ↓ Back to bottom · esc
-┌──────────────────────────────────────────────────────────────────────────────┐
-› draft                                                                        │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+› draft
+
+  gpt-test default · /tmp/project
   esc latest
 
 Resized multiline composer
-Transcript row 30
-Transcript row 31
-Transcript row 32
-Transcript row 33
- Elpis · model gpt-test default · locati
+Transcript row 30                      │
+Transcript row 31                      │
+Transcript row 32                      ┃
+Transcript row 33                      ┃
          ↓ Back to bottom · esc
-┌──────────────────────────────────────┐
-› draft                                │
-│ second line                          │
-│ third line                           │
-└──────────────────────────────────────┘
+
+› draft
+  second line
+  third line
+
+  gpt-test default · /tmp/project
   esc latest
 
 Tiny terminal
- Elpis · model gpt-test default · locati
-┌──────────────────────────────────────┐
-› draft                                │
-└──────────────────────────────────────┘
+
+› draft
+
+  gpt-test default · /tmp/project
   esc latest
 
 Detailed
-• Viewed image assets/detail-image.png
+• Viewed image assets/detail-image.png                                         ┃
+                                                                               ┃
+                                                                               ┃
+                                                                               ┃
+                                                                               ┃
+                                                                               ┃
 
 
+› preserved draft
 
-
-
- Elpis · model gpt-test default · location /tmp/project
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-› preserved draft                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                        100% context left · Tab Context Ledger
+  gpt-test default · /tmp/project

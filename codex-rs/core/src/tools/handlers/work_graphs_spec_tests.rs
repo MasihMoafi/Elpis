@@ -46,3 +46,31 @@ fn report_tool_is_worker_only_and_requires_evidence_field() {
         );
     }
 }
+
+#[test]
+fn work_graph_task_schema_offers_an_optional_reasoning_effort() {
+    let ToolSpec::Function(tool) = create_run_agent_work_graph_tool() else {
+        panic!("expected function tool");
+    };
+    let task_schema = tool
+        .parameters
+        .properties
+        .as_ref()
+        .and_then(|properties| properties.get("tasks"))
+        .and_then(|tasks| tasks.items.as_deref())
+        .expect("task schema");
+    assert!(
+        task_schema
+            .properties
+            .as_ref()
+            .expect("task properties")
+            .contains_key("reasoning_effort")
+    );
+    assert!(
+        !task_schema
+            .required
+            .as_ref()
+            .expect("required task fields")
+            .contains(&"reasoning_effort".to_string())
+    );
+}

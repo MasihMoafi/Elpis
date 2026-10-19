@@ -1,17 +1,19 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
-assertion_line: 233
+assertion_line: 231
 expression: popup
 ---
- Elpis · model gpt-5.6-sol default · location /tmp/project
-
   Update Model Permissions
 
 
-› 1. Ask for approval  Read and edit workspace files and run commands, with
-                       approval required for internet access or edits outside
-                       the workspace
-  2. Full Access       Use with caution: Elpis can edit files outside this
-                       workspace and access the internet without approval
+› 1. Ask for approval    Read and edit workspace files and run commands, with
+                         approval required for internet access or edits outside
+                         the workspace
+  2. Full Access         Use with caution: Elpis can edit files outside this
+                         workspace and access the internet without approval
+  3. Bypass permissions  Elpis will run anything without asking: any command,
+                         any file, the internet, even commands it would
+                         otherwise refuse (such as rm -rf). Only your own rules,
+                         hooks and managed policy can still stop it.
 
   enter select · esc back

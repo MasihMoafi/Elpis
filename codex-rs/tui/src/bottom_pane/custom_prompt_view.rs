@@ -57,7 +57,7 @@ pub(crate) struct CustomPromptView {
     completion: Option<ViewCompletion>,
     pending_suggestion: Option<PendingTextSuggestion>,
     user_edited: bool,
-    /// Elpis: render the input as bullets, for an API key.
+    /// Render secrets as bullets while preserving their submission value.
     masked: bool,
 }
 
@@ -90,7 +90,6 @@ impl CustomPromptView {
         }
     }
 
-    /// Elpis: show the typed text as bullets, for an API key.
     pub(crate) fn masked(mut self) -> Self {
         self.masked = true;
         self
@@ -267,6 +266,10 @@ impl BottomPaneView for CustomPromptView {
 #[cfg(test)]
 #[path = "custom_prompt_view_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "custom_prompt_view_masking_tests.rs"]
+mod masking_tests;
 
 impl Renderable for CustomPromptView {
     fn desired_height(&self, width: u16) -> u16 {

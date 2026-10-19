@@ -1,6 +1,8 @@
 //! Status filters and viewport state survive refreshes of the shared task projection.
 
+mod conversation;
 mod hints;
+mod identity;
 mod input;
 mod navigation;
 mod render;
@@ -14,6 +16,7 @@ pub(super) const TASK_FILTERS: &[(&str, Option<AgentsOverviewGroup>)] = &[
     ("Needs you", Some(AgentsOverviewGroup::NeedsYou)),
     ("Working", Some(AgentsOverviewGroup::Working)),
     ("Ready", Some(AgentsOverviewGroup::Ready)),
+    ("Done", Some(AgentsOverviewGroup::Done)),
     ("Inactive", Some(AgentsOverviewGroup::Finished)),
 ];
 

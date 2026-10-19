@@ -1,9 +1,10 @@
 ---
 source: tui/src/app/agent_center_tests.rs
+assertion_line: 481
 expression: "screen(&view, 100, 12)"
 ---
-  Agent command center  Group: Project  g
-   All 0   Needs you 0   Working 0   Ready 0   Inactive 0                     tab/shift+tab filter
+  Agent command center  Group: Project  g  View: list
+   All 0   Needs you 0   Working 0   Ready 0   Done 0   Inactive 0                 tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────
   No tasks yet                                            │
                                                           │
@@ -13,4 +14,4 @@ expression: "screen(&view, 100, 12)"
                                                           │
                                                           │
                                                           │
-  ? help  esc back  k/j move  enter open  n new
+  ? help  esc back  k/j move  enter open  s steer  x stop  n new

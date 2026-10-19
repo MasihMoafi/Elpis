@@ -134,6 +134,12 @@ pub(crate) fn thread_items_to_transcript_cells(
     let mut cells: TranscriptCells = Vec::new();
     let mut pending = None;
     for item in items {
+        if let ThreadItem::SmartPrune { prune, .. } = &item {
+            PendingActivity::flush(&mut pending, &mut cells);
+            if crate::chatwidget::smart_prune_log::attach_to_tool(&mut cells, prune) {
+                continue;
+            }
+        }
         if matches!(item, ThreadItem::Reasoning { .. })
             && let Some(group) = &mut pending
         {

@@ -24,6 +24,7 @@ use codex_network_proxy::NetworkProxyConfig;
 #[cfg(test)]
 use codex_network_proxy::NetworkUnixSocketPermission as ProxyNetworkUnixSocketPermission;
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -47,6 +48,9 @@ pub(crate) const BUILT_IN_READ_ONLY_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_
 pub(crate) const BUILT_IN_WORKSPACE_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 pub(crate) const BUILT_IN_DANGER_FULL_ACCESS_PROFILE: &str =
     BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+/// Elpis: no sandbox, like full access; see `bypass_permissions_active` for the rest.
+pub(crate) const BUILT_IN_BYPASS_PERMISSIONS_PROFILE: &str =
+    BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 
 pub(crate) fn default_builtin_permission_profile_name(
     active_project: &ProjectConfig,
@@ -67,6 +71,7 @@ pub(crate) fn is_builtin_permission_profile_name(profile_name: &str) -> bool {
         BUILT_IN_READ_ONLY_PROFILE
             | BUILT_IN_WORKSPACE_PROFILE
             | BUILT_IN_DANGER_FULL_ACCESS_PROFILE
+            | BUILT_IN_BYPASS_PERMISSIONS_PROFILE
     )
 }
 
@@ -94,7 +99,9 @@ fn builtin_permission_profile(
             ),
             None => PermissionProfile::workspace_write(),
         }),
-        BUILT_IN_DANGER_FULL_ACCESS_PROFILE => Some(PermissionProfile::Disabled),
+        BUILT_IN_DANGER_FULL_ACCESS_PROFILE | BUILT_IN_BYPASS_PERMISSIONS_PROFILE => {
+            Some(PermissionProfile::Disabled)
+        }
         _ => None,
     }
 }

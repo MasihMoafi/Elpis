@@ -1,6 +1,6 @@
 ---
 source: tui/src/exec_cell/render.rs
-assertion_line: 1108
+assertion_line: 1100
 expression: "(preview, compact, transcript)"
 ---
 (
@@ -26,7 +26,7 @@ expression: "(preview, compact, transcript)"
     ],
     [
         Line::from_iter([
-            Span::from("•").fg(Color::Reset).bold(),
+            Span::from("•").red().bold(),
             Span::from(" "),
             Span::from("Failed (exit 1)").bold(),
             Span::from(" "),
@@ -42,7 +42,7 @@ expression: "(preview, compact, transcript)"
     ],
     [
         Line::from_iter([
-            Span::from("$ ").fg(Color::Reset),
+            Span::from("$ ").magenta(),
             Span::from("echo").fg(Color::Rgb(137, 180, 250)),
             Span::from(" output").fg(Color::Rgb(205, 214, 244)),
         ]),
@@ -55,7 +55,7 @@ expression: "(preview, compact, transcript)"
             Span::from("tail output that also wraps").green().bg(Color::Reset).underline_color(Color::Reset).dim().not_bold().not_italic().not_underlined().not_slow_blink().not_rapid_blink().not_reversed().not_hidden().not_crossed_out(),
         ]),
         Line::from_iter([
-            Span::from("✗").fg(Color::Reset).bold(),
+            Span::from("✗").red().bold(),
             Span::from(" (1)"),
             Span::from(" • 0ms").dim(),
         ]),

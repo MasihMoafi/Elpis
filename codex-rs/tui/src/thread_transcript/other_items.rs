@@ -18,6 +18,9 @@ use std::sync::Arc;
 pub(super) fn cells(item: ThreadItem, cwd: &AbsolutePathBuf) -> TranscriptCells {
     let mut cells: TranscriptCells = Vec::new();
     match item {
+        ThreadItem::SmartPrune { prune, .. } => cells.push(Arc::new(
+            crate::chatwidget::smart_prune_log::SmartPruneCell(prune),
+        )),
         ThreadItem::FileChange {
             id,
             changes,

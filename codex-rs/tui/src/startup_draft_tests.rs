@@ -28,20 +28,9 @@ where
     I: Iterator<Item = TuiEvent> + Send + 'static,
 {
     let (tx, rx) = unbounded_channel();
-    let mut blossom = crate::empty_state_animation::EmptyStateAnimation::default();
-    blossom
-        .greeting
-        .set(crate::empty_state_animation::Greeting {
-            phrase: "Pull up a prompt.",
-        })
-        .expect("initial greeting");
-    blossom.start_fresh();
-    let mut header = startup_session_header(/*config*/ None);
-    crate::history_cell::set_session_greeting(header.as_mut(), &blossom.greeting);
+    let header = startup_session_header(/*cwd*/ None);
     StartupDraftPump {
         header,
-        blossom: std::cell::RefCell::new(blossom),
-        motion: crate::motion::MotionMode::Animated,
         bottom_pane: startup_draft_bottom_pane(
             AppEventSender::new(tx),
             FrameRequester::test_dummy(),
@@ -53,6 +42,7 @@ where
         session_action: StartupDraftSessionAction::New,
         resolved_selection: None,
         configured_cwd: None,
+        context_ledger_width: None,
         pending_paste_newline: None,
         submission_pending: false,
         key_chord_matcher: Default::default(),
@@ -78,6 +68,7 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
 
     for (label, width, text, session_action) in [
         ("empty", 48, "", StartupDraftSessionAction::New),
+        ("configured", 48, "", StartupDraftSessionAction::New),
         ("resuming", 48, "", StartupDraftSessionAction::Resume),
         (
             "forking",
@@ -100,12 +91,8 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
     ] {
         let mut pump = startup_test_pump(std::iter::empty());
         pump.session_action = session_action;
-        // Resume and fork have no fresh-thread greeting. Exercise the real initial state.
-        if matches!(
-            session_action,
-            StartupDraftSessionAction::Resume | StartupDraftSessionAction::Fork
-        ) {
-            pump.header = startup_session_header(/*config*/ None);
+        if label == "configured" {
+            pump.header = startup_session_header(Some(std::path::Path::new("workspace")));
         }
         pump.bottom_pane
             .set_composer_text(text.to_string(), Vec::new(), Vec::new());
@@ -142,7 +129,9 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
             })
             .collect::<Vec<_>>()
             .join("\n")
-            .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
+            .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>");
 
         assert!(
             cursor.1 >= pump.header.desired_height(width),
@@ -183,9 +172,12 @@ fn terminal_app_ssh_fallback_renders_inline_startup() {
         let area = Rect::new(/*x*/ 0, /*y*/ 0, width, height);
         let mut buffer = Buffer::empty(area);
         renderable.render(area, &mut buffer);
-        assert!(buffer.content.iter().any(|cell| {
-            cell.symbol() == "›" && cell.modifier.contains(ratatui::style::Modifier::BOLD)
-        }));
+        assert!(
+            buffer
+                .content
+                .iter()
+                .any(|cell| { cell.symbol() == ">" && cell.fg == crate::style::accent_color() })
+        );
         let frame = (0..height)
             .map(|y| {
                 (0..width)
@@ -205,6 +197,8 @@ fn terminal_app_ssh_fallback_renders_inline_startup() {
         frames
             .join("\n---\n")
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
     );
 }
 
@@ -234,6 +228,8 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
             .collect::<Vec<_>>()
             .join("\n")
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
     };
 
     for (label, initial_screen, session_action) in [
@@ -261,7 +257,6 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
         let mut pump = startup_test_pump(std::iter::empty());
         pump.initial_screen = initial_screen;
         pump.session_action = session_action;
-        pump.blossom.borrow_mut().dismiss();
         if initial_screen == StartupDraftInitialScreen::Composer {
             pump.bottom_pane.insert_str("draft while loading");
         }
@@ -276,7 +271,6 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
 
         pump.update_session_selection(&mut tui, &SessionSelection::StartFresh)
             .expect("clear the loading status after a fresh-session selection");
-        assert!(pump.blossom.borrow().is_eligible());
         if initial_screen == StartupDraftInitialScreen::SessionPicker {
             assert!(tui.terminal.viewport_area.is_empty());
             pump.show(&mut tui)
@@ -311,15 +305,18 @@ async fn startup_draft_hydrates_its_header_without_moving_the_composer() {
         startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action)
             .desired_height(width);
 
-    assert_eq!(pump.header.raw_lines()[2].to_string().trim(), "loading");
-    pump.apply_config(&config);
+    assert_eq!(pump.header.raw_lines()[2].to_string(), "directory: loading");
+    pump.apply_settings(
+        &crate::local_settings::LocalSettings::from(&config),
+        config.cwd.as_path(),
+    );
     let expected_directory = crate::history_cell::SessionHeaderHistoryCell::format_directory_inner(
         config.cwd.as_path(),
         /*max_width*/ None,
     );
     assert_eq!(
-        pump.header.raw_lines()[2].to_string().trim(),
-        expected_directory
+        pump.header.raw_lines()[2].to_string(),
+        format!("directory: {expected_directory}")
     );
     assert_eq!(
         startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action)
@@ -641,11 +638,12 @@ fn startup_draft_preserves_windows_altgr_text_input() {
 #[tokio::test]
 async fn startup_draft_applies_paste_burst_preferences_without_losing_buffered_input() {
     let codex_home = tempfile::tempdir().expect("create temporary Elpis home");
-    let mut config = ConfigBuilder::default()
+    let config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()
         .await
         .expect("build startup configuration");
+    let mut settings = crate::local_settings::LocalSettings::from(&config);
     let mut pump = startup_test_pump(std::iter::empty());
 
     handle_startup_draft_key(
@@ -656,8 +654,8 @@ async fn startup_draft_applies_paste_burst_preferences_without_losing_buffered_i
     assert!(pump.bottom_pane.is_in_paste_burst());
     assert_eq!(pump.bottom_pane.composer_text(), "");
 
-    config.disable_paste_burst = true;
-    pump.apply_config(&config);
+    settings.tui.disable_paste_burst = Some(true);
+    pump.apply_settings(&settings, config.cwd.as_path());
     assert_eq!(pump.bottom_pane.composer_text(), "a");
     assert!(!pump.bottom_pane.is_in_paste_burst());
 
@@ -669,8 +667,8 @@ async fn startup_draft_applies_paste_burst_preferences_without_losing_buffered_i
     assert_eq!(pump.bottom_pane.composer_text(), "ab");
     assert!(!pump.bottom_pane.is_in_paste_burst());
 
-    config.disable_paste_burst = false;
-    pump.apply_config(&config);
+    settings.tui.disable_paste_burst = Some(false);
+    pump.apply_settings(&settings, config.cwd.as_path());
     handle_startup_draft_key(
         &mut pump.bottom_pane,
         KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
@@ -679,8 +677,8 @@ async fn startup_draft_applies_paste_burst_preferences_without_losing_buffered_i
     assert_eq!(pump.bottom_pane.composer_text(), "ab");
     assert!(pump.bottom_pane.is_in_paste_burst());
 
-    config.disable_paste_burst = true;
-    pump.apply_config(&config);
+    settings.tui.disable_paste_burst = Some(true);
+    pump.apply_settings(&settings, config.cwd.as_path());
     assert_eq!(pump.bottom_pane.composer_text(), "abc");
     assert!(!pump.bottom_pane.is_in_paste_burst());
     assert!(pump.app_event_rx.try_recv().is_err());
@@ -689,18 +687,19 @@ async fn startup_draft_applies_paste_burst_preferences_without_losing_buffered_i
 #[tokio::test]
 async fn startup_draft_applies_editor_keymap_without_enabling_vim() {
     let codex_home = tempfile::tempdir().expect("create temporary Elpis home");
-    let mut config = ConfigBuilder::default()
+    let config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .build()
         .await
         .expect("build startup configuration");
-    config.tui_vim_mode_default = true;
-    config.tui_keymap.editor.move_line_start = Some(codex_config::types::KeybindingsSpec::One(
+    let mut settings = crate::local_settings::LocalSettings::from(&config);
+    settings.tui.vim_mode_default = true;
+    settings.tui.keymap.editor.move_line_start = Some(codex_config::types::KeybindingsSpec::One(
         codex_config::types::KeybindingSpec("ctrl-z".to_string()),
     ));
     let mut pump = startup_test_pump(std::iter::empty());
     pump.bottom_pane.insert_str("draft");
-    pump.apply_config(&config);
+    pump.apply_settings(&settings, config.cwd.as_path());
     assert!(!pump.bottom_pane.composer_is_vim_enabled());
     handle_startup_draft_key(
         &mut pump.bottom_pane,
@@ -718,11 +717,11 @@ async fn startup_draft_applies_editor_keymap_without_enabling_vim() {
     let mut tui = crate::tui::test_support::make_test_tui().expect("create test terminal");
     pump.handle_event(&mut tui, TuiEvent::Key(KeyEvent::from(KeyCode::Enter)))
         .expect("confirm draft");
-    pump.apply_config(&config);
+    pump.apply_settings(&settings, config.cwd.as_path());
     assert!(pump.submission_pending);
-    config.tui_keymap.composer.submit =
+    settings.tui.keymap.composer.submit =
         Some(codex_config::types::KeybindingsSpec::Many(Vec::new()));
-    pump.apply_config(&config);
+    pump.apply_settings(&settings, config.cwd.as_path());
     assert!(!pump.submission_pending);
     assert_eq!(pump.bottom_pane.composer_text(), "draftx");
 }
@@ -799,7 +798,9 @@ async fn startup_draft_waits_for_onboarding_before_accepting_input() {
         })
         .collect::<Vec<_>>()
         .join("\n")
-        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
+        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+        // Elpis: the header shows the Elpis release.
+        .replace(crate::branding::ELPIS_VERSION, "<VERSION>");
     drop(renderable);
     frames.push_str(&format!("\n---\nafter onboarding:\n{visible_frame}"));
     insta::assert_snapshot!("startup_draft_onboarding_transition", frames);
@@ -924,4 +925,71 @@ async fn startup_draft_preserves_large_pastes_without_attaching_images() {
     assert_eq!(draft.pending_pastes, vec![(draft.text.clone(), pasted)]);
     assert_eq!(draft.cursor, draft.text.len());
     assert!(draft.local_images.is_empty());
+}
+
+#[tokio::test]
+async fn tui_pointer_startup_draft_drag_copies_exact_text_and_survives_draws() -> std::io::Result<()>
+{
+    use crate::clipboard_copy::CopyStatus;
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    let text = "DRAFT_SELECT alpha beta gamma";
+    for (protected, pending) in [(false, false), (false, true), (true, false)] {
+        let mut pump = quiet_startup_test_pump();
+        pump.submission_pending = pending;
+        let mut tui = crate::tui::test_support::make_test_tui()?;
+        tui.set_owned_screen(true)?;
+        pump.bottom_pane.insert_str(text);
+        pump.handle_event(&mut tui, TuiEvent::Draw)?;
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let (x, y) = buffer
+            .content()
+            .chunks(usize::from(buffer.area.width))
+            .enumerate()
+            .find_map(|(y, row)| {
+                let line = row
+                    .iter()
+                    .map(ratatui::buffer::Cell::symbol)
+                    .collect::<String>();
+                line.find("alpha").map(|offset| {
+                    (
+                        unicode_width::UnicodeWidthStr::width(&line[..offset]) as u16,
+                        y as u16,
+                    )
+                })
+            })
+            .expect("rendered startup draft");
+        if protected {
+            pump.initial_screen = StartupDraftInitialScreen::SessionPicker;
+        }
+        for (kind, column) in [
+            (MouseEventKind::Down(MouseButton::Left), x),
+            (MouseEventKind::Drag(MouseButton::Left), x + 5),
+            (MouseEventKind::Up(MouseButton::Left), x + 5),
+        ] {
+            pump.handle_event(
+                &mut tui,
+                TuiEvent::Mouse(MouseEvent {
+                    kind,
+                    column,
+                    row: y,
+                    modifiers: KeyModifiers::NONE,
+                }),
+            )?;
+            pump.handle_event(&mut tui, TuiEvent::Draw)?;
+        }
+        let mut copied = None;
+        let result = pump.bottom_pane.copy_composer_selection(
+            &TuiEvent::Key(KeyEvent::new(KeyCode::Insert, KeyModifiers::CONTROL)),
+            |selected| {
+                copied = Some(selected.to_owned());
+                Ok(CopyStatus::Unconfirmed)
+            },
+        );
+        assert_eq!(copied.as_deref(), (!protected).then_some("alpha"));
+        assert_eq!(result.is_some(), !protected);
+        assert_eq!(pump.bottom_pane.composer_text(), text);
+        assert_eq!(pump.submission_pending, pending);
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
 }

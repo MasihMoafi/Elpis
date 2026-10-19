@@ -47,7 +47,6 @@ pub(crate) enum WarningKey<'a> {
 
 #[derive(Debug)]
 pub(crate) struct WarningHistoryCell {
-    pub(crate) server_version_notice: bool,
     pub(super) visible_in_transcript: bool,
     pub(super) key: String,
     pub(super) diagnostic: String,

@@ -24,9 +24,9 @@ pub(crate) fn remote_connection_status_value(
 ) -> Option<RemoteConnectionStatus> {
     let endpoint = match app_server_target {
         AppServerTarget::Embedded => return None,
-        AppServerTarget::LocalDaemon { endpoint, .. } | AppServerTarget::Remote { endpoint } => {
-            endpoint
-        }
+        AppServerTarget::LocalDaemon { endpoint, .. }
+        | AppServerTarget::LocalBridge { endpoint }
+        | AppServerTarget::Remote { endpoint } => endpoint,
     };
     let address = match endpoint {
         RemoteAppServerEndpoint::WebSocket { websocket_url, .. } => {
@@ -88,9 +88,9 @@ pub(crate) fn server_version_notice_key(
     let mut hasher = Sha256::new();
     let endpoint = match target {
         AppServerTarget::Embedded => None,
-        AppServerTarget::LocalDaemon { endpoint, .. } | AppServerTarget::Remote { endpoint } => {
-            Some(endpoint)
-        }
+        AppServerTarget::LocalDaemon { endpoint, .. }
+        | AppServerTarget::LocalBridge { endpoint }
+        | AppServerTarget::Remote { endpoint } => Some(endpoint),
     };
     if let Some(server_home) = server_home {
         hash_identity_part(&mut hasher, b"server-home:", server_home.as_bytes());

@@ -2,11 +2,15 @@
 //! HTML/CSS/JS page (see `dashboard_assets/index.html`) that polls `/data.json`
 //! for the live state published from the chat widget.
 //!
-//! Copied from v0.3.0 `dashboard_server.rs`. This build leaves out what it cannot serve yet:
-//! the Smart Prune settings editor and the provider key page answer "not in this Elpis build
-//! yet" (their v0.3.0 modules were `dashboard_pruner.rs` and `dashboard_provider_keys.rs`),
-//! and a turn's cost is only ever unavailable, so neither the turn profile breakdown nor a
-//! price has a representation here. The server binds 127.0.0.1 only.
+//! Copied from v0.3.0 `dashboard_server.rs`. A turn's cost is only ever unavailable in this
+//! build, so neither the turn profile breakdown nor a price has a representation here. The
+//! server binds 127.0.0.1 only.
+//!
+//! Three pages change settings: the Models tab (`dashboard_models.rs`), the provider keys
+//! (`dashboard_provider_keys.rs`) and the Smart Prune prompt (`dashboard_pruner.rs`). Each
+//! needs this session's token in its path, and a write must be a same-origin JSON POST
+//! (`read_write_body`). They reach the running App through the [`DashboardLink`] it registers
+//! each time it publishes the page's state.
 
 use std::io::Cursor;
 use std::net::IpAddr;
@@ -27,13 +31,26 @@ use crate::activity_state::DashboardActivityStatus as ProjectedActivityStatus;
 mod claude;
 #[path = "dashboard_evidence.rs"]
 mod evidence;
+#[path = "dashboard_models.rs"]
+mod models;
+#[path = "dashboard_provider_keys.rs"]
+mod provider_keys;
+#[path = "dashboard_pruner.rs"]
+mod pruner;
+#[path = "dashboard_threads.rs"]
+mod threads;
 
 pub(crate) use evidence::publish as publish_evidence;
 pub(crate) use evidence::register as evidence_url;
+pub(crate) use models::DashboardLink;
+pub(crate) use models::DashboardModelChoice;
+pub(crate) use models::DashboardModels;
+pub(crate) use models::register_link;
 
 const INDEX_HTML: &str = include_str!("dashboard_assets/index.html");
 const DASHBOARD_CSS: &str = include_str!("dashboard_assets/dashboard.css");
 const DASHBOARD_JS: &str = include_str!("dashboard_assets/dashboard.js");
+const DASHBOARD_WORKFLOWS_JS: &str = include_str!("dashboard_assets/dashboard_workflows.js");
 const SCHEMA_VERSION: u64 = 1;
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const UNAVAILABLE_JSON: &[u8] = br#"{"state":null,"heartbeat_at":null}"#;
@@ -49,6 +66,43 @@ pub(crate) struct DashboardState {
     pub(crate) tokens: DashboardTokens,
     pub(crate) activity: DashboardActivity,
     pub(crate) smart_prune: DashboardSmartPrune,
+    /// The usage limits `/usage` shows. Empty when none were reported; absent in states written
+    /// before the Limits card.
+    #[serde(default)]
+    pub(crate) limits: Vec<DashboardLimit>,
+}
+
+/// One usage-limit window, such as Claude's 5-hour or weekly limit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardLimit {
+    pub(crate) label: String,
+    pub(crate) used_percent: i64,
+    /// Local reset time as `/usage` formats it; `None` when the server sent none.
+    pub(crate) resets_at: Option<String>,
+}
+
+/// One agent on the Agents map: a chat, or a helper another agent started.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct DashboardAgent {
+    pub(crate) id: String,
+    /// The agent that started this one; `None` for a chat the user started.
+    pub(crate) parent_id: Option<String>,
+    pub(crate) title: String,
+    pub(crate) model: Option<String>,
+    /// `#rrggbb`: the hue the agent list in Elpis gives this agent.
+    pub(crate) color: Option<String>,
+    pub(crate) status: DashboardAgentStatus,
+    /// The status in the agent list's words.
+    pub(crate) status_label: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DashboardAgentStatus {
+    NeedsYou,
+    Working,
+    Ready,
+    Inactive,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -68,6 +122,10 @@ pub(crate) struct DashboardContext {
     pub(crate) saved_tokens: u64,
     pub(crate) sources: Vec<DashboardSource>,
     pub(crate) backtrack_points: usize,
+    /// The chat, background and Smart Prune models this session uses now. Absent in states
+    /// written before the Models tab.
+    #[serde(default)]
+    pub(crate) models: DashboardModels,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -182,6 +240,8 @@ pub(crate) struct DashboardSmartPruneLatest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct DashboardSmartPruneAttempt {
     pub(crate) status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) failure_reason: Option<String>,
     pub(crate) model: String,
     pub(crate) reasoning_effort: String,
     pub(crate) candidate_outputs: u64,
@@ -193,12 +253,31 @@ pub(crate) struct DashboardSmartPruneAttempt {
 
 static DASHBOARD_STATE: Mutex<Option<DashboardState>> = Mutex::new(None);
 static SERVER_URL: Mutex<Option<String>> = Mutex::new(None);
+static DASHBOARD_AGENTS: Mutex<Vec<DashboardAgent>> = Mutex::new(Vec::new());
+
+/// Whether `/dashboard` has started this session's page server.
+pub(crate) fn is_running() -> bool {
+    SERVER_URL.lock().is_ok_and(|url| url.is_some())
+}
+
+/// Replaces the agents the Agents map draws; the page reads them from `/agents.json`.
+pub(crate) fn publish_agents(agents: Vec<DashboardAgent>) {
+    if let Ok(mut slot) = DASHBOARD_AGENTS.lock() {
+        *slot = agents;
+    }
+}
+
+fn agents_body(agents: &[DashboardAgent]) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({ "agents": agents }))
+        .unwrap_or_else(|_| br#"{"agents":[]}"#.to_vec())
+}
 
 pub(crate) fn publish_state(
     context: DashboardContext,
     tokens: DashboardTokens,
     activity: DashboardActivityState,
     smart_prune: DashboardSmartPrune,
+    limits: Vec<DashboardLimit>,
 ) -> bool {
     let Ok(mut slot) = DASHBOARD_STATE.lock() else {
         return false;
@@ -209,6 +288,7 @@ pub(crate) fn publish_state(
         tokens,
         activity,
         smart_prune,
+        limits,
         Utc::now().timestamp_millis(),
     )
 }
@@ -219,6 +299,7 @@ fn publish_state_into(
     tokens: DashboardTokens,
     activity: DashboardActivityState,
     smart_prune: DashboardSmartPrune,
+    limits: Vec<DashboardLimit>,
     generated_at: i64,
 ) -> bool {
     let activity = map_activity(activity);
@@ -227,7 +308,8 @@ fn publish_state_into(
             if current.context == context
                 && current.tokens == tokens
                 && current.activity == activity
-                && current.smart_prune == smart_prune =>
+                && current.smart_prune == smart_prune
+                && current.limits == limits =>
         {
             return false;
         }
@@ -242,6 +324,7 @@ fn publish_state_into(
         tokens,
         activity,
         smart_prune,
+        limits,
     });
     true
 }
@@ -323,11 +406,144 @@ fn dashboard_bind_addr() -> SocketAddr {
 }
 
 fn serve(listener: tiny_http::Server, port: u16) {
-    for request in listener.incoming_requests() {
+    for mut request in listener.incoming_requests() {
+        // Model discovery and transcript reads must not block dashboard polling.
+        if request.url().starts_with("/models/") || request.url().starts_with("/threads/") {
+            let _ = std::thread::Builder::new()
+                .name("elpis-dashboard-read".to_string())
+                .spawn(move || {
+                    let link = models::current_link();
+                    let response = route(&mut request, port, link.as_deref(), None, 0);
+                    let _ = request.respond(response);
+                });
+            continue;
+        }
+        let link = models::current_link();
         let state = DASHBOARD_STATE.lock().ok().and_then(|state| state.clone());
-        let response = response_for_at(&request, port, state, Utc::now().timestamp_millis());
+        let response = route(
+            &mut request,
+            port,
+            link.as_deref(),
+            state,
+            Utc::now().timestamp_millis(),
+        );
         let _ = request.respond(response);
     }
+}
+
+/// Every request: the Host check, then the capability routes, then the read-only page.
+fn route(
+    request: &mut tiny_http::Request,
+    port: u16,
+    link: Option<&DashboardLink>,
+    state: Option<DashboardState>,
+    heartbeat_at: i64,
+) -> DashboardResponse {
+    if !valid_host(request, port) {
+        return response(403, "text/plain; charset=utf-8", b"forbidden".to_vec());
+    }
+    let url = request.url();
+    if url.starts_with("/threads/") {
+        return threads::route(request, port, link);
+    }
+    if url.starts_with("/models/") {
+        return models::route(link, request, port);
+    }
+    if url.starts_with("/provider-keys/") {
+        return provider_keys::route(link, request, port);
+    }
+    if url.starts_with("/pruner-settings/") {
+        return pruner::route(link, request, port);
+    }
+    // Each poll asks the App to republish, so the page shows this session within one poll
+    // even when nothing in the chat announced the change.
+    if url == "/data.json"
+        && request.method() == &tiny_http::Method::Get
+        && let Some(link) = link
+    {
+        link.request_refresh();
+    }
+    if url == "/agents.json"
+        && request.method() == &tiny_http::Method::Get
+        && let Some(link) = link
+    {
+        link.request_agents_refresh();
+    }
+    response_for_at(request, port, state, heartbeat_at)
+}
+
+fn plain(status: u16, message: &str) -> DashboardResponse {
+    response(
+        status,
+        "text/plain; charset=utf-8",
+        message.as_bytes().to_vec(),
+    )
+}
+
+fn json_response(value: &serde_json::Value) -> DashboardResponse {
+    match serde_json::to_vec(value) {
+        Ok(body) => response(200, "application/json; charset=utf-8", body),
+        Err(_) => plain(500, "Cannot encode the answer"),
+    }
+}
+
+/// The path after `prefix` and this session's token: `""` for the route itself, or the
+/// rest after a `/`. A wrong token, like a foreign Host, learns nothing.
+fn capability_path<'a>(
+    request: &'a tiny_http::Request,
+    port: u16,
+    prefix: &str,
+) -> Result<&'a str, DashboardResponse> {
+    let rest = request
+        .url()
+        .strip_prefix(prefix)
+        .ok_or_else(|| plain(404, "Not found"))?;
+    let (token, path) = rest.split_once('/').unwrap_or((rest, ""));
+    if !valid_host(request, port) || !evidence::valid_token(token) {
+        return Err(plain(403, "Forbidden"));
+    }
+    Ok(path)
+}
+
+/// Reads the body of a write. A write must come from this page (its `Origin`), be JSON (a
+/// cross-site form cannot send that without a preflight this server never answers) and
+/// carry a length no larger than `max_bytes`.
+fn read_write_body(
+    request: &mut tiny_http::Request,
+    port: u16,
+    max_bytes: u64,
+) -> Result<Vec<u8>, DashboardResponse> {
+    use std::io::Read;
+
+    let origin = format!("http://127.0.0.1:{port}");
+    let same_origin = request
+        .headers()
+        .iter()
+        .any(|header| header.field.equiv("Origin") && header.value.as_str() == origin);
+    let json = request.headers().iter().any(|header| {
+        header.field.equiv("Content-Type")
+            && header.value.as_str().split(';').next() == Some("application/json")
+    });
+    if !same_origin || !json {
+        return Err(plain(403, "Same-origin JSON required"));
+    }
+    if request
+        .body_length()
+        .is_none_or(|size| size as u64 > max_bytes)
+    {
+        return Err(plain(413, "Body too large or missing its length"));
+    }
+    let mut bytes = Vec::new();
+    if request
+        .as_reader()
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() as u64 > max_bytes
+    {
+        return Err(plain(400, "Cannot read the request"));
+    }
+    Ok(bytes)
 }
 
 fn response_for_at(
@@ -349,25 +565,6 @@ fn response_for_at(
     if request.url().starts_with("/evidence/") {
         return evidence::route(request, port);
     }
-    // The Smart Prune tab's settings and the Providers tab ask these routes first.
-    for (prefix, message) in [
-        (
-            "/pruner-settings/",
-            "Smart Prune is not in this Elpis build yet.",
-        ),
-        (
-            "/provider-keys/",
-            "Provider keys are not in this Elpis build yet.",
-        ),
-    ] {
-        if request.url().starts_with(prefix) {
-            return response(
-                503,
-                "text/plain; charset=utf-8",
-                message.as_bytes().to_vec(),
-            );
-        }
-    }
     match request.url() {
         "/" | "/index.html" => response(
             200,
@@ -384,10 +581,25 @@ fn response_for_at(
             "text/javascript; charset=utf-8",
             DASHBOARD_JS.as_bytes().to_vec(),
         ),
+        "/dashboard_workflows.js" => response(
+            200,
+            "text/javascript; charset=utf-8",
+            DASHBOARD_WORKFLOWS_JS.as_bytes().to_vec(),
+        ),
         "/claude.json" => response(
             200,
             "application/json; charset=utf-8",
             claude::summary_json(),
+        ),
+        "/agents.json" => response(
+            200,
+            "application/json; charset=utf-8",
+            agents_body(
+                &DASHBOARD_AGENTS
+                    .lock()
+                    .map(|agents| agents.clone())
+                    .unwrap_or_default(),
+            ),
         ),
         "/data.json" => match state {
             Some(state) => data_response_with(state, heartbeat_at, serde_json::to_vec),

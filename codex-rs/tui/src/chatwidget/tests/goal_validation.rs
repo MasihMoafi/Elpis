@@ -26,11 +26,10 @@ fn submit_current_composer(chat: &mut ChatWidget) {
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 }
 
-// Elpis: Enter queues during a turn; Tab belongs to the Context Ledger.
 fn queue_composer_text_with_tab(chat: &mut ChatWidget, text: &str) {
     chat.bottom_pane
         .set_composer_text(text.to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 }
 
 fn next_goal_objective(
@@ -145,11 +144,7 @@ async fn queued_goal_slash_command_emits_oversized_objective_and_stops_queue() {
     handle_turn_started(&mut chat, "turn-1");
     let objective = "x".repeat(MAX_THREAD_GOAL_OBJECTIVE_CHARS + 1);
 
-    chat.queue_user_message_with_options(
-        UserMessage::from(format!("/goal {objective}")),
-        QueuedInputAction::ParseSlash,
-        Vec::new(),
-    );
+    queue_composer_text_with_tab(&mut chat, &format!("/goal {objective}"));
     queue_composer_text_with_tab(&mut chat, "continue");
     assert_eq!(chat.input_queue.queued_user_messages.len(), 2);
 

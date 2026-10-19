@@ -112,16 +112,23 @@ async fn hidden_shell_paste_recalled_from_history_submits_literal_prompt() {
 
 #[tokio::test]
 async fn hidden_shell_paste_queued_during_turn_submits_literal_prompt() {
-    // Elpis: Enter queues during a turn; Tab opens the Context Ledger and never queues (R15).
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    handle_turn_started(&mut chat, "turn-1");
-    let payload = paste_hidden_shell_payload(&mut chat);
+    for key in [KeyCode::Tab, KeyCode::Enter] {
+        let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.thread_id = Some(ThreadId::new());
+        handle_turn_started(&mut chat, "turn-1");
+        let payload = paste_hidden_shell_payload(&mut chat);
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
+        chat.handle_key_event(KeyEvent::new(key, KeyModifiers::NONE));
+        if key == KeyCode::Tab {
+            assert_chatwidget_snapshot!(
+                "hidden_shell_paste_queued_preview",
+                normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
+            );
+        }
+        handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
 
-    assert_hidden_shell_payload_is_literal(op_rx.try_recv(), payload);
+        assert_hidden_shell_payload_is_literal(op_rx.try_recv(), payload);
+    }
 }
 
 #[tokio::test]
@@ -199,7 +206,7 @@ async fn rejected_hidden_shell_paste_preserves_colliding_draft_paste() {
     let model = chat.current_model().to_string();
     handle_turn_started(&mut chat, "turn-1");
     let payload = paste_hidden_shell_payload(&mut chat);
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
     let draft_payload = format!("draft {}", "y".repeat(1000));
     chat.handle_paste(draft_payload.clone());
     chat.set_model("");
@@ -414,6 +421,7 @@ async fn submission_preserves_text_elements_and_local_images() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -431,7 +439,6 @@ async fn submission_preserves_text_elements_and_local_images() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -524,6 +531,7 @@ async fn submission_includes_configured_active_permission_profile() {
     };
     let expected_active_permission_profile = ActivePermissionProfile::new("custom");
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -541,7 +549,6 @@ async fn submission_includes_configured_active_permission_profile() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -580,6 +587,7 @@ async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
         file_system: ManagedFileSystemPermissions::Unrestricted,
     };
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -597,7 +605,6 @@ async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -626,6 +633,7 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -643,7 +651,6 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -727,6 +734,7 @@ async fn enter_with_only_remote_images_submits_user_turn() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -744,7 +752,6 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -797,6 +804,7 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -814,7 +822,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -839,6 +846,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -856,7 +864,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -881,6 +888,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -898,7 +906,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -926,6 +933,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
     let thread_id = ThreadId::new();
     let rollout_file = NamedTempFile::new().unwrap();
     let configured = crate::session_state::ThreadSessionState {
+        daybreak_enabled: false,
         windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
@@ -943,7 +951,6 @@ async fn submission_prefers_selected_duplicate_skill_path() {
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
         collaboration_mode: None,
-        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -960,7 +967,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
             short_description: None,
             interface: None,
             dependencies: None,
-            path: repo_skill_path,
+            path: repo_skill_path.into(),
             scope: crate::test_support::skill_scope_repo(),
             enabled: true,
             plugin_id: None,
@@ -971,7 +978,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
             short_description: None,
             interface: None,
             dependencies: None,
-            path: user_skill_path.clone(),
+            path: user_skill_path.clone().into(),
             scope: crate::test_support::skill_scope_user(),
             enabled: true,
             plugin_id: None,
@@ -1492,7 +1499,6 @@ async fn interrupted_turn_restore_keeps_active_mode_for_resubmission() {
     match next_submit_op(&mut op_rx) {
         Op::UserTurn {
             collaboration_mode: Some(CollaborationMode { mode, .. }),
-            personality: None,
             ..
         } => assert_eq!(mode, expected_mode),
         other => {
@@ -1733,6 +1739,83 @@ async fn output_free_ctrl_c_interrupt_keeps_prompt_and_opens_blank_composer() {
 }
 
 #[tokio::test]
+async fn pending_steer_empty_enter_interrupts_once_and_resubmits_after_ack() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    chat.input_queue
+        .pending_steers
+        .push_back(pending_steer("waiting steer"));
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    next_interrupt_op(&mut op_rx);
+    assert!(chat.input_queue.submit_pending_steers_after_interrupt);
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(
+        op_rx.try_recv().is_err(),
+        "Repeated Enter must not interrupt twice"
+    );
+
+    handle_turn_interrupted(&mut chat, "turn-1");
+    let Op::UserTurn { items, .. } = next_submit_op(&mut op_rx) else {
+        panic!("expected replacement turn after confirmed interruption");
+    };
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: "waiting steer".to_string(),
+            text_elements: Vec::new()
+        }]
+    );
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert!(
+        op_rx.try_recv().is_err(),
+        "Waiting steer must be submitted once"
+    );
+}
+
+#[tokio::test]
+async fn pending_steer_empty_submit_uses_configured_binding_and_leaves_tab_alone() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let mut keymap = crate::keymap::RuntimeKeymap::defaults();
+    keymap.composer.submit = vec![crate::key_hint::ctrl(KeyCode::Enter)];
+    chat.bottom_pane.set_keymap_bindings(&keymap);
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.input_queue
+        .pending_steers
+        .push_back(pending_steer("waiting steer"));
+    // Unbound Enter types a newline; Tab opens and then closes the Context Ledger.
+    for code in [KeyCode::Enter, KeyCode::Tab, KeyCode::Tab] {
+        chat.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE));
+        assert!(op_rx.try_recv().is_err());
+        assert!(!chat.input_queue.submit_pending_steers_after_interrupt);
+    }
+    assert_eq!(chat.bottom_pane.composer_text(), "\n");
+    chat.bottom_pane
+        .set_composer_text(String::new(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+    next_interrupt_op(&mut op_rx);
+    assert!(chat.input_queue.submit_pending_steers_after_interrupt);
+}
+
+#[tokio::test]
+async fn pending_steer_nonempty_enter_preserves_normal_submission() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    handle_turn_started(&mut chat, "turn-1");
+    chat.input_queue
+        .pending_steers
+        .push_back(pending_steer("waiting steer"));
+    chat.bottom_pane
+        .set_composer_text("additional steer".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_matches!(next_submit_op(&mut op_rx), Op::UserTurn { .. });
+    assert!(!chat.input_queue.submit_pending_steers_after_interrupt);
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn pending_steer_esc_does_not_steal_vim_insert_escape() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
@@ -1810,6 +1893,7 @@ async fn restore_thread_input_state_applies_running_state_policy() {
         }),
         safety_buffering_prompt: Some(UserMessage::from("buffered prompt")),
         safety_buffering_source: UserMessageSource::Prompt,
+        pending_steer_recall_ids: None,
         pending_steers: VecDeque::from([PendingSteer {
             history_record: pending_history.clone(),
             ..pending_steer("submitted to the interrupted turn")
@@ -1965,7 +2049,7 @@ async fn unbound_queued_message_edit_does_not_fall_back_to_alt_up() {
 }
 
 #[tokio::test]
-async fn queued_message_edit_hint_uses_up_with_configured_chord() {
+async fn queued_message_edit_hint_displays_configured_chords() {
     use codex_config::types::KeybindingSpec;
     use codex_config::types::KeybindingsSpec;
     use codex_config::types::TuiKeymap;
@@ -1982,19 +2066,20 @@ async fn queued_message_edit_hint_uses_up_with_configured_chord() {
         .push_back(UserMessage::from("queued".to_string()).into());
     chat.refresh_pending_input_preview();
 
-    let rendered = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(rendered.contains("↑ edit all · enter send"));
-    assert!(!rendered.contains("edit last queued message"));
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(chat.bottom_pane.composer_text(), "queued");
-    assert!(chat.input_queue.queued_user_messages.is_empty());
+    let hint = crate::key_hint::ShortcutHint::Chord {
+        prefix: crate::key_hint::ctrl(KeyCode::Char('x')),
+        completion: crate::key_hint::plain(KeyCode::Up),
+    };
+    assert!(render_bottom_popup(&chat, /*width*/ 100).contains(&format!(
+        "{} edit last queued message",
+        hint.display_label()
+    )));
 }
 
 /// Pressing Up to recall the most recent history entry and immediately queuing
-/// it while a task is running should always enqueue the same text, even when it
-/// is queued repeatedly.
+/// it while a task is running should keep one queued copy when Up reclaims it.
 #[tokio::test]
-async fn enqueueing_history_prompt_multiple_times_is_stable() {
+async fn recalling_queued_prompt_replaces_it_instead_of_duplicating_it() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
 
@@ -2012,11 +2097,9 @@ async fn enqueueing_history_prompt_multiple_times_is_stable() {
         assert_eq!(chat.bottom_pane.composer_text(), "repeat me");
 
         // Queue the prompt while the task is running.
-        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
 
-    // Elpis: Up pulls the queued messages back before it reaches history (R16), so each round
-    // recalls the one queued prompt and queues it again.
     assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     for message in chat.input_queue.queued_user_messages.iter() {
         assert_eq!(message.text, "repeat me");
@@ -2576,6 +2659,12 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
         chat.snapshot_local_images = true;
         if running {
             handle_turn_started(&mut chat, "turn");
+            chat.input_queue
+                .pending_steers
+                .push_back(pending_steer("already sent"));
+            chat.input_queue
+                .queued_user_messages
+                .push_back(UserMessage::from("follow-up").into());
         }
         let pending_steers = chat.input_queue.pending_steers.clone();
         let dir = tempfile::tempdir().unwrap();
@@ -2607,12 +2696,6 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
             std::fs::remove_file(&path).unwrap();
         }
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        if running {
-            // Elpis: Enter queues the message during a turn and prepares nothing; Esc hands the
-            // queued message to the running turn, which prepares its images.
-            assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
-            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        }
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);
@@ -2656,15 +2739,28 @@ async fn image_preparation_failure_restores_full_input_without_submitting() {
                 normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 80))
             );
         }
-        // Elpis: upstream also checks a reconnect while an earlier steer waits. In Elpis, Esc
-        // hands a queued draft to the turn only when no steer waits, so that state cannot
-        // hold a failed image draft.
+        if running {
+            // A transport recovery must preserve the pause for the failed image draft.
+            chat.pause_for_disconnect();
+            let mut input = chat.capture_thread_input_state();
+            input.as_mut().unwrap().reconnect_pending = true;
+            chat.restore_reconnected_input(input, &[pending_steers[0].client_id.clone()]);
+            chat.on_committed_user_message(
+                &[UserInput::Text {
+                    text: "already sent".into(),
+                    text_elements: Vec::new(),
+                }],
+                Some(&pending_steers[0].client_id),
+                /*from_replay*/ false,
+                "turn",
+            );
+            chat.input_queue.suppress_queue_autosend = false;
+            handle_turn_completed(&mut chat, "turn", /*duration_ms*/ None);
+            assert_eq!(chat.queued_user_message_texts(), vec!["follow-up"]);
+            assert_no_submit_op(&mut op_rx);
+        }
         pixels.save(&path).unwrap();
         chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        if running {
-            // Elpis: the retry is queued too, and Esc hands it to the running turn.
-            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        }
         while let Some(event) = rx.recv().await {
             if let AppEvent::ImagesPrepared(id) = event {
                 chat.on_images_prepared(id);
@@ -2821,4 +2917,160 @@ fn image_preparation_keeps_input_responsive_and_preserves_pending_input() {
                 assert!(chat.pending_image_submission.is_none());
             });
     }
+}
+
+fn queue_follow_ups(chat: &mut ChatWidget, texts: &[&str]) {
+    for text in texts {
+        chat.queue_user_message(UserMessage::from(*text));
+    }
+    assert_eq!(chat.queued_user_message_texts(), texts.to_vec());
+}
+
+// Up pulls every queued follow-up back together.
+
+#[tokio::test]
+async fn up_pulls_every_queued_follow_up_and_the_draft_back_together() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    queue_follow_ups(&mut chat, &["queued one", "queued two"]);
+    chat.bottom_pane
+        .set_composer_text("draft".to_string(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+
+    assert_eq!(
+        chat.bottom_pane.composer_text(),
+        "queued one\nqueued two\ndraft"
+    );
+    assert!(chat.queued_user_message_texts().is_empty());
+}
+
+#[tokio::test]
+async fn up_without_queued_follow_ups_keeps_history_recall() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane
+        .set_composer_text("earlier prompt".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    assert!(chat.queued_user_message_texts().is_empty());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+
+    assert_eq!(chat.bottom_pane.composer_text(), "earlier prompt");
+    assert!(chat.queued_user_message_texts().is_empty());
+}
+
+#[tokio::test]
+async fn up_recalls_waiting_steers_only_after_backend_acknowledgement() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    let steer = pending_steer("waiting steer");
+    let client_id = steer.client_id.clone();
+    chat.input_queue.pending_steers.push_back(steer);
+    queue_follow_ups(&mut chat, &["queued one"]);
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+    assert_eq!(chat.queued_user_message_texts(), vec!["queued one"]);
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok()).any(|event| matches!(event,
+        AppEvent::RecallPendingSteers { thread_id: id, client_user_message_ids }
+        if id == thread_id && client_user_message_ids == vec![client_id.clone()]))
+    );
+    // Edits made while the request is outstanding are merged at acknowledgement.
+    chat.bottom_pane.set_composer_text(
+        "draft typed while waiting".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    for code in [KeyCode::Enter, KeyCode::Tab] {
+        chat.handle_key_event(KeyEvent::new(code, KeyModifiers::NONE));
+        assert_eq!(
+            chat.bottom_pane.composer_text(),
+            "draft typed while waiting"
+        );
+        assert_eq!(chat.input_queue.pending_steers.len(), 1);
+        assert_eq!(chat.queued_user_message_texts(), vec!["queued one"]);
+    }
+    let mut keymap = crate::keymap::RuntimeKeymap::defaults();
+    keymap.composer.submit = vec![crate::key_hint::ctrl(KeyCode::Enter)];
+    chat.bottom_pane.set_keymap_bindings(&keymap);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+    assert_eq!(
+        chat.bottom_pane.composer_text(),
+        "draft typed while waiting"
+    );
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+    chat.finish_pending_steer_recall(Ok(vec![client_id]));
+    assert_eq!(
+        chat.bottom_pane.composer_text(),
+        "waiting steer\nqueued one\ndraft typed while waiting"
+    );
+    assert!(chat.input_queue.pending_steers.is_empty());
+    assert!(chat.queued_user_message_texts().is_empty());
+    chat.finish_pending_steer_recall(Ok(Vec::new()));
+    assert_eq!(
+        chat.bottom_pane.composer_text(),
+        "waiting steer\nqueued one\ndraft typed while waiting"
+    );
+}
+
+#[tokio::test]
+async fn up_does_not_restore_a_steer_that_was_delivered_before_cancellation() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.input_queue
+        .pending_steers
+        .push_back(pending_steer("already delivered"));
+    queue_follow_ups(&mut chat, &["still queued"]);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    chat.finish_pending_steer_recall(Ok(Vec::new()));
+    assert_eq!(chat.bottom_pane.composer_text(), "still queued");
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+}
+
+#[tokio::test]
+async fn failed_up_cancellation_preserves_waiting_messages_and_draft() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.input_queue
+        .pending_steers
+        .push_back(pending_steer("waiting steer"));
+    queue_follow_ups(&mut chat, &["still queued"]);
+    chat.bottom_pane
+        .set_composer_text("draft".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    chat.finish_pending_steer_recall(Err("fixture cancellation failed".to_string()));
+    assert_eq!(chat.bottom_pane.composer_text(), "draft");
+    assert_eq!(chat.input_queue.pending_steers.len(), 1);
+    assert_eq!(chat.queued_user_message_texts(), vec!["still queued"]);
+}
+
+#[tokio::test]
+async fn up_preserves_unconfirmed_delivery_instead_of_preparing_a_duplicate() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let delivery = MessageDelivery::Unconfirmed(Some("unconfirmed-id".to_string()));
+    chat.input_queue
+        .queued_user_messages
+        .push_back(QueuedUserMessage {
+            delivery: delivery.clone(),
+            ..UserMessage::from("possibly delivered").into()
+        });
+    chat.input_queue.recovered_queue = true;
+    chat.refresh_pending_input_preview();
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+
+    assert!(chat.bottom_pane.composer_is_empty());
+    assert_eq!(chat.queued_user_message_texts(), vec!["possibly delivered"]);
+    assert_eq!(chat.input_queue.queued_user_messages[0].delivery, delivery);
+    assert!(chat.input_queue.recovered_queue);
+    assert_no_submit_op(&mut op_rx);
 }

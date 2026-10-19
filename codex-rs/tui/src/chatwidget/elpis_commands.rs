@@ -11,7 +11,7 @@
 //! Elpis build. It sends nothing to the model or the app server.
 //!
 //! `/memory-model` saves `background_model` / `background_provider`
-//! (`crate::elpis_background_model`), which choose the model that names sessions.
+//! (`crate::elpis_background_model`), which provide Smart Prune's fallback model.
 //!
 //! `/compact` stays upstream's command; Elpis adds its v0.3.0 arguments here. `/compact N` saves
 //! the pressure-compaction threshold (core/src/pressure_compaction.rs) and `/compact <text>`
@@ -44,7 +44,8 @@ use ratatui::widgets::Wrap;
 /// Or-pattern of every Elpis-owned `SlashCommand` variant, for the exhaustive upstream matches.
 macro_rules! elpis_slash_commands {
     () => {
-        $crate::slash_command::SlashCommand::PrunerModel
+        $crate::slash_command::SlashCommand::Effort
+            | $crate::slash_command::SlashCommand::PrunerModel
             | $crate::slash_command::SlashCommand::MemoryModel
             | $crate::slash_command::SlashCommand::Yolo
             | $crate::slash_command::SlashCommand::Prune
@@ -54,6 +55,8 @@ macro_rules! elpis_slash_commands {
             | $crate::slash_command::SlashCommand::Dashboard
             | $crate::slash_command::SlashCommand::Add
             | $crate::slash_command::SlashCommand::Context
+            | $crate::slash_command::SlashCommand::Rag
+            | $crate::slash_command::SlashCommand::Personal
     };
 }
 pub(crate) use elpis_slash_commands;
@@ -61,15 +64,19 @@ pub(crate) use elpis_slash_commands;
 /// The v0.3.0 popup descriptions.
 pub(crate) fn description(cmd: SlashCommand) -> &'static str {
     match cmd {
+        SlashCommand::Personal => {
+            "view your working preferences, or /personal dismiss to hide the tip"
+        }
+        SlashCommand::Effort => "change how hard the model thinks: /effort [low|medium|high|…]",
         SlashCommand::PrunerModel => {
             "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>"
         }
         SlashCommand::MemoryModel => {
-            "set background tasks (pruning and session naming); memory uses the responding agent: /memory-model <id|provider:id|default>"
+            "set Smart Prune's fallback model; memory uses the responding agent: /memory-model <id|provider:id|default>"
         }
         SlashCommand::Yolo => "save Full Access as the default for future chats",
         SlashCommand::Prune => "turn Smart Prune on for subsequent turns",
-        SlashCommand::SmartPrune => "optimize fresh tool results before their first model request",
+        SlashCommand::SmartPrune => "toggle Smart Prune, set on/off, or open log",
         SlashCommand::ForcePrune => {
             "force a prune down to a target of remaining context: /force-prune <1-100>"
         }
@@ -81,6 +88,7 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
         SlashCommand::Context => {
             "show context usage as a grid, by category, with checkpoints and system files"
         }
+        SlashCommand::Rag => "use the configured RAG MCP server or manage it with /rag <request>",
         _ => unreachable!("not an Elpis slash command: /{}", cmd.command()),
     }
 }
@@ -113,6 +121,8 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
         cmd,
         // Commands Codex added after v0.3.0, kept typeable (Masih asked for v0.3.0's list).
         SlashCommand::Agents
+            | SlashCommand::Archive
+            | SlashCommand::Delete
             | SlashCommand::Cd
             | SlashCommand::Daemon
             | SlashCommand::Export
@@ -121,17 +131,14 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
             | SlashCommand::Tui
             | SlashCommand::Warnings
             // Commands v0.3.0 kept out of the popup.
-            | SlashCommand::Archive
             | SlashCommand::AutoReview
             | SlashCommand::Btw
             | SlashCommand::DebugConfig
-            | SlashCommand::Delete
             | SlashCommand::Import
             | SlashCommand::Logout
             | SlashCommand::Mention
             | SlashCommand::Ps
             | SlashCommand::Raw
-            | SlashCommand::Review
             | SlashCommand::Side
             | SlashCommand::Statusline
             | SlashCommand::Stop
@@ -144,7 +151,8 @@ pub(crate) fn unlisted(cmd: SlashCommand) -> bool {
 pub(crate) fn hidden(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::App
+        // `/app` is not here: on Linux it opens the chat in the Elpis desktop app (app/history_ui.rs).
+        SlashCommand::Daybreak
             | SlashCommand::Apps
             | SlashCommand::ElevateSandbox
             | SlashCommand::Exit
@@ -157,20 +165,21 @@ pub(crate) fn hidden(cmd: SlashCommand) -> bool {
             | SlashCommand::Rollout
             | SlashCommand::Status
             | SlashCommand::TestApproval
-            // Codex's worktree chooser, added after v0.3.0 and feature-gated upstream.
-            | SlashCommand::Worktree
     )
 }
 
 pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::PrunerModel
+        SlashCommand::Effort
+            | SlashCommand::PrunerModel
             | SlashCommand::MemoryModel
             | SlashCommand::SmartPrune
             | SlashCommand::ForcePrune
             | SlashCommand::Add
             | SlashCommand::Compact
+            | SlashCommand::Rag
+            | SlashCommand::Personal
     )
 }
 
@@ -178,15 +187,22 @@ pub(crate) fn available_in_side_conversation(cmd: SlashCommand) -> bool {
     matches!(cmd, SlashCommand::Dashboard | SlashCommand::Context)
 }
 
+pub(super) fn rag_command_message(args: &str) -> String {
+    let prompt = include_str!("../../../core/src/prompts/rag.md").trim_end();
+    format!("{prompt} {args}")
+}
+
 pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
     matches!(
         cmd,
-        SlashCommand::PrunerModel
+        SlashCommand::Effort
+            | SlashCommand::PrunerModel
             | SlashCommand::MemoryModel
             | SlashCommand::Yolo
             | SlashCommand::Agent
             | SlashCommand::Dashboard
             | SlashCommand::Context
+            | SlashCommand::Personal
     )
 }
 
@@ -264,6 +280,8 @@ impl ChatWidget {
     /// Run an Elpis slash command, bare or with inline arguments.
     pub(super) fn dispatch_elpis_command(&mut self, cmd: SlashCommand) {
         match cmd {
+            SlashCommand::Personal => self.open_personal_skill(),
+            SlashCommand::Rag => self.submit_user_message(rag_command_message("").into()),
             SlashCommand::Yolo => {
                 self.app_event_tx
                     .send(AppEvent::Elpis(ElpisAppEvent::EnableYolo));
@@ -278,6 +296,7 @@ impl ChatWidget {
             SlashCommand::Prune | SlashCommand::SmartPrune | SlashCommand::PrunerModel => {
                 self.dispatch_prune_command(cmd)
             }
+            SlashCommand::Effort => self.open_effort_popup(),
             SlashCommand::Context => self.request_fresh_context_usage_report(),
             SlashCommand::MemoryModel => self.open_background_model_popup(),
             SlashCommand::Dashboard => self.open_dashboard(),
@@ -290,6 +309,19 @@ impl ChatWidget {
                     /*hint*/ None,
                 );
             }
+        }
+    }
+
+    pub(super) fn open_personal_skill(&mut self) {
+        match codex_skills::personal::open(self.config.codex_home.as_path()) {
+            Ok((path, content)) => {
+                self.refresh_skills_for_current_cwd(/*force_reload*/ true);
+                self.add_info_message(
+                    format!("{}\n\n{content}", path.display()),
+                    Some("Edit this SKILL.md in your editor, or tell Elpis your working preferences.".to_string()),
+                );
+            }
+            Err(error) => self.add_error_message(format!("Could not open /personal: {error}")),
         }
     }
 

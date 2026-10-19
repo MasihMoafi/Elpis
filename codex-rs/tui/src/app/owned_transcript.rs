@@ -9,6 +9,7 @@ use super::*;
 use crate::history_cell::HistoryRenderMode;
 use crate::keymap::KeymapContext;
 use crate::keymap::bindings_for_action;
+use crate::keymap::configured_binding_for_action;
 use crate::keymap::keymap_action_ids;
 use crate::motion::MotionMode;
 use crate::pager_overlay::TranscriptHistoryState;
@@ -40,8 +41,18 @@ impl App {
 
     fn sync_owned_transcript(&mut self, width: u16) -> bool {
         let chat_widget = &self.chat_widget;
-        let transcript_width = chat_widget.history_wrap_width(width);
+        let scrollbar_width = u16::from(self.transcript_view.reserves_scrollbar());
+        let transcript_width = chat_widget
+            .history_wrap_width(width)
+            .saturating_sub(scrollbar_width)
+            .max(1);
         let view = &mut self.transcript_view;
+        view.mouse_scroll_speed = self
+            .local_settings
+            .tui
+            .mouse_scroll_speed
+            .unwrap_or(crate::transcript_view::DEFAULT_MOUSE_SCROLL_SPEED);
+        view.mouse_wheel_acceleration = true;
         view.primary_selection = self.right_click_paste_environment.primary;
         view.copy_on_select = self
             .local_settings
@@ -53,7 +64,10 @@ impl App {
         let active_ids = chat_widget.active_activity_ids();
         let expanded = view.sync_live_activity(&self.transcript_cells, active_ids)
             && chat_widget.history_render_mode() == HistoryRenderMode::Rich;
-        if detailed {
+        let search_changed = view.sync_search_live_tail(transcript_width, active_key, |width| {
+            chat_widget.active_cell_transcript_hyperlink_lines(width)
+        });
+        let changed = if detailed {
             view.sync_live_tail(transcript_width, active_key, |width| {
                 chat_widget.active_cell_transcript_hyperlink_lines(width)
             })
@@ -61,7 +75,8 @@ impl App {
             view.sync_live_activity_tail(transcript_width, active_key, expanded, |width| {
                 chat_widget.active_cell_owned_transcript_lines(width, expanded)
             })
-        }
+        };
+        changed || search_changed
     }
 
     pub(super) fn render_owned_transcript(
@@ -70,25 +85,39 @@ impl App {
         screen_size: Size,
     ) -> Result<Rect> {
         self.chat_widget.sync_warnings(&self.transcript_cells);
-        // Elpis: full screen hides a Ledger that leaves the transcript too few rows.
-        self.chat_widget
-            .fit_context_ledger_to_screen(Some(screen_size));
+        // The full-screen Ledger owns a column at the right edge; replies and composer stay left.
+        self.chat_widget.fit_context_ledger_column();
+        let ledger_width = self.chat_widget.context_ledger_width(screen_size.width);
+        let main_width = screen_size.width.saturating_sub(ledger_width);
         let motion = MotionMode::from_animations_enabled(
             self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
         );
-        let composer = self.first_screen_composer();
         let latest_navigation = if self.enter_returns_to_latest() {
             "enter/esc latest"
         } else {
             "esc latest"
         };
-        self.sync_owned_transcript(screen_size.width);
-        let transcript_width = self.chat_widget.history_wrap_width(screen_size.width);
+        self.sync_owned_transcript(main_width);
+        let transcript_width = self
+            .chat_widget
+            .history_wrap_width(main_width)
+            .min(main_width);
+        // Elpis: once the conversation overflows the screen, its last column holds the scrollbar.
+        let scrollbar_width =
+            u16::from(self.transcript_view.reserves_scrollbar()).min(transcript_width);
+        let body_width = transcript_width.saturating_sub(scrollbar_width);
+        // Elpis: the Ledger's title is level with the first transcript line: one row below the
+        // session header card, past the gap that follows it, so the header, not the Ledger, opens
+        // the screen. The offset stays fixed when the transcript scrolls.
+        let ledger_top = self
+            .session_header_height(body_width)
+            .saturating_add(1)
+            .min(screen_size.height);
+        let frame_requester = tui.frame_requester();
         // Elpis: the hint row shares the composer's column, left of the Context Ledger.
-        let composer_hint =
-            self.composer_hint(self.chat_widget.width_beside_context_ledger(transcript_width));
+        let composer_hint = self.composer_hint(transcript_width);
         let now = Instant::now();
-        let turn_tip = self.turn_tip(transcript_width, now, &tui.frame_requester());
+        let turn_tip = self.turn_tip(body_width, now, &tui.frame_requester());
         let working_tip = turn_tip
             .as_ref()
             .filter(|(surface, _)| *surface == TipSurface::Working)
@@ -100,72 +129,86 @@ impl App {
         let mut composer_gap = (!self.chat_widget.has_active_view()
             && !self.chat_widget.is_external_writer_view())
         .then(crate::bottom_pane::ComposerGap::default);
-        let mut prompt_footer =
-            self.prompt_navigation_footer(screen_size.width.saturating_sub(/*rhs*/ 2));
+        let mut prompt_footer = self.prompt_navigation_footer(main_width.saturating_sub(/*rhs*/ 2));
         let chat_widget = &self.chat_widget;
         let view = &mut self.transcript_view;
         let active_key = chat_widget.active_cell_transcript_key();
         view.sync_history_tail(&self.transcript_cells);
-        view.prepare_width(transcript_width);
+        view.prepare_width(body_width);
         if view.advance_search(&self.transcript_cells) {
             tui.frame_requester().schedule_frame();
         }
         let footer_area = crate::bottom_pane::inset_footer_hint_area(Rect::new(
-            /*x*/ 0,
-            /*y*/ 0,
-            screen_size.width,
-            /*height*/ 1,
+            /*x*/ 0, /*y*/ 0, main_width, /*height*/ 1,
         ));
         let footer = view.footer_with_navigation(footer_area.width, motion, latest_navigation);
-        let bottom = chat_widget.bottom_pane_renderable(
-            prompt_footer.as_ref().or(footer.as_ref()),
-            if view.has_active_interaction() {
-                crate::bottom_pane::CommandPopupPlacement::Hidden
-            } else {
-                crate::bottom_pane::CommandPopupPlacement::Overlay
-            },
-            composer_gap.as_ref(),
-            working_tip,
-        );
+        // Cap the whole composer (including padding and hints) at two-thirds of the screen,
+        // but allow at least 8 rows on small screens, without exceeding the screen itself.
+        let max_composer_height = ((u32::from(screen_size.height) * 2 / 3) as u16)
+            .max(8)
+            .min(screen_size.height);
+        let bottom =
+            chat_widget.bottom_pane_renderable(crate::bottom_pane::ComposerRenderOptions {
+                max_height: Some(max_composer_height),
+                footer: prompt_footer.as_ref().or(footer.as_ref()),
+                command_popup_placement: if view.has_active_interaction() {
+                    crate::bottom_pane::CommandPopupPlacement::Hidden
+                } else {
+                    crate::bottom_pane::CommandPopupPlacement::Overlay
+                },
+                composer_gap: composer_gap.as_ref(),
+                working_tip,
+                context_ledger_column: true,
+                ..Default::default()
+            });
         let dashboard_visible = chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_some();
         let bottom_height = if dashboard_visible {
             screen_size.height
         } else {
-            bottom
-                .desired_height(screen_size.width)
-                .min(screen_size.height)
+            bottom.desired_height(main_width).min(screen_size.height)
         };
         drop(bottom);
         let available = screen_size.height.saturating_sub(bottom_height);
         let mut bottom_area = Rect::new(
             /*x*/ 0,
             screen_size.height.saturating_sub(bottom_height),
-            screen_size.width,
+            main_width,
             bottom_height,
         );
+        let ledger_column = Rect::new(main_width, /*y*/ 0, ledger_width, screen_size.height);
+        let ledger_area = Rect {
+            y: ledger_top,
+            height: screen_size.height - ledger_top,
+            ..ledger_column
+        };
         let mut rendered_cursor = None;
         let mut footer_height_changed = false;
         let mut feedback_tick = None;
-        let mut blossom_tick = None;
         let mut transcript_bottom = available.saturating_sub(u16::from(composer_gap.is_none()));
         tui.draw(screen_size.height, |frame| {
             ratatui::widgets::Clear.render(
-                Rect::new(/*x*/ 0, /*y*/ 0, screen_size.width, available),
+                Rect::new(/*x*/ 0, /*y*/ 0, main_width, available),
                 frame.buffer,
             );
+            ratatui::widgets::Clear.render(ledger_column, frame.buffer);
             let mut completion_tip_area = view.render_with_turn_tip_space(
-                Rect::new(
-                    /*x*/ 0,
-                    /*y*/ 0,
-                    transcript_width,
-                    transcript_bottom,
-                ),
+                Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
                 frame.buffer,
                 &self.transcript_cells,
                 completion_tip,
             );
+            let scrollbar_track = |bottom| {
+                Rect::new(body_width, /*y*/ 0, scrollbar_width, bottom)
+            };
+            if view.render_scrollbar(
+                scrollbar_track(transcript_bottom),
+                frame.buffer,
+                &self.transcript_cells,
+            ) {
+                frame_requester.schedule_frame();
+            }
             if let Some(gap) = composer_gap.as_mut() {
                 gap.needs_separator = available > 1
                     && chat_widget.no_modal_or_popup_active()
@@ -186,62 +229,50 @@ impl App {
             {
                 *progress = crate::bottom_pane::footer_hint_items_line(&items);
             }
-            let bottom = chat_widget.bottom_pane_renderable(
-                prompt_footer.as_ref().or(footer.as_ref()),
-                if view.has_active_interaction() {
-                    crate::bottom_pane::CommandPopupPlacement::Hidden
-                } else {
-                    crate::bottom_pane::CommandPopupPlacement::Overlay
-                },
-                composer_gap.as_ref(),
-                working_tip,
-            );
+            let bottom =
+                chat_widget.bottom_pane_renderable(crate::bottom_pane::ComposerRenderOptions {
+                    max_height: Some(max_composer_height),
+                    footer: prompt_footer.as_ref().or(footer.as_ref()),
+                    command_popup_placement: if view.has_active_interaction() {
+                        crate::bottom_pane::CommandPopupPlacement::Hidden
+                    } else {
+                        crate::bottom_pane::CommandPopupPlacement::Overlay
+                    },
+                    composer_gap: composer_gap.as_ref(),
+                    working_tip,
+                    context_ledger_column: true,
+                    ..Default::default()
+                });
             footer_height_changed = !dashboard_visible
-                && bottom
-                    .desired_height(screen_size.width)
-                    .min(screen_size.height)
-                    != bottom_height;
+                && bottom.desired_height(main_width).min(screen_size.height) != bottom_height;
             if footer_height_changed && composer_gap.as_ref().is_some_and(|gap| gap.needs_separator)
             {
-                bottom_area.height = bottom
-                    .desired_height(screen_size.width)
-                    .min(screen_size.height);
+                bottom_area.height = bottom.desired_height(main_width).min(screen_size.height);
                 bottom_area.y = screen_size.height.saturating_sub(bottom_area.height);
                 // Resolve controls with the compact viewport first, then make room for
                 // their separator. Resizing must not preserve a stale return control.
                 ratatui::widgets::Clear.render(bottom_area, frame.buffer);
                 transcript_bottom = bottom_area.y;
                 completion_tip_area = view.render_with_turn_tip_space(
-                    Rect::new(
-                        /*x*/ 0,
-                        /*y*/ 0,
-                        transcript_width,
-                        transcript_bottom,
-                    ),
+                    Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
                     frame.buffer,
                     &self.transcript_cells,
                     completion_tip,
                 );
+                view.render_scrollbar(
+                    scrollbar_track(transcript_bottom),
+                    frame.buffer,
+                    &self.transcript_cells,
+                );
                 footer_height_changed = false;
             }
-            blossom_tick = chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .render_first_screen(
-                    Rect {
-                        width: screen_size.width,
-                        ..view.remaining_area()
-                    },
-                    frame.buffer,
-                    composer,
-                    MotionMode::from_animations_enabled(self.local_settings.tui.animations),
-                );
             bottom.render(bottom_area, frame.buffer);
+            chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
                 tip.render(area, frame.buffer);
             }
             // Elpis: the row above the composer stops at the Context Ledger, which starts there.
-            let gap_width = chat_widget.width_beside_context_ledger(transcript_width);
+            let gap_width = transcript_width;
             let follow_area = if let Some(gap) = composer_gap.as_ref() {
                 Some(Rect {
                     width: gap_width,
@@ -249,22 +280,36 @@ impl App {
                 })
             } else {
                 (available > 0).then(|| {
-                    Rect::new(
-                        /*x*/ 0,
-                        available - 1,
-                        gap_width,
-                        /*height*/ 1,
-                    )
+                    Rect::new(/*x*/ 0, available - 1, gap_width, /*height*/ 1)
                 })
             }
             .filter(|_| chat_widget.no_modal_or_popup_active());
             feedback_tick =
                 view.render_composer_gap(follow_area, composer_hint.as_ref(), frame.buffer, now);
             chat_widget.note_rendered_width(screen_size.width);
-            rendered_cursor = bottom.cursor_pos(bottom_area);
+            let dialog = chat_widget.centered_dialog();
+            let (foreground, foreground_area): (&dyn Renderable, Rect) =
+                if let Some(dialog) = &dialog {
+                    let area = Rect::new(
+                        /*x*/ 0,
+                        /*y*/ 0,
+                        screen_size.width,
+                        screen_size.height,
+                    );
+                    dialog.render(area, frame.buffer);
+                    (dialog, area)
+                } else {
+                    (&bottom, bottom_area)
+                };
+            rendered_cursor = foreground.cursor_pos(foreground_area).filter(|_| {
+                dialog.is_some() || ledger_width == 0 || !chat_widget.context_ledger_has_focus()
+            });
             if let Some(position) = rendered_cursor {
-                frame.set_cursor_style(bottom.cursor_style(bottom_area));
+                frame.set_cursor_style(foreground.cursor_style(foreground_area));
                 frame.set_cursor_position(position);
+            }
+            if chat_widget.is_agent_turn_running() && frame.redraw_if_empty() {
+                frame_requester.schedule_frame_in(Duration::from_millis(100));
             }
         })?;
         if let Some((surface, tip)) = &turn_tip
@@ -278,13 +323,12 @@ impl App {
         if let Some(delay) = feedback_tick {
             tui.frame_requester().schedule_frame_in(delay);
         }
-        if let Some(delay) = blossom_tick {
-            tui.frame_requester().schedule_frame_in(delay);
-        }
         let animating =
             view.is_following() && active_key.is_some_and(|key| key.animation_tick.is_some());
         let loading = view.is_loading_history() && motion == MotionMode::Animated;
-        if animating || loading {
+        let header_animating =
+            motion == MotionMode::Animated && view.has_visible_animation(&self.transcript_cells);
+        if animating || loading || header_animating {
             tui.frame_requester()
                 .schedule_frame_in(Duration::from_millis(/*millis*/ 50));
         }
@@ -292,17 +336,32 @@ impl App {
         Ok(bottom_area)
     }
 
-    /// Keep modal input ownership while allowing wheel scrolling over the visible transcript.
+    /// Keep modal input ownership while allowing selection and copying in the visible transcript.
     pub(super) fn handle_owned_transcript_event(
         &mut self,
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
         event: &TuiEvent,
     ) -> Result<bool> {
+        let has_modal = self.chat_widget.has_active_modal();
+        let modal_transcript_mouse = has_modal
+            && matches!(event, TuiEvent::Mouse(mouse)
+                if self.chat_widget.centered_dialog().is_none()
+                    || matches!(mouse.kind, crossterm::event::MouseEventKind::ScrollUp
+                        | crossterm::event::MouseEventKind::ScrollDown));
+        let modal_transcript_draw = has_modal
+            && self.chat_widget.centered_dialog().is_none()
+            && matches!(event, TuiEvent::Draw);
+        let modal_transcript_event = modal_transcript_mouse
+            || modal_transcript_draw
+            || (has_modal
+                && matches!(event, TuiEvent::Key(key)
+                    if crate::text_selection::is_copy_key(*key)
+                        && self.transcript_view.owns_interaction_key(*key)));
         if !tui.is_owned_screen()
             || matches!(event, TuiEvent::FocusLost | TuiEvent::Resume)
             || self.overlay.is_some()
-            || !self.chat_widget.no_modal_or_popup_active()
+            || (!self.chat_widget.no_modal_or_popup_active() && !modal_transcript_event)
         {
             self.transcript_view.end_drag();
         }
@@ -314,14 +373,6 @@ impl App {
         }
         if !tui.is_owned_screen() || self.overlay.is_some() {
             return Ok(false);
-        }
-        if matches!(event, TuiEvent::FocusLost) {
-            self.chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .cancel_replay();
-            // Show the static, faded decoration immediately when the terminal loses focus.
-            tui.frame_requester().schedule_frame();
         }
         if self.transcript_view.history == TranscriptHistoryState::Idle {
             self.transcript_view.history = if self.scrollback_has_older_history {
@@ -343,12 +394,18 @@ impl App {
                 let size = tui.prepare_draw_size()?;
                 self.render_owned_transcript(tui, size)?;
             }
+            if self.chat_widget.handle_active_view_mouse(*mouse) {
+                tui.frame_requester().schedule_frame();
+                return Ok(true);
+            }
             if self.chat_widget.no_modal_or_popup_active()
-                && self
-                    .chat_widget
-                    .empty_state_animation
-                    .borrow_mut()
-                    .handle_mouse(*mouse)
+                && self.chat_widget.handle_context_ledger_divider_mouse(*mouse)
+            {
+                tui.frame_requester().schedule_frame();
+                return Ok(true);
+            }
+            if self.chat_widget.no_modal_or_popup_active()
+                && self.chat_widget.handle_context_ledger_mouse(*mouse)
             {
                 tui.frame_requester().schedule_frame();
                 return Ok(true);
@@ -364,26 +421,23 @@ impl App {
                 return Ok(true);
             }
             if composer_ready && self.chat_widget.handle_composer_mouse(*mouse) {
-                self.transcript_view.end_selection(&self.transcript_cells);
-                self.transcript_view.cancel_search();
-                self.transcript_view.clear_activity_focus();
+                if !matches!(
+                    mouse.kind,
+                    crossterm::event::MouseEventKind::ScrollUp
+                        | crossterm::event::MouseEventKind::ScrollDown
+                ) {
+                    self.chat_widget.unfocus_context_ledger();
+                    self.transcript_view.end_selection(&self.transcript_cells);
+                    self.transcript_view.cancel_search();
+                    self.transcript_view.clear_activity_focus();
+                }
                 tui.frame_requester().schedule_frame();
                 return Ok(true);
             }
         }
         if !self.chat_widget.no_modal_or_popup_active() {
             self.chat_widget.end_composer_drag();
-            let is_modal_scroll = self.chat_widget.has_active_modal()
-                && matches!(
-                    event,
-                    TuiEvent::Mouse(mouse)
-                        if matches!(
-                            mouse.kind,
-                            crossterm::event::MouseEventKind::ScrollUp
-                                | crossterm::event::MouseEventKind::ScrollDown
-                        )
-                );
-            if !is_modal_scroll {
+            if !modal_transcript_event {
                 return Ok(false);
             }
         }
@@ -457,15 +511,30 @@ impl App {
             self.close_transcript_overlay(tui);
             return Ok(true);
         }
+        let empty_enter_returns_to_latest = matches!(
+            event,
+            TuiEvent::Key(KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                ..
+            })
+        ) && self.enter_returns_to_latest()
+            && self.transcript_view.can_return_to_latest();
         if let TuiEvent::Key(key) = event
-            && ((key.modifiers.is_empty()
-                && matches!(key.code, KeyCode::PageUp | KeyCode::PageDown))
-                || crate::transcript_view::JumpTarget::from_key(*key).is_some())
             && !self.transcript_view.has_active_interaction()
             && keymap_action_ids().any(|action| {
                 action.context != KeymapContext::Pager
                     && !matches!(action.action, "find_transcript" | "focus_activity")
                     && self.active_keymap_contexts().contains_action(action)
+                    && !(empty_enter_returns_to_latest
+                        && action.context == KeymapContext::Composer
+                        && action.action == "submit")
+                    && ((key.modifiers.is_empty()
+                        && matches!(key.code, KeyCode::PageUp | KeyCode::PageDown))
+                        || crate::transcript_view::JumpTarget::from_key(*key).is_some()
+                        || configured_binding_for_action(&self.local_settings.tui.keymap, action)
+                            .is_some_and(std::option::Option::is_some))
                     && bindings_for_action(
                         &self.keymap,
                         action.context.config_name(),
@@ -478,7 +547,7 @@ impl App {
         }
         let action = match event {
             TuiEvent::Key(key)
-                if !self.transcript_view.is_search_active()
+                if !self.transcript_view.is_search_editing()
                     && self.keymap.app.find_transcript.is_pressed(*key) =>
             {
                 self.transcript_view.begin_search();
@@ -487,6 +556,9 @@ impl App {
             TuiEvent::Key(key) => self
                 .transcript_view
                 .handle_key(*key, &self.transcript_cells),
+            TuiEvent::Mouse(mouse) if modal_transcript_mouse => self
+                .transcript_view
+                .handle_selection_mouse(*mouse, &self.transcript_cells),
             TuiEvent::Mouse(mouse) => self
                 .transcript_view
                 .handle_mouse(*mouse, &self.transcript_cells),
@@ -506,17 +578,7 @@ impl App {
             | TuiEvent::FocusLost => None,
         };
         let Some(action) = action else {
-            if matches!(
-                event,
-                TuiEvent::Key(KeyEvent {
-                    code: KeyCode::Enter,
-                    modifiers: KeyModifiers::NONE,
-                    kind: KeyEventKind::Press,
-                    ..
-                })
-            ) && self.enter_returns_to_latest()
-                && self.transcript_view.can_return_to_latest()
-            {
+            if empty_enter_returns_to_latest {
                 self.transcript_view.jump_to_latest();
                 tui.frame_requester().schedule_frame();
                 return Ok(true);
@@ -547,8 +609,6 @@ impl App {
                     &text,
                     !copy_on_select,
                 );
-                self.transcript_view
-                    .show_copy_feedback(&result, text.chars().count());
                 if resume_following
                     && matches!(result, Ok(crate::clipboard_copy::CopyStatus::Pending(_)))
                 {
@@ -603,8 +663,12 @@ impl App {
 pub(super) mod tests;
 
 #[cfg(test)]
-#[path = "empty_state_animation_tests.rs"]
-mod empty_state_animation_tests;
+#[path = "first_turn_screen_tests.rs"]
+mod first_turn_screen_tests;
+
+#[cfg(test)]
+#[path = "ledger_divider_tests.rs"]
+mod ledger_divider_tests;
 
 #[cfg(test)]
 #[path = "owned_transcript_input_tests.rs"]
@@ -617,3 +681,13 @@ mod warning_notice_tests;
 #[cfg(test)]
 #[path = "owned_transcript_follow_tests.rs"]
 mod follow_tests;
+
+// Elpis: typing draws at once and its frame cost does not grow with the chat.
+#[cfg(test)]
+#[path = "owned_transcript_render_cost_tests.rs"]
+mod render_cost_tests;
+
+// Elpis: Esc never leaves typed text in the air on the full screen.
+#[cfg(test)]
+#[path = "owned_transcript_esc_typing_tests.rs"]
+mod esc_typing_tests;

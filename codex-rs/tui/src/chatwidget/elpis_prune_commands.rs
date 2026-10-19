@@ -2,7 +2,7 @@
 //! `model_popups.rs`.
 //!
 //! `/prune` turns Smart Prune on for subsequent turns; `/smart-prune` toggles it and
-//! `/smart-prune on|off` sets it (`elpis_ledger_glue.rs` owns the switch). `/pruner-model`
+//! `/smart-prune on|off` sets it and `log` browses its evidence. `/pruner-model`
 //! chooses the model Smart Prune's optimizer uses, saved in `pruner.json`
 //! (`core/src/pruner_settings.rs`); the chat model is never changed. Typed choices parse as
 //! `/memory-model`'s do (`crate::elpis_background_model`): `default`, `<provider>:<id>`, or an
@@ -20,12 +20,13 @@ use crate::history_cell;
 use crate::legacy_core::pruner_settings::PrunerSettings;
 use crate::slash_command::SlashCommand;
 
-const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off]";
+const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off|log]";
 const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
-/// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads.
-/// `role_provider` is the provider a bare id runs on when the choice names none.
-fn save_pruner_choice(
+/// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads. The
+/// dashboard's Models tab saves through it too. `role_provider` is the provider a bare id runs
+/// on when the choice names none.
+pub(crate) fn save_pruner_choice(
     home: &Path,
     choice: &BackgroundModelChoice,
     role_provider: &str,
@@ -79,10 +80,11 @@ impl ChatWidget {
         }
     }
 
-    /// `/smart-prune on|off` and `/pruner-model <id|provider:id|default>`.
+    /// `/smart-prune on|off|log` and `/pruner-model <id|provider:id|default>`.
     pub(super) fn dispatch_prune_command_with_args(&mut self, cmd: SlashCommand, args: &str) {
         match cmd {
             SlashCommand::SmartPrune => match args.to_ascii_lowercase().as_str() {
+                "log" => self.open_smart_prune_log(),
                 "on" => {
                     self.request_smart_prune_enabled(/*enabled*/ true);
                 }
@@ -117,7 +119,7 @@ impl ChatWidget {
 
     /// The provider the pruner uses when `pruner.json` names none: the background provider,
     /// else the session's.
-    fn pruner_role_provider(&self) -> &str {
+    pub(crate) fn pruner_role_provider(&self) -> &str {
         self.config
             .background_provider
             .as_deref()
@@ -184,11 +186,12 @@ impl ChatWidget {
                     description: Some(description),
                     is_current,
                     actions: vec![Box::new(move |tx| {
-                        let result = PrunerSettings::load(home.as_path()).and_then(|mut settings| {
-                            settings.model = model.clone();
-                            settings.provider = provider.clone();
-                            settings.save(home.as_path())
-                        });
+                        let result =
+                            PrunerSettings::load(home.as_path()).and_then(|mut settings| {
+                                settings.model = model.clone();
+                                settings.provider = provider.clone();
+                                settings.save(home.as_path())
+                            });
                         let cell = match result {
                             Ok(()) => history_cell::new_info_event(
                                 format!(

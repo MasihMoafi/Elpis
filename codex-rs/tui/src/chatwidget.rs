@@ -261,7 +261,6 @@ mod connector_mentions;
 mod connectors;
 mod constructor;
 mod dynamic_activity;
-mod empty_state_policy;
 pub(crate) use self::connectors::ConnectorScopeGeneration;
 use self::connectors::ConnectorsState;
 mod exec_state;
@@ -317,6 +316,11 @@ mod context_usage;
 mod elpis_ledger_glue;
 // Elpis: /prune, /smart-prune, /pruner-model and `--pruner-model`.
 pub(crate) mod elpis_prune_commands;
+pub(crate) mod smart_prune_log;
+#[cfg(test)]
+pub(crate) use context_ledger::ledger_column_width;
+pub(crate) use context_ledger::ledger_column_width_for;
+pub(crate) use context_ledger::render_startup_ledger_column;
 pub(crate) use elpis_ledger_glue::elpis_memory_dir;
 mod worktree_picker;
 use self::skills::collect_tool_mentions;
@@ -334,8 +338,18 @@ mod model_popup_state;
 mod model_popups;
 // Elpis: the provider-aware /model picker.
 mod elpis_providers;
+// Elpis: `/effort`.
+mod elpis_effort;
+pub(crate) use self::elpis_providers::BridgedProvider;
+#[cfg(test)]
+pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
-pub(crate) use self::elpis_providers::elpis_catalog_provider;
+pub(crate) use self::elpis_providers::bridged_provider;
+pub(crate) use self::elpis_providers::bridged_provider_of_model;
+pub(crate) use self::elpis_providers::elpis_chat_model_providers;
+pub(crate) use self::elpis_providers::elpis_lists_from_app_server;
+pub(crate) use self::elpis_providers::elpis_picker_providers;
+pub(crate) use self::elpis_providers::is_bridged_model;
 pub(crate) use self::elpis_providers::load_elpis_provider_models;
 pub(crate) use self::elpis_providers::set_elpis_catalog_provider;
 mod notifications;
@@ -379,13 +393,11 @@ pub(crate) use realtime::realtime_delegation_display_text;
 pub(crate) use realtime::realtime_delegation_input;
 #[cfg(test)]
 pub(crate) use realtime::tests::activate_voice_for_thread;
+#[cfg(test)]
+pub(crate) use realtime::tests::commit_realtime_history_events;
 mod reasoning_shortcuts;
 use self::realtime::RealtimeConversationUiState;
 mod rendering;
-// Elpis: the identity line above the composer.
-mod elpis_identity;
-// Elpis: the ChatWidget half of the v0.3.0 composer behaviour.
-mod elpis_composer;
 // Elpis: the Context Ledger's category shares, the dashboard and the local evidence links.
 mod elpis_dashboard;
 mod replay;
@@ -442,7 +454,7 @@ use self::user_messages::UserMessageSource;
 use self::user_messages::app_server_text_elements;
 pub(crate) use self::user_messages::create_initial_user_message;
 pub(crate) use self::user_messages::mention_bindings_from_user_inputs;
-use self::user_messages::merge_user_messages;
+pub(crate) use self::user_messages::merge_user_messages;
 use self::user_messages::merge_user_messages_with_history_record;
 #[cfg(test)]
 use self::user_messages::remap_placeholders_for_message;
@@ -480,7 +492,7 @@ const ASK_FOR_APPROVAL_LABEL: &str = "Ask for approval";
 const APPROVE_FOR_ME_LABEL: &str = "Approve for me";
 const AUTO_REVIEW_DESCRIPTION: &str = "Only ask for actions detected as potentially unsafe";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] = ["model-with-reasoning", "current-dir", "thread-name"];
+const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] = ["model-with-reasoning", "thread-name", "current-dir"];
 
 /// Common initialization parameters shared by all `ChatWidget` constructors.
 pub(crate) struct ChatWidgetInit {
@@ -533,9 +545,7 @@ pub(crate) enum ExternalEditorState {
 /// (which view gets Ctrl+C), while `ChatWidget` owns process-level decisions such as interrupting
 /// active work, arming the double-press quit shortcut, and requesting shutdown-first exit.
 pub(crate) struct ChatWidget {
-    pub(crate) empty_state_animation:
-        std::cell::RefCell<crate::empty_state_animation::EmptyStateAnimation>,
-    pub(crate) cyber_policy_notice: crate::daybreak::NoticeCache,
+    pub(crate) daybreak_enabled: bool,
     app_event_tx: AppEventSender,
     codex_op_target: CodexOpTarget,
     bottom_pane: BottomPane,
@@ -561,6 +571,7 @@ pub(crate) struct ChatWidget {
     model_catalog: Arc<ModelCatalog>,
     model_popup_request_id: Option<uuid::Uuid>,
     permission_popup_request_id: Option<uuid::Uuid>,
+    permission_discovery: Option<crate::permission_discovery::PermissionDiscovery>,
     worktree_popup_request_id: Option<uuid::Uuid>,
     permission_profiles_menu_opened: bool,
     model_popup_model_ids: Vec<String>,
@@ -583,6 +594,7 @@ pub(crate) struct ChatWidget {
     context_attribution: Option<codex_app_server_protocol::ThreadContextAttribution>,
     smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot,
     smart_prune_synced: bool,
+    smart_prune_log_request: Option<uuid::Uuid>,
     last_prune_saved_tokens: Option<u64>,
     // Elpis: the dashboard's Activity tab and whether `/dashboard` has been opened.
     dashboard: elpis_dashboard::DashboardWidgetState,
@@ -625,13 +637,15 @@ pub(crate) struct ChatWidget {
     pending_stream_consolidations: usize,
     /// Copy feedback is discarded with its originating conversation.
     pending_clipboard: Option<clipboard::PendingCopy>,
+    /// Legacy terminals report auto-repeat as new presses; suppress the burst after a slow paste.
+    suppress_image_paste_until: Instant,
     copy_last_response_binding: Vec<KeyBinding>,
     running_commands: HashMap<String, RunningCommand>,
     collab_agent_metadata: HashMap<ThreadId, AgentMetadata>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
     suppressed_exec_calls: HashSet<String>,
     skills_all: Vec<SkillMetadata>,
-    skills_initial_state: Option<HashMap<AbsolutePathBuf, bool>>,
+    skills_initial_state: Option<HashMap<PathUri, bool>>,
     last_unified_wait: Option<UnifiedExecWaitState>,
     unified_exec_wait_streak: Option<UnifiedExecWaitStreak>,
     turn_lifecycle: TurnLifecycleState,
@@ -1109,7 +1123,7 @@ impl ChatWidget {
                     ..Default::default()
                 },
             ],
-            ..SelectionViewParams::picker()
+            ..SelectionViewParams::confirmation()
         });
     }
 
@@ -1196,8 +1210,6 @@ impl ChatWidget {
         self.update_due_hook_visibility();
         self.schedule_hook_timer_if_needed();
         self.bottom_pane.pre_draw_tick();
-        // Elpis: the idle footer tip follows the composer state (v0.3.0).
-        self.refresh_elpis_tip();
         self.flush_realtime_transcript_history();
         self.refresh_realtime_microphone_level();
         if let Some(pet) = self.ambient_pet.as_ref() {
@@ -1538,7 +1550,8 @@ impl ChatWidget {
                 config.cwd.to_path_buf(),
                 CODEX_CLI_VERSION,
             )
-            .with_yolo_mode(history_cell::is_yolo_mode(config)),
+            .with_yolo_mode(history_cell::is_yolo_mode(config))
+            .with_bypass_mode(history_cell::is_bypass_mode(config)),
         )
     }
 
@@ -1753,6 +1766,10 @@ impl ChatWidget {
 
     pub(crate) fn composer_is_empty(&self) -> bool {
         self.bottom_pane.composer_is_empty() && !self.bottom_pane.is_in_paste_burst()
+    }
+
+    pub(crate) fn composer_is_vim_enabled(&self) -> bool {
+        self.bottom_pane.composer_is_vim_enabled()
     }
 
     #[cfg(test)]

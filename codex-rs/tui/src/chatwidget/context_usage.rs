@@ -18,32 +18,33 @@ use super::ChatWidget;
 use crate::elpis_ledger_events::ContextUsageTranscriptTotals;
 use crate::history_cell::HistoryCell;
 
-// Adjacent categories deliberately alternate light/dark luminance while retaining
-// distinct hues and at least 4.5:1 contrast against the reference charcoal surface.
-pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(111, 181, 253);
-pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(3, 155, 44);
-pub(super) const REASONING_COLOR: Color = Color::Rgb(245, 239, 202);
+// Recognizable hues for category dots and bar segments. Labels keep the terminal
+// foreground; charcoal markers retain at least 4.5:1 contrast.
+pub(super) const USER_MESSAGES_COLOR: Color = Color::Rgb(83, 177, 255);
+pub(super) const AGENT_RESPONSES_COLOR: Color = Color::Rgb(63, 211, 148);
+pub(super) const REASONING_COLOR: Color = Color::Rgb(171, 132, 255);
 const REASONING_CATEGORY_LABEL: &str = "Reasoning + compaction";
-pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(162, 129, 11);
-pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(252, 178, 79);
+pub(super) const TOOL_CALLS_COLOR: Color = Color::Rgb(255, 161, 58);
+pub(super) const TOOL_RESULTS_COLOR: Color = Color::Rgb(217, 219, 117);
 pub(super) const SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(240, 68, 93);
-pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(239, 140, 255);
-pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(145, 145, 145);
-pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(166, 252, 24);
+pub(super) const DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(255, 153, 194);
+pub(super) const TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(160, 160, 160);
+pub(super) const UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(29, 209, 226);
+pub(super) const CONTEXT_CATEGORY_MARKER: &str = "●";
 
-// The same hues on paper, muted, alternating a lighter and a darker tone so
-// neighbouring bar segments read apart without loud color. Darkening the charcoal
-// palette uniformly had pushed every category into one muddy band. Each color is
-// at least 4.5:1 on paper and white and 25 CIELAB units from every other one.
-const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(70, 110, 170);
-const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(30, 90, 50);
-const LIGHT_REASONING_COLOR: Color = Color::Rgb(40, 120, 125);
-const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(95, 80, 30);
-const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(160, 95, 40);
+// Each category has the same hue role on paper and charcoal. In particular,
+// reasoning is violet, separate from green agents and olive tool results.
+// Markers keep at least 3:1 contrast on light backgrounds; labels use the
+// terminal foreground rather than inheriting a graphical marker's color.
+const LIGHT_USER_MESSAGES_COLOR: Color = Color::Rgb(0, 108, 206);
+const LIGHT_AGENT_RESPONSES_COLOR: Color = Color::Rgb(0, 135, 92);
+const LIGHT_REASONING_COLOR: Color = Color::Rgb(113, 67, 214);
+const LIGHT_TOOL_CALLS_COLOR: Color = Color::Rgb(205, 103, 0);
+const LIGHT_TOOL_RESULTS_COLOR: Color = Color::Rgb(116, 132, 27);
 const LIGHT_SYSTEM_INSTRUCTIONS_COLOR: Color = Color::Rgb(140, 45, 60);
-const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(130, 90, 160);
-const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(80, 80, 80);
-const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(150, 95, 120);
+const LIGHT_DEVELOPER_MESSAGES_COLOR: Color = Color::Rgb(206, 71, 143);
+const LIGHT_TOOL_DEFINITIONS_COLOR: Color = Color::Rgb(100, 100, 100);
+const LIGHT_UNRECOGNIZED_ITEMS_COLOR: Color = Color::Rgb(0, 131, 149);
 
 fn light_category_color(color: Color) -> Color {
     match color {
@@ -94,26 +95,6 @@ pub(super) struct CategoryUsage {
     pub(super) label: &'static str,
     pub(super) tokens: u64,
     pub(super) color: Color,
-}
-
-impl CategoryUsage {
-    /// A shape identifier shared by `/context` and the persistent Ledger. Shapes
-    /// keep categories distinguishable when a terminal theme or color vision
-    /// makes two hues harder to tell apart.
-    pub(super) fn marker(&self) -> &'static str {
-        match self.color {
-            USER_MESSAGES_COLOR => "●",
-            AGENT_RESPONSES_COLOR => "◆",
-            REASONING_COLOR => "▲",
-            TOOL_CALLS_COLOR => "■",
-            TOOL_RESULTS_COLOR => "⬟",
-            SYSTEM_INSTRUCTIONS_COLOR => "✦",
-            DEVELOPER_MESSAGES_COLOR => "✚",
-            TOOL_DEFINITIONS_COLOR => "▣",
-            UNRECOGNIZED_ITEMS_COLOR => "?",
-            _ => "●",
-        }
-    }
 }
 
 // Elpis: shared with the dashboard (elpis_dashboard.rs).
@@ -218,14 +199,19 @@ pub(super) fn run_built_context_categories(
         },
     ];
     categories.retain(|category| category.tokens > 0);
-    debug_assert_eq!(
-        categories
-            .iter()
-            .map(|category| category.tokens)
-            .sum::<u64>(),
-        attribution.estimated_total,
-        "run-built categories must sum to the unpadded request estimate",
-    );
+    // The split comes from the server (for Claude and Antigravity chats, the bridge's estimates);
+    // a total that disagrees is drawn scaled to the measured context, never a crash.
+    let summed = categories
+        .iter()
+        .map(|category| category.tokens)
+        .sum::<u64>();
+    if summed != attribution.estimated_total {
+        tracing::warn!(
+            summed,
+            estimated_total = attribution.estimated_total,
+            "context categories do not sum to the request estimate"
+        );
+    }
     categories
 }
 
@@ -519,6 +505,80 @@ impl ChatWidget {
     }
 }
 
+/// Left-aligned blocks of 0–7 eighths of a cell.
+const LEFT_EIGHTHS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+
+/// The used part of a context bar, `used_cells` wide, split between `(tokens, color)` segments in
+/// proportion to their tokens. A bar with room (two cells or more per segment, like the Ledger's)
+/// gives each segment whole cells and keeps neighbours apart with a sliver of background, as Masih
+/// asked on 11 October and again on 18 October. A cramped bar cannot spare the gaps: there one-eighth
+/// cell resolution keeps a 27k category wider than a 1k one, which whole cells could not.
+pub(super) fn category_bar_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
+    let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
+    let big = weighted_cell_counts(&tokens, used_cells).into_iter().filter(|cells| *cells > 0).count();
+    if big > 1 && used_cells >= 2 * big {
+        gapped_spans(segments, &tokens, used_cells)
+    } else {
+        blended_spans(segments, used_cells)
+    }
+}
+
+/// Whole cells per segment; every segment but the last ends in ▉, whose unpainted eighth is the gap.
+fn gapped_spans(segments: &[(u64, Color)], tokens: &[u64], used_cells: usize) -> Vec<Span<'static>> {
+    let visible = segments
+        .iter()
+        .zip(weighted_cell_counts(tokens, used_cells))
+        .filter(|(_, cells)| *cells > 0)
+        .map(|((_, color), cells)| (cells, *color))
+        .collect::<Vec<_>>();
+    let mut spans = Vec::new();
+    for (index, (cells, color)) in visible.iter().enumerate() {
+        if index + 1 == visible.len() {
+            spans.push(Span::styled("█".repeat(*cells), Style::default().fg(*color)));
+            continue;
+        }
+        if *cells > 1 {
+            spans.push(Span::styled("█".repeat(cells - 1), Style::default().fg(*color)));
+        }
+        spans.push(Span::styled("▉", Style::default().fg(*color).bg(Color::Reset)));
+    }
+    spans
+}
+
+/// One-eighth cell resolution: a cell holding a boundary paints the segment that ends there in
+/// front and the one that continues behind it, so the boundary sits where the next segment starts.
+/// A segment under an eighth of a cell is not drawn; the legend still lists it.
+fn blended_spans(segments: &[(u64, Color)], used_cells: usize) -> Vec<Span<'static>> {
+    let tokens = segments.iter().map(|(tokens, _)| *tokens).collect::<Vec<_>>();
+    let eighths = weighted_cell_counts(&tokens, used_cells * 8);
+    let colors = segments
+        .iter()
+        .zip(eighths)
+        .flat_map(|((_, color), count)| std::iter::repeat_n(*color, count))
+        .collect::<Vec<_>>();
+    colors
+        .chunks(8)
+        .map(|cell| {
+            let back = cell[cell.len() - 1];
+            let back_eighths = cell.iter().rev().take_while(|color| **color == back).count();
+            if back_eighths == cell.len() {
+                return Span::styled("█", Style::default().fg(back));
+            }
+            // The front part can hold slivers of several segments; the largest one shows.
+            let front = &cell[..cell.len() - back_eighths];
+            let front_color = front
+                .iter()
+                .copied()
+                .max_by_key(|color| front.iter().filter(|other| *other == color).count())
+                .unwrap_or(back);
+            Span::styled(
+                LEFT_EIGHTHS[front.len()],
+                Style::default().fg(front_color).bg(back),
+            )
+        })
+        .collect()
+}
+
 fn build_category_bar_chart(
     categories: &[CategoryUsage],
     used: u64,
@@ -542,7 +602,6 @@ fn build_category_bar_chart(
     let used_cells = ((u128::from(used.min(window)) * bar_width as u128
         + u128::from(window.max(1)) / 2)
         / u128::from(window.max(1))) as usize;
-    let counts = category_grid_cell_counts(&categories, used_cells);
     let mut bar = vec![Span::from(if narrow {
         "   Context ["
     } else {
@@ -551,17 +610,16 @@ fn build_category_bar_chart(
     if categories.is_empty() && used_cells > 0 {
         bar.push(Span::styled(
             "█".repeat(used_cells),
-            Style::default().fg(Color::Reset),
+            crate::style::context_style(),
         ));
     } else {
-        for (category, cells) in categories.iter().zip(counts) {
-            if cells > 0 {
-                bar.push(Span::styled(
-                    "█".repeat(cells),
-                    Style::default().fg(context_display_color(category.color)),
-                ));
-            }
-        }
+        bar.extend(category_bar_spans(
+            &categories
+                .iter()
+                .map(|category| (category.tokens, context_display_color(category.color)))
+                .collect::<Vec<_>>(),
+            used_cells,
+        ));
     }
     if used_cells < bar_width {
         bar.push(Span::styled(
@@ -591,7 +649,7 @@ fn build_category_bar_chart(
         if narrow {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("   {} ", category.marker()),
+                    format!("   {CONTEXT_CATEGORY_MARKER} "),
                     Style::default().fg(context_display_color(category.color)),
                 ),
                 Span::from(format!(
@@ -604,7 +662,7 @@ fn build_category_bar_chart(
         } else {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("   {} ", category.marker()),
+                    format!("   {CONTEXT_CATEGORY_MARKER} "),
                     Style::default().fg(context_display_color(category.color)),
                 ),
                 Span::from(format!("{:<27}", category.label)),
@@ -641,17 +699,7 @@ fn build_category_bar_chart(
     lines
 }
 
-fn category_grid_cell_counts(categories: &[CategoryUsage], used_cells: usize) -> Vec<usize> {
-    weighted_cell_counts(
-        &categories
-            .iter()
-            .map(|category| category.tokens)
-            .collect::<Vec<_>>(),
-        used_cells,
-    )
-}
-
-pub(super) fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<usize> {
+fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<usize> {
     let total = weights
         .iter()
         .map(|tokens| u128::from(*tokens))
@@ -674,30 +722,9 @@ pub(super) fn weighted_cell_counts(weights: &[u64], used_cells: usize) -> Vec<us
     remainders.sort_by(|(left_index, left), (right_index, right)| {
         right.cmp(left).then_with(|| left_index.cmp(right_index))
     });
+    // Strictly proportional: a minimum share for tiny categories made unequal ones look equal.
     for (index, _) in remainders.into_iter().take(remaining) {
         counts[index] += 1;
-    }
-
-    let positive_count = weights.iter().filter(|tokens| **tokens > 0).count();
-    if used_cells >= positive_count {
-        for recipient in weights
-            .iter()
-            .enumerate()
-            .filter_map(|(index, tokens)| (*tokens > 0 && counts[index] == 0).then_some(index))
-            .collect::<Vec<_>>()
-        {
-            let Some(donor) = counts
-                .iter()
-                .enumerate()
-                .filter(|(_, cells)| **cells > 1)
-                .max_by_key(|(index, cells)| (**cells, weights[*index]))
-                .map(|(index, _)| index)
-            else {
-                break;
-            };
-            counts[donor] -= 1;
-            counts[recipient] = 1;
-        }
     }
     debug_assert_eq!(counts.iter().sum::<usize>(), used_cells);
     counts
@@ -817,8 +844,94 @@ mod tests {
         assert!(text.contains("210k/200k · 105.0% used"), "{text}");
         assert!(text.contains("100k · 50.0% of context window"), "{text}");
         assert!(text.contains("110k · 55.0% of context window"), "{text}");
-        assert_eq!(text.matches('█').count(), 80);
+        // The bar is capped at the window's 80 cells. Without a known terminal background
+        // both categories share one display colour, so cells are counted, not boundaries.
+        let cells = text.matches(['█', '▏', '▎', '▍', '▌', '▋', '▊', '▉']).count();
+        assert_eq!(cells, 80, "{text}");
         assert_eq!(text.matches('░').count(), 0);
+    }
+
+    /// Eighths of each color the bar paints: a full cell gives its color 8, and a shared cell
+    /// gives the front color its block and the back color the rest.
+    fn painted_eighths(spans: &[Span<'static>]) -> std::collections::HashMap<Color, usize> {
+        let mut painted = std::collections::HashMap::new();
+        for span in spans {
+            for cell in span.content.chars() {
+                let front = LEFT_EIGHTHS
+                    .iter()
+                    .position(|block| block.chars().eq([cell]))
+                    .unwrap_or(8);
+                *painted.entry(span.style.fg.expect("front color")).or_default() += front;
+                if let Some(back) = span.style.bg.filter(|back| *back != Color::Reset) {
+                    *painted.entry(back).or_default() += 8 - front;
+                }
+            }
+        }
+        painted
+    }
+
+    /// The bar cell by cell: each cell's colour and how many eighths it paints.
+    fn bar_cells(spans: &[Span<'static>]) -> Vec<(Color, usize)> {
+        spans
+            .iter()
+            .flat_map(|span| {
+                let color = span.style.fg.expect("front color");
+                span.content.chars().map(move |cell| {
+                    let eighths = LEFT_EIGHTHS.iter().position(|block| block.chars().eq([cell])).unwrap_or(8);
+                    (color, eighths)
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn neighbouring_segments_are_separated_by_a_gap() {
+        // As on 11 October: on a bar with room, a gap of an eighth between segments, none after the last.
+        let spans = category_bar_spans(&[(2, Color::Blue), (0, Color::Green), (6, Color::Red), (2, Color::Yellow)], 10);
+        assert_eq!(spans.iter().map(|span| span.content.as_ref()).collect::<String>(), "█▉█████▉██");
+        for (cells, segments) in [
+            // Masih's nine-cell Ledger: tiny categories must not prevent gaps between whole-cell segments.
+            (9, vec![(6_000, Color::Blue), (30_000, Color::Green), (4_000, Color::Red), (3_000, Color::Yellow), (600, Color::Cyan), (500, Color::Magenta)]),
+            (24, vec![(4_000, Color::Magenta), (2_500, Color::Green), (900, Color::DarkGray), (1_400, Color::Gray)]),
+            (40, vec![(9_000, Color::Magenta), (6_000, Color::Green), (900, Color::DarkGray), (3_000, Color::Gray)]),
+        ] {
+            let spans = category_bar_spans(&segments, cells);
+            let bar = bar_cells(&spans);
+            assert_eq!(Line::from(spans.clone()).width(), cells, "the bar keeps its width");
+            assert!(spans.iter().all(|span| span.style.bg.is_none_or(|back| back == Color::Reset)), "no cell mixes two segments");
+            for pair in bar.windows(2).filter(|pair| pair[0].0 != pair[1].0) {
+                assert!(pair[0].1 < 8, "{:?} runs into {:?} with no gap: {bar:?}", pair[0].0, pair[1].0);
+            }
+            assert_eq!(bar.last().map(|cell| cell.1), Some(8), "the used edge is not cut short: {bar:?}");
+        }
+    }
+
+    #[test]
+    fn category_widths_follow_their_tokens_when_cells_are_scarce() {
+        // Masih's Ledger on 16 October 2026: 83.6k of a 475k window in a nine-cell bar drew all
+        // eight categories one cell wide.
+        let segments = [
+            (643, Color::Blue),
+            (1_700, Color::Green),
+            (26_200, Color::Magenta),
+            (10_300, Color::Yellow),
+            (27_200, Color::Red),
+            (4_400, Color::Cyan),
+            (5_600, Color::LightRed),
+            (7_600, Color::Gray),
+        ];
+        let spans = category_bar_spans(&segments, 9);
+        let painted = painted_eighths(&spans);
+
+        assert_eq!(Line::from(spans).width(), 9);
+        assert_eq!(painted.values().sum::<usize>(), 72);
+        // 27.2k and 26.2k of 83.6k of 72 eighths: about 23 each, against 1 for 643 tokens.
+        assert!(painted[&Color::Red] >= 22, "{painted:?}");
+        assert!(painted[&Color::Magenta] >= 21, "{painted:?}");
+        assert!(painted[&Color::Yellow] >= 8, "{painted:?}");
+        assert!(painted[&Color::Red] > 10 * painted.get(&Color::Blue).copied().unwrap_or(0));
+        assert!(category_bar_spans(&[(0, Color::Blue)], 3).is_empty());
+        assert_eq!(category_bar_spans(&[(1, Color::Blue)], 1)[0].content, "█");
     }
 
     #[test]
@@ -833,11 +946,42 @@ mod tests {
     }
 
     #[test]
-    fn occupied_bar_keeps_nonzero_categories_visible_when_resolution_allows() {
-        let counts = weighted_cell_counts(&[1, 1, 1, 97], 10);
+    fn tiny_categories_do_not_take_width_from_large_ones() {
+        assert_eq!(weighted_cell_counts(&[1, 1, 1, 97], 10), vec![0, 0, 0, 10]);
 
-        assert_eq!(counts.iter().sum::<usize>(), 10);
-        assert!(counts.into_iter().all(|count| count >= 1));
+        // A four-cell Ledger bar on 16 October 2026: five categories under 300 tokens drew
+        // 3.8k of system instructions wider than 5.4k of developer messages.
+        let segments = [
+            (209, Color::Blue),
+            (16, Color::Green),
+            (288, Color::Magenta),
+            (54, Color::Yellow),
+            (76, Color::LightYellow),
+            (3_800, Color::Red),
+            (5_400, Color::LightRed),
+            (6_500, Color::Gray),
+        ];
+        let painted = painted_eighths(&category_bar_spans(&segments, 4));
+        assert_eq!(painted.values().sum::<usize>(), 32);
+        assert!(painted[&Color::Red] < painted[&Color::LightRed], "{painted:?}");
+        assert!(painted[&Color::LightRed] < painted[&Color::Gray], "{painted:?}");
+        assert!(painted[&Color::Red] <= 8, "{painted:?}");
+
+        // Three cells: 435 tokens of reasoning opened the first cell and painted all of 4.0k
+        // of system instructions in its colour.
+        let segments = [
+            (233, Color::Blue),
+            (30, Color::Green),
+            (435, Color::Magenta),
+            (91, Color::Yellow),
+            (916, Color::LightYellow),
+            (4_000, Color::Red),
+            (5_600, Color::LightRed),
+            (6_800, Color::Gray),
+        ];
+        let painted = painted_eighths(&category_bar_spans(&segments, 3));
+        assert!(painted.get(&Color::Red).copied().unwrap_or(0) >= 5, "{painted:?}");
+        assert!(painted.get(&Color::Magenta).copied().unwrap_or(0) <= 1, "{painted:?}");
     }
 
     #[tokio::test]
@@ -918,6 +1062,29 @@ mod tests {
         assert!(!text.contains("effort setting"), "{text}");
     }
 
+    /// A server's split may disagree with its own total (a bridged chat's estimates did: 4379
+    /// against 3210); Elpis draws it, scaled to the measured context, instead of panicking.
+    #[test]
+    fn run_built_categories_tolerate_a_total_that_disagrees() {
+        let attribution = codex_app_server_protocol::ThreadContextAttribution {
+            user_messages: 3000,
+            tool_results: 1379,
+            estimated_total: 3210,
+            ..Default::default()
+        };
+
+        let categories =
+            reconcile_context_categories(&run_built_context_categories(&attribution), 3210);
+
+        assert_eq!(
+            categories
+                .iter()
+                .map(|category| category.tokens)
+                .sum::<u64>(),
+            3210
+        );
+    }
+
     #[test]
     fn run_built_categories_reconcile_to_measured_context_without_a_gap() {
         let attribution = codex_app_server_protocol::ThreadContextAttribution {
@@ -972,14 +1139,10 @@ mod tests {
 
     fn colors_have_minimum_distance(colors: &[Color], minimum: f64) -> bool {
         colors.iter().enumerate().all(|(index, left)| {
-            let (left_red, left_green, left_blue) = rgb(*left);
-            colors.iter().skip(index + 1).all(|right| {
-                let (right_red, right_green, right_blue) = rgb(*right);
-                let red = f64::from(left_red) - f64::from(right_red);
-                let green = f64::from(left_green) - f64::from(right_green);
-                let blue = f64::from(left_blue) - f64::from(right_blue);
-                red.hypot(green).hypot(blue) >= minimum
-            })
+            colors
+                .iter()
+                .skip(index + 1)
+                .all(|right| lab_distance(*left, *right) >= minimum)
         })
     }
 
@@ -1009,7 +1172,7 @@ mod tests {
 
     #[test]
     fn context_category_palette_uses_distinct_high_contrast_hues() {
-        const MINIMUM_RGB_DISTANCE: f64 = 100.0;
+        const MINIMUM_LAB_DISTANCE: f64 = 40.0;
         const MINIMUM_CONTRAST: f64 = 4.5;
         let terminal_colors = [
             USER_MESSAGES_COLOR,
@@ -1026,31 +1189,24 @@ mod tests {
 
         assert!(colors_have_minimum_distance(
             &terminal_colors,
-            MINIMUM_RGB_DISTANCE
+            MINIMUM_LAB_DISTANCE
         ));
         assert!(
             terminal_colors
                 .iter()
                 .all(|color| contrast_ratio(*color, terminal_background) >= MINIMUM_CONTRAST)
         );
-        for (index, pair) in terminal_colors.windows(2).enumerate() {
-            let left = relative_luminance(pair[0]);
-            let right = relative_luminance(pair[1]);
-            assert!(
-                if index % 2 == 0 {
-                    left - right >= 0.10
-                } else {
-                    right - left >= 0.10
-                },
-                "category {index} and {} do not alternate light/dark: {left:.3} vs {right:.3}",
-                index + 1,
-            );
-        }
 
         let near_duplicate = [Color::Rgb(95, 135, 255), Color::Rgb(96, 136, 255)];
         assert!(!colors_have_minimum_distance(
             &near_duplicate,
-            MINIMUM_RGB_DISTANCE
+            MINIMUM_LAB_DISTANCE
+        ));
+        // The old purple/pink markers were different RGBs but visually too close.
+        let old_markers = [Color::Rgb(210, 153, 244), Color::Rgb(240, 136, 187)];
+        assert!(!colors_have_minimum_distance(
+            &old_markers,
+            MINIMUM_LAB_DISTANCE
         ));
         assert!(contrast_ratio(Color::Rgb(36, 36, 36), terminal_background) < MINIMUM_CONTRAST);
     }
@@ -1088,7 +1244,7 @@ mod tests {
 
     #[test]
     fn light_category_palette_keeps_every_pair_apart() {
-        const MINIMUM_LAB_DISTANCE: f64 = 25.0;
+        const MINIMUM_LAB_DISTANCE: f64 = 30.0;
         let colors = [
             USER_MESSAGES_COLOR,
             AGENT_RESPONSES_COLOR,
@@ -1109,25 +1265,22 @@ mod tests {
                     "{left:?} and {right:?} are only {distance:.1} apart on paper"
                 );
             }
-            for background in [Color::Rgb(248, 246, 239), Color::Rgb(255, 255, 255)] {
+            for background in [
+                Color::Rgb(240, 240, 240),
+                Color::Rgb(248, 246, 239),
+                Color::Rgb(255, 255, 255),
+            ] {
                 assert!(
-                    contrast_ratio(*left, background) >= 4.5,
+                    contrast_ratio(*left, background) >= 3.0,
                     "{left:?} on {background:?}"
                 );
             }
         }
-        for (index, pair) in colors.windows(2).enumerate() {
-            let gap = lab(pair[0]).0 - lab(pair[1]).0;
-            assert!(
-                if index % 2 == 0 {
-                    gap >= 8.0
-                } else {
-                    gap <= -8.0
-                },
-                "categories {index} and {} do not alternate lighter/darker on paper: {gap:.1}",
-                index + 1,
-            );
-        }
+        let old_markers = [Color::Rgb(147, 99, 181), Color::Rgb(173, 86, 132)];
+        assert!(!colors_have_minimum_distance(
+            &old_markers,
+            MINIMUM_LAB_DISTANCE
+        ));
         // The uniform darkening this replaces is what made the bar unreadable.
         let darkened = [TOOL_CALLS_COLOR, TOOL_RESULTS_COLOR].map(|color| {
             let (r, g, b) = rgb(color);
@@ -1146,7 +1299,7 @@ mod tests {
 
     #[test]
     fn context_colors_remain_visible_in_both_appearances() {
-        for bg in [(17, 18, 20), (248, 246, 239)] {
+        for bg in [(17, 18, 20), (248, 246, 239), (255, 255, 255)] {
             crate::terminal_palette::with_test_default_colors(
                 crate::terminal_probe::DefaultColors {
                     fg: (220, 220, 220),
@@ -1168,7 +1321,7 @@ mod tests {
                             contrast_ratio(
                                 context_display_color(color),
                                 Color::Rgb(bg.0, bg.1, bg.2)
-                            ) >= 4.5
+                            ) >= 3.0
                         );
                     }
                     let lines = build_category_bar_chart(&[], 50, 100, 80);
@@ -1185,6 +1338,70 @@ mod tests {
                             .iter()
                             .flat_map(|line| &line.spans)
                             .any(|span| span.content.contains("50.0% of window"))
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn tool_results_keep_slightly_lighter_olive_in_bar_and_legend() {
+        for bg in [(17, 18, 20), (248, 246, 239)] {
+            crate::terminal_palette::with_test_default_colors(
+                crate::terminal_probe::DefaultColors {
+                    fg: (32, 32, 32),
+                    bg,
+                },
+                || {
+                    let olive = context_display_color(TOOL_RESULTS_COLOR);
+                    let (r, g, b) = rgb(olive);
+                    assert!(g > r && r > b.saturating_add(60));
+                    // The hue remains olive; its declared light/dark pigments brighten
+                    // the original by only a small step.
+                    let expected = if crate::color::is_light(bg) {
+                        Color::Rgb(116, 132, 27)
+                    } else {
+                        Color::Rgb(217, 219, 117)
+                    };
+                    assert_eq!(olive, expected);
+                    assert_ne!(crate::style::context_style().fg, Some(olive));
+                    let categories = [
+                        CategoryUsage {
+                            label: "Tool results",
+                            tokens: 25,
+                            color: TOOL_RESULTS_COLOR,
+                        },
+                        CategoryUsage {
+                            label: "User messages",
+                            tokens: 25,
+                            color: USER_MESSAGES_COLOR,
+                        },
+                    ];
+                    let chart = build_category_bar_chart(&categories, 50, 100, 80);
+                    let spans = chart
+                        .iter()
+                        .flat_map(|line| &line.spans)
+                        .collect::<Vec<_>>();
+                    assert!(
+                        spans
+                            .iter()
+                            .any(|span| span.content.contains('█') && span.style.fg == Some(olive))
+                    );
+                    assert!(
+                        spans
+                            .iter()
+                            .any(|span| span.content.contains('●') && span.style.fg == Some(olive))
+                    );
+                    assert!(spans.iter().any(|span| span.content.contains('█')
+                        && span.style.fg == Some(context_display_color(USER_MESSAGES_COLOR))));
+                    assert_ne!(olive, context_display_color(USER_MESSAGES_COLOR));
+                    let unattributed = build_category_bar_chart(&[], 50, 100, 80);
+                    assert!(
+                        unattributed
+                            .iter()
+                            .flat_map(|line| &line.spans)
+                            .any(|span| span.content.contains('█')
+                                && span.style.fg == crate::style::context_style().fg)
                     );
                 },
             );

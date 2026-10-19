@@ -12,6 +12,17 @@ use pretty_assertions::assert_eq;
 
 const WIDTH: u16 = 150;
 
+#[tokio::test]
+async fn smart_prune_log_opens_a_view_without_toggling_pruning() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log".to_string(), Vec::new());
+    let screen = render_bottom_popup(&chat, 80);
+    assert!(screen.contains("Smart Prune log"), "{screen}");
+    assert!(feature_updates(&mut rx).is_empty());
+    assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
+}
+
 fn feature_updates(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
 ) -> Vec<(Feature, bool)> {
@@ -117,7 +128,7 @@ async fn smart_prune_on_off_sets_it_and_anything_else_prints_the_usage() {
                 assert!(
                     cells
                         .iter()
-                        .any(|cell| cell.contains("Usage: /smart-prune [on|off]")),
+                        .any(|cell| cell.contains("Usage: /smart-prune [on|off|log]")),
                     "{cells:?}"
                 );
             }
@@ -209,7 +220,7 @@ async fn ledger_p_toggles_smart_prune() {
     // Positive: with the ledger focused, `p` switches Smart Prune off.
     chat.bottom_pane
         .set_composer_text(String::new(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     chat.handle_key_event(KeyEvent::from(KeyCode::Char('p')));
     assert_eq!(
         feature_updates(&mut rx),

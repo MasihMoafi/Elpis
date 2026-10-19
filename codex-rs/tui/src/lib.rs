@@ -75,6 +75,7 @@ use codex_utils_oss::get_default_model_for_oss_provider;
 use color_eyre::eyre::WrapErr;
 use crossterm::SynchronizedUpdate;
 use cwd_prompt::CwdPromptAction;
+pub use daemon_startup::uses_wsl_drvfs;
 pub use session_archive_commands::DeleteConfirmation;
 pub use session_archive_commands::SessionArchiveAction;
 pub use session_archive_commands::SessionArchiveCommandOptions;
@@ -115,7 +116,6 @@ mod app_server_connection;
 mod app_server_session;
 mod approval_events;
 // Elpis: the welcome-screen ASCII animation v0.3.0 drew.
-mod ascii_animation;
 mod async_question_reply;
 mod backend_banners;
 mod bottom_pane;
@@ -131,6 +131,7 @@ mod clock_format;
 mod collaboration_modes;
 mod color;
 mod config_update;
+mod copy_input_guard;
 pub(crate) mod custom_terminal;
 // Elpis: the `/dashboard` page's loopback server.
 mod dashboard_server;
@@ -141,10 +142,12 @@ mod elpis_app_event;
 mod elpis_background_model;
 // Elpis: GOAL.md and the ES.md turn checkpoint.
 mod elpis_context;
+mod elpis_local_bridge;
 // Elpis: Context Ledger event value types.
 mod elpis_ledger_events;
 // Elpis: the Elpis motion palette.
 mod elpis_motion;
+mod empty_state_animation;
 mod experimental_features;
 mod markdown_copy;
 mod permission_discovery;
@@ -160,7 +163,6 @@ mod diff_model;
 mod diff_render;
 mod dynamic_tools;
 mod dynamic_tools_mcp;
-mod empty_state_animation;
 mod exec_cell;
 mod exec_command;
 mod external_agent_config_migration;
@@ -176,6 +178,8 @@ mod hooks_rpc;
 mod ide_context;
 mod inline_visualization;
 pub(crate) mod insert_history;
+mod managed_worktree_tool_specs;
+mod managed_worktree_tools;
 pub use insert_history::insert_history_lines;
 mod footer_hint;
 mod key_hint;
@@ -316,7 +320,8 @@ async fn start_embedded_app_server(
     environment_manager: Arc<EnvironmentManager>,
     embedded_network_policy: codex_app_server_client::EmbeddedNetworkPolicy,
 ) -> color_eyre::Result<InProcessAppServerClient> {
-    start_embedded_app_server_with(
+    // Keep embedded startup state off the caller's stack during session transitions.
+    Box::pin(start_embedded_app_server_with(
         arg0_paths,
         config,
         cli_kv_overrides,
@@ -329,13 +334,16 @@ async fn start_embedded_app_server(
         environment_manager,
         embedded_network_policy,
         InProcessAppServerClient::start,
-    )
+    ))
     .await
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AppServerTarget {
     Embedded,
+    LocalBridge {
+        endpoint: RemoteAppServerEndpoint,
+    },
     LocalDaemon {
         endpoint: RemoteAppServerEndpoint,
         allow_embedded_fallback: bool,
@@ -348,6 +356,21 @@ pub(crate) enum AppServerTarget {
 impl AppServerTarget {
     pub(crate) fn uses_remote_workspace(&self) -> bool {
         matches!(self, Self::Remote { .. })
+    }
+
+    /// Whether the Left arrow lists this server's agents: the local daemon's, and (Elpis) those
+    /// of any server at a loopback address, such as the Claude bridge.
+    pub(crate) fn serves_local_agents(&self) -> bool {
+        match self {
+            Self::LocalDaemon { .. } | Self::LocalBridge { .. } => true,
+            Self::Remote {
+                endpoint: RemoteAppServerEndpoint::WebSocket { websocket_url, .. },
+            } => Url::parse(websocket_url).is_ok_and(|parsed| websocket_url_is_loopback(&parsed)),
+            Self::Remote {
+                endpoint: RemoteAppServerEndpoint::UnixSocket { .. },
+            } => true,
+            Self::Embedded => false,
+        }
     }
 
     fn uses_embedded_network_policy(&self) -> bool {
@@ -377,6 +400,7 @@ impl AppServerTarget {
                 allow_embedded_fallback: false,
                 ..
             }
+            | Self::LocalBridge { .. }
             | Self::Remote { .. } => factory,
         }
     }
@@ -409,14 +433,11 @@ async fn init_state_db_for_app_server_target(
         AppServerTarget::Embedded => state_db::try_init(config).await.map(Some).map_err(|err| {
             let database_path = codex_state::runtime_db_path_for_corruption_error(&err)
                 .unwrap_or_else(|| config.sqlite_config().state_db_path());
-            std::io::Error::other(LocalStateDbStartupError::new(
-                database_path,
-                format!("{err:#}"),
-            ))
+            std::io::Error::other(LocalStateDbStartupError::new(database_path, err))
         }),
-        AppServerTarget::LocalDaemon { .. } | AppServerTarget::Remote { .. } => {
-            Ok(state_db::get_state_db(config).await)
-        }
+        AppServerTarget::LocalDaemon { .. }
+        | AppServerTarget::LocalBridge { .. }
+        | AppServerTarget::Remote { .. } => Ok(state_db::get_state_db(config).await),
     }
 }
 
@@ -457,8 +478,11 @@ fn remote_addr_has_explicit_port(addr: &str, parsed: &Url) -> bool {
 }
 
 fn websocket_url_supports_auth_token(parsed: &Url) -> bool {
+    (parsed.scheme() == "wss" && parsed.host().is_some()) || websocket_url_is_loopback(parsed)
+}
+
+fn websocket_url_is_loopback(parsed: &Url) -> bool {
     match (parsed.scheme(), parsed.host()) {
-        ("wss", Some(_)) => true,
         ("ws", Some(url::Host::Domain(domain))) => domain.eq_ignore_ascii_case("localhost"),
         ("ws", Some(url::Host::Ipv4(addr))) => addr.is_loopback(),
         ("ws", Some(url::Host::Ipv6(addr))) => addr.is_loopback(),
@@ -865,7 +889,11 @@ async fn lookup_latest_session_target_with_app_server(
                 include_non_interactive,
                 lookup_mode,
             ))
-            .await?;
+            .await;
+        let response = match response {
+            Err(_) if lookup_mode == LatestSessionLookupMode::StateDbOnly => continue,
+            response => response?,
+        };
         let target = response
             .data
             .into_iter()
@@ -1423,7 +1451,10 @@ async fn run_ratatui_app(
     if app_server_target.uses_embedded_network_policy() {
         embedded_network_policy.bind_config(&mut config);
     }
-    startup_draft.apply_config(&config);
+    startup_draft.apply_settings(
+        &crate::local_settings::LocalSettings::from(&config),
+        config.cwd.as_path(),
+    );
     if !(cli.resume_picker || cli.fork_picker || cli.agents_overview)
         && let Err(err) = startup_draft.show(&mut tui)
     {
@@ -1775,7 +1806,10 @@ async fn run_ratatui_app(
     if app_server_target.uses_embedded_network_policy() {
         embedded_network_policy.bind_config(&mut config);
     }
-    startup_draft.apply_config(&config);
+    startup_draft.apply_settings(
+        &crate::local_settings::LocalSettings::from(&config),
+        config.cwd.as_path(),
+    );
 
     if config.model_provider_id != startup_model_provider {
         startup_account = None;
@@ -1830,8 +1864,11 @@ async fn run_ratatui_app(
     // Remote startup keeps its existing explicit --cd trust check. Resolving other
     // remote folders requires authoritative project-root information from the server.
     if !uses_remote_workspace || remote_cwd_override.is_some() {
-        let resumed_thread = if matches!(app_server_target, AppServerTarget::LocalDaemon { .. })
-            && let resume_picker::SessionSelection::Resume(target) = &session_selection
+        let resumed_thread = if matches!(
+            app_server_target,
+            AppServerTarget::LocalDaemon { .. } | AppServerTarget::LocalBridge { .. }
+        ) && let resume_picker::SessionSelection::Resume(target) =
+            &session_selection
         {
             Some(
                 startup_draft
@@ -1935,7 +1972,10 @@ async fn run_ratatui_app(
     if app_server_target.uses_embedded_network_policy() {
         embedded_network_policy.bind_config(&mut config);
     }
-    startup_draft.apply_config(&config);
+    startup_draft.apply_settings(
+        &crate::local_settings::LocalSettings::from(&config),
+        config.cwd.as_path(),
+    );
 
     // Count launches that reach final config resolution, regardless of screen policy.
     if config.analytics_enabled != Some(false)
@@ -2015,15 +2055,24 @@ async fn run_ratatui_app(
     // Elpis: layer 1 of the pruning pipeline is a hook, not built-in behavior. Register it just
     // before hooks are listed, so a first launch that finds RTK reviews it right away.
     crate::rtk_hook::ensure_rtk_hook(config.codex_home.as_path());
+    let server_owned_fresh_bootstrap = app::startup_bootstrap::uses_server_owned_fresh_bootstrap(
+        &app_server_target,
+        &session_selection,
+        &loader_overrides,
+    );
     let startup_prefetch_started_at = Instant::now();
     let startup_prefetch = startup_draft
         .run_until(&mut tui, async {
             tokio::join!(
                 async {
-                    match startup_account {
+                    if server_owned_fresh_bootstrap {
+                        return Ok::<_, color_eyre::Report>(None);
+                    }
+                    let bootstrap = match startup_account {
                         Some(account) => app_server.bootstrap_with_account(&config, account).await,
                         None => app_server.bootstrap(&config).await,
-                    }
+                    }?;
+                    Ok(Some(bootstrap))
                 },
                 load_startup_hooks_review_entry(hooks_request_handle, hooks_cwd),
             )
@@ -2041,7 +2090,7 @@ async fn run_ratatui_app(
         return Err(err.into());
     }
     let startup_bootstrap = match startup_bootstrap {
-        Ok(startup_bootstrap) => Some(startup_bootstrap),
+        Ok(startup) => startup,
         Err(err) => {
             shutdown_startup_session(Some(app_server), &mut terminal_restore_guard).await;
             return Err(err);
@@ -2394,6 +2443,25 @@ pub(crate) mod tests {
         let size = std::mem::size_of_val(&future);
 
         assert!(size < 64 * 1024, "TUI startup future is {size} bytes");
+    }
+
+    /// Elpis: the Claude bridge is a server on this machine reached at a loopback address, so
+    /// the Left arrow lists its agents as it does a local daemon's. Negative: a server on
+    /// another host, and the embedded server, do not.
+    #[test]
+    fn loopback_servers_list_their_agents() {
+        let ws = |url: &str| AppServerTarget::Remote {
+            endpoint: RemoteAppServerEndpoint::WebSocket {
+                websocket_url: url.to_string(),
+                auth_token: None,
+            },
+        };
+        for url in ["ws://127.0.0.1:38539", "ws://localhost:4000", "ws://[::1]:4000"] {
+            assert!(ws(url).serves_local_agents(), "{url}");
+        }
+        assert!(!ws("wss://elpis.example.com:443").serves_local_agents());
+        assert!(!ws("ws://192.168.1.20:4000").serves_local_agents());
+        assert!(!AppServerTarget::Embedded.serves_local_agents());
     }
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
@@ -3931,7 +3999,7 @@ requires_openai_auth = {requires_openai_auth}
 
         assert_eq!(startup_error.database_path(), logs_db_path.as_path());
         assert!(
-            codex_state::sqlite_error_detail_is_corruption(startup_error.detail()),
+            startup_error.is_corruption(),
             "startup error should preserve the SQLite corruption cause, got: {}",
             startup_error.detail()
         );

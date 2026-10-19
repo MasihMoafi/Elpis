@@ -47,6 +47,7 @@ async fn usage_notice_preserves_composer_geometry_on_recovery() -> Result<()> {
                     thread_id: ThreadId::new().to_string(),
                     turn: Turn {
                         id: "turn".into(),
+                        root_turn_id: None,
                         items_view: TurnItemsView::Full,
                         items: Vec::new(),
                         status: TurnStatus::InProgress,
@@ -61,12 +62,13 @@ async fn usage_notice_preserves_composer_geometry_on_recovery() -> Result<()> {
             assert!(app.chat_widget.is_user_turn_pending_or_running());
             if queued {
                 app.keymap.chat.edit_queued_message = vec![crate::key_hint::shift(KeyCode::Left)];
+                app.keymap.composer.queue = vec![crate::key_hint::plain(KeyCode::Tab)];
                 app.chat_widget
                     .apply_keymap_update(Default::default(), &app.keymap);
                 app.chat_widget
                     .apply_external_edit("queued follow-up".into());
                 app.chat_widget
-                    .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                    .handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
                 assert_eq!(
                     app.chat_widget.queued_user_message_texts(),
                     vec!["queued follow-up"],

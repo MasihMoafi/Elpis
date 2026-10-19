@@ -1,10 +1,13 @@
-//! Session-scoped shortcuts for the ordinary built-in permission modes.
+//! Cycle server-allowed modes; Shift+Tab also offers the confirmed Full Access flow.
 
 use super::*;
 
 impl ChatWidget {
     pub(super) fn handle_permission_shortcut(&mut self, key_event: KeyEvent) -> bool {
-        let forward = if self.chat_keymap.next_permission_mode.is_pressed(key_event) {
+        let shift_tab = matches!(key_event.code, KeyCode::BackTab)
+            && (key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT)
+            || key_hint::shift(KeyCode::Tab).is_press(key_event);
+        let forward = if shift_tab || self.chat_keymap.next_permission_mode.is_pressed(key_event) {
             true
         } else if self
             .chat_keymap
@@ -18,6 +21,9 @@ impl ChatWidget {
         if !self.bottom_pane.no_modal_or_popup_active() {
             return false;
         }
+        if shift_tab && key_event.kind != KeyEventKind::Press {
+            return true;
+        }
         if self.permission_shortcut_pending {
             return true;
         }
@@ -26,15 +32,36 @@ impl ChatWidget {
             return true;
         }
         let Some(thread_id) = self.thread_id else {
+            self.open_permissions_popup();
             return true;
         };
 
+        let Some(discovery) = self.permission_discovery.as_ref() else {
+            self.request_permission_profiles();
+            return true;
+        };
+        let server_requirements = codex_config::ConfigRequirements {
+            auto_review_required_models: discovery
+                .requirements
+                .as_ref()
+                .and_then(|requirements| requirements.auto_review.as_ref())
+                .and_then(|auto_review| auto_review.required_on_models.as_ref())
+                .map(|models| {
+                    codex_config::Sourced::new(
+                        models.iter().cloned().collect(),
+                        codex_config::RequirementSource::Unknown,
+                    )
+                }),
+            ..Default::default()
+        };
         let current_approval =
             AskForApproval::from(self.config.permissions.approval_policy.value());
         let active_profile = self.config.permissions.active_permission_profile();
         let mut choices = Vec::new();
         for preset in builtin_approval_presets() {
-            if !matches!(preset.id, "read-only" | "auto") {
+            if !matches!(preset.id, "read-only" | "auto")
+                && !(shift_tab && preset.id == "full-access")
+            {
                 continue;
             }
             for reviewer in [ApprovalsReviewer::User, ApprovalsReviewer::AutoReview] {
@@ -45,12 +72,14 @@ impl ChatWidget {
                     continue;
                 }
                 let approval = AskForApproval::from(preset.approval);
-                let requirements = self.config.config_layer_stack.requirements();
-                if self
-                    .permission_mode_disabled_reason(&preset, approval)
+                if discovery
+                    .disabled_reason(
+                        &preset.active_permission_profile.id,
+                        Some(approval),
+                        Some(reviewer.into()),
+                    )
                     .is_some()
-                    || requirements.approvals_reviewer.can_set(&reviewer).is_err()
-                    || (requirements.auto_review_required_for_model(self.current_model())
+                    || (server_requirements.auto_review_required_for_model(self.current_model())
                         && reviewer != ApprovalsReviewer::AutoReview)
                 {
                     continue;

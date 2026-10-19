@@ -1769,6 +1769,7 @@ async fn load_config_layers_includes_cloud_config_bundle() -> anyhow::Result<()>
         Some(cwd),
         &[] as &[(String, TomlValue)],
         ConfigLoadOptions {
+            loader_overrides: LoaderOverrides::without_managed_config_for_tests(),
             cloud_config_bundle,
             ..Default::default()
         },
@@ -2534,6 +2535,12 @@ extends = ":workspace"
                 description: None,
                 allowed: false,
             },
+            // Elpis: requirements that forbid full access forbid bypass too.
+            PermissionProfileCatalogEntry {
+                id: ":bypass-permissions".to_string(),
+                description: None,
+                allowed: false,
+            },
             PermissionProfileCatalogEntry {
                 id: "managed-disabled".to_string(),
                 description: None,
@@ -2546,6 +2553,135 @@ extends = ":workspace"
             },
         ]
     );
+    Ok(())
+}
+
+/// Elpis: a config with `default_permissions` and `approval_policy` only, plus optional
+/// requirements, as every new session loads it.
+async fn load_permission_default(
+    config_toml: &str,
+    requirements_toml: Option<&str>,
+) -> anyhow::Result<crate::config::Config> {
+    let tmp = tempdir()?;
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    tokio::fs::write(codex_home.join(CONFIG_TOML_FILE), config_toml).await?;
+    let mut overrides = LoaderOverrides::without_managed_config_for_tests();
+    if let Some(requirements_toml) = requirements_toml {
+        let requirements_path = tmp.path().join("requirements.toml");
+        tokio::fs::write(&requirements_path, requirements_toml).await?;
+        overrides.system_requirements_path = Some(requirements_path);
+    }
+    let cwd = AbsolutePathBuf::from_absolute_path(tmp.path())?;
+    Ok(ConfigBuilder::default()
+        .codex_home(codex_home)
+        .fallback_cwd(Some(cwd.to_path_buf()))
+        .loader_overrides(overrides)
+        .build()
+        .await?)
+}
+
+fn bypass_is_active(config: &crate::config::Config) -> bool {
+    codex_protocol::models::bypass_permissions_active(
+        config.permissions.approval_policy.value(),
+        config.permissions.permission_profile(),
+        config.permissions.active_permission_profile().as_ref(),
+    )
+}
+
+#[tokio::test]
+async fn bypass_permissions_default_starts_every_session_without_sandbox_prompts_or_hook_review()
+-> anyhow::Result<()> {
+    let config = load_permission_default(
+        r#"
+default_permissions = ":bypass-permissions"
+approval_policy = "never"
+"#,
+        /*requirements_toml*/ None,
+    )
+    .await?;
+
+    assert_eq!(
+        config.permissions.permission_profile(),
+        &PermissionProfile::Disabled
+    );
+    assert_eq!(
+        config
+            .permissions
+            .active_permission_profile()
+            .map(|profile| profile.id),
+        Some(":bypass-permissions".to_string())
+    );
+    assert!(bypass_is_active(&config));
+    assert!(
+        config.bypass_hook_trust,
+        "bypass runs enabled hooks without the trust review, like --dangerously-bypass-hook-trust"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn full_access_and_bypass_without_never_keep_hook_trust_review() -> anyhow::Result<()> {
+    for config_toml in [
+        // Full Access is unchanged.
+        "default_permissions = \":danger-full-access\"\napproval_policy = \"never\"\n",
+        // The bypass profile alone, while approvals are still asked, is only "no sandbox".
+        "default_permissions = \":bypass-permissions\"\napproval_policy = \"on-request\"\n",
+    ] {
+        let config = load_permission_default(config_toml, /*requirements_toml*/ None).await?;
+        assert_eq!(
+            config.permissions.permission_profile(),
+            &PermissionProfile::Disabled,
+            "{config_toml}"
+        );
+        assert!(!bypass_is_active(&config), "{config_toml}");
+        assert!(!config.bypass_hook_trust, "{config_toml}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn managed_requirements_win_over_a_bypass_permissions_default() -> anyhow::Result<()> {
+    for (requirements_toml, falls_back) in [
+        // Only listed profiles are allowed, and bypass is not listed.
+        (
+            r#"
+[allowed_permission_profiles]
+":read-only" = true
+":workspace" = true
+":danger-full-access" = true
+"#,
+            true,
+        ),
+        // Unsandboxed modes are not allowed at all; "never" without a sandbox is refused.
+        (
+            r#"
+allowed_sandbox_modes = ["read-only", "workspace-write"]
+"#,
+            false,
+        ),
+        // Approvals must be asked.
+        (
+            r#"
+allowed_approval_policies = ["on-request"]
+"#,
+            true,
+        ),
+    ] {
+        let config = load_permission_default(
+            "default_permissions = \":bypass-permissions\"\napproval_policy = \"never\"\n",
+            Some(requirements_toml),
+        )
+        .await;
+        match config {
+            Ok(config) => {
+                assert!(falls_back, "{requirements_toml} should refuse the config");
+                assert!(!bypass_is_active(&config), "{requirements_toml}");
+                assert!(!config.bypass_hook_trust, "{requirements_toml}");
+            }
+            Err(err) => assert!(!falls_back, "{requirements_toml}: {err}"),
+        }
+    }
     Ok(())
 }
 

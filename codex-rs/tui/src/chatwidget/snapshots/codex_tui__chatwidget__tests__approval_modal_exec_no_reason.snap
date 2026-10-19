@@ -1,10 +1,8 @@
 ---
 source: tui/src/chatwidget/tests/exec_flow.rs
-assertion_line: 1688
 expression: terminal.backend().vt100().screen().contents()
 ---
 
- Elpis · model gpt-5.6-sol default · location /tmp/project
 
   Would you like to run the following command?
 

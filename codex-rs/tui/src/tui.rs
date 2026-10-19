@@ -90,6 +90,8 @@ pub(crate) mod test_support;
 mod tmux;
 #[cfg(any(windows, test))]
 mod windows_console;
+#[cfg(any(windows, test))]
+mod windows_key_sequence;
 
 /// Target frame interval for UI redraw scheduling.
 pub(crate) const TARGET_FRAME_INTERVAL: Duration = frame_rate_limiter::MIN_FRAME_INTERVAL;
@@ -441,7 +443,7 @@ fn flush_terminal_input_buffer() {
     use windows_sys::Win32::System::Console::STD_INPUT_HANDLE;
 
     let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
-    if handle == INVALID_HANDLE_VALUE || handle == 0 {
+    if handle == INVALID_HANDLE_VALUE || handle.is_null() {
         let err = unsafe { GetLastError() };
         tracing::warn!("failed to get stdin handle for flush: error {err}");
         return;
@@ -866,6 +868,38 @@ impl Tui {
     // Inverse of `pause_events`.
     pub fn resume_events(&mut self) {
         self.event_broker.resume_events();
+    }
+
+    /// Refresh terminal-owned colors after focus returns, without losing interleaved input.
+    /// Keep the previous palette when a terminal does not answer the bounded probe.
+    pub(crate) fn refresh_terminal_palette(&mut self) -> bool {
+        #[cfg(any(unix, windows))]
+        {
+            self.pause_events();
+            #[cfg(unix)]
+            let colors = crate::terminal_probe::startup(
+                crate::terminal_probe::DEFAULT_TIMEOUT,
+                crate::terminal_probe::StartupKeyboardEnhancementProbe::Skip,
+            )
+            .ok()
+            .and_then(|probe| probe.default_colors);
+            #[cfg(windows)]
+            let colors =
+                crate::terminal_probe::default_colors(crate::terminal_probe::DEFAULT_TIMEOUT)
+                    .ok()
+                    .flatten();
+            self.resume_events();
+            if let Some(colors) = colors {
+                let changed = crate::terminal_palette::default_fg() != Some(colors.fg)
+                    || crate::terminal_palette::default_bg() != Some(colors.bg);
+                crate::terminal_palette::set_default_colors_from_startup_probe(Some(colors));
+                if changed {
+                    self.frame_requester.schedule_frame();
+                }
+                return changed;
+            }
+        }
+        false
     }
 
     /// Discover the visible Windows theme only after protected startup decisions have completed.
@@ -1529,7 +1563,7 @@ fn ensure_virtual_terminal_processing() -> Result<()> {
     use windows_sys::Win32::System::Console::SetConsoleMode;
 
     fn enable_for_handle(handle: HANDLE) -> Result<()> {
-        if handle == INVALID_HANDLE_VALUE || handle == 0 {
+        if handle == INVALID_HANDLE_VALUE || handle.is_null() {
             return Ok(());
         }
 

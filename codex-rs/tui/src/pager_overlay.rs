@@ -41,6 +41,15 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use scrolling::render_offset_content;
 
+/// Put Escape first among close bindings so local reports do not trigger backtrack or interruption.
+pub(crate) fn escape_first_pager_keymap(pager: &PagerKeymap) -> PagerKeymap {
+    let mut keymap = pager.clone();
+    let escape = crate::key_hint::plain(KeyCode::Esc);
+    keymap.close.retain(|binding| binding != &escape);
+    keymap.close.insert(0, escape);
+    keymap
+}
+
 pub(crate) enum Overlay {
     Transcript(TranscriptOverlay),
     Static(StaticOverlay),
@@ -52,9 +61,12 @@ impl Overlay {
         cells: Vec<Arc<dyn HistoryCell>>,
         keymap: PagerKeymap,
         copy_on_select: bool,
+        mouse_scroll_speed: f64,
     ) -> Self {
         let mut overlay = TranscriptOverlay::new(cells, keymap);
         overlay.view.copy_on_select = copy_on_select;
+        overlay.view.mouse_scroll_speed = mouse_scroll_speed;
+        overlay.view.mouse_wheel_acceleration = true;
         overlay.view.primary_selection = crate::clipboard_copy::primary::available();
         Self::Transcript(overlay)
     }

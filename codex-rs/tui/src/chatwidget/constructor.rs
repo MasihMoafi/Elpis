@@ -63,9 +63,7 @@ impl ChatWidget {
             settings: fallback_default,
         };
 
-        let empty_state_animation = crate::empty_state_animation::EmptyStateAnimation::default();
-        let mut header = Self::placeholder_session_header_cell(&config);
-        history_cell::set_session_greeting(header.as_mut(), &empty_state_animation.greeting);
+        let header = Self::placeholder_session_header_cell(&config);
         let active_cell = Some(header);
 
         let current_cwd = Some(config.cwd.to_path_buf());
@@ -96,9 +94,10 @@ impl ChatWidget {
             app_event_tx.clone(),
             pet_http_client.clone(),
         );
+        let mut context_ledger = context_ledger::ContextLedgerState::default();
+        context_ledger.preferred_width = local_settings.tui.context_ledger_width;
         let mut widget = Self {
-            empty_state_animation: std::cell::RefCell::new(empty_state_animation),
-            cyber_policy_notice: Default::default(),
+            daybreak_enabled: false,
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
             codex_op_target,
@@ -114,7 +113,7 @@ impl ChatWidget {
                 skills: None,
             }),
             // Elpis: Context Ledger state.
-            context_ledger: context_ledger::ContextLedgerState::default(),
+            context_ledger,
             agent_ledger: Vec::new(),
             manual_memory_cache: elpis_ledger_glue::ManualMemoryCache::default(),
             transcript: TranscriptState::new(active_cell),
@@ -132,6 +131,7 @@ impl ChatWidget {
             model_catalog,
             model_popup_request_id: None,
             permission_popup_request_id: None,
+            permission_discovery: None,
             worktree_popup_request_id: None,
             permission_profiles_menu_opened: false,
             model_popup_model_ids: Vec::new(),
@@ -152,6 +152,7 @@ impl ChatWidget {
             context_attribution: None, // Elpis
             smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot::default(),
             smart_prune_synced: false,
+            smart_prune_log_request: None,
             last_prune_saved_tokens: None,
             dashboard: Default::default(), // Elpis
             token_usage_pending: false,
@@ -188,6 +189,7 @@ impl ChatWidget {
             plan_stream_controller: None,
             pending_stream_consolidations: 0,
             pending_clipboard: None,
+            suppress_image_paste_until: Instant::now(),
             copy_last_response_binding,
             running_commands: HashMap::new(),
             collab_agent_metadata: HashMap::new(),
@@ -307,10 +309,9 @@ impl ChatWidget {
         } else {
             widget.bottom_pane.set_vim_enabled(/*enabled*/ false);
         }
-        // Elpis: the identity line above the composer replaces the footer status line.
         widget
             .bottom_pane
-            .set_status_line_enabled(/*enabled*/ false);
+            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);

@@ -5,6 +5,7 @@ use crate::keymap::KeymapContextSet;
 use crate::render::renderable::Renderable;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use crossterm::event::KeyEvent;
+use crossterm::event::MouseEvent;
 use std::time::Instant;
 
 use super::CancellationEvent;
@@ -16,11 +17,29 @@ pub(crate) enum ViewCompletion {
     Cancelled,
 }
 
+/// How a view is placed over the preceding view in the bottom-pane stack.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ViewPresentation {
+    #[default]
+    Inline,
+    Centered,
+}
+
 /// Trait implemented by every view that can be shown in the bottom pane.
 pub(crate) trait BottomPaneView: Renderable {
+    /// Centered views preserve the preceding view as their backdrop.
+    fn presentation(&self) -> ViewPresentation {
+        ViewPresentation::Inline
+    }
+
     /// Handle a key event while the view is active. A redraw is always
     /// scheduled after this call.
     fn handle_key_event(&mut self, _key_event: KeyEvent) {}
+
+    /// Handle a pointer event using the view's last rendered hit targets.
+    fn handle_mouse_event(&mut self, _mouse_event: MouseEvent) -> bool {
+        false
+    }
 
     /// Return the keymap contexts whose handlers are active in this view.
     fn keymap_contexts(&self) -> KeymapContextSet {

@@ -298,16 +298,6 @@ async fn review_during_mcp_startup_preserves_draft_when_foreground_work_is_pendi
 
             chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-            // Elpis: during an agent turn the command queues for after the turn.
-            if activity == "turn" {
-                assert_eq!(chat.bottom_pane.composer_text(), "");
-                assert_eq!(chat.queued_user_message_texts(), vec![draft]);
-                assert!(
-                    !std::iter::from_fn(|| op_rx.try_recv().ok())
-                        .any(|op| matches!(op, Op::Review { .. } | Op::UserTurn { .. }))
-                );
-                continue;
-            }
             assert_eq!(chat.bottom_pane.composer_text(), draft);
             assert_eq!(
                 chat.bottom_pane.remote_image_urls(),
@@ -358,33 +348,16 @@ async fn pending_mcp_startup_does_not_block_queued_follow_up() {
 #[tokio::test]
 async fn pending_mcp_startup_dispatches_queued_slash_commands() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.empty_state_animation.borrow_mut().start_fresh();
     chat.set_mcp_startup_expected_servers(["slow".to_string()]);
     notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
     chat.thread_id = Some(ThreadId::new());
     chat.bottom_pane
         .set_composer_text("/resume".to_string(), Vec::new(), Vec::new());
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
-    // Enter (unlike Codex's Tab queue key) first follows the transcript.
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FollowTranscript));
     assert_matches!(rx.try_recv(), Ok(AppEvent::OpenResumePicker));
     assert_no_submit_op(&mut op_rx);
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 17,
-    );
-    let mut buffer = ratatui::buffer::Buffer::empty(area);
-    assert!(
-        chat.empty_state_animation
-            .borrow_mut()
-            .render_in(
-                area,
-                &mut buffer,
-                crate::empty_state_animation::Presentation::Animated,
-            )
-            .is_some()
-    );
 }
 
 #[tokio::test]
@@ -396,7 +369,7 @@ async fn pending_mcp_startup_does_not_reject_queued_compaction() {
     handle_turn_started(&mut chat, "turn-1");
     chat.bottom_pane
         .set_composer_text("/compact".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 
     handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
 
@@ -416,7 +389,7 @@ async fn pending_mcp_startup_does_not_drain_follow_up_before_review_starts() {
     for message in ["/review", "queued follow-up"] {
         chat.bottom_pane
             .set_composer_text(message.to_string(), Vec::new(), Vec::new());
-        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
     chat.bottom_pane
         .set_composer_text("new draft".to_string(), Vec::new(), Vec::new());

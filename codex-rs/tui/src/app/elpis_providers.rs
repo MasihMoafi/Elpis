@@ -7,8 +7,8 @@
 //! it, and a fork keeps the whole history while the old thread keeps its provider. A thread with
 //! no turns yet has nothing to carry, so it is replaced by a fresh session on the new provider.
 
-use super::*;
 use super::session_lifecycle::ThreadAttachPresentation;
+use super::*;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::chatwidget::ElpisProviderEvent;
 
@@ -27,10 +27,11 @@ impl App {
             ElpisProviderEvent::Browse { provider_id } => self.elpis_browse_provider(provider_id),
             ElpisProviderEvent::ModelsLoaded {
                 provider_id,
+                request_id,
                 result,
             } => self
                 .chat_widget
-                .open_elpis_provider_models(provider_id, result),
+                .finish_elpis_models_loading(request_id, provider_id, result),
             ElpisProviderEvent::OpenKeyPrompt { provider_id } => {
                 self.chat_widget.open_elpis_api_key_prompt(provider_id);
             }
@@ -41,6 +42,10 @@ impl App {
                 self.elpis_switch_provider(tui, app_server, provider_id, model)
                     .await;
             }
+            ElpisProviderEvent::UseClaudeModel { model } => {
+                self.chat_widget
+                    .apply_model_and_effort(model, /*effort*/ None);
+            }
         }
         tui.frame_requester().schedule_frame();
     }
@@ -49,19 +54,25 @@ impl App {
     /// directly, so a key saved a moment ago counts; another provider the app server started
     /// with uses the app server's list.
     fn elpis_browse_provider(&mut self, provider_id: String) {
+        // A bridged subscription's models are already in the app server's list.
+        if crate::chatwidget::bridged_provider(&provider_id).is_some() {
+            self.chat_widget
+                .open_elpis_provider_models(provider_id, Ok(Vec::new()));
+            return;
+        }
         let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
             self.chat_widget
                 .add_error_message(format!("Model provider `{provider_id}` not found"));
             return;
         };
-        if codex_model_provider_info::gateway_route(&provider).is_none()
-            && crate::chatwidget::elpis_catalog_provider().as_deref() == Some(provider_id.as_str())
-        {
+        if crate::chatwidget::elpis_lists_from_app_server(&provider_id, &provider) {
             let presets = self.model_catalog.try_list_models().unwrap_or_default();
             self.chat_widget
                 .open_elpis_provider_models(provider_id, Ok(presets));
             return;
         }
+        // The catalog arrives later; until then a loading picker holds the queued input back.
+        let request_id = self.chat_widget.begin_elpis_models_loading(&provider_id);
         let home = self.config.codex_home.to_path_buf();
         let tx = self.app_event_tx.clone();
         tokio::spawn(async move {
@@ -69,14 +80,60 @@ impl App {
                 crate::chatwidget::load_elpis_provider_models(home, provider_id.clone(), provider)
                     .await;
             tx.send(AppEvent::Elpis(
-                crate::elpis_app_event::ElpisAppEvent::Provider(
-                    ElpisProviderEvent::ModelsLoaded {
-                        provider_id,
-                        result,
-                    },
-                ),
+                crate::elpis_app_event::ElpisAppEvent::Provider(ElpisProviderEvent::ModelsLoaded {
+                    provider_id,
+                    request_id,
+                    result,
+                }),
             ));
         });
+    }
+
+    /// A switch landed on the new provider: carry the unsent input over, then offer the new
+    /// model's effort levels, as Codex does after a model is picked.
+    async fn finish_provider_switch(
+        &mut self,
+        source: Option<ThreadId>,
+        input: Option<ThreadInputState>,
+    ) {
+        self.carry_input_after_provider_switch(source, input).await;
+        self.chat_widget.offer_effort_levels();
+    }
+
+    /// Move only unsent input to the replacement chat. The source keeps its questions and
+    /// running work, and the destination keeps its selected model and current turn state.
+    async fn carry_input_after_provider_switch(
+        &mut self,
+        source: Option<ThreadId>,
+        input: Option<ThreadInputState>,
+    ) {
+        let Some(mut input) = input else {
+            return;
+        };
+        if self.chat_widget.thread_id() == source {
+            return;
+        }
+        let Some(mut target) = self.chat_widget.capture_thread_input_state() else {
+            return;
+        };
+        let mut source_store = match source.and_then(|id| self.thread_event_channels.get(&id)) {
+            Some(channel) => Some(channel.store.lock().await),
+            None => None,
+        };
+        // Replacement saves the latest source input, including notifications drained during
+        // attachment. Moving from that store also prevents replay on the previous provider.
+        source_store
+            .as_mut()
+            .and_then(|store| store.input_state.as_mut())
+            .unwrap_or(&mut input)
+            .move_draft_and_queue_to(&mut target);
+        drop(source_store);
+        self.chat_widget.restore_thread_input_state(
+            Some(target),
+            crate::chatwidget::ThreadInputStateRestoreMode {
+                preserve_in_flight_turn: true,
+            },
+        );
     }
 
     async fn elpis_switch_provider(
@@ -89,9 +146,12 @@ impl App {
         if provider_id == self.chat_widget.config_ref().model_provider_id {
             // The thread's own provider: an ordinary model change.
             self.app_event_tx.send(AppEvent::UpdateModel(model.clone()));
-            self.app_event_tx.send(AppEvent::UpdateReasoningEffort(None));
             self.app_event_tx
-                .send(AppEvent::PersistModelSelection { model, effort: None });
+                .send(AppEvent::UpdateReasoningEffort(None));
+            self.app_event_tx.send(AppEvent::PersistModelSelection {
+                model,
+                effort: None,
+            });
             return;
         }
         let Some(provider) = self.config.model_providers.get(&provider_id).cloned() else {
@@ -135,11 +195,14 @@ impl App {
         self.config.model_reasoning_effort = None;
 
         let Some(thread_id) = self.chat_widget.thread_id() else {
+            let input = self.chat_widget.capture_thread_input_state();
             self.start_fresh_session(
                 tui, app_server, /*session_start_source*/ None,
                 /*initial_user_message*/ None, /*new_thread_name*/ None,
             )
             .await;
+            self.finish_provider_switch(/*source*/ None, input)
+                .await;
             return;
         };
         let mut fork_config = self.config.clone();
@@ -148,7 +211,7 @@ impl App {
                 .workspace_roots
                 .clone_from(&self.chat_widget.config_ref().workspace_roots);
         }
-        let selected_profile = self.confirmed_server_profile(thread_id);
+        let selected_profile = self.selected_server_profile(thread_id);
         match app_server
             .fork_thread_at(
                 &self.local_settings,
@@ -162,8 +225,12 @@ impl App {
             .await
         {
             Ok(forked) => {
-                self.detach_current_thread_for_navigation(app_server, Some(forked.session.thread_id))
-                    .await;
+                let input = self.chat_widget.capture_thread_input_state();
+                self.detach_current_thread_for_navigation(
+                    app_server,
+                    Some(forked.session.thread_id),
+                )
+                .await;
                 match self
                     .replace_chat_widget_with_app_server_thread(
                         tui,
@@ -173,26 +240,37 @@ impl App {
                     )
                     .await
                 {
-                    Ok(()) => self.chat_widget.add_info_message(
-                        format!("Now on {name} · {model}."),
-                        Some(
-                            "This conversation continues in a fork; the previous thread keeps \
-                             its provider."
-                                .to_string(),
-                        ),
-                    ),
+                    Ok(()) => {
+                        self.finish_provider_switch(Some(thread_id), input)
+                            .await;
+                        self.chat_widget.add_info_message(
+                            format!("Now on {name} · {model}."),
+                            Some(
+                                "This conversation continues in a fork; the previous thread \
+                                 keeps its provider."
+                                    .to_string(),
+                            ),
+                        );
+                    }
                     Err(err) => self.chat_widget.add_error_message(format!(
                         "Could not open the conversation on {name}: {err}"
                     )),
                 }
             }
-            Err(err) if err.chain().any(|cause| cause.to_string().contains(NO_ROLLOUT)) => {
-                // No turns yet: nothing to carry over.
+            Err(err)
+                if err
+                    .chain()
+                    .any(|cause| cause.to_string().contains(NO_ROLLOUT)) =>
+            {
+                // No turns yet: nothing to carry over but the owner's input.
+                let input = self.chat_widget.capture_thread_input_state();
                 self.start_fresh_session(
                     tui, app_server, /*session_start_source*/ None,
                     /*initial_user_message*/ None, /*new_thread_name*/ None,
                 )
                 .await;
+                self.finish_provider_switch(Some(thread_id), input)
+                    .await;
                 self.chat_widget
                     .add_info_message(format!("Now on {name} · {model}."), /*hint*/ None);
             }
@@ -203,3 +281,7 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "elpis_providers_tests.rs"]
+mod tests;

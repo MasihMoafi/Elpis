@@ -37,6 +37,8 @@ pub(crate) const MIN_SAVINGS_PERCENT: usize = 20;
 pub(crate) struct AdmissionEvidence<'a> {
     pub(crate) admission_id: &'a str,
     pub(crate) source_sha256: &'a str,
+    /// Where the audit keeps the exact source, so the main model can reread it.
+    pub(crate) source_file: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,21 +116,26 @@ pub(crate) fn decision_manifest_schema() -> serde_json::Value {
                         {
                             "type": "object",
                             "additionalProperties": false,
-                            "required": ["call_id", "decision", "content"],
+                            "required": ["call_id", "decision", "content", "reason"],
                             "properties": {
                                 "call_id": {"type": "string"},
                                 "decision": {"type": "string", "enum": ["compact"]},
-                                "content": {"type": "string"}
+                                "content": {"type": "string"},
+                                "reason": {"type": "string", "description": "Briefly name the facts kept in the compact output, in plain words."}
                             }
                         },
                         {
                             "type": "object",
                             "additionalProperties": false,
-                            "required": ["call_id", "decision", "content"],
+                            "required": ["call_id", "decision", "content", "reason"],
                             "properties": {
                                 "call_id": {"type": "string"},
                                 "decision": {"type": "string", "enum": ["unchanged"]},
-                                "content": {"type": "null"}
+                                "content": {"type": "null"},
+                                "reason": {
+                                    "type": "string",
+                                    "description": "Explain the content-specific reason this output needs to remain exact or cannot safely be made smaller. Do not merely say unchanged or no change."
+                                }
                             }
                         }
                     ]
@@ -144,6 +151,10 @@ struct RawDecision {
     call_id: String,
     decision: RawDecisionKind,
     content: Option<String>,
+    // Optional for existing audit manifests and non-LLM producers. The LLM
+    // response schema requests a reason for every new decision.
+    #[serde(default, rename = "reason")]
+    _reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -181,7 +192,7 @@ pub fn parse_decision_manifest(
             (RawDecisionKind::Compact, Some(content)) if !content.trim().is_empty() => {
                 AdmissionDecision::Compact {
                     call_id: item.call_id.clone(),
-                    content: content.trim().to_string(),
+                    content,
                 }
             }
             (RawDecisionKind::Unchanged, None) => AdmissionDecision::Unchanged {
@@ -216,20 +227,25 @@ pub fn admit_compact_text(
     call_id: &str,
     admission_id: &str,
     source_sha256: &str,
+    source_file: Option<&str>,
 ) -> Option<AdmittedText> {
-    let compact_text = compact_text.trim();
-    if compact_text.is_empty() {
+    if compact_text.trim().is_empty() {
         return None;
     }
     let source_tokens = approx_token_count(source_text);
     if source_tokens < MIN_SOURCE_TOKENS {
         return None;
     }
-    let text = format!(
+    let mut text = format!(
         "{compact_text}\n[ELPIS SMART PRUNE]\n\
          exact_source=smart-prune://{admission_id}/{call_id}\n\
          source_sha256={source_sha256}"
     );
+    if let Some(source_file) = source_file {
+        text.push_str(&format!(
+            "\nexact_source_file={source_file} (JSON; its output field is the full text)"
+        ));
+    }
     let admitted_tokens = approx_token_count(&text);
     let saved_tokens = source_tokens.saturating_sub(admitted_tokens);
     if saved_tokens < MIN_SAVED_TOKENS
@@ -265,6 +281,7 @@ pub(crate) fn transform_tool_output(
         call_id,
         evidence.admission_id,
         evidence.source_sha256,
+        evidence.source_file,
     )?;
 
     let mut admitted = source.clone();

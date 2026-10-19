@@ -1,11 +1,13 @@
 use crate::agent::api::AgentInput;
 use crate::agent::api::SpawnRequest;
 use crate::agent::child_config::build_agent_spawn_config;
+use crate::agent::child_config::validate_spawn_agent_reasoning_effort;
 use crate::agent::control::LocalAgentControl;
 use crate::agent::status::is_final;
 use crate::agent::types::SpawnAgentOptions;
 use crate::config::Config;
 use crate::environment_selection::TurnEnvironmentSnapshot;
+use crate::environment_selection::retarget_selection;
 use crate::function_tool::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
@@ -19,10 +21,14 @@ use crate::tools::handlers::work_graphs_spec::create_report_agent_work_task_tool
 use crate::tools::handlers::work_graphs_spec::create_run_agent_work_graph_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
+use anyhow::anyhow;
+use anyhow::bail;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
@@ -48,11 +54,13 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+use worktrees::WorktreeIsolation;
 
 const DEFAULT_WORK_GRAPH_CONCURRENCY: usize = 4;
 const MAX_WORK_GRAPH_CONCURRENCY: usize = 32;
@@ -66,6 +74,15 @@ struct RunAgentWorkGraphArgs {
     tasks: Vec<WorkTaskArgs>,
     max_concurrency: Option<usize>,
     max_runtime_seconds: Option<u64>,
+    #[serde(default)]
+    isolation: Option<WorkGraphIsolation>,
+}
+
+/// Elpis: `worktree` gives each implement/fix task its own git worktree, merged after the run.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum WorkGraphIsolation {
+    Worktree,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +91,9 @@ struct WorkTaskArgs {
     kind: codex_state::WorkGraphTaskKind,
     title: String,
     instruction: String,
+    provider: Option<String>,
+    model: Option<String>,
+    reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]
     depends_on: Vec<String>,
     #[serde(default)]
@@ -112,6 +132,7 @@ struct WorkGraphToolResult {
     tasks: Vec<WorkGraphTaskToolResult>,
     event_count: usize,
     error: Option<String>,
+    worktree_report: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -137,9 +158,10 @@ struct ReportToolResult {
 struct RunnerOptions {
     max_concurrency: usize,
     max_runtime: Duration,
-    spawn_config: Config,
+    task_configs: HashMap<String, Config>,
     environments: Vec<TurnEnvironmentSelection>,
     environment_snapshot: TurnEnvironmentSnapshot,
+    isolation: Option<Arc<WorktreeIsolation>>,
 }
 
 #[derive(Debug, Clone)]
@@ -277,11 +299,26 @@ async fn run_work_graph(
     cancellation_token: CancellationToken,
     arguments: String,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
-    let turn = Arc::clone(&step_context.turn);
-    let args: RunAgentWorkGraphArgs = parse_arguments(arguments.as_str())?;
+    let prepared = prepare_work_graph(&session, &step_context, &arguments).await?;
+    run_prepared_work_graph(session, step_context, cancellation_token, prepared).await
+}
+
+pub(crate) struct PreparedWorkGraph {
+    pub(crate) graph_id: String,
+    options: RunnerOptions,
+    db: Arc<codex_state::StateRuntime>,
+    cleanup: AbortedGraphCleanup,
+}
+
+pub(crate) async fn prepare_work_graph(
+    session: &Arc<Session>,
+    step_context: &Arc<StepContext>,
+    arguments: &str,
+) -> Result<PreparedWorkGraph, FunctionCallError> {
+    let args: RunAgentWorkGraphArgs = parse_arguments(arguments)?;
     validate_runner_args(&args)?;
     let db = required_state_db(&session)?;
-    let options = build_runner_options(&session, &step_context, &args).await?;
+    let mut options = build_runner_options(&session, &step_context, &args).await?;
     let selections = options.environments.clone();
     let default_environment = selections.first().ok_or_else(|| {
         FunctionCallError::RespondToModel(
@@ -289,14 +326,17 @@ async fn run_work_graph(
         )
     })?;
 
-    db.fail_unfinished_work_graphs_for_root(
-        session.thread_id.to_string().as_str(),
-        "superseded by a new work graph run after coordinator interruption",
-    )
-    .await
-    .map_err(storage_error)?;
-
     let graph_id = Uuid::new_v4().to_string();
+    if args.isolation == Some(WorkGraphIsolation::Worktree) {
+        options.isolation = plan_worktree_isolation(
+            graph_id.as_str(),
+            &args,
+            selections.as_slice(),
+            default_environment,
+            &step_context.turn.config,
+        )?
+        .map(Arc::new);
+    }
     let tasks = args
         .tasks
         .iter()
@@ -314,15 +354,37 @@ async fn run_work_graph(
                 })?,
                 title: task.title.clone(),
                 instruction: task.instruction.clone(),
+                provider: Some(options.task_configs[&task.id].model_provider_id.clone()),
+                model: options.task_configs[&task.id].model.clone(),
                 kind: task.kind,
                 dependencies: task.depends_on.clone(),
                 write_scopes: normalize_scopes(task.write_scopes.as_slice())?,
                 acceptance_criteria: task.acceptance_criteria.clone(),
                 environment_id: Some(environment.environment_id.clone()),
-                workspace_path: Some(environment.cwd.to_string()),
+                workspace_path: Some(
+                    options
+                        .isolation
+                        .as_ref()
+                        .and_then(|isolation| isolation.task_cwd(task.id.as_str()))
+                        .map_or_else(
+                            || native_workspace_path(&environment.cwd),
+                            |cwd| cwd.as_path().display().to_string(),
+                        ),
+                ),
             })
         })
         .collect::<Result<Vec<_>, FunctionCallError>>()?;
+
+    // Invalid requests must not supersede a previously persisted graph.
+    codex_state::validate_work_graph_tasks(&tasks)
+        .map_err(|err| FunctionCallError::RespondToModel(format!("invalid work graph: {err}")))?;
+
+    db.fail_unfinished_work_graphs_for_root(
+        session.thread_id.to_string().as_str(),
+        "superseded by a new work graph run after coordinator interruption",
+    )
+    .await
+    .map_err(storage_error)?;
 
     db.create_work_graph(
         &codex_state::WorkGraphCreateParams {
@@ -335,20 +397,39 @@ async fn run_work_graph(
     )
     .await
     .map_err(|err| FunctionCallError::RespondToModel(format!("invalid work graph: {err}")))?;
+    let cleanup = AbortedGraphCleanup {
+        session: Arc::clone(session),
+        db: Arc::clone(&db),
+        graph_id: graph_id.clone(),
+        isolation: options.isolation.clone(),
+        armed: true,
+    };
     db.mark_work_graph_running(graph_id.as_str())
         .await
         .map_err(storage_error)?;
+    Ok(PreparedWorkGraph {
+        graph_id,
+        options,
+        db,
+        cleanup,
+    })
+}
 
-    // Elpis: Codex aborts a running tool on Esc, so the scheduler cannot clean up after itself.
-    let mut abort_guard = AbortedGraphCleanup {
-        session: Arc::clone(&session),
-        db: Arc::clone(&db),
-        graph_id: graph_id.clone(),
-        armed: true,
-    };
+pub(crate) async fn run_prepared_work_graph(
+    session: Arc<Session>,
+    step_context: Arc<StepContext>,
+    cancellation_token: CancellationToken,
+    prepared: PreparedWorkGraph,
+) -> Result<FunctionToolOutput, FunctionCallError> {
+    let PreparedWorkGraph {
+        graph_id,
+        options,
+        db,
+        cleanup: mut abort_guard,
+    } = prepared;
     let scheduled = run_scheduler(
         Arc::clone(&session),
-        Arc::clone(&turn),
+        Arc::clone(&step_context),
         Arc::clone(&db),
         graph_id.as_str(),
         &options,
@@ -358,6 +439,13 @@ async fn run_work_graph(
     abort_guard.armed = false;
     if let Err(err) = scheduled {
         let message = format!("work graph scheduler failed: {err}");
+        let graph_error = release_worktrees(
+            db.as_ref(),
+            graph_id.as_str(),
+            options.isolation.as_deref(),
+            message.as_str(),
+        )
+        .await;
         if let Ok(tasks) = db.list_work_graph_tasks(graph_id.as_str()).await {
             for task in tasks {
                 if !task.status.is_final() {
@@ -375,7 +463,7 @@ async fn run_work_graph(
             .finish_work_graph(
                 graph_id.as_str(),
                 codex_state::WorkGraphStatus::Failed,
-                Some(message.as_str()),
+                Some(graph_error.as_str()),
             )
             .await;
     }
@@ -417,6 +505,7 @@ async fn report_work_task(
             )),
         });
     }
+    let mut undeclared_changed_files = BTreeSet::new();
     if task.kind.is_writable() {
         let baseline = task.baseline.as_ref().ok_or_else(|| {
             FunctionCallError::Fatal(format!(
@@ -431,26 +520,41 @@ async fn report_work_task(
             ))
         })?;
         let actual = changed_paths(baseline, &current)?;
+        let outside_scopes = changed_files_outside_scopes(
+            &actual.iter().cloned().collect::<Vec<_>>(),
+            &task.write_scopes,
+        )?;
+        if !outside_scopes.is_empty() {
+            return tool_json(&ReportToolResult {
+                accepted: false,
+                reason: Some(format!(
+                    "measured changed files outside declared write scopes: {}",
+                    outside_scopes.join(", ")
+                )),
+            });
+        }
         let declared = args
             .changed_files
             .iter()
             .map(|path| normalize_repo_path(path))
             .collect::<Result<BTreeSet<_>, _>>()?;
-        if actual != declared {
+        if !declared.is_subset(&actual) {
             return tool_json(&ReportToolResult {
                 accepted: false,
                 reason: Some(format!(
-                    "declared changed files do not match engine measurement; measured: [{}], declared: [{}]",
+                    "declared changed files include paths without measured changes; measured: [{}], declared: [{}]",
                     actual.iter().cloned().collect::<Vec<_>>().join(", "),
                     declared.iter().cloned().collect::<Vec<_>>().join(", ")
                 )),
             });
         }
+        undeclared_changed_files = actual.difference(&declared).cloned().collect();
     }
 
     let result = serde_json::json!({
         "summary": args.summary,
         "changed_files": args.changed_files,
+        "undeclared_changed_files": undeclared_changed_files,
         "checks": args.checks,
         "risks": args.risks,
         "edge_cases_considered": args.edge_cases_considered,
@@ -572,12 +676,108 @@ fn validate_runner_args(args: &RunAgentWorkGraphArgs) -> Result<(), FunctionCall
     Ok(())
 }
 
+fn resolve_task_spawn_config(
+    base: &Config,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> anyhow::Result<Config> {
+    if provider.is_some() && model.is_none() {
+        bail!("an explicit provider requires an explicit model");
+    }
+    let provider_id = provider.unwrap_or(base.model_provider_id.as_str());
+    if provider_id.is_empty()
+        || provider_id.len() > 128
+        || !provider_id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
+        || matches!(
+            provider_id.to_ascii_lowercase().as_str(),
+            "claude" | "agy" | "antigravity"
+        )
+    {
+        bail!("unsupported native work graph provider `{provider_id}`");
+    }
+    if let Some(required) = base
+        .config_layer_stack
+        .requirements()
+        .model_provider
+        .as_ref()
+        && required.value != provider_id
+    {
+        bail!(
+            "managed policy requires model provider `{}`",
+            required.value
+        );
+    }
+    let model = model
+        .or(base.model.as_deref())
+        .ok_or_else(|| anyhow!("work graph task has no effective model"))?;
+    if model.is_empty()
+        || model.len() > 256
+        || model.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        bail!("work graph model must be a nonempty model ID without whitespace");
+    }
+    let lower_model = model.to_ascii_lowercase();
+    if ["claude/", "agy/", "antigravity/"]
+        .iter()
+        .any(|prefix| lower_model.starts_with(prefix))
+    {
+        bail!("subscription models cannot run as native work graph workers");
+    }
+    let mut config = base.clone();
+    if provider.is_some() {
+        config.model_provider = base
+            .model_providers
+            .get(provider_id)
+            .ok_or_else(|| anyhow!("unknown native work graph provider `{provider_id}`"))?
+            .clone();
+    }
+    config.model_provider_id = provider_id.to_string();
+    config.model = Some(model.to_string());
+    Ok(config)
+}
+
+/// Elpis: gives one task's worker the reasoning effort it asked for. Refused, with the efforts the
+/// model does offer, when the task's model does not offer it. A model with no catalog entry
+/// (`used_fallback_model_metadata`) cannot be checked, so its provider decides, as for a role.
+fn apply_task_reasoning_effort(
+    config: &mut Config,
+    requested: Option<&ReasoningEffort>,
+    model_info: &ModelInfo,
+) -> Result<(), String> {
+    let Some(requested) = requested else {
+        return Ok(());
+    };
+    if !model_info.used_fallback_model_metadata {
+        let model = config.model.as_deref().unwrap_or(model_info.slug.as_str());
+        validate_spawn_agent_reasoning_effort(
+            model,
+            &model_info.supported_reasoning_levels,
+            requested,
+        )?;
+    }
+    config.model_reasoning_effort = Some(requested.clone());
+    Ok(())
+}
+
 async fn build_runner_options(
     session: &Arc<Session>,
     step_context: &StepContext,
     args: &RunAgentWorkGraphArgs,
 ) -> Result<RunnerOptions, FunctionCallError> {
     let turn = &step_context.turn;
+    if !turn
+        .config
+        .features
+        .get()
+        .enabled(codex_features::Feature::SpawnCsv)
+    {
+        return Err(FunctionCallError::RespondToModel(
+            "work graphs are disabled; enable the enable_fanout feature before running a workflow"
+                .to_string(),
+        ));
+    }
     if turn.multi_agent_version == MultiAgentVersion::Disabled {
         return Err(FunctionCallError::RespondToModel(
             "multi-agent runtime is disabled; this session cannot run a work graph".to_string(),
@@ -597,33 +797,112 @@ async fn build_runner_options(
         .clamp(1, MAX_WORK_GRAPH_CONCURRENCY);
     let max_concurrency = agent_limit.map_or(requested, |limit| requested.min(limit.max(1)));
     let base_instructions = session.get_base_instructions().await;
-    let spawn_config = build_agent_spawn_config(&base_instructions, step_context)
-        .map_err(FunctionCallError::RespondToModel)?;
+    let spawn_config = build_agent_spawn_config(
+        &base_instructions,
+        step_context,
+        &step_context.inherited_permissions(),
+    )
+    .map_err(FunctionCallError::RespondToModel)?;
+    let mut task_configs = HashMap::new();
+    for task in &args.tasks {
+        let refuse = |error: String| {
+            FunctionCallError::RespondToModel(format!("task `{}`: {error}", task.id))
+        };
+        let mut config = resolve_task_spawn_config(
+            &spawn_config,
+            task.provider.as_deref(),
+            task.model.as_deref(),
+        )
+        .map_err(|error| refuse(error.to_string()))?;
+        if task.reasoning_effort.is_some() {
+            let model = config.model.clone().unwrap_or_default();
+            let model_info = session
+                .services
+                .models_manager
+                .get_model_info(model.as_str(), &config.to_models_manager_config())
+                .await;
+            apply_task_reasoning_effort(&mut config, task.reasoning_effort.as_ref(), &model_info)
+                .map_err(refuse)?;
+        }
+        task_configs.insert(task.id.clone(), config);
+    }
+
     Ok(RunnerOptions {
         max_concurrency,
         max_runtime: args
             .max_runtime_seconds
             .map(Duration::from_secs)
             .unwrap_or(DEFAULT_TASK_RUNTIME),
-        spawn_config,
+        task_configs,
         environments: step_context.environments.to_selections(),
         environment_snapshot: step_context.environments.clone(),
+        isolation: None,
     })
+}
+
+/// Elpis: plans the worktrees of an isolated run in the repository of its writers' environment.
+fn plan_worktree_isolation(
+    graph_id: &str,
+    args: &RunAgentWorkGraphArgs,
+    selections: &[TurnEnvironmentSelection],
+    default_environment: &TurnEnvironmentSelection,
+    config: &Config,
+) -> Result<Option<WorktreeIsolation>, FunctionCallError> {
+    let Some(writer) = args.tasks.iter().find(|task| task.kind.is_writable()) else {
+        return Ok(None);
+    };
+    let environment = resolve_task_environment(
+        selections,
+        default_environment,
+        writer.environment_id.as_deref(),
+    )?;
+    let refuse =
+        |err: String| FunctionCallError::RespondToModel(format!("worktree isolation: {err}"));
+    let cwd = environment
+        .cwd
+        .to_abs_path()
+        .map_err(|err| refuse(format!("the environment is not a local folder: {err}")))?;
+    WorktreeIsolation::plan(
+        graph_id,
+        cwd.as_path(),
+        configured_worktree_root(config).as_deref(),
+        args.tasks.as_slice(),
+    )
+    .map_err(|err| refuse(err.to_string()))
+}
+
+/// The desktop's `desktop.git-worktree-root`, when set to an absolute folder.
+fn configured_worktree_root(config: &Config) -> Option<PathBuf> {
+    let merged = config.config_layer_stack.effective_config();
+    let root = merged
+        .get("desktop")?
+        .get("git-worktree-root")?
+        .as_str()?
+        .trim();
+    let root = PathBuf::from(root);
+    root.is_absolute().then_some(root)
 }
 
 async fn run_scheduler(
     session: Arc<Session>,
-    turn: Arc<TurnContext>,
+    step_context: Arc<StepContext>,
     db: Arc<codex_state::StateRuntime>,
     graph_id: &str,
     options: &RunnerOptions,
     cancellation_token: &CancellationToken,
 ) -> anyhow::Result<()> {
+    let turn = Arc::clone(&step_context.turn);
     let mut active = HashMap::<ThreadId, ActiveTask>::new();
     loop {
         if cancellation_token.is_cancelled() {
-            cancel_running_graph(Arc::clone(&session), Arc::clone(&db), graph_id, &mut active)
-                .await?;
+            cancel_running_graph(
+                Arc::clone(&session),
+                Arc::clone(&db),
+                graph_id,
+                &mut active,
+                options.isolation.as_deref(),
+            )
+            .await?;
             return Ok(());
         }
         let mut tasks = db.list_work_graph_tasks(graph_id).await?;
@@ -638,6 +917,9 @@ async fn run_scheduler(
         )
         .await?;
         tasks = db.list_work_graph_tasks(graph_id).await?;
+        if let Some(isolation) = &options.isolation {
+            isolation.commit_verified_writers(tasks.as_slice())?;
+        }
 
         if tasks.iter().all(|task| task.status.is_final()) && active.is_empty() {
             let failed = tasks.iter().any(|task| {
@@ -648,17 +930,34 @@ async fn run_scheduler(
                         | codex_state::WorkGraphTaskStatus::Cancelled
                 )
             });
-            if failed {
-                db.finish_work_graph(
-                    graph_id,
-                    codex_state::WorkGraphStatus::Failed,
-                    Some("one or more work graph tasks failed or were blocked"),
-                )
-                .await?;
-            } else {
-                db.finish_work_graph(graph_id, codex_state::WorkGraphStatus::Succeeded, None)
-                    .await?;
-            }
+            let message = "one or more work graph tasks failed or were blocked";
+            let error = match (&options.isolation, failed) {
+                (_, true) => Some(
+                    release_worktrees(db.as_ref(), graph_id, options.isolation.as_deref(), message)
+                        .await,
+                ),
+                (None, false) => None,
+                (Some(isolation), false) => {
+                    let merged = isolation.merge_into_root(tasks.as_slice());
+                    let (Ok(report) | Err(report)) = &merged;
+                    record_worktree_report(db.as_ref(), graph_id, report).await?;
+                    merged.err()
+                }
+            };
+            match error {
+                Some(error) => {
+                    db.finish_work_graph(
+                        graph_id,
+                        codex_state::WorkGraphStatus::Failed,
+                        Some(error.as_str()),
+                    )
+                    .await?
+                }
+                None => {
+                    db.finish_work_graph(graph_id, codex_state::WorkGraphStatus::Succeeded, None)
+                        .await?
+                }
+            };
             return Ok(());
         }
 
@@ -666,14 +965,53 @@ async fn run_scheduler(
         let ready = select_ready_tasks(tasks.as_slice(), slots);
         let mut progressed = false;
         for task in ready {
+            if let Some(isolation) = &options.isolation
+                && task.kind.is_writable()
+                && let Err(reason) = isolation.create_writer_worktree(&task, tasks.as_slice())
+            {
+                db.mark_work_graph_task_failed(graph_id, task.task_id.as_str(), reason.as_str())
+                    .await?;
+                progressed = true;
+                continue;
+            }
+            // Elpis: an isolated task's environment moves to its worktree.
+            let worktree_cwd = options
+                .isolation
+                .as_ref()
+                .and_then(|isolation| isolation.task_cwd(task.task_id.as_str()))
+                .map(|cwd| PathUri::from_abs_path(&cwd));
+            // Elpis: a worker started later in the run takes the permissions accepted now.
+            let permissions = session
+                .with_current_permissions(Arc::clone(&step_context))
+                .await
+                .map(|step| step.inherited_permissions());
             let setup = (|| {
                 let prompt = build_worker_prompt(&task, tasks.as_slice())?;
-                let environments = task_environment_selection(
+                let mut environments = task_environment_selection(
                     options.environments.as_slice(),
                     task.environment_id.as_deref(),
                 )?;
-                let spawn_config =
-                    scoped_spawn_config(&options.spawn_config, &task, &environments[0])?;
+                if let Some(cwd) = &worktree_cwd {
+                    retarget_selection(&mut environments[0], cwd);
+                }
+                let task_config = options
+                    .task_configs
+                    .get(&task.task_id)
+                    .ok_or_else(|| anyhow!("task has no validated provider configuration"))?;
+                if task.provider.as_deref() != Some(task_config.model_provider_id.as_str())
+                    || task.model != task_config.model
+                {
+                    bail!(
+                        "persisted task provider/model does not match its validated configuration"
+                    );
+                }
+                let mut base_config =
+                    resolve_task_spawn_config(task_config, None, task.model.as_deref())?;
+                permissions
+                    .map_err(|err| anyhow::anyhow!("permissions are invalid: {err}"))?
+                    .apply_to(&mut base_config)
+                    .map_err(anyhow::Error::msg)?;
+                let spawn_config = scoped_spawn_config(&base_config, &task, &environments[0])?;
                 let baseline = task
                     .kind
                     .is_writable()
@@ -711,11 +1049,14 @@ async fn run_scheduler(
                     options: SpawnAgentOptions {
                         parent_thread_id: Some(session.thread_id),
                         parent_turn_id: Some(turn.sub_id.clone()),
-                        environments: Some(
-                            options
+                        environments: Some(match &worktree_cwd {
+                            Some(cwd) => options
+                                .environment_snapshot
+                                .narrowed_to_worktree(&environments[0].environment_id, cwd),
+                            None => options
                                 .environment_snapshot
                                 .narrowed_to(&environments[0].environment_id),
-                        ),
+                        }),
                         ..Default::default()
                     },
                 })
@@ -778,6 +1119,7 @@ async fn cancel_running_graph(
     db: Arc<codex_state::StateRuntime>,
     graph_id: &str,
     active: &mut HashMap<ThreadId, ActiveTask>,
+    isolation: Option<&WorktreeIsolation>,
 ) -> anyhow::Result<()> {
     for thread_id in active.keys().copied().collect::<Vec<_>>() {
         let _ = local_control(&session).shutdown_live_agent(thread_id).await;
@@ -793,13 +1135,51 @@ async fn cancel_running_graph(
             .await?;
         }
     }
+    let message = release_worktrees(
+        db.as_ref(),
+        graph_id,
+        isolation,
+        "coordinator turn was cancelled",
+    )
+    .await;
     db.finish_work_graph(
         graph_id,
         codex_state::WorkGraphStatus::Cancelled,
-        Some("coordinator turn was cancelled"),
+        Some(message.as_str()),
     )
     .await?;
     Ok(())
+}
+
+/// Elpis: a stopped isolated run keeps every worktree holding work, and says where.
+async fn release_worktrees(
+    db: &codex_state::StateRuntime,
+    graph_id: &str,
+    isolation: Option<&WorktreeIsolation>,
+    message: &str,
+) -> String {
+    let Some(isolation) = isolation else {
+        return message.to_string();
+    };
+    let report = isolation.release_after_stop();
+    if let Err(err) = record_worktree_report(db, graph_id, report.as_str()).await {
+        tracing::warn!("failed to record the worktree report of work graph {graph_id}: {err}");
+    }
+    format!("{message}. {report}")
+}
+
+async fn record_worktree_report(
+    db: &codex_state::StateRuntime,
+    graph_id: &str,
+    report: &str,
+) -> anyhow::Result<()> {
+    db.record_work_graph_event(
+        graph_id,
+        None,
+        codex_state::WORKTREE_REPORT_EVENT,
+        &serde_json::json!({ "text": report }),
+    )
+    .await
 }
 
 async fn block_tasks_with_failed_dependencies(
@@ -880,7 +1260,9 @@ fn tasks_have_write_conflict(
     first: &codex_state::WorkGraphTask,
     second: &codex_state::WorkGraphTask,
 ) -> bool {
-    if first.environment_id != second.environment_id {
+    if first.environment_id != second.environment_id
+        || first.workspace_path != second.workspace_path
+    {
         return false;
     }
     !first.write_scopes.is_empty() && !second.write_scopes.is_empty()
@@ -1179,6 +1561,14 @@ fn resolve_task_environment<'a>(
     })
 }
 
+/// The workspace a task's scopes are measured in.
+fn native_workspace_path(cwd: &PathUri) -> String {
+    cwd.to_abs_path().map_or_else(
+        |_| cwd.to_string(),
+        |path| path.as_path().display().to_string(),
+    )
+}
+
 fn normalize_scopes(scopes: &[String]) -> Result<Vec<String>, FunctionCallError> {
     scopes
         .iter()
@@ -1207,12 +1597,36 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
         .ok_or_else(|| anyhow::anyhow!("task has no native workspace path"))?;
     let root = Path::new(workspace);
     let mut files = BTreeMap::<String, String>::new();
-    for scope in &task.write_scopes {
-        let scoped_path = root.join(scope);
-        if !scoped_path.exists() {
-            continue;
+    // Measure the workspace, including paths outside the scopes. Git enumerates
+    // tracked and untracked files without ignored output or repository metadata.
+    let output = std::process::Command::new("git")
+        .args([
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".",
+        ])
+        .current_dir(root)
+        .output()?;
+    if output.status.success() {
+        for path in output
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+        {
+            let path = std::str::from_utf8(path)?;
+            snapshot_path(root, &root.join(path), &mut files)?;
         }
-        snapshot_path(root, &scoped_path, &mut files)?;
+    } else if root.ancestors().any(|path| path.join(".git").exists()) {
+        bail!(
+            "failed to enumerate workspace files: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    } else {
+        snapshot_path(root, root, &mut files)?;
     }
     Ok(serde_json::to_value(files)?)
 }
@@ -1222,7 +1636,14 @@ fn snapshot_path(
     path: &Path,
     files: &mut BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
-    let metadata = std::fs::symlink_metadata(path)?;
+    if path.file_name().is_some_and(|name| name == ".git") {
+        return Ok(());
+    }
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
     if metadata.is_dir() {
         for entry in std::fs::read_dir(path)? {
             snapshot_path(root, &entry?.path(), files)?;
@@ -1345,6 +1766,7 @@ async fn render_graph_result(
             .collect(),
         event_count: events.len(),
         error: graph.last_error,
+        worktree_report: codex_state::latest_worktree_report(&events),
     })
 }
 
@@ -1361,6 +1783,7 @@ struct AbortedGraphCleanup {
     session: Arc<Session>,
     db: Arc<codex_state::StateRuntime>,
     graph_id: String,
+    isolation: Option<Arc<WorktreeIsolation>>,
     armed: bool,
 }
 
@@ -1372,6 +1795,7 @@ impl Drop for AbortedGraphCleanup {
         let session = Arc::clone(&self.session);
         let db = Arc::clone(&self.db);
         let graph_id = self.graph_id.clone();
+        let isolation = self.isolation.clone();
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
@@ -1396,11 +1820,18 @@ impl Drop for AbortedGraphCleanup {
                     )
                     .await;
             }
+            let message = release_worktrees(
+                db.as_ref(),
+                graph_id.as_str(),
+                isolation.as_deref(),
+                "coordinator turn was cancelled",
+            )
+            .await;
             let _ = db
                 .finish_work_graph(
                     graph_id.as_str(),
                     codex_state::WorkGraphStatus::Cancelled,
-                    Some("coordinator turn was cancelled"),
+                    Some(message.as_str()),
                 )
                 .await;
         });
@@ -1426,6 +1857,9 @@ fn tool_json(value: &impl Serialize) -> Result<FunctionToolOutput, FunctionCallE
             FunctionCallError::Fatal(format!("failed to serialize work graph result: {err}"))
         })
 }
+
+#[path = "work_graph_worktrees.rs"]
+mod worktrees;
 
 #[cfg(test)]
 #[path = "work_graphs_tests.rs"]

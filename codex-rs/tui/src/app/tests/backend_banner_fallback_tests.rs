@@ -56,7 +56,9 @@ async fn backend_banner_fallback_updates_task_settings_and_keeps_notice() -> Res
             .set_reasoning_effort(Some(ReasoningEffortConfig::Medium));
         if mode_kind == ModeKind::Plan {
             app.chat_widget
-                .handle_key_event(KeyEvent::from(KeyCode::BackTab));
+                .restore_user_message_to_composer(UserMessage::from("/plan"));
+            app.chat_widget
+                .handle_key_event(KeyEvent::from(KeyCode::Enter));
             app.chat_widget
                 .set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
         }
@@ -118,7 +120,7 @@ async fn backend_banner_fallback_updates_task_settings_and_keeps_notice() -> Res
         app.chat_widget
             .handle_key_event(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE));
         let queued = std::iter::from_fn(|| events.try_recv().ok()).collect::<Vec<_>>();
-        assert!(queued.iter().any(|event| matches!(event, AppEvent::OpenUrlInBrowser { url } if url == "https://chatgpt.com/codex/settings/usage")));
+        assert!(queued.iter().any(|event| matches!(event, AppEvent::OpenUrlInBrowser { url } if url == "https://chatgpt.com/settings/usage")));
         let notices = queued
             .iter()
             .filter_map(|event| match event {
@@ -158,9 +160,11 @@ async fn backend_banner_fallback_updates_task_settings_and_keeps_notice() -> Res
         assert_eq!(std::fs::read(&config_path).ok(), saved_config);
         if mode_kind == ModeKind::Plan {
             let chat = &mut app.chat_widget;
-            chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            chat.restore_user_message_to_composer(UserMessage::from("/plan"));
+            chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
             assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
-            chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+            chat.restore_user_message_to_composer(UserMessage::from("/plan"));
+            chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
         }
         app.chat_widget
             .restore_user_message_to_composer(UserMessage::from("continue"));

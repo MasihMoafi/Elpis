@@ -40,7 +40,10 @@ impl App {
     }
 
     /// Adds a work graph that arrived after `/agent` opened.
-    pub(super) fn add_loaded_work_graph(&mut self, result: Result<Option<WorkGraphSummary>, String>) {
+    pub(super) fn add_loaded_work_graph(
+        &mut self,
+        result: Result<Option<WorkGraphSummary>, String>,
+    ) {
         match result {
             Ok(Some(graph)) => self
                 .chat_widget
@@ -183,6 +186,7 @@ mod tests {
             max_concurrency: 2,
             error: Some("verification failed".to_string()),
             event_count: 6,
+            worktree_report: None,
             tasks: vec![codex_app_server_protocol::WorkGraphTaskSummary {
                 id: "implement".to_string(),
                 kind: "implement".to_string(),
@@ -190,6 +194,8 @@ mod tests {
                 status: "succeeded".to_string(),
                 dependencies: Vec::new(),
                 assigned_thread_id: Some("00000000-0000-0000-0000-000000000002".to_string()),
+                provider: Some("fixture-provider".to_string()),
+                model: Some("fixture-model".to_string()),
                 result: Some(serde_json::json!({
                     "summary": "added the check",
                     "what_i_did_not_check": ["production data"]

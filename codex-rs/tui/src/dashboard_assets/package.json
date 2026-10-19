@@ -3,7 +3,8 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "build": "tailwindcss -i ./source.css -o ./dashboard.css --minify"
+    "build": "tailwindcss -i ./source.css -o ./dashboard.css --minify",
+    "test": "node --test dashboard.test.cjs"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",

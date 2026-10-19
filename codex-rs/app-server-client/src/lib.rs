@@ -101,6 +101,10 @@ pub mod legacy_core {
     pub mod pruner_settings {
         pub use codex_core::pruner_settings::*;
     }
+
+    pub mod smart_prune_log {
+        pub use codex_core::smart_prune_log::*;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -1102,6 +1106,7 @@ mod tests {
             thread_id: "thread".to_string(),
             turn: codex_app_server_protocol::Turn {
                 id: "turn".to_string(),
+                root_turn_id: None,
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: Vec::new(),
                 status: codex_app_server_protocol::TurnStatus::Completed,
@@ -1435,6 +1440,7 @@ mod tests {
                 request_id: RequestId::Integer(1),
                 params: codex_app_server_protocol::GetAccountParams {
                     refresh_token: false,
+                    skip_workspace_routing: false,
                 },
             })
             .await
@@ -1495,6 +1501,7 @@ mod tests {
                 request_id: RequestId::Integer(1),
                 params: codex_app_server_protocol::GetAccountParams {
                     refresh_token: false,
+                    skip_workspace_routing: false,
                 },
             })
             .await
@@ -1538,6 +1545,7 @@ mod tests {
                 request_id: RequestId::Integer(1),
                 params: codex_app_server_protocol::GetAccountParams {
                     refresh_token: false,
+                    skip_workspace_routing: false,
                 },
             })
             .await
@@ -1672,6 +1680,7 @@ mod tests {
                     request_id: RequestId::Integer(1),
                     params: codex_app_server_protocol::GetAccountParams {
                         refresh_token: false,
+                        skip_workspace_routing: false,
                     },
                 })
                 .await
@@ -1687,6 +1696,7 @@ mod tests {
                 request_id: RequestId::Integer(1),
                 params: codex_app_server_protocol::GetAccountParams {
                     refresh_token: false,
+                    skip_workspace_routing: false,
                 },
             })
             .await

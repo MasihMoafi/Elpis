@@ -50,14 +50,17 @@ pub(super) async fn handle_message_string_tool(
     let ToolInvocation {
         session,
         turn,
+        step_context,
         call_id,
         source,
         ..
     } = invocation;
     let receiver_thread_id = resolve_agent_target(&session, &turn, &target).await?;
     analytics.set_receiver(receiver_thread_id);
-    let resume_config =
-        build_agent_resume_config(&turn).map_err(FunctionCallError::RespondToModel)?;
+    // Elpis: the permissions this call was dispatched with, also from a Code Mode cell that
+    // outlived its turn.
+    let resume_config = build_agent_resume_config(&turn, &step_context.inherited_permissions())
+        .map_err(FunctionCallError::RespondToModel)?;
     let receipt = session
         .services
         .agent_control
@@ -87,6 +90,8 @@ pub(super) async fn handle_message_string_tool(
         &session,
         &turn,
         SubAgentActivityItem {
+            model: None,
+            reasoning_effort: None,
             id: call_id,
             agent_thread_id: receiver_thread_id,
             agent_path: receiver_agent_path,

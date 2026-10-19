@@ -2,10 +2,199 @@ use super::*;
 use chrono::Utc;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
+
+async fn provider_route_fixture() -> (Config, tempfile::TempDir) {
+    let home = tempfile::tempdir().expect("temporary config home");
+    let mut config = Config::load_default_with_cli_overrides_for_codex_home(
+        home.path().to_path_buf(),
+        Vec::new(),
+    )
+    .await
+    .expect("default native config");
+    config.model = Some("root-model".to_string());
+    config.developer_instructions = Some("Preserve graph instructions".to_string());
+    for id in ["root", "provider-a", "provider-b"] {
+        config.model_providers.insert(
+            id.to_string(),
+            serde_json::from_value(serde_json::json!({
+                "name": id,
+                "base_url": format!("http://127.0.0.1:8123/{id}"),
+                "wire_api": "responses",
+                "requires_openai_auth": false,
+                "experimental_bearer_token": format!("synthetic-{id}"),
+            }))
+            .expect("fixture provider"),
+        );
+    }
+    config.model_provider_id = "root".to_string();
+    config.model_provider = config.model_providers["root"].clone();
+    (config, home)
+}
+
+#[tokio::test]
+async fn task_provider_routes_preserve_independent_auth_and_inherited_config() {
+    let (base, _home) = provider_route_fixture().await;
+    let inherited = resolve_task_spawn_config(&base, None, None).expect("inherited route");
+    assert_eq!(inherited.model.as_deref(), Some("root-model"));
+    assert_eq!(inherited.model_provider, base.model_provider);
+    let model_only =
+        resolve_task_spawn_config(&base, None, Some("root/custom")).expect("model-only route");
+    assert_eq!(model_only.model_provider_id, "root");
+    assert_eq!(model_only.model_provider, base.model_provider);
+    for id in ["provider-a", "provider-b"] {
+        let selected = resolve_task_spawn_config(&base, Some(id), Some("custom/model"))
+            .expect("configured native route");
+        assert_eq!(selected.model_provider_id, id);
+        assert_eq!(selected.model.as_deref(), Some("custom/model"));
+        assert_eq!(selected.model_provider, base.model_providers[id]);
+        assert_ne!(selected.model_provider, base.model_provider);
+        assert_eq!(selected.developer_instructions, base.developer_instructions);
+        assert_eq!(
+            selected.permissions.permission_profile(),
+            base.permissions.permission_profile()
+        );
+        assert_eq!(
+            selected.config_layer_stack.requirements(),
+            base.config_layer_stack.requirements()
+        );
+    }
+}
+
+#[tokio::test]
+async fn task_provider_routes_reject_unknown_incomplete_and_subscription_routes() {
+    let (base, _home) = provider_route_fixture().await;
+    for (provider, model) in [
+        (Some("provider-a"), None),
+        (Some("unknown"), Some("custom/model")),
+        (Some("claude"), Some("custom/model")),
+        (Some("agy"), Some("custom/model")),
+        (Some("antigravity"), Some("custom/model")),
+        (Some("provider-a"), Some("Claude/opus")),
+        (None, Some("agy/model")),
+        (None, Some("antigravity/model")),
+        (Some("provider-a"), Some("")),
+        (Some("provider-a"), Some("bad model")),
+        (Some(" provider-a"), Some("custom/model")),
+    ] {
+        assert!(resolve_task_spawn_config(&base, provider, model).is_err());
+    }
+}
+
+#[tokio::test]
+async fn task_provider_routes_retain_managed_provider_requirements() {
+    let (mut base, _home) = provider_route_fixture().await;
+    let mut requirements = base.config_layer_stack.requirements().clone();
+    requirements.model_provider = Some(codex_config::Sourced::new(
+        "root".to_string(),
+        codex_config::RequirementSource::Unknown,
+    ));
+    base.config_layer_stack = codex_config::ConfigLayerStack::new(
+        base.config_layer_stack
+            .layers_low_to_high()
+            .cloned()
+            .collect(),
+        requirements,
+        base.config_layer_stack.requirements_toml().clone(),
+    )
+    .expect("managed config stack");
+    assert!(resolve_task_spawn_config(&base, None, Some("another-root-model")).is_ok());
+    let error = resolve_task_spawn_config(&base, Some("provider-a"), Some("custom/model"))
+        .expect_err("managed provider cannot be overridden");
+    assert!(
+        error
+            .to_string()
+            .contains("managed policy requires model provider")
+    );
+}
+
+fn model_offering(levels: &[ReasoningEffort], known: bool) -> ModelInfo {
+    let mut info = codex_models_manager::model_info::model_info_from_slug("effort-model");
+    info.used_fallback_model_metadata = !known;
+    info.supported_reasoning_levels = levels
+        .iter()
+        .map(|effort| ReasoningEffortPreset {
+            effort: effort.clone(),
+            description: effort.to_string(),
+        })
+        .collect();
+    info
+}
+
+#[test]
+fn task_args_read_an_optional_reasoning_effort() {
+    let args = |extra: Value| {
+        let mut task = serde_json::json!({
+            "id": "inspect", "kind": "explore", "title": "Inspect", "instruction": "Read",
+        });
+        task.as_object_mut()
+            .expect("task object")
+            .extend(extra.as_object().expect("extra object").clone());
+        serde_json::from_value::<WorkTaskArgs>(task)
+    };
+    assert_eq!(
+        args(serde_json::json!({"reasoning_effort": "high"}))
+            .expect("effort")
+            .reasoning_effort,
+        Some(ReasoningEffort::High)
+    );
+    for inherited in [
+        serde_json::json!({}),
+        serde_json::json!({"reasoning_effort": null}),
+    ] {
+        assert_eq!(args(inherited).expect("task").reasoning_effort, None);
+    }
+    assert!(args(serde_json::json!({"reasoning_effort": ""})).is_err());
+    assert!(args(serde_json::json!({"reasoning_effort": 3})).is_err());
+}
+
+#[tokio::test]
+async fn task_reasoning_effort_reaches_the_worker_config_when_its_model_offers_it() {
+    let (base, _home) = provider_route_fixture().await;
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let model = model_offering(&[ReasoningEffort::Low, ReasoningEffort::High], true);
+    apply_task_reasoning_effort(&mut config, Some(&ReasoningEffort::High), &model)
+        .expect("offered effort");
+    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::High));
+}
+
+#[tokio::test]
+async fn task_reasoning_effort_the_model_lacks_is_refused_and_leaves_the_config_alone() {
+    let (base, _home) = provider_route_fixture().await;
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let before = config.model_reasoning_effort.clone();
+    let model = model_offering(&[ReasoningEffort::Low, ReasoningEffort::High], true);
+    let error = apply_task_reasoning_effort(&mut config, Some(&ReasoningEffort::XHigh), &model)
+        .expect_err("unsupported effort");
+    for expected in ["xhigh", "effort-model", "low, high"] {
+        assert!(error.contains(expected), "{expected} missing from: {error}");
+    }
+    assert_eq!(config.model_reasoning_effort, before);
+}
+
+#[tokio::test]
+async fn task_without_a_reasoning_effort_inherits_the_coordinator_effort() {
+    let (mut base, _home) = provider_route_fixture().await;
+    base.model_reasoning_effort = Some(ReasoningEffort::Medium);
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let model = model_offering(&[ReasoningEffort::Low], true);
+    apply_task_reasoning_effort(&mut config, None, &model).expect("nothing to apply");
+    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::Medium));
+}
+
+#[tokio::test]
+async fn task_reasoning_effort_for_a_model_without_catalog_metadata_is_left_to_its_provider() {
+    let (base, _home) = provider_route_fixture().await;
+    let mut config = resolve_task_spawn_config(&base, None, Some("effort-model")).expect("route");
+    let model = model_offering(&[], false);
+    apply_task_reasoning_effort(&mut config, Some(&ReasoningEffort::High), &model)
+        .expect("unknown model metadata cannot refuse");
+    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::High));
+}
 
 fn task(
     id: &str,
@@ -22,6 +211,8 @@ fn task(
         ordinal,
         title: id.to_string(),
         instruction: format!("Implement {id}"),
+        provider: Some("fixture-provider".to_string()),
+        model: Some("fixture-model".to_string()),
         kind: if scopes.is_empty() {
             codex_state::WorkGraphTaskKind::Explore
         } else {
@@ -207,6 +398,9 @@ fn writable_graph_requires_an_independent_verification_task() {
             kind: codex_state::WorkGraphTaskKind::Implement,
             title: "Implement".to_string(),
             instruction: "Change the requested behavior.".to_string(),
+            provider: None,
+            model: None,
+            reasoning_effort: None,
             depends_on: Vec::new(),
             write_scopes: vec!["src".to_string()],
             acceptance_criteria: vec!["focused check passes".to_string()],
@@ -214,6 +408,7 @@ fn writable_graph_requires_an_independent_verification_task() {
         }],
         max_concurrency: Some(1),
         max_runtime_seconds: Some(30),
+        isolation: None,
     };
     let err = validate_runner_args(&args)
         .expect_err("a writable task without an independent verifier must be rejected");
@@ -253,6 +448,17 @@ fn engine_snapshot_identifies_modified_created_and_deleted_files() {
     std::fs::create_dir(workspace.path().join("src")).expect("scope");
     std::fs::write(workspace.path().join("src/modified.rs"), "before").expect("seed modified");
     std::fs::write(workspace.path().join("src/deleted.rs"), "delete me").expect("seed deleted");
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "src/modified.rs", "src/deleted.rs"],
+    ] {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(workspace.path())
+            .output()
+            .expect("git fixture");
+        assert!(output.status.success());
+    }
     let mut task = task(
         "measure",
         0,
@@ -276,6 +482,114 @@ fn engine_snapshot_identifies_modified_created_and_deleted_files() {
             "src/deleted.rs".to_string(),
             "src/modified.rs".to_string(),
         ])
+    );
+}
+
+#[test]
+fn engine_snapshot_measures_changes_outside_write_scopes() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    std::fs::create_dir(workspace.path().join("src")).expect("scope");
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.path().display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    std::fs::write(workspace.path().join("outside.txt"), "outside").expect("outside change");
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changes"),
+        BTreeSet::from(["outside.txt".to_string()])
+    );
+}
+
+#[test]
+fn engine_snapshot_does_not_count_git_ignored_files() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let output = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .output()
+        .expect("git init");
+    assert!(output.status.success());
+    std::fs::create_dir_all(workspace.path().join("src/__pycache__")).expect("scope");
+    std::fs::write(workspace.path().join(".gitignore"), "__pycache__/\n").expect("ignore rules");
+    std::fs::write(workspace.path().join("src/__pycache__/old.pyc"), "before").expect("old cache");
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.path().display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    assert!(baseline.get("src/__pycache__/old.pyc").is_none());
+    assert!(
+        baseline
+            .as_object()
+            .expect("snapshot")
+            .keys()
+            .all(|path| !path.starts_with(".git/"))
+    );
+    std::fs::write(workspace.path().join("src/__pycache__/old.pyc"), "after")
+        .expect("modify cache");
+    std::fs::write(workspace.path().join("src/__pycache__/new.pyc"), "new").expect("create cache");
+    std::fs::write(workspace.path().join("src/calc.py"), "source").expect("source change");
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changes"),
+        BTreeSet::from(["src/calc.py".to_string()])
+    );
+}
+
+#[test]
+fn engine_snapshot_uses_paths_relative_to_selected_workspace() {
+    let repo = tempfile::tempdir().expect("repo");
+    let workspace = repo.path().join("app");
+    std::fs::create_dir_all(workspace.join("src")).expect("scope");
+    std::fs::write(workspace.join("src/calc.py"), "before").expect("source");
+    std::fs::write(repo.path().join("sibling.txt"), "outside workspace").expect("sibling");
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "app/src/calc.py", "sibling.txt"],
+    ] {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .expect("git fixture");
+        assert!(output.status.success());
+    }
+    let mut task = task(
+        "measure",
+        0,
+        codex_state::WorkGraphTaskStatus::Running,
+        &[],
+        &["src"],
+        "repo",
+    );
+    task.workspace_path = Some(workspace.display().to_string());
+    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    assert_eq!(
+        baseline
+            .as_object()
+            .expect("snapshot")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec!["src/calc.py"]
+    );
+    std::fs::write(workspace.join("src/calc.py"), "after").expect("modify source");
+    let current = snapshot_task_scopes(&task).expect("current");
+    assert_eq!(
+        changed_paths(&baseline, &current).expect("changes"),
+        BTreeSet::from(["src/calc.py".to_string()])
     );
 }
 
@@ -421,4 +735,43 @@ fn write_scope_rejects_a_file_mount_target() {
         .expect_err("bubblewrap writable roots must be directories");
 
     assert!(err.to_string().contains("must be an existing directory"));
+}
+
+#[test]
+fn isolated_writers_in_one_environment_run_in_parallel() {
+    let mut tasks = vec![
+        task(
+            "left",
+            0,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "repo",
+        ),
+        task(
+            "right",
+            1,
+            codex_state::WorkGraphTaskStatus::Pending,
+            &[],
+            &["src"],
+            "repo",
+        ),
+    ];
+    tasks[0].workspace_path = Some("/tmp/repo-elpis/graph-1/left".to_string());
+    tasks[1].workspace_path = Some("/tmp/repo-elpis/graph-1/right".to_string());
+    assert_eq!(
+        select_ready_tasks(tasks.as_slice(), 2).len(),
+        2,
+        "writers in their own worktrees cannot touch each other's files"
+    );
+}
+
+#[test]
+fn a_task_workspace_is_recorded_as_a_native_path() {
+    let cwd = AbsolutePathBuf::from_absolute_path("/tmp/work graph/repo").expect("absolute path");
+    assert_eq!(
+        native_workspace_path(&PathUri::from_abs_path(&cwd)),
+        "/tmp/work graph/repo",
+        "scope snapshots read this path from disk; a file: URI matches nothing"
+    );
 }

@@ -9,7 +9,7 @@ use super::SessionSelection;
 use super::archive::ArchiveState;
 use super::hint_line_for_row;
 use crate::keymap::KeymapContext;
-use crate::style::popup_border_style;
+use crate::style::accent_style;
 use crate::text_formatting::truncate_text;
 use codex_protocol::ThreadId;
 use crossterm::event::KeyCode;
@@ -40,13 +40,14 @@ pub(super) enum DeleteState {
 
 impl PickerState {
     pub(super) fn delete_shortcut_available(&self) -> bool {
-        if !matches!(self.action, SessionPickerAction::Resume)
+        if !self.query.is_empty()
+            || !matches!(self.action, SessionPickerAction::Resume)
             || !matches!(self.archive_state, ArchiveState::Idle)
             || self.delete_state != DeleteState::Idle
         {
             return false;
         }
-        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+        let key = KeyEvent::from(KeyCode::Backspace);
         self.keymap.list.action_for(key).is_none()
             && !self.keymap.chords.bindings.iter().any(|binding| {
                 binding.action.context == KeymapContext::List && binding.chord.prefix.is_press(key)
@@ -155,9 +156,7 @@ pub(super) fn render_prompt(
         DeleteState::Pending { label, .. } => (" Deleting session… ", label),
     };
     Clear.render(area, frame.buffer);
-    let block = Block::bordered()
-        .title(title)
-        .border_style(popup_border_style());
+    let block = Block::bordered().title(title).border_style(accent_style());
     let inner = block.inner(area);
     frame.render_widget_ref(&block, area);
     let lines = vec![
@@ -199,7 +198,7 @@ pub(super) fn footer_hints(state: &PickerState, width: u16) -> Vec<Line<'static>
         hint_line_for_row(&hints, width),
         hint_line_for_row(
             &[PickerFooterHint {
-                key: "ctrl+c".into(),
+                key: crate::key_hint::ctrl(KeyCode::Char('c')).display_label(),
                 wide_label: "exit".into(),
                 compact_label: "exit".into(),
                 priority: 0,

@@ -93,7 +93,8 @@ impl AgentStatusThreadPreview {
                 },
                 ThreadBufferedEvent::Request(_)
                 | ThreadBufferedEvent::HistoryEntryResponse(_)
-                | ThreadBufferedEvent::FeedbackSubmission(_) => continue,
+                | ThreadBufferedEvent::FeedbackSubmission(_)
+                | ThreadBufferedEvent::PendingSteersRecalled(_) => continue,
             };
             if !seen_item_ids.insert(item.id().to_string()) {
                 continue;
@@ -203,6 +204,7 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
         ThreadItem::ExitedReviewMode { .. } => return Some("Exited review mode".to_string()),
         ThreadItem::ContextCompaction { .. } => return Some("Compacted context".to_string()),
         ThreadItem::UserMessage { .. }
+        | ThreadItem::SmartPrune { .. }
         | ThreadItem::HookPrompt { .. }
         | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::Sleep(_) => {

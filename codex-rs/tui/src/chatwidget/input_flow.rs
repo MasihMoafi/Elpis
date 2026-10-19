@@ -60,7 +60,7 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::FollowTranscript);
                 let should_submit_now = self.is_session_configured()
                     && !self.is_plan_streaming_in_tui()
-                    && !self.input_queue.suppress_queue_autosend
+                    && !self.input_queue.submissions_paused()
                     && !self.input_queue.rate_limit_recovery_pending
                     && (!self.input_queue.user_turn_pending_start
                         || self.turn_lifecycle.agent_turn_running);
@@ -170,11 +170,8 @@ impl ChatWidget {
         }
         let should_run_now = self.is_session_configured()
             && !self.is_user_turn_pending_or_running()
-            && !self.input_queue.suppress_queue_autosend
+            && !self.input_queue.submissions_paused()
             && !self.input_queue.rate_limit_recovery_pending;
-        if action != QueuedInputAction::ParseSlash {
-            self.empty_state_animation.borrow_mut().dismiss();
-        }
         if !should_run_now || action != QueuedInputAction::Plain {
             let queued_slash_prompt = action == QueuedInputAction::ParseSlash
                 && parse_slash_name(&user_message.text).is_none_or(|(name, args, _)| {
@@ -235,8 +232,9 @@ impl ChatWidget {
     /// If idle and there are queued inputs, submit exactly one to start the next turn.
     pub(crate) fn maybe_send_next_queued_input(&mut self) -> bool {
         if !self.is_session_configured()
+            || self.fork_in_progress
             || self.has_misalignment_policy_violation()
-            || self.input_queue.suppress_queue_autosend
+            || self.input_queue.submissions_paused()
             || self.input_queue.rate_limit_recovery_pending
             || self.input_queue.recovered_queue
             || self.input_queue.has_unconfirmed_messages()

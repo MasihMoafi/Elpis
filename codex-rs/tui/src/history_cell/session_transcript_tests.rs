@@ -106,3 +106,40 @@ fn session_information_waits_for_older_pages_and_reappears_after_completion() {
         ]
     );
 }
+
+#[test]
+fn header_animation_follows_settings_and_only_visible_headers_need_frames() {
+    let header =
+        || SessionHeaderHistoryCell::new("test".to_string(), None, PathBuf::from("/tmp"), "test");
+    let static_header = header().with_animations(false);
+    assert_eq!(static_header.transcript_animation_tick(), None);
+    let animated_header = header().with_animations(true);
+    assert!(animated_header.transcript_animation_tick().is_some());
+    let before = animated_header.display_lines(80);
+    let mut later = animated_header;
+    later.animation_origin = Some(Instant::now() - std::time::Duration::from_millis(600));
+    let after = later.display_lines(80);
+    assert_eq!(
+        before.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        after.iter().map(ToString::to_string).collect::<Vec<_>>()
+    );
+    assert!(later.transcript_animation_tick().unwrap() >= 6);
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![
+        Arc::new(later),
+        Arc::new(PlainHistoryCell::new(
+            (0..40)
+                .map(|row| Line::from(format!("row {row}")))
+                .collect(),
+        )),
+    ];
+    let area = Rect::new(0, 0, 80, 12);
+    let mut view = TranscriptView::default();
+    view.render(area, &mut Buffer::empty(area), &cells);
+    assert!(
+        !view.has_visible_animation(&cells),
+        "hidden headers must not keep redrawing"
+    );
+    view.jump_to_beginning(&cells);
+    view.render(area, &mut Buffer::empty(area), &cells);
+    assert!(view.has_visible_animation(&cells));
+}

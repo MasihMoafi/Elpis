@@ -9,7 +9,13 @@ mod app_list;
 mod app_read;
 mod application_network;
 mod attestation;
+#[path = "auth_storage_originator_tests.rs"]
+mod auth_storage_originator;
 mod auto_env;
+#[path = "bedrock_gov_cloud_tests.rs"]
+mod bedrock_gov_cloud;
+#[path = "bedrock_service_tier_tests.rs"]
+mod bedrock_service_tier;
 mod bedrock_setup;
 mod client_metadata;
 mod code_mode_host;
@@ -40,8 +46,12 @@ mod cyber_access_program;
 mod daemon_update_recovery;
 mod daybreak_access;
 mod dynamic_tools;
+// Elpis: the instruction text a thread's model receives.
+mod elpis_instructions_read;
+mod elpis_context_files;
 // Elpis: per-turn timing, cost state and category shares.
 mod elpis_turn_activity;
+mod elpis_work_graphs;
 mod environment_add;
 mod environment_info;
 mod environment_status;
@@ -59,6 +69,7 @@ mod fs;
 mod gateway_oauth;
 mod git_attribution;
 mod guardian_v2;
+mod thread_approval_review;
 mod history_notes_extension;
 mod hooks_list;
 mod host_skills;
@@ -125,6 +136,7 @@ mod server_diagnostics;
 mod session_end;
 mod skills_list;
 mod sleep;
+mod sqlite_recovery;
 mod thread_archive;
 mod thread_attachments;
 mod thread_delete;
@@ -138,6 +150,7 @@ mod thread_list;
 mod thread_loaded_list;
 mod thread_memory_mode_set;
 mod thread_metadata_update;
+mod thread_name_persistence;
 mod thread_name_websocket;
 mod thread_queue;
 mod thread_read;
@@ -150,6 +163,7 @@ mod thread_start;
 mod thread_status;
 mod thread_timeline;
 mod thread_unarchive;
+mod thread_unload;
 mod thread_unsubscribe;
 mod turn_cost_otel;
 mod turn_interrupt;

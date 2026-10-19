@@ -18,14 +18,27 @@ pub(super) async fn run_main_inner(
             "--no-daemon cannot be used with --remote.",
         ));
     }
-    if explicit_remote_endpoint.is_some() && !cli.add_dir.is_empty() {
+    if explicit_remote_endpoint.is_some() && !cli.elpis_local_bridge && !cli.add_dir.is_empty() {
         return Err(std::io::Error::other(
             "--add-dir is not supported with --remote. Configure additional workspace roots on the server.",
         ));
     }
+    #[cfg(windows)]
+    let elevated_warning = if explicit_remote_endpoint.is_none()
+        && !cli.no_daemon
+        && !cli.agents_overview
+        && codex_app_server_daemon::is_elevated().map_err(std::io::Error::other)?
+    {
+        cli.no_daemon = true;
+        Some(daemon_startup::ELEVATED_LAUNCH_WARNING)
+    } else {
+        None
+    };
+    #[cfg(not(windows))]
+    let elevated_warning: Option<&str> = None;
     let strict_config = cli.strict_config;
     if cli.shared.worktree {
-        if explicit_remote_endpoint.is_some() {
+        if explicit_remote_endpoint.is_some() && !cli.elpis_local_bridge {
             return Err(std::io::Error::other(
                 "`--worktree` is only supported for local sessions",
             ));
@@ -73,6 +86,7 @@ pub(super) async fn run_main_inner(
         }
     };
     if explicit_remote_endpoint.is_some()
+        && !cli.elpis_local_bridge
         && cli_kv_overrides.iter().any(|(key, value)| {
             key == "sandbox_workspace_write.writable_roots"
                 || (key == "sandbox_workspace_write" && value.get("writable_roots").is_some())
@@ -104,12 +118,15 @@ pub(super) async fn run_main_inner(
     let workload_identity_selected = is_workload_identity_selected();
 
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
-        let validation_target = app_server_target_for_launch(
-            explicit_remote_endpoint.clone(),
-            /*default_daemon_socket*/ None,
-            /*can_reuse_implicit_local_daemon*/ false,
-            workload_identity_selected,
-            std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+        let validation_target = crate::elpis_local_bridge::select(
+            app_server_target_for_launch(
+                explicit_remote_endpoint.clone(),
+                /*default_daemon_socket*/ None,
+                /*can_reuse_implicit_local_daemon*/ false,
+                workload_identity_selected,
+                std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+            )?,
+            cli.elpis_local_bridge,
         )?;
         let validation_environment_manager =
             if should_load_configured_environments(&loader_overrides, &validation_target) {
@@ -213,12 +230,15 @@ pub(super) async fn run_main_inner(
     };
     // Local-daemon discovery does not change client config precedence. Resolve explicit
     // remote selection and the environment without opening a server connection.
-    let presentation_target = app_server_target_for_launch(
-        explicit_remote_endpoint.clone(),
-        /*default_daemon_socket*/ None,
-        reuse_implicit_local_daemon,
-        workload_identity_selected,
-        std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+    let presentation_target = crate::elpis_local_bridge::select(
+        app_server_target_for_launch(
+            explicit_remote_endpoint.clone(),
+            /*default_daemon_socket*/ None,
+            reuse_implicit_local_daemon,
+            workload_identity_selected,
+            std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+        )?,
+        cli.elpis_local_bridge,
     )?;
     let prepared_environment_manager =
         if should_load_configured_environments(&launch_loader_overrides, &presentation_target) {
@@ -276,15 +296,11 @@ pub(super) async fn run_main_inner(
         bootstrap_config,
         config_cwd,
         mut screen,
+        local_settings,
     } = presentation;
     screen.use_alt_screen = determine_alt_screen_mode(
         cli.no_alt_screen,
-        bootstrap_config
-            .config_toml
-            .tui
-            .as_ref()
-            .map(|tui| tui.alternate_screen)
-            .unwrap_or_default(),
+        local_settings.tui.alternate_screen,
         initialized_terminal.terminal_app_over_ssh,
     );
     screen.transcript_mode = crate::transcript_mode::TranscriptMode::resolve(
@@ -306,12 +322,15 @@ pub(super) async fn run_main_inner(
     } else {
         None
     };
-    let mut app_server_target = app_server_target_for_launch(
-        explicit_remote_endpoint,
-        default_daemon,
-        reuse_implicit_local_daemon,
-        workload_identity_selected,
-        std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+    let mut app_server_target = crate::elpis_local_bridge::select(
+        app_server_target_for_launch(
+            explicit_remote_endpoint,
+            default_daemon,
+            reuse_implicit_local_daemon,
+            workload_identity_selected,
+            std::env::var_os(codex_exec_server::CODEX_EXEC_SERVER_URL_ENV_VAR).as_deref(),
+        )?,
+        cli.elpis_local_bridge,
     )?;
     let remote_cwd_override = cli
         .cwd
@@ -451,7 +470,10 @@ pub(super) async fn run_main_inner(
     if app_server_target.uses_embedded_network_policy() {
         embedded_network_policy.activate(&mut config);
     }
-    startup_draft.apply_config(&config);
+    startup_draft.apply_settings(
+        &crate::local_settings::LocalSettings::from(&config),
+        config.cwd.as_path(),
+    );
 
     let mut cloud_config_bundle = if workload_identity_selected {
         cloud_config_bundle
@@ -486,7 +508,10 @@ pub(super) async fn run_main_inner(
         if app_server_target.uses_embedded_network_policy() {
             embedded_network_policy.activate(&mut config);
         }
-        startup_draft.apply_config(&config);
+        startup_draft.apply_settings(
+            &crate::local_settings::LocalSettings::from(&config),
+            config.cwd.as_path(),
+        );
         Some(worktree)
     } else {
         None
@@ -494,6 +519,7 @@ pub(super) async fn run_main_inner(
     let auto_start_daemon = config.features.enabled(Feature::DaemonAutoStart)
         && !cli.agents_overview
         && !cli.no_daemon
+        && !cli.elpis_local_bridge
         && !app_server_target.uses_remote_workspace();
     if auto_start_daemon
         && daemon_exclusion.is_none()
@@ -517,6 +543,13 @@ pub(super) async fn run_main_inner(
         // The Bedrock wizard configures its provider through the embedded server.
         daemon_exclusion = Some("Bedrock sign-in");
         app_server_target = AppServerTarget::Embedded;
+    }
+    if auto_start_daemon
+        && daemon_exclusion.is_none()
+        && matches!(&app_server_target, AppServerTarget::Embedded)
+        && daemon_startup::uses_wsl_drvfs(&codex_home)
+    {
+        daemon_exclusion = Some(daemon_startup::WSL_DRVFS_EXCLUSION);
     }
     let mut daemon_features = daemon_startup::server_features(&cli_kv_overrides);
     // Disabling shared services requires confirmation, even on a fresh auto-start.
@@ -574,15 +607,18 @@ pub(super) async fn run_main_inner(
     if app_server_target.uses_embedded_network_policy() {
         embedded_network_policy.activate(&mut config);
     }
-    let daemon_startup_warning = compatibility_warning.or_else(|| {
-        daemon_exclusion
+    let daemon_startup_warning = elevated_warning
+        .map(str::to_string)
+        .or(compatibility_warning)
+        .or_else(|| {
+            daemon_exclusion
             .filter(|_| auto_start_daemon)
             .map(|reason| {
                 format!(
                     "Running without the shared background server: {reason} requires embedded mode."
                 )
             })
-    });
+        });
     #[cfg(target_os = "macos")]
     let local_runtime_paths = local_runtime_paths.with_allowed_symlinked_codex_home(
         codex_config::allowed_symlinked_codex_home(&config.config_layer_stack, &config.codex_home),
@@ -643,7 +679,9 @@ pub(super) async fn run_main_inner(
     }
     let selection_reason = match (&app_server_target, daemon_exclusion) {
         (AppServerTarget::Remote { .. }, _) => "explicit_remote",
+        (AppServerTarget::LocalBridge { .. }, _) => "local_bridge",
         _ if cli.agents_overview => "agents",
+        _ if elevated_warning.is_some() => "elevated_windows",
         (_, Some("--no-daemon")) => "explicit_no_daemon",
         (_, Some(_)) => "incompatible_option",
         _ if auto_start_daemon => "auto_start",
@@ -677,6 +715,7 @@ pub(super) async fn run_main_inner(
             (true, AppServerTarget::Embedded) => "in_process",
             (true, AppServerTarget::LocalDaemon { .. }) => "local_daemon",
             (true, AppServerTarget::Remote { .. }) => "remote",
+            (true, AppServerTarget::LocalBridge { .. }) => "local_bridge",
         };
         // Use a fixed category, not the versioned or user-provided terminal identifier.
         let terminal_info = codex_terminal_detection::terminal_info();

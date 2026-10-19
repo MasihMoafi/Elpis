@@ -114,8 +114,11 @@ pub(crate) async fn make_test_app() -> App {
         pending_managed_worktree_attach: None,
         startup_protected_input_boundary: false,
         startup_pending_protected_request: false,
+        account_email_request_id: None,
         rate_limit_hard_stop_generation: 0,
         rate_limit_refresh_state: Default::default(),
+        pending_mcp_login_start: None,
+        active_mcp_login_ids: HashMap::new(),
         pending_plugin_enabled_writes: HashMap::new(),
         pending_hook_enabled_writes: HashMap::new(),
         recap: recap::RecapState::default(),
@@ -154,12 +157,15 @@ pub(super) fn app_enabled_in_effective_config(config: &Config, app_id: &str) -> 
         .and_then(TomlValue::as_bool)
 }
 
-/// Hides the Context Ledger the way Alt+C does. The Ledger is as tall as the composer and its own
-/// panels, so a test of the rest of the screen keeps the rows it would take.
+/// Hides the Context Ledger the way Alt+C does: the first press focuses it, the second hides it.
+/// The Ledger is as tall as the composer and its own panels, so a test of the rest of the screen
+/// keeps the rows it would take.
 pub(crate) fn hide_context_ledger(app: &mut App) {
-    app.chat_widget
-        .handle_key_event(crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Char('c'),
-            crossterm::event::KeyModifiers::ALT,
-        ));
+    for _ in 0..2 {
+        app.chat_widget
+            .handle_key_event(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('c'),
+                crossterm::event::KeyModifiers::ALT,
+            ));
+    }
 }

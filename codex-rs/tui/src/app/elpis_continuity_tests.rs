@@ -30,10 +30,12 @@ fn primary(app: &mut App) -> ThreadId {
 
 fn workspace(app: &App) -> std::path::PathBuf {
     let config = app.chat_widget.config_ref();
-    crate::legacy_core::elpis_context::workspace_context_dir(
+    crate::legacy_core::elpis_context::thread_context_dir(
         Some(elpis_memory_dir(config).as_path()),
         config.cwd.as_path(),
+        &app.primary_thread_id.expect("primary thread").to_string(),
     )
+    .expect("valid thread")
     .expect("workspace context directory")
 }
 
@@ -51,6 +53,7 @@ fn turn_completed(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
     ServerNotification::TurnCompleted(TurnCompletedNotification {
         thread_id: thread_id.to_string(),
         turn: Turn {
+            root_turn_id: None,
             id: turn_id.to_string(),
             items: Vec::new(),
             items_view: TurnItemsView::NotLoaded,
@@ -107,7 +110,10 @@ async fn a_finished_turn_checkpoints_its_result_files_and_commands() -> anyhow::
     .await;
     app.mirror_elpis_context_notification(&turn_completed(ThreadId::new(), "child-turn"))
         .await;
-    assert!(!checkpoint.exists(), "a child thread wrote the workspace checkpoint");
+    assert!(
+        !checkpoint.exists(),
+        "a child thread wrote the workspace checkpoint"
+    );
 
     for item in [
         ThreadItem::FileChange {

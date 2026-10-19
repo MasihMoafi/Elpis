@@ -1,4 +1,5 @@
 use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -57,6 +58,18 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
             ),
             permission_profile: PermissionProfile::Disabled,
         },
+        // Elpis: Full Access plus no refusals and no hook-trust review. See
+        // `codex_protocol::models::bypass_permissions_active`.
+        ApprovalPreset {
+            id: "bypass-permissions",
+            label: "Bypass permissions",
+            description: "Elpis will run anything without asking: any command, any file, the internet, even commands it would otherwise refuse (such as rm -rf). Only your own rules, hooks and managed policy can still stop it.",
+            approval: AskForApproval::Never,
+            active_permission_profile: ActivePermissionProfile::new(
+                BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS,
+            ),
+            permission_profile: PermissionProfile::Disabled,
+        },
     ]
 }
 
@@ -71,7 +84,8 @@ pub fn builtin_permission_profile_for_active_permission_profile(
     match active_permission_profile.id.as_str() {
         BUILT_IN_PERMISSION_PROFILE_READ_ONLY => Some(PermissionProfile::read_only()),
         BUILT_IN_PERMISSION_PROFILE_WORKSPACE => Some(PermissionProfile::workspace_write()),
-        BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS => Some(PermissionProfile::Disabled),
+        BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
+        | BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS => Some(PermissionProfile::Disabled),
         _ => None,
     }
 }

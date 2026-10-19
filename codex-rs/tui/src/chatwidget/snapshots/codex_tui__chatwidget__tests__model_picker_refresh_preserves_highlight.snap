@@ -2,8 +2,6 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: "render_bottom_popup(&chat, 80)"
 ---
- Elpis · model gpt-5.5 default · location /tmp/project
-
   Choose a mind and effort
   Provider: OpenAI (openai)
   Route: the provider's default endpoint

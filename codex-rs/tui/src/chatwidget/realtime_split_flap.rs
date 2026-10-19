@@ -13,6 +13,10 @@ use std::time::Duration;
 use std::time::Instant;
 use unicode_segmentation::UnicodeSegmentation;
 
+#[cfg(test)]
+#[path = "realtime_split_flap_tests.rs"]
+mod tests;
+
 const FRAME_INTERVAL: Duration = Duration::from_millis(45);
 const ANIMATION_DURATION: Duration = Duration::from_millis(675);
 const TILE_SETTLE_DURATION: Duration = Duration::from_millis(180);

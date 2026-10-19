@@ -19,6 +19,14 @@ impl ChatWidget {
         self.bottom_pane.end_composer_drag();
     }
 
+    pub(crate) fn handle_active_view_mouse(&mut self, event: crossterm::event::MouseEvent) -> bool {
+        let handled = self.bottom_pane.handle_active_view_mouse(event);
+        if handled && self.bottom_pane.no_modal_or_popup_active() {
+            self.on_modal_or_popup_closed();
+        }
+        handled
+    }
+
     pub(crate) fn copy_composer_selection(
         &mut self,
         event: &crate::tui::TuiEvent,
@@ -58,16 +66,13 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) -> KeyEventAction {
-        // Elpis: Enter queues during an agent turn, not while MCP servers start.
-        self.bottom_pane
-            .set_elpis_turn_running(self.turn_lifecycle.agent_turn_running);
         if self.handle_startup_submission_key(key_event) {
             return KeyEventAction::None;
         }
         if self.handle_question_key(key_event) {
             return KeyEventAction::None;
         }
-        // Elpis: Tab and Alt+C open, focus and hide the Context Ledger.
+        // Elpis: Alt+C opens the Context Ledger; native submission keys stay unchanged.
         if self.handle_context_ledger_pre_modal_key(key_event) {
             return KeyEventAction::None;
         }
@@ -128,7 +133,6 @@ impl ChatWidget {
             return KeyEventAction::None;
         }
 
-        // Elpis: keys for a focused Context Ledger.
         if self.handle_context_ledger_key_event(key_event) {
             return KeyEventAction::None;
         }
@@ -173,22 +177,39 @@ impl ChatWidget {
             } if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
                 && c.eq_ignore_ascii_case(&'v') =>
             {
+                if Instant::now() < self.suppress_image_paste_until {
+                    self.suppress_image_paste_until =
+                        Instant::now() + clipboard::IMAGE_PASTE_REPEAT_WINDOW;
+                    return KeyEventAction::None;
+                }
+                self.suppress_image_paste_until =
+                    Instant::now() + clipboard::IMAGE_PASTE_REPEAT_WINDOW;
                 return KeyEventAction::PasteImage;
             }
             other if other.kind == KeyEventKind::Press => {
+                self.suppress_image_paste_until = Instant::now();
                 self.bottom_pane.clear_quit_shortcut_hint();
                 self.quit_shortcut_expires_at = None;
                 self.quit_shortcut_key = None;
             }
+            other if other.kind == KeyEventKind::Release => {
+                self.suppress_image_paste_until = Instant::now();
+            }
             _ => {}
         }
 
-        // Elpis: Up pulls every queued follow-up back into the composer (v0.3.0).
         if self.recall_queued_follow_ups_on_up(key_event) {
             return KeyEventAction::None;
         }
-        // Elpis: empty Enter and Esc deliver queued follow-ups during a turn (v0.3.0).
-        if self.send_queued_follow_ups_on_key(key_event) {
+
+        if self.input_queue.pending_steer_recall_ids.is_some()
+            && self.bottom_pane.no_modal_or_popup_active()
+            && self.bottom_pane.is_composer_submission_key(key_event)
+        {
+            self.bottom_pane.show_footer_flash(
+                Line::from("Recalling waiting messages… Submit after they return to the editor."),
+                Duration::from_secs(3),
+            );
             return KeyEventAction::None;
         }
 
@@ -209,25 +230,30 @@ impl ChatWidget {
         }
 
         const REVIEW_STEER_UNAVAILABLE_MESSAGE: &str = "Steer messages aren't supported during /review. Press Ctrl+C now to cancel the review.";
+        let empty_submit = self.bottom_pane.is_empty_composer_submit_key(key_event);
+        let interrupt_pending_steers = empty_submit
+            || (self.chat_keymap.interrupt_turn.is_pressed(key_event)
+                && !self.should_handle_vim_insert_escape(key_event));
 
-        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
+        if interrupt_pending_steers
             && self.review.is_review_mode
             && (!self.input_queue.pending_steers.is_empty()
                 || !self.input_queue.rejected_steers_queue.is_empty())
             && self.bottom_pane.is_task_running()
             && self.bottom_pane.no_modal_or_popup_active()
-            && !self.should_handle_vim_insert_escape(key_event)
         {
             self.add_warning_message(REVIEW_STEER_UNAVAILABLE_MESSAGE.to_string());
             return KeyEventAction::None;
         }
 
-        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
+        if interrupt_pending_steers
             && !self.input_queue.pending_steers.is_empty()
             && self.bottom_pane.is_task_running()
             && self.bottom_pane.no_modal_or_popup_active()
-            && !self.should_handle_vim_insert_escape(key_event)
         {
+            if self.input_queue.submit_pending_steers_after_interrupt {
+                return KeyEventAction::None;
+            }
             self.input_queue.submit_pending_steers_after_interrupt = true;
             if self.submit_op(AppCommand::interrupt()) {
                 self.pause_active_goal_for_interrupt();
@@ -241,40 +267,21 @@ impl ChatWidget {
             return KeyEventAction::None;
         }
 
-        match key_event {
-            KeyEvent {
-                code: KeyCode::BackTab,
-                kind: KeyEventKind::Press,
-                ..
-            } if self.collaboration_modes_enabled()
-                && !self.bottom_pane.is_task_running()
-                && self.bottom_pane.no_modal_or_popup_active() =>
-            {
-                if self.blocks_direct_input {
-                    self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
-                } else {
-                    self.cycle_collaboration_mode();
-                }
-            }
-            _ => {
-                let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
-                let should_pause_active_goal =
-                    self.bottom_pane.should_interrupt_running_task(key_event);
-                let input_result = self.bottom_pane.handle_key_event(key_event);
-                if matches!(
-                    input_result,
-                    InputResult::None | InputResult::ParentOwnedInputBlocked
-                ) {
-                    self.refresh_startup_recovery();
-                }
-                crate::startup_recovery::submitted(&input_result);
-                self.sync_backend_banner_view();
-                if should_pause_active_goal {
-                    self.pause_active_goal_for_interrupt();
-                }
-                self.handle_composer_input_result(input_result, had_modal_or_popup);
-            }
+        let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
+        let should_pause_active_goal = self.bottom_pane.should_interrupt_running_task(key_event);
+        let input_result = self.bottom_pane.handle_key_event(key_event);
+        if matches!(
+            input_result,
+            InputResult::None | InputResult::ParentOwnedInputBlocked
+        ) {
+            self.refresh_startup_recovery();
         }
+        crate::startup_recovery::submitted(&input_result);
+        self.sync_backend_banner_view();
+        if should_pause_active_goal {
+            self.pause_active_goal_for_interrupt();
+        }
+        self.handle_composer_input_result(input_result, had_modal_or_popup);
         KeyEventAction::None
     }
 

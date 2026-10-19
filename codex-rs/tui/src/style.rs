@@ -2,15 +2,18 @@
 //! Informative accents meet minimum contrast on known backgrounds and supported palettes.
 
 mod contrast;
+#[cfg(test)]
+pub(crate) use contrast::ratio as contrast_ratio;
 // Elpis: the Elpis palette lives in style/elpis.rs.
 mod elpis;
 pub(crate) use elpis::adaptive_palette_color;
 pub(crate) use elpis::brand_style;
-pub(crate) use elpis::composer_bg_rgb;
-pub(crate) use elpis::composer_border_style;
-pub(crate) use elpis::composer_style;
-pub(crate) use elpis::popup_border_style;
+pub(crate) use elpis::context_style;
+pub(crate) use elpis::ledger_title_styles;
 pub(crate) use elpis::rule_style;
+pub(crate) use elpis::section_style;
+pub(crate) use elpis::session_name_style;
+pub(crate) use elpis::working_label_styles;
 
 use crate::color::blend;
 use crate::color::is_light;
@@ -24,8 +27,7 @@ use crate::terminal_palette::stdout_color_level;
 use ratatui::style::Color;
 use ratatui::style::Style;
 
-// Elpis: the accent is Elpis orange, not ChatGPT blue.
-const LIGHT_BG_ACCENT_RGB: (u8, u8, u8) = elpis::LIGHT_BG_PRIMARY_RGB;
+const LIGHT_BG_ACCENT_RGB: (u8, u8, u8) = (28, 100, 200);
 
 /// ChatGPT Blue 100 (#A4CDFB), used for selection fills on light backgrounds.
 pub(crate) const CHATGPT_BLUE_100: (u8, u8, u8) = (164, 205, 251);
@@ -34,14 +36,26 @@ pub(crate) const CHATGPT_BLUE_100: (u8, u8, u8) = (164, 205, 251);
 pub(crate) const CHATGPT_BLUE_200: (u8, u8, u8) = (99, 168, 248);
 
 /// Shared accent for picker selection backgrounds and transcript foreground emphasis.
-// Elpis: orange accent.
-pub(crate) const UI_ACCENT: (u8, u8, u8) = elpis::DARK_BG_PRIMARY_RGB;
+pub(crate) const UI_ACCENT: (u8, u8, u8) = CHATGPT_BLUE_200;
+
+/// Informative accents resolve against the surface they are painted on, including selections.
+pub(crate) fn readable_color(preferred: (u8, u8, u8), background: Option<(u8, u8, u8)>) -> Color {
+    contrast::foreground(preferred, background, effective_stdout_color_level())
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum StatusTone {
     Success,
     Attention,
     Failure,
+}
+
+/// Elpis: the name of the mode that runs commands with no sandbox and no approval.
+pub(crate) const BYPASS_PERMISSIONS_LABEL: &str = "Bypass permissions";
+
+/// Elpis: Bypass permissions reads as root access: red wherever it is offered or shown.
+pub(crate) fn bypass_permissions_style() -> Style {
+    status_style(StatusTone::Failure)
 }
 
 /// Semantic status colors that preserve the terminal's configured palette.
@@ -74,8 +88,15 @@ pub fn user_message_style() -> Style {
 
 /// Submitted prompts use a lighter fill than the editable composer in either theme.
 pub(crate) fn history_prompt_style() -> Style {
-    // Elpis: submitted prompts keep the v0.3.0 orange tint.
-    user_message_style()
+    let Some(background) = default_bg() else {
+        return Style::default();
+    };
+    let (foreground, alpha) = if is_light(background) {
+        ((0, 0, 0), 0.02)
+    } else {
+        ((255, 255, 255), 0.16)
+    };
+    Style::default().bg(best_color(blend(foreground, background, alpha)))
 }
 
 pub fn proposed_plan_style() -> Style {
@@ -260,11 +281,10 @@ pub fn user_message_bg(terminal_bg: (u8, u8, u8)) -> Color {
 }
 
 pub(crate) fn user_message_bg_rgb(terminal_bg: (u8, u8, u8)) -> (u8, u8, u8) {
-    // Elpis: user surfaces carry a faint orange tint.
     let (top, alpha) = if is_light(terminal_bg) {
-        (LIGHT_BG_ACCENT_RGB, 0.06)
+        ((0, 0, 0), 0.04)
     } else {
-        (UI_ACCENT, 0.12)
+        ((255, 255, 255), 0.12)
     };
     blend(top, terminal_bg, alpha)
 }

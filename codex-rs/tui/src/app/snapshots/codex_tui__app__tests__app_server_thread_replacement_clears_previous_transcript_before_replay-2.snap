@@ -1,10 +1,10 @@
 ---
 source: tui/src/app/tests.rs
-assertion_line: 6412
+assertion_line: 6513
 expression: rendered
 ---
 
-  ◆ Elpis (v0.4.1)
+  >_ Elpis (v0.4.1)
      <thread cwd>
 
 

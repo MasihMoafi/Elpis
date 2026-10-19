@@ -1,0 +1,14 @@
+---
+source: tui/src/chatwidget/tests/smart_prune_log.rs
+assertion_line: 70
+expression: screen
+---
+  Smart Prune log
+  This chat · oldest first · Enter opens original and compact output
+
+
+
+  2026-10-17 19:20:00 +03:30 · Turn 6  Saved 1000 of 2000 tokens (50.0%) · gpt-6-luna (low) · shell: cargo test -p core
+› 2026-10-17 19:20:00 +03:30 · Turn 7  Saved 1000 of 2000 tokens (50.0%) · gpt-6-luna (low) · shell: cargo test -p core
+
+  enter select · esc back

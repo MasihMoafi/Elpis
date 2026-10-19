@@ -190,11 +190,10 @@ impl Session {
                 let mut environments = configuration.environments.clone();
                 let latest_environments = &state.session_configuration.environments;
                 for environment in &mut environments {
-                    if let Some(latest) = latest_environments.iter().find(|latest| {
-                        latest.environment_id == environment.environment_id
-                            && latest.cwd == environment.cwd
-                            && latest.workspace_roots == environment.workspace_roots
-                    }) {
+                    if let Some(latest) = latest_environments
+                        .iter()
+                        .find(|latest| latest.has_same_workspace(environment))
+                    {
                         environment.config = latest.config.clone();
                     }
                 }
@@ -211,6 +210,19 @@ impl Session {
             self.services.turn_environments.snapshot()
         };
         snapshot.await
+    }
+
+    /// Elpis: installs the saved permission defaults while no task runs, as the next task
+    /// would. Context recorded without a turn, such as a bridged client's injected items, then
+    /// saves the permissions the thread accepted rather than those of its last turn. A
+    /// running task keeps its environments; its accepted changes reach it separately.
+    pub(super) async fn refresh_idle_thread_defaults(&self, configuration: &SessionConfiguration) {
+        let active = self.active_turn.lock().await;
+        if active.as_ref().is_none_or(|turn| turn.task.is_none()) {
+            self.services
+                .turn_environments
+                .set_active_thread_defaults(configuration.inferred_environment_config());
+        }
     }
 
     pub(crate) async fn environment_ready(
@@ -237,10 +249,12 @@ impl Session {
         inherited: &TurnEnvironmentSnapshot,
         selected: &[TurnEnvironmentSelection],
     ) {
-        for starting in inherited
-            .starting()
-            .filter(|starting| selected.contains(&starting.selection))
-        {
+        for starting in inherited.starting().filter(|starting| {
+            selected.iter().any(|selection| {
+                selection.has_same_workspace(&starting.selection)
+                    && matches!(selection.config, EnvironmentConfigState::Pending)
+            })
+        }) {
             let Some(configuration) = starting.owner_configuration() else {
                 continue;
             };
@@ -285,9 +299,7 @@ impl Session {
         let mut future = state.session_configuration.environments.clone();
         let inherited = matches!(source, ConfigUpdateSource::Inherited);
         let matches = |environment: &TurnEnvironmentSelection| {
-            environment.environment_id == selection.environment_id
-                && environment.cwd == selection.cwd
-                && environment.workspace_roots == selection.workspace_roots
+            environment.has_same_workspace(selection)
                 && (!inherited || matches!(environment.config, EnvironmentConfigState::Pending))
         };
         let environments = (

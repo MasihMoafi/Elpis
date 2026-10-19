@@ -23,6 +23,21 @@ pub(super) struct ThreadUsageStatusHistory {
 
 impl App {
     pub(super) fn insert_history_cell(&mut self, tui: &mut tui::Tui, cell: Box<dyn HistoryCell>) {
+        if let Some(prune) = cell
+            .as_any()
+            .downcast_ref::<crate::chatwidget::smart_prune_log::SmartPruneCell>()
+            && tui.is_owned_screen()
+            && crate::chatwidget::smart_prune_log::attach_to_tool(
+                &mut self.transcript_cells,
+                &prune.0,
+            )
+        {
+            if let Some(Overlay::Transcript(view)) = &mut self.overlay {
+                view.attach_smart_prune(&prune.0);
+            }
+            tui.frame_requester().schedule_frame();
+            return;
+        }
         // Global deprecations can be delivered again by hidden threads. Scope deduplication to
         // retained history so clearing or rebuilding a transcript can show the notice again.
         if let Some(notice) = cell
@@ -36,12 +51,6 @@ impl App {
             })
         {
             return;
-        }
-        if !crate::empty_state_animation::is_startup_cell(cell.as_ref()) {
-            self.chat_widget
-                .empty_state_animation
-                .borrow_mut()
-                .dismiss();
         }
         if let Some(warnings) = cell
             .as_any()
@@ -277,15 +286,45 @@ impl App {
         self.insert_pending_usage_output(tui);
     }
 
-    pub(super) fn open_url_in_browser(&mut self, url: String) {
+    pub(crate) fn open_url_in_browser(&mut self, url: String) {
+        if let Some(target) =
+            url.strip_prefix(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX)
+        {
+            if let Some((attempt_id, call_id)) = target.split_once('/')
+                && let (Ok(attempt_id), Ok(call_id)) = (
+                    urlencoding::decode(attempt_id),
+                    urlencoding::decode(call_id),
+                )
+            {
+                let log_dir = self.chat_widget.config_ref().codex_home.join("logs");
+                match crate::legacy_core::smart_prune_log::read_attempt(&log_dir, &attempt_id) {
+                    Ok(mut record)
+                        if self
+                            .chat_widget
+                            .thread_id()
+                            .is_some_and(|id| id.to_string() == record.thread_id) =>
+                    {
+                        record.items.retain(|item| item.call_id == call_id);
+                        self.app_event_tx.send(AppEvent::Elpis(
+                            crate::elpis_app_event::ElpisAppEvent::OpenSmartPruneRecord(Box::new(
+                                record,
+                            )),
+                        ));
+                    }
+                    Ok(_) => self
+                        .chat_widget
+                        .add_error_message("Smart Prune record belongs to another chat.".into()),
+                    Err(error) => self
+                        .chat_widget
+                        .add_error_message(format!("Cannot read Smart Prune evidence: {error}")),
+                }
+            }
+            return;
+        }
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
                 .add_error_message(format!("Failed to open browser for {url}: {err}"));
-            return;
         }
-
-        self.chat_widget
-            .add_info_message(format!("Opened {url} in your browser."), /*hint*/ None);
     }
 
     pub(super) fn open_desktop_thread(&mut self, thread_id: ThreadId) {
@@ -316,18 +355,22 @@ impl App {
         &self,
         version: &'static str,
     ) -> history_cell::SessionHeaderHistoryCell {
-        let mut header = history_cell::SessionHeaderHistoryCell::new(
+        history_cell::SessionHeaderHistoryCell::new(
             self.chat_widget.model_display_name().to_string(),
             self.chat_widget.current_reasoning_effort(),
             self.config.cwd.to_path_buf(),
             version,
         )
-        .with_yolo_mode(history_cell::is_yolo_mode(&self.config));
-        history_cell::set_session_greeting(
-            &mut header,
-            &self.chat_widget.empty_state_animation.borrow().greeting,
-        );
-        header
+        .with_animations(self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer)
+        .with_yolo_mode(history_cell::is_yolo_mode(&self.config))
+        .with_bypass_mode(history_cell::is_bypass_mode(&self.config))
+    }
+
+    /// Rows the session header card takes at the top of the full screen in the current render
+    /// mode: the same header a new session or `/clear` puts first in the transcript.
+    pub(super) fn session_header_height(&self, width: u16) -> u16 {
+        self.clear_ui_header_cell(CODEX_CLI_VERSION)
+            .desired_height_for_mode(width, self.chat_widget.history_render_mode())
     }
 
     pub(super) fn clear_ui_header_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -518,9 +561,50 @@ fn powershell_single_quoted_string(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+// Elpis: on Linux `/app` starts `elpis-app --open-thread <id>` (or ELPIS_DESKTOP_APP). A running app keeps its one
+// window (Electron's single-instance lock, apps/elpis-desktop/desktop/open-thread.cjs) and opens the chat there.
+#[cfg(target_os = "linux")]
+fn open_desktop_thread_url(url: &str) -> Result<(), String> {
+    let (app, args) = elpis_desktop_command(url, std::env::var_os("ELPIS_DESKTOP_APP"))?;
+    launch_elpis_desktop(&app, &args)
+}
+
+#[cfg(target_os = "linux")]
+fn elpis_desktop_command(
+    url: &str,
+    app: Option<std::ffi::OsString>,
+) -> Result<(std::ffi::OsString, Vec<String>), String> {
+    let thread_id = url
+        .strip_prefix("codex://threads/")
+        .ok_or_else(|| format!("unexpected desktop link {url}"))?;
+    Ok((
+        app.unwrap_or_else(|| "elpis-app".into()),
+        vec!["--open-thread".to_string(), thread_id.to_string()],
+    ))
+}
+
+/// Starts the app in its own process group with no terminal I/O, so it neither draws over the TUI nor
+/// receives its Ctrl+C; a thread reaps it when it exits.
+#[cfg(target_os = "linux")]
+fn launch_elpis_desktop(app: &std::ffi::OsStr, args: &[String]) -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
+    let mut child = std::process::Command::new(app)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0)
+        .spawn()
+        .map_err(|err| format!("failed to start {}: {err}", app.to_string_lossy()))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn open_desktop_thread_url(_url: &str) -> Result<(), String> {
-    Err("The Desktop app is only available on macOS and Windows".to_string())
+    Err("The Desktop app is only available on macOS, Windows and Linux".to_string())
 }
 
 #[cfg(test)]

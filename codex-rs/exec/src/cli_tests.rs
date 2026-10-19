@@ -2,6 +2,41 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn parent_parses_with_a_worker_prompt() {
+    let cli = Cli::try_parse_from([
+        "codex-exec",
+        "--parent",
+        "0199e643-657b-7000-8000-000000000001",
+        "Worker · inspect the parser",
+    ])
+    .expect("exec accepts a parent thread id");
+    assert_eq!(
+        cli.parent.map(|id| id.to_string()).as_deref(),
+        Some("0199e643-657b-7000-8000-000000000001")
+    );
+    assert_eq!(cli.prompt.as_deref(), Some("Worker · inspect the parser"));
+}
+
+#[test]
+fn parent_requires_a_valid_thread_id() {
+    assert!(Cli::try_parse_from(["codex-exec", "--parent", "invalid", "worker"]).is_err());
+}
+
+#[test]
+fn parent_requires_a_persisted_worker() {
+    assert!(
+        Cli::try_parse_from([
+            "codex-exec",
+            "--parent",
+            "0199e643-657b-7000-8000-000000000001",
+            "--ephemeral",
+            "worker",
+        ])
+        .is_err()
+    );
+}
+
+#[test]
 fn resume_parses_prompt_after_global_flags() {
     const PROMPT: &str = "echo resume-with-global-flags-after-subcommand";
     let cli = Cli::parse_from([
@@ -11,6 +46,8 @@ fn resume_parses_prompt_after_global_flags() {
         "--json",
         "--model",
         "gpt-5.2-codex",
+        "--cyber-access-program",
+        "daybreak_blue",
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
         "--ephemeral",
@@ -22,6 +59,10 @@ fn resume_parses_prompt_after_global_flags() {
     assert!(cli.ephemeral);
     assert!(cli.ignore_user_config);
     assert!(cli.ignore_rules);
+    assert_eq!(
+        cli.cyber_access_program,
+        Some(CyberAccessProgramCliArg::DaybreakBlue)
+    );
     let Some(Command::Resume(args)) = cli.command else {
         panic!("expected resume command");
     };

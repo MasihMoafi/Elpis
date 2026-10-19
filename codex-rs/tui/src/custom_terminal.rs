@@ -81,6 +81,8 @@ pub struct Frame<'a> {
 
     /// The buffer that is used to draw the current frame
     pub(crate) buffer: &'a mut Buffer,
+
+    empty_frame_redraw: bool,
 }
 
 impl Frame<'_> {
@@ -126,6 +128,17 @@ impl Frame<'_> {
     /// Gets the buffer that this `Frame` draws into as a mutable reference.
     pub fn buffer_mut(&mut self) -> &mut Buffer {
         self.buffer
+    }
+
+    /// Request recovery when an active turn produces no visible text.
+    pub(crate) fn redraw_if_empty(&mut self) -> bool {
+        self.empty_frame_redraw = !self.area().is_empty()
+            && self
+                .buffer
+                .content
+                .iter()
+                .all(|cell| cell.symbol().trim().is_empty());
+        self.empty_frame_redraw
     }
 }
 
@@ -257,6 +270,7 @@ where
             cursor_position: None,
             cursor_style: SetCursorStyle::DefaultUserShape,
             viewport_area: self.viewport_area,
+            empty_frame_redraw: false,
             buffer: self.current_buffer_mut(),
         }
     }
@@ -436,8 +450,35 @@ where
         // We can't change the cursor position right away because we have to flush the frame to
         // stdout first. But we also can't keep the frame around, since it holds a &mut to
         // Buffer. Thus, we're taking the important data out of the Frame and dropping it.
-        let cursor_position = frame.cursor_position;
+        let mut cursor_position = frame.cursor_position;
         let cursor_style = frame.cursor_style;
+        let empty_frame_redraw = frame.empty_frame_redraw;
+
+        if empty_frame_redraw {
+            // Keep a transient empty render from erasing a running conversation. A first
+            // frame (or a resize that cleared the cache) still needs visible activity.
+            if self
+                .previous_buffer()
+                .content
+                .iter()
+                .any(|cell| !cell.symbol().trim().is_empty())
+            {
+                let previous = self.previous_buffer().clone();
+                *self.current_buffer_mut() = previous;
+            } else {
+                let area = self.viewport_area;
+                self.current_buffer_mut().set_stringn(
+                    area.x,
+                    area.y,
+                    "Elpising…",
+                    usize::from(area.width),
+                    ratatui::style::Style::default(),
+                );
+            }
+            // The physical screen may also have been cleared outside the diff buffers.
+            self.invalidate_viewport();
+            cursor_position = None;
+        }
 
         // Not every terminal or multiplexer hides intermediate cursor moves inside a
         // synchronized update, especially when the frame spans multiple writes.
@@ -883,6 +924,9 @@ mod tests {
 
     #[path = "cursor_tests.rs"]
     mod cursor;
+
+    #[path = "empty_frame_tests.rs"]
+    mod empty_frame;
 
     struct CaptureBackend {
         output: Vec<u8>,

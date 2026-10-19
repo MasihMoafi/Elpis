@@ -49,9 +49,8 @@ pub use executed_tool_calls::ToolResultMetadata;
 pub use executed_tool_calls::ToolResultSource;
 pub use executed_tool_calls::ToolResultSources;
 pub use executed_tool_calls::bound_executed_tool_calls_for_message;
-pub use executed_tool_calls::bound_executed_tool_calls_for_prompt;
-pub use executed_tool_calls::bound_executed_tool_calls_for_prompt_prioritizing_recent;
 pub use executed_tool_calls::executed_tool_call_metadata_bytes;
+pub use executed_tool_calls::normalize_executed_tool_call_arguments;
 pub use item_metadata::ContentItemKind;
 
 /// Controls the per-command sandbox override requested by a shell-like tool call.
@@ -414,6 +413,27 @@ pub const BUILT_IN_PERMISSION_PROFILE_WORKSPACE: &str = ":workspace";
 
 /// Reserved identifier for the built-in full-access permission profile.
 pub const BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS: &str = ":danger-full-access";
+
+/// Elpis: reserved identifier for the built-in "Bypass permissions" profile. It
+/// compiles to the same unsandboxed [`PermissionProfile::Disabled`] as full access;
+/// see [`bypass_permissions_active`] for what it changes on top.
+pub const BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS: &str = ":bypass-permissions";
+
+/// Elpis: whether "Bypass permissions" is in effect. It needs all three: approvals set
+/// to never, no sandbox, and the bypass profile itself selected (not a profile that
+/// extends it). Then Elpis also skips its own command-safety refusals and hook-trust
+/// review. Explicit rules, hook decisions and managed requirements still apply.
+pub fn bypass_permissions_active(
+    approval_policy: crate::protocol::AskForApproval,
+    permission_profile: &PermissionProfile,
+    active_permission_profile: Option<&ActivePermissionProfile>,
+) -> bool {
+    approval_policy == crate::protocol::AskForApproval::Never
+        && matches!(permission_profile, PermissionProfile::Disabled)
+        && active_permission_profile.is_some_and(|active| {
+            active.id == BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS && active.extends.is_none()
+        })
+}
 
 /// Canonical active runtime permissions for a conversation, turn, or command.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, JsonSchema, TS)]
@@ -874,10 +894,11 @@ pub enum ResponseInputItem {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
+#[derive(derive_more::Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentItem {
     InputText {
+        #[debug("{:?} <{} bytes>", &text[..text.floor_char_boundary(/*index*/ 512)], text.len())]
         text: String,
     },
     InputImage {
@@ -937,7 +958,7 @@ pub const DEFAULT_IMAGE_DETAIL: ImageDetail = ImageDetail::High;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
-/// Classifies an assistant message as interim commentary or final answer text.
+/// Classifies assistant text as commentary, a partial answer, or a terminal answer.
 ///
 /// Providers do not emit this consistently, so callers must treat `None` as
 /// "phase unknown" and keep compatibility behavior for legacy models.
@@ -947,7 +968,9 @@ pub enum MessagePhase {
     /// Additional tool calls or assistant output may follow before turn
     /// completion.
     Commentary,
-    /// The assistant's terminal answer text for the current turn.
+    /// Stable answer text that may be followed by more assistant output or tools.
+    PartialAnswer,
+    /// The assistant's declared terminal answer text for the current turn.
     FinalAnswer,
 }
 
@@ -1010,12 +1033,12 @@ impl InternalChatMessageMetadataPassthrough {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseItem {
-    #[schemars(skip)]
-    #[ts(skip)]
     AdditionalTools {
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         id: Option<ResponseItemId>,
         role: String,
+        #[ts(type = "unknown[]")]
         tools: Vec<serde_json::Value>,
     },
     Message {
@@ -2518,27 +2541,38 @@ mod tests {
     }
 
     #[test]
-    fn response_input_message_conversion_preserves_phase() {
-        let item = ResponseItem::from(ResponseInputItem::Message {
-            role: "assistant".to_string(),
-            content: vec![ContentItem::OutputText {
-                text: "still working".to_string(),
-            }],
-            phase: Some(MessagePhase::Commentary),
-        });
-
-        assert_eq!(
-            item,
-            ResponseItem::Message {
+    fn response_input_message_conversion_preserves_phase() -> Result<()> {
+        for phase in [
+            None,
+            Some(MessagePhase::Commentary),
+            Some(MessagePhase::PartialAnswer),
+            Some(MessagePhase::FinalAnswer),
+        ] {
+            let input = ResponseInputItem::Message {
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "answer text".to_string(),
+                }],
+                phase: phase.clone(),
+            };
+            let wire = serde_json::to_value(input)?;
+            let item = ResponseItem::from(serde_json::from_value::<ResponseInputItem>(wire)?);
+            let expected = ResponseItem::Message {
                 id: None,
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
-                    text: "still working".to_string(),
+                    text: "answer text".to_string(),
                 }],
-                phase: Some(MessagePhase::Commentary),
+                phase,
                 internal_chat_message_metadata_passthrough: None,
-            }
-        );
+            };
+            assert_eq!(item, expected);
+            assert_eq!(
+                serde_json::from_value::<ResponseItem>(serde_json::to_value(item)?)?,
+                expected
+            );
+        }
+        Ok(())
     }
 
     #[test]

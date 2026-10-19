@@ -30,108 +30,119 @@ fn owned_startup_keeps_the_live_bottom_geometry() {
         "owned_startup_layout",
         format!("cursor={:?}\n{frame}", layout.cursor_pos(area))
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+            // Elpis: the header shows the Elpis release.
+            .replace(crate::branding::ELPIS_VERSION, "<VERSION>")
+    );
+}
+
+fn rendered(layout: &OwnedStartupLayout<'_>, area: Rect) -> Buffer {
+    let mut buffer = Buffer::empty(area);
+    layout.render(area, &mut buffer);
+    buffer
+}
+
+fn row(buffer: &Buffer, y: u16, columns: std::ops::Range<u16>) -> String {
+    columns.map(|x| buffer[(x, y)].symbol()).collect()
+}
+
+/// A slow start must not look like the Ledger is missing: the startup screen already holds its
+/// column, level with where the live Ledger starts, and the composer stops at it.
+#[test]
+fn owned_startup_shows_the_ledger_column_beside_the_composer() {
+    let pump = crate::startup_draft::tests::quiet_startup_test_pump();
+    let layout = OwnedStartupLayout::new(&pump);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 120, /*height*/ 30,
+    );
+    let buffer = rendered(&layout, area);
+    let ledger_width = crate::chatwidget::ledger_column_width(area.width);
+    assert!(ledger_width > 0, "a 120-column terminal has the Ledger");
+    let rule_x = area.width - ledger_width;
+    let title_row = (0..area.height)
+        .find(|&y| row(&buffer, y, rule_x + 1..area.width).contains("CONTEXT LEDGER"))
+        .expect("the startup screen names the Ledger");
+    let header_row = (0..area.height)
+        .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
+        .expect("the header stays");
+    // The live Ledger starts below the header with a dedicated Close row, then its title.
+    assert_eq!(title_row, header_row + 4);
+    for y in 0..title_row - 1 {
+        assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}");
+    }
+    for y in title_row - 1..area.height {
+        assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}");
+    }
+    let composer_rows = |columns: std::ops::Range<u16>| {
+        (0..area.height)
+            .filter(|&y| row(&buffer, y, columns.clone()).contains("Ask Elpis"))
+            .count()
+    };
+    assert_eq!(composer_rows(0..rule_x), 1);
+    assert_eq!(composer_rows(rule_x..area.width), 0);
+}
+
+#[test]
+fn owned_startup_reserves_ledger_close_row() {
+    let pump = crate::startup_draft::tests::quiet_startup_test_pump();
+    let layout = OwnedStartupLayout::new(&pump);
+    let area = Rect::new(0, 0, 120, 30);
+    let buffer = rendered(&layout, area);
+    let rule_x = area.width - crate::chatwidget::ledger_column_width(area.width);
+    let title_y = (0..area.height)
+        .find(|&y| row(&buffer, y, rule_x + 1..area.width).contains("CONTEXT LEDGER"))
+        .expect("Ledger loading title");
+    let header_y = (0..area.height)
+        .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
+        .expect("startup header");
+    assert_eq!(
+        title_y,
+        header_y + 4,
+        "startup reserves the live owned Close row above its heading"
+    );
+    assert_eq!(buffer[(rule_x, title_y - 1)].symbol(), "│");
+    assert!(
+        !row(&buffer, title_y - 1, rule_x + 1..area.width).contains("Close"),
+        "startup paints no dead button"
     );
 }
 
 #[test]
-fn new_startup_decoration_tracks_draft_and_session_action() {
-    let mut pump = crate::startup_draft::tests::quiet_startup_test_pump();
+fn owned_startup_has_no_ledger_column_on_a_narrow_terminal() {
+    let pump = crate::startup_draft::tests::quiet_startup_test_pump();
+    let layout = OwnedStartupLayout::new(&pump);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 32,
+        /*x*/ 0, /*y*/ 0, /*width*/ 79, /*height*/ 30,
     );
-    let mut blossom_visible = Vec::new();
-    for (draft, action, pending) in [
-        ("", StartupDraftSessionAction::New, false),
-        (" ", StartupDraftSessionAction::New, false),
-        ("", StartupDraftSessionAction::New, false),
-        ("", StartupDraftSessionAction::New, true),
-        ("", StartupDraftSessionAction::Resume, false),
-        ("", StartupDraftSessionAction::Fork, false),
-        ("", StartupDraftSessionAction::NewFromCommandCenter, false),
-    ] {
-        pump.session_action = action;
-        pump.submission_pending = pending;
-        pump.bottom_pane
-            .set_composer_text(draft.into(), Vec::new(), Vec::new());
-        let layout = OwnedStartupLayout::new(&pump);
-        let mut buffer = Buffer::empty(area);
-        layout.render(area, &mut buffer);
-        blossom_visible.push(buffer.content.iter().any(|cell| {
-            cell.symbol()
-                .chars()
-                .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch))
-        }));
-    }
-    assert_eq!(
-        blossom_visible,
-        [true, false, true, false, false, false, true]
+    let buffer = rendered(&layout, area);
+    assert!(
+        (0..area.height).all(|y| !row(&buffer, y, 0..area.width).contains("CONTEXT LEDGER")),
+        "below 80 columns the live Ledger is hidden too"
     );
 }
 
 #[tokio::test]
-async fn configured_welcome_opt_out_disables_blossom_and_clicks() -> anyhow::Result<()> {
-    use clap::Parser;
-    use codex_config::LoaderOverrides;
-    use crossterm::event::KeyModifiers;
-    use crossterm::event::MouseButton;
-    use crossterm::event::MouseEvent;
-    use crossterm::event::MouseEventKind;
-    let codex_home = tempfile::tempdir()?;
-    let cli = crate::Cli::try_parse_from(["codex"])?;
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 44,
-    );
-    let click = MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: 40,
-        row: 22,
-        modifiers: KeyModifiers::NONE,
-    };
-    for (settings, enabled) in [
-        ("", true),
-        ("[tui]\nanimations = false\n", false),
-        ("[tui.effects]\nwelcome = false\n", false),
-        (
-            "[tui]\nanimations = false\n[tui.effects]\nwelcome = false\n",
-            false,
-        ),
-    ] {
-        std::fs::write(codex_home.path().join("config.toml"), settings)?;
-        let presentation = crate::startup_presentation::load(
-            &cli,
-            codex_home.path(),
-            LoaderOverrides {
-                ignore_project_config: true,
-                ..LoaderOverrides::without_managed_config_for_tests()
-            },
-            Vec::new(),
-            /*config_cwd*/ None,
+async fn owned_startup_ledger_uses_the_saved_width() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[tui]\ncontext_ledger_width = 65\n",
+    )?;
+    let config = crate::legacy_core::config::ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .loader_overrides(
+            crate::legacy_core::config::LoaderOverrides::without_managed_config_for_tests(),
         )
+        .build()
         .await?;
-        let config = crate::legacy_core::config::ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
-            .build()
-            .await?;
-        let mut pump = crate::startup_draft::tests::quiet_startup_test_pump();
-        // The provisional frame uses the bootstrap value; subsequent frames use effective config.
-        pump.motion = presentation.screen.welcome_motion;
-        for effective in [false, true] {
-            if effective {
-                pump.apply_config(&config);
-            }
-            let mut buffer = Buffer::empty(area);
-            OwnedStartupLayout::new(&pump).render(area, &mut buffer);
-            let visible = buffer.content.iter().any(|cell| {
-                cell.symbol()
-                    .chars()
-                    .any(|ch| ('\u{2801}'..='\u{28ff}').contains(&ch))
-            });
-            assert_eq!(
-                visible, enabled,
-                "settings: {settings}, effective: {effective}"
-            );
-            assert_eq!(pump.blossom.borrow_mut().handle_mouse(click), enabled);
-        }
-    }
+    let settings = crate::local_settings::LocalSettings::from(&config);
+    let mut pump = crate::startup_draft::tests::quiet_startup_test_pump();
+    pump.apply_settings(&settings, config.cwd.as_path());
+    let layout = OwnedStartupLayout::new(&pump);
+    let area = Rect::new(0, 0, 125, 40);
+    let buffer = rendered(&layout, area);
+    let title_row = (0..area.height)
+        .find(|&y| row(&buffer, y, 60..125).contains("CONTEXT LEDGER"))
+        .expect("the startup Ledger title");
+    assert_eq!(buffer[(60, title_row)].symbol(), "│");
     Ok(())
 }

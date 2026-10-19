@@ -44,7 +44,6 @@ use serde_json::json;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
-use wiremock::matchers::body_json;
 use wiremock::matchers::body_partial_json;
 use wiremock::matchers::header;
 use wiremock::matchers::method;
@@ -275,6 +274,7 @@ async fn codex_apps_file_params_omit_fields_absent_from_tool_schema() -> Result<
         apps_tool_call.pointer("/params/_meta/_codex_apps"),
         Some(&json!({
             "call_id": "extract-call-1",
+            "root_turn_id": requests[0].body_json()["client_metadata"]["turn_id"],
             "resource_uri": DOCUMENT_EXTRACT_TEXT_RESOURCE_URI,
             "contains_mcp_source": true,
             "connector_id": "calendar",

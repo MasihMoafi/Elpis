@@ -1,8 +1,114 @@
-//! Link activation and selection extension share pointer gestures without losing selection anchors.
+//! Mouse gestures preserve selection anchors and accumulate fractional transcript scrolling.
 
 use super::*;
 use crate::history_cell::AgentMarkdownCell;
 use pretty_assertions::assert_eq;
+
+#[test]
+fn mouse_scroll_speed_scales_rows_and_accumulates_fractional_movement() {
+    use crate::history_cell::PlainHistoryCell;
+    use crate::transcript_view::tests::text;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(PlainHistoryCell::new(
+        (1..=24).map(|row| format!("row {row:02}").into()).collect(),
+    ))];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 12, /*height*/ 4,
+    );
+    let mut frames = Vec::new();
+    for (speed, deltas) in [
+        (None, vec![-1, 1]),
+        (Some(0.5), vec![0, -1, 0, 0, 1]),
+        (Some(1.5), vec![-1, -2, 1, 2]),
+        (Some(3.0), vec![-3, 3]),
+    ] {
+        let mut view = TranscriptView::default();
+        if let Some(speed) = speed {
+            view.mouse_scroll_speed = speed;
+        }
+        let mut buffer = Buffer::empty(area);
+        view.render(area, &mut buffer, &cells);
+        view.scroll(&cells, /*rows*/ -8);
+        view.render(area, &mut buffer, &cells);
+        let (index, mut row) = view.start(&cells);
+        let up_events = deltas.len().div_ceil(2);
+        for (event_index, delta) in deltas.into_iter().enumerate() {
+            let kind = if event_index < up_events {
+                MouseEventKind::ScrollUp
+            } else {
+                MouseEventKind::ScrollDown
+            };
+            view.handle_mouse(mouse(kind, /*column*/ 1, /*row*/ 1), &cells);
+            row = row.saturating_add_signed(delta);
+            assert_eq!(view.start(&cells), (index, row));
+            view.render(area, &mut buffer, &cells);
+            if event_index + 1 == up_events {
+                frames.push(format!(
+                    "speed {speed:?}, {up_events} up events:\n{}",
+                    text(&buffer)
+                ));
+            }
+        }
+    }
+    insta::assert_snapshot!(frames.join("\n\n"));
+}
+
+#[test]
+fn decimal_mouse_scroll_speeds_preserve_whole_rows() {
+    use crate::history_cell::PlainHistoryCell;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(PlainHistoryCell::new(
+        (1..=120)
+            .map(|row| format!("row {row:03}").into())
+            .collect(),
+    ))];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 12, /*height*/ 4,
+    );
+    for speed in [0.1, 0.3] {
+        let mut view = TranscriptView {
+            mouse_scroll_speed: speed,
+            ..TranscriptView::default()
+        };
+        view.render(area, &mut Buffer::empty(area), &cells);
+        view.scroll(&cells, /*rows*/ -40);
+        let (index, row) = view.start(&cells);
+        for (kind, direction) in [
+            (MouseEventKind::ScrollUp, -1),
+            (MouseEventKind::ScrollDown, 1),
+        ] {
+            let (_, start_row) = view.start(&cells);
+            for event in 1..=100 {
+                view.handle_mouse(mouse(kind, /*column*/ 1, /*row*/ 1), &cells);
+                let rows = (f64::from(event) * speed).floor() as isize * direction;
+                assert_eq!(
+                    view.start(&cells),
+                    (index, start_row.saturating_add_signed(rows))
+                );
+            }
+        }
+        assert_eq!(view.start(&cells), (index, row));
+    }
+}
+
+#[test]
+fn fractional_mouse_scroll_does_not_pause_following_until_a_row_moves() {
+    let (mut view, cells) = transcript(
+        "one\n\ntwo\n\nthree\n\nfour\n\nfive\n\nsix",
+        /*width*/ 12,
+    );
+    view.mouse_scroll_speed = 0.5;
+    view.handle_mouse(
+        mouse(MouseEventKind::ScrollUp, /*column*/ 4, /*row*/ 1),
+        &cells,
+    );
+    assert!(view.is_following());
+    view.handle_mouse(
+        mouse(MouseEventKind::ScrollUp, /*column*/ 4, /*row*/ 1),
+        &cells,
+    );
+    assert!(!view.is_following());
+}
 
 fn transcript(markdown: &str, width: u16) -> (TranscriptView, Vec<Arc<dyn HistoryCell>>) {
     let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(AgentMarkdownCell::new(
@@ -201,6 +307,38 @@ fn ordinary_click_opens_bare_and_markdown_links_on_release() {
 }
 
 #[test]
+fn selection_mouse_does_not_open_links() {
+    for modifiers in [KeyModifiers::NONE, KeyModifiers::CONTROL] {
+        let (mut view, cells) = transcript("[docs](https://example.com/docs)", /*width*/ 60);
+        let down = MouseEvent {
+            modifiers,
+            ..mouse(
+                MouseEventKind::Down(MouseButton::Left),
+                /*column*/ 4,
+                /*row*/ 1,
+            )
+        };
+        assert!(matches!(
+            view.handle_selection_mouse(down, &cells),
+            Some(ViewAction::Changed)
+        ));
+        let area = view.area;
+        view.render(area, &mut Buffer::empty(area), &cells);
+        assert!(matches!(
+            view.handle_selection_mouse(
+                MouseEvent {
+                    kind: MouseEventKind::Up(MouseButton::Left),
+                    ..down
+                },
+                &cells,
+            ),
+            Some(ViewAction::Changed)
+        ));
+        assert_eq!(view.selected_text(&cells), None);
+    }
+}
+
+#[test]
 fn dragging_a_link_selects_text_and_never_opens_it() {
     for return_to_origin in [false, true] {
         let (mut view, cells) = transcript(
@@ -306,4 +444,54 @@ fn modified_clicks_still_open_immediately() {
         assert_eq!(url, "https://example.com/docs");
         assert!(view.selection.is_none());
     }
+}
+
+#[test]
+fn continuous_wheel_runs_accelerate_and_reset_on_pause_or_reversal() {
+    let mut view = TranscriptView::default();
+    let start = std::time::Instant::now();
+    let at = |millis| start + std::time::Duration::from_millis(millis);
+    let rapid: Vec<f64> = (0..12)
+        .map(|event| view.wheel_multiplier(-1.0, at(event)))
+        .collect();
+    assert!(rapid.windows(2).all(|pair| pair[1] > pair[0] || pair[1] == 10.0));
+    assert!(rapid[1] > 1.9 && rapid[1] <= 2.0, "{rapid:?}");
+    assert_eq!(rapid[11], 10.0);
+    // A three-second pause leaves almost no momentum; reversing drops it entirely.
+    assert!(view.wheel_multiplier(-1.0, at(3_011)) < 1.05);
+    assert_eq!(view.wheel_multiplier(1.0, at(3_012)), 1.0);
+}
+
+#[test]
+fn wheel_acceleration_moves_further_only_when_enabled() {
+    use crate::history_cell::PlainHistoryCell;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(PlainHistoryCell::new(
+        (1..=120)
+            .map(|row| format!("row {row:03}").into())
+            .collect(),
+    ))];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 12, /*height*/ 4,
+    );
+    let mut moved = Vec::new();
+    for acceleration in [false, true] {
+        let mut view = TranscriptView {
+            mouse_wheel_acceleration: acceleration,
+            ..TranscriptView::default()
+        };
+        view.render(area, &mut Buffer::empty(area), &cells);
+        view.scroll(&cells, /*rows*/ -60);
+        let (_, before) = view.start(&cells);
+        for _ in 0..6 {
+            view.handle_mouse(
+                mouse(MouseEventKind::ScrollUp, /*column*/ 1, /*row*/ 1),
+                &cells,
+            );
+        }
+        moved.push(before - view.start(&cells).1);
+    }
+    // Six back-to-back events build to about 1 + 2 + 3 + 4 + 5 + 5 rows with acceleration.
+    assert_eq!(moved[0], 6);
+    assert!(moved[1] >= 18, "{moved:?}");
 }

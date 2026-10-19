@@ -8,6 +8,7 @@ use crate::bottom_pane::slash_commands::BuiltinCommandFlags;
 use crate::bottom_pane::slash_commands::find_builtin_command;
 use crate::elpis_app_event::ElpisAppEvent;
 use crate::slash_command::built_in_slash_commands;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::str::FromStr;
 
@@ -17,9 +18,58 @@ const NOT_IN_THIS_BUILD: &str =
 /// The commands that wait for the rest of the Elpis context engine. `/prune`, `/smart-prune`
 /// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
 /// background model; `/dashboard` works (elpis_dashboard.rs).
-const LATER_BUILD: [SlashCommand; 1] = [
-    SlashCommand::ForcePrune,
-];
+const LATER_BUILD: [SlashCommand; 1] = [SlashCommand::ForcePrune];
+
+#[tokio::test]
+async fn personal_command_shows_the_user_file_and_never_overwrites_it() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    chat.bottom_pane.set_disable_paste_burst(true);
+    let command = SlashCommand::from_str("personal").expect("/personal is a built-in command");
+    for c in "/personal".chars() {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let path = codex_skills::personal::path(chat.config.codex_home.as_path());
+    assert!(path.is_file());
+    let shown = history_text(&mut rx).join("\n");
+    assert!(shown.contains("Learning method:"));
+    assert!(shown.contains("Edit this SKILL.md"));
+    let content = format!(
+        "{}\nPREFERENCE_SENTINEL_914\n",
+        codex_skills::personal::TEMPLATE
+    );
+    std::fs::write(&path, &content).unwrap();
+    chat.dispatch_command(command);
+    assert!(
+        history_text(&mut rx)
+            .join("\n")
+            .contains("PREFERENCE_SENTINEL_914")
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+    while let Ok(op) = ops.try_recv() {
+        assert_matches!(op, Op::ListSkills { force_reload: true, .. });
+    }
+}
+
+#[tokio::test]
+async fn personal_dismissal_does_not_create_a_profile() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+    let home = tempfile::TempDir::new().unwrap();
+    chat.config.codex_home = AbsolutePathBuf::from_absolute_path(home.path()).unwrap();
+    assert!(codex_skills::personal::show_tip(home.path()));
+    let command = SlashCommand::from_str("personal").unwrap();
+    chat.dispatch_command_with_args(command, "dismiss".into(), vec![]);
+    assert!(
+        history_text(&mut rx)
+            .join("\n")
+            .contains("Personal tip dismissed")
+    );
+    assert!(!codex_skills::personal::path(chat.config.codex_home.as_path()).exists());
+    assert!(!codex_skills::personal::show_tip(
+        chat.config.codex_home.as_path()
+    ));
+    assert_matches!(ops.try_recv(), Err(TryRecvError::Empty));
+}
 
 fn history_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Vec<String> {
     drain_insert_history(rx)
@@ -37,6 +87,10 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
     let expected = [
         ("model", None),
         (
+            "effort",
+            Some("change how hard the model thinks: /effort [low|medium|high|…]"),
+        ),
+        (
             "pruner-model",
             Some(
                 "view or set the model that prunes context; follows /memory-model when unset: /pruner-model <id|default>",
@@ -45,7 +99,7 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         (
             "memory-model",
             Some(
-                "set background tasks (pruning and session naming); memory uses the responding agent: /memory-model <id|provider:id|default>",
+                "set Smart Prune's fallback model; memory uses the responding agent: /memory-model <id|provider:id|default>",
             ),
         ),
         ("permissions", None),
@@ -61,7 +115,7 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
         ("prune", Some("turn Smart Prune on for subsequent turns")),
         (
             "smart-prune",
-            Some("optimize fresh tool results before their first model request"),
+            Some("toggle Smart Prune, set on/off, or open log"),
         ),
         (
             "force-prune",
@@ -98,10 +152,42 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
 }
 
 #[test]
+fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
+    let mut expected = vec![
+        "model", "effort", "pruner-model", "memory-model", "ide", "permissions", "yolo",
+        "hotkeys", "settings", "add", "skills", "personal", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
+        // Masih, 16 Oct 2026: open the TUI's chat in the desktop app.
+        "app", "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
+        "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "rag", "quit",
+        "clear", "subagents",
+    ];
+    if cfg!(target_os = "android") {
+        expected.retain(|name| *name != "copy");
+    }
+    assert_eq!(
+        built_in_slash_commands().into_iter().map(|(name, _)| name).collect::<Vec<_>>(),
+        expected,
+        "Changing Masih's selected command set requires his explicit agreement",
+    );
+}
+
+#[test]
+fn app_command_opens_this_chat_in_the_elpis_desktop_app() {
+    let (name, command) = built_in_slash_commands()
+        .into_iter()
+        .find(|(name, _)| *name == "app")
+        .expect("/app is listed");
+    assert_eq!(name, "app");
+    assert_eq!(command.description(), "open this chat in the Elpis desktop app");
+    assert!(command.available_during_task());
+}
+
+#[test]
 fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
     let flags = BuiltinCommandFlags::default();
     for (name, cmd) in [
         ("yolo", SlashCommand::Yolo),
+        ("effort", SlashCommand::Effort),
         ("agent", SlashCommand::Agent),
         ("pruner-model", SlashCommand::PrunerModel),
         ("memory-model", SlashCommand::MemoryModel),
@@ -111,6 +197,7 @@ fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
         ("dashboard", SlashCommand::Dashboard),
         ("add", SlashCommand::Add),
         ("context", SlashCommand::Context),
+        ("rag", SlashCommand::Rag),
     ] {
         assert_eq!(SlashCommand::from_str(name), Ok(cmd));
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
@@ -254,9 +341,10 @@ async fn memory_model_saves_the_typed_choice() {
     chat.dispatch_memory_model_with_args("   ");
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event, AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_)))),
+        events.iter().all(|event| !matches!(
+            event,
+            AppEvent::Elpis(ElpisAppEvent::SaveBackgroundModel(_))
+        )),
         "{events:?}"
     );
 }
@@ -289,6 +377,38 @@ async fn queued_plain_text_is_sent_to_the_model() {
 }
 
 #[tokio::test]
+async fn rag_dispatches_the_real_tool_instructions_for_any_provider() {
+    for provider in ["openai", "claude", "openrouter", "local"] {
+        let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
+        chat.config.model_provider_id = provider.to_string();
+        chat.thread_id = Some(ThreadId::new());
+        chat.dispatch_command_with_args(SlashCommand::Rag, "show".to_string(), Vec::new());
+        let Op::UserTurn { items, .. } = ops.try_recv().expect("/rag must submit a provider-neutral turn") else {
+            panic!("/rag did not reach the provider turn");
+        };
+        let UserInput::Text { text, .. } = &items[0] else { panic!("missing RAG instructions") };
+        assert!(text.contains("rag config show"));
+        assert!(text.ends_with("RAG request: show"));
+        assert!(text.contains("Never request, paste, or print API keys"));
+    }
+}
+
+#[tokio::test]
+async fn bare_rag_and_plain_rag_text_take_distinct_paths() {
+    let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.dispatch_command(SlashCommand::Rag);
+    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else { panic!("bare /rag was dropped") };
+    assert!(matches!(&items[0], UserInput::Text { text, .. } if text.contains("An empty request means show current RAG settings")));
+    // A plain message stays literal; only the selected slash command adds instructions.
+    let (mut chat, _app_events, mut ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.submit_user_message("rag show".into());
+    let Op::UserTurn { items, .. } = ops.try_recv().unwrap() else { panic!("literal message was dropped") };
+    assert!(matches!(&items[0], UserInput::Text { text, .. } if text == "rag show"));
+}
+
+#[tokio::test]
 async fn during_a_turn_yolo_runs_and_pruning_waits() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
@@ -301,21 +421,20 @@ async fn during_a_turn_yolo_runs_and_pruning_waits() {
         Ok(AppEvent::Elpis(ElpisAppEvent::EnableYolo))
     );
 
-    // Pruning waits: it queues for after the turn instead of being rejected.
+    // Native Codex rejects commands that cannot run during a turn.
     chat.dispatch_command(SlashCommand::Prune);
-    assert!(history_text(&mut rx).is_empty());
-    assert_eq!(chat.queued_user_message_texts(), vec!["/prune"]);
+    assert!(history_text(&mut rx).join("\n").contains("disabled while a task is in progress"));
+    assert!(chat.queued_user_message_texts().is_empty());
 }
 
 #[test]
-fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup() {
+fn commands_v030_removed_stay_hidden_and_other_unlisted_commands_leave_the_popup() {
     let flags = BuiltinCommandFlags::default();
     let listed = built_in_slash_commands()
         .into_iter()
         .map(|(name, _)| name)
         .collect::<Vec<_>>();
     for name in [
-        "app",
         "apps",
         "plugins",
         "setup-default-sandbox",
@@ -334,7 +453,6 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup()
     }
     // Commands Codex added since July are out of the popup but still typeable.
     for (name, cmd) in [
-        ("agents", SlashCommand::Agents),
         ("export", SlashCommand::Export),
         ("recap", SlashCommand::Recap),
         ("pwd", SlashCommand::Pwd),
@@ -342,10 +460,11 @@ fn commands_v030_removed_stay_hidden_and_new_upstream_commands_leave_the_popup()
         assert!(!listed.contains(&name), "/{name} is listed");
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
     }
-    // Negative: v0.3.0's own commands are listed.
-    for name in ["model", "compact", "context", "dashboard"] {
+    // Selected commands remain listed, including the desktop handoff.
+    for name in ["model", "compact", "context", "dashboard", "app"] {
         assert!(listed.contains(&name), "/{name} is missing");
     }
+    assert_eq!(find_builtin_command("app", flags), Some(SlashCommand::App));
 }
 
 #[test]
@@ -357,17 +476,14 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         .collect::<Vec<_>>();
     for (name, cmd) in [
         ("approve", SlashCommand::AutoReview),
-        ("archive", SlashCommand::Archive),
         ("btw", SlashCommand::Btw),
         ("debug-config", SlashCommand::DebugConfig),
-        ("del", SlashCommand::Delete),
         ("import", SlashCommand::Import),
         ("kill", SlashCommand::Stop),
         ("logout", SlashCommand::Logout),
         ("mention", SlashCommand::Mention),
         ("ps", SlashCommand::Ps),
         ("raw", SlashCommand::Raw),
-        ("review", SlashCommand::Review),
         ("side", SlashCommand::Side),
         ("statusline", SlashCommand::Statusline),
         ("title", SlashCommand::Title),
@@ -385,8 +501,36 @@ fn commands_v030_kept_out_of_the_popup_still_work_under_their_v030_names() {
         assert!(!listed.contains(&alias), "/{alias} is listed");
         assert_eq!(find_builtin_command(alias, flags), Some(cmd), "/{alias}");
     }
-    assert_eq!(find_builtin_command("stop", flags), Some(SlashCommand::Stop));
-    assert_eq!(find_builtin_command("delete", flags), Some(SlashCommand::Delete));
+    assert_eq!(
+        find_builtin_command("stop", flags),
+        Some(SlashCommand::Stop)
+    );
+    assert_eq!(
+        find_builtin_command("delete", flags),
+        Some(SlashCommand::Delete)
+    );
+}
+
+#[test]
+fn selected_chat_commands_stay_listed_and_removed_commands_stay_unlisted() {
+    let flags = BuiltinCommandFlags::default();
+    let listed = built_in_slash_commands();
+    for (name, command) in [
+        ("rename", SlashCommand::Rename),
+        ("new", SlashCommand::New),
+        ("resume", SlashCommand::Resume),
+    ] {
+        assert!(listed.contains(&(name, command)), "/{name} is missing");
+    }
+    for (name, command) in [
+        ("agents", SlashCommand::Agents),
+        ("archive", SlashCommand::Archive),
+        ("del", SlashCommand::Delete),
+    ] {
+        assert!(!listed.contains(&(name, command)), "/{name} was restored to the popup");
+        assert_eq!(find_builtin_command(name, flags), Some(command));
+    }
+    assert_eq!(find_builtin_command("daybreak", flags), None);
 }
 
 fn usage_card(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> Option<String> {

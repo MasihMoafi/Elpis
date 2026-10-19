@@ -262,6 +262,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
         /*initial_user_message*/ None,
     )
     .await?;
+    crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
     app.ensure_thread_channel(thread_id)
         .store
         .lock()
@@ -269,6 +270,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
         .turns
         .push(Turn {
             id: "existing-turn".to_string(),
+            root_turn_id: None,
             items: vec![title_user_message("user-message", "Fix the login timeout")],
             items_view: Default::default(),
             status: TurnStatus::Completed,
@@ -296,7 +298,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
             .await?;
         }
         assert_eq!(app.chat_widget.thread_name(), None);
-        assert!(app.chat_widget.thread_title_generation_pending());
+        assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
         assert_eq!(
             app_server
                 .thread_read(thread_id, /*include_turns*/ false)
@@ -376,12 +378,9 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
                 };
                 app.handle_event(&mut tui, &mut app_server, event).await?;
                 assert!(app.pending_thread_titles.is_empty());
-                // Elpis: the title shows on the identity line; the Ledger beside the composer
-                // lists temporary memory paths, so the snapshot is taken without it.
-                crate::app::test_support::hide_context_ledger(&mut app);
                 let popup = render_bottom_popup(&app.chat_widget, /*width*/ 120);
                 assert!(popup.contains("Keep this title"));
-                assert!(!app.chat_widget.thread_title_generation_pending());
+                assert!(!popup.contains('⠋'));
                 if matches!(scenario, TitleScenario::ManualRename) {
                     insta::assert_snapshot!(
                         "manual_rename_cancels_thread_title",
@@ -428,7 +427,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
     }
     assert!(app.temporary_structured_requests.is_empty());
     assert!(app.pending_thread_titles.is_empty());
-    assert!(!app.chat_widget.thread_title_generation_pending());
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
 
     let request = response.single_request();
     assert!(
@@ -778,7 +777,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
         ((thread_id, suggestion), CancellationToken::new()),
     ]);
     app.sync_thread_title_progress();
-    assert!(app.chat_widget.thread_title_generation_pending());
+    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
 
     app.on_thread_title_started(
         &app_server,
@@ -789,7 +788,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
         Err("startup failed".to_string()),
         CancellationToken::new(),
     );
-    assert!(app.chat_widget.thread_title_generation_pending());
+    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app.on_thread_title_started(
         &app_server,
         thread_id,
@@ -800,7 +799,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
         CancellationToken::new(),
     );
     assert!(app.pending_thread_titles.is_empty());
-    assert!(!app.chat_widget.thread_title_generation_pending());
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
 
     let mut tui = crate::tui::test_support::make_test_tui()?;
     app.pending_thread_titles.insert(
@@ -820,14 +819,14 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
         &mut tui,
         ratatui::layout::Size::new(/*width*/ 120, /*height*/ 30),
     )?;
-    assert!(!app.chat_widget.thread_title_generation_pending());
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app.select_agent_thread(&mut tui, &mut app_server, thread_id)
         .await?;
     app.render_chat_widget_frame(
         &mut tui,
         ratatui::layout::Size::new(/*width*/ 120, /*height*/ 30),
     )?;
-    assert!(app.chat_widget.thread_title_generation_pending());
+    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app.handle_event(
         &mut tui,
         &mut app_server,
@@ -841,7 +840,7 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
     )
     .await?;
     assert!(app.pending_thread_titles.is_empty());
-    assert!(!app.chat_widget.thread_title_generation_pending());
+    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app_server.shutdown().await?;
     Ok(())
 }

@@ -4,11 +4,12 @@ use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::plain_lines;
 use crate::legacy_core::config::Config;
 use crate::line_truncation::line_width;
+use crate::style::BYPASS_PERMISSIONS_LABEL;
 use crate::style::accent_color;
+use crate::style::bypass_permissions_style;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
-use crate::width::display_width;
 use chrono::DateTime;
 use chrono::Local;
 use codex_app_server_protocol::AskForApproval;
@@ -17,6 +18,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::models::ActivePermissionProfile;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -51,7 +53,7 @@ use crate::wrapping::word_wrap_lines;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/codex/settings/usage";
+const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/settings/usage";
 
 #[derive(Debug, Clone)]
 struct StatusContextWindowData {
@@ -676,6 +678,15 @@ fn status_permissions_label(
             }
             _ => {}
         },
+        Some(BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS)
+            if permission_profile == &PermissionProfile::Disabled =>
+        {
+            return if approval_policy == AskForApproval::Never {
+                BYPASS_PERMISSIONS_LABEL.to_string()
+            } else {
+                format!("No Sandbox ({approval})")
+            };
+        }
         Some(BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS)
             if permission_profile == &PermissionProfile::Disabled =>
         {
@@ -750,6 +761,11 @@ impl StatusHistoryCell {
             StatusAccountDisplay::ApiKey => {
                 "API key configured (run elpis login to use ChatGPT)".to_string()
             }
+            StatusAccountDisplay::Subscription { name, email, plan } => match (email, plan) {
+                (Some(email), Some(plan)) => format!("{email} ({plan}) · {name}"),
+                (Some(email), None) => format!("{email} · {name}"),
+                (None, _) => name.clone(),
+            },
         });
 
         let mut labels: Vec<String> = vec!["Model", "Directory", "Permissions", "Agents.md"]
@@ -832,7 +848,13 @@ impl StatusHistoryCell {
             lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
-        lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));
+        let permissions = Span::from(self.permissions.clone());
+        let permissions = if self.permissions == BYPASS_PERMISSIONS_LABEL {
+            permissions.style(bypass_permissions_style())
+        } else {
+            permissions
+        };
+        lines.push(formatter.line("Permissions", vec![permissions]));
         lines.push(formatter.line("Agents.md", vec![Span::from(agents_summary)]));
 
         if let Some(account_value) = account_value {
@@ -951,20 +973,22 @@ impl HistoryCell for Arc<StatusHistoryCell> {
     ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
         let mut lines =
             crate::terminal_hyperlinks::plain_hyperlink_lines(self.display_lines(width));
-        for line in &mut lines {
-            let visible = line
-                .line
-                .spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>();
-            if let Some(start_byte) = visible.find(CHATGPT_USAGE_URL) {
-                let start = display_width(&visible[..start_byte]);
-                line.hyperlinks
-                    .push(crate::terminal_hyperlinks::TerminalHyperlink::web(
-                        start..start + display_width(CHATGPT_USAGE_URL),
-                        CHATGPT_USAGE_URL.to_string(),
-                    ));
+        // The usage URL has a known destination; wrapping preserves its underlined spans.
+        // Attach that destination to every fragment instead of searching for the full URL.
+        if self.show_chatgpt_usage_link {
+            for line in &mut lines {
+                let mut column = 0;
+                for span in &line.line.spans {
+                    let end = column + span.width();
+                    if span.style.add_modifier.contains(Modifier::UNDERLINED) {
+                        line.hyperlinks
+                            .push(crate::terminal_hyperlinks::TerminalHyperlink::web(
+                                column..end,
+                                CHATGPT_USAGE_URL.to_string(),
+                            ));
+                    }
+                    column = end;
+                }
             }
         }
         lines

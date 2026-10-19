@@ -1,24 +1,23 @@
 ---
 source: tui/src/bottom_pane/hooks_browser_view.rs
-assertion_line: 1331
 expression: "render_lines(&view, 44)"
 ---
-┌──────────────────────────────────────────┐
-│ PreToolUse hooks                         │
-│ Turn hooks on or off. Your changes are   │
-│ saved automatically.                     │
-│                                          │
-│› [x] Hook 1                              │
-│                                          │
-│  Event     PreToolUse                    │
-│  Matcher   Bash                          │
-│  Source    User config - /tmp/h.json     │
-│  Command   one two three four five six   │
-│            seven eight nine ten eleven   │
-│            twelve thirteen fourteen…     │
-│  Mode      Sync                          │
-│  Timeout   30s                           │
-│  Trust     Trusted                       │
-│                                          │
-└──────────────────────────────────────────┘
+                                            
+  PreToolUse hooks                          
+  Turn hooks on or off. Your changes are    
+  saved automatically.                      
+                                            
+› [x]  1  Check shell commands before allow…
+                                            
+  Event     PreToolUse                      
+  Matcher   Bash                            
+  Source    User config - /tmp/h.json       
+  Command   one two three four five six     
+            seven eight nine ten eleven     
+            twelve thirteen fourteen…       
+  Mode      Sync                            
+  Timeout   30s                             
+  Trust     Trusted                         
+                                            
+                                            
   space/enter toggle · esc back

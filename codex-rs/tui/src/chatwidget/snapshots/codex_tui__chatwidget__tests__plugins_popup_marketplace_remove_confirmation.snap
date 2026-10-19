@@ -1,0 +1,14 @@
+---
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+expression: confirmation
+---
+                Plugins
+› Ask Elpis to  Remove Repo Marketplace marketplace?
+                This removes the configured marketplace from Elpis.
+  GPT-5.6-Sol
+
+              › 1. Remove marketplace  Remove this marketplace from the available
+                                       plugin list
+                2. Back to plugins     Keep this marketplace installed
+
+                enter select · esc close

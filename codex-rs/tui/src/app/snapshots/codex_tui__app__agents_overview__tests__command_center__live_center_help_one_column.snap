@@ -1,5 +1,6 @@
 ---
 source: tui/src/app/agent_center_tests.rs
+assertion_line: 362
 expression: "screen(&view, width, height)"
 ---
   Agent command center  Group: Projec…
@@ -8,29 +9,29 @@ expression: "screen(&view, width, height)"
   Task shortcuts
 
   Navigate
-  ↑       Up
-  ↓       Down
-  enter   Open
-  pgup    Page up
-  pgdn    Page down
-  ctrl+c  Quit
+  ↑      Up
+  ↓      Down
+  enter  Open
+  pgup   Page up
+  pgdn   Page down
+  ⌃c     Quit
 
   Tasks
   n          New
   w          New worktree
   o          Resume
+  f          Fork
   r          Rename
   x          Stop
   a          Archive
   h          Hide
   backspace  Delete
+  s          Steer
 
   View
-  tab/shift+tab  Filter
-  f              Search
-  g              Group
-
-
+  tab/⇧tab  Filter
+  f3        Search
+  g         Group
 
 
   esc back

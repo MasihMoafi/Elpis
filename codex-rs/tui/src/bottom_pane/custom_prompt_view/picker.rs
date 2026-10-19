@@ -78,7 +78,6 @@ impl CustomPromptView {
         self.picker_header().render(areas.header, buf);
         if !areas.input.is_empty() {
             let mut state = self.textarea_state.borrow_mut();
-            // Elpis: a masked prompt (an API key) shows bullets instead of the text.
             if self.masked {
                 Paragraph::new("•".repeat(self.textarea.text().chars().count()))
                     .render(areas.input, buf);

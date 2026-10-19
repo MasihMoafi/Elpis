@@ -17,6 +17,15 @@ pub struct ClaudeCommand {
     #[arg(long)]
     pub no_prune: bool,
 
+    /// Do not open the session page in the browser. Elpis still prints its link.
+    #[arg(long)]
+    pub no_browser: bool,
+
+    /// Run only the proxy: print its address on stdout and serve until stdin closes. The Claude
+    /// bridge points the Claude chats in Elpis that have Smart Prune on at it.
+    #[arg(long, hide = true)]
+    pub serve: bool,
+
     /// Arguments for `claude`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
@@ -45,6 +54,20 @@ impl ClaudeCommand {
         )
         .await
         .context("failed to start the Smart Prune proxy")?;
+        if self.serve {
+            println!("{}", proxy.origin());
+            // Serve until the bridge that started this closes stdin (or exits).
+            let mut stdin = tokio::io::stdin();
+            let _ = tokio::io::copy(&mut stdin, &mut tokio::io::sink()).await;
+            return Ok(());
+        }
+        let page = proxy.page_url();
+        eprintln!("Elpis · Smart Prune for this Claude Code session: {page}");
+        if !self.no_browser
+            && let Err(error) = webbrowser::open(&page)
+        {
+            eprintln!("Elpis · could not open the browser: {error}");
+        }
         // Claude Code handles Ctrl-C itself. Elpis must stay alive, or the proxy stops.
         tokio::spawn(async { while tokio::signal::ctrl_c().await.is_ok() {} });
         // `prepare_elpis_environment` already put the loopback hosts in NO_PROXY.

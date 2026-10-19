@@ -157,3 +157,129 @@ async fn context_links_the_rollout_as_a_readable_local_report() -> anyhow::Resul
     assert!(!report.contains("file://"), "{report}");
     Ok(())
 }
+
+/// What the Claude bridge pushes as `account/rateLimits/updated`.
+fn claude_limits(primary_used: i32) -> RateLimitSnapshot {
+    RateLimitSnapshot {
+        limit_id: Some("codex".to_string()),
+        limit_name: Some("Claude".to_string()),
+        normal_model_slug: None,
+        primary: Some(RateLimitWindow {
+            used_percent: primary_used,
+            window_duration_mins: Some(300),
+            resets_at: None,
+        }),
+        secondary: Some(RateLimitWindow {
+            used_percent: 7,
+            window_duration_mins: Some(10_080),
+            resets_at: None,
+        }),
+        credits: None,
+        individual_limit: None,
+        plan_type: None,
+        spend_control_reached: None,
+        rate_limit_reached_type: None,
+    }
+}
+
+#[tokio::test]
+async fn a_claude_subscription_model_shows_claude_as_its_provider() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.model_provider_id = "openrouter".to_string();
+    chat.thread_id = Some(ThreadId::new());
+    let status_text = |chat: &mut ChatWidget| {
+        lines_to_single_string(
+            &chat
+                .status_output_cell(
+                    /*refreshing_rate_limits*/ false, /*request_id*/ None,
+                )
+                .display_lines(/*width*/ 120),
+        )
+    };
+
+    chat.set_model("claude/opus");
+    // The Models tab selects the Claude subscription by its id and names it from its list.
+    assert_eq!(
+        chat.dashboard_models().chat.provider.as_deref(),
+        Some(crate::chatwidget::CLAUDE_SUBSCRIPTION_PROVIDER_ID)
+    );
+    assert!(
+        status_text(&mut chat).contains("Claude subscription"),
+        "{}",
+        status_text(&mut chat)
+    );
+    // The configured provider still drives /model and the key checks.
+    assert_eq!(chat.config.model_provider_id, "openrouter");
+
+    chat.set_model("apodex/x");
+    assert_eq!(
+        chat.dashboard_models().chat.provider.as_deref(),
+        Some("openrouter")
+    );
+    let text = status_text(&mut chat);
+    assert!(!text.contains("Claude subscription"), "{text}");
+    assert!(text.contains("openrouter"), "{text}");
+}
+
+#[tokio::test]
+async fn pushed_limits_are_kept_when_the_tui_does_not_fetch_limits() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert!(!chat.should_prefetch_rate_limits());
+
+    chat.on_rolling_rate_limit_snapshot(claude_limits(/*primary_used*/ 42));
+
+    let display = chat
+        .rate_limit_snapshots_by_limit_id
+        .get("codex")
+        .expect("the pushed Claude limits are stored");
+    assert_eq!(display.limit_name, "Claude");
+    assert_eq!(
+        display.primary.as_ref().map(|window| window.used_percent),
+        Some(42.0)
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
+        Some("5h 58% left".to_string())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        Some("weekly 93% left".to_string())
+    );
+}
+
+#[tokio::test]
+async fn pushed_limits_do_not_overwrite_the_limits_a_chatgpt_account_fetches() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    set_chatgpt_auth(&mut chat);
+    assert!(chat.should_prefetch_rate_limits());
+
+    chat.on_rolling_rate_limit_snapshot(claude_limits(/*primary_used*/ 42));
+    assert!(chat.rate_limit_snapshots_by_limit_id.get("codex").is_none());
+
+    chat.on_rate_limit_snapshot(Some(claude_limits(/*primary_used*/ 10)));
+    chat.on_rolling_rate_limit_snapshot(claude_limits(/*primary_used*/ 42));
+    assert_eq!(
+        chat.rate_limit_snapshots_by_limit_id
+            .get("codex")
+            .and_then(|display| display.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(10.0)
+    );
+}
+
+#[tokio::test]
+async fn the_dashboard_state_carries_the_stored_limits() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert_eq!(chat.dashboard_limits(), Vec::new());
+
+    chat.on_rolling_rate_limit_snapshot(claude_limits(/*primary_used*/ 42));
+
+    let limits = serde_json::to_value(chat.dashboard_limits()).expect("serialize limits");
+    assert_eq!(
+        limits,
+        serde_json::json!([
+            { "label": "Claude 5h", "used_percent": 42, "resets_at": null },
+            { "label": "Claude weekly", "used_percent": 7, "resets_at": null },
+        ])
+    );
+}

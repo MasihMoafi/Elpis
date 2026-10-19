@@ -15,6 +15,7 @@ use crate::motion::ReducedMotionIndicator;
 use crate::motion::activity_indicator;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::line_utils::line_to_static;
+use crate::style::accent_color;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::LogicalLineSource;
 use crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines;
@@ -23,7 +24,7 @@ use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::remap_source_wrapped_line;
 use crate::terminal_hyperlinks::visible_lines;
 use crate::tool_output::tool_output_hyperlink_preview;
-use crate::ui_consts::TRANSCRIPT_HINT;
+use crate::ui_consts::transcript_hint;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line_with_source;
 use codex_ansi_escape::ansi_escape_line;
@@ -302,7 +303,7 @@ impl HistoryCell for ExecCell {
 impl ExecCell {
     fn output_ellipsis_text(omitted: usize) -> String {
         let noun = if omitted == 1 { "line" } else { "lines" };
-        format!("… +{omitted} {noun} ({TRANSCRIPT_HINT})")
+        format!("… +{omitted} {noun} ({})", transcript_hint())
     }
 
     fn output_ellipsis_line(omitted: usize) -> Line<'static> {
@@ -426,12 +427,7 @@ impl ExecCell {
                     );
                 }
                 let line = Line::from(line);
-                // Elpis: exploring titles in the Elpis gradient, moving while active.
-                let mut initial_indent = Line::from(crate::elpis_motion::animated_text(
-                    title,
-                    self.animations_enabled() && self.active_start_time().is_some(),
-                ));
-                initial_indent.spans.push(" ".into());
+                let initial_indent = Line::from(vec![title.fg(accent_color()), " ".into()]);
                 let subsequent_indent = " ".repeat(initial_indent.width()).into();
                 let wrapped = adaptive_wrap_hyperlink_lines(
                     &[line.into()],
@@ -464,11 +460,8 @@ impl ExecCell {
             .duration
             .and_then(|_| call.output.as_ref().map(|o| o.exit_code == 0));
         let bullet = match success {
-            // Elpis: success in the accent, failure as a warning.
-            Some(true) => Span::from("•").style(crate::elpis_motion::accent_style()),
-            Some(false) => Span::from("•").style(crate::style::status_style(
-                crate::style::StatusTone::Attention,
-            )),
+            Some(true) => "•".green().bold(),
+            Some(false) => "•".red().bold(),
             None => activity_marker(call.start_time, self.animations_enabled()),
         };
         let is_interaction = call.is_unified_exec_interaction();
@@ -954,7 +947,7 @@ mod tests {
             .split_whitespace()
             .join(" ");
         assert!(
-            normalized.contains(TRANSCRIPT_HINT),
+            normalized.contains(&transcript_hint()),
             "expected truncated output to advertise transcript shortcut, got {normalized}"
         );
     }
@@ -986,7 +979,7 @@ mod tests {
         assert!(
             rendered
                 .iter()
-                .any(|line| line.contains("… +6 lines (ctrl+t to view transcript)")),
+                .any(|line| line.contains("… +6 lines (⌃t to view transcript)")),
             "expected omitted hint to count hidden lines (not wrapped rows), got: {rendered:?}"
         );
     }
@@ -1014,7 +1007,7 @@ mod tests {
 
         assert_eq!(
             rendered,
-            vec!["1", "2", "… +3 lines (ctrl+t to view transcript)", "6", "7",]
+            vec!["1", "2", "… +3 lines (⌃t to view transcript)", "6", "7",]
         );
     }
 

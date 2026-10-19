@@ -14,6 +14,7 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 const WIDTH: u16 = 150;
+const LEDGER_THREAD: &str = "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10";
 
 /// Point the widget at a temporary Elpis home and project holding every kind of ledger source,
 /// then load the rows the way the App's loader does.
@@ -25,8 +26,12 @@ fn configure_ledger_sources(
     let memories = home.join("memories");
     let cwd = root.join("project");
     let global = root.join("global/AGENTS.md");
-    let workspace = crate::legacy_core::elpis_context::workspace_context_dir(Some(&memories), &cwd)
-        .expect("workspace path");
+    let workspace = crate::legacy_core::elpis_context::thread_context_dir(
+        Some(&memories),
+        &cwd,
+        LEDGER_THREAD,
+    )?
+    .expect("workspace path");
     std::fs::create_dir_all(global.parent().expect("global parent"))?;
     std::fs::create_dir_all(&cwd)?;
     std::fs::create_dir_all(&workspace)?;
@@ -59,7 +64,7 @@ fn seed_ledger_from_disk(chat: &mut ChatWidget) -> anyhow::Result<ManualMemoryRe
     let (admission_path, memory_path) =
         crate::legacy_core::elpis_context::manual_memory_storage_paths(Some(&memories), &cwd)
             .ok_or_else(|| anyhow::anyhow!("ledger storage is unavailable"))?;
-    let thread_id = ThreadId::new();
+    let thread_id = ThreadId::from_string(LEDGER_THREAD)?;
     let target = ManualMemoryRequestTarget {
         view: ManualMemoryViewKey {
             epoch: chat
@@ -83,6 +88,7 @@ fn seed_ledger_from_disk(chat: &mut ChatWidget) -> anyhow::Result<ManualMemoryRe
         &chat.instruction_source_paths_as_path_bufs(),
         /*dev_rule_roots*/ &[],
         Some(&status),
+        Some(&target.view.displayed_thread_id.to_string()),
     )?;
     chat.bind_manual_memory_loading(
         target.clone(),
@@ -128,25 +134,350 @@ fn ledger_alone(chat: &ChatWidget) -> Vec<String> {
     rows(&buf, 0..width)
 }
 
+#[tokio::test]
+async fn owned_ledger_displays_complete_source_names_at_narrow_widths() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    let (memories, cwd) = configure_ledger_sources(&mut chat, root.path())?;
+    let long_names = ["dev/CODING_GUIDELINES.md", "docs/数据数据_说明文档.md"];
+    for relative in long_names {
+        let path = cwd.join(relative);
+        std::fs::create_dir_all(path.parent().expect("fixture parent"))?;
+        std::fs::write(&path, "Long context filename fixture")?;
+        crate::legacy_core::elpis_context::add_continuity_source(
+            Some(&memories),
+            &cwd,
+            std::path::Path::new(relative),
+        )?;
+    }
+    seed_ledger_from_disk(&mut chat)?;
+    for width in [28, 32, 48, 52] {
+        let area = Rect::new(0, 0, width, 180);
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        chat.render_context_ledger_column(area, &mut buffer);
+        let text = rows(&buffer, 0..width).join("\n");
+        for name in ["MEMORY.md", "Global AGENTS.md", "Project AGENTS.md"] {
+            assert!(
+                text.contains(name),
+                "complete {name} at width {width}:\n{text}"
+            );
+        }
+        let flattened = text
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+        for relative in long_names {
+            assert!(
+                flattened.contains(relative),
+                "wrapped filename stays complete at width {width}: {relative}\n{text}"
+            );
+            let destination = url::Url::from_file_path(cwd.join(relative))
+                .expect("fixture file URL")
+                .to_string();
+            let escape = format!("\x1b]8;;{destination}\x07");
+            let linked_cells = area
+                .positions()
+                .filter(|&position| buffer[position].symbol().contains(&escape))
+                .collect::<Vec<_>>();
+            let linked = linked_cells
+                .iter()
+                .map(|&position| crate::terminal_hyperlinks::strip_osc8(buffer[position].symbol()))
+                .collect::<String>()
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>();
+            assert!(
+                linked.contains(relative),
+                "every wrapped filename segment keeps its file destination at width {width}: {linked}"
+            );
+            assert!(
+                linked.contains("est.tokens"),
+                "the source metadata still links to its file at width {width}: {linked}"
+            );
+            let last = *linked_cells.last().expect("linked metadata row");
+            assert!(
+                linked_cells.first().expect("first linked row").y < last.y,
+                "this fixture must actually wrap"
+            );
+            let path = cwd.join(relative);
+            let before = chat
+                .continuity_sources()
+                .into_iter()
+                .find(|source| source.path == path)
+                .expect("fixture source")
+                .admitted;
+            assert!(
+                !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                    kind: crossterm::event::MouseEventKind::Down(
+                        crossterm::event::MouseButton::Left
+                    ),
+                    column: last.x,
+                    row: last.y,
+                    modifiers: KeyModifiers::CONTROL,
+                }),
+                "Ctrl+click stays with the file link"
+            );
+            assert!(
+                chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                    kind: crossterm::event::MouseEventKind::Down(
+                        crossterm::event::MouseButton::Left
+                    ),
+                    column: last.x,
+                    row: last.y,
+                    modifiers: KeyModifiers::NONE,
+                }),
+                "the visible wrapped metadata row toggles its source"
+            );
+            seed_ledger_from_disk(&mut chat)?;
+            assert_ne!(
+                chat.continuity_sources()
+                    .into_iter()
+                    .find(|source| source.path == path)
+                    .expect("fixture source")
+                    .admitted,
+                before,
+                "the click maps back to {relative}"
+            );
+        }
+        assert!(
+            (0..width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
+            "the pinned Close row never inherits a file hyperlink"
+        );
+        let expected_sources = chat.continuity_sources().len();
+        assert_eq!(
+            text.matches("EXCLUDED").count() + text.matches("INCLUDED").count(),
+            expected_sources,
+            "estimates and admission states survive filename wrapping at width {width}"
+        );
+        assert_eq!(text.matches("est. tokens").count(), expected_sources);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    for _ in 0..16 {
+        if chat
+            .selected_continuity_source()
+            .is_some_and(|source| source.name == "ES.md")
+        {
+            break;
+        }
+        chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    }
+    let selected = chat.selected_continuity_source().expect("selected source");
+    assert_eq!(selected.name, "ES.md");
+    let path = selected.path.clone();
+    let admitted = selected.admitted;
+    let destination = url::Url::from_file_path(&path)
+        .expect("source file URL")
+        .to_string();
+    let escape = format!("\x1b]8;;{destination}\x07");
+    let area = Rect::new(0, 0, 28, 4);
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    chat.render_context_ledger_column(area, &mut buffer);
+    let text = rows(&buffer, 0..area.width).join("\n");
+    assert!(
+        !text.contains("CONTEXT LEDGER"),
+        "the selected source really scrolled: {text}"
+    );
+    assert!(
+        text.contains("ES.md"),
+        "the selected source fits below Close: {text}"
+    );
+    let close_x = (0..area.width)
+        .find(|&x| buffer[(x, 0)].symbol() == "✕")
+        .expect("pinned Close");
+    assert!(
+        (0..area.width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
+        "the Close row has no source file links after scrolling"
+    );
+    let last = area
+        .positions()
+        .filter(|&position| buffer[position].symbol().contains(&escape))
+        .last()
+        .expect("visible linked source metadata");
+    assert_eq!(
+        last.y,
+        area.bottom() - 1,
+        "selection scrolling uses the body height, excluding Close"
+    );
+    assert!(
+        chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: last.x,
+            row: last.y,
+            modifiers: KeyModifiers::NONE,
+        })
+    );
+    seed_ledger_from_disk(&mut chat)?;
+    assert_ne!(
+        chat.continuity_sources()
+            .into_iter()
+            .find(|source| source.path == path)
+            .expect("clicked source")
+            .admitted,
+        admitted,
+        "a scrolled visible metadata click toggles ES.md"
+    );
+    assert!(
+        !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: close_x,
+            row: 0,
+            modifiers: KeyModifiers::CONTROL,
+        })
+    );
+    assert!(
+        chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: close_x,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    );
+    assert_eq!(chat.context_ledger_width(WIDTH), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.last_rendered_width.set(Some(WIDTH));
+    for width in [0, 1, 2, 3, 11, 12, 28] {
+        for height in 0..=2 {
+            show_context_ledger(&mut chat);
+            let area = Rect::new(7, 5, width, height);
+            let mut buffer = ratatui::buffer::Buffer::empty(area);
+            chat.render_context_ledger_column(area, &mut buffer);
+            let close = area
+                .positions()
+                .find(|&position| buffer[position].symbol() == "✕");
+            if width >= 12 && height > 0 {
+                let close = close.expect("a full Close button fits");
+                assert_eq!(close.y, area.y);
+                assert!(
+                    chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                        kind: crossterm::event::MouseEventKind::Down(
+                            crossterm::event::MouseButton::Left
+                        ),
+                        column: close.x,
+                        row: close.y,
+                        modifiers: KeyModifiers::NONE,
+                    })
+                );
+                assert_eq!(chat.context_ledger_width(WIDTH), 0);
+            } else {
+                assert!(close.is_none(), "a clipped button is never painted");
+                assert!(
+                    !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                        kind: crossterm::event::MouseEventKind::Down(
+                            crossterm::event::MouseButton::Left
+                        ),
+                        column: area.x,
+                        row: area.y,
+                        modifiers: KeyModifiers::NONE,
+                    })
+                );
+            }
+            if width == 28 && height == 2 {
+                let body = (area.x..area.right())
+                    .map(|x| buffer[(x, area.y + 1)].symbol())
+                    .collect::<String>();
+                assert!(
+                    body.contains("CONTEXT LEDGER"),
+                    "the only body row is the title: {body}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn source_headings_are_teal_and_included_markers_are_olive() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    // Admission defaults are off; this rendering fixture needs an included row.
+    chat.manual_memory_cache
+        .sources
+        .first_mut()
+        .expect("fixture has a ledger source")
+        .admitted = true;
+    for bg in [(255, 255, 255), (24, 24, 24)] {
+        crate::terminal_palette::with_test_default_colors(
+            crate::terminal_probe::DefaultColors {
+                fg: (32, 32, 32),
+                bg,
+            },
+            || {
+                let width = chat.context_ledger_width(WIDTH);
+                let area = Rect::new(0, 0, width, chat.context_ledger_desired_height(width));
+                let mut buf = ratatui::buffer::Buffer::empty(area);
+                chat.render_context_ledger(area, &mut buf);
+                let text = rows(&buf, 0..width);
+                for label in [
+                    "SESSION CONTINUITY",
+                    "DURABLE MEMORY",
+                    "INSTRUCTIONS",
+                    "INCLUDED",
+                ] {
+                    let (y, line) = text
+                        .iter()
+                        .enumerate()
+                        .find(|(_, line)| line.contains(label))
+                        .unwrap_or_else(|| panic!("missing {label}"));
+                    let x = line
+                        .chars()
+                        .collect::<Vec<_>>()
+                        .windows(label.len())
+                        .position(|chars| chars.iter().collect::<String>() == label)
+                        .unwrap();
+                    let style = if label == "INCLUDED" {
+                        crate::style::context_style()
+                    } else {
+                        crate::style::section_style()
+                    };
+                    assert_eq!(Some(buf[(x as u16, y as u16)].fg), style.fg, "{label}");
+                }
+                assert_ne!(
+                    crate::style::section_style().fg,
+                    crate::style::context_style().fg
+                );
+            },
+        );
+    }
+    Ok(())
+}
+
 /// The ledger's top row is the composer box's top row, and its last line is on screen.
 fn assert_ledger_beside_composer(chat: &ChatWidget, buf: &ratatui::buffer::Buffer) {
     let ledger_width = chat.context_ledger_width(WIDTH);
     assert!(ledger_width > 0, "the ledger is hidden");
     let left = rows(buf, 0..WIDTH - ledger_width);
     let right = rows(buf, WIDTH - ledger_width..WIDTH);
-    let identity_row = left
+    let composer_row = left
         .iter()
-        .position(|row| row.contains("· location"))
-        .expect("the identity line sits directly above the composer");
+        .position(|row| row.contains("›"))
+        .expect("the native composer remains beside the Ledger");
     let ledger_top = right
         .iter()
         .position(|row| row.contains("CONTEXT LEDGER"))
         .expect("the ledger is drawn beside the composer");
-    assert_eq!(
-        ledger_top,
-        identity_row + 1,
-        "the ledger must start on the composer box's top row\n{}",
-        rows(buf, 0..WIDTH).join("\n")
+    assert!(
+        ledger_top <= composer_row,
+        "Ledger starts below the composer"
+    );
+    assert!(
+        !left.iter().any(|row| row.contains("· location")),
+        "custom identity row returned"
     );
     let last = ledger_alone(chat)
         .into_iter()
@@ -164,19 +495,19 @@ fn assert_ledger_beside_composer(chat: &ChatWidget, buf: &ratatui::buffer::Buffe
 async fn ledger_top_aligns_with_the_composer_and_runs_down_untrimmed() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
 
     // Inline screen.
     let inline = render_full(&chat.as_renderable());
     assert_ledger_beside_composer(&chat, &inline);
 
-    // Fullscreen (owned) screen.
-    let owned = chat.bottom_pane_renderable(
-        /*footer*/ None,
-        crate::bottom_pane::CommandPopupPlacement::Overlay,
-        /*composer_gap*/ None,
-        /*working_tip*/ None,
-    );
+    // Overlay suggestions without the full-screen Ledger column keep the Ledger beside the
+    // composer; the full screen's own column is checked in `owned_transcript_render_cost_tests`.
+    let owned = chat.bottom_pane_renderable(crate::bottom_pane::ComposerRenderOptions {
+        command_popup_placement: crate::bottom_pane::CommandPopupPlacement::Overlay,
+        ..Default::default()
+    });
     assert_ledger_beside_composer(&chat, &render_full(&owned));
     Ok(())
 }
@@ -185,41 +516,255 @@ async fn ledger_top_aligns_with_the_composer_and_runs_down_untrimmed() -> anyhow
 async fn hidden_ledger_gives_the_composer_the_full_width() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    // Alt+C focuses the Ledger first, then hides it.
+    for _ in 0..2 {
+        chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    }
 
     assert_eq!(chat.context_ledger_width(WIDTH), 0);
     let buf = render_full(&chat.as_renderable());
     let screen = rows(&buf, 0..WIDTH).join("\n");
     assert!(!screen.contains("CONTEXT LEDGER"), "{screen}");
+    assert!(
+        !screen.contains('│'),
+        "a Ledger rule is left behind\n{screen}"
+    );
+    assert!(
+        screen.contains('›'),
+        "the native composer is missing\n{screen}"
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn tab_focuses_the_ledger_and_alt_c_hides_it_without_touching_the_draft() {
+async fn ledger_rule_runs_down_beside_the_native_composer() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    let buf = render_full(&chat.as_renderable());
+    let screen = rows(&buf, 0..WIDTH).join("\n");
+    let ledger_width = chat.context_ledger_width(WIDTH);
+    let rule_x = WIDTH - ledger_width;
+
+    // The native composer draws no box, so the Ledger's left rule is a plain line. It starts on
+    // the Ledger's first row, below the blank row Codex leaves above the composer.
+    let ledger_top = rows(&buf, rule_x + 1..WIDTH)
+        .iter()
+        .position(|row| row.contains("CONTEXT LEDGER"))
+        .expect("the Ledger is drawn") as u16;
+    for y in ledger_top..ledger_top + chat.context_ledger_desired_height(ledger_width) {
+        assert_eq!(buf[(rule_x, y)].symbol(), "│", "row {y}\n{screen}");
+    }
+    if let Some(above) = ledger_top.checked_sub(1) {
+        assert_eq!(
+            buf[(rule_x, above)].symbol(),
+            " ",
+            "the rule extends above the Ledger\n{screen}"
+        );
+    }
+    assert!(
+        !screen.contains(['┌', '└', '┐', '┘', '┤']),
+        "composer box returned\n{screen}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn ledger_keeps_codex_right_margin_and_measures_wide_names() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    // Each of these characters takes two columns, so a count of characters is half the width.
+    let wide = root
+        .path()
+        .join("数据数据数据数据数据数据数据数据数据数据数据数据.md");
+    std::fs::write(&wide, "Wide name")?;
+    submit(&mut chat, &format!("/add {}", wide.display()));
+    seed_ledger_from_disk(&mut chat)?;
+
+    let buf = render_full(&chat.as_renderable());
+    let screen = rows(&buf, 0..WIDTH).join("\n");
+    // Codex keeps its last two columns free (`FOOTER_INDENT_COLS`); so does the Ledger.
+    for row in rows(&buf, WIDTH - 2..WIDTH) {
+        assert_eq!(
+            row.trim(),
+            "",
+            "the Ledger wrote into Codex's right margin\n{screen}"
+        );
+    }
+    let ledger_width = chat.context_ledger_width(WIDTH);
+    let source_rows = rows(&buf, WIDTH - ledger_width..WIDTH)
+        .into_iter()
+        .filter(|row| row.contains("est. tokens"))
+        .collect::<Vec<_>>();
+    assert!(source_rows.len() >= 6, "{screen}");
+    for row in &source_rows {
+        let row = row.trim_end();
+        assert!(
+            row.ends_with("INCLUDED") || row.ends_with("EXCLUDED"),
+            "a source row lost its state word: {row:?}\n{screen}"
+        );
+    }
+    assert!(
+        // A wide character's second cell reads as a space here.
+        source_rows
+            .iter()
+            .any(|row| row.replace(' ', "").contains("…据数据")),
+        "the wide name is shortened from the left\n{screen}"
+    );
+    Ok(())
+}
+
+/// The shared test config binds Tab to queueing; these tests need Elpis's default keymap.
+fn use_default_keymap(chat: &mut ChatWidget) {
+    chat.bottom_pane
+        .set_keymap_bindings(&crate::keymap::RuntimeKeymap::defaults());
+}
+
+#[tokio::test]
+async fn ledger_shortcuts_focus_and_hide_without_touching_the_draft() {
+    for key in [
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT),
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        KeyEvent::from(KeyCode::Tab),
+    ] {
+        let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+        use_default_keymap(&mut chat);
+        show_context_ledger(&mut chat);
+        chat.last_rendered_width.set(Some(WIDTH));
+        chat.bottom_pane
+            .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
+        assert!(chat.context_ledger_width(WIDTH) > 0, "visible by default");
+
+        chat.handle_key_event(key);
+        assert!(chat.context_ledger_has_focus());
+        let area = Rect::new(0, 0, WIDTH, 40);
+        assert_eq!(chat.as_renderable().cursor_pos(area), None);
+
+        chat.handle_key_event(key);
+        assert_eq!(chat.context_ledger_width(WIDTH), 0);
+        chat.handle_key_event(key);
+        assert!(chat.context_ledger_width(WIDTH) > 0);
+
+        assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
+        assert!(op_rx.try_recv().is_err(), "nothing was submitted");
+    }
+}
+
+#[tokio::test]
+async fn ctrl_x_preserves_custom_editor_binding_after_live_keymap_update() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-    chat.last_rendered_width.set(Some(WIDTH));
+    let config = toml::from_str("[editor]\nkill_line_end = 'ctrl-x'").unwrap();
+    let runtime = crate::keymap::RuntimeKeymap::from_config(&config).unwrap();
+    chat.apply_keymap_update(config, &runtime);
+    chat.bottom_pane
+        .set_composer_text("Cut this draft".into(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+    assert!(!chat.context_ledger_has_focus());
+    assert!(op_rx.try_recv().is_err());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+    assert!(chat.context_ledger_has_focus(), "Alt+C remains available");
+}
+
+#[tokio::test]
+async fn ctrl_x_preserves_custom_vim_search_after_live_keymap_update() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    let config =
+        toml::from_str("[chat]\ntoggle_voice_mute = []\n[vim_search]\nforward = 'ctrl-x'").unwrap();
+    let runtime = crate::keymap::RuntimeKeymap::from_config(&config).unwrap();
+    chat.apply_keymap_update(config, &runtime);
+    chat.toggle_vim_mode_and_notify();
+    chat.bottom_pane
+        .set_composer_text("Find this draft".into(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(chat.bottom_pane.no_modal_or_popup_active());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert!(
+        !chat.bottom_pane.no_modal_or_popup_active(),
+        "Vim search must open"
+    );
+    assert!(!chat.context_ledger_has_focus());
+    assert_eq!(chat.bottom_pane.composer_text(), "Find this draft");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn ctrl_x_leaves_menus_and_completions_in_control() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.dispatch_command(SlashCommand::Feedback);
+    let before = render_bottom_popup(&chat, 80);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert_eq!(render_bottom_popup(&chat, 80), before);
+    assert!(!chat.context_ledger_has_focus());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    chat.bottom_pane
+        .set_composer_text("/com".into(), Vec::new(), Vec::new());
+    chat.bottom_pane.pre_draw_tick();
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL));
+    assert!(!chat.context_ledger_has_focus());
+    assert_eq!(chat.bottom_pane.composer_text(), "/com");
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    assert_eq!(chat.bottom_pane.composer_text(), "/compact ");
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn plain_x_and_repeated_ctrl_x_do_not_toggle_the_ledger() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    for kind in [KeyEventKind::Repeat, KeyEventKind::Release] {
+        chat.handle_key_event(KeyEvent::new_with_kind(
+            KeyCode::Char('x'),
+            KeyModifiers::CONTROL,
+            kind,
+        ));
+        assert!(!chat.context_ledger_has_focus());
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Char('x')));
+    assert!(!chat.context_ledger_has_focus());
+    // A normal non-character key flushes the composer's held first character.
+    chat.handle_key_event(KeyEvent::from(KeyCode::Right));
+    assert_eq!(chat.composer_text_with_pending(), "x");
+    assert!(!chat.context_ledger_has_focus());
+    assert!(op_rx.try_recv().is_err());
+}
+
+/// Typing, Alt+C, then Backspace: Backspace must edit the draft, not act on a
+/// Ledger row. Only Tab, arrows and the Ledger's own keys belong to the panel.
+#[tokio::test]
+async fn backspace_in_the_focused_ledger_edits_the_draft() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
     chat.bottom_pane
         .set_composer_text("Keep this draft".into(), Vec::new(), Vec::new());
-    assert!(chat.context_ledger_width(WIDTH) > 0, "visible by default");
+    let ledger_before = ledger_alone(&chat);
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     assert!(chat.context_ledger_has_focus());
-    let area = Rect::new(0, 0, WIDTH, 40);
-    assert_eq!(chat.as_renderable().cursor_pos(area), None);
+    chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Backspace));
 
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
-    assert_eq!(chat.context_ledger_width(WIDTH), 0);
-    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
-    assert!(chat.context_ledger_width(WIDTH) > 0);
-
-    assert_eq!(chat.bottom_pane.composer_text(), "Keep this draft");
+    assert_eq!(chat.bottom_pane.composer_text(), "Keep this dra");
+    assert!(
+        !chat.context_ledger_has_focus(),
+        "typing returns to the composer"
+    );
+    assert_eq!(ledger_alone(&chat), ledger_before, "no Ledger row changed");
     assert!(op_rx.try_recv().is_err(), "nothing was submitted");
+    Ok(())
 }
 
 #[tokio::test]
 async fn tab_completes_a_slash_command_before_touching_the_ledger() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
     chat.bottom_pane
         .set_composer_text("/com".into(), Vec::new(), Vec::new());
@@ -243,10 +788,11 @@ fn row_state(chat: &ChatWidget, name: &str) -> String {
 async fn space_on_a_focused_row_writes_its_admission() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let before = row_state(&chat, "ES.md");
 
-    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
     for _ in 0..16 {
         if chat
             .selected_continuity_source()
@@ -273,6 +819,7 @@ async fn space_on_a_focused_row_writes_its_admission() -> anyhow::Result<()> {
 async fn space_with_the_ledger_unfocused_leaves_admissions_alone() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let before = row_state(&chat, "ES.md");
 
@@ -294,6 +841,7 @@ fn submit(chat: &mut ChatWidget, text: &str) {
 async fn add_puts_a_file_under_user_files() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
     let notes = root.path().join("user-notes.md");
     std::fs::write(&notes, "Manually selected context")?;
@@ -317,6 +865,7 @@ async fn add_puts_a_file_under_user_files() -> anyhow::Result<()> {
 async fn bare_add_prints_its_usage_and_adds_nothing() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
 
     submit(&mut chat, "/add");
@@ -336,6 +885,7 @@ async fn bare_add_prints_its_usage_and_adds_nothing() -> anyhow::Result<()> {
 async fn context_asks_the_app_for_the_report_once_the_ledger_is_loaded() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     configure_ledger_sources(&mut chat, root.path())?;
 
     submit(&mut chat, "/context");
@@ -353,6 +903,7 @@ async fn context_asks_the_app_for_the_report_once_the_ledger_is_loaded() -> anyh
 #[tokio::test]
 async fn context_before_the_ledger_loads_says_so_and_asks_for_nothing() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
 
     submit(&mut chat, "/context");
 
@@ -366,6 +917,7 @@ async fn context_before_the_ledger_loads_says_so_and_asks_for_nothing() {
 #[tokio::test]
 async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
 
     let ledger = ledger_alone(&chat).join("\n");
@@ -379,6 +931,38 @@ async fn smart_prune_row_syncs_then_shows_the_thread_state_as_in_v030() {
     let ledger = ledger_alone(&chat).join("\n");
     assert!(ledger.contains("[━━━●] ON"), "{ledger}");
     assert!(!ledger.contains("SYNC"), "{ledger}");
+}
+
+#[tokio::test]
+async fn smart_prune_row_says_what_it_does_on_claude_and_antigravity_chats() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    chat.last_rendered_width.set(Some(WIDTH));
+    chat.smart_prune_synced = true;
+    chat.smart_prune.enabled = true;
+
+    // Negative: a GPT chat keeps the usual Smart Prune line.
+    let ledger = ledger_words(&chat);
+    assert!(ledger.contains("Before first main-model send"), "{ledger}");
+    assert!(
+        !ledger.contains("Does not apply to Claude or Antigravity chats"),
+        "{ledger}"
+    );
+
+    // A Claude chat's tool results shrink in the bridge's Claude proxy while the switch is on.
+    chat.set_model("claude/opus");
+    let ledger = ledger_words(&chat);
+    assert!(ledger.contains("through the Claude proxy"), "{ledger}");
+    assert!(!ledger.contains("Does not apply"), "{ledger}");
+
+    // An Antigravity chat's requests go to Google: the switch skips them.
+    chat.set_model("agy/gemini-3.8-flash-high");
+    let ledger = ledger_words(&chat);
+    assert!(
+        ledger.contains("Does not apply to Antigravity chats"),
+        "{ledger}"
+    );
+    assert!(!ledger.contains("Before first main-model send"), "{ledger}");
 }
 
 /// One `thread/tokenUsage/updated`, as the app server sends it after a sampled response.
@@ -438,6 +1022,7 @@ fn planted_attribution() -> codex_app_server_protocol::ThreadContextAttribution 
 #[tokio::test]
 async fn context_window_shows_category_shares_once_the_server_sends_them() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
 
     token_usage_update(&mut chat, Some(planted_attribution()));
@@ -446,7 +1031,10 @@ async fn context_window_shows_category_shares_once_the_server_sends_them() {
     for category in ["User messages", "Agent messages", "System instructions"] {
         assert!(ledger.contains(category), "missing {category}:\n{ledger}");
     }
-    assert!(!ledger.contains("category attribution unavailable"), "{ledger}");
+    assert!(
+        !ledger.contains("category attribution unavailable"),
+        "{ledger}"
+    );
 
     // A later update without shares (a replay) keeps the last known ones.
     token_usage_update(&mut chat, /*context_attribution*/ None);
@@ -457,11 +1045,118 @@ async fn context_window_shows_category_shares_once_the_server_sends_them() {
 #[tokio::test]
 async fn context_window_says_attribution_is_unavailable_until_shares_arrive() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
     chat.last_rendered_width.set(Some(WIDTH));
 
     token_usage_update(&mut chat, /*context_attribution*/ None);
 
     let ledger = ledger_words(&chat);
-    assert!(ledger.contains("category attribution unavailable"), "{ledger}");
+    assert!(
+        ledger.contains("category attribution unavailable"),
+        "{ledger}"
+    );
     assert!(!ledger.contains("User messages"), "{ledger}");
+}
+
+/// Draws the Ledger at the screen's top-left corner, then clicks the first row that shows
+/// `text`, a few columns in. Returns whether the Ledger took the click.
+fn click_ledger_row(chat: &mut ChatWidget, text: &str, modifiers: KeyModifiers) -> bool {
+    chat.last_rendered_width.set(Some(WIDTH));
+    let row = ledger_alone(chat)
+        .iter()
+        .position(|row| row.contains(text))
+        .unwrap_or_else(|| panic!("no ledger row shows {text}"));
+    chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: 4,
+        row: u16::try_from(row).expect("ledger row fits the screen"),
+        modifiers,
+    })
+}
+
+#[tokio::test]
+async fn clicking_a_source_row_writes_its_admission() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    let before = row_state(&chat, "ES.md");
+
+    assert!(click_ledger_row(&mut chat, "ES.md", KeyModifiers::NONE));
+    seed_ledger_from_disk(&mut chat)?;
+
+    let after = row_state(&chat, "ES.md");
+    assert!(
+        before.contains("INCLUDED") && after.contains("EXCLUDED")
+            || before.contains("EXCLUDED") && after.contains("INCLUDED"),
+        "{before:?} -> {after:?}"
+    );
+    assert!(
+        !chat.context_ledger_has_focus(),
+        "a click leaves typing in the composer"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn ctrl_click_on_a_source_row_leaves_its_admission_to_the_file_link() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    configure_ledger_sources(&mut chat, root.path())?;
+    let before = row_state(&chat, "ES.md");
+
+    assert!(!click_ledger_row(&mut chat, "ES.md", KeyModifiers::CONTROL));
+    seed_ledger_from_disk(&mut chat)?;
+
+    assert_eq!(row_state(&chat, "ES.md"), before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn clicking_the_subagents_switch_flips_it() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    let was_on = chat.config.features.enabled(Feature::Collab);
+
+    assert!(click_ledger_row(&mut chat, "SUBAGENTS", KeyModifiers::NONE));
+
+    assert_eq!(chat.context_ledger.pending_subagents_enabled, Some(!was_on));
+    let sent = std::iter::from_fn(|| rx.try_recv().ok()).any(|event| {
+        matches!(event, AppEvent::UpdateFeatureFlags { updates }
+            if updates == vec![(Feature::Collab, !was_on)])
+    });
+    assert!(sent, "the new subagent setting was not saved");
+}
+
+#[tokio::test]
+async fn clicking_a_ledger_heading_does_nothing() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+
+    assert!(!click_ledger_row(
+        &mut chat,
+        "CONTEXT WINDOW",
+        KeyModifiers::NONE
+    ));
+    assert_eq!(chat.context_ledger.pending_subagents_enabled, None);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn tab_during_a_turn_opens_the_ledger_instead_of_queueing() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    use_default_keymap(&mut chat);
+    show_context_ledger(&mut chat);
+    chat.last_rendered_width.set(Some(WIDTH));
+    chat.bottom_pane.set_task_running(/*running*/ true);
+    chat.bottom_pane
+        .set_composer_text("Not a queued message".into(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+
+    assert!(chat.context_ledger_has_focus());
+    assert!(chat.queued_user_message_texts().is_empty());
+    assert_eq!(chat.bottom_pane.composer_text(), "Not a queued message");
+    assert!(op_rx.try_recv().is_err(), "nothing was submitted");
 }

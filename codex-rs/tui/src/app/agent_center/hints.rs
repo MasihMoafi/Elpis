@@ -29,11 +29,13 @@ impl AgentsOverviewView {
                 &self.agents_keymap.search,
                 &self.agents_keymap.new_task,
                 &self.agents_keymap.new_worktree,
+                &self.agents_keymap.fork,
                 &self.agents_keymap.rename,
                 &self.agents_keymap.stop,
                 &self.agents_keymap.archive,
                 &self.agents_keymap.delete,
                 &self.agents_keymap.hide,
+                &self.agents_keymap.toggle_pin,
                 &self.agents_keymap.toggle_grouping,
             ].into_iter().any(|bindings| bindings.contains(binding)))
         })
@@ -82,13 +84,17 @@ impl AgentsOverviewView {
                 "New worktree",
             ),
             ("resume", &self.agents_keymap.resume, "Resume"),
+            ("fork", &self.agents_keymap.fork, "Fork"),
             ("rename", &self.agents_keymap.rename, "Rename"),
             ("stop", &self.agents_keymap.stop, "Stop"),
             ("archive", &self.agents_keymap.archive, "Archive"),
             ("hide", &self.agents_keymap.hide, "Hide"),
             ("delete", &self.agents_keymap.delete, "Delete"),
+            ("toggle_pin", &self.agents_keymap.toggle_pin, "Pin/unpin"),
         ] {
-            if action != "new_worktree" || self.worktrees_enabled {
+            if (action != "new_worktree" || self.worktrees_enabled)
+                && (action != "toggle_pin" || self.can_toggle_selected_pin())
+            {
                 tasks.push(self.agents_keymap.primary_hint(action, bindings), label);
             }
         }
@@ -96,6 +102,14 @@ impl AgentsOverviewView {
             title: "View",
             entries: Vec::new(),
         };
+        if !self
+            .center_shortcut_keys
+            .is_pressed(KeyCode::Char('s').into())
+        {
+            tasks
+                .entries
+                .push(Shortcut::new(key_hint::plain(KeyCode::Char('s')), "Steer"));
+        }
         let filter = self.center_filter_hint();
         if !filter.is_empty() {
             view.entries.push(Shortcut {
@@ -123,6 +137,16 @@ impl AgentsOverviewView {
 
     pub(super) fn center_footer_hints(&self) -> Vec<(String, String)> {
         let state = self.state();
+        if state.stop_target.is_some() {
+            return [(ListAction::Accept, "stop"), (ListAction::Cancel, "cancel")]
+                .into_iter()
+                .filter_map(|(action, label)| {
+                    self.keymap
+                        .primary_hint(action)
+                        .map(|hint| (hint.display_label(), label.to_string()))
+                })
+                .collect();
+        }
         if let Some(items) = &state.key_chord_hint {
             return items.clone();
         }
@@ -163,13 +187,29 @@ impl AgentsOverviewView {
         if let Some(hint) = self.center_list_hint(ListAction::Accept) {
             hints.push((
                 hint.display_label(),
-                if state.rename_target.is_some() {
+                if state.steer_target.is_some() {
+                    "send"
+                } else if state.rename_target.is_some() {
                     "rename"
                 } else {
                     "open"
                 }
                 .into(),
             ));
+        }
+        if !state.editing_metadata() {
+            if !self
+                .center_shortcut_keys
+                .is_pressed(KeyCode::Char('s').into())
+            {
+                hints.push(("s".into(), "steer".into()));
+            }
+            if let Some(hint) = self
+                .agents_keymap
+                .primary_hint("stop", &self.agents_keymap.stop)
+            {
+                hints.push((hint.display_label(), "stop".into()));
+            }
         }
         if !state.editing_metadata()
             && let Some(hint) = self
