@@ -9,9 +9,12 @@ const SCHEMA = { type: 'object', additionalProperties: false, required: ['answer
 const RULES = 'You are taking part in a self-contained answer-task experiment. Use only the task and supplied predecessor reports. Do not use tools, browse, read files, write files, or delegate. Interpret any role instructions about building or files as producing the corresponding answer or plan in text. Return JSON with answer (only the final answer, no explanation) and report (a concise work summary or critique). Never guess an expected evaluation answer.';
 
 function requestOf(input) {
-  object(input, ['pattern', 'task', 'expected', 'repetitions', 'stages']);
+  object(input, ['pattern', 'task', 'expected', 'repetitions', 'stopWhen', 'stages']);
   const pattern = text(input.pattern, 'pattern', 120), task = text(input.task, 'task', 8000), expected = text(input.expected, 'expected answer', 2000);
   if (!Number.isInteger(input.repetitions) || input.repetitions < 1 || input.repetitions > 10) throw new BridgeError('Repetitions must be a whole number from 1 to 10');
+  // 'solved' repeats until the pattern's answer passes the check; repetitions is then the cap that bounds a task that never passes.
+  const stopWhen = input.stopWhen ?? 'count';
+  if (!['count', 'solved'].includes(stopWhen)) throw new BridgeError('Stop condition must be a fixed count or until the task is solved');
   if (!Array.isArray(input.stages) || !input.stages.length || input.stages.length > 24) throw new BridgeError('Choose a nonempty pattern with at most 24 stages');
   const ids = new Set();
   const stages = input.stages.map(item => {
@@ -30,7 +33,7 @@ function requestOf(input) {
     ready.forEach(s => done.add(s.id));
   }
   if (stages.filter(s => !stages.some(next => next.dependsOn.includes(s.id))).length !== 1) throw new BridgeError('Pattern needs one final answer stage');
-  return { pattern, task, expected, repetitions: input.repetitions, stages };
+  return { pattern, task, expected, repetitions: input.repetitions, stopWhen, stages };
 }
 
 /** One fresh subscription thread per stage; subscribe before turn/start so fast completions are not lost. */
@@ -144,13 +147,23 @@ export function createExperimentLab({ client, file = path.join(process.env.ELPIS
   }
   async function execute() {
     const baseline = [{ id: 'single', title: 'Single agent', instruction: 'Solve the whole task. Return the final answer.', kind: 'implement', dependsOn: [] }];
-    for (let repetition = 1; repetition <= record.request.repetitions && !controller.signal.aborted; repetition++) {
+    const solved = record.request.stopWhen === 'solved';
+    let reason = 'count';
+    repetitions: for (let repetition = 1; repetition <= record.request.repetitions && !controller.signal.aborted; repetition++) {
       for (const arm of repetition % 2 ? ['baseline', 'pattern'] : ['pattern', 'baseline']) {
         if (controller.signal.aborted) break;
         await trial(arm, repetition, arm === 'baseline' ? baseline : record.request.stages);
+        // An error is never retried until it clears: an unbounded run must end on the first one.
+        const last = record.trials.at(-1);
+        if (solved && last.error && !controller.signal.aborted) { reason = 'error'; record.error = `Stopped at the first failed trial: ${last.error}`; break repetitions; }
       }
+      // Only the declared check ends the task; a turn that merely finished does not.
+      if (solved && !controller.signal.aborted && record.trials.some(t => t.repetition === repetition && t.arm === 'pattern' && t.passed)) { reason = 'solved'; break; }
+      if (solved && repetition === record.request.repetitions) reason = 'limit';
     }
-    record.status = controller.signal.aborted ? 'stopped' : 'completed';
+    if (controller.signal.aborted) reason = 'stopped';
+    record.stopReason = reason;
+    record.status = reason === 'stopped' ? 'stopped' : reason === 'error' ? 'failed' : 'completed';
     record.endedAt = new Date().toISOString(); await save();
   }
   return {

@@ -131,7 +131,7 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
     const rows = lab.getByRole('row');
     assert.match(await rows.nth(1).innerText(), /0\/2[\s\S]*Unknown/);
     assert.match(await rows.nth(2).innerText(), /2\/2[\s\S]*120/);
-    assert.equal(requests[0].repetitions, 2); assert.equal(requests[0].pattern, 'voting');
+    assert.equal(requests[0].repetitions, 2); assert.equal(requests[0].pattern, 'voting'); assert.equal(requests[0].stopWhen, 'count', 'fixed-count stays the default');
     assert.equal(requests[0].stages.filter(s => s.kind === 'implement').length, 4);
     await lab.getByText('Trial 1 · Single agent · Fail', { exact: true }).click();
     await lab.getByText('41', { exact: true }).first().waitFor();
@@ -171,5 +171,54 @@ test('Sources and Lab stay readable in light/dark at Masih’s window size', asy
       await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/lab-${theme}.png` });
       await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     }
+  } finally { await f.close(); }
+});
+
+test('Lab offers “Until the task finishes”, sends and restores the choice, and says where the run stands and what is next', async () => {
+  const f = await openCanvas({ desktop: true, width: 1130, height: 660 });
+  let current = null; const requests = [];
+  const trial = (repetition, arm, passed) => ({ repetition, arm, passed, elapsedMs: 1000, tokens: 10, answer: passed ? '42' : '41', error: null, steps: [], endedAt: '2026-10-19T00:00:00Z' });
+  await f.page.route('**/api/experiment-lab**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST') {
+      const data = req.postDataJSON(); requests.push(data);
+      current = { id: 'until', status: 'completed', stopReason: 'solved', model: 'gpt-6-luna', request: data,
+        trials: [trial(1, 'baseline', true), trial(1, 'pattern', false), trial(2, 'pattern', true), trial(2, 'baseline', true)] };
+    }
+    await route.fulfill({ json: { record: current } });
+  });
+  try {
+    await fs.mkdir('/tmp/elpis-lab-ux-screens', { recursive: true });
+    const open = async () => { await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click(); return f.page.getByRole('region', { name: 'Lab', exact: true }); };
+    const lab = await open();
+    const repeat = lab.getByRole('radiogroup', { name: 'Repeat', exact: true });
+    assert.equal(await repeat.getByRole('radio', { name: 'Fixed number', exact: true }).getAttribute('aria-checked'), 'true');
+    await lab.getByRole('spinbutton', { name: 'Repetitions', exact: true }).waitFor();
+    await repeat.getByRole('radio', { name: 'Until the task finishes', exact: true }).click();
+    assert.equal(await repeat.getByRole('radio', { name: 'Until the task finishes', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.equal(await lab.getByRole('spinbutton', { name: 'Repetitions', exact: true }).count(), 0);
+    await lab.getByRole('spinbutton', { name: 'Repetition limit', exact: true }).fill('5');
+    assert.match(await lab.innerText(), /stops when the pattern’s answer matches the expected answer/);
+    await lab.getByRole('textbox', { name: 'Task', exact: true }).fill('What is 19 + 23?');
+    await lab.getByRole('textbox', { name: 'Expected answer', exact: true }).fill('42');
+    assert.match(await lab.innerText(), /Up to \d+ model calls/);
+    await lab.getByRole('button', { name: 'Run comparison', exact: true }).click();
+    await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
+    assert.equal(requests[0].stopWhen, 'solved'); assert.equal(requests[0].repetitions, 5);
+    assert.match(await lab.getByRole('status').innerText(), /Completed · Repetition 2 of up to 5 · 4 trials/);
+    assert.match(await lab.innerText(), /Solved on repetition 2: the pattern’s answer matched[\s\S]*Export JSON before starting another/);
+    await f.page.reload();
+    const again = await open();
+    assert.equal(await again.getByRole('radio', { name: 'Until the task finishes', exact: true }).getAttribute('aria-checked'), 'true', 'the saved choice returns after a reload');
+    assert.equal(await again.getByRole('spinbutton', { name: 'Repetition limit', exact: true }).inputValue(), '5');
+    for (const theme of ['light', 'dark']) for (const [width, height] of [[1130, 660], [400, 760]]) {
+      await f.page.setViewportSize({ width: 1130, height: 660 });
+      if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+      await f.page.setViewportSize({ width, height });
+      assert.equal(await again.evaluate(el => el.scrollWidth <= el.clientWidth), true, `no sideways scroll at ${width}px`);
+      for (const radio of await again.getByRole('radio').all()) { const box = await radio.boundingBox(); assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.height >= 24, `radio fits at ${width}px`); }
+      await f.page.screenshot({ path: `/tmp/elpis-lab-ux-screens/lab-${width}-${theme}.png` });
+    }
+    assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

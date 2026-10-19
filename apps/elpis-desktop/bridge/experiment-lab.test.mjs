@@ -12,15 +12,19 @@ const stage = { id: 'answer', title: 'Answer', instruction: 'Answer independentl
 const input = () => ({ pattern: 'voting', task: 'What is 19 + 23?', expected: '42', repetitions: 2, stages: [stage] });
 class Client extends EventEmitter {
   calls = []; count = 0; prompts = []; auth = 'ChatGPT'; fail = false; hang = false; missingUsage = false;
+  // Answer for the nth pattern-arm turn (1-based); the single-agent arm always answers 42.
+  patternAnswer = () => '42'; patternTurns = 0;
   async providers() { return { openai: { auth: { state: 'signedIn', method: this.auth } } }; }
   async sideRpc(method, params) {
     this.calls.push({ method, params });
     if (method === 'thread/start') return { model: params.model, modelProvider: params.modelProvider, thread: { id: `00000000-0000-0000-0000-${String(++this.count).padStart(12, '0')}`, ephemeral: true } };
     if (method === 'turn/start') {
-      this.prompts.push(params.input[0].text);
+      const prompt = params.input[0].text;
+      this.prompts.push(prompt);
+      const answer = prompt.includes('Your role: Answer') ? this.patternAnswer(++this.patternTurns) : '42';
       if (!this.hang) setTimeout(() => {
         if (!this.missingUsage) this.emit('side', { method: 'thread/tokenUsage/updated', params: { threadId: params.threadId, tokenUsage: { total: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } } } });
-        this.emit('side', { method: 'item/completed', params: { threadId: params.threadId, item: { type: 'agentMessage', phase: 'final_answer', text: JSON.stringify({ answer: '42', report: 'Computed the sum.' }) } } });
+        this.emit('side', { method: 'item/completed', params: { threadId: params.threadId, item: { type: 'agentMessage', phase: 'final_answer', text: JSON.stringify({ answer, report: 'Computed the sum.' }) } } });
         this.emit('side', { method: 'turn/completed', params: { threadId: params.threadId, turn: { status: this.fail ? 'failed' : 'completed', error: this.fail ? { message: 'rate limited' } : null } } });
       }, 2);
       return { turn: { id: `turn-${params.threadId}` } };
@@ -217,4 +221,59 @@ test('the HTTP route requires a private session, returns the record envelope and
   } while (Date.now() < deadline);
   assert.equal(record.trials.length, 2);
   assert.equal((await post({ action: 'stop', unexpected: true })).status, 400);
+});
+
+const until = (extra = {}) => ({ ...input(), repetitions: 5, stopWhen: 'solved', ...extra });
+
+test('until-solved keeps repeating past one turn and stops only when the pattern’s answer passes the check', async () => {
+  const { client, lab, file } = await fixture(); client.patternAnswer = n => n < 3 ? '41' : '42';
+  await lab.start(until());
+  const result = await finish(lab);
+  assert.equal(result.status, 'completed'); assert.equal(result.stopReason, 'solved'); assert.equal(result.request.stopWhen, 'solved');
+  assert.equal(result.trials.length, 6, 'three paired repetitions, not the cap of five');
+  assert.deepEqual(result.trials.filter(t => t.arm === 'pattern').map(t => t.passed), [false, false, true]);
+  assert.ok(result.trials.every(t => t.error === null && t.endedAt));
+  assert.equal(client.listenerCount('side'), 0);
+  assert.deepEqual(await createExperimentLab({ client, file }).read(), result, 'the chosen mode and outcome survive reopening');
+});
+
+test('until-solved never treats a finished turn as a finished task: an unsolved task ends at the cap, saying so', async () => {
+  const { client, lab } = await fixture(); client.patternAnswer = () => '41';
+  await lab.start(until({ repetitions: 3 }));
+  const result = await finish(lab);
+  assert.equal(result.status, 'completed'); assert.equal(result.stopReason, 'limit');
+  assert.equal(result.trials.length, 6); assert.ok(result.trials.every(t => t.endedAt && t.error === null));
+  assert.ok(result.trials.filter(t => t.arm === 'pattern').every(t => !t.passed));
+});
+
+test('until-solved stops at the first failed trial instead of retrying forever', async () => {
+  const { client, lab } = await fixture(); client.fail = true;
+  await lab.start(until({ repetitions: 10 }));
+  const result = await finish(lab);
+  assert.equal(result.status, 'failed'); assert.equal(result.stopReason, 'error');
+  assert.match(result.error, /rate limited/);
+  assert.equal(result.trials.length, 1); assert.equal(client.prompts.length, 1);
+});
+
+test('Stop ends an until-solved run as stopped, not solved', async () => {
+  const { client, lab } = await fixture({ timeoutMs: 10000 }); client.hang = true;
+  await lab.start(until());
+  await new Promise(resolve => setTimeout(resolve, 10));
+  await lab.stop();
+  const result = await finish(lab);
+  assert.equal(result.status, 'stopped'); assert.equal(result.stopReason, 'stopped');
+  assert.equal(client.listenerCount('side'), 0);
+});
+
+test('fixed-count runs ignore the check: every repetition runs even once the pattern passes', async () => {
+  const { lab } = await fixture();
+  await lab.start({ ...input(), repetitions: 3, stopWhen: 'count' });
+  const result = await finish(lab);
+  assert.equal(result.trials.length, 6); assert.equal(result.stopReason, 'count');
+});
+
+test('an unknown stop condition is refused before any model call', async () => {
+  const { client, lab } = await fixture();
+  await assert.rejects(lab.start({ ...input(), stopWhen: 'forever' }), /stop/i);
+  assert.equal(client.calls.length, 0);
 });

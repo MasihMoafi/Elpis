@@ -4,13 +4,19 @@
 .lab h2 { font-size:16px; font-weight:600; }
 .lab p, .sources p { font-size:13px; line-height:1.5; margin:6px 0; }
 .muted { color:var(--muted-foreground); }
-.form { display:grid; gap:10px; }
-.form label { display:grid; gap:6px; font-size:12px; font-weight:500; }
-.fields { display:grid; grid-template-columns:minmax(0,1fr) 130px; gap:14px; }
+.form { display:grid; gap:18px; }
+.group { display:grid; gap:10px; min-width:0; margin:0; padding:0 0 18px; border:0; border-bottom:1px solid var(--hairline); }
+.group:disabled { opacity:1; }
+.group > legend { float:left; width:100%; margin:0 0 10px; padding:0; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted-foreground); }
+.group > legend + * { clear:both; }
+.form :is(label,.field) { display:grid; gap:6px; align-content:start; font-size:12px; font-weight:500; }
+.field .segmented { justify-self:start; }
+.fields { display:grid; grid-template-columns:minmax(0,1fr) auto 110px; gap:14px; align-items:start; }
 .fields > label, .form textarea, .form input { min-width:0; }
 .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .actions .muted { font-size:12px; }
 .error { color:var(--destructive); }
+.lab .next { font-weight:500; }
 .tableWrap { overflow:auto; margin:12px 0; }
 .lab table { width:100%; font-size:13px; border-collapse:collapse; font-variant-numeric:tabular-nums; }
 .lab :is(th,td) { text-align:left; padding:10px 12px; border-bottom:1px solid var(--hairline); white-space:nowrap; }
@@ -26,4 +32,4 @@
 .sources article { padding:12px 0; border-top:1px solid var(--hairline); }
 .sources a { color:var(--primary); text-decoration:underline; text-underline-offset:3px; }
 .sources .muted { font-size:12px; }
-@media (max-width:600px) { .fields { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:720px) { .fields { grid-template-columns:minmax(0,1fr); } .count { max-width:140px; } }
