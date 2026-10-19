@@ -2,7 +2,7 @@
 .settings-page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px; }
 .settings-page-heading { min-width:0; }
 /* A page action (Refresh, Add) sits level with the title. */
-.settings-page-header > :not(.settings-page-heading) { flex-shrink:0; margin-top:4px; }
+.settings-page-header > :not(.settings-page-heading) { flex-shrink:0; margin-top:2px; }
 .settings-page-header h2 { font:400 30px/1.2 var(--serif); letter-spacing:-.01em; }
 .settings-page-header p { margin-top:4px; font-size:13px; color:var(--muted-foreground); }
 .settings-group { margin-bottom:24px; min-width:0; }
@@ -41,7 +41,7 @@
 .settings-actions .settings-notice { margin:0; }
 /* Cards: an account, a server or a form on a Settings page. Stacked cards keep one gap. */
 .settings-card { display:grid; gap:10px; padding:16px; border:1px solid var(--border); background:var(--card); min-width:0; }
-.settings-card h3 { font-size:14px; font-weight:600; margin:0; }
+.settings-card h3 { font-size:13.5px; font-weight:600; margin:0; }
 /* A card of labelled fields (a form) spaces its fields wider than a card of lines. */
 form.settings-card, .settings-card:has(> .field) { gap:16px; }
 .settings-stack { display:grid; gap:12px; min-width:0; }
@@ -50,3 +50,23 @@ form.settings-card, .settings-card:has(> .field) { gap:16px; }
 .archived-bulk { display:flex; align-items:center; gap:8px; min-height:36px; margin:12px 0 8px; padding-inline:17px; }
 .archived-check { display:flex; align-items:center; gap:16px; margin-right:auto; font-size:14px; color:var(--muted-foreground); cursor:pointer; }
 .archived-check input, .archived-row-check { width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
+/* One control size on every page: buttons, inputs, selects and search share a height and type size; segmented
+ * options and icon or link buttons keep their own. Description-like notes share the row description's size. */
+.settings-page { --settings-control-h:32px; }
+.settings-page :is([data-slot="button"]:not([class~="size-6"], [class~="size-7"], [class~="size-8"], [class~="size-9"], .h-auto, .segmented > *), [data-slot="input"], [data-slot="select-trigger"], .model-picker-trigger, .search-field) { height:var(--settings-control-h); min-height:var(--settings-control-h); font-size:13px; }
+.settings-page [data-slot="textarea"] { font-size:13px; }
+.settings-page .segmented > button { height:calc(var(--settings-control-h) - 4px); }
+.settings-page .field { font-size:13.5px; }
+.settings-page :is(.provider-note, .settings-card .text-xs, .settings-stack .text-xs) { font-size:12.5px; }
+.settings-card > :empty { display:none; }
+/* In a narrow pane the section list becomes one scrolling row above the page, so the page keeps the full width. */
+@container workspace (max-width:760px) {
+  .settings-mode .settings-layout { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  .settings-mode .settings-nav { height:auto; max-height:none; overflow:visible; border-right:0; border-bottom:1px solid var(--hairline); padding:8px 12px; gap:8px; }
+  .settings-mode .settings-nav [role="tablist"] { display:flex; gap:4px; overflow-x:auto; padding-bottom:2px; }
+  .settings-mode .settings-nav-group { display:flex; gap:2px; }
+  .settings-mode .settings-nav .section-label { display:none; }
+  .settings-mode .settings-nav button[role="tab"] { width:auto; flex:0 0 auto; white-space:nowrap; }
+  .settings-mode .settings-page { padding:24px 16px 48px; }
+  .settings-page-header h2 { font-size:26px; }
+}
