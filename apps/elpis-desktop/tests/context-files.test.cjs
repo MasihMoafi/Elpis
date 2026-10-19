@@ -116,6 +116,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await assertUiFit(popup, 'Ledger file rows fit');
       await fs.mkdir('/tmp/ctxdesk-shots', { recursive: true }); await f.page.screenshot({ path: `/tmp/ctxdesk-shots/${colorScheme}-${width}.png` });
       await popup.getByRole('button', { name: 'Open ES.md', exact: true }).click();
+      await f.page.getByRole('button', { name: 'Source', exact: true }).click();
       await f.page.getByRole('textbox', { name: /Contents of/ }).waitFor();
       assert.equal(await popup.isVisible(), false);
       assert.match(await f.page.getByRole('textbox', { name: /Contents of/ }).inputValue(), /Ledger source contents/);
