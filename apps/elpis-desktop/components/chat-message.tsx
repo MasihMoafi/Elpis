@@ -52,9 +52,9 @@ function TextOutput({value}:{value:unknown}) {
   return <pre className="step-output"><code><FilePathText text={typeof value==="string"?value:JSON.stringify(value,null,2)} /></code></pre>;
 }
 /** A tool's step: a sentence, its time (or what went wrong) at the right, and its details in the card that opens under it. */
-function Activity({label,status,time,failed,children}:{label:string;status?:unknown;time?:number;failed?:boolean;children?:React.ReactNode}) {
+function Activity({label,status,time,failed,children,open=false}:{label:string;status?:unknown;time?:number;failed?:boolean;children?:React.ReactNode;open?:boolean}) {
   const word=statusLabel(status),duration=stepDuration(time);
-  return <Step title={<FilePathText text={label}/>} failed={failed??text(status)==="failed"} body={children} meta={(word||duration)?<>{word&&<span className={`step-status ${text(status)}`}>{word}</span>}{duration&&<span>{duration}</span>}</>:undefined}/>;
+  return <Step open={open} title={<FilePathText text={label}/>} failed={failed??text(status)==="failed"} body={children} meta={(word||duration)?<>{word&&<span className={`step-status ${text(status)}`}>{word}</span>}{duration&&<span>{duration}</span>}</>:undefined}/>;
 }
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
@@ -138,7 +138,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   }
   if(item.type==="reasoning"){
     const reasoning=[...list(item.summary),...list(item.content)].filter((v):v is string=>typeof v==="string"&&Boolean(v.trim())).join("\n\n");
-    return reasoning?<Activity label="Reasoning"><MarkdownText text={reasoning}/></Activity>:null;
+    return <Activity label="Reasoning" open>{reasoning?<MarkdownText text={reasoning}/>:<p className="step-note">No reasoning summary was recorded for this step.</p>}</Activity>;
   }
   if(item.type==="webSearch"){
     const results=list(item.results);

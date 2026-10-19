@@ -4,6 +4,8 @@
 // reads as its sentence. Local fixture of the bridge (parity-fixture); no engine, no model.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const { oranges } = require('./controls.cjs');
 
@@ -23,6 +25,7 @@ const CHAT = [
   ['t4', 'Restart the local site.', 'Restarting.', [command('c4', { command: 'pkill -f dev && git worktree move a b', description: SENTENCE, status: 'inProgress', exitCode: null, aggregatedOutput: '', durationMs: null })]],
 ];
 const seconds = text => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.ok(m, `a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
+const captures = process.env.ELPIS_APP_SCREENSHOTS || '/tmp';
 
 async function using(run) {
   const f = await fixture({ running: true, chat: CHAT, height: 760 });
@@ -42,6 +45,11 @@ test('finished groups read as Claude words them, and a described step reads as i
   const mark = mixed.locator('.activity-group-failed');
   assert.equal((await mark.innerText()).trim(), '(1 failed)');
   assert.equal(await mixed.locator('.live-timer').count(), 0, 'a finished row has no timer');
+  await mixed.click();
+  const mixedGroup = mixed.locator('..');
+  assert.equal(await mixedGroup.getByText('2 hits', { exact: true }).count(), 0, 'tool output stays lazy until its own row opens');
+  await mixedGroup.locator('.step-title').filter({ hasText: /rag/i }).click();
+  await mixedGroup.getByText('2 hits', { exact: true }).waitFor();
   // Opened, the described command is titled by its sentence and still shows its script.
   const single = page.locator('.activity-group').filter({ hasText: /^Listed everything created/ });
   await single.locator('> summary').click();
@@ -69,8 +77,38 @@ test('a running step is the model\'s sentence with a ticking timer and moving do
     const box = await live.locator('> summary').boundingBox(), column = await page.locator('.turn').last().boundingBox();
     assert.ok(box.x >= column.x - 8 && box.x + box.width <= column.x + column.width + 1, `${scheme}: the row fits the chat column`);
     if (scheme === 'light') assert.deepEqual(await oranges(page), [], 'light: no orange');
-    await page.screenshot({ path: `/tmp/step-sentences-${scheme}.png` });
+    await fs.mkdir(captures, { recursive: true });
+    await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
   assert.equal(await dot.evaluate(node => getComputedStyle(node).animationName), 'none', 'reduced motion: the dots stay still');
 }));
+
+for (const value of [
+  { name: 'recorded', summary: ['The recorded fixture summary.'], content: [], expected: 'The recorded fixture summary.' },
+  { name: 'missing', summary: [], content: [], expected: 'No reasoning summary was recorded for this step.' },
+]) for (const input of ['pointer', 'keyboard']) {
+  test(`Thought exposes ${value.name} reasoning with one ${input} activation`, async () => {
+    const f = await fixture({ running: true, chat: [['t4', 'Check the recorded step.', 'I will check the record.',
+      [{ id: 'reasoning-fixture', type: 'reasoning', status: 'completed', summary: value.summary, content: value.content }]]] });
+    try {
+      await f.open('chat-a');
+      const group = f.page.locator('.activity-group'), head = group.locator('> summary');
+      assert.equal(await group.count(), 1); assert.equal((await head.innerText()).trim(), 'Thought');
+      for (const scheme of ['light', 'dark']) {
+        await f.page.emulateMedia({ colorScheme: scheme });
+        if (input === 'keyboard') { await head.focus(); await head.press('Enter'); } else await head.click();
+        await group.locator('> summary[aria-expanded="true"]').waitFor();
+        if (input === 'pointer') {
+          await fs.mkdir(captures, { recursive: true });
+          await f.page.screenshot({ path: path.join(captures, `thought-${value.name}-${scheme}.png`) });
+        }
+        assert.equal(await group.getByText(value.expected, { exact: true }).isVisible(), true, `${scheme}: the first activation exposes recorded text or its honest absence`);
+        if (input === 'keyboard') await head.press('Space'); else await head.click();
+        await group.locator('> summary[aria-expanded="false"]').waitFor();
+        assert.equal(await group.getByText(value.expected, { exact: true }).isVisible(), false, 'closing the outer group hides its contents');
+      }
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  });
+}
