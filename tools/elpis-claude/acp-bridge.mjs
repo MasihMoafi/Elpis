@@ -505,8 +505,10 @@ wss.on("connection", (ws) => {
     const recipient = route?.client ?? ws;
     if (!msg.method && openingReplies.delete(msg.id) && msg.result?.thread) subscriptions.get(recipient)?.add(msg.result.thread.id);
     if (route) { forwarded.delete(msg.id); sendClient(recipient, { ...msg, id: route.id }); }
-    else if (owner?.ws === ws && !owner.nativeHelper && msg.method && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
+    else if (owner?.ws === ws && msg.method && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
       for (const client of viewers(msg.params.threadId)) sendClient(client, msg);
+      // A helper's delegate server is not a viewer; it follows its helper too.
+      if (owner.nativeHelper) sendClient(ws, msg);
     } else sendClient(recipient, msg);
     // Hydration reaches the terminal before a pending question for that chat.
     if (msg.result?.thread) flushApprovals(recipient, msg.result.thread.id);
@@ -2491,7 +2493,7 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
       checkIdle(); return;
     }
-    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || (!helperConns.has(ws) && ["turn/steer", "turn/interrupt"].includes(msg.method)))) {
+    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || (!helperConns.has(ws) && ["thread/resume", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method)))) {
       owner.dispatch(msg, ws); return;
     }
     if (msg.method === "thread/delete") { deleteThread(msg); return; }
