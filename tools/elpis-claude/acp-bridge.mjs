@@ -46,6 +46,10 @@ const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow"
 // Elpis's own tools for a Claude or Antigravity session: helpers on other models (when it may
 // delegate) and durable memory (a chat the user started, not a helper; the tool itself checks
 // the workspace opted in).
+// A37: an engine chat delegates like a Claude one. The engine names the calling thread in each MCP
+// tool call's `_meta.threadId`, so its server needs no parent of its own; given as config overrides.
+const engineAgentsConfig = () => Object.fromEntries(mcpServersFor(true, null, null).map((s) =>
+  [`mcp_servers.${s.name}`, { command: s.command, args: s.args, env: Object.fromEntries(s.env.map((e) => [e.name, e.value])) }]));
 const mcpServersFor = (subagents, parentThreadId, memoryCwd) => {
   const agents = subagents && !process.env.ACP_BRIDGE_NO_AGENTS;
   if (!agents && !memoryCwd) return [];
@@ -1097,6 +1101,8 @@ wss.on("connection", (ws) => {
   // /experimental and hand edits alike, as GPT turns do.
   const subagentsAllowed = (cwd) => engineCall("config/read", { includeLayers: false, cwd })
     .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
+  // The engine's own chats and helpers get the delegate tool while the Subagents switch is on (A37).
+  const withAgents = async (params) => { if (params && await subagentsAllowed(params.cwd)) params.config = { ...params.config, ...engineAgentsConfig() }; };
   const activeTurns = new BusyMap(); // thread id -> its running Claude or Antigravity turn
   const engineTurns = new BusyMap(); // thread id -> its running engine turn
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
@@ -1244,6 +1250,7 @@ wss.on("connection", (ws) => {
       pendingAdopt.set(msg.id, r);
       boundAccess(msg.params, r.ceiling, "sandbox");
     }
+    if (!claudeModel.has(tid)) await withAgents(msg.params);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
   // A thread/settings/updated that waits for helpers to apply a reduction keeps its place: any
@@ -2065,7 +2072,7 @@ wss.on("connection", (ws) => {
       rememberStart(msg.id, pick);
       p.model = null;
       if (p.config) delete p.config.model_reasoning_effort;
-    }
+    } else await withAgents(msg.params);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
 
