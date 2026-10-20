@@ -50,7 +50,7 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
       {(data.accounts.length < 2 || pending) && <div><Button size="sm" variant="outline" disabled={busy || signingIn} onClick={() => void action("login", pending?.id)}>{signingIn ? "Waiting for sign-in…" : pending ? `Sign in to ${pending.label}` : "Add Claude account"}</Button></div>}
       {signingIn && <form className="grid gap-2" onSubmit={event => { event.preventDefault(); void action("code", loginId ?? data.accounts.find(account => account.signingIn)?.id); }}>
         <label className="field">Sign-in code<Input aria-label="Claude sign-in code" type="password" autoComplete="off" value={code} onChange={event => setCode(event.target.value)} placeholder="Paste the code from the Claude page" /></label>
-        <div><Button size="sm" disabled={busy || !code.trim()}>Complete sign-in</Button></div>
+        <div><Button type="submit" size="sm" disabled={busy || !code.trim()}>Complete sign-in</Button></div>
       </form>}
       {data.accounts.filter(account => account.error).map(account => <p key={account.id} role="alert" className="text-sm text-destructive">{account.error}</p>)}
     </>}
