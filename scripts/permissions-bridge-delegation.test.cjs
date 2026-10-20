@@ -274,6 +274,62 @@ async function main() {
       }
     });
 
+    await group('engine helper status in the agents tree', async () => {
+      const chat = await parent('default');
+      const delegate = await delegateServer(chat);
+      const list = () => request('thread/list', { ancestorThreadId: chat, modelProviders: [], archived: false,
+        limit: 100, useStateDbOnly: true });
+      const listed = async id => (await list()).data.find(thread => thread.id === id);
+      assert.deepEqual((await list()).data, [], 'a delegate server does not invent an unstarted helper');
+      const unownedSteer = { threadId: '00000000-0000-4000-8000-000000000000',
+        expectedTurnId: '00000000-0000-4000-8000-000000000000', input: [{ type: 'text', text: 'Unknown helper.' }] };
+      let unownedError;
+      await assert.rejects(request('turn/steer', unownedSteer), error => { unownedError = error.message; return true; });
+
+      const claude = await claudeHelper(delegate, { allow_writes: true });
+      const claudeBefore = await listed(claude.threadId);
+      assert.equal(claudeBefore?.status?.type, 'idle', 'the Claude helper is idle after its turn');
+
+      const steerText = 'A50 steer delivered to the running helper';
+      const before = provider.requests.length;
+      const engine = await engineHelper(delegate, { allow_writes: true }, async () => {
+        const working = (await list()).data.find(thread => thread.id !== claude.threadId);
+        assert(working?.id, 'the running engine helper is listed as a descendant');
+        assert.equal(working.status?.type, 'active', 'the running helper is Working in the agents tree');
+        const read = await request('thread/read', { threadId: working.id, includeTurns: false });
+        assert.equal(read.thread.status?.type, 'active', 'thread/read has the same live status');
+        const turnId = working.turns.at(-1)?.id;
+        assert(turnId, 'the listed running turn can be steered');
+        const steer = await request('turn/steer', { threadId: working.id, expectedTurnId: turnId,
+          input: [{ type: 'text', text: steerText }] });
+        assert.equal(steer.turnId, turnId, 'the delegate engine answered the other client');
+      });
+      assert.equal(engine.status, 'completed');
+      assert(provider.requests.slice(before).some(r => JSON.stringify(r.body.input).includes(steerText)),
+        'the delegate engine sent the steer text in its next Responses request');
+      const done = await listed(engine.threadId);
+      assert.equal(done?.status?.type, 'idle', 'the completed helper is idle in the agents tree');
+      assert.equal(done.turns.at(-1)?.status, 'completed', 'the completed helper is Done in the agents tree');
+      const read = await request('thread/read', { threadId: engine.threadId, includeTurns: true });
+      assert.equal(read.thread.status?.type, 'idle', 'thread/read has the completed status');
+      assert.equal(read.thread.turns.at(-1)?.status, 'completed', 'thread/read retains the completed turn');
+      const claudeAfter = await listed(claude.threadId);
+      assert.deepEqual(claudeAfter.status, claudeBefore.status, 'engine status tracking leaves Claude status unchanged');
+
+      const interrupted = await engineHelper(delegate, { allow_writes: true }, async () => {
+        const working = (await list()).data.find(thread => ![claude.threadId, engine.threadId].includes(thread.id));
+        assert.equal(working?.status?.type, 'active', 'the second engine helper is running');
+        const turnId = working.turns.at(-1)?.id;
+        assert(turnId, 'the listed running turn can be interrupted');
+        await request('turn/interrupt', { threadId: working.id, turnId });
+      });
+      assert.equal(interrupted.status, 'interrupted', 'the other client interrupted the delegate turn');
+      assert.equal(interrupted.wrote, false, 'the interrupted helper never ran its scripted write');
+      await assert.rejects(request('turn/steer', unownedSteer), { message: unownedError },
+        'a steer for an unowned thread keeps its original error');
+      pass('Engine helpers show Working then Done, route another client’s steer and interrupt, and leave other statuses unchanged');
+    });
+
     // Controls: the helper's own scope under a writable (Default) parent.
     await group('Claude helper controls', async () => {
       const delegate = await delegateServer(await parent('default'));
