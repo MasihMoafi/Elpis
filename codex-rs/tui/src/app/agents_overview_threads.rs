@@ -349,7 +349,7 @@ impl App {
             return;
         }
 
-        self.agents_overview.pin_refresh_requested = false;
+        let full_refresh = std::mem::take(&mut self.agents_overview.pin_refresh_requested);
         let request_id = Uuid::new_v4();
         self.agents_overview.request_id = Some(request_id);
         let initialized = self.agents_overview.initialized;
@@ -374,6 +374,17 @@ impl App {
         });
         let mut thread_ids = std::mem::take(&mut self.agents_overview.refresh_thread_ids);
         self.agents_overview.active_refresh_thread_ids = thread_ids.clone();
+        let current_root = self
+            .primary_thread_id
+            .filter(|id| initialized && full_refresh && thread_ids.contains(id))
+            .and_then(|id| {
+                self.agents_overview
+                    .threads
+                    .get(&id)
+                    .and_then(Option::as_ref)
+                    .filter(|thread| thread.parent_thread_id.is_none())
+                    .map(|_| id.to_string())
+            });
         let conversation_thread_id = self
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
@@ -448,6 +459,17 @@ impl App {
                         }
                         if let Ok(thread_id) = ThreadId::from_string(&thread.id) {
                             threads.insert(thread_id, Some(thread));
+                        }
+                    }
+                }
+
+                // Recheck the open chat when returning to an initialized overview. A helper
+                // started by another connection may have missed this TUI's notification stream.
+                if let Some(root) = current_root {
+                    for child in overview_descendants(&request_handle, &root).await {
+                        if let Ok(id) = ThreadId::from_string(&child.id) {
+                            thread_ids.insert(id);
+                            threads.insert(id, Some(child));
                         }
                     }
                 }
