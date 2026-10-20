@@ -157,6 +157,7 @@ const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export class DesktopClient extends EventEmitter {
   #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
+  #catalog = null;
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
   #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
   #sideChats = new Map();
@@ -225,6 +226,7 @@ export class DesktopClient extends EventEmitter {
     this.#workflowRuns.close();
     this.#pending.clear(); this.#approvals.clear(); this.#checkingApprovals.clear();
     this.#owned.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear();
+    this.#catalog = null;
     for (const id of this.#sideChats.keys()) this.emit('event', { type: 'sideChat', data: { method: 'thread/closed', params: { threadId: id } } });
     this.#sideChats.clear(); this.#side.clear();
     this.emit('event', { type: 'connection', data: { connected: false } });
@@ -334,7 +336,10 @@ export class DesktopClient extends EventEmitter {
         this.emit('event', {type:'approvalResolved',data:{id:key}});
       }
     }
-    if (ACCOUNT_NOTIFICATIONS.has(message.method)) { this.emit('event', { type: 'account', data: { method: message.method } }); return; }
+    if (ACCOUNT_NOTIFICATIONS.has(message.method)) {
+      if (message.method !== 'account/rateLimits/updated') this.#catalog = null;
+      this.emit('event', { type: 'account', data: { method: message.method } }); return;
+    }
     if (message.method === 'thread/settings/updated') {
       for (const resolve of this.#settingsWaiters.get(id) ?? []) resolve(message.params.threadSettings);
       // The app reads the applied permission mode from here rather than from what it asked for.
@@ -575,9 +580,18 @@ export class DesktopClient extends EventEmitter {
       }
     }
     const { provider: _provider, ...page } = options;
-    const result = await this.#rpc('model/list', { ...page, limit: options.limit ?? 100, includeHidden: false });
+    const result = await this.#modelList({ ...page, limit: options.limit ?? 100, includeHidden: false });
     for (const model of result.data) this.#models.add(model.model);
     return result;
+  }
+  #modelList(params) {
+    if (params.cursor || params.limit !== 100 || params.includeHidden !== false) return this.#rpc('model/list', params);
+    if (!this.#catalog) {
+      const pending = this.#rpc('model/list', params);
+      this.#catalog = pending;
+      pending.catch(() => { if (this.#catalog === pending) this.#catalog = null; });
+    }
+    return this.#catalog;
   }
   async settings() {
     const [read, requirements, pruner] = await Promise.all([
@@ -627,6 +641,7 @@ export class DesktopClient extends EventEmitter {
     }
     if (!edits.length) throw new BridgeError('No settings were changed');
     await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false });
+    this.#catalog = null;
     return this.settings();
   }
   async savePruner(input) {
@@ -648,7 +663,7 @@ export class DesktopClient extends EventEmitter {
       this.#rpc('account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
       this.#rpc('account/rateLimits/read', {}).catch(error => ({ error: error.message })),
       this.#rpc('config/read', { includeLayers: false }),
-      this.#rpc('model/list', { limit: 100, includeHidden: false }).catch(() => null),
+      this.#modelList({ limit: 100, includeHidden: false }).catch(() => null),
       // Elpis's own Anthropic sign-out; a bridge that predates it has none.
       this.#rpc('claudeSubscription/read', {}).catch(() => null),
     ]);
@@ -674,7 +689,7 @@ export class DesktopClient extends EventEmitter {
     const current = await this.providerSettings();
     const edits = providerEdits(input, current);
     privateConfigFile(current.configPath);
-    try { await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); }
+    try { await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: true }); this.#catalog = null; }
     catch (error) {
       if (error.status === 409) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
       throw new BridgeError('Provider settings could not be saved. Refresh settings before retrying.', error.status ?? 502);
@@ -683,7 +698,7 @@ export class DesktopClient extends EventEmitter {
   }
   async signIn(body) {
     object(body, ['action']);
-    if (body.action === 'signOut') { await this.#rpc('account/logout', {}); return { signedOut: true }; }
+    if (body.action === 'signOut') { await this.#rpc('account/logout', {}); this.#catalog = null; return { signedOut: true }; }
     if (body.action === 'anthropicSignOut' || body.action === 'anthropicSignIn') return this.#anthropicSignedOut(body.action === 'anthropicSignOut');
     if (body.action !== 'chatgpt') throw new BridgeError('Choose a ChatGPT or Anthropic sign-in or sign-out');
     const result = await this.#rpc('account/login/start', { type: 'chatgpt' });
@@ -700,6 +715,7 @@ export class DesktopClient extends EventEmitter {
       if (/unknown (method|variant)|method not found/i.test(error.message)) throw new BridgeError('Update and restart Elpis to sign out of Anthropic from this app.', 503);
       throw error;
     }
+    this.#catalog = null;
     this.emit('event', { type: 'account', data: { method: 'claudeSubscription/write' } });
     return { anthropicSignedOut: answer?.signedOut === true };
   }

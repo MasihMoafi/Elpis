@@ -7,6 +7,7 @@ import { reloadSettings } from "@/lib/settings-store";
 import { activeTab, type ChatTabs } from "@/lib/chat-tabs";
 import { activityOf, api, isAgentRun, sessionReady, type Approval, type Entry, type Item, type Thread } from "@/lib/api";
 import { without } from "@/lib/without";
+import { changesModelCatalog } from "@/lib/account-events";
 import type { Attention } from "@/lib/attention";
 import type { PermissionMode } from "@/components/composer-controls";
 import type { TaskPlan } from "@/components/task-list";
@@ -158,7 +159,7 @@ export function useLiveConnection({ refreshThreads, patchThread, upsertThread, r
         events.addEventListener("approval", event => { const approval = JSON.parse(event.data); notifyApproval(approval, threadsRef.current, id => void loadThread({ id } as Thread)); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
         events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
         events.addEventListener("unsupportedApproval", event => { const { method } = JSON.parse(event.data); setError(`Elpis requested an unsupported approval (${method}). Update the app to answer this request.`); });
-        events.addEventListener("account", () => { setAccountRefresh(n => n + 1); void refreshModels(); });
+        events.addEventListener("account", event => { setAccountRefresh(n => n + 1); if (changesModelCatalog(JSON.parse(event.data).method)) void refreshModels(); });
       } catch (e) { if (!disposed) setError(String(e)); }
     }
     initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };

@@ -1,5 +1,6 @@
 {
   "fast": [
+    "tests/account-events.test.cjs",
     "tests/agents-iso.test.mjs",
     "tests/agents.test.mjs",
     "tests/api-errors.test.mjs",
