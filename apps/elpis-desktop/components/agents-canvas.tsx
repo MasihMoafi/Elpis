@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkflowHistory } from "@/components/workflow-history";
 import { WorkflowSources } from "@/components/workflow-sources";
 import { summarize, workedFor } from "@/components/transcript";
 import { isoLayout } from "@/lib/iso";
@@ -1075,6 +1076,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const [iso, setIso] = useState(false);
   return <section className="agents-canvas" aria-label="Workflows" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
+      <WorkflowHistory revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} />
       <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
       {projectMenu}
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}

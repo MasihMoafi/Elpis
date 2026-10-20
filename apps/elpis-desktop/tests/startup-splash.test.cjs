@@ -1,4 +1,4 @@
-// The website ribbon opening, reversed for Elpis: M → fiery E, dark in both themes.
+// The Elpis symbol rotates upright without the extra ribbon, in both themes.
 // Runs the exported renderer against the mock bridge; no engine or real desktop profile.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -38,7 +38,7 @@ const frame = (page, ms) => page.evaluate(ms => {
     ribbon: trail && { offset: parseFloat(getComputedStyle(trail).strokeDashoffset), opacity: Number(getComputedStyle(trail).opacity) } };
 }, ms);
 
-for (const colorScheme of ['light', 'dark']) test(`startup: website ribbon motion turns M into the fiery E on dark (${colorScheme})`, async t => {
+for (const colorScheme of ['light', 'dark']) test(`startup: symbol rotates upright without an added ribbon (${colorScheme})`, async t => {
   const { page } = await starting(t, { colorScheme });
   const splash = page.locator('.startup-splash');
   const logo = page.locator('.splash-logo');
@@ -56,9 +56,7 @@ for (const colorScheme of ['light', 'dark']) test(`startup: website ribbon motio
   assert.equal(end.logo, 0, 'The E stays upright while startup waits');
   assert.deepEqual(m.centre, e.centre, 'The mark rotates about its centre');
   assert.ok(Math.abs(m.centre[0] - 640) < 1, 'The mark is centred in the window');
-  assert.equal(m.ribbon.offset, 1, 'The flowing ribbon starts undrawn');
-  assert.equal(end.ribbon.offset, 0, 'The ribbon flows along its whole path');
-  assert.ok(end.ribbon.opacity > m.ribbon.opacity, 'The ribbon arrives with the website motion');
+  assert.equal(await splash.locator('.splash-ribbon').count(), 0, 'No extra ribbon is added to the initial animation');
   assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getTiming().iterations === Infinity)), false, 'App startup plays once');
   if (process.env.ELPIS_SPLASH_SHOTS) {
     await fs.mkdir(process.env.ELPIS_SPLASH_SHOTS, { recursive: true });

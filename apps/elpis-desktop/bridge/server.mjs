@@ -283,6 +283,10 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));
+        if (url.pathname === '/api/workflows/history' && method === 'GET') {
+          if ([...url.searchParams.keys()].length) throw new BridgeError('Unexpected workflow history parameters');
+          return json(response, 200, await client.workflowHistory());
+        }
         if (url.pathname === '/api/workflows' && method === 'GET') {
           if([...url.searchParams.keys()].some(key=>key!=='threadId')||url.searchParams.getAll('threadId').length!==1)throw new BridgeError('Choose one workflow conversation');
           return json(response,200,await client.workflows(url.searchParams.get('threadId')));

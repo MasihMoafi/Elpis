@@ -373,6 +373,36 @@ test('a failed continuation fork does not report an acknowledged conversation or
   } finally { client.close(); }
 });
 
+for (const found of [true, false]) test(`fork recovers a stale turn only through its exact persisted message (found=${found})`, async () => {
+  const { client, socket } = fixture();
+  try {
+    await client.initialize();
+    const send = socket.send;
+    socket.send = raw => {
+      const request = JSON.parse(raw);
+      if (request.method === 'thread/fork' && request.params.lastTurnId === 'stale-turn') {
+        socket.sent.push(request);
+        queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'turn not found: stale-turn' } })));
+      } else if (request.method === 'thread/items/list') {
+        socket.sent.push(request);
+        queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { data: [
+          { turnId: 'newer-turn', item: { id: 'newer-answer', type: 'agentMessage' } },
+          ...(found ? [{ turnId: 'persisted-turn', item: { id: 'selected-answer', type: 'agentMessage' } }] : []),
+        ], nextCursor: null } })));
+      } else send(raw);
+    };
+    if (found) {
+      const result = await client.forkThread(ROOT, { lastTurnId: 'stale-turn', lastItemId: 'selected-answer' });
+      assert.equal(result.thread.id, FORK);
+      assert.deepEqual(socket.sent.filter(row => row.method === 'thread/fork').map(row => row.params.lastTurnId), ['stale-turn', 'persisted-turn']);
+    } else {
+      await assert.rejects(client.forkThread(ROOT, { lastTurnId: 'stale-turn', lastItemId: 'selected-answer' }), /refresh|reload/i);
+      assert.equal(socket.sent.filter(row => row.method === 'thread/fork').length, 1, 'Never fork latest history when the selected message is missing');
+    }
+    assert.equal(socket.sent.some(row => row.method === 'turn/start'), false, 'Fork recovery never sends a new message');
+  } finally { client.close(); }
+});
+
 test('new roots send, steer and interrupt through typed protocol without overriding permissions', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.models();
   await assert.rejects(client.createThread({ model: 'invented' }), /model list/);
@@ -507,6 +537,20 @@ test('workflow workers keep recorded task names and lineage when native list omi
   assert.equal(unrelated.workflowTaskTitle,undefined);
   assert.equal(unrelated.parentThreadId,null,'unrecorded task cannot inherit cached lineage');
   client.close();
+});
+
+test('workflow history includes native teams discovered through their task chats', async () => {
+  const { client, threads, workflowRecords } = fixture();
+  try {
+    await client.initialize();
+    const id = '00000000-0000-0000-0000-000000000099';
+    threads.get(CHILD).source = { subAgent: { other: `work_graph:${id}:review` } };
+    workflowRecords.push({ id, rootThreadId: ROOT, name: 'Native review', status: 'running', tasks: [] });
+    const result = await client.workflowHistory();
+    assert.equal(result.data.length, 1);
+    assert.equal(result.data[0].id, id);
+    assert.equal(result.data[0].rootThreadId, ROOT);
+  } finally { client.close(); }
 });
 
 test('manual workflows require an idle root and dispatch the reviewed graph through ACP', async () => {

@@ -154,7 +154,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
   }
   return {
     busy: () => active.size > 0,
-    async list(rootThreadId) { await load(); return structuredClone([...records.values()].filter(r => r.rootThreadId === rootThreadId)); },
+    async list(rootThreadId) { await load(); return structuredClone([...records.values()].filter(r => rootThreadId === undefined || r.rootThreadId === rootThreadId)); },
     async start(params, root) {
       validateWorkflow(params.tasks, params.roundLimit); await load();
       if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose a project folder before running a workflow');

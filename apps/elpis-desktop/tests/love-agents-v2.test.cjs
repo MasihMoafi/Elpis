@@ -29,7 +29,7 @@ for (const surface of ['embedded', 'standalone']) test(`${surface}: A and one cl
     await details.getByText('What should I investigate for you?', { exact: true }).waitFor();
     const saved = await f.waitFor(s => agents(s).length === 1 && agents(s)[0].customData.loveAgent.interview?.messages.length === 1, 'one question must persist');
     const card = agents(saved)[0], portrait = saved.elements.find(e => e.id === `${card.id}-portrait`);
-    assert.equal(portrait.width, 96); assert.equal(portrait.height, 96);
+    assert.equal(portrait.width, 128); assert.equal(portrait.height, 128);
     assert.ok(Math.abs(card.x + card.width / 2 - 450) < 3, 'card must be centred on the clicked scene point');
     assert.equal(card.customData.loveAgent.task, '', 'interview cannot start the task');
     const prompts = (await f.acp()).filter(e => e.method === 'session/prompt');
@@ -141,9 +141,9 @@ test('existing preset cards receive the larger current art without changing thei
     await fs.writeFile(path.join(f.directory, 'scene.excalidraw'), JSON.stringify(scene));
     await open(f, 'standalone');
     await page.getByRole('button', { name: 'Inspect Researcher', exact: true }).click();
-    const upgraded = await f.waitFor(s => s.elements.find(e => e.id === portrait.id)?.width === 96, 'legacy portrait must be enlarged');
+    const upgraded = await f.waitFor(s => s.elements.find(e => e.id === portrait.id)?.width === 128, 'legacy portrait must be enlarged');
     const image = upgraded.elements.find(e => e.id === portrait.id);
-    assert.equal(image.height, 96); assert.notEqual(image.fileId, oldId);
+    assert.equal(image.height, 128); assert.notEqual(image.fileId, oldId);
     assert.ok(upgraded.files[image.fileId].dataURL.length > 10000, 'the current artwork replaces the planted legacy image');
     assert.equal(agents(upgraded)[0].customData.loveAgent.task, 'LEGACY_TASK_SEED');
     assert.deepEqual(upgraded.elements.find(e => e.id === drawing.id), drawing);

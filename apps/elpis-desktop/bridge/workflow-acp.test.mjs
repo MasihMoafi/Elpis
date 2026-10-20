@@ -102,6 +102,19 @@ test('Workflows uses real ACP and hands only completed dependency answers to the
   assert.equal(f.log('a').filter(row => row.method === 'session/prompt').length, 1);
   assert.ok(g.tasks.every(row => row.assignedThreadId && row.result.summary));
 });
+test('workflow history lists persisted teams without a selected conversation', { timeout: 20000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  assert.deepEqual((await f.client.workflowHistory()).data, [], 'An empty history does not invent workflows');
+  const started = await f.run([task('saved-team')]);
+  const completed = await f.finished(started.graphId);
+  const history = (await f.client.workflowHistory()).data;
+  const record = history.find(row => row.id === completed.id);
+  assert.equal(record.rootThreadId, ROOT);
+  assert.equal(record.name, 'ACP team');
+  assert.equal(record.status, 'succeeded');
+  assert.equal(record.tasks[0].id, 'saved-team');
+});
+
 test('failure blocks dependent ACP nodes; an independent node can finish', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const r = await f.run([task('a', [], '[crash]'), task('b', ['a']), task('c')]);

@@ -1,4 +1,17 @@
 .love-spot { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; height: 100%; }
+.love-spot .excalidraw, .love-spot .excalidraw.theme--dark {
+  --color-selection: var(--love-red);
+  --color-primary: var(--love-red);
+  --color-primary-darker: var(--love-red);
+  --color-primary-darkest: var(--love-red);
+  --color-primary-light: color-mix(in oklab, var(--love-red) 14%, var(--card));
+  --color-primary-light-darker: color-mix(in oklab, var(--love-red) 22%, var(--card));
+  --color-surface-primary-container: var(--color-primary-light);
+  --color-on-primary-container: var(--love-red);
+  --color-primary-hover: color-mix(in oklab, var(--love-red) 85%, var(--foreground));
+  --color-brand-hover: var(--color-primary-hover);
+  --color-brand-active: var(--love-red);
+}
 .love-spot > [role="status"] { padding: 24px; color: var(--muted-foreground); }
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
 .love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }

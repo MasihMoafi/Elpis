@@ -914,6 +914,18 @@ export class DesktopClient extends EventEmitter {
     }
     return this.#model(model);
   }
+  async workflowHistory() {
+    const saved = await this.#workflowRuns.list();
+    const threads = (await this.listThreads({ limit: 100, includeAgentRuns: true })).data ?? [];
+    const roots = new Set(threads.filter(thread => typeof thread.source?.subAgent?.other === 'string' && thread.source.subAgent.other.startsWith('work_graph:')).map(thread => thread.parentThreadId).filter(Boolean));
+    const native = [];
+    for (const rootThreadId of roots) {
+      const listed = await this.#rpc('workGraph/list', { rootThreadId });
+      native.push(...(listed.data ?? []).map(record => ({ ...record, rootThreadId })));
+    }
+    const byId = new Map([...native, ...saved].map(record => [record.id, record]));
+    return { data: [...byId.values()].sort((a, b) => (b.startedAt ?? b.createdAt ?? 0) - (a.startedAt ?? a.createdAt ?? 0)) };
+  }
   async workflows(id) {
     threadId(id);
     const current=await this.#rpc('thread/read',{threadId:id,includeTurns:false});
@@ -1150,11 +1162,30 @@ export class DesktopClient extends EventEmitter {
   /** Renames a chat in Elpis; every client shows the stored name. */
   /** ChatGPT's "Fork chat from here": a new chat with this one's history through `lastTurnId`. */
   async forkThread(id, body) {
-    object(body, ['lastTurnId']);
+    object(body, ['lastTurnId', 'lastItemId']);
     const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);
+    const lastItemId = body.lastItemId === undefined ? undefined : text(body.lastItemId, 'message ID', 200);
+    if (lastItemId && !lastTurnId) throw new BridgeError('Choose the turn containing this message');
     const thread = await this.#current(id);
     if (isAgentRun(thread) && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
-    return this.#forkChat(thread, lastTurnId);
+    try { return await this.#forkChat(thread, lastTurnId); }
+    catch (error) {
+      if (!lastTurnId || !/turn not found|lastTurnId .*was not found/i.test(error.engineMessage ?? error.message ?? '')) throw error;
+      // A rendered message can retain a live turn ID after history is reconciled.
+      // Recover only by the exact saved message, never by the latest turn.
+      if (lastItemId) {
+        let cursor;
+        const seen = new Set();
+        for (let page = 0; page < 20; page++) {
+          const items = await this.#itemsPage({ threadId: id, limit: 100, sortDirection: 'desc', ...(cursor ? { cursor } : {}) });
+          const entry = items.data?.find(row => row.item?.id === lastItemId && row.item.type === 'agentMessage');
+          if (entry?.turnId && entry.turnId !== lastTurnId) return this.#forkChat(thread, entry.turnId);
+          if (entry || !items.nextCursor || seen.has(items.nextCursor)) break;
+          cursor = items.nextCursor; seen.add(cursor);
+        }
+      }
+      throw new BridgeError('That message no longer has a saved fork point. Refresh this conversation and fork from the saved reply.', 409);
+    }
   }
   async #forkChat(thread, lastTurnId, suffix = 'fork') {
     const browserSession = `pending-${randomUUID()}`;

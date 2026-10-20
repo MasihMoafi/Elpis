@@ -31,7 +31,8 @@
     "tests/temp-root.test.mjs",
     "tests/turn-replacement.test.mjs",
     "tests/workflow-sources.test.cjs",
-    "tests/canvas-delete-flow.test.mjs"
+    "tests/canvas-delete-flow.test.mjs",
+    "tests/love-activity.test.mjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",
@@ -239,7 +240,8 @@
     "tests/sidebar-reorder.test.cjs",
     "tests/composer-consistency.test.cjs",
     "tests/chat-feedback.test.cjs",
-    "tests/message-replies.test.cjs"
+    "tests/message-replies.test.cjs",
+    "tests/love-clarity.test.cjs"
   ],
   "opt-in": [
     "tests/app-update-native.test.cjs",

@@ -32,7 +32,7 @@ export function upgradeAgentArt(elements: readonly ExcalidrawElement[], files: B
     const image = byId.get(`${card.id}-portrait`);
     if (!image || image.isDeleted || image.type !== "image" || image.fileId !== `love-portrait-${character.id}`) continue;
     const file = portraitFile(character); added[file.id] = file;
-    replacements.set(image.id, newElementWith(image, { fileId: file.id, ...(image.width === 72 && image.height === 72 ? { x: image.x - 12, width: 96, height: 96 } : {}) }));
+    replacements.set(image.id, newElementWith(image, { fileId: file.id, ...([72, 96].includes(image.width) && image.height === image.width ? { x: image.x - (128 - image.width) / 2, width: 128, height: 128 } : {}) }));
   }
   if (replacements.size) return { elements: elements.map(e => replacements.get(e.id) ?? e), files: { ...files, ...added } };
 }
@@ -42,7 +42,7 @@ export function makeAgent(character: Character, x: number, y: number, task = "")
   const elements = convertToExcalidrawElements([
     { type: "rectangle", id, x, y, width: 220, height: 190, roughness: 0, roundness: { type: 3 }, backgroundColor: character.color, strokeColor: "#677478", strokeWidth: 1, fillStyle: "solid", groupIds: [id], customData: { loveAgent: data },
       label: { text: `\n\n\n${character.name}`, fontFamily: 2, fontSize: 20, strokeColor: "#243b43", verticalAlign: "bottom" } },
-    { type: "image", id: `${id}-portrait`, x: x + 62, y: y + 16, width: 96, height: 96, fileId, status: "saved", groupIds: [id] },
+    { type: "image", id: `${id}-portrait`, x: x + 46, y: y + 10, width: 128, height: 128, fileId, status: "saved", groupIds: [id] },
   ], { regenerateIds: false });
   return { id, elements, file };
 }
