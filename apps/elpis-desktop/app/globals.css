@@ -343,6 +343,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
 .brand img { width:73px; height:36px; flex-shrink:0; }
+.brand-home { width:auto; height:auto; padding:0; flex:0 0 auto; }
 .thread-row { display:flex; align-items:center; gap:2px; min-width:0; padding-right:2px; min-height:34px; }
 .thread-row:hover, .thread-row[data-popup-open] { background:var(--hover); }
 .thread-row.active { background:var(--selected); }
