@@ -46,18 +46,18 @@ export function AgentsGuideLink({ onOpen }: { onOpen: () => void }) {
 export function AgentsGuide({ onBack }: { onBack: () => void }) {
   const [index, setIndex] = useState(0);
   const topic = topics[index];
-  return <section aria-label="Guide to managing agents" className="mx-auto max-w-3xl space-y-5">
+  return <section aria-label="Guide to managing agents" className="mx-auto max-w-3xl space-y-3">
     <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft size={14} />Back to Workflows</Button>
     <nav aria-label="Guide topics" className="flex flex-wrap gap-2">
       {topics.map((item, at) => <Button key={item.title} variant={at === index ? "secondary" : "ghost"} size="sm" aria-current={at === index ? "page" : undefined} onClick={() => setIndex(at)}>{item.title}</Button>)}
     </nav>
-    <article className="space-y-3 text-sm leading-relaxed">
+    <article className="space-y-2 text-sm leading-relaxed">
       <h2 className="text-xl font-semibold">{topic.title}</h2>
       <p>{topic.intro}</p>
       {topic.patterns && <dl className="space-y-2">{topic.patterns.map(([name, detail]) => <div key={name} className="grid gap-1 sm:grid-cols-[140px_1fr]"><dt className="font-medium">{name}</dt><dd>{detail}</dd></div>)}</dl>}
       {topic.points.map(point => <p key={point}>{point}</p>)}
     </article>
-    <footer className="space-y-2 border-t border-border pt-4 text-sm">
+    <footer className="space-y-2 border-t border-border pt-2 text-sm">
       <p className="text-muted-foreground">From Anthropic</p>
       {topic.links.map(link => <a key={link.href} className="block w-fit underline underline-offset-4" href={link.href} target="_blank" rel="noreferrer">{link.title}</a>)}
     </footer>
