@@ -29,9 +29,10 @@ class Provider {
         this.requests.push({ path: req.url, body: request });
         const action = this.actions.shift();
         if (!action) throw new Error('Unexpected provider request');
-        if (action.hang) { this.hanging.add(res); res.on('close', () => this.hanging.delete(res)); return; }
-        if (action.httpError) {res.writeHead(400,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:action.httpError,type:'invalid_request_error'}}));return;}
+        // A scripted function may itself answer `{ hang: true }`.
         const item = typeof action === 'function' ? action(request, req.headers) : action;
+        if (item.hang) { this.hanging.add(res); res.on('close', () => this.hanging.delete(res)); return; }
+        if (item.httpError) {res.writeHead(400,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:item.httpError,type:'invalid_request_error'}}));return;}
         const id = `response_${this.requests.length}`;
         const events = [{ type: 'response.created', response: { id } }];
         if (item.type === 'message') {

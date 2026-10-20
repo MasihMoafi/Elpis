@@ -589,8 +589,11 @@ wss.on("connection", (ws) => {
         threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers]) cache.delete(tid);
     },
     // An abandoned request is bookkeeping, not running work. Turns (including native
-    // background agents) and structured tool calls still outlive their terminal.
+    // background agents) and structured tool calls still outlive their terminal, and so does a chat
+    // whose helpers still run: its delegate server lives in the chat's session, which the engine
+    // ends once no client holds the idle chat.
     busy: () => activeTurns.size > 0 || engineTurns.size > 0 || structured.size > 0
+      || [...helperScope].some(([tid, h]) => threadSeen.has(h.parentThreadId) && providerOwners.get(tid)?.status().type === "active")
       || (ws.readyState === 1 && (pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0))
       || [...forwarded.values()].some((r) => r.owner === ws),
     close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },

@@ -25,7 +25,7 @@ async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-engine-delegate-'));
   const home = path.join(root, 'home'), cwd = path.join(root, 'work'), store = path.join(root, 'sessions.json');
   for (const p of [home, cwd]) fs.mkdirSync(p);
-  fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\n[features]\nmulti_agent=true\n[model_providers.fixture]\nname="offline fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
+  fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nthread_unload_delay_secs=1\n[features]\nmulti_agent=true\n[model_providers.fixture]\nname="offline fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
   const sock = path.join(root, 'bridge.sock');
   const bridge = spawn(process.execPath, [bridgePath], { cwd, env: {
     PATH: process.env.PATH, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home, ELPIS_ENGINE_BIN: binary,
@@ -46,17 +46,21 @@ async function main() {
     await wait(() => seen.some(m => m.method === 'turn/completed' && m.params.threadId === thread.id && m.params.turn.id === turn.id), 'chat turn completes');
     return { chat: thread.id, found, names };
   }
+  // A client (the TUI or the app); a new one replaces the last as `ws`.
+  async function connect() {
+    const client = ws = new WebSocket(`ws+unix://${sock}:/`);
+    await new Promise((res, rej) => { client.once('open', res); client.once('error', rej); });
+    client.on('message', data => {
+      const m = JSON.parse(String(data)); seen.push(m);
+      if (m.method && m.id !== undefined) client.send(JSON.stringify({ id: m.id, result: { decision: 'decline' } }));
+      else if (!m.method) { const p = pending.get(m.id); if (p) { pending.delete(m.id); clearTimeout(p.timer); m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result); } }
+    });
+    await req('initialize', { clientInfo: { name: 'codex-tui', version: '1' }, capabilities: { experimentalApi: true } }); client.send(JSON.stringify({ method: 'initialized' }));
+  }
   try {
     await wait(() => fs.existsSync(sock) || bridge.exitCode !== null, 'listener');
     assert.equal(bridge.exitCode, null, errors);
-    ws = new WebSocket(`ws+unix://${sock}:/`);
-    await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });
-    ws.on('message', data => {
-      const m = JSON.parse(String(data)); seen.push(m);
-      if (m.method && m.id !== undefined) ws.send(JSON.stringify({ id: m.id, result: { decision: 'decline' } }));
-      else if (!m.method) { const p = pending.get(m.id); if (p) { pending.delete(m.id); clearTimeout(p.timer); m.error ? p.reject(Error(m.error.message)) : p.resolve(m.result); } }
-    });
-    await req('initialize', { clientInfo: { name: 'codex-tui', version: '1' }, capabilities: { experimentalApi: true } }); ws.send(JSON.stringify({ method: 'initialized' }));
+    await connect();
 
     const on = await chatTurn(tool => {
       if (!tool) return message('No delegate tool.');
@@ -69,6 +73,32 @@ async function main() {
     const delegations = JSON.parse(fs.readFileSync(store, 'utf8'))._delegations ?? {};
     assert.ok(Object.values(delegations).some(d => d.parentThreadId === on.chat), `the helper is recorded under the engine chat: ${JSON.stringify(delegations)}`);
     console.log('PASS an engine chat delegates a helper, recorded under that chat');
+
+    // The app closes while a helper the chat started still works; the chat is idle, so the engine would unload it
+    // (and the delegate server in its session) a second after its last client leaves.
+    const isHelper = body => body.input.some(i => i.role === 'user' && JSON.stringify(i.content).includes('ENGINE_RESTART_FIXTURE'));
+    const route = body => isHelper(body) ? { hang: true } : message('Chat done.');
+    const background = await chatTurn(tool => {
+      provider.actions.push(route, route);
+      return { type: 'function_call', call_id: 'delegate_2', name: tool.name, ...(tool.namespace && { namespace: tool.namespace }),
+        arguments: JSON.stringify({ task: 'ENGINE_RESTART_FIXTURE: reply done.', model: 'gpt-5.5', provider: 'fixture', allow_writes: false, wait: false }) };
+    });
+    await wait(() => provider.hanging.size === 1, 'the helper is mid-turn');
+    const helperId = Object.entries(JSON.parse(fs.readFileSync(store, 'utf8'))._delegations).find(([, d]) => d.parentThreadId === background.chat)?.[0];
+    ws.terminate(); await pause(5000);
+    assert.equal(provider.hanging.size, 1, 'the helper still works after the app closed');
+    await connect();
+    const [held] = provider.hanging; provider.hanging.delete(held);
+    const item = message('Helper done.');
+    held.writeHead(200, { 'content-type': 'text/event-stream' });
+    held.end([{ type: 'response.created', response: { id: 'r_restart' } }, { type: 'response.output_item.done', output_index: 0, item },
+      { type: 'response.completed', response: { id: 'r_restart', usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } }]
+      .map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
+    let last;
+    for (const until = Date.now() + 30000; last !== 'completed' && Date.now() < until; await pause(300))
+      last = (await req('thread/read', { threadId: helperId, includeTurns: true }).catch(() => null))?.thread?.turns?.at(-1)?.status;
+    assert.equal(last, 'completed', 'the helper finishes');
+    console.log('PASS after the app closes and reopens, a running helper keeps working and finishes');
 
     await req('config/batchWrite', { edits: [{ keyPath: 'features.multi_agent', value: false, mergeStrategy: 'replace' }] });
     const off = await chatTurn(() => message('Done.'));
