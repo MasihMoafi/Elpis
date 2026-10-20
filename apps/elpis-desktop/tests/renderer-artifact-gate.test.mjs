@@ -122,10 +122,19 @@ assert.equal(process.env[key],path.join(process.env.HOME,dir));fs.mkdirSync(proc
   assert.deepEqual(await fs.readdir(external), []);
 });
 
+test('a package cannot omit the saved-workspace reader after its source tests pass', async t => {
+  const f = await fixture(t), destination = path.join(f.repo, 'package');
+  await fs.mkdir(path.join(destination, 'app/desktop'), { recursive: true });
+  await fs.copyFile(path.join(f.root, 'desktop/main.cjs'), path.join(destination, 'app/desktop/main.cjs'));
+  await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify({ schemaVersion: 1, files: [{ path: 'app/desktop/main.cjs' }] }));
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.root, encoding: 'utf8' }).trim();
+  await assert.rejects(verifyPackagedSources({ root: f.root, destination, commit }), /omits.*desktop\/state.cjs/);
+});
+
 test('every tracked packaged source is checked against Git bytes even when marked generated', async t => {
   const f = await fixture(t), destination = path.join(f.repo, 'package');
   await fs.mkdir(path.join(destination, 'app/desktop'), { recursive: true });
-  const files = ['desktop/main.cjs', 'implementation.cjs'];
+  const files = ['desktop/main.cjs', 'desktop/state.cjs', 'implementation.cjs'];
   for (const file of files) await fs.copyFile(path.join(f.root, file), path.join(destination, 'app', file));
   await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify({ schemaVersion: 1, files: files.map(file => ({ path: `app/${file}`, generated: true })) }));
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.root, encoding: 'utf8' }).trim();
@@ -161,7 +170,8 @@ const main=path.join('desktop','main.cjs'), original=fs.readFileSync(main);
 if(['package-source','transient-source'].includes(process.env.MOCK_RECEIPT))fs.writeFileSync(main,'mutated while packaging');
 fs.cpSync(process.env.SOURCE_OUT,path.join(destination,'app/out'),{recursive:true});
 fs.mkdirSync(path.join(destination,'app/desktop'),{recursive:true});fs.copyFileSync(main,path.join(destination,'app/desktop/main.cjs'));
-fs.writeFileSync(path.join(destination,'manifest.json'),JSON.stringify({schemaVersion:1,files:[{path:'app/desktop/main.cjs'}]}));
+fs.copyFileSync('desktop/state.cjs',path.join(destination,'app/desktop/state.cjs'));
+fs.writeFileSync(path.join(destination,'manifest.json'),JSON.stringify({schemaVersion:1,files:[{path:'app/desktop/main.cjs'},{path:'app/desktop/state.cjs'}]}));
 if(process.env.MOCK_RECEIPT==='transient-source')fs.writeFileSync(main,original);
 if(process.env.MOCK_RECEIPT==='mutated')fs.writeFileSync(path.join(destination,'app/out/index.html'),'changed while packaging');`);
   const commit = await f.commitSource();

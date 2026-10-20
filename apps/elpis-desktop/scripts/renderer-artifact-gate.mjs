@@ -45,6 +45,7 @@ export async function verifyPackagedSources({ root = appRoot, destination, commi
     checked.add(source);
   }
   assert(checked.has('desktop/main.cjs'), 'Desktop package manifest omits its tracked entry point');
+  assert(checked.has('desktop/state.cjs'), 'Desktop package manifest omits tracked desktop/state.cjs');
 }
 
 async function treeFiles(root, relative = '') {
