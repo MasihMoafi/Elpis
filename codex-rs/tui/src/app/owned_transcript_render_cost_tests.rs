@@ -32,12 +32,10 @@ async fn inline_mode_leaves_room_above_a_crowded_ledger() -> Result<()> {
     Ok(())
 }
 
-/// Full screen: the Ledger is a column at the right edge that starts level with the first line of
-/// the transcript, past the gap under the session header (Masih: "it should come lower", and again
-/// "starts too high"), and the composer keeps its own height to the Ledger's left instead of
-/// growing to the Ledger's height.
+/// Full screen: the Ledger starts at the top right, above the session header and transcript,
+/// while the composer keeps its own height to the Ledger's left.
 #[tokio::test]
-async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer() -> Result<()> {
+async fn full_screen_ledger_starts_at_the_top_beside_the_composer() -> Result<()> {
     let screen = Size::new(/*width*/ 120, /*height*/ 20);
     let (mut app, _events, _operations) = make_test_app_with_channels().await;
     crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
@@ -85,7 +83,7 @@ async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer(
         "the cwd row must follow the title\n{screen_text}"
     );
     let close_row = (0..screen.height)
-        .find(|&y| row(y, rule_x + 1..screen.width).contains("✕ Close"))
+        .find(|&y| row(y, rule_x + 1..screen.width).contains("╳"))
         .unwrap_or_else(|| panic!("the Ledger Close button is missing\n{screen_text}"));
     let ledger_title = (0..screen.height)
         .find(|&y| row(y, rule_x + 1..screen.width).contains("CONTEXT LEDGER"))
@@ -94,21 +92,34 @@ async fn full_screen_ledger_starts_below_the_session_header_beside_the_composer(
         .find(|&y| row(y, 0..rule_x).contains("first line of the transcript"))
         .unwrap_or_else(|| panic!("the transcript must stay beside the Ledger\n{screen_text}"));
     assert_eq!(
-        close_row, first_line,
-        "the Ledger Close row must start level with the first transcript line, below the header's gap\n\
-         {screen_text}"
+        close_row, 0,
+        "the Ledger Close row starts at the top\n{screen_text}"
     );
     assert_eq!(
         ledger_title,
         close_row + 1,
-        "the Ledger title must follow its dedicated Close row\n{screen_text}"
+        "the Ledger title follows its Close row\n{screen_text}"
     );
-    for y in 0..close_row {
-        assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}\n{screen_text}");
-    }
+    assert!(
+        first_line > ledger_title,
+        "the transcript stays below the Ledger heading\n{screen_text}"
+    );
     for y in close_row..screen.height {
         assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}\n{screen_text}");
     }
+    let close_x = (rule_x + 1..screen.width)
+        .find(|&x| buffer[(x, close_row)].symbol() == "╳")
+        .expect("the Close glyph has a screen position");
+    assert!(
+        app.chat_widget
+            .handle_context_ledger_mouse(crossterm::event::MouseEvent {
+                kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                column: close_x,
+                row: close_row,
+                modifiers: KeyModifiers::NONE,
+            })
+    );
+    assert_eq!(app.chat_widget.context_ledger_width(screen.width), 0);
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }

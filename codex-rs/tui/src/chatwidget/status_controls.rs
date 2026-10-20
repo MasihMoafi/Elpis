@@ -227,6 +227,56 @@ impl ChatWidget {
             .collect()
     }
 
+    fn status_instruction_sources_summary(&self) -> String {
+        // Discovery retains withdrawn files. Report committed Ledger admission, without
+        // presenting a staged next-turn toggle or a discovered path as loaded instructions.
+        let sources = self
+            .accounted_continuity_sources()
+            .into_iter()
+            .filter_map(|source| {
+                PathUri::from_host_native_path(&source.path)
+                    .ok()
+                    .map(|path| (source, path))
+            })
+            .collect::<Vec<_>>();
+        let mut instruction_sources = Vec::new();
+        let mut unverified_sources = Vec::new();
+        for path in &self.instruction_source_paths {
+            if let Some((source, _)) = sources.iter().find(|(_, candidate)| candidate == path) {
+                if source.admitted && !instruction_sources.contains(path) {
+                    instruction_sources.push(path.clone());
+                }
+            } else if !unverified_sources.contains(path) {
+                unverified_sources.push(path.clone());
+            }
+        }
+        for (source, path) in sources {
+            let is_instruction = source.category
+                == crate::legacy_core::elpis_context::ContinuitySourceCategory::Instructions
+                || source
+                    .path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("AGENTS.md"));
+            if source.admitted && is_instruction && !instruction_sources.contains(&path) {
+                instruction_sources.push(path);
+            }
+        }
+        let mut summary = format!(
+            "admitted: {}",
+            crate::status::compose_agents_summary(&self.config, &instruction_sources)
+        );
+        if !unverified_sources.is_empty() {
+            summary.push_str(&format!(
+                "; discovered (admission unverified): {}",
+                crate::status::compose_agents_summary(&self.config, &unverified_sources)
+            ));
+        }
+        if !self.context_ledger.pending_context_admissions.is_empty() {
+            summary.push_str("; changes queued for next turn");
+        }
+        summary
+    }
+
     pub(crate) fn status_output_cell(
         &mut self,
         refreshing_rate_limits: bool,
@@ -255,8 +305,7 @@ impl ChatWidget {
                 .or(model_default_reasoning_effort),
         );
         let rate_limit_snapshots = self.status_rate_limit_snapshots();
-        let agents_summary =
-            crate::status::compose_agents_summary(&self.config, &self.instruction_source_paths);
+        let agents_summary = self.status_instruction_sources_summary();
         let subscription_account = super::elpis_providers::subscription_account(
             self.config.codex_home.as_path(),
             self.current_model(),

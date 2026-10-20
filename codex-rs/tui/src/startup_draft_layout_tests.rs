@@ -45,8 +45,7 @@ fn row(buffer: &Buffer, y: u16, columns: std::ops::Range<u16>) -> String {
     columns.map(|x| buffer[(x, y)].symbol()).collect()
 }
 
-/// A slow start must not look like the Ledger is missing: the startup screen already holds its
-/// column, level with where the live Ledger starts, and the composer stops at it.
+/// A slow start holds the same top-right Ledger column as the live screen, beside the composer.
 #[test]
 fn owned_startup_shows_the_ledger_column_beside_the_composer() {
     let pump = crate::startup_draft::tests::quiet_startup_test_pump();
@@ -64,12 +63,15 @@ fn owned_startup_shows_the_ledger_column_beside_the_composer() {
     let header_row = (0..area.height)
         .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
         .expect("the header stays");
-    // The live Ledger starts below the header with a dedicated Close row, then its title.
-    assert_eq!(title_row, header_row + 4);
-    for y in 0..title_row - 1 {
-        assert_eq!(buffer[(rule_x, y)].symbol(), " ", "row {y}");
-    }
-    for y in title_row - 1..area.height {
+    assert_eq!(
+        title_row, 1,
+        "the Ledger title follows its reserved top Close row"
+    );
+    assert_eq!(
+        header_row, title_row,
+        "the titles share the first content row"
+    );
+    for y in 0..area.height {
         assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}");
     }
     let composer_rows = |columns: std::ops::Range<u16>| {
@@ -95,13 +97,13 @@ fn owned_startup_reserves_ledger_close_row() {
         .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
         .expect("startup header");
     assert_eq!(
-        title_y,
-        header_y + 4,
-        "startup reserves the live owned Close row above its heading"
+        title_y, 1,
+        "startup reserves the live top Close row above its heading"
     );
+    assert_eq!(header_y, title_y, "the titles share the first content row");
     assert_eq!(buffer[(rule_x, title_y - 1)].symbol(), "│");
     assert!(
-        !row(&buffer, title_y - 1, rule_x + 1..area.width).contains("Close"),
+        !row(&buffer, title_y - 1, rule_x + 1..area.width).contains("╳"),
         "startup paints no dead button"
     );
 }

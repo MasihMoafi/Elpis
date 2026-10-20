@@ -135,6 +135,60 @@ fn ledger_alone(chat: &ChatWidget) -> Vec<String> {
 }
 
 #[tokio::test]
+async fn owned_ledger_title_stays_at_top_with_active_subagents() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    chat.set_agent_ledger(vec![crate::chatwidget::agent_ledger::AgentLedgerEntry {
+        task: "Ledger child".to_string(),
+        status: "Running",
+        activity: Some("read-only fixture".to_string()),
+    }]);
+    for width in [28, 40, 52] {
+        let area = Rect::new(0, 0, width, 160);
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        chat.render_context_ledger_column(area, &mut buffer);
+        let lines = rows(&buffer, 0..area.width);
+        assert!(lines[0].contains('╳'), "Close stays at the top");
+        assert!(
+            lines[1].contains("CONTEXT LEDGER"),
+            "child activity must not displace the Ledger title"
+        );
+        let toggle = lines
+            .iter()
+            .position(|line| line.contains("SUBAGENTS"))
+            .expect("subagent setting");
+        let summary = lines
+            .iter()
+            .position(|line| line.contains("SUBAGENT LEDGER"))
+            .expect("active child summary");
+        let task = lines
+            .iter()
+            .position(|line| line.contains("Ledger child"))
+            .expect("child task");
+        let activity = lines
+            .iter()
+            .position(|line| line.contains("read-only fixture"))
+            .expect("child activity");
+        assert!(summary > toggle, "child summary follows SUBAGENTS");
+        assert!(task > summary, "child task follows its summary");
+        assert!(activity > task, "child activity follows its task");
+    }
+}
+
+#[tokio::test]
+async fn owned_ledger_without_subagents_omits_the_child_summary() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    show_context_ledger(&mut chat);
+    let area = Rect::new(0, 0, 52, 160);
+    let mut buffer = ratatui::buffer::Buffer::empty(area);
+    chat.render_context_ledger_column(area, &mut buffer);
+    let lines = rows(&buffer, 0..area.width);
+    assert!(lines[0].contains('╳'));
+    assert!(lines[1].contains("CONTEXT LEDGER"));
+    assert!(!lines.iter().any(|line| line.contains("SUBAGENT LEDGER")));
+}
+
+#[tokio::test]
 async fn owned_ledger_displays_complete_source_names_at_narrow_widths() -> anyhow::Result<()> {
     let root = tempdir()?;
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
@@ -295,7 +349,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
         "the selected source fits below Close: {text}"
     );
     let close_x = (0..area.width)
-        .find(|&x| buffer[(x, 0)].symbol() == "✕")
+        .find(|&x| buffer[(x, 0)].symbol() == "╳")
         .expect("pinned Close");
     assert!(
         (0..area.width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
@@ -353,7 +407,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
 async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
-    for width in [0, 1, 2, 3, 11, 12, 28] {
+    for width in [0, 1, 2, 3, 5, 6, 28] {
         for height in 0..=2 {
             show_context_ledger(&mut chat);
             let area = Rect::new(7, 5, width, height);
@@ -361,8 +415,8 @@ async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
             chat.render_context_ledger_column(area, &mut buffer);
             let close = area
                 .positions()
-                .find(|&position| buffer[position].symbol() == "✕");
-            if width >= 12 && height > 0 {
+                .find(|&position| buffer[position].symbol() == "╳");
+            if width >= 6 && height > 0 {
                 let close = close.expect("a full Close button fits");
                 assert_eq!(close.y, area.y);
                 assert!(

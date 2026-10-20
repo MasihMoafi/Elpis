@@ -269,6 +269,39 @@ jobs:
           path: ${{ runner.temp }}/elpis-config-checks.log
           if-no-files-found: ignore
           retention-days: 7
+      - name: Native Ledger placement and compact Close regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          node scripts/evals/ledger-close-placement.cjs \
+            --binary "$PWD/codex-rs/target/release/elpis" \
+            --output "$RUNNER_TEMP/elpis-ledger-native" --phase candidate
+      - name: Preserve native Ledger evidence
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-ledger-native
+          path: ${{ runner.temp }}/elpis-ledger-native
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prove status regression detects the original missing instructions
+        if: ${{ !cancelled() }}
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_source=tui/src/chatwidget/status_controls.rs
+          trap 'git restore --source=HEAD --worktree -- "$status_source"' EXIT
+          git show fea460113de6a23f00f1ad44c5cc8984e2184fb6:codex-rs/tui/src/chatwidget/status_controls.rs > "$status_source"
+          set +e
+          cargo test --profile dev-small --locked -p codex-tui --lib \
+            chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules \
+            -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          control_status=${PIPESTATUS[0]}
+          set -e
+          test "$control_status" -ne 0
+          rg -q 'test result: FAILED\. 0 passed; 1 failed;' "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          rg -q 'status_command_reports_admitted_development_rules.*FAILED' "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          rg -q '/status omitted an admitted development rule' "$RUNNER_TEMP/elpis-status-negative-checks.log"
       - name: Native UI and retained Elpis interaction tests
         env:
           INSTA_UPDATE: new

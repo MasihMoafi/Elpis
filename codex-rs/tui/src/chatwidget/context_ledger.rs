@@ -42,7 +42,7 @@ const LEDGER_LEFT_COLS: u16 = 2;
 /// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
 /// edge. The native inline Ledger keeps the same margin.
 const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
-const LEDGER_CLOSE_BUTTON_LABEL: &str = " ✕ Close ";
+const LEDGER_CLOSE_BUTTON_LABEL: &str = " ╳ ";
 
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
 /// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
@@ -754,7 +754,7 @@ impl ChatWidget {
         } else {
             "Alt+C controls · Ctrl+click open file"
         };
-        let mut lines = self.agent_ledger_lines(content_width);
+        let mut lines = Vec::new();
         let title_line = lines.len();
         let mut title = crate::status_indicator_widget::ledger_title_shimmer(
             CONTEXT_LEDGER_TITLE,
@@ -1021,6 +1021,7 @@ impl ChatWidget {
         )));
         lines.push(Line::from(""));
 
+        lines.extend(self.agent_ledger_lines(content_width));
         lines.push(Line::from(vec![
             Span::styled("CONTEXT WINDOW", context.bold()),
             Span::raw("  "),
@@ -1559,7 +1560,7 @@ impl ChatWidget {
         sources
     }
 
-    fn accounted_continuity_sources(
+    pub(super) fn accounted_continuity_sources(
         &self,
     ) -> Vec<crate::legacy_core::elpis_context::ContinuitySource> {
         let mut sources = self.manual_memory_cache.sources.clone();
