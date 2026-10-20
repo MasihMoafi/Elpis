@@ -188,9 +188,9 @@ async function main() {
       return { ...t, wrote: fs.existsSync(ctl.marker) };
     }
     // The model's step in an engine turn: once released, write in the workspace with the default sandbox.
-    function scriptedWrite() {
+    function scriptedWrite(before = '') {
       const id = ++files, marker = path.join(cwd, `engine-${id}`);
-      const item = call(`write_${id}`, 'exec_command', { cmd: `printf helper > '${marker}'` });
+      const item = call(`write_${id}`, 'exec_command', { cmd: `${before}printf helper > '${marker}'` });
       provider.actions.push({ hang: true }, message('Done.'));
       return { marker, release: () => {
         const response = [...provider.hanging][0];
@@ -203,8 +203,8 @@ async function main() {
       } };
     }
     // An engine helper's turn through its delegate tool.
-    async function engineHelper(delegate, args, during) {
-      const step = scriptedWrite();
+    async function engineHelper(delegate, args, during, before) {
+      const step = scriptedWrite(before);
       const t = await turn(delegate, { model: 'gpt-5.5', provider: 'fixture', ...args }, () => provider.hanging.size > 0, step.release, during);
       if (t.status === 'completed') assert.equal(provider.actions.length, 0, 'the helper used every scripted model response');
       provider.actions.length = 0;
@@ -350,6 +350,19 @@ async function main() {
       const engine = await engineHelper(delegate, { allow_writes: false });
       assert.equal(engine.wrote, false, 'write');
       pass('a Full Access parent starts a read-only engine helper sandboxed');
+    });
+    // A48 (Masih, 20 Oct: "Full access by default for everyone; subagents never ask"): a writing helper of a
+    // Full Access chat gets Full Access. The workspace sandbox refuses a local server (listen EPERM); Full Access does not.
+    await group('Full Access parent gives a writing helper Full Access', async () => {
+      const listen = `'${process.execPath}' -e "require('net').createServer().listen(0, '127.0.0.1', () => process.exit(0)).on('error', () => process.exit(1))" && `;
+      const full = await parent('full');
+      const engine = await engineHelper(await delegateServer(full), { allow_writes: true }, undefined, listen);
+      assert.equal(engine.wrote, true, 'a writing helper of a Full Access chat opens a local server');
+      pass('a Full Access parent starts a writing engine helper with Full Access');
+      const workspace = await parent('default');
+      const capped = await engineHelper(await delegateServer(workspace), { allow_writes: true }, undefined, listen);
+      assert.equal(capped.wrote, false, 'a writing helper of a Workspace chat stays in the workspace sandbox');
+      pass('a Workspace parent keeps a writing engine helper in the workspace sandbox');
     });
     // A reduction is sticky; a later grant reaches only new helpers, up to what they ask for.
     await group('sticky reduction', async () => {

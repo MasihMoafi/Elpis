@@ -369,10 +369,17 @@ const AUTHORITY = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissi
 const UNSANDBOXED = [":danger-full-access", ":bypass-permissions"];
 const WRITABLE = [":workspace", ...UNSANDBOXED];
 const writableFor = (threadId) => WRITABLE.includes(chatAccess.get(threadId)?.profile) && helperScope.get(threadId)?.ceiling !== "read-only";
+const fullFor = (threadId) => UNSANDBOXED.includes(chatAccess.get(threadId)?.profile) && [undefined, "danger-full-access"].includes(helperScope.get(threadId)?.ceiling);
+// A48 (Masih, 20 Oct: "Full access by default for everyone; subagents never ask; Full access, not
+// Bypass"): a helper that asks to write gets Full Access below a Full Access or Bypass chat, a
+// workspace below a Workspace chat, and read-only otherwise.
+const CEILINGS = ["read-only", "workspace-write", "danger-full-access"];
+const lowest = (...ceilings) => CEILINGS[Math.min(...ceilings.map((c) => Math.max(0, CEILINGS.indexOf(c))))];
+const helperCeiling = (requested, parentThreadId) => requested !== "workspace-write" || !writableFor(parentThreadId) ? "read-only"
+  : fullFor(parentThreadId) ? "danger-full-access" : "workspace-write";
 // A reopened helper's ceiling: the lower of the stored one and this bridge's, lowered to what
 // its chat allows now. A record from before ceilings were kept is read-only.
-const ceilingOf = (threadId, d) => d.requested === "workspace-write" && d.ceiling === "workspace-write"
-  && helperScope.get(threadId)?.ceiling !== "read-only" && writableFor(d.parentThreadId) ? "workspace-write" : "read-only";
+const ceilingOf = (threadId, d) => lowest(d.ceiling, helperScope.get(threadId)?.ceiling ?? "danger-full-access", helperCeiling(d.requested, d.parentThreadId));
 // Lowers the ceiling of every helper below a chat that may still write. Resolves once each open
 // copy has applied it or been stopped; null when there was nothing to lower.
 function reduceHelpers(threadId) {
@@ -380,7 +387,7 @@ function reduceHelpers(threadId) {
   for (const d of pendingHelpers) if (d.parentThreadId === threadId) d.ceiling = "read-only";
   for (const [id, h] of helperScope) {
     if (h.parentThreadId !== threadId) continue;
-    if (h.ceiling === "workspace-write") { h.ceiling = "read-only"; for (const restrict of h.owners) work.push(restrict(id)); }
+    if (h.ceiling !== "read-only") { h.ceiling = "read-only"; for (const restrict of h.owners) work.push(restrict(id)); }
     const nested = reduceHelpers(id);
     if (nested) work.push(nested);
   }
@@ -629,7 +636,7 @@ wss.on("connection", (ws) => {
       for (const k of ["approvalPolicy", "approvalsReviewer", "activePermissionProfile", "cwd", "collaborationMode", "serviceTier", "disabledPluginIds"]) if (s[k] !== undefined) cached[k] = s[k];
       if (s.sandboxPolicy) cached.sandbox = s.sandboxPolicy;
     }
-    const wasWritable = chatAccess.has(threadId) ? writableFor(threadId) : null;
+    const wasWritable = chatAccess.has(threadId) ? writableFor(threadId) : null, wasFull = chatAccess.has(threadId) ? fullFor(threadId) : null;
     if (s.approvalPolicy) threadPolicy.set(threadId, s.approvalPolicy);
     const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
     const profile = s.permissions ?? s.activePermissionProfile?.id
@@ -638,8 +645,8 @@ wss.on("connection", (ws) => {
     threadAccess.set(threadId, { profile: profile ?? prev.profile, reviewer: s.approvalsReviewer ?? prev.reviewer });
     chatAccess.set(threadId, { policy: threadPolicy.get(threadId), profile: threadAccess.get(threadId).profile });
     for (const confirm of confirmations.get(threadId) ?? []) confirm(threadAccess.get(threadId).profile);
-    // A chat that can no longer write lowers its helpers' ceilings.
-    if (writableFor(threadId)) return null;
+    // A chat that can no longer write, or that leaves Full Access, lowers its helpers' ceilings.
+    if (writableFor(threadId) && (fullFor(threadId) || wasFull !== true)) return null;
     if (wasWritable !== false) persistReduction(threadId).then((saved) => {
       if (saved) return;
       log(`helpers of ${threadId}: reduction not saved`);
@@ -1163,15 +1170,16 @@ wss.on("connection", (ws) => {
   const openHelper = (tid, d, ceiling) => {
     let h = helperScope.get(tid);
     if (!h) helperScope.set(tid, h = { parentThreadId: d.parentThreadId, requested: d.requested, ceiling, owners: new Set() });
-    if (ceiling === "read-only") h.ceiling = "read-only";
+    h.ceiling = lowest(h.ceiling, ceiling);
     h.owners.add(restrictHelper);
     ownHelpers.set(tid, { applying: null, waiting: [], failed: false });
     threadSandbox.set(tid, h.ceiling);
     return h;
   };
   // A request for a helper's thread asks for no more than its ceiling: a read-only helper is
-  // asked to be read-only, and none is given Full Access. `field` is the request's sandbox field.
+  // asked to be read-only, and only a Full Access one is given Full Access, never Bypass. `field` is the request's sandbox field.
   const boundAccess = (p, ceiling, field) => {
+    if (ceiling === "danger-full-access") { if (p.permissions === ":bypass-permissions") p.permissions = ":danger-full-access"; return; }
     const wide = UNSANDBOXED.includes(p.permissions) || p[field] === "danger-full-access" || ["dangerFullAccess", "externalSandbox"].includes(p[field]?.type);
     if (ceiling === "workspace-write" && !wide) return;
     delete p.permissions; delete p[field];
@@ -1184,7 +1192,8 @@ wss.on("connection", (ws) => {
     const h = openHelper(tid, r, r.ceiling);
     if (h.ceiling !== r.stored) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = h.ceiling; });
     const profile = threadAccess.get(tid)?.profile;
-    const want = h.ceiling === "read-only" ? ":read-only" : UNSANDBOXED.includes(profile) ? ":workspace" : null;
+    const want = h.ceiling === "read-only" ? ":read-only" : h.ceiling === "workspace-write" ? (UNSANDBOXED.includes(profile) ? ":workspace" : null)
+      : profile === ":bypass-permissions" ? ":danger-full-access" : null;
     if (!want || profile === want) return true;
     if (bridged) { applyProfile(tid, want); return true; }
     const ok = await applyProfile(tid, want);
@@ -2029,10 +2038,10 @@ wss.on("connection", (ws) => {
     const p = msg.params ?? {};
     const helper = !!p.elpisParentThreadId;
     if (helper) {
-      // The helper's ceiling (helperScope): its chat's Full Access is never passed on.
+      // The helper's ceiling (helperScope, helperCeiling): a writer below a Full Access chat gets Full Access.
       const parentThreadId = p.elpisParentThreadId;
-      const requested = p.sandbox === "workspace-write" ? "workspace-write" : "read-only";
-      p.sandbox = requested === "workspace-write" && writableFor(parentThreadId) ? "workspace-write" : "read-only";
+      const requested = ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only";
+      p.sandbox = helperCeiling(requested, parentThreadId);
       delete p.permissions;
       const d = { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested, ceiling: p.sandbox };
       pendingDelegation.set(msg.id, d);
