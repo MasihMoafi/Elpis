@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Activity, Archive, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
@@ -1336,8 +1337,9 @@ export default function Home() {
   }
   /** Puts an earlier message (or the draft) in the box with the caret at its start or end, as the history keys do. */
   function writePrompt(value: string, caret: "start" | "end") {
-    editDraft(value);
-    requestAnimationFrame(() => { const at = caret === "end" ? value.length : 0; composerRef.current?.setSelectionRange(at, at); });
+    flushSync(() => editDraft(value));
+    const at = caret === "end" ? value.length : 0;
+    composerRef.current?.setSelectionRange(at, at);
   }
   /** Esc Esc in an empty box opens the newest message you sent for editing, as in Claude; one that cannot be replaced says why. */
   function editLastMessage() {
@@ -1501,7 +1503,7 @@ export default function Home() {
   ];
   const slash = useSlashMenu(text, slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
-    onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); editDraft(result.text); setCaret(result.caret); requestAnimationFrame(() => composerRef.current?.setSelectionRange(result.caret, result.caret)); } });
+    onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); flushSync(() => editDraft(result.text)); setCaret(result.caret); composerRef.current?.setSelectionRange(result.caret, result.caret); } });
   // A panel belongs to the chat and page it was opened on; a notice goes when the person types again.
   useEffect(() => { setPanel(null); }, [selected?.id, view]);
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
