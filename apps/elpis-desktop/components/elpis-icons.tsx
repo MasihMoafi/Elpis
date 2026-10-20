@@ -46,4 +46,4 @@ export const PersonIcon = icon("0 0 426 426", "M 150.7 59.7 L 125 85.5 125.0 130
 /** Lab: a flask with the sidebar family's cut corners and line weight. */
 export const ExperimentLabIcon = icon("0 0 225 225", "M 76 24 H 149 V 42 H 139 V 92 L 197 172 V 190 L 185 202 H 40 L 28 190 V 172 L 86 92 V 42 H 76 Z M 104 42 V 98 L 46 178 V 183 L 49 186 H 176 L 179 183 V 178 L 121 98 V 42 Z M 73 140 H 152 L 165 158 H 60 Z");
 /** Love Spot: a heart with a spot, drawn on 18 October 2026 in this sheet's corners and line weight. */
-export const LoveSpotIcon = icon("0 0 225 225", "M 112.5 62.5 L 88 38 L 52 38 L 24 66 L 24 104 L 112.5 192.5 L 201 104 L 201 66 L 173 38 L 137 38 Z M 112.5 88 L 80.5 56 L 59.5 56 L 42 73.5 L 42 96.5 L 112.5 167 L 183 96.5 L 183 73.5 L 165.5 56 L 144.5 56 Z M 112.5 104 L 130.5 122 L 112.5 140 L 94.5 122 Z", "#8B1017");
+export const LoveSpotIcon = icon("0 0 225 225", "M 112.5 62.5 L 88 38 L 52 38 L 24 66 L 24 104 L 112.5 192.5 L 201 104 L 201 66 L 173 38 L 137 38 Z M 112.5 88 L 80.5 56 L 59.5 56 L 42 73.5 L 42 96.5 L 112.5 167 L 183 96.5 L 183 73.5 L 165.5 56 L 144.5 56 Z M 112.5 104 L 130.5 122 L 112.5 140 L 94.5 122 Z", "var(--love-red)");

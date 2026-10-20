@@ -48,12 +48,25 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     assert.equal(await page.locator('.message.agent .speaker').count(), 0);
     await page.locator('.thread-row[data-thread-id="critic"] .thread-link').click();
     const icon = page.locator('[data-nav-page="loveSpot"] svg');
-    assert.equal(await icon.getAttribute('fill'), '#8B1017');
     const output = process.env.ELPIS_IDENTITY_SCREENSHOTS || '/tmp/lovespot-identity';
     await fs.mkdir(output, { recursive: true });
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
+      assert.equal(await icon.evaluate(svg => getComputedStyle(svg).fill), 'rgb(139, 16, 23)');
+      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--love-red').trim()), '#8B1017');
       await page.screenshot({ path: path.join(output, `${theme}.png`) });
+    }
+    const shell = page.locator('.app-shell');
+    assert.notEqual(await shell.evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim()), '#8B1017');
+    await page.locator('[data-nav-page="loveSpot"]').click();
+    await page.waitForFunction(() => document.querySelector('.app-shell')?.dataset.workspace === 'loveSpot');
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme);
+      const palette = await shell.evaluate(el => {
+        const style = getComputedStyle(el);
+        return ['--primary', '--primary-action', '--primary-foreground', '--primary-action-content'].map(token => style.getPropertyValue(token).trim());
+      });
+      assert.deepEqual(palette, ['#8B1017', '#8B1017', '#fff', '#fff']);
     }
   } finally {
     await browser.close();
