@@ -145,7 +145,7 @@ function modeOf(result) {
 }
 /** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
 const WHOLE_TURNS = 'whole-turns:';
-const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
+const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
 /** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
@@ -1447,7 +1447,16 @@ export class DesktopClient extends EventEmitter {
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Wait for this agent to finish; a message then continues it in a new conversation.', 409);
-      return this.#rpc('turn/steer', params);
+      try { return await this.#rpc('turn/steer', params); }
+      catch (error) {
+        // The turn the app saw has ended or another replaced it: the message joins the running
+        // turn, or starts a new one, as in the terminal, instead of failing.
+        if (error.code !== -32600 || !/^(no active turn to steer|expected active turn id)/.test(error.engineMessage)) throw error;
+        const running = (await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' })).data?.find(turn => turn.status === 'inProgress')?.id;
+        if (running && running !== params.expectedTurnId) return this.#rpc('turn/steer', { ...params, expectedTurnId: running });
+        if (running) throw error;
+        return this.#startTurn(thread, { threadId: id, input });
+      }
     });
   }
   /** Stops the given turn, or the agent's running turn when the caller has not seen its start. */
