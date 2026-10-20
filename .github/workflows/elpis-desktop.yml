@@ -17,7 +17,7 @@ concurrency:
 jobs:
   renderer:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: apps/elpis-desktop
@@ -42,6 +42,27 @@ jobs:
           node bridge/build-resources.mjs
           npm run -s build
           printf '%s\n' "$GITHUB_SHA" > out/.commit
+      - name: Verify the artifact gate and inventory guards
+        run: node --test --test-reporter=tap tests/renderer-artifact-gate.test.mjs tests/test-inventory.test.mjs
+      - name: Prepare the retained UI checkpoint and browser prerequisite
+        run: |
+          baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
+          git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
+          npm install --prefix "$RUNNER_TEMP/elpis-ui" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.62.1
+          test -x /usr/bin/google-chrome
+      - name: Verify the exact renderer against retained and current UI regressions
+        env:
+          ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/elpis-ui/node_modules/playwright-core
+          ELPIS_CHROMIUM: /usr/bin/google-chrome
+        run: node scripts/renderer-artifact-gate.mjs "$RUNNER_TEMP/elpis-ui-evidence"
+      - name: Preserve UI gate diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: renderer-ui-evidence
+          path: ${{ runner.temp }}/elpis-ui-evidence
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: renderer
