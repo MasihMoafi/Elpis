@@ -125,7 +125,28 @@ const clipItem = (it) => it.type === "fileChange" ? { ...it, changes: it.changes
 const clipTurn = (turn) => ({ ...turn, items: turn.items.map(clipItem) });
 const ELPIS_HOME = process.env.ELPIS_HOME || `${HOME}/.elpis-next`;
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${ELPIS_HOME}/elpis-claude/sessions.json`;
-async function loadStore() { return (await readJson(STORE)) ?? {}; }
+async function loadStore() {
+  const { readFile, stat, copyFile } = await import("node:fs/promises");
+  try {
+    const store = JSON.parse(await readFile(STORE, "utf8"));
+    if (!store || typeof store !== "object" || Array.isArray(store)) throw new Error("saved chats must be a JSON object");
+    return store;
+  } catch (e) {
+    if (e.code === "ENOENT") return {};
+    let backupError = "";
+    try {
+      const { constants } = await import("node:fs");
+      const { mtimeMs } = await stat(STORE);
+      const backup = `${STORE}.damaged-${new Date(mtimeMs).toISOString().replaceAll(":", "-")}`;
+      try { await copyFile(STORE, backup, constants.COPYFILE_EXCL); }
+      catch (err) { if (err.code !== "EEXIST") backupError = `; recovery copy failed: ${err.message}`; }
+    } catch (err) { backupError = `; recovery copy failed: ${err.message}`; }
+    const failure = new Error(`cannot load ${STORE}: ${e.message}${backupError}`);
+    failure.storeLoadError = true;
+    log(`store: ${failure.message}`);
+    throw failure;
+  }
+}
 let storeChain = Promise.resolve();
 const deletingThreads = new Set();
 const deletedThreads = new Set();
@@ -136,7 +157,7 @@ function updateStore(fn) {
     // Late plan/tool notifications cannot recreate a deleted transcript.
     for (const tid of deletedThreads) { delete st[tid]; if (st._delegations) delete st._delegations[tid]; }
     await saveStore(st); return true;
-  }).catch((e) => { log(`store: ${e.message}`); return false; });
+  }).catch((e) => { if (!e.storeLoadError) log(`store: ${e.message}`); return false; });
   return storeChain;
 }
 const STATE_DIR = STORE.slice(0, STORE.lastIndexOf("/"));

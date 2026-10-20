@@ -216,6 +216,7 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Provider history and message retention checks
         run: |
+          node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
           node scripts/bridge-launcher.test.cjs
