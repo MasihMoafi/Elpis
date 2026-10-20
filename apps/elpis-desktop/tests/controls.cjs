@@ -47,7 +47,7 @@ async function guardDesktopStore(target) {
   }, STORE_KEYS.source);
 }
 /** Unapproved oranges in the light theme (hue 15–50°, saturated, mid lightness), as `selector: property value`.
- * Masih's shared amber primary button fill is allowed; its text, edges and all other surfaces stay checked.
+ * Masih's shared amber primary button fill is allowed, and so is the working mark drawn in that same colour; its text, edges and all other surfaces stay checked.
  * Colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
 const oranges = (page, exclude = '') => page.evaluate(exclude => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
@@ -76,6 +76,7 @@ const oranges = (page, exclude = '') => page.evaluate(exclude => {
     if (element instanceof SVGElement) checks.push(['fill', style.fill], ['stroke', style.stroke]);
     for (const [property, value] of checks) {
       if (property === 'background-color' && element.matches('[data-slot="button"].primary-cut')) continue;
+      if (property === 'fill' && element.closest('.elpis-working-mark')) continue;
       for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
     }
   }
