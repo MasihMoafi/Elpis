@@ -1,0 +1,14 @@
+---
+source: tui/src/chatwidget/tests/smart_prune_log.rs
+assertion_line: 245
+expression: screen
+---
+$ 'cargo test -p core'
+Full tool output
+✓ • 5ms
+✂ Smart Prune · cargo test -p core · 6.3k → 182 tokens · kept: the 2 failing tests
+
+$ 'git status'
+Full tool output
+✓ • 5ms
+✂ Smart Prune failed · kept the full output · The pruner timed out.
