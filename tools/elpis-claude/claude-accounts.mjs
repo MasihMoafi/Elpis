@@ -31,15 +31,24 @@ export class ClaudeAccounts {
     return id === "default" ? this.defaultConfigDir : join(this.dir, "claude-accounts", id);
   }
   credentials(id = this.activeId()) { return readJson(join(this.configDir(id), ".credentials.json"))?.claudeAiOauth ?? null; }
+  profile(id) {
+    return readJson(join(this.configDir(id), ".claude.json"))?.oauthAccount ?? (id === "default" && this.defaultConfigDir === join(this.home, ".claude") ? readJson(join(this.home, ".claude.json"))?.oauthAccount : null);
+  }
   account(id = this.activeId()) {
-    const config = readJson(join(this.configDir(id), ".claude.json")) ?? (id === "default" ? readJson(join(this.home, ".claude.json")) : null);
-    return { email: config?.oauthAccount?.emailAddress ?? null, plan: this.credentials(id)?.subscriptionType ?? null };
+    return { email: this.profile(id)?.emailAddress ?? null, plan: this.credentials(id)?.subscriptionType ?? null };
+  }
+  duplicate(id) {
+    if (id === "default") return false;
+    const first = this.profile("default"), second = this.profile(id);
+    if (first?.organizationUuid && second?.organizationUuid && first.organizationUuid !== second.organizationUuid) return false;
+    if (first?.accountUuid && second?.accountUuid) return first.accountUuid === second.accountUuid;
+    return !!first?.emailAddress && !!second?.emailAddress && first.emailAddress.toLowerCase() === second.emailAddress.toLowerCase();
   }
   snapshot() {
     const state = this.state();
     return { activeId: state.activeId, accounts: ["default", ...state.ids].map((id, index) => {
       const login = this.logins.get(id);
-      return { id, label: index ? "Claude 2" : "Claude 1", ...this.account(id), authenticated: !!this.credentials(id)?.accessToken, signingIn: !!login?.running, error: login?.error ?? null };
+      return { id, label: index ? "Claude 2" : "Claude 1", ...this.account(id), authenticated: !!this.credentials(id)?.accessToken, duplicate: this.duplicate(id), signingIn: !!login?.running, error: login?.error ?? null };
     }) };
   }
   add() {
@@ -53,7 +62,9 @@ export class ClaudeAccounts {
   }
   select(id) {
     const state = this.state();
+    if (typeof id !== "string") throw invalid("Choose a Claude account.");
     if (!this.credentials(id)?.accessToken) throw invalid("Sign in to this Claude account before switching.");
+    if (this.duplicate(id)) throw invalid("These logins use the same Claude account and share its limit. Sign in with a different account.");
     this.write({ ...state, activeId: id });
     return this.snapshot();
   }

@@ -6,6 +6,8 @@ Models & accounts offers a Claude account selector and a browser sign-in for an 
 
 The selected account applies to subsequent subscription turns and usage reads in the desktop and terminal. A switch starts a fresh Claude session seeded from Elpis's saved conversation. Each account has its own usage cache. Switching while a Claude response or structured Claude request is active fails visibly. There is no automatic rotation in this implementation.
 
+Two logins for the same Claude identity and organization share their allowance; the selector identifies that case and requires a different account. Account metadata prefers the configured profile and correctly falls back to the legacy home configuration for the default Claude directory.
+
 Sign-in uses the installed Claude Code CLI. The authorization page opens in the system browser; if Claude returns a code, the user pastes it into the Elpis sign-in field. Finishing sign-in leaves the existing selection in place until the user selects the new account. A prematurely destroyed embedded sign-in popup must close without crashing Electron.
 
 Verification: the real bridge with two fixture credentials spawns the selected ACP configuration, reports usage and identity from that account, carries previous conversation text into the new session, and rejects an active-turn switch. Disabling account-specific process environments makes the test fail. The popup test reproduces the reported `isDestroyed` exception without the fix and passes with it. Existing Claude/ChatGPT sign-out checks, private storage and CLI browser-code tests pass. The renderer scenario covers selecting both accounts. Installed behavior and real second-account authentication still require verification and Masih's acceptance.
