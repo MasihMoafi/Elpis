@@ -158,7 +158,7 @@ fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
         "hotkeys", "settings", "add", "skills", "personal", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
         // Masih, 16 Oct 2026: open the TUI's chat in the desktop app.
         "app", "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
-        "agent", "copy", "diff", "usage", "context", "dashboard", "theme", "mcp", "rag", "quit",
+        "agent", "copy", "diff", "usage", "context", "config", "dashboard", "theme", "mcp", "rag", "quit",
         "clear", "subagents",
     ];
     if cfg!(target_os = "android") {
