@@ -3,7 +3,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import type { SlashCommand } from "@/components/slash-menu";
 import type { ReviewTarget } from "@/components/slash-panels";
-import type { Tab as SettingsTab } from "@/components/settings-view";
+import type { SettingsDestination } from "@/components/settings-view";
+import { configDestination } from "@/lib/config-sections";
 import { api, chatProvider, modelLabel, providerLabel, title, unreadable, type Entry, type Model, type ProviderChoice, type ProviderSettings, type Thread } from "@/lib/api";
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
@@ -21,7 +22,7 @@ type Props = {
   setActiveTurns: Setter<Record<string, string>>; focusComposer: () => void;
   entries: Entry[]; setBusy: Setter<boolean>; patchThread: (id: string, patch: Partial<Thread>) => void;
   newChoice: ProviderChoice | undefined; permissionMode: PermissionMode; chatFolder: string | null | undefined;
-  readOnlyRun: boolean; busy: boolean; openSettings: (tab: SettingsTab) => void;
+  readOnlyRun: boolean; busy: boolean; openSettings: (tab: SettingsDestination) => void;
   openPersonal: () => void; writable: boolean; idle: boolean;
   renameThread: (thread: Thread, name: string) => Promise<void>; setRenameRequest: Setter<boolean>;
   newChat: () => void; archiveThread: (thread: Thread) => Promise<void>;
@@ -122,6 +123,7 @@ export function useSlashCommands({ turnEfforts, turnEffort, openComposerControl,
     { name: "permissions", description: "choose what Elpis is allowed to do", available: !busy, run: () => openComposerControl("Change permissions") },
     { name: "yolo", description: "choose Full access or Bypass permissions", available: !busy, run: () => openComposerControl("Change permissions") },
     { name: "settings", description: "open Settings", run: () => openSettings("general") },
+    { name: "config", description: "open Settings or a section: /config [section]", args: true, run: text => openSettings(configDestination(text)) },
     { name: "memories", description: "configure memory use and generation", run: () => openSettings("personalization") },
     { name: "personal", description: "edit your priorities, working habits and preferences", run: openPersonal },
     { name: "hooks", description: "view and manage lifecycle hooks", run: () => openSettings("hooks") },

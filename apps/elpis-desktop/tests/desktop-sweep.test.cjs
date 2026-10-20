@@ -8,7 +8,7 @@ const { openSettings } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contextRoutes } = require('./context-files-fixture.cjs');
 
-const PAGES = ['General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Voice', 'Personalization', 'Usage & limits', 'Archived chats', 'Models & accounts', 'MCP servers', 'Git', 'Worktrees', 'Hooks', 'Configuration'];
+const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats'];
 const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
 const description = 'Check the shared components and their rendered layout, then explain which parts need attention before changing the interface. '.repeat(3);
 function routes() {

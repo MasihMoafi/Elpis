@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useBrowser } from "@/components/browser-panel";
 import { useSidePanel } from "@/components/side-panel";
-import type { Tab as SettingsTab } from "@/components/settings-view";
+import type { SettingsDestination } from "@/components/settings-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
 import { onRequest as onFileRequest } from "@/lib/files-pane";
 import type { Thread } from "@/lib/api";
@@ -11,7 +11,7 @@ import type { View } from "@/hooks/use-chat-navigation";
 type Props = { selected: Thread | null; activeTabId: string; view: View; setView: Dispatch<SetStateAction<View>> };
 
 export function useWorkspacePanels({ selected, activeTabId, view, setView }: Props) {
-  const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
+  const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
   const [desktop, setDesktop] = useState(false);
   const [windowAvailable, setWindowAvailable] = useState(false);
   const sessionWindowApi = () => window.elpisDesktop?.openSessionWindow ?? (window.parent !== window && new URLSearchParams(location.search).get("pane") === "1" ? window.parent.elpisDesktop?.openSessionWindow : undefined);
