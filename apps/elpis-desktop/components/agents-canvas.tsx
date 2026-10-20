@@ -59,7 +59,7 @@ const OVERVIEW = { padding: 0.08, maxZoom: 1 };
 function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
   const status = data.status ?? "idle", check = data.check ?? "idle", portrait = agentPortrait(data);
   return <div className="agent-node" data-kind="agent" data-status={status} style={{ "--agent-color": agentColor(id, data) } as CSSProperties}>
-    {portrait && <span className="avatar agent-portrait"><div><img src={portrait} alt="" /></div></span>}
+    {portrait && <span className="avatar agent-portrait"><div><img src={portrait} alt="" className="size-full object-contain" /></div></span>}
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
     <span className="agent-node-kind">Agent{data.wave ? ` · wave ${data.wave}` : ""}</span>
     <strong className="agent-node-title" title={data.title || "Untitled"}>{data.title || "Untitled"}</strong>

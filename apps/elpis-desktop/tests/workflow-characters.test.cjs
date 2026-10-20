@@ -41,11 +41,14 @@ test('edit a plain workflow agent: assign, replace and remove artwork without ch
     await upload.setInputFiles({ name: 'bad.png', mimeType: 'image/png', buffer: Buffer.from('not an image') });
     await f.canvas.getByRole('alert').filter({ hasText: 'could not be read' }).waitFor();
     assert.equal((await f.saved()).nodes.find(n => n.id === 'Veyra').data.character, 'builder');
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
+    const png = Buffer.from(await f.page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 64; const context = canvas.getContext('2d'); context.fillStyle = '#f09225'; context.fillRect(0, 0, 16, 64); return canvas.toDataURL('image/png').split(',')[1]; }), 'base64');
     await upload.setInputFiles({ name: 'my-character.png', mimeType: 'image/png', buffer: png });
     await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')).nodes.some(n => n.id === 'Veyra' && n.data.characterImage));
     const custom = (await f.saved()).nodes.find(n => n.id === 'Veyra').data.characterImage;
     assert.equal(await node.locator('.agent-portrait img').getAttribute('src'), custom);
+    const artwork = await node.locator('.agent-portrait img').evaluate(image => { const actual = image.getBoundingClientRect(), box = image.parentElement.getBoundingClientRect(); return { fits: actual.width <= box.width && actual.height <= box.height, fit: getComputedStyle(image).objectFit }; });
+    assert.ok(artwork.fits, 'tall custom artwork stays inside its reserved card area');
+    assert.equal(artwork.fit, 'contain');
     await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.canvas.waitFor(); await f.fit();
     await node.dblclick();
     assert.equal(await node.locator('.agent-portrait img').getAttribute('src'), custom);
