@@ -72,7 +72,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot red reads clearly a
     if (colorScheme === 'light') assert.equal(result.token, '#8b1017', 'the light blood red stays exact');
     for (const name of ['navText', 'pageText']) assert.ok(result[name] >= 4.5, `${colorScheme} ${name}: ${result[name].toFixed(2)}:1`);
     for (const name of ['navMark', 'toolMark']) assert.ok(result[name] >= 3, `${colorScheme} ${name}: ${result[name].toFixed(2)}:1`);
-    const blood = colorScheme === 'dark' ? [228, 98, 104] : [139, 16, 23];
+    const blood = colorScheme === 'dark' ? [232, 59, 67] : [139, 16, 23];
     if (colorScheme === 'dark') assert.deepEqual(result.pageColor, blood, 'the dark page selector uses the readable Love Spot red');
     assert.deepEqual(result.project, result.appAccent, `${colorScheme}: project folder uses the app accent`);
     assert.deepEqual(result.status, result.appAccent, `${colorScheme}: chat status uses the app accent`);
