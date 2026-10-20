@@ -37,17 +37,17 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     page.setDefaultTimeout(6000);
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    for (const [name, speaker] of [['Love Spot · Critic', 'Critic'], ['Love Spot · Reviewer', 'Reviewer'], ['Review cache', 'Cache reviewer']]) {
-      await page.getByRole('button', { name, exact: true }).first().click();
+    for (const [id, speaker] of [['critic', 'Critic'], ['reviewer', 'Reviewer'], ['nickname', 'Cache reviewer']]) {
+      await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click();
       await page.locator('.message.agent .speaker').filter({ hasText: speaker }).waitFor();
       assert.equal(await page.locator('.message.agent .speaker').textContent(), speaker);
       assert.match(await page.locator('.thread-meta').textContent(), new RegExp(speaker));
     }
-    await page.getByRole('button', { name: 'Project chat', exact: true }).first().click();
+    await page.locator('.thread-row[data-thread-id="ordinary"] .thread-link').click();
     await page.locator('.message.agent').waitFor();
     assert.equal(await page.locator('.message.agent .speaker').count(), 0);
-    await page.getByRole('button', { name: 'Love Spot · Critic', exact: true }).first().click();
-    const icon = page.getByRole('button', { name: 'Love Spot', exact: true }).locator('svg');
+    await page.locator('.thread-row[data-thread-id="critic"] .thread-link').click();
+    const icon = page.locator('[data-nav-page="loveSpot"] svg');
     assert.equal(await icon.getAttribute('fill'), '#8B1017');
     const output = process.env.ELPIS_IDENTITY_SCREENSHOTS || '/tmp/lovespot-identity';
     await fs.mkdir(output, { recursive: true });
