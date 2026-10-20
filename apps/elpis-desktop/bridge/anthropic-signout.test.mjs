@@ -36,6 +36,21 @@ function fixture({ oldBridge = false, signedOut = false } = {}) {
 }
 const methods = socket => socket.sent.map(row => row.method).filter(Boolean);
 
+test('an interrupted Claude account-list read is reported as a safe read failure', async () => {
+  const f = fixture(); await f.client.initialize();
+  const send = f.socket.send;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'claudeAccounts/read') { f.socket.sent.push(request); return; }
+    send(raw);
+  };
+  try {
+    const reading = f.client.claudeAccounts();
+    f.socket.emit('close');
+    await assert.rejects(reading, /closed while reading/);
+  } finally { f.client.close(); }
+});
+
 test('the Claude account selector validates writes and refreshes models and usage after a switch', async () => {
   const f = fixture(); await f.client.initialize(); const events = [];
   f.client.on('event', event => events.push(event));

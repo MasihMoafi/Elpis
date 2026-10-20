@@ -10,6 +10,21 @@ const { EventEmitter } = require('node:events');
 const vm = require('node:vm');
 const { spawn } = require('node:child_process');
 
+test('saved project chat assignments preserve the workspace and remain writable after restart', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-project-chat-state-')), 'workspace.json');
+  const assignments = JSON.stringify({ 'chat-1': 'project-1' });
+  const values = { 'elpis-project-chats-v1': assignments, 'elpis-theme': 'dark', 'elpis-draft-v1:chat-1': 'Unsent draft' };
+  fs.writeFileSync(file, JSON.stringify(values));
+  const store = createStateStore(file);
+  assert.equal(store.read().error, undefined);
+  assert.deepEqual(store.read(), values);
+  await store.set('elpis-project-chats-v1', JSON.stringify({ 'chat-1': 'project-2' }));
+  const reopened = createStateStore(file);
+  assert.equal(reopened.read()['elpis-draft-v1:chat-1'], 'Unsent draft');
+  assert.deepEqual(JSON.parse(reopened.read()['elpis-project-chats-v1']), { 'chat-1': 'project-2' });
+  await assert.rejects(() => reopened.set('elpis-unknown-setting', 'untrusted'), /Unsupported/);
+});
+
 // The review's reproduction: two actual preloads and preference modules, routed
 // through production window IPC to one real store. Broadcasts can be delayed.
 function windows(t) {
