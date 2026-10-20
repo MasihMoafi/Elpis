@@ -61,6 +61,19 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     const dialog = page.getByRole('alertdialog');
     await link('alpha').waitFor();
 
+    const threadList = page.locator('.thread-list');
+    const listBox = await threadList.boundingBox(); assert.ok(listBox);
+    const { overflowX, overflowY } = await threadList.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { overflowX: style.overflowX, overflowY: style.overflowY };
+    });
+    await page.mouse.move(listBox.x + listBox.width / 2, listBox.y + listBox.height / 2);
+    await page.mouse.wheel(240, 0);
+    const scrollLeft = await threadList.evaluate(element => element.scrollLeft);
+    assert.equal(overflowX, 'hidden', 'the sidebar thread list only scrolls vertically');
+    assert.equal(overflowY, 'auto', 'the sidebar thread list still scrolls vertically');
+    assert.equal(scrollLeft, 0, 'horizontal mouse-wheel input does not move the thread list');
+
     // 1. One click on "Add new project" opens the native chooser; the folder becomes a project named after it, selected.
     const add = aside.getByRole('button', { name: 'Add new project', exact: true });
     assert.notEqual(await add.evaluate(element => getComputedStyle(element).opacity), '0', '"Add new project" is visible without hovering');
