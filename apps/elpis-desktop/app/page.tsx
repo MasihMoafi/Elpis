@@ -448,7 +448,7 @@ export default function Home() {
   }, [select]);
   // Deleted and archived chats never reappear from a list read that raced with their removal.
   const hidden = useRef(new Set<string>());
-  const upsertThread = useCallback((thread: Thread) => setThreads(prev => prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
+  const upsertThread = useCallback((thread: Thread) => setThreads(prev => hidden.current.has(thread.id) ? prev : prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
   const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
     for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
     for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); browser.closeSession(id); }

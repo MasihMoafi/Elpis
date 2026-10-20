@@ -468,7 +468,7 @@ export class DesktopClient extends EventEmitter {
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
     const data = result.data.filter(thread => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map(thread => this.#decorate(thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
-    for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
+    if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
     return { ...result, data };
   }
   /** Rejoins without model, policy, history or workspace changes. Desktop MCP follows cold resumes;
