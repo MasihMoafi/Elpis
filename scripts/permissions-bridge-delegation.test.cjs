@@ -292,10 +292,16 @@ async function main() {
 
       const steerText = 'A50 steer delivered to the running helper';
       const before = provider.requests.length;
+      let followed;
       const engine = await engineHelper(delegate, { allow_writes: true }, async () => {
         const working = (await list()).data.find(thread => thread.id !== claude.threadId);
         assert(working?.id, 'the running engine helper is listed as a descendant');
         assert.equal(working.status?.type, 'active', 'the running helper is Working in the agents tree');
+        // The app opens a running helper the way it opens any chat; its delegate engine answers.
+        const opened = await request('thread/resume', { threadId: working.id, excludeTurns: true,
+          initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(error => ({ error: error.message }));
+        assert.equal(opened.thread?.status?.type, 'active', `another client opens the running helper (${opened.error ?? 'opened'})`);
+        followed = notification('turn/completed', working.id).catch(() => null);
         const read = await request('thread/read', { threadId: working.id, includeTurns: false });
         assert.equal(read.thread.status?.type, 'active', 'thread/read has the same live status');
         const turnId = working.turns.at(-1)?.id;
@@ -305,6 +311,9 @@ async function main() {
         assert.equal(steer.turnId, turnId, 'the delegate engine answered the other client');
       });
       assert.equal(engine.status, 'completed');
+      assert.equal((await followed)?.turn?.status, 'completed', 'the client that opened the helper sees its turn end');
+      const told = await tuiTurn(engine.threadId);
+      assert.equal(told.status, 'completed', `another client tells the finished helper again (${told.refused ?? told.status})`);
       assert(provider.requests.slice(before).some(r => JSON.stringify(r.body.input).includes(steerText)),
         'the delegate engine sent the steer text in its next Responses request');
       const done = await listed(engine.threadId);
