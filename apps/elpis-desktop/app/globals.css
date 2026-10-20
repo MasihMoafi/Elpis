@@ -1304,7 +1304,7 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }
-.dark { --love-red:#ec575e; }
+.dark { --love-red:#e46268; }
 :is(.love-spot, .love-spot-tools) { --primary:var(--love-red); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
 .dark :is(.love-spot, .love-spot-tools) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
 .nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
