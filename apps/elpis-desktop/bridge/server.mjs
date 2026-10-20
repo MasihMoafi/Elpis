@@ -270,6 +270,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));
         if (url.pathname === '/api/pruner' && method === 'POST') return json(response, 200, await client.savePruner(await body(request)));
         if (url.pathname === '/api/providers') return json(response, 200, method === 'GET' ? await client.providers() : await client.signIn(await body(request)));
+        if (url.pathname === '/api/providers/claude-accounts') return json(response, 200, method === 'GET' ? await client.claudeAccounts() : await client.claudeAccounts(await body(request)));
         if (url.pathname === '/api/providers/settings') return json(response, 200, method === 'GET' ? await client.providerSettings() : await client.saveProvider(await body(request)));
         if (url.pathname === '/api/providers/key' && method === 'POST') return json(response, 200, await client.saveProviderKey(await body(request)));
         if (url.pathname === '/api/mcp') return json(response, 200, method === 'GET' ? await client.mcp() : await client.saveMcp(await body(request)));

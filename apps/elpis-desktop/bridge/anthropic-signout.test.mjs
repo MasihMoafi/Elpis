@@ -17,6 +17,9 @@ function fixture({ oldBridge = false, signedOut = false } = {}) {
     switch (request.method) {
       case 'config/read': result = { config: { model: 'test-model', model_providers: {} }, layers: [] }; break;
       case 'account/read': result = { account: { type: 'chatgpt', email: 'person@example.com', planType: 'pro' }, requiresOpenaiAuth: true }; break;
+      case 'claudeAccounts/read':
+      case 'claudeAccounts/write':
+        result = { activeId: request.params.id ?? 'default', accounts: [{ id: 'default', label: 'Claude 1', authenticated: true }, { id: '66601136-bf70-4727-8da3-0e2e8efc7e99', label: 'Claude 2', authenticated: true }] }; break;
       case 'account/rateLimits/read': result = { rateLimits: codex, rateLimitsByLimitId: { codex, ...(state.signedOut ? {} : { claude }) } }; break;
       case 'model/list': result = { data: [{ id: 'test-model', model: 'test-model', displayName: 'Test model' }, ...(state.signedOut ? [] : [{ id: 'claude/opus', model: 'claude/opus', displayName: 'Opus (Claude subscription)' }])], nextCursor: null }; break;
       case 'claudeSubscription/read':
@@ -32,6 +35,23 @@ function fixture({ oldBridge = false, signedOut = false } = {}) {
   return { client: new DesktopClient(socket), socket, state };
 }
 const methods = socket => socket.sent.map(row => row.method).filter(Boolean);
+
+test('the Claude account selector validates writes and refreshes models and usage after a switch', async () => {
+  const f = fixture(); await f.client.initialize(); const events = [];
+  f.client.on('event', event => events.push(event));
+  try {
+    assert.equal((await f.client.claudeAccounts()).activeId, 'default');
+    const id = '66601136-bf70-4727-8da3-0e2e8efc7e99';
+    assert.equal((await f.client.claudeAccounts({ action: 'select', id })).activeId, id);
+    assert.equal(events.filter(event => event.type === 'account').length, 1);
+    const before = f.socket.sent.length;
+    await assert.rejects(f.client.claudeAccounts({ action: 'select', id: '../../bad' }), /Invalid Claude account/);
+    await assert.rejects(f.client.claudeAccounts({ action: 'select' }), /Choose a Claude account/);
+    await assert.rejects(f.client.claudeAccounts({ action: 'delete', id }), /Choose a Claude account action/);
+    await assert.rejects(f.client.claudeAccounts({ action: 'code', id, code: '' }), /Invalid Claude sign-in code/);
+    assert.equal(f.socket.sent.length, before, 'invalid account operations never reach the engine');
+  } finally { f.client.close(); }
+});
 
 test('providers report whether Elpis is signed out of the Claude subscription, and hide its models and usage then', async () => {
   const f = fixture(); await f.client.initialize();

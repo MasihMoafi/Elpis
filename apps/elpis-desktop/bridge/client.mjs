@@ -689,6 +689,25 @@ export class DesktopClient extends EventEmitter {
     if (typeof result?.authUrl !== 'string' || !/^https:\/\//.test(result.authUrl)) throw new BridgeError('Elpis did not return a sign-in page', 502);
     return { authUrl: result.authUrl, loginId: string(result.loginId) };
   }
+  async claudeAccounts(input) {
+    if (input !== undefined) {
+      object(input, ['action', 'id', 'code']);
+      if (!['login', 'select', 'code'].includes(input.action)) throw new BridgeError('Choose a Claude account action');
+      if (input.id !== undefined && input.id !== 'default' && !/^[a-f0-9-]{36}$/.test(input.id)) throw new BridgeError('Invalid Claude account');
+      if (input.action === 'select' && typeof input.id !== 'string') throw new BridgeError('Choose a Claude account');
+      if (input.action === 'code') text(input.code, 'Claude sign-in code', 4096);
+    }
+    let result;
+    try { result = await this.#rpc(input === undefined ? 'claudeAccounts/read' : 'claudeAccounts/write', input ?? {}); }
+    catch (error) {
+      if ([-32601, -32600].includes(error.code) && /unknown|not found/i.test(error.engineMessage ?? error.message)) throw new BridgeError('Restart Elpis to enable Claude account switching.', 503);
+      if (typeof error.engineMessage === 'string' && error.engineMessage) throw new BridgeError(error.engineMessage, error.code === -32600 ? 409 : 400);
+      throw error;
+    }
+    if (!result || !Array.isArray(result.accounts) || typeof result.activeId !== 'string') throw new BridgeError('Claude accounts could not be read.', 502);
+    if (input?.action === 'select') this.emit('event', { type: 'account', data: { method: 'claudeAccounts/write' } });
+    return result;
+  }
   /** Elpis's own Anthropic sign-out, kept by the Elpis bridge for the terminal and every window: only Elpis stops using
    * the Claude subscription. Claude Code's login and the ChatGPT account are not touched. Every window reloads its
    * models and usage as it does when the ChatGPT account changes. */

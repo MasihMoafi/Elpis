@@ -1,5 +1,9 @@
 # Masih's Elpis Outcome Ledger
 
+## October 20 — Two Claude accounts
+
+Masih: “can I also have two claude accounts? and use them say when one is done use the other?”; “Do it; on elpis. ASAP”; “Open that new login in a new tab so I can login and continue with that.” He reported a sign-in popup crash and requested finalization. Status: implementation and isolated checks completed; desktop build/install, real second-account authentication, and user acceptance remain open. Contract: [Claude accounts](specs/claude-accounts.md).
+
 This file records what Masih asked Elpis to become. It is deliberately separate from
 `TASKS.md`, implementation plans, review rounds, and agent-created engineering work.
 

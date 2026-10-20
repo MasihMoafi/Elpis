@@ -62,7 +62,8 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     const tab=tabs.get(id);if(!tab)return;
     const order=[...tabs.keys()],index=order.indexOf(id);tabs.delete(id);
     if(!host.isDestroyed())host.contentView.removeChildView(tab.view);
-    if(!tab.view.webContents.isDestroyed())tab.view.webContents.close({waitForBeforeUnload:false});
+    const webContents=tab.view.webContents;
+    if(webContents&&!webContents.isDestroyed())webContents.close({waitForBeforeUnload:false});
     if(activeId===id){activeId=order[index+1]??order[index-1]??null;syncPage(active());}
     if(!tabs.size){visible=false;annotating=false;}
     place();emit();
@@ -234,6 +235,11 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       case 'reload':tab?.view.webContents.reload();break;
       case 'hardReload':tab?.view.webContents.reloadIgnoringCache();break;
       case 'stop':tab?.view.webContents.stop();break;
+      case 'external-url':{
+        const url=browserUrl(input.url,origin),target=new URL(url);
+        if(target.protocol!=='https:'||!['claude.com','claude.ai','console.anthropic.com','platform.claude.com'].includes(target.hostname)||!target.pathname.includes('oauth/authorize')||!openExternal)throw Error('Choose a Claude sign-in page.');
+        await openExternal(url);break;
+      }
       case 'external':if(tab&&/^https?:/.test(tab.url)&&openExternal)void openExternal(tab.url);break;
       case 'duplicate':if(tab&&/^https?:/.test(tab.url))open(tab.url,{after:tab.id});break;
       case 'copyUrl':if(tab&&/^https?:/.test(tab.url))clipboard?.writeText(tab.url);break;

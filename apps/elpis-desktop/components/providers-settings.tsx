@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { providerFormId, type ProviderType } from "@/lib/provider-form";
 import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
 
 import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
 // `gateway`: a route the engine serves through its own gateway (such as the Anthropic credits), not a server the user added.
@@ -103,6 +104,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
         </div>
       </Card>
       <Card id="claude" name="Anthropic" state={data.claude.signedOut ? <State tone="off">Signed out in Elpis</State> : sub(data.claude)}>
+        <ClaudeAccountsSettings refreshKey={refreshKey} onChanged={async () => { await load(); await onChanged?.(); }} />
         <p className="provider-note">{data.claude.signedOut ? "Elpis is not using your Claude subscription. Claude Code on this computer stays signed in." : data.claude.models.length ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.` : "Sign in to Claude Code on this computer to connect your subscription."}</p>
         <div className="flex flex-wrap gap-2">
           {data.claude.signedOut

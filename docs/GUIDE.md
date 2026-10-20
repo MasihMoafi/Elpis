@@ -105,6 +105,8 @@ Easy, Medium, and Hard are separate difficulty labels. They describe how much re
 
 **R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the later user-selected Claude subscription ACP bridge described in [claude-acp.md](specs/claude-acp.md). Authentication and provider selection remain explicit. `elpis claude` (accepted 2026-10-03) separately starts Claude Code through a loopback Smart Prune proxy.
 
+Masih's October 20 request adds two isolated Claude subscription logins and explicit account switching; see [Claude accounts](specs/claude-accounts.md). Installation and real sign-in acceptance remain open.
+
 **R12. Deterministic multi-agent orchestration** — Elpis owns a persisted task DAG above the agent lineage graph. It validates dependencies and bounded task roles, controls concurrency and write authority, measures file changes, requires evidence, and requires a directly dependent read-only verifier for writable work. Branch/worktree creation and integration remain deliberate coordinator actions. The exact contract and verification state live in [WORK_GRAPHS.md](WORK_GRAPHS.md).
 
 ### State Layout

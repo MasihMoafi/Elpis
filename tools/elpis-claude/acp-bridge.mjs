@@ -3,6 +3,7 @@
 import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs";
 import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
+import { ClaudeAccounts } from "./claude-accounts.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
@@ -140,6 +141,7 @@ function updateStore(fn) {
   return storeChain;
 }
 const STATE_DIR = STORE.slice(0, STORE.lastIndexOf("/"));
+const claudeAccounts = new ClaudeAccounts({ home: HOME, dir: STATE_DIR, defaultConfigDir: process.env.CLAUDE_CONFIG_DIR ?? join(HOME, ".claude"), claudeBin: process.env.CLAUDE_CODE_EXECUTABLE ?? join(HOME, ".local/bin/claude") });
 const CATALOG = `${STATE_DIR}/catalog.json`;
 // Elpis's own sign-out of the Claude subscription (anthropic-signout.mjs), read whenever it matters, so
 // the terminal and the desktop follow it at once. While it is on, Claude's models, usage and turns are
@@ -149,7 +151,7 @@ const claudeSignedOut = () => isSignedOut(STATE_DIR);
 // the Google sign-in) runs through agy-acp.mjs and is offered only when `agy` is installed.
 const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
 const AGENTS = [
-  { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, env: { CLAUDE_CODE_EXECUTABLE: CLAUDE }, catalogFile: CATALOG, signedOut: claudeSignedOut, limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
+  { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, get env() { return { CLAUDE_CODE_EXECUTABLE: CLAUDE, ...claudeAccounts.environment() }; }, catalogFile: CATALOG, signedOut: claudeSignedOut, limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
   ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
     ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mjs", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
     : []),
@@ -169,7 +171,8 @@ async function saveStore(store) { await writeJson(STORE, store); }
 
 async function claudeLimits() {
   const { readFile } = await import("node:fs/promises");
-  const creds = JSON.parse(await readFile(`${HOME}/.claude/.credentials.json`, "utf8")).claudeAiOauth;
+  const creds = claudeAccounts.credentials();
+  if (!creds?.accessToken) throw new Error("Sign in to the selected Claude account in Models & accounts.");
   const r = await fetch(process.env.ELPIS_CLAUDE_USAGE_URL ?? "https://api.anthropic.com/api/oauth/usage", {
     headers: { Authorization: `Bearer ${creds.accessToken}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
     signal: AbortSignal.timeout(15_000),
@@ -205,7 +208,12 @@ function everyMinute(fetchLimits, what) {
     return c.inFlight;
   };
 }
-const claudeLimitsCached = everyMinute(claudeLimits, "Claude usage");
+const claudeLimitCaches = new Map();
+const claudeLimitsCached = () => {
+  const id = claudeAccounts.activeId();
+  if (!claudeLimitCaches.has(id)) claudeLimitCaches.set(id, everyMinute(claudeLimits, "Claude usage"));
+  return claudeLimitCaches.get(id)();
+};
 const agyLimitsCached = everyMinute(agyLimits, "Antigravity usage");
 
 // The TUI applies a resumed or started thread's collaboration mode after its model, so a bridged
@@ -266,9 +274,8 @@ async function recordAccounts() {
   const { readFile } = await import("node:fs/promises");
   const json = (path) => readFile(path, "utf8").then(JSON.parse).catch(() => null);
   const out = {};
-  const claude = (await json(`${HOME}/.claude.json`))?.oauthAccount;
-  const plan = (await json(`${HOME}/.claude/.credentials.json`))?.claudeAiOauth?.subscriptionType;
-  if (claude?.emailAddress && !claudeSignedOut()) out.claude = { email: claude.emailAddress, plan: plan ? plan[0].toUpperCase() + plan.slice(1) : null };
+  const { email, plan } = claudeAccounts.account();
+  if (email && !claudeSignedOut()) out.claude = { email, plan: plan ? plan[0].toUpperCase() + plan.slice(1) : null };
   const agyLog = await readFile(`${HOME}/.gemini/antigravity-cli/cli.log`, "utf8").catch(() => "");
   const agyEmail = [...agyLog.matchAll(/authenticated successfully as (\S+)/g)].at(-1)?.[1];
   if (agyEmail) out.agy = { email: agyEmail };
@@ -570,6 +577,7 @@ wss.on("connection", (ws) => {
   const resumeResults = new Map();
   const context = {
     failed: false,
+    claudeBusy: () => [...activeTurns.keys()].some(tid => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
     stopProvider: (tid) => stopProvider(tid, "deleted"),
     childrenOf: (ids) => [...childThreads].filter(([, child]) => ids.has(child.rootThreadId) || ids.has(child.thread.parentThreadId)).map(([id]) => id),
     forgetThread: (tid) => {
@@ -704,7 +712,7 @@ wss.on("connection", (ws) => {
     const live = sessions.get(threadId);
     if (live?.agent !== "claude") return null;
     const project = (threadCwd.get(threadId) ?? process.cwd()).replace(/[^a-zA-Z0-9]/g, "-");
-    return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects", project, `${live.id}.jsonl`);
+    return join(claudeAccounts.configDir(live.accountId ?? "default"), "projects", project, `${live.id}.jsonl`);
   };
   const attribution = (threadId, used) => {
     const file = transcriptOf(threadId);
@@ -742,8 +750,9 @@ wss.on("connection", (ws) => {
   };
   const isBridged = (m) => !!agentOf(m);
   const ensureAcp = async (agent) => {
-    let a = acps.get(agent.key);
-    if (!a || a.dead) { a = new Acp(agent); acps.set(agent.key, a); await a.ready; log(`${agent.key} acp ready`); }
+    const key = agent.key === "claude" ? `claude:${claudeAccounts.activeId()}` : agent.key;
+    let a = acps.get(key);
+    if (!a || a.dead) { a = new Acp(agent); acps.set(key, a); await a.ready; log(`${key} acp ready`); }
     return a;
   };
   // Each agent's models and each model's effort levels (Claude's Haiku has none; Antigravity
@@ -1702,6 +1711,7 @@ wss.on("connection", (ws) => {
     let status = "completed";
     let error = null;
     const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
+    const accountId = agent.key === "claude" ? claudeAccounts.activeId() : null;
     try {
       refuseSignedOut(agent);
       const acp = await ensureAcp(agent);
@@ -1721,7 +1731,7 @@ wss.on("connection", (ws) => {
       // selection), approval mode, Subagents or Smart Prune reload the native conversation.
       // Nothing reloads an in-flight turn; a changed agent starts afresh.
       const instructions = await elpisInstructions(threadId);
-      if (live && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions) sessionId = live.id;
+      if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const proxy = prune ? await smartPruneProxy() : null;
@@ -1734,8 +1744,9 @@ wss.on("connection", (ws) => {
         const helper = !!store._delegations?.[threadId] || !!store[threadId]?.parentThreadId;
         const mcpServers = mcpServersFor(subagents, threadId, helper ? null : cwd);
         // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
-        const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key;
-        const saved = (live?.agent === agent.key ? live.id : null) ?? (sameAgent ? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0] : null);
+        const sameAccount = agent.key !== "claude" || (store[threadId]?.claudeAccountId ?? "default") === accountId;
+        const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key && sameAccount;
+        const saved = (live?.agent === agent.key && (live.accountId ?? null) === accountId ? live.id : null) ?? (sameAgent ? store[threadId]?.session ?? Object.values(store[threadId]?.sessions ?? {})[0] : null);
         if (saved) {
           acp.loading.add(saved);
           try { await acp.call("session/load", { sessionId: saved, cwd, mcpServers, _meta }); sessionId = saved; log(`session ${saved} reloaded for thread ${threadId} (subagents ${subagents ? "on" : "off"})`); }
@@ -1747,10 +1758,10 @@ wss.on("connection", (ws) => {
           freshSession = true;
           log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy}, subagents ${subagents ? "on" : "off"})`);
         }
-        live = { id: sessionId, mode, subagents, agent: agent.key, prune, instructions };
+        live = { id: sessionId, mode, subagents, agent: agent.key, accountId, prune, instructions };
         sessions.set(threadId, live);
         const sid = sessionId;
-        updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key }; });
+        updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key, ...(agent.key === "claude" && { claudeAccountId: accountId }) }; });
       }
       updateStore((st) => { st[threadId] = { ...st[threadId], model: claudeModel.get(threadId), effort: claudeEffort.get(threadId) ?? null }; });
       const want = claudeModel.get(threadId)?.slice(agent.prefix.length);
@@ -2422,6 +2433,28 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: { signedOut: claudeSignedOut() } });
     } catch (e) { toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } }); }
   }
+  async function claudeAccountsRequest(msg) {
+    try {
+      const params = msg.params ?? {};
+      if (Object.keys(params).some(key => !["action", "id", "code"].includes(key))) throw Object.assign(new Error("Unsupported Claude account setting."), { code: -32602 });
+      let extra = {};
+      if (msg.method === "claudeAccounts/write") {
+        if (params.action === "select") {
+          if ([...contexts].some(context => context.claudeBusy())) throw Object.assign(new Error("Wait for the active Claude response to finish before switching accounts."), { code: -32600 });
+          claudeAccounts.select(params.id); setSignedOut(STATE_DIR, false);
+          await recordAccounts();
+        } else if (params.action === "login") {
+          const id = params.id ?? claudeAccounts.add().id;
+          extra = await claudeAccounts.login(id);
+        } else if (params.action === "code") {
+          const login = claudeAccounts.logins.get(params.id);
+          if (!login?.running || typeof params.code !== "string" || !/^[A-Za-z0-9_#.-]{1,4096}$/.test(params.code)) throw Object.assign(new Error("Enter the code from the Claude sign-in page."), { code: -32602 });
+          login.child.stdin.write(`${params.code}\n`);
+        } else throw Object.assign(new Error("Choose a Claude account action."), { code: -32602 });
+      }
+      toTui({ id: msg.id, result: { ...claudeAccounts.snapshot(), ...(extra.authUrl && { authUrl: extra.authUrl }) } });
+    } catch (e) { toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } }); }
+  }
   function handleMessage(data) {
     const line = data.toString();
     let msg;
@@ -2446,6 +2479,7 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.method === "claudeSubscription/read" || msg.method === "claudeSubscription/write") { claudeSubscriptionRequest(msg); return; }
+    if (msg.method === "claudeAccounts/read" || msg.method === "claudeAccounts/write") { void claudeAccountsRequest(msg); return; }
     const owner = providerOwners.get(msg.params?.threadId);
     if (msg.method === "thread/unsubscribe" && owner) {
       const tid = msg.params.threadId;
