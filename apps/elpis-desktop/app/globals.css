@@ -1063,7 +1063,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-side label, .canvas-folders { display:grid; gap:5px; color:var(--muted-foreground); font-size:12px; }
 /* The folders an agent may write: chosen ones as chips, then a menu of the project's other folders. */
 .canvas-folders-chosen { display:flex; flex-wrap:wrap; gap:4px; }
-.canvas-folders .canvas-chip { height:26px; gap:4px; padding:0 4px 0 8px; color:var(--foreground); font-family:var(--mono); font-size:12px; }
+.canvas-folders .canvas-chip { height:26px; max-width:100%; gap:4px; padding:0 4px 0 8px; color:var(--foreground); font-family:var(--mono); font-size:12px; }
+.canvas-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .canvas-folders .canvas-chip button { display:grid; place-items:center; width:18px; height:18px; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
 .canvas-folders .canvas-chip button:hover { background:var(--hover); color:var(--foreground); }
 .canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }

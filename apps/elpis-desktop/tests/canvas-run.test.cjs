@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseOption, chooseTheme } = require('./controls.cjs');
 
 test('Voting finishes every agent; Tally receives all answers after their checks', async () => {
   const events = [], results = new Map();
@@ -53,4 +53,29 @@ test('a failed writer explains why its descendants did not start', async () => {
     await fixture.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await fixture.canvas.getByRole('alert').filter({ hasText: 'Writable success requires changed files' }).waitFor();
   } finally { await fixture.close(); }
+});
+
+test('a project with no folders runs: every agent and its check write their report in their own folder; one may write the whole project', async () => {
+  const fixture = await openCanvas({ folders: [] });
+  const { page, canvas, runs, node, errors, close } = fixture;
+  try {
+    await canvas.getByRole('button', { name: /^Voting/ }).click();
+    // The tally may write the whole project: the folder menu offers it even when the project has no folders.
+    await node('Nuvani · Tally the answers').click();
+    const inspector = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    await chooseOption(inspector.getByRole('combobox', { name: 'Add a folder', exact: true }), '.');
+    await inspector.getByRole('group', { name: 'May write' }).getByText('Whole project', { exact: true }).waitFor();
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('.react-flow__node-agent [data-status="running"], .react-flow__node-agent [data-status="succeeded"]'), null, { timeout: 8000 });
+    assert.equal(runs.length, 1, 'the run started');
+    const byTitle = Object.fromEntries(runs[0].tasks.map(task => [task.title, task]));
+    const answer = byTitle['Quillon · Answer 1'], check = byTitle['Check: Quillon · Answer 1'], tally = byTitle['Nuvani · Tally the answers'];
+    assert.deepEqual([answer.writeScopes, check.writeScopes], [['agents/quillon-answer-1'], ['agents/quillon-answer-1/check']]);
+    assert.deepEqual(tally.writeScopes, ['.', 'agents/nuvani-tally-the-answers']);
+    assert.match(answer.instruction, /agents\/quillon-answer-1\/report\.md/);
+    assert.match(check.instruction, /agents\/quillon-answer-1\/check\/report\.md/);
+    assert.doesNotMatch(check.instruction, /read.only/i);
+    assert.equal(new Set(runs[0].tasks.map(task => task.writeScopes.at(-1))).size, runs[0].tasks.length, 'every task has a folder of its own');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });

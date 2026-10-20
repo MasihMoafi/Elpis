@@ -70,7 +70,7 @@ function promptFor({ goal, folders, agents, maxAgents }) {
     `Use at most ${maxAgents} agents. A small goal needs one or two.`,
     'Every agent writes: code or, for research and decisions, a markdown file in its own folder. No agent only reads or reports.',
     'Split by independent parts, not by role. An agent handling a feature also handles its tests. Never add a separate tester, reviewer or planner agent.',
-    'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project. Two agents that run at the same time must not share a folder.',
+    'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project. Two agents that run at the same time must not share a folder. Every agent also gets its own folder for its report, so an agent that changes no project files needs none.',
     'waitsFor: the keys of the agents this one builds on (a DAG, no loops). Agents that build on nothing wait for nothing, so they run in parallel.',
     'prompt: short and concrete (what to build, where, what to leave alone). title: plain language, 6 words at most. doneWhen: one to three checks anyone can verify. key: a short lowercase word with dashes. name: two to five plain words for the team.',
     ...agents.length ? ["Keep every existing agent's key. For an existing agent, fill only what is empty (prompt, folders, doneWhen) unless the goal asks to change it. Return a field you leave alone as it is, or empty: the canvas keeps what it has. Add agents for parts the board lacks; leave an agent out only if the goal asks."] : [],

@@ -280,7 +280,8 @@ function workflowPolicy(value, cwd) {
   if (value === undefined) return null;
   if (!value || !['implement', 'fix', 'verify', 'explore'].includes(value.kind) || !Array.isArray(value.writeScopes)) throw RequestError.invalidParams(undefined, "Invalid workflow policy");
   const writes = ['implement', 'fix'].includes(value.kind), roots = [];
-  if (!writes && value.writeScopes.length || writes && !value.writeScopes.length) throw RequestError.invalidParams(undefined, "Invalid workflow write scopes");
+  // Writers need a folder; a check or an explorer may have one for its report.
+  if (writes && !value.writeScopes.length) throw RequestError.invalidParams(undefined, "Invalid workflow write scopes");
   const base = fs.realpathSync(cwd);
   for (const scope of value.writeScopes) {
     if (typeof scope !== 'string' || path.isAbsolute(scope) || scope.split(/[\\/]/).includes('..')) throw RequestError.invalidParams(undefined, "Invalid workflow write scope");

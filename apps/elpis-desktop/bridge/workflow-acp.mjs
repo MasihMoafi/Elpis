@@ -10,6 +10,23 @@ const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
 const writer = task => ['implement', 'fix'].includes(task.kind);
 const alive = pid => { if (!Number.isSafeInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
 
+/** A write scope as a folder inside `base`, made when missing (each agent's own folder is new on its first run). The
+ * nearest folder that exists must already be inside `base`, so a link out of the project creates nothing. */
+async function projectFolder(base, scope) {
+  const refused = () => new BridgeError('Write scopes must be project folders');
+  if (typeof scope !== 'string' || path.isAbsolute(scope) || scope.split(/[\\/]/).includes('..')) throw refused();
+  const real = await fs.realpath(base), target = path.join(real, scope), inside = at => at === real || at.startsWith(`${real}${path.sep}`);
+  let existing = target;
+  for (;;) {
+    try { existing = await fs.realpath(existing); break; } catch (error) { if (error.code !== 'ENOENT') throw error; existing = path.dirname(existing); }
+  }
+  if (!inside(existing)) throw refused();
+  await fs.mkdir(target, { recursive: true });
+  const resolved = await fs.realpath(target);
+  if (!inside(resolved) || !(await fs.stat(resolved)).isDirectory()) throw refused();
+  return resolved;
+}
+
 /** Validate the complete graph before starting any ACP process. Feedback is from a previous bounded round. */
 export function validateWorkflow(tasks, roundLimit) {
   const ids = new Set(tasks.map(t => t.id));
@@ -18,8 +35,7 @@ export function validateWorkflow(tasks, roundLimit) {
   for (const task of tasks) {
     if ([...task.dependsOn, ...(task.feedbackFrom ?? [])].some(id => !ids.has(id))) throw new BridgeError('A task dependency is missing');
     if (task.feedbackFrom?.length && roundLimit === undefined) throw new BridgeError('Recursive feedback needs an explicit round limit');
-    if (writer(task) && (!task.writeScopes.length || !tasks.some(check => check.kind === 'verify' && check.dependsOn.includes(task.id)))) throw new BridgeError('Every writer needs folders and a directly dependent read-only check');
-    if (!writer(task) && task.writeScopes.length) throw new BridgeError('Read-only tasks cannot have write scopes');
+    if (writer(task) && (!task.writeScopes.length || !tasks.some(check => check.kind === 'verify' && check.dependsOn.includes(task.id)))) throw new BridgeError('Every writer needs folders and a directly dependent check');
   }
   const done = new Set();
   while (done.size < tasks.length) {
@@ -72,16 +88,11 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             if (controller.signal.aborted) throw new BridgeError('Workflow cancelled', 409);
             task.status = 'running'; await save(record);
             const cwd = isolation ? await isolation.prepare(task, round, record.tasks) : root.cwd;
-            const scopes = [];
-            for (const scope of task.writeScopes) {
-              if (path.isAbsolute(scope) || scope.split(/[\\/]/).includes('..')) throw new BridgeError('Write scopes must stay inside the project');
-              const resolved = await fs.realpath(path.join(cwd, scope));
-              if (resolved !== cwd && !resolved.startsWith(`${await fs.realpath(cwd)}${path.sep}`)) throw new BridgeError('A write scope points outside the project');
-              if (!(await fs.stat(resolved)).isDirectory()) throw new BridgeError('A write scope must be a folder');
-              scopes.push(scope);
-            }
+            // An isolated task runs in its own worktree, where the agent folders are new again.
+            for (const scope of task.writeScopes) await projectFolder(cwd, scope);
+            const scopes = task.writeScopes;
             const instructions = [`Acceptance criteria:\n${task.acceptanceCriteria.map(c => `- ${c}`).join('\n')}`,
-              writer(task) ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
+              scopes.length ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
             const spec = nodeSpec({ name: task.title, prompt: instructions, model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' }, env);
             spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${task.title}`, workflow: { kind: task.kind, writeScopes: scopes, ...(task.reasoningEffort ? { reasoningEffort: task.reasoningEffort } : {}) } } };
@@ -110,7 +121,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             if (controller.signal.aborted) { task.status = 'cancelled'; continue; }
             if (task.dependsOn.some(id => ['failed', 'blocked', 'cancelled'].includes(byId.get(id).status))) { task.status = 'blocked'; continue; }
             if (running.size >= (record.maxConcurrency ?? 3) || !task.dependsOn.every(id => byId.get(id).status === 'succeeded')) continue;
-            if (writer(task) && record.tasks.some(other => running.has(other.id) && writer(other) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
+            if (record.tasks.some(other => running.has(other.id) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
             const promise = run(task).finally(() => { running.delete(task.id); inflight.delete(promise); }); running.set(task.id, promise); inflight.add(promise);
           }
           if (running.size) await Promise.race(running.values());
@@ -144,11 +155,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       validateWorkflow(params.tasks, params.roundLimit); await load();
       if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose a project folder before running a workflow');
       root = { ...root, cwd: await fs.realpath(root.cwd) };
-      for (const task of params.tasks) for (const scope of task.writeScopes) {
-        if (path.isAbsolute(scope) || scope.split(/[\\/]/).includes('..')) throw new BridgeError('Invalid write scope');
-        const resolved = await fs.realpath(path.join(root.cwd, scope));
-        if (resolved !== root.cwd && !resolved.startsWith(`${root.cwd}${path.sep}`) || !(await fs.stat(resolved)).isDirectory()) throw new BridgeError('Write scopes must be project folders');
-      }
+      for (const task of params.tasks) for (const scope of task.writeScopes) await projectFolder(root.cwd, scope);
       const lock = path.join(stateDir, `${params.rootThreadId}.lock`);
       try {
         const handle = await fs.open(lock, 'wx', 0o600); await handle.writeFile(String(process.pid)); await handle.close();

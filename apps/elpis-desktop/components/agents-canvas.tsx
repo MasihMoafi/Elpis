@@ -20,7 +20,7 @@ import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
 import { characters, type Character } from "@/lib/agent-characters";
 import { portraits } from "@/lib/love-characters";
-import { PATTERNS, applyPattern, agent, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
+import { PATTERNS, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
  * his tasks wait in `father` until her part has succeeded, then run in his own chat. */
@@ -322,8 +322,8 @@ function Shape({ shape }: { shape: number[] }) {
     {shape.map((count, index) => <span key={index}>{Array.from({ length: count }, (_, row) => <i key={row} className="canvas-kind" data-kind="agent" />)}</span>)}</span>;
 }
 
-/** The folders an agent may write, chosen from the project's own (GET /api/folders): Elpis takes only existing
- * folders inside the project, never the whole project (codex-rs state/src/model/work_graph.rs `validate_write_scopes`). */
+/** The folders an agent may write, chosen from the project's own (GET /api/folders) or the whole project, besides the
+ * agent's own folder (`ownFolders`), which the run makes and which `own` shows. */
 /** The project's folders (GET /api/folders), which agents may write: read once per project, shared by the pickers
  * and by Elpis when it fills in the team. */
 function useProjectFolders(cwd?: string) {
@@ -337,16 +337,19 @@ function useProjectFolders(cwd?: string) {
   return { folders, error };
 }
 
-function FolderPicker({ cwd, folders, error, value, onChange }: { cwd?: string; folders: string[] | null; error: string; value: string[]; onChange: (folders: string[]) => void }) {
-  const left = (folders ?? []).filter(folder => !value.includes(folder));
+const folderLabel = (folder: string) => folder === WHOLE_PROJECT ? "Whole project" : folder;
+
+function FolderPicker({ cwd, folders, error, value, own, onChange }: { cwd?: string; folders: string[] | null; error: string; value: string[]; own?: string; onChange: (folders: string[]) => void }) {
+  const left = (folders ? [WHOLE_PROJECT, ...folders] : []).filter(folder => !value.includes(folder));
   return <div className="canvas-folders" role="group" aria-label="May write">
     <span>May write</span>
-    {value.length > 0 && <span className="canvas-folders-chosen">{value.map(folder => <span key={folder} className="canvas-chip">{folder}<button type="button" aria-label={`Remove ${folder}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>}
+    <span className="canvas-folders-chosen">{own && <span className="canvas-chip" title={`${own}: its own folder. The run makes it, and the agent and its check write their reports there.`}><span className="canvas-chip-label">{own}</span></span>}
+      {value.map(folder => <span key={folder} className="canvas-chip" title={folderLabel(folder)}><span className="canvas-chip-label">{folderLabel(folder)}</span><button type="button" aria-label={`Remove ${folderLabel(folder)}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>
     {!cwd ? <small>Agents write inside a project: choose one at the top.</small>
       : error ? <small role="alert">{error}</small>
       : <OptionSelect aria-label="Add a folder" value="" onChange={event => { if (event.target.value) onChange([...value, event.target.value]); }}>
-        <option value="" disabled>{folders === null ? "Loading the project's folders…" : !value.length ? "Elpis decides, or add a folder…" : left.length ? "Add a folder it may write…" : "No more folders"}</option>
-        {left.map(folder => <option key={folder} value={folder}>{folder}</option>)}</OptionSelect>}
+        <option value="" disabled>{folders === null ? "Loading the project's folders…" : !value.length && folders.length ? "Elpis decides, or add a folder…" : left.length ? "Add a folder it may write…" : "No more folders"}</option>
+        {left.map(folder => <option key={folder} value={folder}>{folderLabel(folder)}</option>)}</OptionSelect>}
   </div>;
 }
 
@@ -359,7 +362,7 @@ function RunClock({ since, until }: { since: number; until?: number }) {
 /** A span of time as mm:ss. */
 const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
 
-function AgentDashboard({ node, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
+function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; own: string; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
   const data = node.data, panel = useRef<HTMLDivElement>(null);
   // A click anywhere else on the page closes it, as Escape does.
   useEffect(() => {
@@ -375,7 +378,7 @@ function AgentDashboard({ node, wave, status, check, clash, chat, waitsFor, feed
       <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking` : ""}</dd></div>
       <div><dt>Inputs needed</dt><dd>{waitsFor.length ? waitsFor.join(", ") : "All inputs captured"}</dd></div>
       <div><dt>Feeds</dt><dd>{feeds.length ? feeds.join(", ") : "The Mother's report"}</dd></div>
-      <div><dt>May write</dt><dd>{data.writeScopes.length ? data.writeScopes.join(", ") : "No folder yet: choose one before the run"}</dd></div>
+      <div><dt>May write</dt><dd>{[own, ...data.writeScopes.map(folderLabel)].join(", ")}</dd></div>
       <div><dt>Prompt</dt><dd>{data.instruction || "No prompt yet: write one before the run"}</dd></div>
       <div><dt>Done when</dt><dd>{(data.acceptanceCriteria.length ? data.acceptanceCriteria : [DONE]).join("; ")}</dd></div>
       <div><dt>Its check</dt><dd>{CHECK_LABEL[check]}</dd></div>
@@ -416,6 +419,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const showPanel = (open: boolean) => { setPanelOpen(open); try { appStorage().setItem("elpis-canvas-panel", open ? "open" : "closed"); } catch { /* kept for this session only */ } setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   useEffect(() => { if (selection.length && !panelOpen && !boxDrag.current) showPanel(true); }, [selection, selectionBox]); // eslint-disable-line react-hooks/exhaustive-deps
   const project = useProjectFolders(cwd);
+  const own = useMemo(() => ownFolders(graph), [graph]);
   const [notice, setNotice] = useState("");
   const [deleted, setDeleted] = useState<string | null>(null);
   useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
@@ -1056,7 +1060,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     if (!cwd) { setNeedProject(true); setNotice("Choose the project the agents work in, then run again."); return; }
     // Prompts and folders left empty are Elpis's to fill: from the run's goal, or, with none written, from the team as
     // drawn. A run never stops for a missing goal.
-    const empty = agents.some(node => !node.data.instruction.trim() || !node.data.writeScopes.length);
+    // An agent without folders in a project that has none writes only its own folder: nothing for Elpis to choose.
+    const empty = agents.some(node => !node.data.instruction.trim() || !node.data.writeScopes.length && Boolean(project.folders?.length));
     const ready = empty ? await letElpis(mother.brief.trim() || DRAWN) : graph;
     if (!ready) return;
     const built = runParts(ready);
@@ -1181,7 +1186,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         onAgents={command => { addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}
       {menu && (view => <CanvasMenu at={menu} {...view} onClose={() => setMenu(null)} />)(menuView(menu))}
-      {dashboard && <AgentDashboard node={dashboard} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
+      {dashboard && <AgentDashboard node={dashboard} own={own.get(dashboard.id) ?? ""} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
         waitsFor={inputsNeeded(dashboard.id)} feeds={graph.edges.filter(edge => waits(edge) && edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onSettings={() => { setSelection([dashboard.id]); showPanel(true); setDashboardId(null); }} onClose={() => setDashboardId(null)} />}
       {flowEdit && <div className="canvas-flow-edit" style={{ left: flowEdit.left, top: flowEdit.top }}><CanvasTextEdit key={flowEdit.edge.id} label="Flow label" maxLength={60} value={flowEdit.edge.source === MOTHER ? graph.motherFlow ?? "" : graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? ""} onSave={saveFlow} onCancel={() => setFlowEdit(null)} /></div>}
@@ -1213,7 +1218,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         {selected.data.model && !selectedModel && <option value={choiceKey(selected.data)}>{selected.data.model}</option>}</OptionSelect></label>
       {selectedModel && selectedModel.efforts.length > 0 && <label>Thinking<OptionSelect aria-label="Thinking" value={selected.data.effort ?? ""} onChange={event => edit({ effort: event.target.value || null })}>
         <option value="">Model default{selectedModel.defaultEffort ? ` (${selectedModel.defaultEffort})` : ""}</option>{selectedModel.efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}</OptionSelect></label>}
-      <FolderPicker cwd={cwd} {...project} value={selected.data.writeScopes} onChange={writeScopes => edit({ writeScopes })} />
+      <FolderPicker cwd={cwd} {...project} value={selected.data.writeScopes} own={own.get(selected.id)} onChange={writeScopes => edit({ writeScopes })} />
       <label>Done when (one per line; its check holds it to these)<Textarea aria-label="Done when" rows={3} value={selected.data.acceptanceCriteria.join("\n")} placeholder={DONE} onChange={event => edit({ acceptanceCriteria: lines(event.target.value) })} /></label>
       <div className="canvas-inspector-actions">
         <Button variant="outline" size="sm" onClick={() => setDashboardId(selected.id)}>Dashboard <kbd>Enter</kbd></Button>

@@ -135,6 +135,19 @@ test('failed verification cannot release a downstream writer', { timeout: 20000 
   const g = await f.finished(r.graphId); assert.equal(g.status, 'failed');
   assert.equal(g.tasks.find(t => t.id === 'check').status, 'failed'); assert.equal(f.log('next').length, 0);
 });
+test('every agent writes: a check gets its own folder, and folders the run names are created inside the project only', { timeout: 20000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  const outside = fs.mkdtempSync(path.join(path.dirname(f.dir), 'outside-')); fs.symlinkSync(outside, path.join(f.dir, 'link'));
+  await assert.rejects(f.run([{ ...task('escape'), kind: 'implement', writeScopes: ['link/agents/escape'] }, { ...task('escape-check', ['escape']), kind: 'verify' }]), /project folder/i);
+  assert.deepEqual(fs.readdirSync(outside), [], 'nothing is created through a link out of the project');
+  const writer = { ...task('writer'), kind: 'implement', writeScopes: ['agents/writer'] };
+  const check = { ...task('check', ['writer']), kind: 'verify', writeScopes: ['agents/writer/check'] };
+  const g = await f.finished((await f.run([writer, check])).graphId);
+  assert.equal(g.status, 'succeeded', g.error);
+  assert.ok(fs.statSync(path.join(f.dir, 'agents/writer/check')).isDirectory());
+  const opened = f.log('check').find(row => row.method === 'session/new').params._meta.elpis.workflow;
+  assert.deepEqual([opened.kind, opened.writeScopes], ['verify', ['agents/writer/check']]);
+});
 test('ACP permissions use the existing approval panel and the offered decision reaches the agent', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
   const r = await f.run([task('a', [], '[permission]')]);

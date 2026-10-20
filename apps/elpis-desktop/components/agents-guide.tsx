@@ -19,8 +19,8 @@ const topics = [
     "The Father starts only after the Mother’s part succeeds, then reports to her. If her part fails, his part does not start. Raising Max agents makes room for a larger team.",
   ], links: [research] },
   { title: "Writers and checks", intro: "Every board agent writes files; reading and planning happen inside that writer.", points: [
-    "Give each writer a prompt, folders it may change, and a “Done when” check. Elpis fills missing prompts or folders from the brief or drawn team.",
-    "Elpis adds a read-only check after every writer. Downstream writers wait for both. A failed prerequisite blocks the writers that depend on it.",
+    "Give each writer a prompt, folders it may change (or the whole project), and a “Done when” check. Elpis fills missing prompts or folders. Each agent writes its report in agents/<its name>.",
+    "Elpis adds a check after every writer; its report goes in agents/<name>/check. Downstream writers wait for both. A failed prerequisite blocks the writers that depend on it.",
     "With several writers in Git, Workflows requests one worktree per writer, shared with its check. Successful results merge; conflicts stop the merge and keep the work.",
     "Without Git, Workflows skips worktrees. Keep concurrent writers in separate folders.",
   ], links: [effective] },

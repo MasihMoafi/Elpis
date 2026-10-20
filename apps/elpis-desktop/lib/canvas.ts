@@ -5,10 +5,10 @@ export { waits };
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
  * sends the graph to the ACP scheduler (POST /api/workflows/run, bridge/client.mjs `runWorkflow`).
- * Every agent on the board writes: Elpis checks each writer with a read-only verify task, which the run adds itself
+ * Every agent on the board writes: Elpis checks each writer with a verify task that writes only its report, which the run adds itself
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
 /** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
- * folders the agent may write, which bridge/workflow-acp.mjs requires to exist inside the project. */
+ * folders the agent may write ("." is the whole project) besides its own folder (`ownFolders`). */
 export type AgentData = { character?: string; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
@@ -56,6 +56,22 @@ export const checkOf = (id: string) => `${id}-check`;
 /** What an agent is held to when its "Done when" is left empty. */
 export const DONE = "The change builds and its tests pass.";
 const agentsOf = (graph: CanvasGraph) => graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
+/** The folder value that stands for the whole project. */
+export const WHOLE_PROJECT = ".";
+/** Each agent's own folder in the project, `agents/<its name>`, which the run creates: the agent writes its report and
+ * anything else it makes there, and its check writes in `check` inside it. Names that repeat take -2, -3 in board order. */
+export function ownFolders(graph: CanvasGraph): Map<string, string> {
+  const taken = new Set<string>(), folders = new Map<string, string>();
+  for (const node of agentsOf(graph)) {
+    const base = node.data.title.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "") || node.id;
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+    taken.add(name); folders.set(node.id, `agents/${name}`);
+  }
+  return folders;
+}
+/** What every agent and check is told to write, so reports read the same across a run. */
+const report = (folder: string, verdict: boolean) => `Write your report to ${folder}/report.md in this form: a title line, then the sections ## ${verdict ? "Verdict (passed or failed, for each criterion)" : "Result"}, ## Evidence (commands you ran and what they showed, or your sources), ## Files (the paths you wrote) and ## Open (what is left or unsure).`;
 
 let counter = 0;
 export const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
@@ -289,7 +305,7 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
 }
 
 /** The graph as the tasks Elpis runs, or what is missing first. Notes are not sent. Each agent is a writer followed by
- * its own check (a read-only verify task, which Elpis requires after every writer); an agent wired after it waits
+ * its own check (a verify task, which Elpis requires after every writer, writing only its report); an agent wired after it waits
  * for that check and the original result, so it receives both the answer and its verification. */
 /** The run in its parts: the Mother's tasks, and the Father's (empty within PER_PARENT agents). The Father's part
  * starts after hers has succeeded, so waiting on her agents is dropped from his tasks. */
@@ -311,7 +327,6 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
   for (const node of agents) {
     if (!node.data.title.trim()) return { error: "Every agent needs a name." };
     if (!node.data.instruction.trim()) return { error: `“${node.data.title}” has no prompt: write one, or give the run a goal (Mother) and Elpis fills it in.` };
-    if (!node.data.writeScopes.length) return { error: `“${node.data.title}” has no folder it may write: choose one, or give the run a goal (Mother) and Elpis fills it in.` };
     if (node.data.provider && !node.data.model) return { error: `“${node.data.title}” needs a model from its provider.` };
   }
   // Agents working alongside each other must not share a folder: they run at the same time.
@@ -319,11 +334,15 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
   for (const edge of graph.edges.filter(edge => edge.kind === "alongside")) {
     const a = byId.get(edge.source), b = byId.get(edge.target), shared = a && b ? a.data.writeScopes.find(folder => b.data.writeScopes.includes(folder)) : undefined;
     if (a && b && shared) return { error: `“${a.data.title}” and “${b.data.title}” work alongside but both may write ${shared}: give each its own folder.` };
+    const whole = [a, b].find(item => item?.data.writeScopes.includes(WHOLE_PROJECT));
+    if (a && b && whole) return { error: `“${whole.data.title}” writes the whole project, so it cannot work alongside “${(whole === a ? b : a).data.title}”: wire them one after the other.` };
   }
+  const own = ownFolders(graph);
   const brief = graph.mother?.brief.trim();
   return { tasks: agents.flatMap(node => {
     const title = node.data.title.trim(), prompt = node.data.instruction.trim();
-    const partners = beside(node.id).map(other => `“${other.data.title}” (writes ${other.data.writeScopes.join(", ")}): ${other.data.instruction.trim().split("\n")[0]}`);
+    const folder = own.get(node.id)!, scopes = [...node.data.writeScopes.filter(scope => scope !== folder), folder];
+    const partners = beside(node.id).map(other => `“${other.data.title}” (writes ${[...other.data.writeScopes, own.get(other.id)].join(", ")}): ${other.data.instruction.trim().split("\n")[0]}`);
     const alongside = partners.length ? `Working alongside you, at the same time:\n${partners.map(line => `- ${line}`).join("\n")}\nDo not write in their folders; leave them what they need as files in yours.` : "";
     const incoming = graph.edges.filter(edge => edge.target === node.id && byId.has(edge.source));
     const receives = incoming.filter(edge => edge.label?.trim()).map(edge => `Receives “${edge.label!.trim()}” from ${byId.get(edge.source)!.data.title}.`);
@@ -332,13 +351,13 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
     const model = { ...(node.data.provider ? { provider: node.data.provider } : {}), ...(node.data.model ? { model: node.data.model } : {}) };
     return [
       // Every writer receives the shared brief and its own prompt. Its final ACP answer feeds its check and successors.
-      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders, including a markdown answer for research or decisions. Include the answer and file paths in your final answer so the next agent can use them.`, graph.template === "voting" && node.id === agents.at(-1)?.id ? "Compare the connected agents’ independent answers. Give the majority conclusion and explain disagreements with evidence." : "", alongside].filter(Boolean).join("\n\n"),
+      { id: node.id, kind: "implement" as const, title, instruction: [brief && `Goal of the whole run: ${brief}`, receives.join("\n"), prompt, `Save your result as files inside your allowed folders. ${report(folder, false)} Include the answer and file paths in your final answer so the next agent can use them.`, graph.template === "voting" && node.id === agents.at(-1)?.id ? "Compare the connected agents’ independent answers. Give the majority conclusion and explain disagreements with evidence." : "", alongside].filter(Boolean).join("\n\n"),
         dependsOn: graph.edges.filter(edge => waits(edge) && edge.target === node.id && ids.has(edge.source)).flatMap(edge => [edge.source, checkOf(edge.source)]),
         ...(graph.template === "recursive" ? { feedbackFrom: graph.edges.filter(edge => edge.feedback && edge.target === node.id).flatMap(edge => [edge.source, checkOf(edge.source)]) } : {}),
-        writeScopes: node.data.writeScopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
+        writeScopes: scopes, acceptanceCriteria: criteria, ...model, ...(node.data.effort ? { reasoningEffort: node.data.effort } : {}) },
       { id: checkOf(node.id), kind: "verify" as const, title: `Check: ${title}`.slice(0, 256),
-        instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}`,
-        dependsOn: [node.id], writeScopes: [], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
+        instruction: `Check the work of “${title}”. Its prompt was:\n${prompt}\n\nRun what proves it (the build, the tests, or reading what it wrote) and show the output. Say plainly whether each of these holds: ${criteria.join("; ")}\n\nChange nothing of its work. ${report(`${folder}/check`, true)}`,
+        dependsOn: [node.id], writeScopes: [`${folder}/check`], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
     ];
   }) };
 }

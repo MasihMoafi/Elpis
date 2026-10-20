@@ -73,7 +73,7 @@ function start(t, { args = ["--model", "luna-test", "--provider", "openai"], ans
   return { dir, socketPath, runtime, child, conn, events, state, engine, updates, text, open, prompt, exited, stderr: () => stderr };
 }
 
-test("workflow ACP keeps verification read-only and applies scoped writer permissions and effort", { timeout: 20000 }, async t => {
+test("workflow ACP applies scoped permissions and effort; a check writes only its own folder", { timeout: 20000 }, async t => {
   const a = start(t);
   fs.mkdirSync(path.join(a.dir, 'src'));
   const { sessionId } = await a.open({ elpis: { workflow: { kind: 'implement', writeScopes: ['src'], reasoningEffort: 'high' } } });
@@ -84,10 +84,11 @@ test("workflow ACP keeps verification read-only and applies scoped writer permis
   const profile = a.engine().find(m => m.method === 'thread/start').params.config['permissions.elpis-workflow'];
   assert.deepEqual(profile, { extends: ':read-only', filesystem: { '/': 'read', [path.join(a.dir, 'src')]: 'write' }, network: { enabled: false } });
   assert.equal(turn.effort, 'high');
-  const check = await a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'verify', writeScopes: [] } } } });
-  await a.prompt(check.sessionId, 'Check only');
+  fs.mkdirSync(path.join(a.dir, 'src', 'check'));
+  const check = await a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'verify', writeScopes: ['src/check'] } } } });
+  await a.prompt(check.sessionId, 'Check, and write the report');
   assert.equal(a.engine().filter(m => m.method === 'turn/start').at(-1).params.permissions, 'elpis-workflow');
-  assert.deepEqual(a.engine().filter(m => m.method === 'thread/start').at(-1).params.config['permissions.elpis-workflow'].filesystem, { '/': 'read' });
+  assert.deepEqual(a.engine().filter(m => m.method === 'thread/start').at(-1).params.config['permissions.elpis-workflow'].filesystem, { '/': 'read', [path.join(a.dir, 'src', 'check')]: 'write' });
   await assert.rejects(a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'implement', writeScopes: ['../escape'] } } } }), /scope/i);
 });
 

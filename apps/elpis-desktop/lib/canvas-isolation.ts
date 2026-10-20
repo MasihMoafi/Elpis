@@ -4,7 +4,7 @@
  * docs/WORK_GRAPHS.md). Elpis refuses the run outside a git repository that has a commit, so the canvas asks only inside one.
  * Plain functions with no imports, so node tests load them. */
 
-/** The writing agents of a run part: its `implement` tasks (each is followed by its own read-only check). */
+/** The writing agents of a run part: its `implement` tasks (each is followed by its own check, which writes only its report). */
 const writers = (tasks: { kind: string }[]) => tasks.filter(task => task.kind === "implement").length;
 
 /** The body of POST /api/workflows/run. It asks for worktree isolation when the project is a git repository and the part

@@ -8,19 +8,20 @@ const { guardDesktopStore } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 
 /** A stand-in for Elpis's planner (POST /api/canvas/plan): a goal "from scratch" designs a two-agent team; one starting
- * with "Fix" adds an agent doing it; otherwise it fills each agent's empty prompt and folders. */
-function planFor(body) {
+ * with "Fix" adds an agent doing it; otherwise it fills each agent's empty prompt, and its empty folders with `fill`. */
+function planFor(body, fill = ['src']) {
   if (/from scratch/i.test(body.goal)) return { name: 'Dark theme', agents: [
     { key: 'a', title: 'Build the theme', prompt: 'Add the dark theme tokens.', folders: ['src'], doneWhen: ['The tokens exist'], waitsFor: [] },
     { key: 'b', title: 'Use the theme', prompt: 'Use the tokens on every page.', folders: ['src/lib'], doneWhen: ['Every page uses them'], waitsFor: ['a'] }] };
-  const kept = body.agents.map(item => ({ ...item, prompt: item.prompt || `Do ${item.title}`, folders: item.folders.length ? item.folders : ['src'] }));
+  const kept = body.agents.map(item => ({ ...item, prompt: item.prompt || `Do ${item.title}`, folders: item.folders.length ? item.folders : fill }));
   return { name: '', agents: /^fix/i.test(body.goal) ? [...kept, { key: 'new', title: body.goal, prompt: body.goal, folders: ['src'], doneWhen: ['It works'], waitsFor: [] }] : kept };
 }
 
-/** `repository` is whether the project folder is a git repository (GET /api/repository); `graph` is a board saved on the
+/** `folders` are the project's folders (none: a flat project); `repository` is whether the project folder is a git
+ * repository (GET /api/repository); `graph` is a board saved on the
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, folders = ['docs', 'src', 'src/lib', 'tests'] } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -34,9 +35,9 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     }
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }, { id: 'sol', model: 'gpt-6.1-sol', displayName: 'Sol 6.1', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'low' }], nextCursor: null });
     if (url.pathname === '/api/settings') return json({ main: { model: 'gpt-6.1-sol', provider: 'openai' }, background: {}, smartPrune: { enabled: false, explicitOverride: {} }, memory: {}, write: { available: false, reason: '' }, agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' }, ...settings });
-    if (url.pathname === '/api/folders') return json({ data: ['docs', 'src', 'src/lib', 'tests'] });
+    if (url.pathname === '/api/folders') return json({ data: folders });
     if (url.pathname === '/api/repository') return json({ repository });
-    if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body)); }
+    if (url.pathname === '/api/canvas/plan') { const body = JSON.parse(raw); plans.push(body); return json(planFor(body, folders.length ? ['src'] : [])); }
     // Runs: each chat started gets an id; a graph run on it finishes after its first look.
     if (url.pathname === '/api/threads' && req.method === 'POST') { const id = `chat-${posts.filter(post => post.path === '/api/threads').length}`; return json({ thread: { id, name: JSON.parse(raw).name, cwd: '/tmp/demo', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } } }); }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });

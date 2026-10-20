@@ -185,7 +185,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await chooseOption(inspector.getByRole('combobox', { name: 'Model', exact: true }), '|gpt-6.1-sol');
     await chooseOption(inspector.getByRole('combobox', { name: 'Thinking', exact: true }), 'high');
 
-    // Run: a new chat holds the run. Elpis gets each agent as a writer followed by its own read-only check, and an agent
+    // Run: a new chat holds the run. Elpis gets each agent as a writer followed by its own check, each with a folder of its own, and an agent
     // wired after another waits for that one's check, so it builds on checked work.
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await until('an agent shows as running', () => document.querySelector('.react-flow__node-agent [data-status="running"]'));
@@ -194,9 +194,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.equal(ran.tasks.length, 10);
     const byTitle = Object.fromEntries(ran.tasks.map(task => [task.title, task]));
     const join = byTitle['Nuvani · Join the parts'], joinCheck = byTitle['Check: Nuvani · Join the parts'];
-    assert.deepEqual([join.kind, join.writeScopes, join.acceptanceCriteria], ['implement', ['src', 'src/lib'], ['The whole suite passes']]);
+    assert.deepEqual([join.kind, join.writeScopes, join.acceptanceCriteria], ['implement', ['src', 'src/lib', 'agents/nuvani-join-the-parts'], ['The whole suite passes']]);
     assert.deepEqual(join.dependsOn, ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3'].flatMap(title => [byTitle[title].id, byTitle[`Check: ${title}`].id]));
-    assert.deepEqual([joinCheck.kind, joinCheck.dependsOn, joinCheck.writeScopes], ['verify', [join.id], []]);
+    assert.deepEqual([joinCheck.kind, joinCheck.dependsOn, joinCheck.writeScopes], ['verify', [join.id], ['agents/nuvani-join-the-parts/check']]);
     assert.match(joinCheck.instruction, /^Check the work of “Nuvani · Join the parts”[\s\S]*The whole suite passes/);
     assert.deepEqual(byTitle['Zelko'].dependsOn, [join.id, joinCheck.id]);
     // The new agent had no prompt: Elpis filled it from the run's goal before the run, and nothing else changed.
