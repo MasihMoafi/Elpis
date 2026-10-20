@@ -1,0 +1,51 @@
+name: Elpis desktop
+
+# Builds the desktop renderer for every build/* branch, so no build runs on Masih's machine (20 October: "use github
+# actions for all builds"). scripts/install-desktop.mjs --actions installs the artifact of exactly that commit.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['build/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elpis-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renderer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/elpis-desktop
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: Install the locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7
+        with:
+          path: apps/elpis-desktop/.next/cache
+          key: next-${{ hashFiles('apps/elpis-desktop/package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-${{ hashFiles('apps/elpis-desktop/package-lock.json') }}-
+      - name: Build the renderer
+        run: |
+          node bridge/build-resources.mjs
+          npm run -s build
+          printf '%s\n' "$GITHUB_SHA" > out/.commit
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: renderer
+          path: apps/elpis-desktop/out
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

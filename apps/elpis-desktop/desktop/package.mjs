@@ -86,6 +86,14 @@ function inputTree(directory, destination, keep = () => true) {
   });
 }
 
+/** Hard-links `source` to `output`; false when the filesystem refuses (another device, no permission). */
+function tryLink(source, output) {
+  try { fs.linkSync(source, output); return true; } catch (error) {
+    if (['EXDEV', 'EPERM', 'EMLINK', 'ENOTSUP'].includes(error.code)) return false;
+    throw error;
+  }
+}
+
 // Resolve existing parent symlinks before checking whether a new destination overlaps an input.
 function resolveDestination(file) {
   if (fs.lstatSync(file, { throwIfNoEntry: false })) throw new Error(`Destination already exists: ${file}`);
@@ -95,21 +103,25 @@ function resolveDestination(file) {
   return path.join(fs.realpathSync(parent), ...suffix);
 }
 
-/** Copy a built renderer and the exact desktop runtime closure. Never builds, installs pointers, or starts the app. */
-export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta.url)), destination, electronDist, wsDirectory, ptyDirectory } = {}) {
+/** Copy a built renderer and the exact desktop runtime closure. Never builds, installs pointers, or starts the app.
+ * `outDirectory` is the renderer to ship (default: the source's out/, or one GitHub Actions built). With `linkRuntime`,
+ * Electron's files are hard-linked from `electronDist` (an earlier installation's runtime) rather than copied, so an
+ * installation adds about 30 MB instead of 310 MB; installations are never changed after staging. */
+export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta.url)), destination, electronDist, wsDirectory, ptyDirectory, outDirectory, linkRuntime = false } = {}) {
   if (typeof destination !== 'string' || !path.isAbsolute(destination)) throw new Error('An absolute destination is required');
   const target = resolveDestination(path.resolve(destination));
   source = fs.realpathSync(source);
   const electron = fs.realpathSync(electronDist || path.join(source, 'node_modules/electron/dist'));
   const ws = fs.realpathSync(wsDirectory || path.join(source, 'node_modules/ws'));
   const pty = fs.realpathSync(ptyDirectory || path.join(source, 'node_modules/node-pty'));
-  for (const input of [source, electron, ws, pty]) {
+  const out = fs.realpathSync(outDirectory || path.join(source, 'out'));
+  for (const input of [source, electron, ws, pty, out]) {
     const relative = path.relative(input, target);
     if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
       throw new Error(`Destination is inside a package input: ${input}`);
     }
   }
-  requireFile(path.join(source, 'out/index.html'));
+  requireFile(path.join(out, 'index.html'));
   const executable = requireFile(path.join(electron, 'electron'));
   if (!(executable.mode & 0o111)) throw new Error('Electron executable is not executable');
   for (const name of ['LICENSE', 'LICENSES.chromium.html']) requireFile(path.join(electron, name));
@@ -126,7 +138,7 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   }
   const files = [
     ...productionFiles.map(name => inputFile(path.join(source, name), `app/${name}`)),
-    ...inputTree(path.join(source, 'out'), 'app/out'),
+    ...inputTree(out, 'app/out'),
     ...inputTree(electron, 'runtime/electron'),
     ...inputTree(ws, 'app/node_modules/ws'),
     // The integrated terminal (desktop/terminal.cjs): node-pty's loader, licence and its build for this Electron.
@@ -144,8 +156,10 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   for (const file of files) {
     const output = path.join(target, file.path);
     fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.copyFileSync(file.source, output, fs.constants.COPYFILE_EXCL);
-    fs.chmodSync(output, file.mode);
+    if (!(linkRuntime && file.path.startsWith('runtime/') && tryLink(file.source, output))) {
+      fs.copyFileSync(file.source, output, fs.constants.COPYFILE_EXCL);
+      fs.chmodSync(output, file.mode);
+    }
     if (sha256(output) !== file.sha256) throw new Error(`Source changed while packaging: ${file.source}`);
   }
   for (const file of generated) {
@@ -171,9 +185,11 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   try {
     const { values } = parseArgs({ options: { destination: { type: 'string' }, source: { type: 'string' },
-      'electron-dist': { type: 'string' }, 'ws-directory': { type: 'string' }, 'pty-directory': { type: 'string' } } });
+      'electron-dist': { type: 'string' }, 'ws-directory': { type: 'string' }, 'pty-directory': { type: 'string' },
+      'out-directory': { type: 'string' }, 'link-runtime': { type: 'boolean' } } });
     const result = stageDesktop({ source: values.source, destination: values.destination,
-      electronDist: values['electron-dist'], wsDirectory: values['ws-directory'], ptyDirectory: values['pty-directory'] });
+      electronDist: values['electron-dist'], wsDirectory: values['ws-directory'], ptyDirectory: values['pty-directory'],
+      outDirectory: values['out-directory'], linkRuntime: values['link-runtime'] });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
 }

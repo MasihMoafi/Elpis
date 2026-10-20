@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// install-desktop.mjs NAME [--release]: packages this commit as ~/.local/lib/elpis-desktop/versions/NAME-<commit> and
+// install-desktop.mjs NAME [--release] [--actions]: packages this commit as ~/.local/lib/elpis-desktop/versions/NAME-<commit> and
 // points ~/.local/bin/elpis-app at it, with nothing uncommitted. A release also needs the full test gate's pass on exactly
 // this commit; a local install does not (Masih: "Only full suite for releases; for local deployment prefer fastest builds").
-// It reuses the installed Electron runtime, launches nothing, and prints the command that rolls back.
+// It links the installed Electron runtime rather than copying it, launches nothing, and prints the command that rolls back.
+// With --actions the renderer is the one GitHub Actions built for this commit (.github/workflows/elpis-desktop.yml; push
+// the commit to a build/* branch first), so nothing is built here (Masih, 20 October: "use github actions for all builds").
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,9 +14,21 @@ import { records, requirePass } from './gate-guards.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
-const name = process.argv[2], release = process.argv.includes('--release');
+const name = process.argv[2], release = process.argv.includes('--release'), actions = process.argv.includes('--actions');
+const gh = args => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
+
+/** Downloads the renderer GitHub Actions built for `commit` into a new temporary folder and returns that folder. */
+function actionsRenderer(commit) {
+  const [run] = JSON.parse(gh(['run', 'list', '--workflow', 'elpis-desktop.yml', '--commit', commit, '--status', 'success', '--json', 'databaseId', '--limit', '1']));
+  if (!run) throw new Error(`GitHub Actions has no successful build of ${commit.slice(0, 9)}: push it to a build/* branch and wait for "Elpis desktop".`);
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-renderer-'));
+  gh(['run', 'download', String(run.databaseId), '--name', 'renderer', '--dir', folder]);
+  const built = fs.readFileSync(path.join(folder, '.commit'), 'utf8').trim();
+  if (built !== commit) throw new Error(`The Actions renderer is from ${built.slice(0, 9)}, not ${commit.slice(0, 9)}.`);
+  return folder;
+}
 try {
-  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mjs NAME [--release]');
+  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mjs NAME [--release] [--actions]');
   if (git(['status', '--porcelain', '--untracked-files=no'])) throw new Error('There are uncommitted changes; commit them and run the full gate first.');
   const commit = git(['rev-parse', 'HEAD']);
   if (release) await requirePass(records, commit);
@@ -23,8 +37,9 @@ try {
   const electron = path.join(path.dirname(fs.realpathSync(link)), 'runtime/electron');
   const destination = path.join(os.homedir(), '.local/lib/elpis-desktop/versions', `${name}-${commit.slice(0, 9)}`);
   if (fs.existsSync(destination)) throw new Error(`${destination} already exists.`);
-  execFileSync(process.execPath, ['desktop/package.mjs', '--source', '.', '--destination', destination,
-    '--electron-dist', electron, '--ws-directory', 'node_modules/ws'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  const renderer = actions ? ['--out-directory', actionsRenderer(commit)] : [];
+  execFileSync(process.execPath, ['desktop/package.mjs', '--source', '.', '--destination', destination, '--link-runtime',
+    '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...renderer], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
   const staged = `${link}.new-${process.pid}`;
   fs.symlinkSync(path.join(destination, 'launch'), staged);
   fs.renameSync(staged, link);

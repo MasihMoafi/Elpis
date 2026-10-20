@@ -197,6 +197,22 @@ esac
   await assert.rejects(run(path.join(options.destination, 'launch'), [], { env: { PATH: '/usr/bin:/bin', ELPIS_NODE_BIN: '/missing/node' } }), /Elpis requires Node\.js/);
 });
 
+test('an installation can ship a renderer built elsewhere and share Electron with the one before it', async () => {
+  const options = await fixture();
+  const built = path.join(options.root, 'actions-renderer');
+  await put(path.join(built, 'index.html'), '<p>Built on GitHub</p>');
+  await put(path.join(built, '.commit'), 'abc123\n');
+  stageDesktop({ ...options, outDirectory: built, linkRuntime: true });
+  assert.equal(await fs.readFile(path.join(options.destination, 'app/out/index.html'), 'utf8'), '<p>Built on GitHub</p>');
+  assert.equal(await fs.readFile(path.join(options.destination, 'app/out/.commit'), 'utf8'), 'abc123\n');
+  await assert.rejects(fs.access(path.join(options.destination, 'app/out/_next/static/app.js')), 'the source checkout\'s own out/ is not mixed in');
+  const [from, to] = await Promise.all([fs.stat(path.join(options.electronDist, 'electron')), fs.stat(path.join(options.destination, 'runtime/electron/electron'))]);
+  assert.equal(to.ino, from.ino, 'Electron is linked, not copied');
+  assert.equal(to.mode & 0o777, 0o755);
+  const app = await fs.stat(path.join(options.destination, 'app/desktop/main.cjs'));
+  assert.equal(app.nlink, 1, 'the app itself is still copied');
+});
+
 test('packager refuses an existing destination and preserves its contents', async () => {
   const options = await fixture();
   await put(path.join(options.destination, 'keep'), 'existing installation');
