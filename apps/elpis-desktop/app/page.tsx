@@ -2,28 +2,25 @@
 
 import dynamic from "next/dynamic";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Activity, Archive, Blocks, ChevronRight, Layers, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
+import { ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Activity, Blocks, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, RefreshCw, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
-import { Input } from "@/components/ui/input";
-import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
+import { ApprovalCard } from "@/components/approval-card";
 import { PlanCard } from "@/components/plan-card";
 import { SearchField } from "@/components/ui/search-field";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatMessage } from "@/components/chat-message";
-import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
+import { FailedTurnCard } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
-import { readPins, savePins } from "@/lib/pins";
-import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
-import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
+import { readPins } from "@/lib/pins";
+import { addGroup, groupSections, moveChats, sortChats } from "@/lib/chat-groups";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
 import { arrange, move } from "@/lib/nav-order";
-import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences, type Preferences } from "@/lib/preferences";
-import { notifyApproval, notifyRuntimeEvent } from "@/lib/notifications";
-import { queueFollowUp, sendQueuedFollowUp, type FollowUp, type FollowUpOptions } from "@/lib/follow-ups";
+import { followUpChoices, followUpHint, followUpKey, followUpTooltip, isSendKey, newChatFolder, savePreferences, useAppPreferences } from "@/lib/preferences";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
 import { stopsOnEscape, usePromptKeys } from "@/lib/prompt-history";
 import { PromptStatusLine } from "@/components/prompt-status";
@@ -32,81 +29,85 @@ import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { AppUpdate } from "@/components/app-update";
-import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
+import { PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
-import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
-import { entryKey, rememberSubmittedMessages, submittedContent, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
+import { entryKey, rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility } from "@/lib/turn-replacement";
 import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ExperimentLab } from "@/components/experiment-lab";
 import { CustomizeView } from "@/components/customize-view";
-import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
+import { GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
-import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
-import { fastServiceTier } from "@/lib/service-tier.mjs";
-import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
+import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
+import { SlashMenu, useSlashMenu } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
 import { PromptRail } from "@/components/prompt-rail";
-import { RewindDialog, type RestoreMode } from "@/components/rewind-dialog";
-import { usedMentions, type Mention } from "@/lib/mentions";
-import { canBack, canForward, startHistory, step, visit, type History } from "@/lib/nav-history";
-import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
-import { INIT_PROMPT } from "@/lib/init-prompt";
-import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
-import { replyAttachment, readReply } from "@/lib/message-reply";
+import { RewindDialog } from "@/components/rewind-dialog";
+import { canBack, canForward, startHistory, visit, type History } from "@/lib/nav-history";
+import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels";
 import { SelectionReply } from "@/components/message-reply";
-import { openControl } from "@/lib/slash-focus";
-import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-store";
+import { reloadSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
-import { chooseProject, EnvironmentMenu, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { EnvironmentMenu, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { BranchChip } from "@/components/branch-chip";
-import { keptNotice, projectFolderOf, type WorktreeOutcome } from "@/lib/chat-worktree";
+import { projectFolderOf } from "@/lib/chat-worktree";
 import { AccountMenu } from "@/components/account-menu";
 import { ModelPicker } from "@/components/model-picker";
-import { appStorage, readProjects, saveProjects, type Project } from "@/lib/projects";
+import { appStorage } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
-import { TaskList, type TaskPlan } from "@/components/task-list";
+import { TaskList } from "@/components/task-list";
 import { chatOrigin } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { AgentsCanvas } from "@/components/agents-canvas";
-import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
-import { readAttention, saveAttention, type Attention } from "@/lib/attention";
+import { AgentsPanel } from "@/components/agents-panel";
+import { agentState, mergeListedThreads } from "@/lib/agents";
+import { useChatGroups } from "@/hooks/use-chat-groups";
+import { useChatAttention } from "@/hooks/use-chat-attention";
+import { approvalDraftKey, useApprovals } from "@/hooks/use-approvals";
 import { insertTranscript } from "@/lib/dictation";
-import { useBrowser } from "@/components/browser-panel";
-import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
+import { openFile, setFileView } from "@/lib/files-pane";
 import { PersonalTip, usePersonal } from "@/components/personal-tip";
-import { SidePanel, useSidePanel } from "@/components/side-panel";
-import { SideChat, type SideRequest } from "@/components/side-chat";
+import { SidePanel } from "@/components/side-panel";
+import { SideChat } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
 import { Tab, TabStrip } from "@/components/tab-strip";
-import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
-import { readDraft, writeDraft } from "@/lib/drafts";
+import { followChat, renameTabs, writeTabs, type ChatTab } from "@/lib/chat-tabs";
 import { AttachmentChips } from "@/components/attachment-chips";
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
-import { scanDeletionThreads } from "@/lib/thread-deletion";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, transferFiles } from "@/lib/attachments";
+import { without } from "@/lib/without";
+import { useModelCatalog } from "@/hooks/use-model-catalog";
+import { useDraftRecovery } from "@/hooks/use-draft-recovery";
+import { useChatSearch } from "@/hooks/use-chat-search";
+import { useThreads } from "@/hooks/use-threads";
+import { useChatTurns, useTurnActivity } from "@/hooks/use-chat-turns";
+import { useSidebarRows, useSidebarState } from "@/hooks/use-sidebar-rows";
+import { useLiveConnection, type Live } from "@/hooks/use-live-connection";
+import { useChatNavigation, useChatTabs, type View } from "@/hooks/use-chat-navigation";
+import { useProjectActions, useProjectState } from "@/hooks/use-project-actions";
+import { usePermissionState, usePermissions } from "@/hooks/use-permissions";
+import { useSlashCommands } from "@/hooks/use-slash-commands";
+import { useComposerAttachments } from "@/hooks/use-composer-attachments";
+import { useAgentChildren, useExpandedAgents, useRelatedAgents } from "@/hooks/use-agent-relations";
+import { useDisconnectedChat } from "@/hooks/use-disconnected-chat";
+import { useWorkspacePanels } from "@/hooks/use-workspace-panels";
+import { useComposerInput } from "@/hooks/use-composer-input";
+import { useWorkspaceRestore } from "@/hooks/use-workspace-restore";
+import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
+import { useThreadActions } from "@/hooks/use-thread-actions";
+import { useComposerActions } from "@/hooks/use-composer-actions";
 import type { ThemeChoice } from "@/components/appearance-settings";
-import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title, agentName,
-  mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
-
-const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
+import { api, chatProvider, choiceById, choiceOf, effortsOf, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, providerChoices, title, agentName, mediaUrl, type Entry, type Thread } from "@/lib/api";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 function ObservabilityView() { return <div className="page-scroll" data-view="observability" />; }
-type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
-type NextTurn = { model?: string; effort?: string; plan?: boolean };
-type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
-/** The terminal's answer to a finished plan: Plan mode off, then this message. */
-const IMPLEMENT_PLAN = "Implement the plan.";
 /** The sidebar's width in pixels: the default, and how far its edge can be dragged. */
 const SIDEBAR = { initial: 256, min: 200, max: 480 };
-const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 /** Whether a chat ran in a project's folder (trailing slashes ignored). */
 const sameFolder = (a: string | undefined, b: string) => !!a && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
@@ -125,85 +126,26 @@ export default function Home() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
-  // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
-  const [tabs, setTabs] = useState<ChatTabs>(startTabs);
-  const tabsRef = useRef(tabs);
-  const [tabsRestored, setTabsRestored] = useState(false);
-  const restoredTabs = useRef(false);
-  const updateTabs = useCallback((next: ChatTabs) => { tabsRef.current = next; setTabs(next); }, []);
+  const { tabs, tabsRef, tabsRestored, setTabsRestored, restoredTabs, updateTabs } = useChatTabs();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [submissions, setSubmissions] = useState<SubmittedMessage[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
-  const [catalogError, setCatalogError] = useState("");
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const catalogRequest = useRef(0);
-  const refreshModels = useCallback(async () => {
-    const id = ++catalogRequest.current; setCatalogLoading(true);
-    try {
-      const result = await api<{ data: Model[] }>("/models");
-      if (!Array.isArray(result?.data)) throw new Error("The model catalogue did not return a model list.");
-      if (catalogRequest.current === id) { setModels(result.data); setCatalogError(""); }
-    } catch (cause) {
-      if (catalogRequest.current === id) setCatalogError(cause instanceof Error ? cause.message : String(cause));
-    } finally { if (catalogRequest.current === id) setCatalogLoading(false); }
-  }, []);
-  // One settings snapshot for the whole app, so a main model saved in Settings is what the next new chat starts with.
-  const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
-  const providerSettings = settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
+  const { models, catalogError, catalogLoading, catalogRequest, refreshModels, providerSettings } = useModelCatalog();
   // New conversations: where to run and with what.
   const [choiceId, setChoiceId] = useState("");
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
-  const [cwd, setCwd] = useState("");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [projectChanging, setProjectChanging] = useState(false);
-  const project = projects.find(item => item.id === projectId) ?? null;
-  const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
+  const { cwd, setCwd, projects, setProjects, projectId, setProjectId, projectChanging,
+    setProjectChanging, project, projectEdit, setProjectEdit } = useProjectState();
   // Existing conversations: overrides for their next turn only.
-  const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
-  const [threadModes, setThreadModes] = useState<Record<string, PermissionMode>>({});
-  const [changingPermissions, setChangingPermissions] = useState(false);
-  const [threadPlans, setThreadPlans] = useState<Record<string, boolean>>({});
-  const [newPlan, setNewPlan] = useState(false);
-  const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
+  const { nextTurn, setNextTurn, threadModes, setThreadModes, changingPermissions,
+    setChangingPermissions, threadPlans, setThreadPlans, newPlan, setNewPlan } = usePermissionState();
+  const [error, setError] = useState("");
   const [pins, setPins] = useState<string[]>([]);
-  // Groups the person made, and how the sidebar lists chats (lib/chat-groups.ts); kept on this computer, read once.
-  const [chatGroups, setChatGroups] = useState<ChatGroups>(emptyGroups);
-  const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
-  const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
-  useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
-  function updateGroups(change: (state: ChatGroups) => ChatGroups) {
-    const next = change(chatGroupsRef.current);
-    chatGroupsRef.current = next; setChatGroups(next);
-    if (!writeGroups(next, appStorage())) setError("Could not save chat groups on this device.");
-  }
-  const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
-  const [attentionLoaded, setAttentionLoaded] = useState(false);
-  const planTurns = useRef(new Map<string, string>());
-  useEffect(() => { setAttention(readAttention()); setAttentionLoaded(true); }, []);
-  useEffect(() => {
-    if (attentionLoaded) try { saveAttention(attention); } catch { setError("Could not save chat attention on this device."); }
-  }, [attention, attentionLoaded]);
-  const markRead = useCallback((id: string) => setAttention(previous => previous.unread.includes(id) ? { ...previous, unread: previous.unread.filter(value => value !== id) } : previous), []);
-  useEffect(() => {
-    setAttention(previous => {
-      const answered = Object.keys(previous.plans).filter(id => previous.plans[id] === planAnswered[id]);
-      if (!answered.length) return previous;
-      return { ...previous, plans: Object.fromEntries(Object.entries(previous.plans).filter(([id]) => !answered.includes(id))) };
-    });
-  }, [planAnswered]);
-  /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
-  const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
-  const [deleteRunHistory, setDeleteRunHistory] = useState(false);
-  /** "Deleted …" with its Undo, after the sidebar deletes chats; Ctrl+Z does the same. `shownWhenDeleted` reopens the chat that was open. */
-  const [deletedNotice, setDeletedNotice] = useState<string | null>(null);
-  const shownWhenDeleted = useRef(new Set<string>());
-  /** Chats marked with Ctrl+click or Shift+click in the sidebar; `markAnchor` is where a Shift range starts. */
-  const [marked, setMarked] = useState<string[]>([]);
-  const markAnchor = useRef<string | null>(null);
-  const threadList = useRef<HTMLDivElement>(null);
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const { chatGroups, newGroupFor, setNewGroupFor, updateGroups } = useChatGroups(setError);
+  const { attention, setAttention, planAnswered, setPlanAnswered, planTurns, markRead } = useChatAttention(setError);
+  const { deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory,
+    deletedNotice, setDeletedNotice, shownWhenDeleted, marked, setMarked, markAnchor,
+    threadList, collapsedProjects, setCollapsedProjects } = useSidebarState();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const commandReturnFocus = useRef<HTMLElement | null>(null);
@@ -226,133 +168,35 @@ export default function Home() {
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
   useEffect(() => { setPins(readPins()); }, []);
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
-  const [text, setTextState] = useState("");
-  const [shellMode, setShellMode] = useState(false);
-  const shellCreated = useRef<string | null>(null);
-  const [sideChat, setSideChat] = useState<{ parentId: string; open: boolean; question?: SideRequest } | null>(null);
-  const sideRequests = useRef(0);
-  const textRef = useRef("");
-  const composerRef = useRef<HTMLTextAreaElement>(null);
-  const [caret, setCaret] = useState(0);
-  /** The mentions picked in the message box; a message carries those whose @name is still in its text. */
-  const pickedMentions = useRef(new Map<string, Mention>());
-  const filePickerRef = useRef<HTMLInputElement>(null);
-  const [attachments, setAttachmentsState] = useState<Attachment[]>([]);
-  const attachmentsRef = useRef<Attachment[]>([]);
-  const attachmentDrafts = useRef<Record<string, Attachment[]>>({});
-  const [attaching, setAttaching] = useState(false);
-  const readingFiles = useRef(false);
-  const setAttachments = useCallback((value: Attachment[]) => { attachmentsRef.current = value; setAttachmentsState(value); }, []);
-  const [dictating, setDictating] = useState(false);
-  const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
-  const [search, setSearch] = useState("");
+  const { text, shellMode, setShellMode, shellCreated, sideChat, setSideChat, sideRequests,
+    textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, attachments,
+    attachmentsRef, setAttachments, dictating, setDictating, setText } = useComposerInput();
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
-  const searchTerm = search.trim();
-  const [searchResults, setSearchResults] = useState<{ query: string; data: Thread[]; nextCursor: string | null; loading: boolean; error: string }>({ query: "", data: [], nextCursor: null, loading: false, error: "" });
-  const drafts = useRef<Record<string, string>>({});
   const [messageEdits, setMessageEdits] = useState<Record<string, string>>({});
-  const [approvalDrafts, setApprovalDrafts] = useState<Record<string, { id: string; answers: QuestionAnswers }>>({});
-  const submitting = useRef(new Set<string>());
-  const [pendingDrafts, setPendingDrafts] = useState<Record<string, boolean>>({});
-  async function submitDraft<T,>(key: string, send: () => Promise<T>): Promise<T> {
-    if (submitting.current.has(key)) throw new Error("This request is already being sent.");
-    submitting.current.add(key); setPendingDrafts(previous => ({ ...previous, [key]: true }));
-    try { return await send(); }
-    finally { submitting.current.delete(key); setPendingDrafts(previous => without(previous, key)); }
-  }
-  const clearApprovalDraft = useCallback((id: string) => setApprovalDrafts(previous => {
-    const keys = Object.keys(previous).filter(key => previous[key].id === id);
-    if (!keys.length) return previous;
-    const next = { ...previous }; for (const key of keys) delete next[key]; return next;
-  }), []);
-  const draftAnswer = (approval: Approval, id: string, value: string[]) => {
-    const key = approvalDraftKey(approval);
-    setApprovalDrafts(previous => ({ ...previous, [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: value } } }));
-  };
-  const newDraftKey = useRef("new");
-  const [error, setError] = useState("");
+  const { approvals, setApprovals, approvalDrafts, pendingDrafts, submitDraft, clearApprovalDraft, draftAnswer } = useApprovals();
   const [fileNotice, setFileNotice] = useState("");
+  // Hidden chats stay absent while a list request races with deletion or archiving.
+  const hidden = useRef(new Set<string>());
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
   }, [ready, connected]);
-  useEffect(() => {
-    if (!ready || !searchTerm) { setSearchResults({ query: "", data: [], nextCursor: null, loading: false, error: "" }); return; }
-    let disposed = false;
-    setSearchResults({ query: searchTerm, data: [], nextCursor: null, loading: true, error: "" });
-    const timer = setTimeout(() => {
-      api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&searchTerm=${encodeURIComponent(searchTerm)}`)
-        .then(result => { if (!Array.isArray(result.data)) throw unreadable("search"); if (!disposed) setSearchResults({ query: searchTerm, data: result.data, nextCursor: result.nextCursor, loading: false, error: "" }); })
-        .catch(cause => { if (!disposed) setSearchResults({ query: searchTerm, data: [], nextCursor: null, loading: false, error: cause instanceof Error ? cause.message : String(cause) }); });
-    }, 250);
-    return () => { disposed = true; clearTimeout(timer); };
-  }, [ready, searchTerm]);
+  const { search, setSearch, searchTerm, searchResults, loadMoreSearch } = useChatSearch(ready, hidden);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
-  const savedDraft = useCallback((id: string) => drafts.current[id] ?? readDraft(id), []);
-  const saveDraft = useCallback((id: string, value: string) => {
-    drafts.current[id] = value;
-    if (!writeDraft(id, value)) setError("Draft recovery is unavailable. Your text is kept in this window; copy it before reloading.");
-  }, []);
-  const editDraft = (value: string) => { setText(value); saveDraft(selectedRef.current?.id || newDraftKey.current, value); };
-  const savedAttachments = useCallback((id: string) => attachmentDrafts.current[id] ?? (attachmentDrafts.current[id] = readAttachmentDraft(id)), []);
-  const saveAttachments = useCallback((id: string, value: Attachment[]) => {
-    attachmentDrafts.current[id] = value;
-    if (!writeAttachmentDraft(id, value)) setError("Attachment recovery is unavailable. Your files are kept in this window; save them before reloading.");
-  }, []);
-  const restoreAttachments = useCallback((id: string) => {
-    try { setAttachments(savedAttachments(id)); savedAttachments(`recovery-${id}`); }
-    catch { setAttachments([]); setError("Saved attachments could not be restored. Add the files again before sending."); }
-    setFileNotice("");
-  }, [savedAttachments, setAttachments]);
-  async function addFiles(files: File[]) {
-    if (!files.length) return;
-    if (shellMode) { setFileNotice("Bash mode is on, so nothing was added. Press Backspace in the empty message box to return to chat, then try again."); return; }
-    if (readingFiles.current) { setFileNotice("Wait for the current files to finish reading."); return; }
-    const owner = selectedRef.current?.id || newDraftKey.current;
-    readingFiles.current = true; setAttaching(true); setFileNotice("");
-    try {
-      const read = await attachFiles(savedAttachments(owner), files, body => api("/attachments/extract", body));
-      const fit = fitAttachments(savedAttachments(owner), read.added); // the list may have changed while the files were read
-      if (read.added.length) { saveAttachments(owner, fit.kept); if ((selectedRef.current?.id || newDraftKey.current) === owner) setAttachments(fit.kept); }
-      if (read.problems.length || fit.problems.length) throw Error([...read.problems, ...fit.problems].join("\n"));
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      if ((selectedRef.current?.id || newDraftKey.current) === owner) setFileNotice(message);
-      else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
-    } finally { readingFiles.current = false; setAttaching(false); }
-  }
-  /** The browser's annotations and screenshots join the composer's files; its Send also sends the message. */
-  async function attachFromBrowser(parts: Attachment[], submit: boolean) {
-    const owner = selectedRef.current?.id || newDraftKey.current;
-    try {
-      const fit = fitAttachments(savedAttachments(owner), parts);
-      if (fit.problems.length) throw Error(fit.problems.join("\n"));
-      saveAttachments(owner, fit.kept); setAttachments(fit.kept); setFileNotice("");
-    } catch (cause) { setFileNotice(cause instanceof Error ? cause.message : String(cause)); showChat(); return false; }
-    showChat();
-    if (submit) await send(); else requestAnimationFrame(() => composerRef.current?.focus());
-    return true;
-  }
-  const [moreLoading, setMoreLoading] = useState(false);
-  const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
-  const rootPaging = useRef(false), loadedRootPages = useRef(false);
-  const childPaging = useRef(new Set<string>()), loadedChildPages = useRef(new Set<string>());
+  const { drafts, attachmentDrafts, newDraftKey, savedDraft, saveDraft, editDraft, savedAttachments,
+    saveAttachments, restoreAttachments } = useDraftRecovery(selectedRef, setText,
+    setAttachments, setFileNotice, setError);
+  const { attaching, addFiles, attachFromBrowser } = useComposerAttachments({ shellMode, setFileNotice,
+    selectedRef, newDraftKey, savedAttachments, saveAttachments, setAttachments,
+    setRuntimeNotices: updater => setRuntimeNotices(updater), showChat: () => showChat(),
+    send: () => send(), composerRef });
   const [settingsVisited, setSettingsVisited] = useState(false);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
-  const [activeTurns, setActiveTurns] = useState<Record<string, string>>({});
-  // Each chat's latest task list (turn/plan/updated), shown above the message box (components/task-list.tsx).
-  const [plans, setPlans] = useState<Record<string, TaskPlan>>({});
-  // A fast turn can finish over SSE before its HTTP start response arrives.
-  const completedTurns = useRef(new Set<string>());
-  const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [activity, setActivity] = useState<Record<string, string>>({});
-  const [liveError, setLiveError] = useState<Record<string, string>>({});
-  const [runtimeNotices, setRuntimeNotices] = useState<Record<string, string>>({});
-  const [failedTurns, setFailedTurns] = useState<Record<string, FailedTurn>>({});
-  // A turn that ended stopped (by Stop, Esc, another window or the engine) says so until the next turn starts.
-  const [stoppedTurns, setStoppedTurns] = useState<Record<string, string>>({});
+  const { activeTurns, setActiveTurns, plans, setPlans, completedTurns, activity, setActivity,
+    liveError, setLiveError, runtimeNotices, setRuntimeNotices, failedTurns, setFailedTurns,
+    stoppedTurns, setStoppedTurns } = useTurnActivity();
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
@@ -360,36 +204,10 @@ export default function Home() {
   const [originOpen, setOriginOpen] = useState({ love: true, workflows: true });
   const viewRef = useRef(view); viewRef.current = view;
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
-  const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
-  const [desktop, setDesktop] = useState(false);
-  const [windowAvailable, setWindowAvailable] = useState(false);
-  const sessionWindowApi = () => window.elpisDesktop?.openSessionWindow ?? (window.parent !== window && new URLSearchParams(location.search).get("pane") === "1" ? window.parent.elpisDesktop?.openSessionWindow : undefined);
-  useEffect(() => { setWindowAvailable(!!sessionWindowApi()); }, []);
-  const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
-  const side = useSidePanel(browser);
-  useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
-  useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
-  // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
-  const [hasTerminal, setHasTerminal] = useState(false);
-  const [tuiLaunch, setTuiLaunch] = useState<TerminalLaunch | null>(null);
-  useEffect(() => { setHasTerminal(!!window.elpisDesktop?.terminal); }, []);
-  const panelShown = desktop && side.open && view === "chat";
-  /** Full view (the side panel's): the panel fills the work area and the chat floats over it, as a card or folded to a pill. */
-  const fullView = panelShown && side.full;
-  /** A window too narrow for chat and panel side by side shows the panel alone; the chat comes back when it is needed. */
-  const showChat = () => { if (side.full) side.setChatCollapsed(false); else if (matchMedia("(max-width: 760px)").matches) side.closePanel(); };
-  useEffect(() => { if (selected?.id) showChat(); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [pendingInputOpen, setPendingInputOpen] = useState(false);
-  const pendingInputButton = useRef<HTMLButtonElement>(null);
-  const [sidebar, setSidebar] = useState(false);
-  const [panelDrawer, setPanelDrawer] = useState(false);
-  useEffect(() => {
-    const media = matchMedia("(max-width: 1000px)");
-    const update = () => setPanelDrawer(media.matches);
-    update(); media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  const [agentsPanel, setAgentsPanel] = useState(true);
+  const { settingsSection, setSettingsSection, desktop, windowAvailable, sessionWindowApi,
+    browser, side, hasTerminal, tuiLaunch, setTuiLaunch, panelShown, fullView, showChat,
+    pendingInputOpen, setPendingInputOpen, pendingInputButton, sidebar, setSidebar, panelDrawer,
+    agentsPanel, setAgentsPanel } = useWorkspacePanels({ selected, activeTabId: tabs.activeId, view, setView });
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
   // Theme: System follows the operating system; the choice is kept on this device.
   const [theme, setThemeChoice] = useState<ThemeChoice>("system");
@@ -404,9 +222,6 @@ export default function Home() {
   const setTheme = (next: ThemeChoice) => { setThemeChoice(next); try { appStorage().setItem("elpis-theme", next); } catch { setError("Could not save appearance on this device."); } };
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [itemCursor, setItemCursor] = useState<string | null>(null);
   /** Each chat's last read transcript: reopening a chat draws it at once while it rereads, as in the ChatGPT app. */
   const transcripts = useRef(new Map<string, { entries: Entry[]; cursor: string | null }>());
@@ -418,325 +233,32 @@ export default function Home() {
   const liveRevision = useRef(0), liveVersions = useRef(new Map<string, number>());
   const liveKeysAfter = useCallback((revision: number) => new Set([...liveVersions.current].filter(([, version]) => version > revision).map(([key]) => key)), []);
 
-  const select = useCallback((thread: Thread | null) => {
-    const launch = new URL(window.location.href);
-    if (launch.searchParams.has("session") && launch.searchParams.get("session") !== (thread?.id || "")) {
-      launch.searchParams.set("session", thread?.id || ""); window.history.replaceState(null, "", launch.pathname + launch.search);
-    }
-    selectedRef.current = thread; setSelected(thread); try { window.elpisDesktop?.storage?.setItem("elpis-last-chat", thread?.id || ""); } catch { /* The in-memory selection remains usable. */ } }, []);
-  // Reported routes are authoritative; remembered settings fill list rows that omit model metadata.
-  const settingsOf = useRef<Record<string, Pick<Thread, "model" | "modelProvider" | "reasoningEffort">>>({});
-  const remember = (thread: Thread) => { if (thread.model) settingsOf.current[thread.id] = { model: thread.model, modelProvider: thread.modelProvider, reasoningEffort: thread.reasoningEffort ?? null }; return thread; };
-  const threadsRef = useRef<Thread[]>([]);
-  useEffect(() => { threadsRef.current = threads; }, [threads]);
-  const statusRevisions = useRef<Record<string, number>>({});
-  const patchThread = useCallback((id: string, patch: Partial<Thread>) => {
-    if (patch.status) statusRevisions.current[id] = (statusRevisions.current[id] ?? 0) + 1;
-    setThreads(prev => prev.map(thread => thread.id === id ? { ...thread, ...patch } : thread));
-    if (selectedRef.current?.id === id) select({ ...selectedRef.current, ...patch });
-  }, [select]);
-  // Deleted and archived chats never reappear from a list read that raced with their removal.
-  const hidden = useRef(new Set<string>());
-  const upsertThread = useCallback((thread: Thread) => setThreads(prev => prev.some(item => item.id === thread.id) ? prev.map(item => item.id === thread.id ? { ...item, ...thread } : item) : [thread, ...prev]), []);
-  const removeThreads = useCallback((ids: Set<string>, permanent: boolean) => {
-    for (let grew = true; grew;) { grew = false; for (const thread of threadsRef.current) if (thread.parentThreadId && ids.has(thread.parentThreadId) && !ids.has(thread.id)) { ids.add(thread.id); grew = true; } }
-    for (const id of ids) { hidden.current.add(id); transcripts.current.delete(id); browser.closeSession(id); }
-    if (permanent) {
-      for (const id of ids) for (const key of [id, `recovery-${id}`]) { delete drafts.current[key]; writeDraft(key, ""); delete attachmentDrafts.current[key]; writeAttachmentDraft(key, []); }
-      setMessageEdits(previous => Object.fromEntries(Object.entries(previous).filter(([key]) => !ids.has((JSON.parse(key) as [string, string, string])[0]))));
-    }
-    updateTabs(forgetChats(tabsRef.current, ids));
-    setThreads(prev => prev.filter(thread => !ids.has(thread.id)));
-    setMarked(prev => prev.some(id => ids.has(id)) ? prev.filter(id => !ids.has(id)) : prev);
-    setApprovals(prev => prev.filter(approval => !ids.has(approval.params.threadId ?? "")));
-    if (selectedRef.current && ids.has(selectedRef.current.id)) { request.current++; select(null); setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setEntries([]); setItemCursor(null); }
-  }, [select, setText, savedDraft, restoreAttachments, updateTabs, browser.closeSession]);
-  const refreshThreads = useCallback(async () => {
-    const routesAtRequest = { ...settingsOf.current };
-    const statusesAtRequest = { ...statusRevisions.current };
-    const result = await api<{ data: Thread[]; nextCursor: string | null }>("/threads?limit=100&includeAgentRuns=true"); if (!Array.isArray(result.data)) throw unreadable("conversations");
-    result.data = result.data.filter(thread => !hidden.current.has(thread.id));
-    // Preserve an event or local acknowledgment that arrived after this list request began.
-    for (const thread of result.data) if (thread.model && settingsOf.current[thread.id] === routesAtRequest[thread.id]) remember({ ...settingsOf.current[thread.id], ...thread });
-    // Listed rows omit forkedFromId (native stored rows); keep what thread/read or a fork already reported.
-    const status = (t: Thread, current: Thread | undefined) => statusRevisions.current[t.id] !== statusesAtRequest[t.id] ? current?.status ?? t.status : t.status;
-    const known = (t: Thread, prev: Thread[]) => ({ ...t, status: status(t, prev.find(p => p.id === t.id)), ...settingsOf.current[t.id], forkedFromId: t.forkedFromId ?? prev.find(p => p.id === t.id)?.forkedFromId ?? null });
-    setThreads(prev => mergeListedThreads(prev, result.data.map(t => known(t, prev)), hidden.current, true));
-    if (!loadedRootPages.current) setNextCursor(result.nextCursor);
-    const updated = result.data.find(t => t.id === selectedRef.current?.id);
-    if (updated) select({ ...selectedRef.current, ...updated, status: status(updated, selectedRef.current ?? undefined), ...settingsOf.current[updated.id], forkedFromId: updated.forkedFromId ?? selectedRef.current?.forkedFromId ?? null });
-  }, [select]);
-
-  const loadMoreConversations = useCallback(async () => {
-    if (!nextCursor || rootPaging.current) return;
-    rootPaging.current = true; setMoreLoading(true);
-    try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&includeAgentRuns=true&cursor=${encodeURIComponent(nextCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-      loadedRootPages.current = true;
-      setThreads(prev => mergeListedThreads(prev, result.data, hidden.current)); setNextCursor(result.nextCursor);
-    } catch (cause) { setError(String(cause)); }
-    finally { rootPaging.current = false; setMoreLoading(false); }
-  }, [nextCursor]);
-  async function loadMoreSearch() {
-    if (!searchResults.nextCursor || searchResults.loading || searchResults.query !== searchTerm) return;
-    const query = searchTerm;
-    setSearchResults(previous => ({ ...previous, loading: true, error: "" }));
-    try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&searchTerm=${encodeURIComponent(query)}&cursor=${encodeURIComponent(searchResults.nextCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-      setSearchResults(previous => previous.query === query ? { query, data: mergeListedThreads(previous.data, result.data, hidden.current), nextCursor: result.nextCursor, loading: false, error: "" } : previous);
-    } catch (cause) { setSearchResults(previous => previous.query === query ? { ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : previous); }
-  }
-
-  const loadThread = useCallback(async (thread: Thread) => {
-    markRead(thread.id);
-    // A chat that is already open in another tab brings that tab forward instead of opening twice.
-    const owner = tabFor(tabsRef.current, thread.id);
-    if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
-    saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); setText(savedDraft(thread.id));
-    const id = ++request.current; stickToBottom.current = true; restoreScroll.current = null;
-    liveVersions.current.clear(); const historyRevision = liveRevision.current;
-    const shown = transcripts.current.get(thread.id);
-    select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(true); setError(""); restoreAttachments(thread.id);
-    try {
-      const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
-      if (request.current !== id) return;
-      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor);
-    } catch (e) { if (request.current === id) setError(String(e)); return; }
-    finally { if (request.current === id) setLoading(false); }
-    // Follow it live in this app: subscribe, and learn the turn it is running now.
-    try {
-      const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
-      if (request.current !== id || live.thread?.id !== thread.id) return;
-      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); rememberModes(thread.id, live);
-      if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
-      setLiveError(prev => without(prev, thread.id));
-    } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, upsertThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
-
+  const { select, settingsOf, remember, threadsRef, patchThread, upsertThread, removeThreads,
+    refreshThreads, loadMoreConversations, loadThread, nextCursor, moreLoading } = useThreads({ threads,
+    setThreads, setSelected, selectedRef, browser, hidden, transcripts, drafts, attachmentDrafts, tabsRef,
+    updateTabs, setMarked, setApprovals, request, setMessageEdits, setText, savedDraft, newDraftKey, restoreAttachments,
+    setEntries, setItemCursor, setError, markRead, saveDraft, textRef, stickToBottom, restoreScroll,
+    liveVersions, liveRevision, liveKeysAfter, setView, setSidebar, setLoading, rememberModes,
+    completedTurns, setActiveTurns, setLiveError });
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
-  // The desktop gets the theme as dark or not, the choice (System keeps the operating system in charge of pages in the browser)
-  // and the page's own --background, resolved: main paints the browser's blank pages with it.
-  useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
-  useEffect(() => {
-    let saved: string | null = null;
-    try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = stored.selectedId ? `new-${stored.selectedId}` : "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setProjectId(stored.selectedId); setCwd(stored.projects.find(item => item.id === stored.selectedId)?.cwd ?? ""); }
-    catch (e) { setError(e instanceof Error ? e.message : "Could not restore workspace preferences."); }
-    try {
-      const store = window.elpisDesktop?.storage, restored = store && readTabs(store);
-      if (restored) {
-        updateTabs(restored); restoredTabs.current = true;
-        const shown = activeTab(restored);
-        if (!shown.threadId && shown.draftKey) { newDraftKey.current = shown.draftKey; setText(savedDraft(shown.draftKey)); restoreAttachments(shown.draftKey); }
-      }
-    } catch { /* The tabs start afresh. */ }
-    setTabsRestored(true);
-    if (saved === "system" || saved === "light" || saved === "dark") setThemeChoice(saved);
-    const media = matchMedia("(prefers-color-scheme: dark)"); setSystemDark(media.matches);
-    const follow = (event: MediaQueryListEvent) => setSystemDark(event.matches);
-    media.addEventListener("change", follow); return () => media.removeEventListener("change", follow);
-  }, []);
-  useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
-  // The mouse's side buttons go back and forward, as in a browser.
-  useEffect(() => {
-    const onMouse = (event: MouseEvent) => {
-      if (event.button !== 3 && event.button !== 4) return;
-      event.preventDefault();
-      if (event.type === "mouseup") shortcutAction.current(event.button === 3 ? "back" : "forward");
-    };
-    const types = ["mousedown", "mouseup", "auxclick"] as const;
-    for (const type of types) window.addEventListener(type, onMouse);
-    return () => { for (const type of types) window.removeEventListener(type, onMouse); };
-  }, []);
-  // The ChatGPT app's shortcuts (lib/shortcuts.ts); the action reads this render's state.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-      const hit = shortcutFor(event, typing); if (!hit) return;
-      event.preventDefault(); shortcutAction.current(hit.id, hit.index);
-    };
-    window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, []);
-  useEffect(() => {
-    let disposed = false; let events: EventSource | undefined; let wasConnected = false; let recovery = 0;
-    function disconnected() { wasConnected = false; recovery++; setConnected(false); setApprovals([]); }
-    async function reconnect() {
-      const attempt = ++recovery, thread = selectedRef.current, requestId = request.current;
-      setAccountRefresh(value => value + 1);
-      void refreshModels();
-      try {
-        await refreshThreads();
-        await reloadSettings().catch(() => null);
-        if (disposed || attempt !== recovery) return;
-        if (!thread) return;
-        const historyRevision = liveRevision.current;
-        const history = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
-        if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        select(remember(history.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...history.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(history.nextCursor);
-        const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
-        if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); rememberModes(thread.id, live);
-        setActiveTurns(previous => live.activeTurnId && !completedTurns.current.has(live.activeTurnId) ? { ...previous, [thread.id]: live.activeTurnId } : without(previous, thread.id));
-        setLiveError(previous => without(previous, thread.id));
-      } catch (error) {
-        if (!disposed && attempt === recovery && thread) setLiveError(previous => ({ ...previous, [thread.id]: error instanceof Error ? error.message : String(error) }));
-      }
-    }
-    async function initialize() {
-      try {
-        await sessionReady();
-        const health = await api<{ connected: boolean }>("/health"); if (disposed) return; wasConnected = health.connected; setConnected(health.connected);
-        void refreshModels();
-        await refreshThreads();
-        await reloadSettings().catch(() => null); if (disposed) return;
-        setReady(true);
-        // The chat of the shown tab comes back; without saved tabs, the last chat does.
-        const launch = new URLSearchParams(location.search);
-        const last = launch.has("session") ? launch.get("session") : restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
-        if (last && !selectedRef.current && request.current === 0) await loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
-        events = new EventSource("/api/events");
-        events.addEventListener("sideChat", event => window.dispatchEvent(new CustomEvent("elpis:side-chat", { detail: JSON.parse(event.data) })));
-        events.addEventListener("connection", event => {
-          const available = Boolean(JSON.parse(event.data).connected);
-          if (!available) { disconnected(); return; }
-          const recovered = !wasConnected; wasConnected = true; setConnected(true);
-          if (recovered) void reconnect();
-        });
-        events.onerror = disconnected;
-        events.addEventListener("message", event => {
-          const { method, params } = JSON.parse(event.data);
-          notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
-          const threadId: string | undefined = params.threadId ?? params.thread?.id;
-          if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
-            planTurns.current.delete(threadId);
-            setAttention(previous => ({ unread: previous.unread.filter(id => id !== threadId), plans: without(previous.plans, threadId) }));
-          }
-          if (threadId && method === "item/completed" && params.item?.type === "plan") planTurns.current.set(threadId, params.turnId);
-          if (threadId && method === "turn/completed" && !completedTurns.current.has(params.turn.id) && params.turn.status === "completed" && !params.turn.error && !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})) {
-            const unread = selectedRef.current?.id !== threadId || viewRef.current !== "chat";
-            const planReady = planTurns.current.get(threadId) === params.turn.id || params.turn.items?.some((item: Item) => item.type === "plan");
-            setAttention(previous => ({
-              unread: unread ? [...new Set([...previous.unread, threadId])] : previous.unread.filter(id => id !== threadId),
-              plans: planReady ? { ...previous.plans, [threadId]: params.turn.id } : previous.plans,
-            }));
-          }
-          if (method === "turn/plan/updated" && Array.isArray(params.plan)) setPlans(prev => ({ ...prev, [params.threadId]: { turnId: params.turnId, explanation: params.explanation ?? null, steps: params.plan } }));
-          // A new turn starts without a list; the last turn's list goes until this one makes its own.
-          if (method === "turn/started") { setPlans(prev => prev[params.threadId] && prev[params.threadId].turnId !== params.turn.id ? without(prev, params.threadId) : prev); setRewindActions(prev => without(prev, params.threadId)); }
-          if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); setFailedTurns(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
-          if (method === "turn/started") setStoppedTurns(prev => without(prev, params.threadId));
-          if (method === "turn/completed") {
-            completedTurns.current.add(params.turn.id);
-            setStoppedTurns(prev => params.turn?.status === "interrupted" ? { ...prev, [params.threadId]: params.turn.id } : without(prev, params.threadId));
-            setActiveTurns(prev => prev[params.threadId] !== params.turn.id ? prev : without(prev, params.threadId));
-            refreshThreads().catch(e => setError(String(e)));
-            if (params.turn?.error) {
-              setFailedTurns(prev => ({ ...prev, [params.threadId]: { turnId: params.turn.id, error: params.turn.error } }));
-              setRuntimeNotices(prev => without(prev, params.threadId));
-            } else {
-              setFailedTurns(prev => without(prev, params.threadId));
-              setRuntimeNotices(prev => without(prev, params.threadId));
-            }
-          }
-          if (method === "error" && threadId) {
-            const notice = runtimeErrorNotice(params);
-            if (notice) setRuntimeNotices(prev => ({ ...prev, [threadId]: notice }));
-          }
-          if (method === "thread/status/changed" && params.status) patchThread(params.threadId, { status: params.status });
-          // The engine's word that a chat is no longer running ends its turn here too, even if that turn's own end was
-          // missed (another window, a reconnect, a dropped stream), so a finished chat never keeps offering a follow-up.
-          if (method === "thread/status/changed" && params.status && params.status.type !== "active") setActiveTurns(prev => without(prev, params.threadId));
-          // The engine's applied permission mode, from this or any other client.
-          if (method === "thread/settings/updated" && params.permissions) setThreadModes(prev => ({ ...prev, [params.threadId]: params.permissions }));
-          if (method === "thread/settings/updated" && params.threadSettings?.model) {
-            const settings = { model: params.threadSettings.model, modelProvider: params.threadSettings.modelProvider, reasoningEffort: params.threadSettings.effort ?? null };
-            settingsOf.current[params.threadId] = settings; patchThread(params.threadId, settings);
-          }
-          // Another client started working in a chat this window has not listed yet; Elpis lists it once stored.
-          if (method === "thread/status/changed" && !threadsRef.current.some(thread => thread.id === params.threadId)) void (async () => {
-            for (let attempt = 0; attempt < 5 && !threadsRef.current.some(thread => thread.id === params.threadId); attempt++) {
-              await refreshThreads().catch(() => {}); await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-          })();
-          if (method === "thread/started" && params.thread?.parentThreadId) upsertThread(params.thread);
-          if (method === "thread/name/updated" || method === "thread/started") refreshThreads().catch(e => setError(String(e)));
-          if (method === "thread/deleted" || (method === "thread/archived" && rewindSwitch.current !== params.threadId)) removeThreads(new Set([params.threadId]), method === "thread/deleted");
-          const line = threadId ? activityOf(method, params) : null;
-          if (line && threadId) setActivity(prev => prev[threadId] === line ? prev : { ...prev, [threadId]: line });
-          if (!threadId || threadId !== selectedRef.current?.id) return;
-          const itemKey = liveEventItemKey(method, params);
-          if (itemKey) liveVersions.current.set(itemKey, ++liveRevision.current);
-          setEntries(prev => mergeLiveItem(prev, method, params, threadId));
-        });
-        events.addEventListener("approval", event => { const approval = JSON.parse(event.data); notifyApproval(approval, threadsRef.current, id => void loadThread({ id } as Thread)); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
-        events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
-        events.addEventListener("unsupportedApproval", event => { const { method } = JSON.parse(event.data); setError(`Elpis requested an unsupported approval (${method}). Update the app to answer this request.`); });
-        events.addEventListener("account", () => { setAccountRefresh(n => n + 1); void refreshModels(); });
-      } catch (e) { if (!disposed) setError(String(e)); }
-    }
-    initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels]);
-
-  const loadChildren = useCallback(async (id: string, cursor?: string, expand = true) => {
-    if (childPaging.current.has(id)) return;
-    childPaging.current.add(id); setLoadingChildren(prev => ({ ...prev, [id]: true }));
-    try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?ancestorThreadId=${encodeURIComponent(id)}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-      setThreads(prev => mergeListedThreads(prev, result.data, hidden.current));
-      if (cursor) loadedChildPages.current.add(id);
-      if (cursor || !loadedChildPages.current.has(id)) setChildCursors(prev => ({ ...prev, [id]: result.nextCursor }));
-      if (expand) setExpanded(prev => ({ ...prev, [id]: true }));
-    } catch (e) { setError(String(e)); }
-    finally { childPaging.current.delete(id); setLoadingChildren(prev => ({ ...prev, [id]: false })); }
-  }, []);
-  useEffect(() => { if (selected?.id && !selected.parentThreadId) loadChildren(selected.id); }, [selected?.id, selected?.parentThreadId, loadChildren]);
-  // Chats this app could not subscribe to are refreshed by reading them instead.
-  const selectedLiveError = selected ? liveError[selected.id] : undefined;
-  useEffect(() => {
-    if (!selected || !selectedLiveError || view !== "chat" || loading) return;
-    const id = selected.id; let disposed = false, inFlight = false;
-    const timer = setInterval(async () => {
-      if (disposed || inFlight || document.visibilityState !== "visible") return;
-      inFlight = true;
-      const historyRevision = liveRevision.current;
-      try {
-        const result = await api<{ thread: Thread; data: Entry[] }>(`/threads/${encodeURIComponent(id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
-        if (disposed || selectedRef.current?.id !== id) return;
-        select(result.thread);
-        setEntries(prev => {
-          const fresh = [...result.data].reverse(); const byId = new Map(fresh.map(entry => [`${entry.turnId}:${entry.item.id}`, entry]));
-          const merged = prev.map(entry => byId.get(`${entry.turnId}:${entry.item.id}`) || entry);
-          const previousIds = new Set(prev.map(entry => `${entry.turnId}:${entry.item.id}`));
-          merged.push(...fresh.filter(entry => !previousIds.has(`${entry.turnId}:${entry.item.id}`)));
-          const preserved = mergeHistoryWithLive(prev, merged, liveKeysAfter(historyRevision));
-          return JSON.stringify(preserved) === JSON.stringify(prev) ? prev : preserved;
-        });
-      } catch (e) { if (!disposed) setError(String(e)); } finally { inFlight = false; }
-    }, 3000);
-    return () => { disposed = true; clearInterval(timer); };
-  }, [selected?.id, selectedLiveError, view, loading, select, liveKeysAfter]);
-  // Follow agents whose parent is expanded in the sidebar.
-  const observedIds = JSON.stringify(Object.keys(expanded).filter(id => expanded[id]).sort());
-  useEffect(() => {
-    let disposed = false, inFlight = false;
-    const refresh = async () => {
-      if (disposed || inFlight || document.visibilityState !== "visible") return;
-      inFlight = true;
-      try {
-        const ids = JSON.parse(observedIds) as string[];
-        for (let start = 0; start < ids.length && !disposed; start += 3) await Promise.all(ids.slice(start, start + 3).map(id => loadChildren(id, undefined, false)));
-      } catch (cause) { if (!disposed) setError(String(cause)); }
-      finally { inFlight = false; }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 5000);
-    return () => { disposed = true; clearInterval(timer); };
-  }, [observedIds, loadChildren]);
-  // Name the parent and the agent a continued chat came from, even when they are not on the loaded page.
-  const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(preferences.showAgentRuns && agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
-  useEffect(() => {
-    for (const id of relatedIds) api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`).then(result => setRelated(prev => ({ ...prev, [id]: result.thread }))).catch(() => {});
-  }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  useWorkspaceRestore({ dark, theme, newDraftKey, setText, savedDraft, restoreAttachments,
+    setProjects, setProjectId, setCwd, updateTabs, restoredTabs, setTabsRestored,
+    setThemeChoice, setSystemDark, setError });
+  useGlobalShortcuts(shortcutAction);
+  useLiveConnection({ refreshThreads, patchThread, upsertThread, removeThreads, select, remember, rememberModes,
+    loadThread, liveKeysAfter, clearApprovalDraft, refreshModels, selectedRef, request, liveRevision, liveVersions,
+    completedTurns, planTurns, viewRef, threadsRef, settingsOf, rewindSwitch, restoredTabs, tabsRef, catalogRequest,
+    setConnected, setApprovals, setAccountRefresh, setEntries, setItemCursor, setActiveTurns, setLiveError, setReady,
+    setError, setAttention, setPlans, setRewindActions, setRuntimeNotices, setFailedTurns, setStoppedTurns,
+    setThreadModes, setActivity });
+  const { loadingChildren, childCursors, expanded, loadChildren } = useAgentChildren({
+    selected, setThreads, hidden, setError,
+  });
+  const selectedLiveError = useDisconnectedChat({ selected, liveError, view, loading, liveRevision,
+    selectedRef, select, setEntries, liveKeysAfter, setError });
+  useExpandedAgents(expanded, loadChildren, setError);
+  useRelatedAgents({ selected, threads, showAgentRuns: preferences.showAgentRuns, agentRunsOpen, related, setRelated });
   const shownScope = selected?.id ?? newDraftKey.current;
   const shownEntries = useMemo(() => withSubmittedMessages(entries, submissions, shownScope), [entries, submissions, shownScope]);
   useEffect(() => { setSubmissions(previous => rememberSubmittedMessages(entries, previous, selected?.id ?? newDraftKey.current)); }, [entries, selected?.id, submissions]);
@@ -810,6 +332,13 @@ export default function Home() {
   const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
   // The message box's history keys (lib/prompt-history.ts): ↑/↓ and Ctrl+R through what you sent, Esc Esc to edit the last.
+  const { focusComposer, beginReply, askSideQuestion, restoreComposerFocus, editQueued,
+    writePrompt, editLastMessage, pickFiles, startMention, startSlash, focusSearch,
+    openComposerControl, closePanel } = useComposerActions({ composerRef, selectedRef, readOnlyRun,
+    attachmentsRef, setFileNotice, setShellMode, setAttachments, saveAttachments, selected, setError,
+    setSideChat, sideRequests, editDraft, textRef, pickedMentions, newDraftKey, replaceable,
+    entries, replacementOptions, setSlashNotice, setMessageEdits, filePickerRef, setCaret,
+    view, show: next => show(next), setSidebar, setSidebarCollapsed, searchInput, setPanel });
   const promptKeys = usePromptKeys(selected?.id ?? newDraftKey.current, { entries, box: () => composerRef.current, read: () => textRef.current, write: writePrompt, editLast: editLastMessage });
   const regenerate = (() => {
     if (!replaceable) return null;
@@ -827,8 +356,12 @@ export default function Home() {
   const team = teamRoot ? threads.filter(thread => thread.parentThreadId === teamRoot.id) : [];
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
-  function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
-  const newChat = () => openNewChat(tabDraftKey(activeTab(tabsRef.current)));
+  const { openNewChat, newChat, showTab, newChatTab, closeChatTab, cycleTabs, goHistory, openInNewTab } = useChatNavigation({
+    projectId, tabsRef, updateTabs, selectedRef, newDraftKey, textRef, saveDraft, savedDraft, request,
+    stickToBottom, restoreScroll, select, setEntries, setItemCursor, setText, setError,
+    restoreAttachments, setLoading, setView, setSidebar, composerRef, loadThread, find, showChat,
+    closeSession: browser.closeSession, historyRef, setHistory, hidden, show: next => show(next),
+  });
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
     if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
@@ -836,383 +369,28 @@ export default function Home() {
   const openSplit = (thread: Thread) => { side.closePanel(); setAgentsPanel(false); setView("chat"); split.open(thread); };
   const openSessionWindow = (thread?: Thread) => { void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause))); };
 
-  /** An empty tab keeps its unsent text under its own key; the first one uses the project's new-chat draft. */
-  const tabDraftKey = (tab: ChatTab) => tab.draftKey ?? (projectId ? `new-${projectId}` : "new");
-  /** Puts the tab's chat (or empty chat) on screen. */
-  function openTab(tab: ChatTab) {
-    if (tab.threadId) void loadThread(find(tab.threadId) ?? { id: tab.threadId, ...(tab.title ? { name: tab.title } : {}) } as Thread);
-    else openNewChat(tabDraftKey(tab));
-  }
-  function showTab(tab: ChatTab) {
-    if (tab.id === tabsRef.current.activeId) { showChat(); return; }
-    updateTabs(activate(tabsRef.current, tab.id)); openTab(tab);
-  }
-  /** The "+" and Ctrl+T: a new empty chat beside the others (a sibling chat, never an agent or a fork). */
-  function newChatTab() { const tab = makeTab(); updateTabs(addTab(tabsRef.current, tab)); openNewChat(tabDraftKey(tab)); }
-  function closeChatTab(id: string) {
-    const before = tabsRef.current, next = closeTab(before, id);
-    if (next === before) return;
-    const closed = before.tabs.find(tab => tab.id === id);
-    if (closed) browser.closeSession(closed.threadId ?? `draft:${closed.id}`);
-    updateTabs(next);
-    if (id === before.activeId) openTab(activeTab(next));
-  }
-  function cycleTabs(delta: number) { const next = cycle(tabsRef.current, delta); if (next !== tabsRef.current) { updateTabs(next); openTab(activeTab(next)); } }
-  /** Back (-1) or Forward (1): to the previous or next place visited, skipping chats that are gone. */
-  function goHistory(delta: -1 | 1) {
-    const found = step(historyRef.current, delta, place => !place.threadId || !hidden.current.has(place.threadId));
-    if (!found) return;
-    historyRef.current = found.history; setHistory(found.history);
-    const { view: target, threadId } = found.place;
-    if (target !== "chat") show(target as View);
-    else if (threadId === (selectedRef.current?.id ?? null)) show("chat");
-    else if (threadId) void loadThread(find(threadId) ?? { id: threadId } as Thread);
-    else openNewChat();
-  }
-  /** Middle-click on a chat in the sidebar: its own tab (or the one it already has). */
-  function openInNewTab(thread: Thread) {
-    const owner = tabFor(tabsRef.current, thread.id);
-    if (owner) { showTab(owner); return; }
-    updateTabs(addTab(tabsRef.current, makeTab(thread.id, title(thread)))); void loadThread(thread);
-  }
-  async function selectProject(next: Project | null) {
-    setProjectChanging(true);
-    try {
-      if (next && window.elpisDesktop?.resolveFolder) await window.elpisDesktop.resolveFolder(next.cwd);
-      await saveProjects(projects, next?.id ?? null); setProjectId(next?.id ?? null); setCwd(next?.cwd ?? ""); openNewChat(next ? `new-${next.id}` : "new");
-    } finally { setProjectChanging(false); }
-  }
-  async function saveProject(next: Project) {
-    const known = projects.some(item => item.id === next.id), updated = known ? projects.map(item => item.id === next.id ? next : item) : [...projects, next];
-    if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
-    await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
-  }
-  /** "Add new project" in the sidebar and the project menu: one click opens the native folder chooser, as in the ChatGPT app.
-   * A browser has no chooser, so it asks for the path instead. */
-  async function addProject() {
-    try {
-      const chosen = await chooseProject(projects);
-      if (chosen === undefined) setProjectEdit(null);
-      else if (chosen) await (projects.some(item => item.id === chosen.id) ? selectProject(chosen) : saveProject(chosen));
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
-  /** Moves the open chat to a project's folder (A26): its next turns run there; earlier turns keep theirs. */
-  async function moveChat(target: Project | null) {
-    if (!selected || !target) return;
-    const { cwd: moved } = await api<{ cwd: string }>(`/threads/${encodeURIComponent(selected.id)}/folder`, { cwd: target.cwd });
-    patchThread(selected.id, { cwd: moved });
-  }
-  /** The chip's "Choose folder…": the native chooser, then the move; cancelling moves nothing. */
-  async function moveChatToFolder() {
-    try { const chosen = await chooseProject(projects); if (chosen) await moveChat(chosen); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
-  /** Forgets the project; its folder and chats stay as they are. */
-  async function removeProject(item: Project) {
-    const updated = projects.filter(other => other.id !== item.id), current = projectId === item.id ? null : projectId;
-    try { await saveProjects(updated, current); setProjects(updated); if (!current) { setProjectId(null); setCwd(""); } }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  }
+  const { selectProject, saveProject, addProject, moveChat, moveChatToFolder, removeProject } = useProjectActions({
+    projects, setProjects, projectId, setProjectId, setProjectChanging, setCwd, setProjectEdit,
+    openNewChat, selected, patchThread, setError,
+  });
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
-  /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
-  async function forkFrom(thread: Thread, lastTurnId: string, lastItemId?: string) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/fork`, { lastTurnId, ...(lastItemId ? { lastItemId } : {}) }); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("fork"); upsertThread(result.thread);
-      if (request.current !== originalRequest || selectedRef.current?.id !== thread.id) return;
-      await loadThread(result.thread);
-      if (selectedRef.current?.id === result.thread.id) restoreComposerFocus(originalFocus);
-    }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
-  }
-  async function continueHere(thread: Thread) {
-    const originalRequest = request.current;
-    setBusy(true); setError("");
-    try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/continue`, {});
-      if (!result.thread?.id) throw unreadable("continued chat");
-      upsertThread(result.thread);
-      if (request.current === originalRequest && selectedRef.current?.id === thread.id) await loadThread(result.thread);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
-  }
+  const { forkFrom, continueHere, deleteThread, renameThread, archiveThread, unarchived, answer } = useThreadActions({
+    request, selectedRef, upsertThread, loadThread, restoreComposerFocus: origin => restoreComposerFocus(origin),
+    setError, setBusy, removeThreads, noteKept, patchThread, hidden, refreshThreads, submitDraft,
+    setApprovals, clearApprovalDraft,
+  });
   /** What a reopened chat reports about its approval mode and Plan mode. */
   function rememberModes(id: string, live: Live) {
     if (live.permissions) setThreadModes(prev => ({ ...prev, [id]: live.permissions! }));
     if (typeof live.planMode === "boolean") setThreadPlans(prev => ({ ...prev, [id]: live.planMode! }));
   }
-  const setPlan = (on: boolean) => selected ? setOverride(selected.id, { plan: on }) : setNewPlan(on);
-  /** The plan card's answers (components/plan-card.tsx). Accept leaves Plan mode and asks Elpis to carry the plan out,
-   * after switching the chat to `permissions` when one is chosen; Keep planning sends what should change, in Plan mode,
-   * or with nothing to say just stays there. */
-  async function answerPlan(thread: Thread, turnId: string, answer: { implement: true; permissions?: PermissionMode } | { feedback: string }) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    setPlanAnswered(prev => ({ ...prev, [thread.id]: turnId })); setError("");
-    const implement = "implement" in answer, feedback = implement ? "" : answer.feedback.trim();
-    if (!implement && !feedback) { focusComposer(); return; }
-    try {
-      if (implement && answer.permissions) {
-        const changed = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(thread.id)}/permissions`, { permissions: answer.permissions });
-        setThreadModes(prev => ({ ...prev, [thread.id]: changed.permissions }));
-      }
-      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/turns`, implement ? { text: IMPLEMENT_PLAN, mode: "default" } : { text: feedback });
-      if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
-      if (implement) { setThreadPlans(prev => ({ ...prev, [thread.id]: false })); setNextTurn(prev => { const { plan: _, ...rest } = prev[thread.id] ?? {}; return Object.keys(rest).length ? { ...prev, [thread.id]: rest } : without(prev, thread.id); }); }
-      if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
-    } catch (e) { setPlanAnswered(prev => without(prev, thread.id)); setError(e instanceof Error ? e.message : String(e)); }
-    finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
-  }
-  /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
-   * running turn too, and the composer shows the mode the engine reports. A new chat's mode goes in its thread/start. */
-  const permissionsLocked = !ready || busy || projectChanging || changingPermissions;
-  const choosePermissions = (next: PermissionMode) => selected ? void changePermissions(selected.id, next) : setNewMode(next);
-  /** Shift+Tab in the message box, as in Claude Code: Ask for approval, then Approve for me, then Plan mode, then back.
-   * Full access and Bypass are chosen from the menu only; Shift+Tab from them returns to Ask for approval. */
-  function cycleMode() {
-    if (permissionsLocked) return;
-    if (planMode) setPlan(false);
-    else if (permissionMode === "auto") { choosePermissions("ask"); setPlan(true); }
-    else choosePermissions(permissionMode === "ask" ? "auto" : "ask");
-  }
-  async function changePermissions(id: string, mode: PermissionMode) {
-    setChangingPermissions(true); setError("");
-    try {
-      const result = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(id)}/permissions`, { permissions: mode });
-      setThreadModes(prev => ({ ...prev, [id]: result.permissions }));
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setChangingPermissions(false); }
-  }
-  function setOverride(id: string, patch: NextTurn) {
-    const thread = selectedRef.current; if (!thread) return;
-    setNextTurn(prev => {
-      const merged = { ...prev[id], ...patch };
-      if (merged.model === (thread.model ?? undefined)) delete merged.model;
-      if (merged.effort === (thread.reasoningEffort ?? undefined) || merged.effort === "") delete merged.effort;
-      if (merged.plan === (threadPlans[id] ?? false)) delete merged.plan;
-      return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
-    });
-  }
-  /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
-   * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  async function send(own?: string, followUp?: Preferences["followUp"]) {
-    if (readOnlyRun) return;
-    if (own === undefined && shellMode) { await sendShell(); return; }
-    const sideQuestion = own === undefined ? /^\/btw(?:[\s:,.]\s*([\s\S]*))?$/i.exec(textRef.current.trim()) : null;
-    if (sideQuestion) { if (selected) editDraft(""); askSideQuestion(sideQuestion[1]); return; }
-    const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
-    if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging || !connected) return;
-    if (imageBlocked && own === undefined) return; // the box already says why
-    if (missingChoiceNotice) return;
-    if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
-    setBusy(true); setError("");
-    const sentText = outgoing, sentAttachments = [...files];
-    const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
-    pickedMentions.current = new Map();
-    const originalId = selected?.id || newDraftKey.current, originalRequest = request.current, browserDraft = `draft:${tabsRef.current.activeId}`;
-    const submissionKey = crypto.randomUUID();
-    const clearsComposer = own === undefined;
-    if (clearsComposer) { setText(""); saveDraft(originalId, ""); setAttachments([]); saveAttachments(originalId, []); }
-    const queued = activeTurn && !continues && (followUp ?? preferences.followUp) === "queue";
-    if (!queued) {
-      stickToBottom.current = true;
-      setSubmissions(previous => [...previous.filter(sent => sent.scope === originalId), { key: submissionKey, scope: originalId, content: submittedContent(sentText, sentAttachments), previousKeys: entries.map(entryKey), newTurn: !activeTurn || continues, ...(activeTurn && !continues ? { turnId: activeTurn } : {}) }]);
-    }
-    const updateSubmission = (patch: Partial<SubmittedMessage>) => setSubmissions(previous => previous.map(sent => sent.key === submissionKey
-      ? { ...sent, ...(patch.turnId && sent.turnId && patch.turnId !== sent.turnId ? { recorded: undefined } : {}), ...patch } : sent));
-    const originalFocus = document.activeElement;
-    const attached = { ...(sentAttachments.length ? { attachments: sentAttachments } : {}), ...(sentMentions.length ? { mentions: sentMentions } : {}) };
-    let errorThreadId = selected?.id;
-    try {
-      let thread = selected;
-      if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
-        thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
-        updateSubmission({ scope: thread.id });
-        await browser.adoptSession(browserDraft, thread.id);
-        saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
-        saveAttachments(thread.id, originalRequest === request.current ? attachmentsRef.current : sentAttachments);
-        if (originalRequest === request.current) { saveDraft(originalId, ""); saveAttachments(originalId, []); select(thread); }
-        setThreads(prev => [thread!, ...prev]);
-      }
-      const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
-      const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
-      if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
-        const steered = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
-        // The turn shown as running had ended, so the message started a new one.
-        if (steered.turn?.id) {
-          updateSubmission({ turnId: steered.turn.id, newTurn: true });
-          if (!completedTurns.current.has(steered.turn.id)) setActiveTurns(prev => ({ ...prev, [thread!.id]: steered.turn!.id }));
-        }
-      } else {
-        const result = await api<{ turn?: { id: string }; thread?: Thread; continuedFrom?: string; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/turns`, { text: sentText, ...attached, ...turnOptions, ...(continues ? { continueAs: `${title(thread)} (continued)` } : {}) });
-        if (result.thread && result.sendError) {
-          updateSubmission({ failed: true });
-          const forkDraft = savedDraft(result.thread.id);
-          const hasNewerForkDraft = !!forkDraft.trim() && forkDraft !== sentText || savedAttachments(result.thread.id).length > 0;
-          const targetKey = hasNewerForkDraft ? `recovery-${result.thread.id}` : result.thread.id;
-          saveDraft(targetKey, sentText); saveAttachments(targetKey, sentAttachments); upsertThread(result.thread);
-          setRuntimeNotices(previous => ({ ...previous, [result.thread!.id]: result.sendError + (hasNewerForkDraft ? " Your current draft is kept; recover the unsent message below." : "") }));
-          if (selectedRef.current?.id === thread.id && request.current === originalRequest) await loadThread(result.thread);
-          return;
-        }
-        if (!result.turn?.id) throw new Error("Elpis did not acknowledge the new turn. Check the conversation before retrying.");
-        updateSubmission({ turnId: result.turn.id, ...(result.thread ? { scope: result.thread.id } : {}) });
-        if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [result.thread?.id || thread!.id]: result.turn!.id }));
-        if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
-        if (selected && used) {
-          setNextTurn(prev => without(prev, selected.id));
-          const effective = { ...settingsOf.current[thread.id], ...(used.model ? { model: used.model } : {}), ...(used.effort ? { reasoningEffort: used.effort } : {}) };
-          settingsOf.current[thread.id] = effective; patchThread(thread.id, effective);
-        }
-        if (result.thread) {
-          upsertThread(result.thread);
-          if (selectedRef.current?.id === thread.id && request.current === originalRequest) await loadThread(result.thread);
-          return;
-        }
-      }
-    } catch (e) {
-      updateSubmission({ failed: true });
-      for (const mention of sentMentions) pickedMentions.current.set(mention.path, mention);
-      if (clearsComposer) {
-        const key = errorThreadId || originalId, shown = (selectedRef.current?.id || newDraftKey.current) === key;
-        if (shown && !textRef.current.trim() && !attachmentsRef.current.length) { setText(sentText); setAttachments(sentAttachments); }
-        const target = !savedDraft(key).trim() && !savedAttachments(key).length ? key : `recovery-${key}`;
-        saveDraft(target, sentText); saveAttachments(target, sentAttachments);
-      }
-      if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
-      else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusy(false);
-      if (request.current === originalRequest && (errorThreadId ? selectedRef.current?.id === errorThreadId : !selectedRef.current)) restoreComposerFocus(originalFocus);
-    }
-  }
-  async function sendShell() {
-    const command = textRef.current, originalRequest = request.current;
-    if (!command.trim() || busy || !connected || projectChanging) return;
-    if (attachmentsRef.current.length) { setFileNotice("Bash mode is on. Return to chat to send attachments."); return; }
-    setBusy(true); setError("");
-    let thread = selectedRef.current;
-    const originalId = thread?.id || newDraftKey.current, browserDraft = `draft:${tabsRef.current.activeId}`;
-    try {
-      if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
-        thread = result.thread; upsertThread(thread);
-        await browser.adoptSession(browserDraft, thread.id);
-        if (request.current === originalRequest) { saveDraft(originalId, ""); saveDraft(thread.id, command); shellCreated.current = thread.id; select(thread); }
-      }
-      await api(`/threads/${encodeURIComponent(thread.id)}/shell`, { command });
-      if (savedDraft(thread.id) === command) saveDraft(thread.id, "");
-      if (selectedRef.current?.id === thread.id && textRef.current === command && request.current === originalRequest) setText("");
-    } catch (e) { if (request.current === originalRequest) setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); if (request.current === originalRequest) focusComposer(); }
-  }
-  async function stop(thread: Thread) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    try { await api(`/threads/${encodeURIComponent(thread.id)}/interrupt`, activeTurns[thread.id] ? { turnId: activeTurns[thread.id] } : {}); }
-    catch (e) { setError(String(e instanceof Error ? e.message : e)); }
-    finally { if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus); }
-  }
-  async function deleteThread(thread: Thread) {
-    const ids = new Set([thread.id]);
-    const descendants = await scanDeletionThreads<Thread>(({ archived, limit, cursor }) => api(`/threads?ancestorThreadId=${encodeURIComponent(thread.id)}&archived=${archived}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`));
-    for (const child of descendants) ids.add(child.id);
-    const result = await api<{ alsoDeleted: string[]; worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/delete`, {});
-    for (const id of result.alsoDeleted) ids.add(id);
-    removeThreads(ids, true); noteKept(keptNotice(title(thread), "deleted", result.worktree));
-  }
-  async function renameThread(thread: Thread, name: string) {
-    const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/rename`, { name });
-    patchThread(thread.id, { name: result.thread.name ?? name });
-  }
-  // Elpis archives the chat with the agents it spawned; hide every loaded one.
-  async function archiveThread(thread: Thread) {
-    try { const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {}); removeThreads(new Set([thread.id]), false); noteKept(keptNotice(title(thread), "archived", result.worktree)); }
-    catch (e) { setError(`Could not archive “${title(thread)}”: ${e instanceof Error ? e.message : String(e)}`); }
-  }
-  function unarchived(thread: Thread) { hidden.current.delete(thread.id); upsertThread(thread); refreshThreads().catch(e => setError(String(e))); }
-  /** Edit-and-resend and regenerate: Elpis replaces the turn and every later one, then runs the new text. */
-  async function replaceFrom(turnId: string, replacement: string, editKey?: string, retryModel?: string) {
-    const thread = selectedRef.current; if (!thread) return;
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    if (savedDraft(`recovery-${thread.id}`) || savedAttachments(`recovery-${thread.id}`).length) throw new Error("Recover the saved edited message before replacing another turn.");
-    const eligibility = replacementOptions.get(turnId);
-    if (!eligibility?.allowed) throw new Error(eligibility && !eligibility.allowed ? eligibility.reason : "The complete input for this turn is unavailable.");
-    const index = entries.findIndex(entry => entry.turnId === turnId);
-    const stale = new Set(entries.slice(Math.max(index, 0)).map(entry => entry.turnId));
-    const overrides = retryModel ? { ...nextTurn[thread.id], model: retryModel } : nextTurn[thread.id];
-    const sendReplacement = () => api<{ turn?: { id: string }; rewound?: boolean; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/revert`, { beforeTurnId: turnId, text: replacement,
-      ...(overrides?.model ? { model: overrides.model } : {}), ...(overrides?.effort ? { effort: overrides.effort } : {}) });
-    const result = editKey ? await submitDraft(editKey, sendReplacement) : await sendReplacement();
-    if (result.rewound && result.sendError) {
-      saveDraft(`recovery-${thread.id}`, replacement);
-      if (selectedRef.current?.id === thread.id) await loadThread(thread);
-      setRuntimeNotices(prev => ({ ...prev, [thread.id]: `${result.sendError} Your edited message is saved separately below; your composer draft is unchanged.` }));
-      return;
-    }
-    if (!result.turn) throw new Error("Elpis did not acknowledge the replacement turn. Check the conversation before retrying.");
-    if (editKey) setMessageEdits(previous => previous[editKey] === replacement ? without(previous, editKey) : previous);
-    const startedTurn = result.turn;
-    if (overrides) setNextTurn(prev => without(prev, thread.id));
-    if (selectedRef.current?.id === thread.id) { stickToBottom.current = true; setEntries(prev => prev.filter(entry => !stale.has(entry.turnId))); }
-    if (!completedTurns.current.has(startedTurn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: startedTurn.id }));
-    if (request.current === originalRequest && selectedRef.current?.id === thread.id) restoreComposerFocus(originalFocus);
-  }
-  /** "Rewind to here": Elpis drops the turn and every later one (thread/revert, as edit-and-resend does) without sending anything;
-   * the turn's prompt returns to an empty message box when it can be resent as text. */
-  async function rewindFrom(turnId: string, mode: RestoreMode, version?: string) {
-    const thread = selectedRef.current; if (!thread) return;
-    const prompt = replacementOptions.get(turnId);
-    await switchRewind({ action: "restore", beforeTurnId: turnId, mode, ...(version ? { version } : {}) }, mode === "code");
-    if (mode !== "code" && prompt?.allowed && !textRef.current.trim()) editDraft(prompt.prompt);
-    if (mode !== "code") focusComposer();
-  }
-  async function switchRewind(body: { action: string; beforeTurnId?: string; mode?: RestoreMode; version?: string }, filesOnly = false) {
-    const thread = selectedRef.current; if (!thread) return;
-    const draft = textRef.current; rewindSwitch.current = thread.id; setRewindBusy(true);
-    try {
-      const result = await api<{ thread?: Thread; undo?: "undo" | "redo" }>(`/threads/${encodeURIComponent(thread.id)}/rewind`, body);
-      if (filesOnly || selectedRef.current?.id !== thread.id) return;
-      const next = result.thread ?? thread;
-      transcripts.current.delete(next.id); hidden.current.delete(next.id); upsertThread(next);
-      if (next.id !== thread.id) { hidden.current.add(thread.id); setThreads(prev => prev.filter(item => item.id !== thread.id)); }
-      setEntries([]); await loadThread(next);
-      if (draft.trim()) editDraft(draft);
-      setRewindActions(prev => ({ ...prev, [thread.id]: undefined, [next.id]: result.undo }));
-    } finally { rewindSwitch.current = null; setRewindBusy(false); }
-  }
-  /** Answers a request; `instead` is "Deny, and tell Elpis what to do instead" (body: { text }). */
-  async function answer(id: string, body: unknown, key: string, instead = false) {
-    const originalFocus = document.activeElement, originalRequest = request.current;
-    await submitDraft(key, () => api(`/approvals/${encodeURIComponent(id)}${instead ? "/instead" : ""}`, body));
-    setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
-    if (request.current === originalRequest) restoreComposerFocus(originalFocus);
-  }
-  async function older(untilTurnId?: string): Promise<boolean> {
-    if (!selected || !itemCursor) return false;
-    setLoading(true);
-    const id = selected.id, pages: Entry[] = [], seen = new Set<string>();
-    let cursor: string | null = itemCursor, found = false;
-    try {
-      while (cursor) {
-        if (seen.has(cursor)) throw new Error("Repeated conversation cursor");
-        seen.add(cursor);
-        const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(cursor)}`);
-        if (!Array.isArray(result.data)) throw unreadable("conversations");
-        found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage");
-        pages.unshift(...result.data.reverse());
-        cursor = result.nextCursor;
-        if (!untilTurnId || found || selectedRef.current?.id !== id) break;
-      }
-      if (selectedRef.current?.id !== id) return false;
-      stickToBottom.current = false;
-      if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop };
-      setEntries(prev => [...pages, ...prev]);
-      setItemCursor(cursor);
-      return untilTurnId ? found : true;
-    } catch (e) { setError(String(e)); return false; }
-    finally { setLoading(false); }
-  }
+  const { setPlan, answerPlan, permissionsLocked, choosePermissions, cycleMode, setOverride } = usePermissions({
+    selected, selectedRef, setNewPlan, setPlanAnswered, setError, request, setThreadModes,
+    setThreadPlans, setNextTurn, completedTurns, setActiveTurns, ready, busy, projectChanging,
+    changingPermissions, setChangingPermissions, setNewMode, planMode, permissionMode, threadPlans,
+    focusComposer: () => focusComposer(), restoreComposerFocus: origin => restoreComposerFocus(origin),
+  });
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
   const openInTui = (thread: Thread) => {
@@ -1234,14 +412,17 @@ export default function Home() {
   /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order and mostly in its words.
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
-  const focusComposer = () => composerRef.current?.focus();
-  function beginReply(entry: Entry, quote?: string) {
-    if (!selectedRef.current || readOnlyRun) return;
-    const attachment = replyAttachment(entry, entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis", quote);
-    const fit = fitAttachments(attachmentsRef.current.filter(part => !readReply(part)), [attachment]);
-    if (fit.problems.length) { setFileNotice(fit.problems.join("\n")); return; }
-    setShellMode(false); setAttachments(fit.kept); saveAttachments(selectedRef.current.id, fit.kept); setFileNotice(""); focusComposer();
-  }
+  const { send, sendShell, stop, replaceFrom, rewindFrom, switchRewind, older } = useChatTurns({ selected,
+    selectedRef, request, tabsRef, newDraftKey, textRef, attachmentsRef, pickedMentions, shellCreated,
+    stickToBottom, completedTurns, settingsOf, transcripts, hidden, rewindSwitch, scroll, restoreScroll,
+    browser, preferences, newChoice, replacementOptions, readOnlyRun, shellMode, busy, dictating, attaching,
+    projectChanging, connected, imageBlocked, missingChoiceNotice, needsModelId, model, cwd, newWorktree,
+    newMode, activeTurn, activeTurns, continues, effort, newPlan, pending, nextTurn, entries, itemCursor,
+    setError, setBusy, setText, setAttachments, setFileNotice, setSubmissions, setThreads, setThreadModes,
+    setRuntimeNotices, setActiveTurns, setThreadPlans, setNewPlan, setNextTurn, setMessageEdits, setEntries,
+    setRewindBusy, setRewindActions, setLoading, setItemCursor, editDraft, saveDraft, savedDraft,
+    saveAttachments, savedAttachments, select, upsertThread, loadThread, patchThread,
+    submitDraft, askSideQuestion, restoreComposerFocus, focusComposer });
 
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
@@ -1254,169 +435,21 @@ export default function Home() {
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable ? () => live.current.setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
-  function editQueued(item: FollowUp) {
-    editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
-    for (const mention of item.mentions ?? []) pickedMentions.current.set(mention.path, mention);
-    if (item.attachments.length) {
-      const all = [...attachmentsRef.current, ...item.attachments], kept = all.slice(0, ATTACHMENT_LIMITS.count);
-      setAttachments(kept); saveAttachments(selectedRef.current?.id || newDraftKey.current, kept);
-      if (kept.length < all.length) setFileNotice(`A message holds up to ${ATTACHMENT_LIMITS.count} files; the extra files of the queued message were left out.`);
-    }
-    focusComposer();
-  }
-  /** Puts an earlier message (or the draft) in the box with the caret at its start or end, as the history keys do. */
-  function writePrompt(value: string, caret: "start" | "end") {
-    editDraft(value);
-    requestAnimationFrame(() => { const at = caret === "end" ? value.length : 0; composerRef.current?.setSelectionRange(at, at); });
-  }
-  /** Esc Esc in an empty box opens the newest message you sent for editing, as in Claude; one that cannot be replaced says why. */
-  function editLastMessage() {
-    if (!replaceable || !selected) return;
-    const last = entries.filter(entry => entry.item.type === "userMessage").at(-1); if (!last) return;
-    const option = replacementOptions.get(last.turnId);
-    if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
-    setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, last.item.id])]: option.prompt }));
-  }
-  /** The "+" menu's Add files or photos: the one chooser, for pictures and documents alike. */
-  const pickFiles = () => filePickerRef.current?.click();
-  /** The "+" menu's Mention: an "@" at the caret (after a space when words come before it), which opens the picker. */
-  function startMention() {
-    const box = composerRef.current, at = box?.selectionStart ?? textRef.current.length, before = textRef.current.slice(0, at);
-    const glue = before && !/\s$/.test(before) ? " " : "", next = before + glue + "@" + textRef.current.slice(at), position = before.length + glue.length + 1;
-    editDraft(next); setCaret(position); box?.focus(); requestAnimationFrame(() => box?.setSelectionRange(position, position));
-  }
-  /** The "+" menu's Slash commands: a "/" in an empty box, which opens the command list. */
-  function startSlash() { editDraft("/"); setCaret(1); focusComposer(); }
-  function askSideQuestion(question?: string) {
-    if (readOnlyRun) return;
-    if (!selected) { setError("Start a conversation before asking a side question."); return; }
-    setSideChat({ parentId: selected.id, open: true, question: { id: ++sideRequests.current, text: question ?? "" } });
-  }
-  // Returning from a disappearing action must not override a field the person chose while it was pending.
-  const restoreComposerFocus = (origin: Element | null) => requestAnimationFrame(() => {
-    const active = document.activeElement;
-    if (!active || active === document.body || active === origin) focusComposer();
-  });
-  const focusSearch = () => { if (view === "settings") show("chat"); setSidebar(true); setSidebarCollapsed(false); requestAnimationFrame(() => { searchInput.current?.focus(); searchInput.current?.select(); }); };
-  /** A composer control opened for a command takes the focus; the composer gets it back when the control closes. */
-  const openComposerControl = (label: string) => { const trigger = composerRef.current?.form?.querySelector<HTMLElement>(`[aria-label="${label}"]`); if (trigger) openControl(trigger, () => composerRef.current); };
-  const closePanel = () => { setPanel(null); focusComposer(); };
   const lastTurn = entries.at(-1)?.turnId;
   const idle = !busy && !activeTurn && selected?.status?.type !== "active";
   const writable = !!selected && !continues;
   const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
   // The profile opens as source: /personal is for editing it.
   const personal = usePersonal(ready && !selected, path => { const at = selected?.cwd || cwd; openFile(at, path); setFileView(at, path, "source"); side.openFiles(); }, setError);
-  const chooseEffort = (level?: string) => {
-    if (!level) { openComposerControl("Reasoning effort"); return; }
-    const match = turnEfforts.find(item => item.toLowerCase() === level.toLowerCase());
-    if (!match) { setSlashNotice(`${modelLabel(turnModel || providerSettings?.main.model, models)} does not offer the reasoning effort “${level}”. It offers: ${turnEfforts.join(", ")}.`); return; }
-    if (selected) setOverride(selected.id, { effort: match }); else setEffort(match);
-  };
-  async function startReview(thread: Thread, target: ReviewTarget) {
-    setPanel(null); setError("");
-    try {
-      const result = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/review`, { target });
-      if (!result.turn?.id) throw new Error("Elpis did not acknowledge the review. Check the conversation before retrying.");
-      if (!completedTurns.current.has(result.turn.id)) setActiveTurns(prev => ({ ...prev, [thread.id]: result.turn!.id }));
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    focusComposer();
-  }
-  function compactChat(thread: Thread, guidance?: string) {
-    // The terminal reads a lone number as its pressure setting; this app has no such setting to save.
-    if (guidance && /^\d+(\.\d+)?%?$/.test(guidance)) { setSlashNotice("A number sets the terminal's pressure compaction, which this app does not save. Compact now, or add words to guide the summary."); return; }
-    api(`/threads/${encodeURIComponent(thread.id)}/compact`, guidance ? { instructions: guidance } : {}).catch(e => setError(e instanceof Error ? e.message : String(e)));
-  }
-  async function exportChat(thread: Thread) {
-    try {
-      const all: Entry[] = []; let cursor: string | null = null;
-      do { // Pages come newest first; each older page goes in front.
-        const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(thread.id)}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
-        all.unshift(...[...result.data].reverse()); cursor = result.nextCursor;
-      } while (cursor && all.length < 100000);
-      const link = document.createElement("a"), file = exportFileName(title(thread));
-      link.href = URL.createObjectURL(new Blob([conversationMarkdown(title(thread), all)], { type: "text/markdown" })); link.download = file;
-      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 10000);
-      setSlashNotice(`Exported the conversation as ${file}.`);
-    } catch (e) { setError(`Could not export: ${e instanceof Error ? e.message : String(e)}`); }
-  }
-  async function turnSmartPruneOn() {
-    try {
-      const current = await api<{ version?: string | null; smartPrune?: { enabled: boolean | null } }>("/settings");
-      if (current.smartPrune?.enabled) { setSlashNotice("Smart Prune is already on."); return; }
-      await saveSettings("/settings", { version: current.version, options: { automaticPruning: true } });
-      setSlashNotice("Smart Prune is on. It applies to new chats.");
-    } catch (e) { setError(`Could not turn Smart Prune on: ${e instanceof Error ? e.message : String(e)}`); }
-  }
-  const sessionRows: [string, string][] = [
-    ["Model", modelLabel(turnModel || providerSettings?.main.model, models)],
-    ["Provider", providerLabel(turnModel || providerSettings?.main.model, selected ? selected.modelProvider : newChoice?.provider ?? providerSettings?.main.provider, providerSettings?.providers)],
-    ["Reasoning effort", turnEffort || "Default"],
-    ["Permissions", permissionLabel(permissionMode)],
-    ["Folder", chatFolder || "Default folder"],
-    ["Chat", selected?.id ?? "Not started yet"],
-  ];
-  async function chooseFast(args?: string) {
-    const choice = args?.trim().toLowerCase();
-    if (choice && choice !== 'on' && choice !== 'off') { setSlashNotice('Use /fast, /fast on or /fast off.'); return; }
-    const provider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
-    if (provider !== 'openai') { setSlashNotice('/fast is available for OpenAI models.'); return; }
-    setBusy(true); setSlashNotice('');
-    try {
-      let serviceTier: string;
-      if (selected) {
-        const applied = await api<{ serviceTier: string }>(`/threads/${encodeURIComponent(selected.id)}/service-tier`, choice ? { enabled: choice === 'on' } : {});
-        serviceTier = applied.serviceTier;
-        patchThread(selected.id, { serviceTier });
-      } else {
-        const current = await reloadSettings();
-        const enabled = choice ? choice === 'on' : !['fast', 'priority'].includes(current.options?.serviceTier ?? '');
-        const chosen = models.find(item => item.model === (turnModel || current.main.model));
-        if (enabled && !fastServiceTier(chosen)) throw new Error('This model does not offer Fast on this account.');
-        serviceTier = enabled ? 'fast' : 'default';
-        await saveSettings('/settings', { version: current.version, options: { serviceTier } });
-      }
-      setSlashNotice(['fast', 'priority'].includes(serviceTier) ? 'Fast is on for subsequent turns. It uses plan limits faster.' : 'Fast is off. Standard speed is selected.');
-    } catch (error) { setSlashNotice(error instanceof Error ? error.message : String(error)); }
-    finally { setBusy(false); }
-  }
-  const slashCommands: SlashCommand[] = [
-    { name: "btw", description: "Ask a quick side question without adding to the session", available: !!selected, args: true, run: askSideQuestion },
-    { name: "model", description: "choose what model and reasoning effort to use", available: !busy, run: () => openComposerControl("Model") },
-    { name: "fast", description: "toggle OpenAI Fast speed: /fast [on|off]", available: !busy && !readOnlyRun, args: true, run: chooseFast },
-    { name: "effort", description: "change how hard the model thinks: /effort [low|medium|high|…]", available: !busy && turnEfforts.length > 0, args: true, run: chooseEffort },
-    { name: "pruner-model", description: "view or set the model that prunes context; follows /memory-model when unset", run: () => openSettings("configuration") },
-    { name: "memory-model", description: "set Smart Prune's fallback model; memory uses the responding agent", run: () => openSettings("configuration") },
-    { name: "permissions", description: "choose what Elpis is allowed to do", available: !busy, run: () => openComposerControl("Change permissions") },
-    { name: "yolo", description: "choose Full access or Bypass permissions", available: !busy, run: () => openComposerControl("Change permissions") },
-    { name: "settings", description: "open Settings", run: () => openSettings("general") },
-    { name: "memories", description: "configure memory use and generation", run: () => openSettings("personalization") },
-    { name: "personal", description: "edit your priorities, working habits and preferences", run: personal.open },
-    { name: "hooks", description: "view and manage lifecycle hooks", run: () => openSettings("hooks") },
-    { name: "review", description: "review my current changes and find issues", available: writable && idle, args: true, run: text => { if (!selected) return; if (text) void startReview(selected, { type: "custom", instructions: text }); else setPanel("review"); } },
-    { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(e instanceof Error ? e.message : String(e))); else setRenameRequest(true); } },
-    { name: "new", description: "start a new chat during a conversation", run: newChat },
-    { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) void archiveThread(selected); } },
-    { name: "delete", description: "permanently delete this session", available: !!selected, run: () => { if (selected) setDeleteTargets([selected]); } },
-    { name: "resume", description: "resume a saved chat", run: focusSearch },
-    { name: "fork", description: "fork the current chat", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
-    { name: "init", description: "create an AGENTS.md file with instructions for Elpis", available: !continues && idle, run: () => void send(INIT_PROMPT) },
-    { name: "compact", description: "compact now, or add words to guide the summary", available: writable && idle, args: true, run: text => { if (selected) compactChat(selected, text); } },
-    { name: "prune", description: "turn Smart Prune on for new chats", available: idle, run: () => void turnSmartPruneOn() },
-    { name: "plan", description: planMode ? "turn Plan mode off" : "turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
-    { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !panelShown, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
-    { name: "copy", description: "copy the last response", available: !!lastReply(entries), run: () => { const reply = lastReply(entries); if (reply) navigator.clipboard.writeText(reply).then(() => setSlashNotice("Copied the last reply."), () => setError("Could not copy: the clipboard is unavailable.")); } },
-    { name: "export", description: "export the conversation as markdown", available: !!selected && entries.length > 0 && idle, run: () => { if (selected) void exportChat(selected); } },
-    { name: "diff", description: "show git diff (including untracked files)", available: !!selected, run: () => setPanel("diff") },
-    { name: "status", description: "show current session configuration and token usage", run: () => setPanel("status") },
-    { name: "pwd", description: "show the current working directory", available: !!chatFolder, run: () => setSlashNotice(`Current working directory: ${chatFolder}`) },
-    { name: "usage", description: "inspect this session; /usage account opens usage and limits", args: true, run: text => { if (text) openSettings("usage"); else setPanel("status"); } },
-    { name: "context", description: "show context usage as a grid, by category, with checkpoints and system files", available: !!selected, run: () => window.dispatchEvent(new CustomEvent("elpis:open-context")) },
-    { name: "theme", description: "choose the theme", run: () => openSettings("appearance") },
-    { name: "mcp", description: "list and manage MCP servers", run: () => openSettings("mcp") },
-    { name: "rag", description: "use the configured RAG MCP server or manage it with /rag <request>", available: !continues && idle, run: () => void send("/rag") },
-  ];
+  const { sessionRows, slashCommands, startReview } = useSlashCommands({
+    turnEfforts, turnEffort, openComposerControl, turnModel, providerSettings, models, setSlashNotice,
+    selected, setOverride, setEffort, setPanel, setError, completedTurns, setActiveTurns,
+    focusComposer, entries, setBusy, patchThread, newChoice, permissionMode, chatFolder,
+    readOnlyRun, busy, openSettings, openPersonal: personal.open, writable, idle,
+    renameThread, setRenameRequest, newChat, archiveThread, setDeleteTargets, focusSearch,
+    lastTurn, activeTurn, forkFrom, continues, send, planMode, setPlan, team, panelShown, setAgentsPanel,
+    askSideQuestion,
+  });
   const slash = useSlashMenu(text, slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
     onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); editDraft(result.text); setCaret(result.caret); requestAnimationFrame(() => composerRef.current?.setSelectionRange(result.caret, result.caret)); } });
@@ -1479,178 +512,18 @@ export default function Home() {
     else if (id === "terminal" && hasTerminal) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleTerminal(selected?.cwd || cwd, !away)) focusComposer(); }
     else if (id === "files" && desktop) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleFiles(!away)) focusComposer(); }
   };
-  function togglePin(thread: Thread) {
-    const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
-    setPins(next); savePins(next);
-  }
+  const { togglePin, deleteChats, trashChats, undoDelete, sidebarKeys, listKeys, attentionFor, groupMenu,
+    drop, dropTarget, threadRow, chatRows, chatGroupSection, descendants } = useSidebarRows({ selected, view, searchedThreads,
+    filtered, expanded, ordinaryThreads, preferences, searchTerm, pins, setPins, marked, setMarked, markAnchor,
+    threadList, deletedNotice, setDeletedNotice, setDeleteTargets, setDeleteRunHistory, selectedRef, shownWhenDeleted,
+    hidden, setError, noteKept, removeThreads, upsertThread, remember, refreshThreads, loadThread, openSplit,
+    openInNewTab, attention, setAttention, setPlanAnswered, chatGroups, updateGroups, setNewGroupFor, listedRoots,
+    pinnedChats, recentChats, grouped, waitingIds, approvals, find, hasTerminal, openInTui, splitPane: split.pane,
+    windowAvailable, openSessionWindow, agentRunsOpen, setAgentRunsOpen, loadChildren, desktop, renameThread,
+    archiveThread, markRead, loveThreads: loveActivity.threads });
   /** A narrow window slides the sidebar over the page; a wide one collapses it (the sidebar button and Ctrl+B), as in ChatGPT and Claude. */
   function narrow() { return matchMedia("(max-width: 760px)").matches || (panelShown && panelDrawer); }
   function showSidebar(open: boolean) { if (!narrow()) { setSidebarCollapsed(!open); return; } setSidebar(open); if (open) setSidebarCollapsed(false); }
-  /** The sidebar's chat buttons in screen order (a project's chats also appear under Recents). */
-  const rowLinks = () => [...threadList.current?.querySelectorAll<HTMLButtonElement>(".thread-row > .thread-link") ?? []];
-  const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
-  /** Opens the shared delete confirmation for these chats. */
-  const chatsOf = (ids: string[]) => ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
-  /** Deletes these chats as one step Ctrl+Z undoes: after the shared confirmation, or at once when it is turned off.
-   * `focusAt` is the sidebar row to focus afterwards, so Ctrl+Z reaches the app and not a text field. */
-  function deleteChats(ids: string[], focusAt?: number) {
-    setDeleteRunHistory(false);
-    const targets = chatsOf(ids);
-    if (!targets.length) return;
-    if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
-    void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(e instanceof Error ? e.message : e)));
-  }
-  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mjs). */
-  async function trashChats(targets: Thread[]) {
-    const ids = targets.map(thread => thread.id);
-    if (selectedRef.current && ids.includes(selectedRef.current.id)) shownWhenDeleted.current.add(selectedRef.current.id);
-    const { trashed, worktrees } = await api<{ trashed: string[]; worktrees?: { threadId: string; worktree: WorktreeOutcome }[] }>("/trash", { threadIds: ids });
-    for (const { threadId, worktree } of worktrees ?? []) { const thread = targets.find(item => item.id === threadId); if (thread) noteKept(keptNotice(title(thread), "deleted", worktree)); }
-    removeThreads(new Set(trashed), false);
-    setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0])}”` : `Deleted ${targets.length} chats`);
-  }
-  /** Ctrl+Z and the notice's Undo: the newest deletion comes back, with the chat that was open opened again. */
-  async function undoDelete() {
-    try {
-      const { threads: back, restored } = await api<{ threads: Thread[]; restored?: string[] }>("/trash/undo", {});
-      if (!back.length) return;
-      setDeletedNotice(null);
-      for (const id of restored ?? back.map(thread => thread.id)) hidden.current.delete(id);
-      for (const thread of back) upsertThread(remember(thread));
-      await refreshThreads();
-      const reopen = back.find(thread => shownWhenDeleted.current.has(thread.id));
-      for (const thread of back) shownWhenDeleted.current.delete(thread.id);
-      if (reopen) await loadThread(reopen);
-    } catch (e) { setError(`Could not bring back the deleted chat: ${e instanceof Error ? e.message : String(e)}`); }
-  }
-  useEffect(() => { if (!deletedNotice) return; const timer = setTimeout(() => setDeletedNotice(null), 8000); return () => clearTimeout(timer); }, [deletedNotice]);
-  /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
-  function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
-    if (event.altKey) { event.preventDefault(); openSplit(thread); return; }
-    const ids = [...new Set(rowLinks().map(rowOf).filter((id): id is string => !!id))];
-    if (event.ctrlKey || event.metaKey) {
-      const base = marked.length ? marked : selected && ids.includes(selected.id) ? [selected.id] : [];
-      setMarked(base.includes(thread.id) ? base.filter(id => id !== thread.id) : [...base, thread.id]); markAnchor.current = thread.id;
-    } else if (event.shiftKey) {
-      const to = ids.indexOf(thread.id), at = ids.indexOf(markAnchor.current ?? selected?.id ?? thread.id), from = at < 0 ? to : at;
-      setMarked(ids.slice(Math.min(from, to), Math.max(from, to) + 1)); event.currentTarget.focus();
-    } else { setMarked([]); markAnchor.current = thread.id; void loadThread(thread); }
-  }
-  /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
-  function sidebarKeys(event: React.KeyboardEvent<HTMLElement>) {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    const target = event.target as HTMLElement;
-    const stops = [...event.currentTarget.querySelectorAll<HTMLElement>(".nav-list > button, input[aria-label='Search conversations'], .sidebar-group-toggle, .thread-row > .thread-link, [data-sidebar-stop]")]
-      .filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
-    const at = stops.indexOf(target);
-    if (at < 0 || !event.currentTarget.contains(target)) return;
-    if (target instanceof HTMLInputElement && target.value && (event.key === "Home" || event.key === "End")) return;
-    const index = event.key === "Home" ? 0 : event.key === "End" ? stops.length - 1 : Math.max(0, Math.min(stops.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
-    event.preventDefault(); stops[index]?.focus();
-  }
-  /** Keys on a focused chat row: D deletes, U changes attention, and Escape clears the marks. */
-  function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
-    const target = event.target as HTMLElement, id = rowOf(target);
-    if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey) return;
-    if (event.altKey) {
-      if (event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown") || target.closest(".thread-row.child")) return;
-      event.preventDefault(); reorderBy(id, event.key === "ArrowUp" ? -1 : 1); return;
-    }
-    if (event.key === "Escape" && marked.length) setMarked([]);
-    else if (letterKey(event) === "u") attentionFor(id).planReady ? attentionFor(id).onComplete() : attentionFor(id).onToggleRead();
-    else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
-    else return;
-    event.preventDefault();
-  }
-  function attentionFor(id: string) {
-    return { unread: attention.unread.includes(id), planReady: !!attention.plans[id],
-      onToggleRead: () => setAttention(previous => ({ ...previous, unread: previous.unread.includes(id) ? previous.unread.filter(value => value !== id) : [...previous.unread, id] })),
-      onComplete: () => {
-        setPlanAnswered(previous => ({ ...previous, [id]: attention.plans[id] }));
-        setAttention(previous => ({ unread: previous.unread.filter(value => value !== id), plans: without(previous.plans, id) }));
-      },
-    };
-  }
-  /** "Move to group" for these chats (the row's chat, or the selection it belongs to), as Claude's session menu has it.
-   * Only top-level chats are grouped; an agent's chat stays under its parent. */
-  function groupMenu(thread: Thread, ids: string[]) {
-    if (thread.parentThreadId || isAgentRun(thread)) return undefined;
-    const known = (id: string) => chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? chatGroups.members[id] : null;
-    const currents = new Set(ids.map(known));
-    return { groups: chatGroups.groups, current: currents.size === 1 ? [...currents][0] : undefined,
-      onMove: (groupId: string | null) => { updateGroups(state => moveChats(state, ids, groupId)); setMarked([]); },
-      onNew: () => setNewGroupFor(ids) };
-  }
-  // Manual order: drag a chat onto another (or onto a group's heading, or Recents') or press Alt+Up/Down on it. Pinned chats
-  // stay pinned and others stay unpinned; a drop in another section moves the chat there. The first move makes Sort by Manual.
-  const dragging = useRef<string | null>(null);
-  const [drop, setDrop] = useState<{ id: string; mark: "before" | "after" | "into" } | null>(null);
-  const sectionOf = (id: string) => pins.includes(id) ? "pinned" : chatGroups.groupBy === "custom" && chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? `group:${chatGroups.members[id]}` : "recents";
-  const sectionChats = (section: string) => section === "pinned" ? pinnedChats : section === "recents" ? recentChats : grouped?.groups.find(item => `group:${item.group.id}` === section)?.chats ?? [];
-  const canDrop = (section: string) => !!dragging.current && !searchTerm && (section === "pinned") === (sectionOf(dragging.current) === "pinned");
-  function placeDragged(id: string, section: string, place?: { target: string; after: boolean }) {
-    const ids = listedRoots.map(thread => thread.id);
-    updateGroups(state => placeChat(state, place && place.target !== id ? move(ids, id, place) : ids, id, section === "pinned" ? undefined : section === "recents" ? null : section.slice(6)));
-  }
-  function reorderBy(id: string, by: -1 | 1) {
-    const section = sectionOf(id), list = sectionChats(section), neighbour = list[list.findIndex(thread => thread.id === id) + by];
-    if (!neighbour || searchTerm) return;
-    placeDragged(id, section, { target: neighbour.id, after: by > 0 });
-    requestAnimationFrame(() => threadList.current?.querySelector<HTMLElement>(`.thread-row[data-thread-id="${CSS.escape(id)}"] .thread-link`)?.focus());
-  }
-  /** Where a drag may end on `key` (a chat id, or a section): the heading of a group or of Recents takes the chat at its end or its start. */
-  const dropTarget = (section: string, key: string, onHeading?: boolean) => {
-    const over = (event: React.DragEvent<HTMLElement>) => {
-      if (!canDrop(section) || dragging.current === key) return;
-      event.preventDefault(); event.dataTransfer.dropEffect = "move";
-      const box = event.currentTarget.getBoundingClientRect(), mark = onHeading ? "into" : event.clientY > box.top + box.height / 2 ? "after" : "before";
-      setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
-    };
-    return { onDragEnter: over, onDragOver: over,
-    onDragLeave: (event: React.DragEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDrop(previous => previous?.id === key ? null : previous); },
-    onDrop: (event: React.DragEvent<HTMLElement>) => {
-      const id = dragging.current, mark = drop?.id === key ? drop.mark : null, allowed = canDrop(section); dragging.current = null; setDrop(null);
-      if (!id || !allowed || id === key) return;
-      event.preventDefault();
-      if (!onHeading) { placeDragged(id, section, { target: key, after: mark === "after" }); return; }
-      const others = sectionChats(section).filter(thread => thread.id !== id);
-      placeDragged(id, section, section === "recents" && others[0] ? { target: others[0].id, after: false } : others.at(-1) ? { target: others.at(-1)!.id, after: true } : undefined);
-    },
-    };
-  };
-  function threadRow(thread: Thread, depth = 0, section?: string) {
-    const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
-    const origin = chatOrigin(thread, loveActivity.threads);
-    const runParent = find(thread.parentThreadId);
-    const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
-    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined}
-      attention={attentionFor(thread.id)}
-      selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
-      group={depth ? undefined : groupMenu(thread, marked.length > 1 && marked.includes(thread.id) ? marked : [thread.id])}
-      agents={!depth && !isAgent(thread) ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
-        try { if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true }); }
-        catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
-        setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
-      } } : undefined}
-      area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""} data-[drop=before]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[dragging]:opacity-50`} data-thread-id={thread.id} data-drop={drop?.id === thread.id ? drop.mark : undefined} data-dragging={dragging.current === thread.id && drop ? "" : undefined}
-        {...(section && !depth && !searchTerm ? { draggable: true, ...dropTarget(section, thread.id),
-          onDragStart: (event: React.DragEvent<HTMLElement>) => { dragging.current = thread.id; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-chat", thread.id); },
-          onDragEnd: () => { dragging.current = null; setDrop(null); } } : {})} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
-      {menu => <>
-      {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
-      <button data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <span className="thread-title">{name}</span>
-        {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
-        {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
-        {origin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
-        {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
-      </button>
-      {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
-      {menu}
-      </>}
-    </ThreadActions>;
-  }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
     <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} area={area}>{content}</ThreadActions>;
@@ -1664,24 +537,7 @@ export default function Home() {
     return <Tab key={tab.id} chat icon={<ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
       wrap={thread ? (area, content) => threadMenu(thread, area, content, shown) : undefined} onSelect={() => showTab(tab)} onClose={() => closeChatTab(tab.id)} />;
   }
-  function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
-    if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
-  }
   useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
-  /** A listed chat and, when shown, its agents under it. */
-  const chatRows = (section: string) => (thread: Thread) => <div key={thread.id}>{threadRow(thread, 0, section)}{expanded[thread.id] && descendants(thread.id, 1)}</div>;
-  const needsYou = (thread: Thread) => agentState(thread, waitingIds) === "waiting" || !!attention.plans[thread.id];
-  /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
-   * closed group holding a chat that needs you says so, as Claude's does. */
-  function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
-    const open = !chatGroups.collapsed.includes(group.id), waiting = !open && chats.some(needsYou), note = "A chat in this group is waiting on you";
-    return <SidebarGroup key={group.id} kind="chat" name={group.name} icon={<Layers size={14} aria-hidden="true" />} open={open} onToggle={() => updateGroups(state => toggleCollapsed(state, group.id))}
-      note={waiting ? <span className="thread-dot" data-state="waiting" role="img" aria-label={note} title={note} /> : undefined}
-      wrap={(area, content) => <GroupActions group={group} state={chatGroups} area={cloneElement(area, { className: `${(area.props as { className?: string }).className} data-[drop=into]:bg-[var(--selected)] data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]`, "data-drop": drop?.id === `group:${group.id}` ? "into" : undefined, ...dropTarget(`group:${group.id}`, `group:${group.id}`, true) } as object)} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length}
-        onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
-      empty={!chats.length}>{chats.map(chatRows(`group:${group.id}`))}</SidebarGroup>;
-  }
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
@@ -1883,16 +739,7 @@ export default function Home() {
           </div>
         </div>
       </div>
-      {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <aside className="team-panel" aria-label="Agents in this chat">
-        <div className="team-heading"><span>Agents</span><small>{team.filter(thread => agentState(thread, waitingIds) === "working").length} working · {team.length} total</small></div>
-        <button data-slot="team-row" className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
-        {team.map(thread => { const state = agentState(thread, waitingIds);
-          return <button data-slot="team-row" key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => loadThread(thread)} title={activity[thread.id] || title(thread)}>
-            <span className="team-state" aria-label={stateLabels[state]}><i /></span>
-            <span className="team-title">{title(thread)}{thread.agentNickname && thread.agentNickname !== title(thread) && <em>{thread.agentNickname}</em>}</span>
-            <small>{state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ")}</small>
-          </button>; })}
-      </aside>}
+      {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <AgentsPanel team={team} root={teamRoot} selected={selected} waitingIds={waitingIds} activity={activity} models={models} onOpen={openById} onLoad={loadThread} />}
       </div></ViewBoundary>}
       </div>{fullView && side.chatCollapsed && <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />}{desktop && <SidePanel panel={side} browser={browser} hasTerminal={hasTerminal} dark={dark} cwd={selected?.cwd || cwd} threadId={selected?.id} running={!!activeTurn} launch={tuiLaunch} covered={pendingInputOpen || sidebar || view !== "chat"} onAttach={attachFromBrowser} imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))} />}</div>
       {split.thread && view === "chat" && <iframe key={split.thread.id} ref={split.frame} className="split-session" title="Split session" src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`} />}
