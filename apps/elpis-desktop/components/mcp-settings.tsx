@@ -91,7 +91,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     try { await save(draft.name.trim(), { action: "add", command: draft.command.trim(), args: draft.args.split("\n").map(arg => arg.trim()).filter(Boolean) }); setAdding(false); setDraft({ name: "", command: "", args: "" }); } catch {}
   }
   return <div aria-label="MCP servers">
-    <SettingsHeader title="MCP servers" description="Manage the tools available to your agents and their API keys." action={<Button variant="outline" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus />Add MCP server</Button>} />
+    <SettingsHeader title="MCP servers" description="Server choices apply to new chats; stored API keys stay on this device." action={<Button variant="outline" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus />Add MCP server</Button>} />
     <div className="settings-stack">
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
@@ -108,7 +108,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     {data && !data.servers.length && <SettingsEmpty title="No MCP servers are configured">Add one to give your agents its tools.</SettingsEmpty>}
     {data?.servers.map(server => <section key={server.name} className="mcp-server settings-card" data-name={server.name} aria-label={server.name}>
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h3 className="font-mono">{server.name}</h3>
+        <h3 className="font-mono">{server.name}</h3><span className="settings-scope">new chats</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={server.command ?? server.url ?? ""}>{server.transport === "http" ? server.url : server.command}</span>
         <Switch aria-label={`Enable ${server.name}`} checked={server.enabled} disabled={!data.write?.available} onCheckedChange={enabled => void save(server.name, { action: "enable", enabled }).catch(() => {})} />
         <Button variant="ghost" size="icon-sm" aria-label={`Remove ${server.name}`} disabled={!data.write?.available} onClick={() => setRemoving(server.name)}><Trash2 size={14} /></Button>

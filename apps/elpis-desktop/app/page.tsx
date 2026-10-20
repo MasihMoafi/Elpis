@@ -43,7 +43,8 @@ import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ExperimentLab } from "@/components/experiment-lab";
 import { CustomizeView } from "@/components/customize-view";
 import type { TerminalLaunch } from "@/components/terminal-view";
-import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
+import { SettingsView, type SettingsDestination } from "@/components/settings-view";
+import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
@@ -373,7 +374,7 @@ export default function Home() {
   const [originOpen, setOriginOpen] = useState({ love: true, workflows: true });
   const viewRef = useRef(view); viewRef.current = view;
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
-  const [settingsSection, setSettingsSection] = useState<SettingsTab>("general");
+  const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
   const [desktop, setDesktop] = useState(false);
   const [windowAvailable, setWindowAvailable] = useState(false);
   const sessionWindowApi = () => window.elpisDesktop?.openSessionWindow ?? (window.parent !== window && new URLSearchParams(location.search).get("pane") === "1" ? window.parent.elpisDesktop?.openSessionWindow : undefined);
@@ -1303,7 +1304,7 @@ export default function Home() {
   }, [desktopPrompt, selected, view, connected, busy, dictating, attaching, projectChanging]); // eslint-disable-line react-hooks/exhaustive-deps
   /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order and mostly in its words.
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
-  const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
+  const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
   function beginReply(entry: Entry, quote?: string) {
     if (!selectedRef.current || readOnlyRun) return;
@@ -1474,6 +1475,7 @@ export default function Home() {
     { name: "permissions", description: "choose what Elpis is allowed to do", available: !busy, run: () => openComposerControl("Change permissions") },
     { name: "yolo", description: "choose Full access or Bypass permissions", available: !busy, run: () => openComposerControl("Change permissions") },
     { name: "settings", description: "open Settings", run: () => openSettings("general") },
+    { name: "config", description: "open Settings or a section: /config [section]", args: true, run: text => openSettings(configDestination(text)) },
     { name: "memories", description: "configure memory use and generation", run: () => openSettings("personalization") },
     { name: "personal", description: "edit your priorities, working habits and preferences", run: personal.open },
     { name: "hooks", description: "view and manage lifecycle hooks", run: () => openSettings("hooks") },
@@ -1910,7 +1912,7 @@ export default function Home() {
       </div>
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
-      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
+      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
       {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
