@@ -112,6 +112,7 @@
     "tests/anthropic-signout.test.cjs",
     "tests/approvals.test.cjs",
     "tests/archived-bulk.test.cjs",
+    "tests/arrow-keys.test.cjs",
     "tests/attachments-ui.test.cjs",
     "tests/browser-annotate.test.cjs",
     "tests/browser-drawing.test.cjs",

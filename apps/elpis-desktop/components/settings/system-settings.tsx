@@ -27,7 +27,9 @@ function acceleratorOf(event: KeyboardEvent): string | null {
  * or a common action's combination is refused before anything is registered. */
 function ShortcutRecorder({ label, shortcut, disabled, onRecord, onRefuse }: { label: string; shortcut: string; disabled?: boolean; onRecord: (accelerator: string) => void; onRefuse: (text: string) => void }) {
   function keyDown(event: KeyboardEvent) {
-    if ((event.key === "Tab" && !(event.altKey || event.ctrlKey || event.metaKey)) || event.nativeEvent.isComposing) return;
+    // Tab leaves; a plain arrow, Home or End (never a valid shortcut) moves to the next control, as everywhere (lib/arrow-keys.ts).
+    const plainKey = !(event.altKey || event.ctrlKey || event.metaKey || event.shiftKey);
+    if ((event.key === "Tab" && plainKey) || (plainKey && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(event.key)) || event.nativeEvent.isComposing) return;
     event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation();
     const accelerator = acceleratorOf(event);
     if (!accelerator) return;
