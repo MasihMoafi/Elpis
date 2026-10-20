@@ -52,8 +52,8 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     await fs.mkdir(output, { recursive: true });
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
-      const red = theme === 'dark' ? '#e83b43' : '#8b1017';
-      assert.equal(await icon.evaluate(svg => getComputedStyle(svg).fill), theme === 'dark' ? 'rgb(228, 98, 104)' : 'rgb(139, 16, 23)');
+      const red = theme === 'dark' ? '#ec575e' : '#8b1017';
+      assert.equal(await icon.evaluate(svg => getComputedStyle(svg).fill), theme === 'dark' ? 'rgb(236, 87, 94)' : 'rgb(139, 16, 23)');
       assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--love-red').trim().toLowerCase()), red);
       await page.screenshot({ path: path.join(output, `${theme}.png`) });
     }
@@ -62,7 +62,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     await page.waitForFunction(() => document.querySelector('.app-shell')?.dataset.workspace === 'loveSpot');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme);
-      const red = theme === 'dark' ? '#e83b43' : '#8b1017';
+      const red = theme === 'dark' ? '#ec575e' : '#8b1017';
       const palette = await page.locator('.love-spot-tools').evaluate(el => {
         const style = getComputedStyle(el);
         return ['--primary', '--primary-action', '--primary-foreground', '--primary-action-content'].map(token => style.getPropertyValue(token).trim().toLowerCase());
