@@ -110,6 +110,7 @@
   ],
   "ui": [
     "tests/approved-working-mark.test.cjs",
+    "tests/effort-shortcuts.test.cjs",
     "tests/project-membership.test.cjs",
     "tests/send-feedback-ui.test.cjs",
     "tests/love-spot-identity.test.cjs",
