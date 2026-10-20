@@ -14,6 +14,104 @@ use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test]
+async fn overview_reopen_discovers_delegated_helper_after_missed_notification() -> Result<()> {
+    let mut app = make_test_app().await;
+    let root_id = ThreadId::new();
+    let helper_id = ThreadId::new();
+    let root = overview_thread(root_id, None, "Chat", ThreadStatus::Idle);
+    let mut helper = overview_thread(
+        helper_id,
+        None,
+        "",
+        ThreadStatus::Active {
+            active_flags: Vec::new(),
+        },
+    );
+    helper.source = SessionSource::VsCode;
+    helper.parent_thread_id = Some(root_id.to_string());
+    helper.session_id = helper_id.to_string();
+    helper.name = None;
+    helper.can_accept_direct_input = Some(true);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let endpoint = crate::resolve_remote_addr(&format!("ws://{}", listener.local_addr()?))?;
+    let server_root = root.clone();
+    let server_helper = helper.clone();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        let mut socket = tokio_tungstenite::accept_async(stream).await?;
+        while let Some(Ok(Message::Text(text))) = socket.next().await {
+            let JSONRPCMessage::Request(request) = serde_json::from_str(&text)? else {
+                continue;
+            };
+            let params = request.params.unwrap_or_default();
+            let result = match request.method.as_str() {
+                "initialize" => json!({"userAgent": "overview-test/1.0"}),
+                "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
+                "thread/list"
+                    if params["ancestorThreadId"].as_str() == Some(server_root.id.as_str()) =>
+                {
+                    json!({"data": [server_helper.clone()], "nextCursor": null})
+                }
+                "thread/list" => json!({"data": [], "nextCursor": null}),
+                "thread/read" if params["threadId"].as_str() == Some(server_root.id.as_str()) => {
+                    json!({"thread": server_root.clone()})
+                }
+                "thread/read"
+                    if params["threadId"].as_str() == Some(server_helper.id.as_str()) =>
+                {
+                    json!({"thread": server_helper.clone()})
+                }
+                "thread/turns/list" => json!({"data": [], "nextCursor": null}),
+                method => panic!("unexpected request: {method}"),
+            };
+            socket
+                .send(Message::Text(
+                    json!({"id": request.id, "result": result})
+                        .to_string()
+                        .into(),
+                ))
+                .await?;
+        }
+        Ok::<_, color_eyre::Report>(())
+    });
+    let session = AppServerSession::new(
+        crate::connect_remote_app_server(endpoint).await?,
+        ThreadParamsMode::Remote,
+    );
+    app.primary_thread_id = Some(root_id);
+    app.agents_overview.initialized = true;
+    app.agents_overview
+        .threads
+        .insert(root_id, Some(root.clone()));
+    let view = app.agents_overview_view(vec![root], Some(root_id));
+    app.agents_overview.visible_thread_ids = view.thread_ids();
+    assert_eq!(app.agents_overview.visible_thread_ids, vec![root_id]);
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = AppEventSender::new(tx);
+    app.refresh_agents_overview_threads(&session);
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+
+    assert_eq!(
+        app.agents_overview.visible_thread_ids,
+        vec![root_id, helper_id]
+    );
+    let threads = app
+        .agents_overview
+        .threads
+        .values()
+        .flatten()
+        .cloned()
+        .collect();
+    let view = app.agents_overview_view(threads, Some(root_id));
+    assert_eq!(view.rows[0].group, AgentsOverviewGroup::Working);
+    session.shutdown().await?;
+    server.await??;
+    Ok(())
+}
+
+#[tokio::test]
 async fn overview_show_more_refills_archived_rows_and_retries_without_losing_rows() -> Result<()> {
     check_discovery(/*mixed_sources*/ false).await?;
     check_discovery(/*mixed_sources*/ true).await

@@ -291,6 +291,129 @@ fn overview_thread(
 }
 
 #[tokio::test]
+async fn delegated_helper_notifications_group_only_under_their_chat() -> Result<()> {
+    let mut app = make_test_app().await;
+    let app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let chat = ThreadId::from_string("01a158d2-5a8e-7e63-9630-809d54fe2b34")?;
+    let helper = ThreadId::from_string("01a158d9-0850-70c1-9241-c4ccb3e5e037")?;
+    let [other_chat, other_helper] = std::array::from_fn(|_| ThreadId::new());
+    app.primary_thread_id = Some(chat);
+    app.agents_overview.initialized = true;
+    app.agents_overview.threads.insert(
+        chat,
+        Some(overview_thread(chat, None, "Chat", ThreadStatus::Idle)),
+    );
+
+    // The helper payload is the bridge's captured thread/started shape, including its
+    // independent session ID and VS Code source.
+    let wire = serde_json::json!({
+        "method": "thread/started",
+        "params": {"thread": {
+            "id": helper.to_string(),
+            "environments": [{
+                "environmentId": "local",
+                "cwd": "/tmp/project",
+                "runtimeWorkspaceRoots": ["/tmp/project"]
+            }],
+            "extra": null,
+            "sessionId": helper.to_string(),
+            "forkedFromId": null,
+            "parentThreadId": chat.to_string(),
+            "preview": "",
+            "ephemeral": false,
+            "section": null,
+            "sectionEnteredAt": null,
+            "projectId": null,
+            "historyMode": "paginated",
+            "modelProvider": "openai",
+            "model": "gpt-6-luna",
+            "reasoningEffort": "low",
+            "createdAt": 1792491980,
+            "updatedAt": 1792491980,
+            "recencyAt": 1792491980,
+            "status": {"type": "idle"},
+            "path": "/tmp/rollout.jsonl",
+            "cwd": "/tmp/project",
+            "cliVersion": "0.162.0",
+            "originator": "elpis-agents",
+            "source": "vscode",
+            "canAcceptDirectInput": true,
+            "threadSource": null,
+            "agentNickname": null,
+            "agentRole": null,
+            "gitInfo": null,
+            "name": null,
+            "daybreakEnabled": null,
+            "turns": []
+        }},
+        "emittedAtMs": 1792491980927_i64
+    });
+    let codex_app_server_protocol::JSONRPCMessage::Notification(wire) =
+        serde_json::from_value(wire)?
+    else {
+        panic!("captured helper notification should be a notification");
+    };
+    let started = ServerNotification::try_from(wire)?;
+    let mut other_thread = overview_thread(other_helper, None, "", ThreadStatus::Idle);
+    other_thread.source = SessionSource::VsCode;
+    other_thread.parent_thread_id = Some(other_chat.to_string());
+    other_thread.session_id = other_helper.to_string();
+    other_thread.name = None;
+    other_thread.can_accept_direct_input = Some(true);
+    for notification in [
+        started,
+        ServerNotification::ThreadStatusChanged(
+            codex_app_server_protocol::ThreadStatusChangedNotification {
+                thread_id: helper.to_string(),
+                status: ThreadStatus::Active {
+                    active_flags: Vec::new(),
+                },
+            },
+        ),
+        ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: other_thread,
+        }),
+        ServerNotification::ThreadStatusChanged(
+            codex_app_server_protocol::ThreadStatusChangedNotification {
+                thread_id: other_helper.to_string(),
+                status: ThreadStatus::Active {
+                    active_flags: Vec::new(),
+                },
+            },
+        ),
+    ] {
+        app.handle_app_server_event(
+            &app_server,
+            AppServerEvent::ServerNotification(Box::new(notification)),
+        )
+        .await;
+    }
+
+    let threads = app
+        .agents_overview
+        .threads
+        .values()
+        .flatten()
+        .cloned()
+        .collect();
+    let view = app.agents_overview_view(threads, Some(chat));
+    assert_eq!(view.thread_ids(), vec![chat, helper]);
+    assert_eq!(view.visible_indices(), vec![0, 1]);
+    assert_eq!(view.rows[0].group, AgentsOverviewGroup::Working);
+    assert_eq!(view.rows[1].group, AgentsOverviewGroup::Working);
+    assert_eq!(
+        view.rows
+            .iter()
+            .filter(|row| row.thread.parent_thread_id.is_none()
+                && row.group == AgentsOverviewGroup::Working)
+            .count(),
+        1
+    );
+    app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Result<()> {
     let mut app = make_test_app().await;
     let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
