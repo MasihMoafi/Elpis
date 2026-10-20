@@ -49,3 +49,40 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+
+  # The desktop test gate runs here too, so tests do not run on Masih's machine either (A46b, 20 October).
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        tiers: ['fast bridge desktop', 'ui']
+    defaults:
+      run:
+        working-directory: apps/elpis-desktop
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: Install the locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Playwright and its Chromium (the version the local tests use)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.62.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          echo "ELPIS_PLAYWRIGHT_PACKAGE=$RUNNER_TEMP/pw/node_modules/playwright" >> "$GITHUB_ENV"
+      - name: Run the gate (${{ matrix.tiers }})
+        run: node scripts/test-gate.mjs ${{ matrix.tiers }}
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gate-${{ strategy.job-index }}
+          path: /tmp/elpis-test-gate-*
+          if-no-files-found: ignore
+          retention-days: 14
