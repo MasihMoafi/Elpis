@@ -24,6 +24,53 @@ impl ChatWidget {
             format!("{:?}", self.config.permissions.approval_policy.value()),
         );
         local_values.insert(
+            "Account",
+            if self.has_codex_backend_auth {
+                "connected"
+            } else {
+                "not connected"
+            }
+            .to_string(),
+        );
+        local_values.insert(
+            "Experimental features",
+            format!("{} enabled", self.config.features.enabled_features().len()),
+        );
+        local_values.insert(
+            "Context Ledger",
+            if self.thread_id().is_some() {
+                "active"
+            } else {
+                "unavailable"
+            }
+            .to_string(),
+        );
+        local_values.insert(
+            "Pruner model",
+            crate::legacy_core::pruner_settings::PrunerSettings::load(
+                self.config.codex_home.as_path(),
+            )
+            .ok()
+            .and_then(|settings| settings.model)
+            .unwrap_or_else(|| "provider default".to_string()),
+        );
+        local_values.insert(
+            "Voice settings",
+            self.config.realtime.voice.map_or_else(
+                || "default".to_string(),
+                |voice| voice.wire_name().to_string(),
+            ),
+        );
+        local_values.insert(
+            "Keymap",
+            if self.local_settings.tui.keymap == Default::default() {
+                "default"
+            } else {
+                "custom"
+            }
+            .to_string(),
+        );
+        local_values.insert(
             "Theme",
             self.local_settings
                 .tui
