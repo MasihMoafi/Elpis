@@ -157,6 +157,36 @@ test('conversation pages keep a full page of chats when recent agent runs outnum
   } finally { await server.close(); f.client.close(); }
 });
 
+test('Subagents permits optional delegation and refreshes its policy on the next turn of a loaded chat', async () => {
+  const { client, socket, threads, configRead } = fixture();
+  try {
+    await client.initialize(); await client.resume(ROOT, {});
+    const policies = new Set();
+    for (const enabled of [undefined, false, true, true]) {
+      configRead.config.features.multi_agent = enabled;
+      threads.get(ROOT).status = { type: 'idle' };
+      await client.send(ROOT, { text: 'Please solve this task' });
+      const params = socket.sent.findLast(row => row.method === 'turn/start').params;
+      const policy = params.additionalContext?.['elpis.subagents'];
+      assert.equal(policy?.kind, 'application', 'the setting reaches the model as application instructions');
+      policies.add(policy.value);
+      if (enabled === false) {
+        assert.match(policy.value, /earlier instructions.*delegation.*no longer apply/);
+        assert.match(policy.value, /Do not spawn sub-agents unless.*explicitly ask/);
+      } else {
+        assert.match(policy.value, /earlier instructions.*delegation.*no longer apply/);
+        assert.match(policy.value, /work directly or delegate/);
+        assert.match(policy.value, /never requires spawning an agent/);
+        assert.match(policy.value, /Honor explicit user requests/);
+      }
+      assert.equal(params.input[0].text, 'Please solve this task');
+    }
+    assert.equal(policies.size, 4, 'native mode hints changing between turns cannot leave a deduplicated, stale policy');
+    assert.equal(socket.sent.filter(row => row.method === 'thread/resume').length, 1, 'already-loaded chats get the changed policy without reloading');
+    assert.equal(socket.sent.some(row => row.method === 'config/batchWrite'), false, 'sending does not change global settings');
+  } finally { client.close(); }
+});
+
 test('desktop browser MCP follows new, resumed and forked desktop chats without writing user config', async () => {
   const browserConfig={'mcp_servers.elpis_browser':{command:'node',args:['browser-mcp.mjs'],env:{ELPIS_BROWSER_SOCKET:'/tmp/private-browser.sock'}}};
   const {client,socket}=fixture({browserConfig});
@@ -470,7 +500,9 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   assert.equal((await client.steer(CREATED, { text: 'Clarify', expectedTurnId: 'new-turn' })).turnId, 'new-turn');
   await client.interrupt(CREATED, { turnId: 'new-turn' });
   const request = socket.sent.find(row => row.method === 'turn/start');
-  assert.deepEqual(request.params, { threadId: CREATED, input: [{ type: 'text', text: 'Do the task', text_elements: [] }], model: MODEL });
+  const { additionalContext, ...params } = request.params;
+  assert.equal(additionalContext['elpis.subagents'].kind, 'application');
+  assert.deepEqual(params, { threadId: CREATED, input: [{ type: 'text', text: 'Do the task', text_elements: [] }], model: MODEL });
   assert.equal(socket.sent.some(row => row.method === 'thread/resume'), false);
   client.close(); assert.equal(socket.closed, true);
 });

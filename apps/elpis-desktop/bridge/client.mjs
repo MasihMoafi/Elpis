@@ -151,6 +151,10 @@ const WHOLE_TURNS = 'whole-turns:';
 const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
 /** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
+const SUBAGENT_POLICY = {
+  enabled: 'Subagents are enabled and optional. Any earlier instructions requiring delegation or restricting delegation to explicit requests no longer apply. Use your judgment to work directly or delegate when useful; enabling this option never requires spawning an agent. Honor explicit user requests and applicable instructions about whether to delegate.',
+  disabled: 'Any earlier instructions enabling spontaneous delegation no longer apply. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.',
+};
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
 const EFFORT = /^[a-z]{2,16}$/;
 const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -1320,6 +1324,11 @@ export class DesktopClient extends EventEmitter {
     });
   }
   async #startTurn(thread, params) {
+    // Application context reaches already-loaded chats; resume config overrides do not.
+    const { config } = await this.#rpc('config/read', { includeLayers: false });
+    const policy = config?.features?.multi_agent === false ? SUBAGENT_POLICY.disabled : SUBAGENT_POLICY.enabled;
+    // Refresh even when unchanged: a model/effort change may add a new native mode hint.
+    params = { ...params, additionalContext: { ...params.additionalContext, 'elpis.subagents': { kind: 'application', value: `${policy}\nApplies to turn request ${randomUUID()}.` } } };
     // Snapshot before turn/start can execute tools. Non-Git or oversized folders still support conversation rewind.
     const pending = `pending-${randomUUID()}`; let snapshot = false;
     try { await this.#rewindSnapshots.capture(thread.id, pending, thread.cwd); snapshot = true; } catch { /* Preview reports unavailable. */ }
