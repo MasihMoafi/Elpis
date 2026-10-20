@@ -855,7 +855,7 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .workspace-body { position:relative; }
 .composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
 .composer-right { flex:1 1 auto; flex-wrap:nowrap; min-width:0; justify-content:flex-end; }
-.composer .model-picker-trigger { min-width:88px; max-width:none; flex:0 0 auto; }
+.composer .model-picker-trigger { min-width:88px; max-width:none; flex:0 1 auto; }
 .header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
 /* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
 .slash-menu { position:absolute; left:0; right:0; bottom:calc(100% + 6px); z-index:20; max-height:min(320px, 50vh); overflow-y:auto; }
