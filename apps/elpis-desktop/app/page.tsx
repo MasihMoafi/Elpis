@@ -1809,6 +1809,7 @@ export default function Home() {
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
+      <section aria-label="Session Manager chat"><Button variant="ghost" size="sm" className="w-full justify-start gap-2" aria-label="Open Session Manager" title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={!ready || !connected || openingSessionManager} onClick={() => void openSessionManager()}><Layers size={14} />Session Manager</Button></section>
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><div className="section-label">Projects</div><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id);
@@ -1817,7 +1818,6 @@ export default function Home() {
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
               empty={!chats.length}>{chats.map(t => threadBranch(t, 0, `project:${item.id}`))}</SidebarGroup>; })}
         </section>}
-        {!searchTerm && <section aria-label="Session Manager chat"><Button variant="ghost" size="sm" className="w-full justify-start gap-2" aria-label="Open Session Manager" title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={!ready || !connected || openingSessionManager} onClick={() => void openSessionManager()}><Layers size={14} />Session Manager</Button></section>}
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows("pinned"))}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
         {(loveChats.length > 0 || workflowChats.length > 0) && <div className="section-label">Agent chats</div>}

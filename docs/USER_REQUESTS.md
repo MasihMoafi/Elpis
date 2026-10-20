@@ -180,3 +180,9 @@ Masih requested drawing with Love Spot's Excalidraw tools in the built-in Browse
 ## Love Spot identity — 20 October 2026
 
 Masih clarified that the logo to recolor is Love Spot’s heart icon inside Elpis, rather than the separate Excalidraw launcher. He wants dark blood red, without a purple/wine tint. Each Love Spot agent must also show its name in the conversation, including above its replies. The installed app is the acceptance target.
+
+## 2026-10-20 — Session Manager placement and activity
+
+- Feature: Keep Session Manager above Projects and all chats, accessible during search and scrolling.
+- Feature: Wake its agent after three chats are created within approximately twenty minutes or run simultaneously; coordinator review is a proposed default while clarification is pending.
+- Keep: Existing account activation ownership and preservation constraints; this source checkpoint is not an activation.

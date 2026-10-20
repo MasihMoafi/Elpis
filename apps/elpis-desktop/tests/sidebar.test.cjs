@@ -157,6 +157,12 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
 
     assert.equal(creates.length, 0, 'the manager chat is created only when opened');
     const managerButton = page.getByRole('button', { name: 'Open Session Manager', exact: true });
+    assert.equal(await managerButton.evaluate(button => !!button.closest('.thread-list')), false, 'manager stays above the scrolling chat list');
+    assert.equal(await managerButton.evaluate(button => !!(button.compareDocumentPosition(document.querySelector('section[aria-label="Projects"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'manager precedes projects and chats');
+    const sidebarSearch = aside.locator('input[aria-label="Search conversations"]');
+    await sidebarSearch.fill('no matching chat');
+    assert.equal(await managerButton.isVisible(), true, 'search never hides the manager entry');
+    await sidebarSearch.fill('');
     await managerButton.click();
     await eventually(async () => assert.deepEqual(creates, [{ sessionManager: true, permissions: 'ask' }]));
     await eventually(async () => assert.ok(await page.locator('.thread-row[data-thread-id="session-manager"]').count()));
