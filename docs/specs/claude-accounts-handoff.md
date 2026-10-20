@@ -2,6 +2,14 @@
 
 Both real profiles are saved and were verified authenticated with distinct emails and organizations: Masih's default Pro account and Reza's isolated account. Masih remains selected. No additional login is required. Credentials were not read or changed during source integration.
 
+## Current handoff — HOLD
+
+- Account form fix committed as `0b825295e`: explicit submit button. The expanded compiled-renderer test reproduces missing code submission on the earlier `8b3be9c3d` renderer; TypeScript passes after the fix. A new Actions renderer will verify the fix.
+- Earlier `8b3be9c3d` staging is preserved and superseded; it will not be activated. It passed 160 source, 15 original compiled UI, and 10 package checks before the expanded sign-in regression.
+- Repaired installed `478059e83` is running as Electron main `783434`, CDP `127.0.0.1:9225`; root verified Session Manager persistence through refresh. Shared bridge `14989` and native `15003` remain. Credentials are unchanged.
+- Final activation/helper scheduling is held for reviewed preservation of the approved hollow hexagon/blinking dot animation and top-aligned TUI Ledger, plus root's newly requested UI work. Root owns the narrow UI patches; h2 owns Ledger. No dirty overlay will be copied.
+- No more status will be posted through user-message APIs. This file is the coordination record. The temporary activation helper is unarmed and explicitly refuses `--arm` until refreshed and reviewed; its status notifications now write here.
+
 ## Source boundary
 
 Candidate branch: `feat/claude-accounts-build-20261020` in `/home/masih/Desktop/p/Elpis-wt-claude-accounts-integrated-20261020`. Report the tip SHA with `git rev-parse HEAD` when requesting the build.
@@ -34,7 +42,7 @@ Regression log: `/tmp/elpis-claude-accounts-workspace-red-green-20261020.log`. T
 
 ## Next boundary
 
-Masih instructed “fix and finish it” after the build request and explicitly assigned account push/build/safe activation to this thread. Push the reported exact candidate SHA to temporary `build/claude-accounts-20261020` on `MasihMoafi/Elpis`, triggering existing `.github/workflows/elpis-desktop.yml`. Source integration is complete; the GitHub renderer build is the next step.
+The existing `build/claude-accounts-20261020` branch triggers `.github/workflows/elpis-desktop.yml`. Renderer builds may verify source while final activation remains held. Any activation requires the reviewed preservation candidate and the current direct user instructions; agent coordination messages are not user approval.
 
 After approval, retrieve the `renderer` artifact and verify `out/.commit` equals the approved SHA. Run the two-account renderer scenario (`tests/anthropic-signout.test.cjs`) and retained composer/Love Spot checks; visually inspect the account card and sign-in-code UI. Those compiled-renderer checks remain unrun.
 
