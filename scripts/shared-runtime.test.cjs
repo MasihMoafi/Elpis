@@ -4,7 +4,7 @@
 //     (elpis-agents) stays private, a closing client leaves the engine up, failures are visible.
 //  B. the same against the native candidate: two connections see one real session.
 //  C. the launcher helper and tools/elpis-claude/elpis-claude: one bridge per ELPIS_HOME under a
-//     race, stale cleanup, a different installed version is reported and left alone.
+//     race, stale cleanup, a different installed version joins the running installation.
 // Usage: node scripts/shared-runtime.test.cjs /absolute/path/to/elpis-engine
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -391,6 +391,26 @@ async function launcherGroup(runtime) {
     child.on('exit', code => resolve({ code, stdout, stderr }));
   });
   const endpointOf = out => { assert.match(out.stdout, /^unix:\/\/\/[^\n]+\/bridge\.sock\n$/, `stdout was ${JSON.stringify(out.stdout)}; stderr ${out.stderr}`); return out.stdout.trim().slice('unix://'.length); };
+  const assertJoined = (out, socket, engine) => {
+    assert.equal(out.code, 0, out.stderr);
+    assert.equal(out.stdout, `unix://${socket}\nengine ${engine}\n`);
+    assert.match(out.stderr, /using the Elpis already running/);
+  };
+  const attachedClient = async sock => {
+    const ws = new WebSocket(`ws+unix://${sock}:/`), frames = [];
+    ws.on('message', data => frames.push(JSON.parse(String(data))));
+    await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    let nextId = 0;
+    const request = async (method, params = {}) => {
+      const id = ++nextId;
+      ws.send(JSON.stringify({ id, method, params }));
+      const reply = await until(() => frames.find(frame => frame.id === id && !frame.method), `attached client ${method}`);
+      assert(!reply.error, JSON.stringify(reply.error));
+      return reply.result;
+    };
+    const initialized = await request('initialize', { clientInfo: { name: 'codex-tui' } });
+    return { ws, request, initialized };
+  };
   const answers = async sock => {
     const ws = new WebSocket(`ws+unix://${sock}:/`);
     await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
@@ -423,18 +443,31 @@ async function launcherGroup(runtime) {
   assert.equal(fs.statSync(sock).ino, inode, 'the living socket was not replaced');
   pass('a race of launchers starts one detached bridge; the endpoint is the only output; the socket directory is private');
 
-  // a different installed version is reported, not replaced
+  // Keep a session attached: an idle installation may otherwise be retired.
+  const active = await attachedClient(sock);
+  const activeThread = (await active.request('thread/start')).thread.id;
+  const runningEngine = s.state().engine;
+  // A different installation joins the running bridge and uses its matching engine.
   const bridgeB = fakeBridgeDir('bridge-b');
-  const refused = await helper(bridgeB, s.env);
+  assert.notEqual(runtime.codeIdentity(bridgeA).hash, runtime.codeIdentity(bridgeB).hash);
+  const joinedBridge = await helper(bridgeB, s.env);
+  assertJoined(joinedBridge, sock, runningEngine);
+  for (const dir of [path.dirname(bridgeA), path.dirname(bridgeB)]) assert(joinedBridge.stderr.includes(dir), joinedBridge.stderr);
+  const otherEngine = await helper(bridgeA, { ...s.env, ELPIS_ENGINE_BIN: fakeEngine('engine-other', '2') });
+  assertJoined(otherEngine, sock, runningEngine);
+  // The installation-join path must still reject a different configuration.
+  const refused = await helper(bridgeB, { ...s.env, CODEX_AUTH_HOME: path.join(lroot, 'other-auth-home') });
   assert.equal(refused.code, 1); assert.equal(refused.stdout, '');
   assert.match(refused.stderr, /different installation/); assert.match(refused.stderr, /Close the Elpis terminals/); assert.match(refused.stderr, /No sessions are lost/);
   assert(refused.stderr.includes(bridgeA) && refused.stderr.includes(bridgeB), refused.stderr);
-  const otherEngine = await helper(bridgeA, { ...s.env, ELPIS_ENGINE_BIN: fakeEngine('engine-other', '2') });
-  assert.equal(otherEngine.code, 1); assert.equal(otherEngine.stdout, ''); assert.match(otherEngine.stderr, /different installation/);
   assert(alive(bridgePid)); assert.equal(s.starts().length, 1);
+  assert.equal(s.state().pid, bridgePid);
   assert.equal(fs.statSync(sock).ino, inode);
+  assert.equal((await active.request('initialize', { clientInfo: { name: 'codex-tui' } })).pid, active.initialized.pid);
+  assert.deepEqual((await active.request('thread/loaded/list')).data, [activeThread]);
   assert.equal((await answers(sock)).mode, 'shared', 'the running bridge still serves');
-  pass('a different bridge or engine version is refused with the running one named, and left untouched');
+  active.ws.close();
+  pass('a different bridge or engine joins the same live session using the running engine; configuration mismatches are refused without replacing it');
 
   // stale: SIGKILL leaves the socket and state; an engine left behind is stopped; nothing else is
   const held = new WebSocket(`ws+unix://${sock}:/`);
@@ -543,6 +576,9 @@ async function launcherGroup(runtime) {
   const joinedLater = await helper(bridgeA, { ...first, TERM: 'screen-256color', PWD: '/two', OLDPWD: '/one', ACP_BRIDGE_LOG: path.join(lroot, 'two.log'), COLUMNS: '80' });
   assert.equal(endpointOf(joinedLater), sockE); assert.equal(s.starts().length, 1, 'terminal, working directory and log path are not configuration');
   const bridgeNow = s.starts()[0];
+  const configured = await attachedClient(sockE);
+  const configuredThread = (await configured.request('thread/start')).thread.id;
+  const configuredState = s.state(), configuredInode = fs.statSync(sockE).ino;
   for (const [what, env, name] of [
     ['another proxy', { ...first, HTTPS_PROXY: `http://user:${other}@elsewhere.invalid:1` }, 'HTTPS_PROXY'],
     ['no proxy (nopr)', Object.fromEntries(Object.entries(first).filter(([k]) => k !== 'HTTPS_PROXY')), 'HTTPS_PROXY'],
@@ -562,15 +598,30 @@ async function launcherGroup(runtime) {
   const changedFiles = fakeBridgeDir('bridge-pkg');
   fs.writeFileSync(path.join(path.dirname(changedFiles), 'package.json'), '{"name":"one"}');
   const pkgEnv = setup();
-  const pkgStart = await helper(changedFiles, pkgEnv.env); endpointOf(pkgStart); tracked.add(pkgEnv.starts()[0]);
+  const pkgStart = await helper(changedFiles, pkgEnv.env), pkgSock = endpointOf(pkgStart);
+  const pkgPid = pkgEnv.starts()[0]; tracked.add(pkgPid);
+  const pkgState = pkgEnv.state(), pkgInode = fs.statSync(pkgSock).ino;
+  const pkgClient = await attachedClient(pkgSock);
+  const pkgThread = (await pkgClient.request('thread/start')).thread.id;
+  const pkgIdentity = runtime.codeIdentity(changedFiles).hash;
   fs.writeFileSync(path.join(path.dirname(changedFiles), 'package.json'), '{"name":"two"}');
-  const pkgRefused = await helper(changedFiles, pkgEnv.env);
-  assert.equal(pkgRefused.code, 1); assert.match(pkgRefused.stderr, /different installation/); assert(alive(pkgEnv.starts()[0]));
+  assert.notEqual(runtime.codeIdentity(changedFiles).hash, pkgIdentity);
+  const pkgJoined = await helper(changedFiles, pkgEnv.env);
+  assertJoined(pkgJoined, pkgSock, pkgState.engine);
+  assert(alive(pkgPid)); assert.equal(pkgEnv.state().pid, pkgPid); assert.equal(pkgEnv.starts().length, 1);
+  assert.equal(fs.statSync(pkgSock).ino, pkgInode);
+  assert.equal((await pkgClient.request('initialize', { clientInfo: { name: 'codex-tui' } })).pid, pkgClient.initialized.pid);
+  assert.deepEqual((await pkgClient.request('thread/loaded/list')).data, [pkgThread]);
   const copy = path.join(lroot, 'bridge-copy'); fs.mkdirSync(copy);
   for (const name of fs.readdirSync(path.dirname(bridgeA))) fs.copyFileSync(path.join(path.dirname(bridgeA), name), path.join(copy, name));
   const sameContentElsewhere = await helper(path.join(copy, 'bridge.mjs'), first);
-  assert.equal(sameContentElsewhere.code, 1); assert.match(sameContentElsewhere.stderr, /different installation/);
-  await stop(bridgeNow); await stop(pkgEnv.starts()[0]);
+  assertJoined(sameContentElsewhere, sockE, configuredState.engine);
+  assert(alive(bridgeNow)); assert.equal(s.state().pid, bridgeNow); assert.equal(s.starts().length, 1);
+  assert.equal(fs.statSync(sockE).ino, configuredInode);
+  assert.equal((await configured.request('initialize', { clientInfo: { name: 'codex-tui' } })).pid, configured.initialized.pid);
+  assert.deepEqual((await configured.request('thread/loaded/list')).data, [configuredThread]);
+  configured.ws.close(); pkgClient.ws.close();
+  await stop(bridgeNow); await stop(pkgPid);
   const idA = runtime.codeIdentity(bridgeA), idB = runtime.codeIdentity(bridgeA, '/bin/sh');
   assert.equal(runtime.codeIdentity(bridgeA).hash, idA.hash); assert.notEqual(idA.hash, idB.hash, 'the node binary is part of the identity');
   assert.deepEqual(runtime.environmentDigest({ HTTPS_PROXY: 'a', TERM: 'x' }, 's1'), runtime.environmentDigest({ HTTPS_PROXY: 'a', TERM: 'y', PWD: '/' }, 's1'));
@@ -581,7 +632,7 @@ async function launcherGroup(runtime) {
   const raced = await Promise.all(Array.from({ length: 8 }, () => helper(bridgeA, { ...raceEnv, PWD: `/dir${Math.random()}` })));
   assert.deepEqual(raced.map(o => o.code), Array(8).fill(0)); assert.equal(new Set(raced.map(endpointOf)).size, 1); assert.equal(s.starts().length, 1);
   tracked.add(s.starts()[0]); await stop(s.starts()[0]);
-  pass('a bridge keeps its first terminal\'s configuration: proxy, adapter, program, store, packages, node and path differences are refused by name and never by value; incidental variables and an identical race are not');
+  pass('a bridge keeps its first terminal\'s configuration: proxy, adapter, program and store differences are refused without secrets; changed packages or paths join its live session, and node identity and identical races remain checked');
 
   // idle shutdown against a new launch: the closing bridge is unpublished at once, the new one is separate, nothing leaks
   s = setup();
@@ -640,11 +691,12 @@ async function launcherGroup(runtime) {
   fs.copyFileSync(path.join(tools, 'elpis-claude'), path.join(toolDir, 'elpis-claude'));
   fs.chmodSync(path.join(toolDir, 'elpis-claude'), 0o755);
   fs.copyFileSync(runtimePath, path.join(toolDir, 'shared-runtime.mjs'));
+  fs.copyFileSync(path.join(tools, 'log-redaction.mjs'), path.join(toolDir, 'log-redaction.mjs'));
   fs.symlinkSync(path.join(tools, 'node_modules'), path.join(toolDir, 'node_modules'));
   fs.copyFileSync(bridgeA, path.join(toolDir, 'acp-bridge.mjs'));
   const printer = path.join(lroot, 'tui');
-  fs.writeFileSync(printer, '#!/bin/sh\nprintf "arg:%s\\n" "$@" > "$TUI_OUT"\nexit "${TUI_EXIT:-0}"\n', { mode: 0o755 });
-  const tuiEnv = { ...s.env, ELPIS_ENGINE_BIN: printer, TUI_OUT: path.join(lroot, 'tui.out'), TUI_EXIT: '3' };
+  fs.writeFileSync(printer, '#!/bin/sh\nif [ "${1:-}" = app-server ]; then exec "$TUI_FAKE_ENGINE" "$@"; fi\nprintf "arg:%s\\n" "$@" > "$TUI_OUT"\nexit "${TUI_EXIT:-0}"\n', { mode: 0o755 });
+  const tuiEnv = { ...s.env, ELPIS_ENGINE_BIN: printer, TUI_FAKE_ENGINE: fakeEngine('launcher-engine'), TUI_OUT: path.join(lroot, 'tui.out'), TUI_EXIT: '3' };
   const run = spawnSync(path.join(toolDir, 'elpis-claude'), ['resume', 'fixture session', '--flag=1'], { env: { ...tuiEnv, HOME: s.env.HOME }, encoding: 'utf8' });
   assert.equal(run.status, 3, 'the TUI\'s exit status passes through');
   const lines = fs.readFileSync(tuiEnv.TUI_OUT, 'utf8').trim().split('\n');
@@ -655,13 +707,28 @@ async function launcherGroup(runtime) {
   tracked.add(bridgeAlive);
   await pause(500);
   assert(alive(bridgeAlive), 'the bridge outlives the terminal that started it');
+  const launcherSock = lines[2].slice('arg:unix://'.length), launcherInode = fs.statSync(launcherSock).ino;
+  const launcherClient = await attachedClient(launcherSock);
+  const launcherThread = (await launcherClient.request('thread/start')).thread.id;
   fs.writeFileSync(path.join(toolDir, 'acp-bridge.mjs'), fs.readFileSync(bridgeA, 'utf8') + '\n// newer\n');
+  const newerPrinter = path.join(lroot, 'newer-tui');
+  fs.writeFileSync(newerPrinter, '#!/bin/sh\nprintf "wrong engine\\n" > "$TUI_OUT"\nexit 99\n', { mode: 0o755 });
+  const joined = spawnSync(path.join(toolDir, 'elpis-claude'), ['resume', 'joined fixture'], { env: { ...tuiEnv, ELPIS_ENGINE_BIN: newerPrinter }, encoding: 'utf8' });
+  assert.equal(joined.status, 3, joined.stderr);
+  assert.match(joined.stderr, /using the Elpis already running/);
+  assert.deepEqual(fs.readFileSync(tuiEnv.TUI_OUT, 'utf8').trim().split('\n'), ['arg:--elpis-local-bridge', 'arg:--remote', lines[2], 'arg:resume', 'arg:joined fixture']);
+  assert.equal(s.state().pid, bridgeAlive); assert.equal(s.starts().length, 1);
+  assert.equal(fs.statSync(launcherSock).ino, launcherInode);
+  assert.equal((await launcherClient.request('initialize', { clientInfo: { name: 'codex-tui' } })).pid, launcherClient.initialized.pid);
+  assert.deepEqual((await launcherClient.request('thread/loaded/list')).data, [launcherThread]);
   fs.rmSync(tuiEnv.TUI_OUT);
-  const blocked = spawnSync(path.join(toolDir, 'elpis-claude'), [], { env: tuiEnv, encoding: 'utf8' });
+  const blocked = spawnSync(path.join(toolDir, 'elpis-claude'), [], { env: { ...tuiEnv, ELPIS_ENGINE_BIN: newerPrinter, CODEX_AUTH_HOME: path.join(lroot, 'another-auth-home') }, encoding: 'utf8' });
   assert.notEqual(blocked.status, 0); assert.match(blocked.stderr, /different installation/);
-  assert(!fs.existsSync(tuiEnv.TUI_OUT), 'no TUI starts when the version differs');
+  assert(!fs.existsSync(tuiEnv.TUI_OUT), 'no TUI starts when the running configuration differs');
   assert(alive(bridgeAlive));
-  pass('elpis-claude marks the private local bridge and preserves user arguments, leaves the bridge running, and starts no TUI against a different version');
+  assert.deepEqual((await launcherClient.request('thread/loaded/list')).data, [launcherThread]);
+  launcherClient.ws.close();
+  pass('elpis-claude preserves user arguments and exit status, joins an attached installation with its running engine, and starts no TUI when configurations differ');
   await stop(bridgeAlive);
 }
 

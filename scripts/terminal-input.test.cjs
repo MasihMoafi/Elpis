@@ -468,13 +468,14 @@ async function stopAppServer() {
   await screenWhen(s => threadSettings().some(thread => thread.name === 'Second folder sentinel')
     && !s.includes('/rename Second folder sentinel'), 'second-renamed', 'second');
   key('Left');
-  screen = await screenWhen(s => s.includes('Agent command center') && s.includes('Visible session sentinel') && s.includes('Second folder sentinel'), 'agents-80');
+  const firstTitlePrefix = 'Visible session';
+  screen = await screenWhen(s => s.includes('Agent command center') && s.includes(firstTitlePrefix) && s.includes('Second folder sentinel'), 'agents-80');
   assert(screen.includes('Group: Project'), screen);
   const lines = screen.split('\n');
   const secondGroup = lines.findIndex(line => line.includes('second-project'));
   const firstGroup = lines.findIndex(line => line.includes(path.basename(cwd)));
   const secondTask = lines.findIndex(line => line.includes('Second folder sentinel'));
-  const firstTask = lines.findIndex(line => line.includes('Visible session sentinel'));
+  const firstTask = lines.findIndex(line => line.includes(firstTitlePrefix));
   assert(firstGroup >= 0 && firstGroup < firstTask && firstTask < secondGroup && secondGroup < secondTask, screen);
   if (!reference) {
     assert(lines[firstTask].includes('GPT-5.5'), screen);
@@ -493,7 +494,7 @@ async function stopAppServer() {
   key('Escape'); key('BSpace');
   await screenWhen(s => s.includes('Permanently delete'), 'delete-confirmation');
   key('Escape');
-  await screenWhen(s => s.includes('Visible session sentinel'), 'delete-cancelled');
+  await screenWhen(s => s.includes(firstTitlePrefix), 'delete-cancelled');
   assert(threadSettings().some(thread => thread.id === savedPermissions[0].id && thread.name === 'Visible session sentinel'));
   pass('cancelling task deletion preserves the fixture session');
   if (!reference) {
