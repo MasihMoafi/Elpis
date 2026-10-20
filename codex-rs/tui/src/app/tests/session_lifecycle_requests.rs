@@ -3285,7 +3285,22 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     )),
                 )
                 .await;
-                assert!(app.agents_overview.request_id.is_none());
+                // An open dashboard may request a fresh read after the status notification.
+                // Finish that read before reopening, so either visibility state proves the
+                // loaded thread remains seeded.
+                if let Some(refresh_id) = app.agents_overview.request_id {
+                    let Some(AppEvent::AgentsOverviewThreadsLoaded { request_id, result }) =
+                        tokio::time::timeout(Duration::from_secs(10), rx.recv()).await?
+                    else {
+                        panic!("expected status-driven overview refresh")
+                    };
+                    assert_eq!(request_id, refresh_id);
+                    app.apply_agents_overview_thread_refresh(&app_server, request_id, result);
+                    assert_eq!(
+                        app.agents_overview.threads.keys().copied().collect::<Vec<_>>(),
+                        vec![started.session.thread_id]
+                    );
+                }
             }
         }
         let list_requests = recorded_params(&requests, "thread/list");
