@@ -4,7 +4,7 @@
 //     (elpis-agents) stays private, a closing client leaves the engine up, failures are visible.
 //  B. the same against the native candidate: two connections see one real session.
 //  C. the launcher helper and tools/elpis-claude/elpis-claude: one bridge per ELPIS_HOME under a
-//     race, stale cleanup, a different installed version is reported and left alone.
+//     race, stale cleanup, and a different installed version joins the attached running one.
 // Usage: node scripts/shared-runtime.test.cjs /absolute/path/to/elpis-engine
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -423,23 +423,32 @@ async function launcherGroup(runtime) {
   assert.equal(fs.statSync(sock).ino, inode, 'the living socket was not replaced');
   pass('a race of launchers starts one detached bridge; the endpoint is the only output; the socket directory is private');
 
-  // a different installed version is reported, not replaced
-  const bridgeB = fakeBridgeDir('bridge-b');
-  const refused = await helper(bridgeB, s.env);
-  assert.equal(refused.code, 1); assert.equal(refused.stdout, '');
-  assert.match(refused.stderr, /different installation/); assert.match(refused.stderr, /Close the Elpis terminals/); assert.match(refused.stderr, /No sessions are lost/);
-  assert(refused.stderr.includes(bridgeA) && refused.stderr.includes(bridgeB), refused.stderr);
-  const otherEngine = await helper(bridgeA, { ...s.env, ELPIS_ENGINE_BIN: fakeEngine('engine-other', '2') });
-  assert.equal(otherEngine.code, 1); assert.equal(otherEngine.stdout, ''); assert.match(otherEngine.stderr, /different installation/);
-  assert(alive(bridgePid)); assert.equal(s.starts().length, 1);
-  assert.equal(fs.statSync(sock).ino, inode);
-  assert.equal((await answers(sock)).mode, 'shared', 'the running bridge still serves');
-  pass('a different bridge or engine version is refused with the running one named, and left untouched');
-
-  // stale: SIGKILL leaves the socket and state; an engine left behind is stopped; nothing else is
+  // An attached bridge is joined with its matching engine, even by a newer installation.
   const held = new WebSocket(`ws+unix://${sock}:/`);
   await new Promise(resolve => held.once('open', resolve));
   held.send(JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'codex-tui' } } }));
+  const runningEngine = s.state().engine;
+  const bridgeB = fakeBridgeDir('bridge-b');
+  const joined = await helper(bridgeB, s.env);
+  assert.equal(joined.code, 0, joined.stderr);
+  assert.equal(joined.stdout, `unix://${sock}\nengine ${runningEngine}\n`);
+  assert.match(joined.stderr, /using the Elpis already running/);
+  assert(joined.stderr.includes('bridge-a') && joined.stderr.includes('bridge-b'), joined.stderr);
+  const otherEngine = await helper(bridgeA, { ...s.env, ELPIS_ENGINE_BIN: fakeEngine('engine-other', '2') });
+  assert.equal(otherEngine.code, 0, otherEngine.stderr);
+  assert.equal(otherEngine.stdout, `unix://${sock}\nengine ${runningEngine}\n`);
+  assert.match(otherEngine.stderr, /using the Elpis already running/);
+  const differentConfig = await helper(bridgeA, { ...s.env, NODE_USE_ENV_PROXY: '1' });
+  assert.equal(differentConfig.code, 1);
+  assert.equal(differentConfig.stdout, '');
+  assert.match(differentConfig.stderr, /different configuration/);
+  assert.match(differentConfig.stderr, /NODE_USE_ENV_PROXY/);
+  assert(alive(bridgePid)); assert.equal(s.starts().length, 1);
+  assert.equal(fs.statSync(sock).ino, inode);
+  assert.equal((await answers(sock)).mode, 'shared', 'the running bridge still serves');
+  pass('a different bridge or engine joins the attached running version with its engine; configuration conflicts still refuse');
+
+  // stale: SIGKILL leaves the socket and state; an engine left behind is stopped; nothing else is
   const enginePid = await until(() => { const l = readLines(s.env.FAKE_ENGINE_LOG).find(x => x.includes('--listen')); return l && Number(l.split(' ')[0]); }, 'shared engine started');
   tracked.add(enginePid);
   process.kill(bridgePid, 'SIGKILL');
