@@ -24,6 +24,7 @@ async function fixture(t, code) {
   const repo = await fs.mkdtemp(path.join(base, 'renderer-gate-test-'));
   t.after(() => execFileSync('gio', ['trash', repo]));
   const root = path.join(repo, 'apps/elpis-desktop');
+  const identity = { name: 'fixture-desktop', productName: 'Fixture Elpis', desktopName: 'fixture.desktop', version: '0.1.0', main: 'desktop/main.cjs', private: true };
   const git = args => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
   const inventory = { fast: [], bridge: [], desktop: ['desktop/state.test.cjs'], ui: ['tests/kept.test.cjs'], 'opt-in': [] };
   await fs.mkdir(path.join(root, 'tests'), { recursive: true });
@@ -34,6 +35,7 @@ async function fixture(t, code) {
   await fs.mkdir(path.join(root, 'out'));
   await fs.writeFile(path.join(repo, '.gitignore'), 'apps/elpis-desktop/out/\n');
   await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify(inventory));
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ ...identity, dependencies: { react: 'fixture' } }));
   await fs.writeFile(path.join(root, 'implementation.cjs'), 'module.exports = "old";');
   await fs.writeFile(path.join(root, 'tests/helper.cjs'), 'module.exports = "retained helper";');
   await fs.writeFile(path.join(root, 'tests/kept.test.cjs'), code ?? `const {test}=require('node:test'); const assert=require('node:assert/strict'); const fs=require('node:fs');
@@ -54,7 +56,7 @@ test('retained behavior executes the candidate implementation and renderer',()=>
   };
   await fs.writeFile(path.join(root, 'out/index.html'), 'candidate renderer');
   await commit();
-  return { root, repo, baseline, inventory, commitSource: commit, out: path.join(root, 'out'), evidence: path.join(repo, 'evidence') };
+  return { root, repo, baseline, identity, inventory, commitSource: commit, out: path.join(root, 'out'), evidence: path.join(repo, 'evidence') };
 }
 
 test('the real gate retains dropped tests, uses candidate imports, and binds the resulting renderer receipt', async t => {
@@ -126,19 +128,28 @@ test('a package cannot omit the saved-workspace reader after its source tests pa
   const f = await fixture(t), destination = path.join(f.repo, 'package');
   await fs.mkdir(path.join(destination, 'app/desktop'), { recursive: true });
   await fs.copyFile(path.join(f.root, 'desktop/main.cjs'), path.join(destination, 'app/desktop/main.cjs'));
+  await fs.writeFile(path.join(destination, 'app/package.json'), JSON.stringify({ ...f.identity, type: 'module', dependencies: { ws: 'fixture' } }));
   await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify({ schemaVersion: 1, files: [{ path: 'app/desktop/main.cjs' }] }));
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.root, encoding: 'utf8' }).trim();
   await assert.rejects(verifyPackagedSources({ root: f.root, destination, commit }), /omits.*desktop\/state.cjs/);
 });
 
-test('every tracked packaged source is checked against Git bytes even when marked generated', async t => {
+test('generated identity and tracked source bytes follow the initial commit', async t => {
   const f = await fixture(t), destination = path.join(f.repo, 'package');
   await fs.mkdir(path.join(destination, 'app/desktop'), { recursive: true });
   const files = ['desktop/main.cjs', 'desktop/state.cjs', 'implementation.cjs'];
   for (const file of files) await fs.copyFile(path.join(f.root, file), path.join(destination, 'app', file));
+  const identity = { ...f.identity, type: 'module', dependencies: { ws: 'generated bundle dependency' } };
+  const identityFile = path.join(destination, 'app/package.json');
+  await fs.writeFile(identityFile, JSON.stringify(identity));
   await fs.writeFile(path.join(destination, 'manifest.json'), JSON.stringify({ schemaVersion: 1, files: files.map(file => ({ path: `app/${file}`, generated: true })) }));
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.root, encoding: 'utf8' }).trim();
   await verifyPackagedSources({ root: f.root, destination, commit });
+  for (const [key, value] of Object.entries({ name: 'wrong-app', productName: 'Wrong App', desktopName: 'wrong.desktop', version: '9.9.9', main: 'wrong.cjs', private: false, type: 'commonjs' })) {
+    await fs.writeFile(identityFile, JSON.stringify({ ...identity, [key]: value }));
+    await assert.rejects(verifyPackagedSources({ root: f.root, destination, commit }), new RegExp(`Packaged desktop identity differs.*${key}`));
+  }
+  await fs.writeFile(identityFile, JSON.stringify(identity));
   await fs.writeFile(path.join(destination, 'app/implementation.cjs'), 'copied transient mutation');
   await assert.rejects(verifyPackagedSources({ root: f.root, destination, commit }), /Packaged production bytes differ.*implementation/);
 });
@@ -154,7 +165,7 @@ for (const [name, body] of [
   await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
 });
 
-for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-head', 'package-source', 'transient-source', 'valid']) test(`the actual --actions installer checks ${mode} artifacts before selecting`, async t => {
+for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-head', 'package-source', 'transient-source', 'transient-identity', 'valid']) test(`the actual --actions installer checks ${mode} artifacts before selecting`, async t => {
   const f = await fixture(t);
   await fs.mkdir(path.join(f.root, 'scripts'));
   for (const file of ['install-desktop.mjs', 'renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
@@ -171,7 +182,12 @@ if(['package-source','transient-source'].includes(process.env.MOCK_RECEIPT))fs.w
 fs.cpSync(process.env.SOURCE_OUT,path.join(destination,'app/out'),{recursive:true});
 fs.mkdirSync(path.join(destination,'app/desktop'),{recursive:true});fs.copyFileSync(main,path.join(destination,'app/desktop/main.cjs'));
 fs.copyFileSync('desktop/state.cjs',path.join(destination,'app/desktop/state.cjs'));
-fs.writeFileSync(path.join(destination,'manifest.json'),JSON.stringify({schemaVersion:1,files:[{path:'app/desktop/main.cjs'},{path:'app/desktop/state.cjs'}]}));
+const identityOriginal=fs.readFileSync('package.json');
+if(process.env.MOCK_RECEIPT==='transient-identity'){const identity=JSON.parse(identityOriginal);identity.name='wrong-user-data';identity.version='9.9.9';fs.writeFileSync('package.json',JSON.stringify(identity));}
+const identity=JSON.parse(fs.readFileSync('package.json','utf8'));
+fs.writeFileSync(path.join(destination,'app/package.json'),JSON.stringify({name:identity.name,productName:identity.productName||'Elpis',desktopName:identity.desktopName,version:identity.version,main:'desktop/main.cjs',private:true,type:'module',dependencies:{ws:'fixture'}}));
+if(process.env.MOCK_RECEIPT==='transient-identity')fs.writeFileSync('package.json',identityOriginal);
+fs.writeFileSync(path.join(destination,'manifest.json'),JSON.stringify({schemaVersion:1,files:[{path:'app/desktop/main.cjs'},{path:'app/desktop/state.cjs'},{path:'app/package.json',generated:true}]}));
 if(process.env.MOCK_RECEIPT==='transient-source')fs.writeFileSync(main,original);
 if(process.env.MOCK_RECEIPT==='mutated')fs.writeFileSync(path.join(destination,'app/out/index.html'),'changed while packaging');`);
   const commit = await f.commitSource();
@@ -209,5 +225,6 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
   } else assert.equal(await fs.readFile(marker, 'utf8'), 'called');
   if (mode === 'mutated') assert.match(result.stderr, /Renderer bytes changed/);
   if (mode === 'package-source' || mode === 'transient-source') assert.match(result.stderr, /Tracked source changed|Packaged production bytes differ/);
+  if (mode === 'transient-identity') assert.match(result.stderr, /Packaged desktop identity differs/);
   assert.equal(await fs.readlink(selected), mode === 'valid' ? path.join(path.dirname(path.dirname(previous)), `candidate-${commit.slice(0, 9)}/launch`) : previous);
 });

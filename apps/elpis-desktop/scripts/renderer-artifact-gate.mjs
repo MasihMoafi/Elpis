@@ -32,11 +32,18 @@ export function assertSourceCommit(root, commit) {
 export async function verifyPackagedSources({ root = appRoot, destination, commit }) {
   const manifest = JSON.parse(await fs.readFile(path.join(destination, 'manifest.json'), 'utf8'));
   assert(manifest.schemaVersion === 1 && Array.isArray(manifest.files), 'Invalid desktop package manifest');
+  const sourceIdentity = JSON.parse(git(root, ['show', `${commit}:${appPrefix}package.json`]));
+  const identity = JSON.parse(await fs.readFile(path.join(destination, 'app/package.json'), 'utf8'));
+  const expectedIdentity = { name: sourceIdentity.name, productName: sourceIdentity.productName || 'Elpis',
+    desktopName: sourceIdentity.desktopName, version: sourceIdentity.version, main: 'desktop/main.cjs', private: true, type: 'module' };
+  for (const [key, value] of Object.entries(expectedIdentity)) {
+    assert.deepEqual(identity[key], value, `Packaged desktop identity differs from source commit: ${key}`);
+  }
   const tracked = trackedFiles(root, commit, [appPrefix]), checked = new Set();
   for (const file of manifest.files) {
     assert(typeof file.path === 'string' && !path.isAbsolute(file.path) && !file.path.split('/').includes('..'), 'Invalid packaged path');
     const source = file.path.startsWith('app/') ? file.path.slice(4) : null;
-    // The packager deliberately generates app/package.json; other tracked source files retain their Git bytes.
+    // Identity is checked above; package.json dependencies are generated from the bundled packages.
     if (!source || source === 'package.json' || !tracked.has(source)) continue;
     assert(!checked.has(source), `Duplicate packaged source: ${source}`);
     const packaged = path.join(destination, file.path);
