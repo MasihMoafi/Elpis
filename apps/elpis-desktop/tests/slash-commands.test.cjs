@@ -131,8 +131,8 @@ test('the menu filters (names that start with the text first, then names that co
   try {
     await composer.fill('/'); await menu.waitFor();
     assert.equal(await composer.getAttribute('aria-activedescendant'), await menu.getByRole('option').first().getAttribute('id'));
-    await composer.press('ArrowDown'); await composer.press('ArrowDown'); assert.equal(await selected(menu), '/pruner-model');
-    await composer.press('ArrowUp'); assert.equal(await selected(menu), '/effort');
+    await composer.press('ArrowDown'); await composer.press('ArrowDown'); assert.equal(await selected(menu), '/effort');
+    await composer.press('ArrowUp'); assert.equal(await selected(menu), '/fast');
     await composer.press('ArrowUp'); await composer.press('ArrowUp'); assert.equal(await selected(menu), '/rag', 'the arrows wrap around');
     await composer.press('Escape'); assert.equal(await menu.count(), 0); assert.equal(await composer.inputValue(), '/', 'Escape closes the menu and keeps the text');
     await composer.fill('/sta'); assert.deepEqual(await names(menu), ['/status']);
