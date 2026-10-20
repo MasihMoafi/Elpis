@@ -208,9 +208,10 @@ test('the HTTP route requires a private session, returns the record envelope and
   assert.equal((await post({ ...input(), repetitions: 0 })).status, 400);
   assert.equal(client.calls.length, 0);
   const initial = await fetch(`${url.origin}/api/experiment-lab`, { headers: { Cookie: cookie } });
-  assert.deepEqual(await initial.json(), { record: null });
+  assert.deepEqual(await initial.json(), { record: null, entries: [] });
   const response = await post({ ...input(), repetitions: 1 });
-  assert.equal(response.status, 200); assert.equal((await response.json()).record.status, 'running');
+  assert.equal(response.status, 200); const started = await response.json(); assert.equal(started.record.status, 'running');
+  assert.deepEqual(started.entries.map(entry => entry.id), [started.record.id]);
   const deadline = Date.now() + 10000;
   let record;
   do {
@@ -220,17 +221,21 @@ test('the HTTP route requires a private session, returns the record envelope and
     await new Promise(resolve => setTimeout(resolve, 20));
   } while (Date.now() < deadline);
   assert.equal(record.trials.length, 2);
+  const selected = await fetch(`${url.origin}/api/experiment-lab?id=${record.id}`, { headers: { Cookie: cookie } });
+  assert.equal((await selected.json()).record.id, record.id);
+  const missing = await fetch(`${url.origin}/api/experiment-lab?id=missing`, { headers: { Cookie: cookie } });
+  assert.equal(missing.status, 404);
   assert.equal((await post({ action: 'stop', unexpected: true })).status, 400);
 });
 
-const until = (extra = {}) => ({ ...input(), repetitions: 5, stopWhen: 'solved', ...extra });
+const until = (extra = {}) => ({ ...input(), stopWhen: 'solved', ...extra });
 
 test('until-solved keeps repeating past one turn and stops only when the pattern’s answer passes the check', async () => {
   const { client, lab, file } = await fixture(); client.patternAnswer = n => n < 3 ? '41' : '42';
   await lab.start(until());
   const result = await finish(lab);
-  assert.equal(result.status, 'completed'); assert.equal(result.stopReason, 'solved'); assert.equal(result.request.stopWhen, 'solved');
-  assert.equal(result.trials.length, 6, 'three paired repetitions, not the cap of five');
+  assert.equal(result.status, 'completed'); assert.equal(result.stopReason, 'solved'); assert.equal(result.request.stopWhen, 'solved'); assert.equal(result.request.repetitions, 10);
+  assert.equal(result.trials.length, 6, 'three paired repetitions, before the safety stop of ten');
   assert.deepEqual(result.trials.filter(t => t.arm === 'pattern').map(t => t.passed), [false, false, true]);
   assert.ok(result.trials.every(t => t.error === null && t.endedAt));
   assert.equal(client.listenerCount('side'), 0);
@@ -242,7 +247,7 @@ test('until-solved never treats a finished turn as a finished task: an unsolved 
   await lab.start(until({ repetitions: 3 }));
   const result = await finish(lab);
   assert.equal(result.status, 'completed'); assert.equal(result.stopReason, 'limit');
-  assert.equal(result.trials.length, 6); assert.ok(result.trials.every(t => t.endedAt && t.error === null));
+  assert.equal(result.request.repetitions, 10); assert.equal(result.trials.length, 20); assert.ok(result.trials.every(t => t.endedAt && t.error === null));
   assert.ok(result.trials.filter(t => t.arm === 'pattern').every(t => !t.passed));
 });
 
@@ -276,4 +281,39 @@ test('an unknown stop condition is refused before any model call', async () => {
   const { client, lab } = await fixture();
   await assert.rejects(lab.start({ ...input(), stopWhen: 'forever' }), /stop/i);
   assert.equal(client.calls.length, 0);
+});
+
+test('until-solved requires no repetition choice and always stores the fixed safety limit; fixed count still uses its number', async () => {
+  const { lab } = await fixture();
+  await lab.start({ ...until(), repetitions: undefined });
+  const solved = await finish(lab);
+  assert.equal(solved.request.repetitions, 10);
+  await lab.start({ ...input(), stopWhen: 'count', repetitions: 4 });
+  const fixed = await finish(lab);
+  assert.equal(fixed.request.repetitions, 4); assert.equal(fixed.trials.length, 8);
+  await assert.rejects(lab.start({ ...input(), repetitions: undefined, stopWhen: 'count' }), /Repetitions/);
+});
+
+test('a new run keeps older results in newest-first history and reopens each by ID', async () => {
+  const { lab, client, file } = await fixture();
+  await lab.start({ ...input(), repetitions: 1 });
+  const first = await finish(lab);
+  await lab.start({ ...input(), task: 'Another question?', expected: '43', repetitions: 1 });
+  const second = await finish(lab);
+  assert.deepEqual((await lab.list()).map(entry => entry.id), [second.id, first.id]);
+  assert.deepEqual(await lab.read(first.id), first);
+  const reopened = createExperimentLab({ client, file });
+  assert.deepEqual(await reopened.read(first.id), first);
+  assert.deepEqual(await reopened.read(), second);
+});
+
+test('an old single latest record becomes the first saved history entry without losing evidence', async () => {
+  const { lab, client, file } = await fixture();
+  await lab.start({ ...input(), repetitions: 1 });
+  const legacy = await finish(lab);
+  await fs.writeFile(file, JSON.stringify(legacy));
+  const migrated = createExperimentLab({ client, file });
+  assert.deepEqual(await migrated.read(), legacy);
+  assert.deepEqual((await migrated.list()).map(entry => entry.id), [legacy.id]);
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { version: 2, records: [legacy] });
 });
