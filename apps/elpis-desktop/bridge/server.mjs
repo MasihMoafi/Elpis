@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, DesktopClient, elpisHome, object } from './client.mjs';
+import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
@@ -80,7 +80,7 @@ async function body(request, limit = 65536) {
 }
 function json(response, status, value) {
   const bytes = Buffer.from(JSON.stringify(value));
-  if (bytes.length > 8 * 1024 * 1024) return json(response, 413, { error: 'Response is too large; request a smaller page' });
+  if (bytes.length > MAX_BRIDGE_MESSAGE_BYTES) return json(response, 413, { error: 'Response is too large; request a smaller page' });
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': bytes.length }); response.end(bytes);
 }
 

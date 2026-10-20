@@ -27,6 +27,9 @@ const string = value => typeof value === 'string' ? value : null;
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
 const CHAT_SOURCE_KINDS = ['cli', 'vscode', 'appServer', 'unknown'];
 
+// Image history can exceed 8 MiB; keep runtime messages and HTTP responses bounded together.
+export const MAX_BRIDGE_MESSAGE_BYTES = 100 * 1024 * 1024;
+
 export class BridgeError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
@@ -194,8 +197,7 @@ export class DesktopClient extends EventEmitter {
     const openSocket = async () => {
       await options.beforeConnect?.();
       const socketPath = existingSocket(options.socketPath);
-      // Match ws's bounded default: one recorded tool result can exceed 8 MiB.
-      const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: 100 * 1024 * 1024 });
+      const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: MAX_BRIDGE_MESSAGE_BYTES });
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => { socket.terminate(); reject(new BridgeError('Bridge connection timed out', 504)); }, 10000);
         socket.once('open', () => { clearTimeout(timer); resolve(); });
