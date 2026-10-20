@@ -87,7 +87,7 @@ const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileCh
 const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/updated']);
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
-const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
+const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval and
  * sandbox settings. Bypass is the engine's built-in `:bypass-permissions` profile: Full access plus no
