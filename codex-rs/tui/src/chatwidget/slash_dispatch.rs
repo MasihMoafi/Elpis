@@ -361,6 +361,9 @@ impl ChatWidget {
                 self.open_model_command_popup();
                 self.defer_input_until_settings_applied();
             }
+            SlashCommand::Config => {
+                self.app_event_tx.send(AppEvent::OpenConfigPanel(None));
+            }
             SlashCommand::Plan => {
                 if self.active_mode_kind() == ModeKind::Plan {
                     self.cycle_collaboration_mode();
@@ -817,6 +820,9 @@ impl ChatWidget {
         } = prepared;
         let trimmed = args.trim();
         match cmd {
+            SlashCommand::Config => {
+                self.app_event_tx.send(AppEvent::OpenConfigPanel(Some(trimmed.to_string())));
+            }
             SlashCommand::Personal => {
                 if trimmed == "dismiss" {
                     match codex_skills::personal::dismiss_tip(self.config.codex_home.as_path()) {
@@ -1384,6 +1390,7 @@ impl ChatWidget {
             | SlashCommand::Compact
             | SlashCommand::Review
             | SlashCommand::Model
+            | SlashCommand::Config
             | SlashCommand::Plan
             | SlashCommand::Goal
             | SlashCommand::Side

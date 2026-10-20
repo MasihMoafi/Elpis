@@ -156,6 +156,25 @@ pub(crate) async fn write_config_batch(
     request_handle: AppServerRequestHandle,
     edits: Vec<ConfigEdit>,
 ) -> Result<ConfigWriteResponse> {
+    write_config_batch_inner(request_handle, edits, None, true).await
+}
+
+/// Use the version from a preceding `config/read` for a new-chat default.
+/// Keep loaded chats unchanged; current-chat edits use `thread/settings/update`.
+pub(crate) async fn write_config_batch_with_version(
+    request_handle: AppServerRequestHandle,
+    edits: Vec<ConfigEdit>,
+    expected_version: Option<String>,
+) -> Result<ConfigWriteResponse> {
+    write_config_batch_inner(request_handle, edits, expected_version, false).await
+}
+
+async fn write_config_batch_inner(
+    request_handle: AppServerRequestHandle,
+    edits: Vec<ConfigEdit>,
+    expected_version: Option<String>,
+    reload_user_config: bool,
+) -> Result<ConfigWriteResponse> {
     let request_id = RequestId::String(format!("tui-config-write-{}", Uuid::new_v4()));
     request_handle
         .request_typed(ClientRequest::ConfigBatchWrite {
@@ -163,12 +182,29 @@ pub(crate) async fn write_config_batch(
             params: ConfigBatchWriteParams {
                 edits,
                 file_path: None,
-                expected_version: None,
-                reload_user_config: true,
+                expected_version,
+                reload_user_config,
             },
         })
         .await
         .wrap_err("config/batchWrite failed in TUI")
+}
+
+pub(crate) async fn read_config_with_layers(
+    request_handle: AppServerRequestHandle,
+    cwd: String,
+) -> Result<ConfigReadResponse> {
+    let request_id = RequestId::String(format!("tui-config-panel-read-{}", Uuid::new_v4()));
+    request_handle
+        .request_typed(ClientRequest::ConfigRead {
+            request_id,
+            params: ConfigReadParams {
+                include_layers: true,
+                cwd: Some(cwd),
+            },
+        })
+        .await
+        .wrap_err("config/read failed in TUI config panel")
 }
 
 pub(crate) async fn write_trusted_project(
