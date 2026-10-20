@@ -1,5 +1,6 @@
 /** Owns composer focus, replies, prompt editing, and search controls. */
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { flushSync } from "react-dom";
 import type { SideRequest } from "@/components/side-chat";
 import { ATTACHMENT_LIMITS, fitAttachments, type Attachment } from "@/lib/attachments";
 import { openControl } from "@/lib/slash-focus";
@@ -65,8 +66,9 @@ export function useComposerActions({ composerRef, selectedRef, readOnlyRun, atta
   }
   /** Puts an earlier message (or the draft) in the box with the caret at its start or end, as the history keys do. */
   function writePrompt(value: string, caret: "start" | "end") {
-    editDraft(value);
-    requestAnimationFrame(() => { const at = caret === "end" ? value.length : 0; composerRef.current?.setSelectionRange(at, at); });
+    flushSync(() => editDraft(value));
+    const at = caret === "end" ? value.length : 0;
+    composerRef.current?.setSelectionRange(at, at);
   }
   /** Esc Esc in an empty box opens the newest message you sent for editing, as in Claude; one that cannot be replaced says why. */
   function editLastMessage() {

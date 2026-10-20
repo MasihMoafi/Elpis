@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { flushSync } from "react-dom";
 import { ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Activity, Blocks, ChevronRight, PanelLeft, PanelRight, PanelRightClose, PanelRightOpen, RefreshCw, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -452,7 +453,7 @@ export default function Home() {
   });
   const slash = useSlashMenu(text, slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
-    onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); editDraft(result.text); setCaret(result.caret); requestAnimationFrame(() => composerRef.current?.setSelectionRange(result.caret, result.caret)); } });
+    onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); flushSync(() => editDraft(result.text)); setCaret(result.caret); composerRef.current?.setSelectionRange(result.caret, result.caret); } });
   // A panel belongs to the chat and page it was opened on; a notice goes when the person types again.
   useEffect(() => { setPanel(null); }, [selected?.id, view]);
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
