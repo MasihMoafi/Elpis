@@ -22,8 +22,8 @@ function ConfigText({ settings, title, description, value, placeholder, toOption
       <Input aria-label={title} className="w-64 max-w-full" value={text} placeholder={placeholder} disabled={!writable || saver.pending !== null} onChange={event => { saver.clear(); setDraft(event.target.value === value ? null : event.target.value); }} />
     </SettingRow>
     {writable && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", async () => { await reloadSettings(); setDraft(null); }, "Settings reloaded. Unsaved edits were discarded.")} />}>
-      {value && <Button variant="ghost" size="sm" disabled={saver.pending !== null} onClick={() => save(toOption(""), "Reset to the Elpis default.")}>Use default</Button>}
-      <Button size="sm" disabled={saver.pending !== null || draft === null} onClick={() => save(toOption(text), success)}>{saver.pending === "save" ? "Saving…" : "Save"}</Button>
+      {value && <Button variant="ghost" disabled={saver.pending !== null} onClick={() => save(toOption(""), "Reset to the Elpis default.")}>Use default</Button>}
+      <Button disabled={saver.pending !== null || draft === null} onClick={() => save(toOption(text), success)}>{saver.pending === "save" ? "Saving…" : "Save"}</Button>
     </SettingsActions>}
   </>;
 }

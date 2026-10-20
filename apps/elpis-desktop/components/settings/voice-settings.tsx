@@ -44,7 +44,7 @@ function WhisperTypeSettings({ server, save, disabled = false }: { server: Pick<
       <OptionSelect aria-label="Fallback transcription engine" className="settings-choice" value={backend} disabled={disabled || busy} onChange={e => { setSaved(false); setBackend(e.target.value as Fallback); }}><option value="auto">Automatic</option><option value="local">Local WhisperType</option><option value="codex">ChatGPT sign-in</option><option value="openrouter">OpenRouter</option></OptionSelect>
     </SettingRow>
     <SettingsActions feedback={error ? <SettingsNotice tone="alert">{error}</SettingsNotice> : saved ? <SettingsNotice>Transcription settings saved.</SettingsNotice> : null}>
-      <Button type="submit" variant="outline" size="sm" aria-label="Save transcription settings" disabled={disabled || busy}>{busy ? "Saving…" : "Save"}</Button>
+      <Button type="submit" variant="outline" aria-label="Save transcription settings" disabled={disabled || busy}>{busy ? "Saving…" : "Save"}</Button>
     </SettingsActions>
   </form>;
 }
@@ -74,8 +74,8 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
         <span className={`settings-badge ${route?.available ? "ok" : "warn"}`}>{route?.available ? "Configured" : "Unavailable"}</span>
       </SettingRow>
       {server ? <WhisperTypeSettings server={server} disabled={!config.write?.available} save={save} />
-        : <SettingRow title="WhisperType server" description="Dictation uses the whispertype MCP server. Add it under MCP servers."><Button variant="outline" size="sm" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
-      {server && <SettingRow title="API keys" description="WhisperType's keys are managed with its MCP server."><Button variant="outline" size="sm" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
+        : <SettingRow title="WhisperType server" description="Dictation uses the whispertype MCP server. Add it under MCP servers."><Button variant="outline" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
+      {server && <SettingRow title="API keys" description="WhisperType's keys are managed with its MCP server."><Button variant="outline" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
     </SettingsGroup>}
   </div>;
 }

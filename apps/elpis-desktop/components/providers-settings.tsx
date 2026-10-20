@@ -26,7 +26,7 @@ function ConfiguredList({ items, empty, config, onEdit }: { items: Configured[];
   if (!items.length) return <p className="provider-note">{empty}</p>;
   return <ul className="grid gap-3">{items.map(item => {
     const provider = config?.providers.find(provider => provider.id === item.id);
-    return <li key={item.id} className="text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all"><span className="font-medium">{item.name}</span><span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span></p>{provider && <Button variant="outline" size="sm" disabled={!config?.write?.available || !provider.editable} onClick={() => onEdit(provider)}>Edit {item.name}</Button>}</div>
+    return <li key={item.id} className="text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all"><span className="font-medium">{item.name}</span><span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span></p>{provider && <Button variant="outline" disabled={!config?.write?.available || !provider.editable} onClick={() => onEdit(provider)}>Edit {item.name}</Button>}</div>
       {(item.envKey || provider?.auth.keySet) && <p className="mt-1 text-xs text-muted-foreground">API key {item.keySet || provider?.auth.keySet ? "set" : "not set"}</p>}
     </li>;
   })}</ul>;
@@ -74,7 +74,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
   return <div aria-label="Providers">
     <SettingsHeader title="Models & accounts" description="Elpis models use the accounts connected on this computer." action={<RefreshButton onClick={() => void load()} />} />
     <div className="settings-stack">
-    <details className="provider-advanced settings-card"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button size="sm" variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
+    <details className="provider-advanced settings-card"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
     {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
     {config?.write?.reason && !config.write?.available && <p className="settings-notice">{config.write?.reason}</p>}
@@ -97,8 +97,8 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
         {data.openai.auth.email && <p className="text-sm">{data.openai.auth.email}{data.openai.auth.plan ? ` · ${data.openai.auth.plan} plan` : ""}</p>}
         <div className="flex flex-wrap gap-2">
           {data.openai.auth.state === "signedIn"
-            ? <Button variant="outline" size="sm" disabled={busy} onClick={() => void account("signOut")}>Sign out</Button>
-            : <Button size="sm" disabled={busy} onClick={() => void account("chatgpt")}>Sign in with ChatGPT</Button>}
+            ? <Button variant="outline" disabled={busy} onClick={() => void account("signOut")}>Sign out</Button>
+            : <Button disabled={busy} onClick={() => void account("chatgpt")}>Sign in with ChatGPT</Button>}
           {waiting && <span role="status" className="self-center text-sm text-muted-foreground">Complete sign-in in the page that opened.</span>}
         </div>
       </Card>
@@ -106,8 +106,8 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
         <p className="provider-note">{data.claude.signedOut ? "Elpis is not using your Claude subscription. Claude Code on this computer stays signed in." : data.claude.models.length ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.` : "Sign in to Claude Code on this computer to connect your subscription."}</p>
         <div className="flex flex-wrap gap-2">
           {data.claude.signedOut
-            ? <Button size="sm" disabled={busy} onClick={() => void account("anthropicSignIn")}>Sign in</Button>
-            : data.claude.state !== "notConnected" && <Button variant="outline" size="sm" disabled={busy} onClick={() => void account("anthropicSignOut")}>Sign out</Button>}
+            ? <Button disabled={busy} onClick={() => void account("anthropicSignIn")}>Sign in</Button>
+            : data.claude.state !== "notConnected" && <Button variant="outline" disabled={busy} onClick={() => void account("anthropicSignOut")}>Sign out</Button>}
         </div>
       </Card>
       <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>

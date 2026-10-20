@@ -74,8 +74,8 @@ function CodeFont({ font, onSave }: { font: string; onSave: (font: string) => vo
   return <SettingRow title="Code font" description={problem ? <span className="text-destructive" role="alert">{problem}</span> : "Set a custom monospace font for code and terminal."}>
     <form className="flex min-w-0 flex-wrap gap-2" onSubmit={submit}>
       <Input aria-label="Code font" className="w-56 max-w-full" value={text} placeholder="JetBrains Mono" maxLength={120} aria-invalid={problem ? true : undefined} onChange={event => { setText(event.target.value); setProblem(""); }} />
-      <Button type="submit" variant="outline" size="sm" aria-label="Save code font" disabled={text.trim() === font}>Save</Button>
-      {font && <Button type="button" variant="ghost" size="sm" aria-label="Reset code font" onClick={() => { setProblem(""); onSave(""); }}>Reset</Button>}
+      <Button type="submit" variant="outline" aria-label="Save code font" disabled={text.trim() === font}>Save</Button>
+      {font && <Button type="button" variant="ghost" aria-label="Reset code font" onClick={() => { setProblem(""); onSave(""); }}>Reset</Button>}
     </form>
   </SettingRow>;
 }

@@ -33,11 +33,11 @@ function DefaultFolder({ folder, onSave }: { folder: string; onSave: (folder: st
   return <SettingRow title="Default folder for new chats" description={error ? <span className="text-destructive" role="alert">{error}</span> : "Where chats started outside a project run. Projects keep their own folder."}>
     {editing === null ? <>
       <span className={`settings-path${folder ? "" : " unset"}`} title={folder || undefined}><bdi>{folder || "Elpis default"}</bdi></span>
-      <Button variant="outline" size="sm" onClick={() => desktop?.chooseFolder ? void choose() : setEditing(folder)}>Change</Button>
-      {folder && <Button variant="ghost" size="sm" onClick={() => onSave("")}>Reset</Button>}
+      <Button variant="outline" onClick={() => desktop?.chooseFolder ? void choose() : setEditing(folder)}>Change</Button>
+      {folder && <Button variant="ghost" onClick={() => onSave("")}>Reset</Button>}
     </> : <form className="flex min-w-0 flex-wrap gap-2" onSubmit={submit}>
       <Input aria-label="Default folder for new chats" className="w-64 max-w-full" autoFocus value={editing} placeholder="/home/you/projects" onChange={event => setEditing(event.target.value)} />
-      <Button type="submit" size="sm">Save</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(null); setError(""); }}>Cancel</Button>
+      <Button type="submit">Save</Button><Button type="button" variant="ghost" onClick={() => { setEditing(null); setError(""); }}>Cancel</Button>
     </form>}
   </SettingRow>;
 }

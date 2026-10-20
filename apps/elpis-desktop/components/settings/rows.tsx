@@ -10,7 +10,7 @@ export function SaveFeedback({ outcome, onReload }: { outcome: { ok: boolean; te
   if (!outcome) return null;
   return <div className="flex flex-wrap items-center gap-2">
     <SettingsNotice tone={outcome.ok ? "status" : "alert"}>{outcome.text}</SettingsNotice>
-    {!outcome.ok && onReload && <Button variant="outline" size="sm" className="mt-2" onClick={onReload}>Reload settings</Button>}
+    {!outcome.ok && onReload && <Button variant="outline" className="mt-2" onClick={onReload}>Reload settings</Button>}
   </div>;
 }
 
@@ -22,7 +22,7 @@ export function SettingsHeader({ title, description, action }: { title: string; 
 
 /** A page's Refresh action, placed by SettingsHeader beside the title. */
 export function RefreshButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
-  return <Button variant="ghost" size="sm" disabled={disabled} onClick={onClick}><RefreshCw />Refresh</Button>;
+  return <Button variant="ghost" disabled={disabled} onClick={onClick}><RefreshCw />Refresh</Button>;
 }
 
 /** A list with nothing to show: what is missing, then what to do about it. */

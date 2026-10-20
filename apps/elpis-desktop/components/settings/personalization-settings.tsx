@@ -20,8 +20,8 @@ function CustomInstructions({ settings }: { settings: ElpisSettings }) {
       <Textarea aria-label="Instructions for every chat" className="max-h-80 min-h-28 text-sm" value={text} maxLength={32000} disabled={!writable || saver.pending !== null} placeholder="For example: Answer briefly. Prefer small, reversible changes." onChange={event => { saver.clear(); setDraft(event.target.value === saved ? null : event.target.value); }} />
     </SettingRow>
     {writable ? <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", async () => { await reloadSettings(); setDraft(null); }, "Settings reloaded. Unsaved edits were discarded.")} />}>
-      {draft !== null && <Button variant="ghost" size="sm" disabled={saver.pending !== null} onClick={() => setDraft(null)}>Discard</Button>}
-      <Button size="sm" disabled={saver.pending !== null || draft === null} onClick={() => void saver.run("save", async () => { await saveOptions(settings, { developerInstructions: text }); setDraft(null); }, "Instructions saved. Applies to new conversations.")}>{saver.pending === "save" ? "Saving…" : "Save instructions"}</Button>
+      {draft !== null && <Button variant="ghost" disabled={saver.pending !== null} onClick={() => setDraft(null)}>Discard</Button>}
+      <Button disabled={saver.pending !== null || draft === null} onClick={() => void saver.run("save", async () => { await saveOptions(settings, { developerInstructions: text }); setDraft(null); }, "Instructions saved. Applies to new conversations.")}>{saver.pending === "save" ? "Saving…" : "Save instructions"}</Button>
     </SettingsActions> : <SettingsActions feedback={settings.write.reason}>{null}</SettingsActions>}
   </SettingsGroup>;
 }

@@ -114,7 +114,7 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
       <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={current.provider ?? ""} onChange={event => update("provider", event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{providerOptions(draft.provider ?? saved.provider ?? "", value.providers)}</OptionSelect>
     </SettingRow>
     <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
-      <Button size="sm" disabled={saver.pending !== null || !Object.keys(draft).length || (which === "main" && !current.model)} onClick={() => void saver.run("save", async () => { await saveSettings("/settings", { version: value.version, [which]: draft }); setDraft({}); }, `${name} model saved. Applies to new conversations.`)}>{saver.pending === "save" ? "Saving…" : `Save ${name.toLowerCase()} model`}</Button>
+      <Button disabled={saver.pending !== null || !Object.keys(draft).length || (which === "main" && !current.model)} onClick={() => void saver.run("save", async () => { await saveSettings("/settings", { version: value.version, [which]: draft }); setDraft({}); }, `${name} model saved. Applies to new conversations.`)}>{saver.pending === "save" ? "Saving…" : `Save ${name.toLowerCase()} model`}</Button>
     </SettingsActions>
   </>;
 }
@@ -146,7 +146,7 @@ export function PrunerSettings({ value, models }: { value: ElpisSettings; models
         <SettingRow title="Pruning model" description="Choose a model supported by the selected provider."><ModelChoice label="Pruning model" value={current.model || null} models={catalogs.forProvider(current.provider || null)} provider={catalogs.connectionLabel(current.provider || null)} catalogStatus={catalogs.catalogStatus(current.provider || null)} disabled={saver.pending !== null} inheritLabel="Choose a pruning model" onChange={model => update({ model: model ?? "" })} /></SettingRow>
       </>}
       <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
-        <Button size="sm" disabled={saver.pending !== null || !changed || (current.mode === "explicit" && (!current.model.trim() || !current.provider))} onClick={() => void saver.run("save", async () => { await saveSettings("/pruner", { version: override.version, model: current.mode === "explicit" ? current.model.trim() : null, provider: current.mode === "explicit" ? current.provider : null }); setDraft(null); }, "Pruning model saved. Applies to the next pruning attempt.")}>{saver.pending === "save" ? "Saving…" : "Save pruning model"}</Button>
+        <Button disabled={saver.pending !== null || !changed || (current.mode === "explicit" && (!current.model.trim() || !current.provider))} onClick={() => void saver.run("save", async () => { await saveSettings("/pruner", { version: override.version, model: current.mode === "explicit" ? current.model.trim() : null, provider: current.mode === "explicit" ? current.provider : null }); setDraft(null); }, "Pruning model saved. Applies to the next pruning attempt.")}>{saver.pending === "save" ? "Saving…" : "Save pruning model"}</Button>
       </SettingsActions>
     </> : <SettingRow title="Pruning model" description={override.reason ?? "Pruning model settings are unavailable."} />}
   </SettingsGroup>;
@@ -191,10 +191,10 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
         onChange={model => { saver.clear(); setDraft(old => { const patch = { ...old }; if (model === value.memory[key]) delete patch[key]; else patch[key] = model; return patch; }); }} />
     </SettingRow>)}
     <SettingRow title="Delete memories" description="Remove every memory Elpis has saved. Chats are not deleted.">
-      <Button variant="destructive" size="sm" disabled={saver.pending !== null} onClick={() => setConfirming(true)}>Delete</Button>
+      <Button variant="destructive" disabled={saver.pending !== null} onClick={() => setConfirming(true)}>Delete</Button>
     </SettingRow>
     <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
-      <Button size="sm" disabled={saver.pending !== null || !changed} onClick={() => void saver.run("models", async () => { await saveSettings("/settings", { version: value.version, memory: draft }); setDraft({}); }, "Memory models saved. Applies to new conversations.")}>{saver.pending === "models" ? "Saving…" : "Save memory models"}</Button>
+      <Button disabled={saver.pending !== null || !changed} onClick={() => void saver.run("models", async () => { await saveSettings("/settings", { version: value.version, memory: draft }); setDraft({}); }, "Memory models saved. Applies to new conversations.")}>{saver.pending === "models" ? "Saving…" : "Save memory models"}</Button>
     </SettingsActions>
     <AlertDialog open={confirming} onOpenChange={setConfirming}>
       <AlertDialogContent>

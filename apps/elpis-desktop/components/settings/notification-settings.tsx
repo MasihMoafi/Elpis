@@ -26,8 +26,8 @@ export function NotificationSettings() {
     <SettingsGroup title="Desktop notifications">
       <SettingRow title="Notification permission" description={state.description}>
         <span className={`settings-badge ${state.tone}`}>{state.label}</span>
-        {permission === "default" && <Button size="sm" onClick={() => void requestNotificationPermission().then(setPermission)}>Allow</Button>}
-        {permission === "granted" && <Button variant="outline" size="sm" onClick={() => { if (!sendTestNotification()) setNotice("The test notification could not be shown."); }}>Send test</Button>}
+        {permission === "default" && <Button onClick={() => void requestNotificationPermission().then(setPermission)}>Allow</Button>}
+        {permission === "granted" && <Button variant="outline" onClick={() => { if (!sendTestNotification()) setNotice("The test notification could not be shown."); }}>Send test</Button>}
       </SettingRow>
       <SettingRow title="Turn completion notifications" description="Set when Elpis alerts you that a chat finished.">
         <Choice label="Turn completion notifications" value={preferences.turnNotifications} options={[{ value: "never", label: "Never" }, { value: "unfocused", label: "Only when unfocused" }, { value: "always", label: "Always" }]} onChange={turnNotifications => save({ turnNotifications })} />

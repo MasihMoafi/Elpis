@@ -79,8 +79,8 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
     {!!threads?.length && <div className="archived-bulk">
       <label className="archived-check"><input type="checkbox" className="accent-primary" aria-label="Select all" checked={selectingAll || (!cursor && picked.length === threads.length)} onChange={event => void selectAll(event.target.checked)} />Select all</label>
       {picked.length > 0 && <>
-        <Button variant="outline" size="sm" disabled={!!busy} onClick={() => void unarchivePicked()}><ArchiveRestore />Unarchive {picked.length}</Button>
-        <Button variant="destructive" size="sm" disabled={!!busy} onClick={() => setDeleting(pickedThreads)}><Trash2 />Delete {picked.length}</Button>
+        <Button variant="outline" disabled={!!busy} onClick={() => void unarchivePicked()}><ArchiveRestore />Unarchive {picked.length}</Button>
+        <Button variant="destructive" disabled={!!busy} onClick={() => setDeleting(pickedThreads)}><Trash2 />Delete {picked.length}</Button>
       </>}
     </div>}
     <DeleteChatsDialog threads={deleting} onDelete={remove} onClose={() => setDeleting(null)} alwaysConfirm />
@@ -92,7 +92,7 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
           {thread.agentNickname && <div className="settings-row-description">{thread.agentNickname}</div>}
         </div>
         <div className="settings-row-control">
-          <Button variant="outline" size="sm" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
+          <Button variant="outline" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
           {menu}
         </div>
       </>}</ThreadActions>)}

@@ -37,7 +37,7 @@ function ShortcutRecorder({ label, shortcut, disabled, onRecord, onRefuse }: { l
     if (plain || RESERVED.includes(accelerator)) { onRefuse(RESERVED_TEXT); return; }
     onRecord(accelerator);
   }
-  return <Button variant="outline" size="sm" className="min-w-[120px]" aria-label={label} title="Press the new shortcut" disabled={disabled} onKeyDown={keyDown}>
+  return <Button variant="outline" className="min-w-[120px]" aria-label={label} title="Press the new shortcut" disabled={disabled} onKeyDown={keyDown}>
     {shortcut ? shortcut.split("+").map((key, index) => <kbd key={`${key}:${index}`} className="kbd">{key}</kbd>) : <span className="text-muted-foreground">Set shortcut</span>}
   </Button>;
 }

@@ -37,7 +37,7 @@ function CredentialSettings({ server, disabled, save }: { server: Server; disabl
   }}>
     <p className="text-sm font-medium">API keys</p><p className="text-xs text-muted-foreground">Leave a field empty to keep its current key. Saved keys are never displayed.</p>
     <div className="grid gap-3 sm:grid-cols-2">{names.map(name => <label className="field min-w-0" key={name}><span className="break-all text-xs">{name}</span><Input type="password" autoComplete="new-password" aria-label={`${server.name} ${name}`} value={values[name] ?? ""} placeholder={server.credentials.find(key => key.name === name)?.set ? "Key is set · enter to replace" : "Enter API key"} disabled={disabled || busy} onChange={event => { setSaved(false); setValues(previous => ({ ...previous, [name]: event.target.value })); }} /></label>)}</div>
-    <Button type="submit" variant="outline" size="sm" disabled={disabled || busy || !Object.values(values).some(value => value.trim())}>{busy ? "Saving…" : "Save API keys"}</Button>
+    <Button type="submit" variant="outline" disabled={disabled || busy || !Object.values(values).some(value => value.trim())}>{busy ? "Saving…" : "Save API keys"}</Button>
     {saved && <p role="status" className="text-xs text-muted-foreground">API keys saved.</p>}
   </form>;
 }
@@ -91,7 +91,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     try { await save(draft.name.trim(), { action: "add", command: draft.command.trim(), args: draft.args.split("\n").map(arg => arg.trim()).filter(Boolean) }); setAdding(false); setDraft({ name: "", command: "", args: "" }); } catch {}
   }
   return <div aria-label="MCP servers">
-    <SettingsHeader title="MCP servers" description="Manage the tools available to your agents and their API keys." action={<Button variant="outline" size="sm" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus />Add MCP server</Button>} />
+    <SettingsHeader title="MCP servers" description="Manage the tools available to your agents and their API keys." action={<Button variant="outline" onClick={() => setAdding(true)} disabled={!data?.write?.available}><Plus />Add MCP server</Button>} />
     <div className="settings-stack">
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
