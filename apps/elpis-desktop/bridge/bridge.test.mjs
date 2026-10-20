@@ -9,13 +9,14 @@ import http from 'node:http';
 import net from 'node:net';
 import { DesktopClient, existingSocket } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
+import { isAgentRun } from '../lib/agent-runs.mjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -54,7 +55,17 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       case 'hooks/list': result = hooksList; break;
       case 'memory/reset': result = {}; break;
       // Like native stored rows, listed threads do not report forkedFromId; thread/read does.
-      case 'thread/list': result = { data: [...threads.values()].filter(thread => !!thread.archived === !!request.params.archived).filter(thread => !request.params.ancestorThreadId || thread.parentThreadId === request.params.ancestorThreadId).map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor: null }; break;
+      case 'thread/list': {
+        let data = [...threads.values()].filter(thread => !!thread.archived === !!request.params.archived).filter(thread => !request.params.ancestorThreadId || thread.parentThreadId === request.params.ancestorThreadId);
+        let nextCursor = null;
+        if (threadListPaging) {
+          data = data.filter(thread => !request.params.sourceKinds?.length || request.params.sourceKinds.includes(typeof thread.source === 'object' ? 'subAgentThreadSpawn' : thread.source));
+          const offset = Number(request.params.cursor ?? 0), end = offset + request.params.limit;
+          if (end < data.length) nextCursor = String(end);
+          data = data.slice(offset, end);
+        }
+        result = { data: data.map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor }; break;
+      }
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       case 'thread/resume': result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: [] } }; break;
       case 'thread/turns/list': result = { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
@@ -102,6 +113,49 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   const client = new DesktopClient(socket, { browserConfig, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
+
+test('conversation pages keep a full page of chats when recent agent runs outnumber them', async () => {
+  const f = fixture({ threadListPaging: true });
+  f.threads.clear();
+  const chats = [];
+  for (let i = 0; i < 120; i++) {
+    const chat = { id: randomUUID(), name: `Synthetic chat ${i}`, source: 'vscode', status: { type: 'idle' } };
+    chats.push(chat); f.threads.set(chat.id, chat);
+    for (let j = 0; j < 2; j++) {
+      const run = { id: randomUUID(), source: j ? { subAgent: { thread_spawn: {} } } : 'exec', parentThreadId: chat.id, status: { type: 'idle' } };
+      f.threads.set(run.id, run);
+    }
+  }
+  const { transpileModule, ModuleKind } = await import('typescript');
+  const source = await fs.readFile(new URL('../lib/conversation-page.ts', import.meta.url), 'utf8');
+  const compiled = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS } }).outputText;
+  const loaded = {};
+  new Function('exports', 'require', compiled)(loaded, id => {
+    assert.equal(id, './api'); return { isAgentRun };
+  });
+  const server = await startDesktopServer({ client: f.client });
+  try {
+    const url = new URL(server.url), origin = url.origin;
+    const token = new URLSearchParams(url.hash.slice(1)).get('token');
+    const session = await fetch(`${origin}/api/session`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
+    assert.equal(session.status, 200);
+    const cookie = session.headers.get('set-cookie').split(';')[0];
+    const request = async route => {
+      const response = await fetch(`${origin}/api${route}`, { headers: { Cookie: cookie } });
+      assert.equal(response.status, 200); return response.json();
+    };
+    const first = await loaded.loadConversationPage(request);
+    assert.equal(first.data.filter(thread => !isAgentRun(thread)).length, 100);
+    assert.deepEqual(first.data.filter(thread => !isAgentRun(thread)).map(thread => thread.id), chats.slice(0, 100).map(thread => thread.id));
+    assert.ok(first.data.some(isAgentRun), 'recent background runs remain available in their own section');
+    assert.equal(first.nextCursor, '100');
+    const second = await loaded.loadConversationPage(request, first.nextCursor);
+    assert.deepEqual(second.data.map(thread => thread.id), chats.slice(100).map(thread => thread.id));
+    assert.equal(second.nextCursor, null);
+    const queries = f.socket.sent.filter(request => request.method === 'thread/list');
+    assert.equal(queries.filter(request => !request.params.sourceKinds?.length || request.params.sourceKinds.includes('exec')).length, 1, 'background runs are refreshed separately from chat pagination');
+  } finally { await server.close(); f.client.close(); }
+});
 
 test('desktop browser MCP follows new, resumed and forked desktop chats without writing user config', async () => {
   const browserConfig={'mcp_servers.elpis_browser':{command:'node',args:['browser-mcp.mjs'],env:{ELPIS_BROWSER_SOCKET:'/tmp/private-browser.sock'}}};

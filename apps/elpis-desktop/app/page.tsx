@@ -91,6 +91,7 @@ import { readDraft, writeDraft } from "@/lib/drafts";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
+import { loadConversationPage } from "@/lib/conversation-page";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
@@ -454,7 +455,7 @@ export default function Home() {
   const refreshThreads = useCallback(async () => {
     const routesAtRequest = { ...settingsOf.current };
     const statusesAtRequest = { ...statusRevisions.current };
-    const result = await api<{ data: Thread[]; nextCursor: string | null }>("/threads?limit=100&includeAgentRuns=true"); if (!Array.isArray(result.data)) throw unreadable("conversations");
+    const result = await loadConversationPage(api);
     result.data = result.data.filter(thread => !hidden.current.has(thread.id));
     // Preserve an event or local acknowledgment that arrived after this list request began.
     for (const thread of result.data) if (thread.model && settingsOf.current[thread.id] === routesAtRequest[thread.id]) remember({ ...settingsOf.current[thread.id], ...thread });
@@ -471,7 +472,7 @@ export default function Home() {
     if (!nextCursor || rootPaging.current) return;
     rootPaging.current = true; setMoreLoading(true);
     try {
-      const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?limit=100&includeAgentRuns=true&cursor=${encodeURIComponent(nextCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
+      const result = await loadConversationPage(api, nextCursor);
       loadedRootPages.current = true;
       setThreads(prev => mergeListedThreads(prev, result.data, hidden.current)); setNextCursor(result.nextCursor);
     } catch (cause) { setError(String(cause)); }
