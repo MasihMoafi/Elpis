@@ -3175,6 +3175,13 @@ impl App {
                     self.chat_widget.open_approvals_popup();
                 }
             }
+            AppEvent::OpenConfigPanel(section) => {
+                self.chat_widget.open_config_panel(app_server.request_handle(), section.as_deref());
+                self.chat_widget.defer_input_until_settings_applied();
+            }
+            AppEvent::ConfigPanelShortcut(command) => {
+                self.chat_widget.open_config_shortcut(command);
+            }
             AppEvent::OpenReviewBranchPicker(cwd) => {
                 self.chat_widget.show_review_branch_picker(&cwd).await;
             }

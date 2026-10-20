@@ -16,6 +16,7 @@ pub enum SlashCommand {
     // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
     // more frequently used commands should be listed first.
     Model,
+    Config,
     Effort, // Elpis
     // Elpis: v0.3.0 commands, in their v0.3.0 popup positions.
     PrunerModel,
@@ -154,6 +155,7 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE",
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
+            SlashCommand::Config => "search and edit settings in one panel",
             SlashCommand::Daybreak => "turn Daybreak on or off",
             SlashCommand::Ide => {
                 "include current selection, open files, and other context from your IDE"
@@ -199,6 +201,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Review
+                | SlashCommand::Config
                 | SlashCommand::Rename
                 | SlashCommand::New
                 | SlashCommand::Clear
@@ -255,6 +258,7 @@ impl SlashCommand {
         matches!(
             self,
             SlashCommand::Personal
+                | SlashCommand::Config
                 | SlashCommand::New
                 | SlashCommand::Clear
                 | SlashCommand::Resume
@@ -303,6 +307,7 @@ impl SlashCommand {
             | SlashCommand::Archive
             | SlashCommand::Resume
             | SlashCommand::Model
+            | SlashCommand::Config
             | SlashCommand::Daybreak
             | SlashCommand::Permissions
             | SlashCommand::Copy
@@ -378,6 +383,13 @@ mod tests {
     use std::str::FromStr;
 
     use super::SlashCommand;
+
+    #[test]
+    fn config_is_distinct_from_settings() {
+        assert_eq!(SlashCommand::from_str("config"), Ok(SlashCommand::Config));
+        assert_eq!(SlashCommand::from_str("settings"), Ok(SlashCommand::Experimental));
+        assert!(SlashCommand::Config.supports_inline_args());
+    }
 
     #[test]
     fn kill_command_is_canonical_name() {

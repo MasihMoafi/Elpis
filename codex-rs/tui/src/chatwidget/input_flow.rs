@@ -28,6 +28,7 @@ impl ChatWidget {
             // Inline commands still follow so their output (including usage errors) is visible.
             InputResult::Command(
                 SlashCommand::Model
+                | SlashCommand::Config
                 | SlashCommand::Keymap
                 | SlashCommand::Memories
                 | SlashCommand::Title
@@ -116,7 +117,7 @@ impl ChatWidget {
         }
     }
 
-    pub(super) fn defer_input_until_settings_applied(&mut self) {
+    pub(crate) fn defer_input_until_settings_applied(&mut self) {
         if !self.bottom_pane.no_modal_or_popup_active() {
             self.input_queue.suppress_queue_autosend = true;
         }
