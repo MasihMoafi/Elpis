@@ -30,14 +30,14 @@ function CredentialSettings({ server, disabled, save }: { server: Server; disabl
   if (!names.length) return null;
   // Elpis gives an HTTP server only the token named by bearer_token_env_var, read from its environment; it refuses `env` there.
   if (server.transport === "http") return <p className="text-xs text-muted-foreground">This server reads its key from {names.map(name => <code key={name}>{name}</code>)} in the environment Elpis starts with; set it there and restart Elpis.</p>;
-  return <form className="mcp-tool-settings" aria-label={`API keys for ${server.name}`} onSubmit={async event => {
+  return <form className="mcp-tool-settings settings-form" aria-label={`API keys for ${server.name}`} onSubmit={async event => {
     event.preventDefault(); setBusy(true); setSaved(false);
     try { await save({ action: "credentials", env: Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim())) }); setValues({}); setSaved(true); }
     catch {} finally { setBusy(false); }
   }}>
-    <p className="text-sm font-medium">API keys</p><p className="text-xs text-muted-foreground">Leave a field empty to keep its current key. Saved keys are never displayed.</p>
+    <div><p className="text-sm font-medium">API keys</p><p className="text-xs text-muted-foreground">Leave a field empty to keep its current key. Saved keys are never displayed.</p></div>
     <div className="grid gap-3 sm:grid-cols-2">{names.map(name => <label className="field min-w-0" key={name}><span className="break-all text-xs">{name}</span><Input type="password" autoComplete="new-password" aria-label={`${server.name} ${name}`} value={values[name] ?? ""} placeholder={server.credentials.find(key => key.name === name)?.set ? "Key is set · enter to replace" : "Enter API key"} disabled={disabled || busy} onChange={event => { setSaved(false); setValues(previous => ({ ...previous, [name]: event.target.value })); }} /></label>)}</div>
-    <Button type="submit" variant="outline" disabled={disabled || busy || !Object.values(values).some(value => value.trim())}>{busy ? "Saving…" : "Save API keys"}</Button>
+    <Button type="submit" variant="outline" className="justify-self-start" disabled={disabled || busy || !Object.values(values).some(value => value.trim())}>{busy ? "Saving…" : "Save API keys"}</Button>
     {saved && <p role="status" className="text-xs text-muted-foreground">API keys saved.</p>}
   </form>;
 }
@@ -96,7 +96,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
     {data?.configPath && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Configuration file</summary><p className="mt-2 break-all">{data.configPath}</p></details>}
-    {adding && <form className="settings-card" aria-label="Add MCP server" onSubmit={add}>
+    {adding && <form className="settings-card settings-form" aria-label="Add MCP server" onSubmit={add}>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">Server name<Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="letters, numbers, - or _" /></label>
         <label className="field">Command<Input value={draft.command} onChange={e => setDraft({ ...draft, command: e.target.value })} placeholder="/path/to/server or an executable name" /></label>

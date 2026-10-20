@@ -42,8 +42,9 @@
 /* Cards: an account, a server or a form on a Settings page. Stacked cards keep one gap. */
 .settings-card { display:grid; gap:10px; padding:16px; border:1px solid var(--border); background:var(--card); min-width:0; }
 .settings-card h3 { font-size:13.5px; font-weight:600; margin:0; }
-/* A card of labelled fields (a form) spaces its fields wider than a card of lines. */
-form.settings-card, .settings-card:has(> .field) { gap:16px; }
+/* Forms space fields and save actions alike, including forms inside cards. */
+.settings-form { display:grid; }
+.settings-form, .settings-card:has(> .field) { gap:16px; }
 .settings-stack { display:grid; gap:12px; min-width:0; }
 /* Archived chats: Select all and the selection's actions above the list, in the rows' column (row padding plus its
  * card's border); a checkbox before each row, 16px from its words like every row gap. */

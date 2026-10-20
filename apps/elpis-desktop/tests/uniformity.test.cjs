@@ -67,3 +67,41 @@ test('one role, one look: every button comes from a shared component, and each k
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('MCP API-key fields share the Settings field-to-save gap and controls stay apart', { timeout: 30000 }, async () => {
+  const f = await fixture({ desktop: true, routes: {
+    '/api/mcp': () => ({ version: 'm1', write: { available: true }, servers: [{
+      name: 'fixture-server', enabled: true, transport: 'stdio', command: 'fixture-mcp', url: null,
+      credentials: ['SERVICE_API_KEY', 'SERVICE_TOKEN'].map(name => ({ name, source: 'config', set: false })),
+    }] }),
+  } });
+  try {
+    await f.open('chat-a');
+    await openSettings(f.page);
+    await f.page.getByRole('tab', { name: 'MCP servers', exact: true }).click();
+    const keyForm = f.page.getByRole('form', { name: 'API keys for fixture-server' });
+    await keyForm.locator('input[type="password"]').first().waitFor();
+    await f.page.getByRole('button', { name: 'Add MCP server' }).click();
+    const addForm = f.page.getByRole('form', { name: 'Add MCP server' });
+    const referenceGap = await addForm.evaluate(form => {
+      const field = form.querySelector('textarea').getBoundingClientRect();
+      const save = form.querySelector('button[type="submit"]').getBoundingClientRect();
+      return save.top - field.bottom;
+    });
+    const boxes = await keyForm.locator('input[type="password"], button[type="submit"]').evaluateAll(controls =>
+      controls.map(control => {
+        const { top, right, bottom, left } = control.getBoundingClientRect();
+        return { top, right, bottom, left };
+      }));
+    assert.equal(boxes.length, 3, 'two API-key inputs and their Save button are visible');
+    assert.ok(referenceGap > 0, 'the Settings reference has a positive field-to-save gap');
+    for (const input of boxes.slice(0, -1))
+      assert.ok(Math.abs(boxes.at(-1).top - input.bottom - referenceGap) < 0.5, 'each API-key input matches the Settings field-to-save gap');
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      assert.ok(a.right < b.left || b.right < a.left || a.bottom < b.top || b.bottom < a.top,
+        `API-key controls ${i + 1} and ${j + 1} neither touch nor overlap`);
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
