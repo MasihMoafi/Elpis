@@ -26,7 +26,7 @@ const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; 
 function ConfigFile() {
   const [path, setPath] = useState<string | null>(null);
   useEffect(() => { api<{ configPath?: string | null }>("/mcp").then(value => setPath(value.configPath ?? null)).catch(() => setPath(null)); }, []);
-  return <SettingRow title="Config file" description="Settings on this page are saved here. Other options can be edited in the file.">
+  return <SettingRow title="Open config file" scope="this device" description="Settings on this page are saved here. Other options can be edited in the file.">
     <span className={`settings-path${path ? "" : " unset"}`} title={path ?? undefined}>{path ? <FileRefLink target={{ path }}><bdi>{path}</bdi></FileRefLink> : "Not reported"}</span>
   </SettingRow>;
 }

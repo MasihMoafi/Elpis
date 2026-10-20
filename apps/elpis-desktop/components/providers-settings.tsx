@@ -18,7 +18,7 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 const State = ({ tone, children }: { tone: "ok" | "warn" | "off"; children: React.ReactNode }) => <span className={`settings-badge ${tone}`}>{children}</span>;
 function Card({ id, name, state, children }: { id: string; name: string; state: React.ReactNode; children: React.ReactNode }) {
   return <section className="provider-card settings-card" data-provider={id} aria-label={name}>
-    <header className="flex flex-wrap items-center justify-between gap-2"><h3>{name}</h3>{state}</header>
+    <header className="flex flex-wrap items-center justify-between gap-2"><h3>{name}</h3><span className="settings-scope">this device</span>{state}</header>
     {children}
   </section>;
 }
@@ -72,7 +72,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
   const custom = config && data ? config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway && !data.openrouter.some(item => item.id === provider.id)) : [];
   const sub = (value: Subscription) => value.state === "connected" ? <State tone="ok">Connected</State> : value.state === "available" ? <State tone="warn">Models available</State> : value.state === "unknown" ? <State tone="off">Not reported</State> : <State tone="off">Not connected</State>;
   return <div aria-label="Providers">
-    <SettingsHeader title="Models & accounts" description="Elpis models use the accounts connected on this computer." action={<RefreshButton onClick={() => void load()} />} />
+    <SettingsHeader title="Models & accounts" description="Account connections and keys are on this device. Default models apply to new chats under Configuration." action={<RefreshButton onClick={() => void load()} />} />
     <div className="settings-stack">
     <details className="provider-advanced settings-card"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
     {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}

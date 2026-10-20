@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -38,11 +38,18 @@ export function SettingsGroup({ title, description, action, children }: { title?
   </section>;
 }
 
-type RowProps = { title: ReactNode; description?: ReactNode; children?: ReactNode; stacked?: boolean; id?: string };
+export type SettingScope = "new chats" | "this chat" | "this device" | "terminal";
+const ScopeContext = createContext<SettingScope | null>(null);
+export function SettingsScope({ value, children }: { value: SettingScope; children: ReactNode }) {
+  return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
+}
+type RowProps = { title: ReactNode; description?: ReactNode; children?: ReactNode; stacked?: boolean; id?: string; scope?: SettingScope };
 /** One setting. Its control carries its own label. `stacked` puts a wide control (text area, list) under the text. */
-export function SettingRow({ title, description, children, stacked, id }: RowProps) {
+export function SettingRow({ title, description, children, stacked, id, scope }: RowProps) {
+  const inheritedScope = useContext(ScopeContext);
+  const effectiveScope = scope ?? inheritedScope;
   return <div className={`settings-row${stacked ? " stacked" : ""}`}>
-    <div className="settings-row-text"><div className="settings-row-title" id={id}>{title}</div>{description && <div className="settings-row-description">{description}</div>}</div>
+    <div className="settings-row-text"><div className="settings-row-heading"><div className="settings-row-title" id={id}>{title}</div>{effectiveScope && <span className="settings-scope">{effectiveScope}</span>}</div>{description && <div className="settings-row-description">{description}</div>}</div>
     {children && <div className="settings-row-control">{children}</div>}
   </div>;
 }

@@ -30,7 +30,7 @@ import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
 import { AppUpdate } from "@/components/app-update";
-import { PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
+import { PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
 import { entryKey, rememberSubmittedMessages, withSubmittedMessages, type SubmittedMessage } from "@/lib/submitted-messages";
 import { replacementEligibility } from "@/lib/turn-replacement";
@@ -38,7 +38,7 @@ import { AgentsGuide } from "@/components/agents-guide";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ExperimentLab } from "@/components/experiment-lab";
 import { CustomizeView } from "@/components/customize-view";
-import { SettingsView, type Tab as SettingsTab } from "@/components/settings-view";
+import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
@@ -412,7 +412,7 @@ export default function Home() {
   }, [desktopPrompt, selected, view, connected, busy, dictating, attaching, projectChanging]); // eslint-disable-line react-hooks/exhaustive-deps
   /** The terminal's slash commands this app performs (codex-rs/tui/src/slash_command.rs), in its popup order and mostly in its words.
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
-  const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
+  const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const { send, sendShell, stop, replaceFrom, rewindFrom, switchRewind, older } = useChatTurns({ selected,
     selectedRef, request, tabsRef, newDraftKey, textRef, attachmentsRef, pickedMentions, shellCreated,
     stickToBottom, completedTurns, settingsOf, transcripts, hidden, rewindSwitch, scroll, restoreScroll,
@@ -662,7 +662,7 @@ export default function Home() {
       </div>
       <div className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}><div className="workspace-content" {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}>
       {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
-      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
+      {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
       {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
