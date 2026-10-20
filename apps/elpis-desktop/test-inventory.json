@@ -236,7 +236,8 @@
     "tests/browser-sessions-electron.test.cjs",
     "tests/sidebar-reorder.test.cjs",
     "tests/composer-consistency.test.cjs",
-    "tests/chat-feedback.test.cjs"
+    "tests/chat-feedback.test.cjs",
+    "tests/message-replies.test.cjs"
   ],
   "opt-in": [
     "tests/app-update-native.test.cjs",

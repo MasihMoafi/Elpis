@@ -23,6 +23,24 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
   const [reviewOpen, setReviewOpen] = useState(false), [change, setChange] = useState<Change | null>(null), [notice, setNotice] = useState("");
   const [menu, setMenu] = useState<HTMLElement | null>(null), [fallback, setFallback] = useState<{ x: number; y: number } | null>(null);
   const pointed = useRef<Element | null>(null), contextActive = useRef(false);
+  const [source, setSource] = useState<{ path: string | null; configured: boolean } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let disposed = false;
+    void api<{ path: string | null; configured: boolean }>("/improvements/source").then(value => { if (!disposed) setSource(value); }).catch(cause => { if (!disposed) setError(message(cause)); });
+    return () => { disposed = true; };
+  }, [open]);
+  async function chooseSource() {
+    setError("");
+    try {
+      const path = await window.elpisDesktop?.chooseFolder?.();
+      if (!path) return;
+      setBusy(true);
+      setSource(await api<{ path: string; configured: boolean }>("/improvements/source", { path }));
+    } catch (cause) { setError(message(cause)); }
+    finally { setBusy(false); }
+  }
+
   const shownReview = useRef<string | null>(null);
   const begin = useCallback(async (element: Element | null) => {
     contextActive.current = false; setMenu(null); setFallback(null); setError(""); setTarget(null); setRequest(""); setBusy(true);
@@ -115,10 +133,14 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     <AlertDialog open={open} onOpenChange={value => { if (!busy) setOpen(value); }}>
       <AlertDialogContent role="dialog" className="elpis-improve-dialog">
         <AlertDialogHeader><AlertDialogTitle>Improve Elpis</AlertDialogTitle><AlertDialogDescription>Describe the change. Elpis will open a chat in a separate source worktree.</AlertDialogDescription></AlertDialogHeader>
+        <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border p-3 text-sm">
+          <div className="min-w-0 flex-1"><p className="font-medium">Elpis source folder</p><p className="truncate text-muted-foreground" title={source?.path || undefined}>{source?.path || "Choose the source checkout for your changes."}</p></div>
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void chooseSource()}>Choose source folder</Button>
+        </div>
         {target && <><p className="text-sm text-muted-foreground">{target.component} · {target.file}</p><img className="elpis-improve-region" src={target.image} alt={`Pointed region: ${target.label.slice(0, 80)}`} /></>}
         <label className="grid gap-2 text-sm">What should change?<Textarea aria-label="What should change?" value={request} maxLength={16000} onChange={event => setRequest(event.target.value)} disabled={busy} autoFocus /></label>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button><Button disabled={busy || !target || !request.trim()} onClick={() => void start()}>{busy ? "Starting…" : "Start change"}</Button></AlertDialogFooter>
+        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button><Button disabled={busy || !source?.configured || !target || !request.trim()} onClick={() => void start()}>{busy ? "Starting…" : "Start change"}</Button></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
     <AlertDialog open={reviewOpen} onOpenChange={value => { if (!busy) setReviewOpen(value); }}>

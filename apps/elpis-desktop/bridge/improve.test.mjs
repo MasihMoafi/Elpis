@@ -84,6 +84,15 @@ test('authenticated HTTP flow reaches the fake engine with Luna, isolated cwd, i
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(`${url.origin}/api/session`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
   const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const sourceUrl = `${url.origin}/api/improvements/source`;
+  const unauthenticated = await fetch(sourceUrl); assert.equal(unauthenticated.status, 401);
+  const configured = await fetch(sourceUrl, { headers: { Cookie: cookie } });
+  assert.deepEqual(await configured.json(), { path: f.sourceRoot, configured: true });
+  await fs.mkdir(path.join(f.sourceRoot, 'apps/elpis-desktop'), { recursive: true });
+  await fs.writeFile(path.join(f.sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
+  const savedSource = await fetch(sourceUrl, { method: 'POST', headers: { Origin: url.origin, Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ path: f.sourceRoot }) });
+  assert.equal(savedSource.status, 200); assert.equal((await savedSource.json()).path, f.sourceRoot);
+  assert.equal(requests.some(request => request.method === 'thread/start'), false, 'choosing a source never starts an agent');
   const response = await fetch(`${url.origin}/api/improvements`, { method: 'POST', headers: { Origin: url.origin, Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ request: 'Rename Send to Go', target }) });
   const row = await response.json(); assert.equal(response.status, 201, JSON.stringify(row));
   assert.equal(row.error, undefined); assert.equal(row.status, 'working');
@@ -102,4 +111,21 @@ test('an uncertain send retains its chat and worktree without retrying; complete
   f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: row.thread.id } } });
   for (let i = 0; i < 100; i++) { const next = await f.manager.get(row.id); if (next.status === 'review') { await f.manager.check(row.id); assert.equal(next.checks.passed, true); assert.equal(next.error, undefined); return; } await new Promise(resolve => setTimeout(resolve, 10)); }
   assert.fail('completed turn did not produce a measured review');
+});
+
+test('a saved source folder repairs packaged Change this, survives restart and rejects invalid folders without starting a chat', async t => {
+  const f = await setup(t);
+  const missing = path.join(f.store, 'packaged-app');
+  const manager = await createImprovements({ client: f.client, sourceRoot: missing, stateDir: path.join(f.store, 'configured'), sourceMap: map }); t.after(() => manager.close());
+  assert.equal((await manager.source()).configured, false);
+  await assert.rejects(manager.start({ request: 'Rename', target }), /source folder/i);
+  assert.equal(f.created(), undefined);
+  await assert.rejects(manager.setSource({ path: missing }), /source|folder|checkout/i);
+  await fs.mkdir(path.join(f.sourceRoot, 'apps/elpis-desktop'), { recursive: true });
+  await fs.writeFile(path.join(f.sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
+  const selected = await manager.setSource({ path: f.sourceRoot }); assert.equal(selected.path, f.sourceRoot);
+  const restored = await createImprovements({ client: f.client, stateDir: path.join(f.store, 'configured'), sourceMap: map }); t.after(() => restored.close());
+  assert.equal((await restored.source()).path, f.sourceRoot);
+  await restored.start({ request: 'Rename', target }); assert.ok(f.created().cwd.includes('worktrees'));
+  assert.equal(await fs.readFile(path.join(f.sourceRoot, 'button.txt'), 'utf8'), 'Send\n');
 });

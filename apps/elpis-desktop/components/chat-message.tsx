@@ -3,7 +3,7 @@
 import { SmartPruneLine } from "@/components/smart-prune";
 import { useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
-import { Copy, FileText, Pencil, RefreshCw, Terminal, Undo2 } from "lucide-react";
+import { Copy, FileText, Pencil, RefreshCw, Reply, Terminal, Undo2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +16,8 @@ import { unreadable, type Item, type Thread, taskFromPath, title } from "@/lib/a
 import { inlineMediaUrl } from "@/lib/attachments";
 import { plainText } from "@/lib/message-copy";
 import "@/components/message-actions.css";
+import { ReplyPreview } from "@/components/message-reply";
+import { messageDomId, readReply } from "@/lib/message-reply";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
@@ -76,6 +78,7 @@ const write = (value: string) => void navigator.clipboard.writeText(value).catch
 const copyAction = (label: string, text: () => string): MessageAction => ({ id: "copy", label, menuLabel: "Copy as Markdown", icon: <Copy size={14}/>, copy: text, run: () => write(text()) });
 /** "Copy text": the message as a reader sees it, without the Markdown marks. */
 const copyTextAction = (markdown: () => string, markup = true): MessageAction => ({ id: "copy-text", label: "Copy text", icon: <FileText size={14}/>, menuOnly: true, run: () => write(markup ? plainText(markdown()) : markdown()) });
+const replyAction = (reply?: () => void): MessageAction[] => reply ? [{ id: "reply", label: "Reply", icon: <Reply size={14}/>, run: reply }] : [];
 const rewindAction = (rewind?: () => void): MessageAction[] => rewind ? [{ id: "rewind", label: "Rewind to here", icon: <Undo2 size={14}/>, menuOnly: true, run: rewind }] : [];
 const menuActions = (actions: MessageAction[]): MenuAction[] => actions.map(action => ({ ...action, label: action.menuLabel ?? action.label }));
 function MessageButtons({actions}:{actions:MessageAction[]}) {
@@ -84,7 +87,7 @@ function MessageButtons({actions}:{actions:MessageAction[]}) {
   </>;
 }
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn. */
-function UserMessage({body,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time}:{body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
+function UserMessage({body,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent}:{onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
   const [localEditing,setEditing]=useState(false);const [localDraft,setLocalDraft]=useState(body);const [localBusy,setBusy]=useState(false);const [error,setError]=useState("");
   const busy=localBusy||!!editPending;
   const editing=onEditDraftChange?editDraft!==undefined:localEditing,draft=onEditDraftChange?editDraft??body:localDraft;
@@ -98,24 +101,25 @@ function UserMessage({body,attachments,attachmentContent,copyText,onEdit,onRewin
     <div className="flex justify-end gap-2"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={cancel}>Cancel</Button><Button type="submit" size="sm" disabled={busy||!onEdit||!draft.trim()}>{busy?"Sending…":"Send"}</Button></div>
   </form>;
   const whole=()=>copyText ?? [body,...attachments].filter(Boolean).join("\n");
-  const actions:MessageAction[]=[copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
-  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn"/>}><div className="message user">{body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
+  const actions:MessageAction[]=[...replyAction(onReply),copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
+  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}{body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
     {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     <MessageButtons actions={actions}/>
     {!onEdit&&editBlockedReason&&<Button variant="ghost" size="icon-xs" aria-label="Why editing is unavailable" title={editBlockedReason} onClick={()=>setError(previous=>previous?"":editBlockedReason)}><Pencil size={14}/></Button>}
   </div>{error&&<p role="status" className="mb-3 text-xs text-muted-foreground">{error}</p>}</RightClickMenu>;
 }
-export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,onRewind,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase,activityLabel}:{item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;onRewind?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string;activityLabel?:string}) {
+export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,onRewind,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase,activityLabel,onReply,reference}:{onReply?:()=>void;reference?:string;item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;onRewind?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string;activityLabel?:string}) {
   if(item.type==="userMessage"){
     const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
+    const replies=attached.flatMap(({part,file})=>{const reply=file?readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}):null;return reply?[reply]:[];});
     const reason=editBlockedReason||(attachments.length?"This message contains attachments that this app cannot safely resend.":undefined);
-    const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><summary className="cursor-pointer break-all">{file}</summary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
-    return <UserMessage body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
+    const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.filter(({part,file})=>!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)})).map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><summary className="cursor-pointer break-all">{file}</summary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
+    return <UserMessage onReply={onReply} reference={reference} replyContent={replies.map(reply=><ReplyPreview key={reply.reference} reply={reply}/>)} body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
   }
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
-    const actions:MessageAction[]=item.text?[copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent"/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    const actions:MessageAction[]=item.text?[...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
+    return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;

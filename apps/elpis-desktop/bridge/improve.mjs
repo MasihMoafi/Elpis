@@ -19,8 +19,28 @@ Dependencies may be linked from the source checkout; never edit them or install 
 Delete with gio trash. Never use git add -A, git add ., reset --hard, clean or stash. Stage named files only, inspect git diff --cached --stat and commit your change. Keep unrelated files untouched.
 The app independently checks your committed result. Finish with a short result and trade-offs; the user can Try it or mark it ready for the coordinator.`;
 
-export async function createImprovements({ client, sourceRoot = process.env.ELPIS_SOURCE_REPO || path.resolve(appRoot, '../..'), stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement } = {}) {
+export async function createImprovements({ client, sourceRoot, stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement } = {}) {
   const records = new Map(), checking = new Map();
+  const sourceFile = path.join(stateDir, 'source.json');
+  let chosenSource;
+  async function source() {
+    const saved = await fs.readFile(sourceFile, 'utf8').then(JSON.parse).catch(() => null);
+    const candidate = chosenSource || sourceRoot || saved?.path || process.env.ELPIS_SOURCE_REPO || path.resolve(appRoot, '../..');
+    const root = typeof candidate === 'string' && path.isAbsolute(candidate) ? await git(candidate, 'rev-parse', '--show-toplevel').catch(() => null) : null;
+    return { path: root, configured: !!root };
+  }
+  async function setSource(body) {
+    object(body, ['path']);
+    if (typeof body.path !== 'string' || !path.isAbsolute(body.path)) throw new BridgeError('Choose a local Elpis source folder');
+    const root = await git(body.path, 'rev-parse', '--show-toplevel').catch(() => null);
+    const identity = root && await fs.readFile(path.join(root, 'apps/elpis-desktop/package.json'), 'utf8').then(JSON.parse).catch(() => null);
+    if (!root || identity?.name !== 'elpis-desktop') throw new BridgeError('This folder is not an Elpis source checkout. Choose the folder containing apps/elpis-desktop.');
+    await fs.writeFile(`${sourceFile}.tmp`, JSON.stringify({ path: root }), { mode: 0o600 });
+    await fs.rename(`${sourceFile}.tmp`, sourceFile);
+    chosenSource = root;
+    return { path: root, configured: true };
+  }
+
   await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
   for (const name of await fs.readdir(stateDir)) {
     if (!name.endsWith('.json')) continue;
@@ -47,12 +67,13 @@ export async function createImprovements({ client, sourceRoot = process.env.ELPI
     if (typeof body.target.image !== 'string' || !body.target.image.startsWith('data:image/png;base64,')) throw new BridgeError('A region screenshot is required; use the desktop app');
     const attachments = [{ id: 'pointed-region', type: 'image', name: 'Elpis region.png', mimeType: 'image/png', dataUrl: body.target.image }];
     attachmentInput('Screenshot', attachments); // Validate the native image before creating anything.
+    const { path: root } = await source();
+    if (!root) throw new BridgeError('Choose your Elpis source folder in this dialog before starting a change.', 409);
     await client.models(); // Register the subscription model on this bridge connection before creating a chat.
     const label = typeof body.target.label === 'string' ? body.target.label.slice(0, 300) : '';
     const request = body.request.trim(), id = randomUUID();
     const slug = request.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 42) || 'change';
     const branch = `improve/${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${slug}-${id.slice(0, 8)}`;
-    const root = await git(sourceRoot, 'rev-parse', '--show-toplevel').catch(() => { throw new BridgeError('Set ELPIS_SOURCE_REPO to the Elpis source checkout before starting a change', 409); });
     const base = await git(root, 'rev-parse', 'HEAD');
     const cwd = path.join(stateDir, 'worktrees', id); await fs.mkdir(path.dirname(cwd), { recursive: true });
     await git(root, 'worktree', 'add', '-b', branch, cwd, base);
@@ -108,5 +129,5 @@ export async function createImprovements({ client, sourceRoot = process.env.ELPI
     if (row) void check(row.id).catch(async error => { row.status = 'needs-check'; row.error = error.message; await save(row); });
   };
   client.on('event', completed);
-  return { start, check, keep, verified, get: async id => review(find(id)), list: () => [...records.values()].map(({ id, thread, status }) => ({ id, threadId: thread?.id, status })), close: () => client.removeListener('event', completed) };
+  return { source, setSource, start, check, keep, verified, get: async id => review(find(id)), list: () => [...records.values()].map(({ id, thread, status }) => ({ id, threadId: thread?.id, status })), close: () => client.removeListener('event', completed) };
 }

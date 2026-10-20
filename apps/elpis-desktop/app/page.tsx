@@ -57,6 +57,8 @@ import { canBack, canForward, startHistory, step, visit, type History } from "@/
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
+import { replyAttachment, readReply } from "@/lib/message-reply";
+import { SelectionReply } from "@/components/message-reply";
 import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
@@ -1213,11 +1215,19 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsTab) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
+  function beginReply(entry: Entry, quote?: string) {
+    if (!selectedRef.current || readOnlyRun) return;
+    const attachment = replyAttachment(entry, entry.item.type === "userMessage" ? "You" : selectedRef.current.agentNickname || "Elpis", quote);
+    const fit = fitAttachments(attachmentsRef.current.filter(part => !readReply(part)), [attachment]);
+    if (fit.problems.length) { setFileNotice(fit.problems.join("\n")); return; }
+    setShellMode(false); setAttachments(fit.kept); saveAttachments(selectedRef.current.id, fit.kept); setFileNotice(""); focusComposer();
+  }
+
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
-  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError });
-  live.current = { openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError };
-  const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}><Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={id => live.current.openById(id)}
+  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply });
+  live.current = { openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply };
+  const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}>{selected && !readOnlyRun && <SelectionReply key={selected.id} onQuote={(reference, text) => { const entry = shownEntries.find(entry => entryKey(entry) === reference); if (entry) live.current.beginReply(entry, text); }} />}<Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} reference={entryKey(e)} onReply={selected && !readOnlyRun && !e.clientPending && (e.item.type === "userMessage" || e.item.type === "agentMessage") ? () => live.current.beginReply(e) : undefined} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={selected?.agentNickname || "Elpis"} onOpenThread={id => live.current.openById(id)}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
             onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}

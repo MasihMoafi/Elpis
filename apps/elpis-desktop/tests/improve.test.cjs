@@ -9,6 +9,7 @@ async function setup(colorScheme = 'light', failCapture = false) {
   let started = false;
   const f = await fixture({ colorScheme, width: 1200, height: 800, routes: {
     '/api/improvements': body => { if (body) { started = true; return row; } return { data: started ? [{ id: row.id, threadId: 'chat-a' }] : [] }; },
+    '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
     '/api/improvements/change-1': () => row,
     '/api/improvements/change-1/check': () => row,
     '/api/improvements/change-1/keep': () => ({ ...row, status: 'ready', note: '/tmp/ready.md' }),
@@ -51,6 +52,29 @@ test('right-click preserves chat actions and carries the pointed component; capt
     await dialog.getByText('Capture failed', { exact: true }).waitFor();
     assert.equal(await dialog.getByRole('button', { name: 'Start change' }).isEnabled(), false);
     assert.equal(f.posts.filter(post => post.path === '/api/improvements').length, 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('the source folder chooser repairs setup without losing the requested change or starting a model', async () => {
+  let configured = false;
+  const f = await fixture({ width: 1100, height: 800, routes: {
+    '/api/improvements/source': body => { if (!body) return { path: configured ? '/tmp/source' : null, configured }; if (body.path === '/tmp/wrong') return { __http: 400, error: 'This folder is not an Elpis source checkout.' }; configured = true; return { path: body.path, configured: true }; },
+    '/api/improvements': () => ({ data: [] }),
+  } });
+  try {
+    await f.page.evaluate(PNG => { window.elpisDesktop.improve = { capture: async () => ({ image: PNG }) }; window.elpisDesktop.chooseFolder = async () => '/tmp/wrong'; }, PNG);
+    await f.page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
+    const dialog = f.page.getByRole('dialog', { name: 'Improve Elpis' }); await dialog.waitFor();
+    const request = dialog.getByRole('textbox', { name: 'What should change?' }); await request.fill('Keep this requested change');
+    assert.equal(await dialog.getByRole('button', { name: 'Start change' }).isDisabled(), true);
+    await dialog.getByRole('button', { name: 'Choose source folder' }).click(); await dialog.getByRole('alert').waitFor();
+    assert.equal(await request.inputValue(), 'Keep this requested change');
+    await f.page.evaluate(() => { window.elpisDesktop.chooseFolder = async () => '/tmp/source'; });
+    await dialog.getByRole('button', { name: 'Choose source folder' }).click();
+    await dialog.getByText('/tmp/source', { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('button', { name: 'Start change' }).isEnabled(), true);
+    assert.equal(f.posts.filter(p => p.path === '/api/improvements').length, 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

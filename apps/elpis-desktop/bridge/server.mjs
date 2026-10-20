@@ -202,6 +202,11 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
+        if (url.pathname === '/api/improvements/source') {
+          const store = await improvements();
+          if (method === 'GET') return json(response, 200, await store.source());
+          if (method === 'POST') return json(response, 200, await store.setSource(await body(request)));
+        }
         if (url.pathname === '/api/improvements') {
           const store = await improvements();
           return json(response, method === 'POST' ? 201 : 200, method === 'POST' ? await store.start(await body(request, ATTACHMENT_BODY_LIMIT)) : { data: store.list() });
