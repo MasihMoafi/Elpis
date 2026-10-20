@@ -87,6 +87,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         ? replacementPages?.[request.params.cursor ?? 'start'] ?? { data: [{ turnId: request.params.turnId, item: { type: 'userMessage', id: 'prompt', content: [{ type: 'text', text: 'Original prompt', textElements: [] }] } }], nextCursor: null }
         : promptPages?.[request.params.cursor ?? 'start'] ?? { data: [{ turnId: 't1', item: { type: 'agentMessage', id: 'item1', text: 'Actual fixture transcript' }, startedAtMs: 1 }], nextCursor: null }; break;
       case 'model/list': result = { data: [{ id: MODEL, model: MODEL, displayName: 'Test model' }, { id: 'claude/opus', model: 'claude/opus', displayName: 'Opus (Claude subscription)' }], nextCursor: null }; break;
+      case 'account/logout': result = {}; break;
       case 'thread/start': {
         const thread = { id: CREATED, source: 'cli', canAcceptDirectInput: true, status: { type: 'idle' } };
         threads.set(CREATED, thread); result = { thread }; break;
@@ -187,6 +188,47 @@ test('Subagents permits optional delegation and refreshes its policy on the next
     assert.equal(policies.size, 4, 'native mode hints changing between turns cannot leave a deduplicated, stale policy');
     assert.equal(socket.sent.filter(row => row.method === 'thread/resume').length, 1, 'already-loaded chats get the changed policy without reloading');
     assert.equal(socket.sent.some(row => row.method === 'config/batchWrite'), false, 'sending does not change global settings');
+  } finally { client.close(); }
+});
+
+test('idle account usage and concurrent desktop readers share one model list; account changes refresh it', async () => {
+  const { client, socket } = fixture();
+  const reads = () => socket.sent.filter(request => request.method === 'model/list').length;
+  try {
+    await Promise.all([client.models(), client.providers(), client.providers()]);
+    assert.equal(reads(), 1, 'the first desktop catalogue is shared');
+    await client.providers();
+    socket.emit('message', JSON.stringify({ method: 'account/rateLimits/updated', params: {} }));
+    await Promise.all([client.models(), client.providers()]);
+    assert.equal(reads(), 1, 'usage updates do not change the model catalogue');
+    socket.emit('message', JSON.stringify({ method: 'account/updated', params: {} }));
+    await Promise.all([client.models(), client.providers()]);
+    assert.equal(reads(), 2, 'a real account change refreshes the shared catalogue');
+    await client.saveSettings({ version: 'user-version', main: { model: MODEL, provider: 'openai' } });
+    await client.models();
+    assert.equal(reads(), 3, 'a saved provider choice refreshes the catalogue');
+    await client.signIn({ action: 'signOut' });
+    await client.models();
+    assert.equal(reads(), 4, 'sign-out refreshes the catalogue even without an account notification');
+  } finally { client.close(); }
+});
+
+test('a failed model list is retried and non-default pages are read separately', async () => {
+  const { client, socket } = fixture();
+  const send = socket.send;
+  let fail = true;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'model/list' && fail) {
+      fail = false; socket.sent.push(request);
+      queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32603, message: 'catalogue unavailable' } })));
+    } else send(raw);
+  };
+  try {
+    await assert.rejects(client.models(), /rejected the operation/);
+    await client.models();
+    await client.models({ cursor: 'next' });
+    assert.equal(socket.sent.filter(request => request.method === 'model/list').length, 3);
   } finally { client.close(); }
 });
 
