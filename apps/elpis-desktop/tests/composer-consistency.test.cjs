@@ -67,4 +67,10 @@ test('Ask for approval shares the row with Plan mode in a narrow running chat', 
     assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
   }
+  await f.page.setViewportSize({ width: 1100, height: 700 });
+  await f.page.locator('.composer').evaluate(element => { element.style.width = '400px'; });
+  const floating = await probe(f.page);
+  assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
+  assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
+  assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
 });
