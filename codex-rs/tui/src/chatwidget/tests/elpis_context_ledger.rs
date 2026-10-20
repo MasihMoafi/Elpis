@@ -295,7 +295,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
         "the selected source fits below Close: {text}"
     );
     let close_x = (0..area.width)
-        .find(|&x| buffer[(x, 0)].symbol() == "✕")
+        .find(|&x| buffer[(x, 0)].symbol() == "╳")
         .expect("pinned Close");
     assert!(
         (0..area.width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
@@ -353,7 +353,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
 async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
-    for width in [0, 1, 2, 3, 11, 12, 28] {
+    for width in [0, 1, 2, 3, 5, 6, 28] {
         for height in 0..=2 {
             show_context_ledger(&mut chat);
             let area = Rect::new(7, 5, width, height);
@@ -361,8 +361,8 @@ async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
             chat.render_context_ledger_column(area, &mut buffer);
             let close = area
                 .positions()
-                .find(|&position| buffer[position].symbol() == "✕");
-            if width >= 12 && height > 0 {
+                .find(|&position| buffer[position].symbol() == "╳");
+            if width >= 6 && height > 0 {
                 let close = close.expect("a full Close button fits");
                 assert_eq!(close.y, area.y);
                 assert!(

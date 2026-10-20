@@ -92,16 +92,14 @@ impl Renderable for OwnedStartupLayout<'_> {
             );
         }
         self.bottom.render(bottom, buf);
-        // Elpis: the Ledger's column is there from the first frame, level with where the live
-        // Ledger starts (one row below the header, like the first transcript line), so a slow
-        // start never looks like the Ledger is missing.
+        // Elpis: startup and the live Ledger share the full column from the top row.
         let ledger = Rect {
             x: area.right(),
             width: full.width - area.width,
             ..full
         };
         if ledger.width > 0 {
-            crate::chatwidget::render_startup_ledger_column(ledger, header.bottom() + 1, buf);
+            crate::chatwidget::render_startup_ledger_column(ledger, ledger.top(), buf);
         }
     }
 

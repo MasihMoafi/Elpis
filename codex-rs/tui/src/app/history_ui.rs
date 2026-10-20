@@ -366,13 +366,6 @@ impl App {
         .with_bypass_mode(history_cell::is_bypass_mode(&self.config))
     }
 
-    /// Rows the session header card takes at the top of the full screen in the current render
-    /// mode: the same header a new session or `/clear` puts first in the transcript.
-    pub(super) fn session_header_height(&self, width: u16) -> u16 {
-        self.clear_ui_header_cell(CODEX_CLI_VERSION)
-            .desired_height_for_mode(width, self.chat_widget.history_render_mode())
-    }
-
     pub(super) fn clear_ui_header_lines(&self, width: u16) -> Vec<Line<'static>> {
         self.clear_ui_header_lines_with_version(width, CODEX_CLI_VERSION)
     }
