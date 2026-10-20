@@ -1,24 +1,38 @@
-# Claude accounts: update handoff — 20 October 2026
+# Claude accounts build handoff — 20 October 2026
 
-## Current evidence
+Both real profiles are saved and were verified authenticated with distinct emails and organizations: Masih's default Pro account and Reza's isolated account. Masih remains selected. No additional login is required. Credentials were not read or changed during source integration.
 
-- The second-email requirement is resolved. Masih's default Pro login and Reza's isolated login are authenticated, have distinct identities and organizations, and are both retained by the account index. The saved default remains Masih's account. No additional login or credential copying is needed.
-- Implementation branch: `feat/claude-accounts-20261020`. Implementation commits: `fea460113` and `d87d83fef`; outcome checkpoint: `c662d0946`.
-- Fresh verification: 15 provider/account checks, 8 desktop/API checks, and TypeScript pass. Three focused checks against the actual selected provider bundle also pass. Account routing, usage, conversation continuity, active-turn rejection, duplicate detection, private storage, CLI browser-code sign-in, and the reported popup crash have evidence.
-- The running bridge is still the older `tui-ledger-20261019-fb21bb0d-edf91367` bridge (PID 14989 at this checkpoint). Its account RPC requires a restart. The selected next native version is `claude-accounts-20261020-fea460113`.
-- Current selected desktop: `composer-chats-20261020-09537abaa`. It retains the exact tested popup fix and matching manifest hash. This newer renderer must be preserved; its suffix is not a commit available in this checkout and it has no `out/.commit` marker.
-- No credentials, installed bundles, runtime selectors, or running chats were changed during this resumed verification. No push, publication, build, deployment, or restart was performed.
+## Source boundary
 
-## Remaining input
+Candidate branch: `feat/claude-accounts-build-20261020` in `/home/masih/Desktop/p/Elpis-wt-claude-accounts-integrated-20261020`. Report the tip SHA with `git rev-parse HEAD` when requesting the build.
 
-One user authorization is outstanding: permission to push the integrated change to a temporary branch such as `build/claude-accounts-20261020` on `MasihMoafi/Elpis`, run the existing `elpis-desktop.yml` GitHub Actions renderer build, and retrieve its artifact. Existing project instructions require permission before pushes and require GitHub Actions for renderer builds. The renewed priority instruction did not lift that prohibition. Do not ask for another email.
+The recovery root and handoff coordinator confirmed this baseline:
 
-## Local integration and update checklist
+1. Composer `09537abaaf73a87181908a00a09c342ef17adea7`, already containing account implementation `fea460113` and the popup teardown fix.
+2. Love Spot `2b309a34bd9c8ab90ac4e93dbf4aac59085cfb60`, plus only CSS/test changes from `4413cace991d33fa0b6abe3b060a38b2ef3bd776`.
+3. Account identity/duplicate fix `d87d83fef`, carried as `f9de0a169`.
+4. Integration repair `0080df449`: classify account-list RPCs as safe reads after disconnect; accept saved `elpis-project-chats-v1` state. The restore test comes from the continuity repair and exercises saved theme, project membership, draft, update and reopen; it still rejects unknown keys.
 
-1. Coordinate the authoritative desktop source with the session owning the composer/chat changes. Do not replace the current renderer with a build of this older feature branch alone.
-2. Integrate the account changes into that source, preserving existing dirty work. Prepared patches are `/tmp/elpis-claude-accounts-20261020/desktop-source.patch` and `/tmp/elpis-claude-accounts-20261020/provider-source.patch`. Both pass `git apply --check` against `Elpis-wt-working-facets-20261020`. In `Elpis-wt-continuity`, the overlapping files are `desktop/browser.cjs`, `desktop/browser.test.cjs`, and `tools/elpis-claude/acp-bridge.mjs`; merge those deliberately rather than overwriting them. These were checks only; neither source was modified.
-3. Run the focused account/provider/API/browser checks and TypeScript on the integrated source; commit the exact build candidate locally. The only untracked files in this feature worktree are its two development `node_modules` symlinks.
-4. After explicit approval, push that candidate to the agreed `build/*` branch. Wait for the existing workflow, download the `renderer` artifact, and check its `out/.commit` against the exact candidate commit. This authorizes a build branch, not a release or publication.
-5. Run `tests/anthropic-signout.test.cjs` against that renderer, including its new two-account selector scenario. Inspect the account card and sign-in-code field, and check light/dark and constrained layout. The actual renderer scenario and visual checks have not yet run; there is no local renderer build.
-6. Coordinate before touching shared installed bundles. Preserve the latest chat/composer changes and popup fix, validate the staged manifest, and perform the checked update through Elpis's graceful update path. Preserve active/saved conversations and drafts; do not kill an active provider turn or change credentials.
-7. After the graceful restart, verify `claudeAccounts/read` on the live bridge returns both distinct accounts and the correct selected default. Verify identity/usage for each selection without paid inference, then obtain Masih's acceptance. Recorded automated checks alone do not establish completion.
+The earlier exploratory `4ac64897a` candidate is not the build source. No dirty working-facets, session-manager or inline-media source was overlaid. The candidate browser module is byte-identical to `09537abaa`, retaining the tested OAuth popup fix.
+
+## Verified locally
+
+All commands ran on the integrated candidate with linked existing dependencies. No renderer build was run locally.
+
+| Check | Result |
+| --- | --- |
+| `node --test tools/elpis-claude/test/claude-accounts.test.mjs tools/elpis-claude/test/anthropic-signout.test.mjs` | 15 passed |
+| Desktop `node --test bridge/anthropic-signout.test.mjs desktop/browser.test.cjs bridge/provider-models.test.mjs desktop/state.test.cjs` | 45 passed |
+| Desktop `node --test --test-name-pattern='reconnect\|disconnect\|provider\|account\|sign.in\|turn' bridge/bridge.test.mjs` | 26 passed |
+| Desktop `npm run -s typecheck` | Passed |
+| Saved-workspace regression with only the project-chat key removed, then restored, in a temporary source copy | Fails with the reported workspace-load error before repair; passes after repair |
+
+Regression log: `/tmp/elpis-claude-accounts-workspace-red-green-20261020.log`. The full native state suite includes actual multi-window IPC, restart, draft and attachment persistence, and crash durability. Focused account checks exercise isolated ACP environments, usage/identity, transcript continuity, active-turn rejection, duplicate detection, sign-out and CLI browser-code login.
+
+## Next boundary
+
+Recovery root will present Masih the precise approval request: push the reported exact candidate SHA to temporary `build/claude-accounts-20261020` on `MasihMoafi/Elpis`, triggering existing `.github/workflows/elpis-desktop.yml`. Source integration is complete; no push or remote build has occurred.
+
+After approval, retrieve the `renderer` artifact and verify `out/.commit` equals the approved SHA. Run the two-account renderer scenario (`tests/anthropic-signout.test.cjs`) and retained composer/Love Spot checks; visually inspect the account card and sign-in-code UI. Those compiled-renderer checks remain unrun.
+
+Installation and restarting shared processes remain separately gated by root coordination. Preserve the currently selected desktop and latest chats/drafts; use the graceful update path. The old live bridge does not yet serve `claudeAccounts/read`. After a coordinated restart, verify both accounts and selected identity/usage through the live API, then obtain Masih's acceptance. No installed bundle, selector, process, credential or shared workspace was changed in this source-integration turn.
