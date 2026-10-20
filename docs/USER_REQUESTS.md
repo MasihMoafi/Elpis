@@ -2,7 +2,7 @@
 
 ## October 20 — Two Claude accounts
 
-Masih: “can I also have two claude accounts? and use them say when one is done use the other?”; “Do it; on elpis. ASAP”; “Open that new login in a new tab so I can login and continue with that.” He reported a sign-in popup crash and requested finalization. Status: implementation and isolated checks completed; popup fix selected for restart. The real second sign-in completed but returned the existing identity and organization, so an independent account is still needed. Selector build/install awaits GitHub build-branch push approval; user acceptance remains open. Contract: [Claude accounts](specs/claude-accounts.md).
+Masih: “can I also have two claude accounts? and use them say when one is done use the other?”; “Do it; on elpis. ASAP”; “Open that new login in a new tab so I can login and continue with that.” He reported a sign-in popup crash, requested finalization, then signed into another email and asked to retain Reza's account as well. Status: implementation and isolated checks completed; popup fix selected for restart. Real Claude Code status checks now verify two authenticated logins with distinct emails and organizations: Masih's default and Reza's saved profile. The running bridge is still the previous version and requires a restart. Selector build/install awaits GitHub build-branch push approval; user acceptance remains open. Contract: [Claude accounts](specs/claude-accounts.md).
 
 This file records what Masih asked Elpis to become. It is deliberately separate from
 `TASKS.md`, implementation plans, review rounds, and agent-created engineering work.
