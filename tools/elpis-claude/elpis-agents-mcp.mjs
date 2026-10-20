@@ -89,8 +89,7 @@ const server = new McpServer({ name: "elpis-agents", version: "0.3.0" });
 // One entry per delegated thread this server has run: its active turn and what it produced.
 const runs = new Map();
 
-function report(threadId) {
-  const run = runs.get(threadId);
+function report(threadId, run = runs.get(threadId)) {
   return [
     `Agent: ${run.label} (Elpis thread ${threadId}), status: ${run.status}`,
     run.commands.length ? `Commands it ran: ${run.commands.join("; ")}` : "Commands it ran: none",
@@ -136,7 +135,27 @@ async function activeTurn(run) {
 const threadArg = z.string().describe("Elpis thread id returned by delegate.");
 const known = (thread_id) => runs.has(thread_id)
   ? null
-  : { content: [{ type: "text", text: `Unknown thread ${thread_id}: delegate with thread_id to reopen it.` }], isError: true };
+  : { content: [{ type: "text", text: `Thread ${thread_id} is not owned by this server; delegated helpers remain visible through delegate_status. Send a follow-up with delegate and thread_id to reopen it.` }], isError: true };
+
+// Read a helper from Elpis without resuming it or adding it to this server's owned runs.
+async function storedRun(threadId) {
+  const conn = connect();
+  try {
+    await conn.ready;
+    const thread = (await conn.call("thread/read", { threadId, includeTurns: false }))?.thread;
+    if (!thread || !(thread.parentThreadId || thread.source?.subAgent?.thread_spawn)) return null;
+    const turn = (await conn.call("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "full" }))?.data?.[0];
+    const status = thread.status?.type === "active" || turn?.status === "inProgress" ? "running"
+      : turn?.status ?? (thread.status?.type === "systemError" ? "failed" : "completed");
+    const items = turn?.items ?? [];
+    return {
+      label: thread.model ?? "helper", status,
+      commands: items.filter((item) => item.type === "commandExecution").map((item) => item.command),
+      text: items.filter((item) => item.type === "agentMessage").map((item) => item.text ?? "").join(""),
+      error: turn?.error ?? null,
+    };
+  } finally { conn.close(); }
+}
 
 // Helpers on other models: offered when the chat may delegate.
 if (process.env.ELPIS_AGENT_TOOLS !== "0") {
@@ -223,7 +242,17 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
   server.registerTool(
     "delegate_status",
     { description: "Show a delegated agent's status, the commands it ran and its answer so far.", inputSchema: { thread_id: threadArg } },
-    async ({ thread_id }) => known(thread_id) ?? { content: [{ type: "text", text: report(thread_id) }] },
+    async ({ thread_id }) => {
+      if (runs.has(thread_id)) return { content: [{ type: "text", text: report(thread_id) }] };
+      let run;
+      try { run = await storedRun(thread_id); }
+      catch (error) {
+        return { content: [{ type: "text", text: `Could not read helper ${thread_id}: ${error.message ?? JSON.stringify(error)}` }], isError: true };
+      }
+      return run
+        ? { content: [{ type: "text", text: report(thread_id, run) }] }
+        : { content: [{ type: "text", text: `Thread ${thread_id} is not a delegated helper.` }], isError: true };
+    },
   );
 
   server.registerTool(

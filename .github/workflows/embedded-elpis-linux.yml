@@ -352,6 +352,8 @@ jobs:
         run: |
           node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+      - name: Delegated helper status across server restarts
+        run: node scripts/delegate-status-restart.test.cjs
       - name: Delegated helper permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
