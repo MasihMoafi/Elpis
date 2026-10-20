@@ -15,11 +15,10 @@
 .settings-row-title { font-size:13.5px; font-weight:500; line-height:1.4; overflow-wrap:anywhere; }
 .settings-row-title h3 { font:inherit; }
 .settings-row-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:0 8px; }
-.settings-scope { display:inline-block; color:var(--muted-foreground); font-size:11px; font-weight:400; white-space:nowrap; }
+.settings-scope { display:inline-block; color:var(--muted-foreground); font-size:var(--text-small); font-weight:400; white-space:nowrap; }
 .settings-scope::before { content:"· "; }
 .settings-nav .settings-section-link { width:100%; height:30px; justify-content:flex-start; padding:0 8px; margin-top:8px; text-align:left; }
-.settings-section-link[aria-current="page"] { color:var(--foreground); background:var(--selected); }
-.settings-section-link:hover { color:var(--foreground); }
+.settings-section-link[aria-current="page"] { color:var(--primary); background:var(--selected); }
 .settings-row-description { font-size:12.5px; line-height:1.45; color:var(--muted-foreground); margin-top:2px; overflow-wrap:anywhere; }
 /* A control keeps the width its content needs (max-width still caps it); a long description wraps instead of squeezing it. */
 .settings-row-control { flex:0 0 auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; min-width:0; max-width:60%; }
@@ -72,7 +71,7 @@
   .settings-mode .settings-nav { height:auto; max-height:none; overflow:visible; border-right:0; border-bottom:1px solid var(--hairline); padding:8px 12px; gap:8px; }
   .settings-mode .settings-nav [role="tablist"] { display:flex; gap:4px; overflow-x:auto; padding-bottom:2px; }
   .settings-mode .settings-nav-group { display:flex; gap:2px; }
-  .settings-mode .settings-nav .section-label { display:block; white-space:nowrap; }
+  .settings-mode .settings-nav .settings-section-link { width:auto; flex:0 0 auto; margin-top:0; white-space:nowrap; }
   .settings-mode .settings-nav button[role="tab"] { width:auto; flex:0 0 auto; white-space:nowrap; }
   .settings-mode .settings-page { padding:24px 16px 48px; }
   .settings-page-header h2 { font-size:26px; }
