@@ -40,8 +40,8 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
     await page.locator('[data-nav-page="loveSpot"]').click();
     await page.locator('.excalidraw canvas').first().waitFor();
     assert.equal(await page.locator('.love-unread').count(), 0, 'Visiting acknowledges the reply');
-    const primary = await page.locator('.love-spot').evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim().toLowerCase());
-    assert.equal(primary, colorScheme === 'dark' ? '#e46268' : '#8b1017');
+    const primary = await page.locator('.love-spot').evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim());
+    assert.equal(primary, colorScheme === 'dark' ? '#e83b43' : '#8B1017');
     const canvasPrimary = await page.locator('.excalidraw').first().evaluate(el => getComputedStyle(el).getPropertyValue('--color-primary').trim());
     assert.equal(canvasPrimary, primary, 'Canvas tools follow the Love Spot deck palette');
     const tool = await page.locator('.excalidraw input.ToolIcon_type_radio:checked + .ToolIcon__icon').first().evaluate(el => {
