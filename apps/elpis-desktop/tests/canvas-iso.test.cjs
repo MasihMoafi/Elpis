@@ -52,9 +52,9 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     // The header switches the board between Flat (editing) and Isometric (watching and clicking).
     const view = canvas.getByRole('radiogroup', { name: 'Workflows view', exact: true });
     const flat = view.getByRole('radio', { name: 'Flat', exact: true }), iso = view.getByRole('radio', { name: 'Isometric', exact: true });
-    assert.deepEqual([await flat.getAttribute('aria-pressed'), await iso.getAttribute('aria-pressed')], ['true', 'false']);
+    assert.deepEqual([await flat.getAttribute('aria-checked'), await iso.getAttribute('aria-checked')], ['true', 'false']);
     await iso.click();
-    assert.equal(await iso.getAttribute('aria-pressed'), 'true');
+    assert.equal(await iso.getAttribute('aria-checked'), 'true');
     const board = canvas.getByRole('region', { name: 'Isometric board', exact: true }); await board.waitFor();
     assert.equal(await canvas.locator('.react-flow').count(), 0, 'the isometric view takes the flat board\'s place');
 
