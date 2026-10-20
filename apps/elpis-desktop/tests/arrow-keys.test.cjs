@@ -2,8 +2,9 @@
 // For every visible, enabled button or link on the chat, every Settings section and Workflows, an arrow key must move
 // focus to another control in the same area (its dialog, region, nav, aside, main, header, footer, form or labelled
 // section; a tab list or radio group inside that area counts as inside it), whenever that area holds another control. This test does not reuse lib/arrow-keys.ts: it presses the real
-// keys and reads where focus went. Menu buttons open their menu with the arrows and are left out; text fields, the
-// board, the drawing, editors and terminals keep their own keys.
+// keys and reads where focus went. Menu buttons open their menu with the arrows and are left out; a closed drop-down
+// list is an ordinary button here, which Enter or Space opens (Masih, 20 Oct: arrowing through Settings › General
+// stopped at Speed). Text fields, the board, the drawing, editors and terminals keep their own keys.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
@@ -12,7 +13,7 @@ const { leaveSettings, openSettings } = require('./controls.cjs');
 const HELPERS = `
   window.__arrows = (() => {
     const CONTROL = 'button, a[href], summary, [role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="treeitem"], [role="radio"]:not(input), [role="checkbox"]:not(input)';
-    const SKIP = '.xterm, .excalidraw, .react-flow, .cm-editor, [data-arrows="off"], [aria-haspopup], [role="combobox"], [role="slider"]';
+    const SKIP = '.xterm, .excalidraw, .react-flow, .cm-editor, [data-arrows="off"], [aria-haspopup]:not([aria-haspopup="listbox"]), [role="combobox"]:not([aria-haspopup="listbox"]), [role="slider"]';
     const AREA = 'dialog, [role="dialog"], [role="alertdialog"], [role="region"], [role="menu"], [role="listbox"], [role="toolbar"], [role="tablist"], [role="radiogroup"], [role="tree"], nav, aside, main, header, footer, form, section[aria-label]';
     const usable = el => el instanceof HTMLElement && !el.closest('.xterm, .excalidraw, .react-flow, .cm-editor, [data-arrows="off"], [inert], [hidden], [aria-hidden="true"]')
       && !el.disabled && el.getAttribute('aria-disabled') !== 'true' && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
@@ -69,6 +70,30 @@ test('arrow keys move between the buttons of every page: chat, each Settings sec
     console.log(`checked ${checked} controls; stuck ${stuck.length}`);
     assert.ok(checked > 100, `the sweep reached the pages (${checked} controls)`);
     assert.deepEqual(stuck, [], `${stuck.length} of ${checked} controls do not move with the arrow keys`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a closed drop-down passes the arrow keys on; Enter and Space open it', { timeout: 60000 }, async () => {
+  const f = await fixture({ desktop: true });
+  try {
+    await f.open('chat-a');
+    await openSettings(f.page);
+    await f.page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'General', exact: true }).click();
+    const send = f.page.getByRole('combobox', { name: 'Send shortcut', exact: true }), list = f.page.getByRole('listbox');
+    for (const key of ['ArrowDown', 'ArrowUp']) {
+      await send.focus();
+      await f.page.keyboard.press(key);
+      assert.equal(await send.evaluate(el => el === document.activeElement), false, `${key} leaves Send shortcut`);
+      assert.equal(await list.count(), 0, `${key} does not open Send shortcut`);
+    }
+    for (const key of ['Enter', ' ']) {
+      await send.focus();
+      await f.page.keyboard.press(key);
+      await list.waitFor({ timeout: 3000 });
+      await f.page.keyboard.press('Escape');
+      await list.waitFor({ state: 'detached', timeout: 3000 });
+    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
