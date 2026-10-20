@@ -65,8 +65,9 @@ test('"Deny, and tell Elpis what to do instead" steers the waiting turn, then de
   assert.equal(f.socket.sent.length,before,'a refused instruction sends nothing');
   const failing=f.request('item/commandExecution/requestApproval',{turnId:'turn-2'});
   const send=f.socket.send;f.socket.send=raw=>{const request=JSON.parse(raw);if(request.method==='turn/steer'){f.socket.sent.push(request);queueMicrotask(()=>f.socket.emit('message',JSON.stringify({id:request.id,error:{code:-32600,message:'no active turn to steer'}})));return;}send(raw);};
-  await assert.rejects(f.client.denyInstead(failing.id,{text}),/rejected the operation/);
+  await assert.rejects(f.client.denyInstead(failing.id,{text}),/no active turn to steer/);
   assert.ok(f.client.pendingApprovals.some(item=>item.id===failing.id),'the card stays when the instruction cannot be delivered');
+  assert.equal(f.socket.sent.some(message=>message.method==='turn/start'),false,'the instruction never starts a new turn');
   assert.equal(f.socket.sent.some(message=>message.id===failing.wireId),false);
 });
 test('POST /api/approvals/<id>/instead reaches denyInstead',async t=>{
