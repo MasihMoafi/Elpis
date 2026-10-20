@@ -22,17 +22,18 @@ test('an actual bridge failure displays its code and request ID in the renderer 
     for (const colorScheme of ['light', 'dark']) {
       const f = await fixture({ colorScheme, width: 1280, height: 800 });
       try {
-        let requestId;
+        const requestIds = new Set();
         await f.page.route('**/api/settings', async route => {
           const reply = await fetch(origin + '/api/settings', { headers: { Cookie: cookie } });
-          const body = await reply.json(); requestId = body.requestId;
+          const body = await reply.json(); requestIds.add(body.requestId);
           await route.fulfill({ status: reply.status, contentType: 'application/json', body: JSON.stringify(body) });
         });
         await openSettings(f.page);
         await f.page.getByRole('tab', { name: 'Configuration', exact: true }).click();
         const notice = f.page.locator('.settings-notice:visible').filter({ hasText: /Application request failed.*ELPIS_REQUEST_FAILED/ }).first();
         await notice.waitFor();
-        assert.match(await notice.innerText(), new RegExp(requestId));
+        const shownId = (await notice.innerText()).match(/request ([a-f0-9-]{36})/)?.[1];
+        assert.ok(shownId && requestIds.has(shownId), 'the displayed ID belongs to a real bridge failure');
         assert.doesNotMatch(await notice.innerText(), /PRIVATE_CONTENT/);
         await f.page.screenshot({ path: `/tmp/elpis-request-diagnostics-${colorScheme}.png` });
         assert.deepEqual(f.errors, []);
