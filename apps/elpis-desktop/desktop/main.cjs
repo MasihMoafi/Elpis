@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, sc
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
+const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY } = require('./session-manager-agent.cjs');
 const { closeNeedsConfirmation, closesToTray, quickEntryShortcut } = require('./preferences.cjs');
 const { createStateStore } = require('./state.cjs');
 const { openThreadArgument } = require('./open-thread.cjs');
@@ -17,6 +18,7 @@ const fs = require('node:fs');
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
 let browserAgentSocket;
+let sessionManagerAgent;
 let window;
 let closing = false;
 let opening;
@@ -60,13 +62,26 @@ async function openWindow(loveSpot = false) {
 
 async function prepareWindows() {
   if (!server) {
+    store ??= createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
     const { startDesktopServer } = await import(pathToFileURL(path.join(__dirname, '../bridge/server.mjs')).href);
     const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
+    const { sessionManagerMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-mcp.mjs')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
-      const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: {
+      let client;
+      sessionManagerAgent = await startSessionManagerAgent({ store, client: {
+        listThreads: (...args) => client.listThreads(...args),
+        renameThread: (...args) => client.renameThread(...args),
+        archiveThread: (...args) => client.archiveThread(...args),
+      } });
+      client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, sessionManagerConfig: {
+        isManager: id => store.read()[SESSION_MANAGER_ID_KEY] === id,
+        forSession: id => sessionManagerMcpConfig(sessionManagerAgent.path, undefined, sessionManagerAgent.scope(id)),
+        bind: (from, to) => sessionManagerAgent.bind(from, to),
+        close: id => sessionManagerAgent.revoke(id),
+      }, browserConfig: {
         forSession: id => browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
         bind: (from, to) => browserAgentSocket.rebind(from, to),
         close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
@@ -76,10 +91,9 @@ async function prepareWindows() {
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
       try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }
-    } catch (error) { await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
+    } catch (error) { await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   if (!sessionWindows) {
-    store = createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
     sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, improvements: server.improvements, updates,
       mayClose, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
       onFocused: (host, openers) => { if (!openers?.loveSpot) { window = host; primaryOpeners = openers; } } });
@@ -120,7 +134,7 @@ async function quitApp(restartTarget) {
       if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('A chat or agent started while preparing the update. Wait for it to finish before restarting.');
       if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
       closing = true;
-      await Promise.all([server?.close(), browserAgentSocket?.close()]);
+      await Promise.all([server?.close(), browserAgentSocket?.close(), sessionManagerAgent?.close()]);
       quickEntry?.dispose?.(); tray?.destroy();
       // All editable text is saved. A page's beforeunload must not veto explicit Quit afterward.
       for (const host of hosts) if (!host.isDestroyed()) host.webContents.on('will-prevent-unload', event => event.preventDefault());

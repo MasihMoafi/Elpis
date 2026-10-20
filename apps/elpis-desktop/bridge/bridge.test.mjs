@@ -8,6 +8,8 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 import { DesktopClient, existingSocket } from './client.mjs';
+import { handleSessionManagerMcp, SESSION_MANAGER_INSTRUCTIONS, SESSION_MANAGER_TOOLS, sessionManagerMcpConfig } from './session-manager-mcp.mjs';
+import sessionManagerAgent from '../desktop/session-manager-agent.cjs';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mjs';
 
@@ -16,7 +18,7 @@ const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, sessionManagerConfig } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -110,7 +112,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
-  const client = new DesktopClient(socket, { browserConfig, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
+  const client = new DesktopClient(socket, { browserConfig, sessionManagerConfig, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -1847,4 +1849,103 @@ test('Voice can return the fallback engine to Automatic, which is no explicit ba
     assert.deepEqual((await client.mcp()).servers.find(server => server.name === 'whispertype').whispertype, { backend: null, model: 'openai/gpt-4o-mini-transcribe' });
     await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'auto' }), /OpenRouter, Codex sign-in or local/);
   } finally { client.close(); }
+});
+
+test('Session Manager is a dedicated least-access chat with its own approved tools', async () => {
+  const requested = [], bound = [], closed = [];
+  let managerId = '';
+  const managerConfig = {
+    isManager: id => id === managerId,
+    forSession(id) { requested.push(id); return sessionManagerMcpConfig('/tmp/elpis-session-manager-test.sock', 'node', 'private-capability'); },
+    bind(from, to) { bound.push([from, to]); },
+    close(id) { closed.push(id); },
+  };
+  const browserConfig = { 'mcp_servers.elpis_browser': { command: 'node', args: ['browser-mcp.mjs'] } };
+  const { client, socket } = fixture({ browserConfig, sessionManagerConfig: managerConfig });
+  let coldClient;
+  try {
+    const manager = await client.createThread({ sessionManager: true, permissions: 'full' });
+    const started = socket.sent.find(row => row.method === 'thread/start').params;
+    assert.equal(manager.thread.name, 'Session Manager');
+    assert.match(started.developerInstructions, /dedicated Session Manager chat/);
+    assert.equal(started.config['mcp_servers.elpis_session_manager'].default_tools_approval_mode, 'approve');
+    assert.equal(started.config['mcp_servers.elpis_session_manager'].tools.session_list.approval_mode, 'auto');
+    assert.equal(started.config['mcp_servers.elpis_browser'], undefined, 'the manager receives only its own tools');
+    assert.equal(started.cwd, undefined, 'the manager has no project folder');
+    assert.equal(requested.length, 1);
+    assert.deepEqual(bound, [[requested[0], CREATED]]);
+    managerId = manager.thread.id;
+    const cold = fixture({ browserConfig, sessionManagerConfig: managerConfig });
+    coldClient = cold.client;
+    cold.threads.set(managerId, structuredClone(manager.thread));
+    await cold.client.resume(managerId, {});
+    const resumed = cold.socket.sent.find(row => row.method === 'thread/resume').params;
+    assert.ok(resumed.config['mcp_servers.elpis_session_manager'], 'cold resume restores the manager tools');
+    assert.equal(resumed.config['mcp_servers.elpis_browser'], undefined);
+    assert.equal(requested.length, 2);
+    await cold.client.createThread({});
+    const ordinary = cold.socket.sent.find(row => row.method === 'thread/start').params;
+    assert.equal(ordinary.config['mcp_servers.elpis_session_manager'], undefined, 'ordinary chats do not receive session controls');
+    assert.ok(ordinary.config['mcp_servers.elpis_browser'], 'ordinary chats retain their browser tools');
+    assert.equal(requested.length, 2);
+    await assert.rejects(client.createThread({ sessionManager: true, instructions: 'replace manager policy' }), /managed by Elpis/);
+    assert.equal(cold.socket.sent.filter(row => row.method === 'thread/start').length, 1);
+    assert.doesNotMatch(SESSION_MANAGER_INSTRUCTIONS, /delete sessions? with a tool/i);
+    assert.deepEqual(SESSION_MANAGER_TOOLS.map(tool => tool.name), ['session_list', 'session_rename', 'session_organize', 'session_archive']);
+    assert.equal(closed.length, 0);
+  } finally { client.close(); coldClient?.close(); }
+});
+
+test('Session Manager tools list, rename, group, and archive one active session; reject self, bulk, and forged calls', async t => {
+  const { startSessionManagerAgent, SESSION_GROUPS_KEY: SESSION_MANAGER_GROUPS_KEY, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
+  const active = [
+    { id: 'chat-a', name: 'Parser cleanup', cwd: '/work/parser', updatedAt: '2026-10-19T10:00:00Z', status: { type: 'idle' } },
+    { id: 'manager', name: 'Session Manager', status: { type: 'idle' } },
+  ];
+  const values = {
+    [SESSION_MANAGER_ID_KEY]: 'manager',
+    [SESSION_MANAGER_GROUPS_KEY]: JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [] }),
+  };
+  const renamed = [], archived = [];
+  const store = { read: () => ({ ...values }), async set(key, value) { values[key] = value; } };
+  const client = {
+    async listThreads() { return { data: [...active], nextCursor: null }; },
+    async renameThread(id, body) { renamed.push([id, body.name]); active.find(thread => thread.id === id).name = body.name; return {}; },
+    async archiveThread(id) { archived.push(id); return { archived: true }; },
+  };
+  const agent = await startSessionManagerAgent({ client, store });
+  t.after(() => agent.close());
+  const capability = agent.scope('manager');
+  const call = (name, args, token = capability, managerThreadId = 'manager') => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, _meta: { threadId: managerThreadId } } }, { socketPath: agent.path, capability: token });
+  const list = await call('session_list', {});
+  const listText = list.result.content[0].text;
+  assert.match(listText, /Parser cleanup/);
+  assert.doesNotMatch(listText, /Session Manager/);
+  assert.match(listText, /parser/);
+  assert.deepEqual(await call('session_rename', { sessionId: 'chat-a', name: 'Parser tests' }).then(result => result.result.isError), undefined);
+  assert.deepEqual(renamed, [['chat-a', 'Parser tests']]);
+  await call('session_organize', { sessionId: 'chat-a', groupName: 'Review later' });
+  const groups = JSON.parse(values[SESSION_MANAGER_GROUPS_KEY]);
+  assert.equal(groups.groupBy, 'custom');
+  assert.equal(groups.groups[0].name, 'Review later');
+  assert.equal(groups.members['chat-a'], groups.groups[0].id);
+  const archive = await call('session_archive', { sessionId: 'chat-a' });
+  assert.match(SESSION_MANAGER_TOOLS.find(tool => tool.name === 'session_archive').description, /spawned agent chats/);
+  assert.match(archive.result.content[0].text, /"spawnedAgentsArchived":true/);
+  assert.deepEqual(archived, ['chat-a']);
+
+  const self = await call('session_archive', { sessionId: 'manager' });
+  assert.equal(self.result.isError, true);
+  const bulk = await call('session_archive', { sessionId: 'chat-a', sessionIds: ['chat-a', 'chat-b'] });
+  assert.equal(bulk.result.isError, true);
+  const forged = await call('session_archive', { sessionId: 'chat-a' }, 'wrong-capability');
+  assert.equal(forged.result.isError, true);
+  const missingIdentity = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_archive', arguments: { sessionId: 'chat-a' } } }, { socketPath: agent.path, capability });
+  assert.equal(missingIdentity.result.isError, true);
+  assert.deepEqual(archived, ['chat-a'], 'rejected calls never archive anything');
+
+  const configured = sessionManagerMcpConfig(agent.path, 'node', capability)['mcp_servers.elpis_session_manager'];
+  assert.equal(configured.default_tools_approval_mode, 'approve');
+  assert.equal(configured.tools.session_list.approval_mode, 'auto');
+  assert.equal('session_delete' in Object.fromEntries(SESSION_MANAGER_TOOLS.map(tool => [tool.name, true])), false);
 });

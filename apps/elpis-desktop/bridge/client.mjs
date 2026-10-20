@@ -15,6 +15,7 @@ import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { SkillTrash, skillRoots } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
+import { SESSION_MANAGER_INSTRUCTIONS, SESSION_MANAGER_NAME } from './session-manager-mcp.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
 import { recordedChanges } from './recorded-changes.mjs';
@@ -172,11 +173,13 @@ export class DesktopClient extends EventEmitter {
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
+  #sessionManagerConfig;
   #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
+    this.#sessionManagerConfig = sessionManagerConfig;
     this.#githubConnector = githubConnector;
     this.#skillTrash = new SkillTrash(skillTrashOptions);
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
@@ -219,7 +222,13 @@ export class DesktopClient extends EventEmitter {
   }
   get connected() { return this.#ready && !this.#closed; }
   hasLocalActivity() { return this.#mutating.size > 0 || this.#workflowRuns.busy(); }
-  #browserOptions(id) { return this.#browserConfig ? { config: this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig } : {}; }
+  #browserOptions(id) {
+    const managerThread = this.#sessionManagerConfig?.isManager?.(id) === true;
+    const browser = !managerThread && this.#browserConfig ? (this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig) : {};
+    const manager = managerThread ? this.#sessionManagerConfig.forSession(id) : {};
+    const config = { ...browser, ...manager };
+    return Object.keys(config).length ? { config } : {};
+  }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {
     if (this.#closed) return;
@@ -433,7 +442,7 @@ export class DesktopClient extends EventEmitter {
     return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
       canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
-  #forget(id) { this.#browserConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); }
+  #forget(id) { this.#browserConfig?.close?.(id); this.#sessionManagerConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); }
   async listThreads(options = {}) {
     object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
     if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
@@ -1074,13 +1083,18 @@ export class DesktopClient extends EventEmitter {
   /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
    * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents', 'sessionManager']);
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
     if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
+    if (body.sessionManager !== undefined && typeof body.sessionManager !== 'boolean') throw new BridgeError('sessionManager must be true or false');
+    const sessionManager = body.sessionManager === true;
+    if (sessionManager && !this.#sessionManagerConfig?.forSession) throw new BridgeError('Session Manager tools are unavailable in this runtime', 503);
+    if (sessionManager && body.instructions !== undefined) throw new BridgeError('Session Manager instructions are managed by Elpis');
+    if (sessionManager && (body.cwd !== undefined || body.worktree === true || body.agents === true)) throw new BridgeError('Session Manager does not use a project folder, worktree, or spawned agents');
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
-    const permissions = permissionMode(body.permissions);
-    const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
-    const ownInstructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
+    const permissions = permissionMode(sessionManager ? 'ask' : body.permissions);
+    const name = sessionManager ? SESSION_MANAGER_NAME : body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
+    const ownInstructions = sessionManager ? SESSION_MANAGER_INSTRUCTIONS : body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
     if (body.cwd !== undefined && !path.isAbsolute(text(body.cwd, 'working directory', 4096))) throw new BridgeError('Working directory must be absolute');
     let differentProvider = false;
     if (body.provider !== undefined) {
@@ -1092,20 +1106,22 @@ export class DesktopClient extends EventEmitter {
     }
     if (differentProvider) text(body.model, 'model for this provider', 200);
     const model = await this.#providerModel(body.model, body.provider);
-    const instructions = [ownInstructions, await this.#githubConnector.instructions()].filter(Boolean).join('\n\n');
+    const instructions = [ownInstructions, ...(sessionManager ? [] : [await this.#githubConnector.instructions()])].filter(Boolean).join('\n\n');
     // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
     // worktree goes again.
     const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
     const browserSession = `pending-${randomUUID()}`;
-    const config = { ...this.#browserOptions(browserSession).config, ...(body.agents ? { 'features.multi_agent': true } : {}) };
+    const managerConfig = sessionManager ? this.#sessionManagerConfig.forSession(browserSession) : {};
+    const config = { ...(sessionManager ? {} : this.#browserOptions(browserSession).config), ...managerConfig, ...(body.agents ? { 'features.multi_agent': true } : {}) };
     let result;
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
         ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
         ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
-    } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
-    this.#browserConfig?.bind?.(browserSession, result.thread.id);
+    } catch (error) { if (!sessionManager) this.#browserConfig?.close?.(browserSession); this.#sessionManagerConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
+    if (!sessionManager) this.#browserConfig?.bind?.(browserSession, result.thread.id);
+    if (sessionManager) this.#sessionManagerConfig.bind?.(browserSession, result.thread.id);
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
     return { ...result, thread: this.#decorate(result.thread), ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };

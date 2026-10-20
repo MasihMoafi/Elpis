@@ -95,6 +95,7 @@ for (const colorScheme of ['light', 'dark']) test(`a waiting chat says why under
   const f = await fixture({ colorScheme, width: 1130, height: 820 }), { page } = f;
   try {
     const line = id => row(page, id).locator('.thread-subtitle');
+    await eventually(async () => assert.equal(f.listening(), 1));
     f.emit('approval', { id: 'ap-1', ownerThreadId: 'chat-b', method: 'item/commandExecution/requestApproval', params: { threadId: 'chat-b', command: 'npm run test -- --runInBand --coverage --reporters=default --watchAll=false', reason: 'Run the tests' } });
     f.emit('approval', { id: 'ap-2', ownerThreadId: 'chat-c', method: 'item/tool/requestUserInput', params: { threadId: 'chat-c', questions: [{ id: 'q', header: 'Pick', question: 'Which file?' }] } });
     await eventually(async () => assert.equal(await line('chat-b').textContent(), 'Needs your approval · npm run test -- --runInBand --coverage --reporters=default…'));
