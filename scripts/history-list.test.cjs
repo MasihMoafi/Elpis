@@ -17,7 +17,7 @@ const gateEnd = source.indexOf('pendingThreadList.set(msg.id, lp);', gateStart)
 assert(start >= 0 && end > start && gateStart >= 0 && gateEnd > gateStart,
   'bridge list implementation must be found');
 
-function fixture(overrides = {}) {
+function fixture(overrides = {}, options = {}) {
   const thread = {
     id: 'fixture-chat', source: 'vscode', modelProvider: 'openai', model: 'gpt-fixture',
     preview: '', name: 'Research notes', cwd: '/fixture', path: '/fixture/sessions/chat',
@@ -29,9 +29,11 @@ function fixture(overrides = {}) {
       turns: [{ items: [{ type: 'userMessage', content: [{ type: 'text', text: 'Planted history marker' }] }] }],
     },
   };
+  let reads = 0, time = 0;
   const ctx = vm.createContext({
     storeChain: Promise.resolve(), loadStore: async () => store,
-    engineCall: async () => ({ thread: { ...thread } }),
+    engineCall: async () => { reads++; if (options.read) return options.read(reads, thread); return { thread: { ...thread } }; },
+    now: () => time, log: () => {},
     inputSummary: content => content.map(item => item.text ?? '').join(''),
     ownModel: t => { t.model = store[t.id].model; },
     pendingThreadList: new Map(),
@@ -40,6 +42,8 @@ function fixture(overrides = {}) {
     + ';globalThis.list = unlistedClaudeThreads;', ctx);
   const gate = new vm.Script(source.slice(gateStart, gateEnd));
   return {
+    reads: () => reads,
+    advance: ms => { time += ms; },
     list: (req, page = { data: [], nextCursor: null }) => ctx.list(req, page),
     request: async (req, page = { data: [], nextCursor: null }) => {
       ctx.lp = req;
@@ -50,6 +54,29 @@ function fixture(overrides = {}) {
     },
   };
 }
+
+test('a missing saved thread is read once within 30 seconds, then retried', async () => {
+  const f = fixture({}, { read: async (count, thread) => {
+    if (count === 1) throw new Error(`thread not loaded: ${thread.id}`);
+    return { thread: { ...thread } };
+  } });
+  assert.equal((await f.list({})).length, 0);
+  assert.equal((await f.list({})).length, 0);
+  assert.equal(f.reads(), 1, 'repeated list must not reread an unchanged missing thread');
+  f.advance(30_000);
+  assert.equal((await f.list({})).length, 1, 'a newly readable thread must reappear');
+  assert.equal(f.reads(), 2);
+});
+
+test('a transient read error is retried on the next list', async () => {
+  const f = fixture({}, { read: async (count, thread) => {
+    if (count === 1) throw new Error('temporary transport error');
+    return { thread: { ...thread } };
+  } });
+  assert.equal((await f.list({})).length, 0);
+  assert.equal((await f.list({})).length, 1);
+  assert.equal(f.reads(), 2);
+});
 
 test('persisted bridge chat with empty native preview appears in interactive history', async () => {
   assert.equal((await fixture().request({ sourceKinds: [], sortKey: 'recency_at' })).length, 1);
