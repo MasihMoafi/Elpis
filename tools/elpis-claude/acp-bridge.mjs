@@ -870,6 +870,7 @@ wss.on("connection", (ws) => {
   }
   const pageFloor = new Map(); // nextCursor -> sort value of the last thread on the page before it
   const previewed = new Set(); // threads the engine lists itself
+  const missingThreadUntil = new Map(); // a native thread/read said this saved chat is not loaded
   const listField = (req) => ({ updated_at: "updatedAt", recency_at: "recencyAt" })[req.sortKey] ?? "createdAt";
   const previewOf = (first) => first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
   const runningFirstTurn = (saved) => !saved?.turns?.length && typeof saved?.active?.preview === "string";
@@ -891,12 +892,15 @@ wss.on("connection", (ws) => {
     let next = 0, failure;
     async function readCandidate(index) {
       const [id, saved] = candidates[index];
+      if ((missingThreadUntil.get(id) ?? 0) > now()) return;
       const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }, 5000).catch((e) => {
         if (e.code === "ETIMEDOUT") throw e;
+        if (/^thread not loaded:/.test(e.message ?? "")) missingThreadUntil.set(id, now() + 30_000);
         log(`thread/list: cannot read saved thread ${id}: ${e.message ?? JSON.stringify(e)}`);
         return null;
       }))?.thread;
       if (!t) return;
+      missingThreadUntil.delete(id);
       const interactive = t.source === "cli" || t.source === "vscode" || ["atlas", "chatgpt"].includes(t.source?.custom);
       if (req.sourceKinds?.length ? !req.sourceKinds.includes(t.source) : !interactive) return;
       if (t.preview) { previewed.add(id); return; }
@@ -1402,6 +1406,7 @@ wss.on("connection", (ws) => {
     // bridged start in flight names its model then.
     if (parsed?.method === "thread/started" && parsed.params?.thread) {
       const t = parsed.params.thread;
+      missingThreadUntil.delete(t.id);
       await Promise.all([...startingProviders.values()].map((p) => p.ready));
       const starting = [...pendingStart.values()].filter((pick) => pick?.model);
       const pick = !claudeModel.has(t.id) && starting.length === 1 ? starting[0] : null;
@@ -1513,6 +1518,7 @@ wss.on("connection", (ws) => {
       resumeOptions.delete(parsed.id);
       pendingResume.delete(parsed.id);
       reopened = parsed.result.thread.id;
+      missingThreadUntil.delete(reopened);
       await storeChain;
       const saved = (await loadStore())[parsed.result.thread.id];
       const helper = pendingAdopt.get(parsed.id);
