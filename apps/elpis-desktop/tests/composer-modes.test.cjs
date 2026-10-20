@@ -6,6 +6,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const bashNotice = 'Bash mode. Press Escape to return to chat.';
 const side = page => page.getByRole('region', { name: 'Side chat', exact: true });
+const recap = page => page.getByRole('region', { name: 'Recap', exact: true });
 const sent = (f, suffix) => f.posts.filter(post => post.path.endsWith(suffix));
 async function using(options, run) {
   const f = await fixture(options);
@@ -15,6 +16,43 @@ async function eventually(check) {
   const end = Date.now() + 4000;
   for (;;) { try { return await check(); } catch (e) { if (Date.now() > end) throw e; await new Promise(r => setTimeout(r, 40)); } }
 }
+
+for (const colorScheme of ['light', 'dark']) {
+  test(`/recap summarizes this chat in a fresh side panel (${colorScheme})`, () => {
+    let forks = 0;
+    return using({ colorScheme, staticDir: process.env.ELPIS_RECAP_TEST_OUT, routes: {
+      '/api/threads/chat-a/side-chat': () => ({ threadId: `recap-${++forks}` }),
+      '/api/side-chats/recap-1/turns': () => ({ turn: { id: 'recap-turn-1' } }),
+      '/api/side-chats/recap-2/turns': () => ({ turn: { id: 'recap-turn-2' } }),
+    } }, async f => {
+      await f.composer.fill('/recap'); await f.composer.press('Enter');
+      const panel = recap(f.page); await panel.waitFor();
+      await eventually(() => assert.equal(sent(f, '/side-chats/recap-1/turns').length, 1));
+      assert.match(sent(f, '/side-chats/recap-1/turns')[0].body.text, /summari[sz]e|recap/i);
+      assert.equal(sent(f, '/threads/chat-a/turns').length + sent(f, '/steer').length + sent(f, '/interrupt').length, 0);
+      f.emit('sideChat', { method: 'item/completed', params: { threadId: 'recap-1', turnId: 'recap-turn-1', item: { id: 'recap-answer', type: 'agentMessage', text: 'Parser recap: lexer repaired; next verify Unicode input.' } } });
+      f.emit('sideChat', { method: 'turn/completed', params: { threadId: 'recap-1', turn: { id: 'recap-turn-1', status: 'completed' } } });
+      await panel.getByText('Parser recap: lexer repaired; next verify Unicode input.', { exact: true }).waitFor();
+      assert.equal(await f.page.locator('.chat-scroll').getByText('Parser recap: lexer repaired; next verify Unicode input.', { exact: true }).count(), 0);
+      await assertUiFit(panel, 'Recap fits beside the conversation');
+      if (process.env.ELPIS_RECAP_SHOTS) { await fs.mkdir(process.env.ELPIS_RECAP_SHOTS, { recursive: true }); await f.page.screenshot({ path: path.join(process.env.ELPIS_RECAP_SHOTS, `recap-${colorScheme}.png`) }); }
+      await f.composer.fill('/recap'); await f.composer.press('Enter');
+      await eventually(() => assert.equal(forks, 2, 'A second recap must fork the current history again'));
+      await eventually(() => assert.equal(sent(f, '/side-chats/recap-1/close').length, 1));
+      await eventually(() => assert.equal(sent(f, '/side-chats/recap-2/turns').length, 1));
+      await f.open('chat-b'); await panel.waitFor({ state: 'detached' });
+      await eventually(() => assert.equal(sent(f, '/side-chats/recap-2/close').length, 1));
+    });
+  });
+}
+
+test('/recap shows a generation error without sending to the main conversation', () => using({ staticDir: process.env.ELPIS_RECAP_TEST_OUT, routes: {
+  '/api/threads/chat-a/side-chat': () => ({ __http: 503, error: 'Recap is temporarily unavailable.' }),
+} }, async f => {
+  await f.composer.fill('/recap'); await f.composer.press('Enter');
+  await recap(f.page).getByRole('alert').getByText('Recap is temporarily unavailable.', { exact: true }).waitFor();
+  assert.equal(sent(f, '/threads/chat-a/turns').length + sent(f, '/steer').length + sent(f, '/interrupt').length, 0);
+}));
 
 test('! at the start enters Bash mode; Escape and empty Backspace return to chat, without interrupting a reply', () => using({ running: true }, async f => {
   await f.composer.click(); await f.page.keyboard.type('!');

@@ -1356,6 +1356,11 @@ export default function Home() {
     if (!selected) { setError("Start a conversation before asking a side question."); return; }
     setSideChat({ parentId: selected.id, open: true, question: { id: ++sideRequests.current, text: question ?? "" } });
   }
+  function recapConversation() {
+    if (!selected || readOnlyRun) return;
+    if (!entries.length) { setError("There is no conversation history to recap."); return; }
+    setSideChat({ parentId: selected.id, open: true, question: { id: ++sideRequests.current, kind: "recap", text: "Recap the conversation so far for the person returning to it. Briefly state the goal, key decisions, completed work, what is still open, and the next useful step. Use only the existing conversation. Do not use tools or perform the work." } });
+  }
   // Returning from a disappearing action must not override a field the person chose while it was pending.
   const restoreComposerFocus = (origin: Element | null) => requestAnimationFrame(() => {
     const active = document.activeElement;
@@ -1483,6 +1488,7 @@ export default function Home() {
     { name: "pwd", description: "show the current working directory", available: !!chatFolder, run: () => setSlashNotice(`Current working directory: ${chatFolder}`) },
     { name: "usage", description: "inspect this session; /usage account opens usage and limits", args: true, run: text => { if (text) openSettings("usage"); else setPanel("status"); } },
     { name: "context", description: "show context usage as a grid, by category, with checkpoints and system files", available: !!selected, run: () => window.dispatchEvent(new CustomEvent("elpis:open-context")) },
+    { name: "recap", description: "Summarize this conversation and its next step", available: !!selected && !readOnlyRun, run: recapConversation },
     { name: "theme", description: "choose the theme", run: () => openSettings("appearance") },
     { name: "mcp", description: "list and manage MCP servers", run: () => openSettings("mcp") },
     { name: "rag", description: "use the configured RAG MCP server or manage it with /rag <request>", available: !continues && idle, run: () => void send("/rag") },
@@ -1920,7 +1926,7 @@ export default function Home() {
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
         </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { stickToBottom.current = false; }} /></div></div>
         <div className="composer-wrap">
-          {sideChat && selected?.id === sideChat.parentId && <SideChat key={sideChat.parentId} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }} />}
+          {sideChat && selected?.id === sideChat.parentId && <SideChat key={`${sideChat.parentId}:${sideChat.question?.kind === "recap" ? sideChat.question.id : "side"}`} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }} />}
           <ViewBoundary label="This panel" resetKey={panel}>
           {panel === "status" && <SessionPanel rows={sessionRows} threadId={selected?.id} onUsage={() => { setPanel(null); openSettings("usage"); }} onClose={closePanel} />}
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}

@@ -8,10 +8,11 @@ import { ChatMessage } from "@/components/chat-message";
 import { api, type Entry } from "@/lib/api";
 import { mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 
-export type SideRequest = { id: number; text: string };
+export type SideRequest = { id: number; text: string; kind?: "recap" };
 
 /** An ephemeral fork's messages live only in this panel, never in the main transcript or drafts. */
 export function SideChat({ parentId, open, question, onClose }: { parentId: string; open: boolean; question?: SideRequest; onClose: () => void }) {
+  const isRecap = question?.kind === "recap";
   const [draft, setDraft] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -58,7 +59,7 @@ export function SideChat({ parentId, open, question, onClose }: { parentId: stri
       if (disposed.current) return;
       const id = `side-prompt-${++sequence.current}`;
       setEntries(previous => {
-        const prompt: Entry = { turnId: result.turn.id, item: { id, type: "userMessage", content: [{ type: "text", text }] } };
+        const prompt: Entry = { turnId: result.turn.id, item: { id, type: "userMessage", content: [{ type: "text", text: isRecap && text === question?.text ? "Recap this conversation" : text }] } };
         const at = previous.findIndex(entry => entry.turnId === result.turn.id);
         return at < 0 ? [...previous, prompt] : [...previous.slice(0, at), prompt, ...previous.slice(at)];
       });
@@ -74,10 +75,10 @@ export function SideChat({ parentId, open, question, onClose }: { parentId: stri
     if (question.text.trim()) void send(question.text);
   }, [question]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <section role="region" aria-label="Side chat" hidden={!open} className="side-chat" onKeyDown={event => {
+  return <section role="region" aria-label={isRecap ? "Recap" : "Side chat"} hidden={!open} className="side-chat" onKeyDown={event => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
   }}>
-    <header className="side-chat-heading"><div><h2>Side chat</h2><p>Ask a quick side question without adding to the session</p></div><Button variant="ghost" size="icon-sm" aria-label="Close side chat" onClick={onClose}><X size={16} /></Button></header>
+    <header className="side-chat-heading"><div><h2>{isRecap ? "Recap" : "Side chat"}</h2><p>{isRecap ? "The goal, decisions, progress and next step" : "Ask a quick side question without adding to the session"}</p></div><Button variant="ghost" size="icon-sm" aria-label={isRecap ? "Close recap" : "Close side chat"} onClick={onClose}><X size={16} /></Button></header>
     <div className="side-chat-content" ref={content} aria-live="polite">
       {entries.map(entry => <ChatMessage key={entry.item.id} item={entry.item} />)}
       {busy && <p role="status" className="text-sm text-muted-foreground">Elpising…</p>}
