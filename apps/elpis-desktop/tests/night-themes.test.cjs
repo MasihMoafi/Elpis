@@ -7,6 +7,30 @@ const { fixture } = require('./parity-fixture.cjs');
 const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const ACCENTS = ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange'];
+function isOrange([r, g, b]) {
+  return r > 150 && g / r >= .35 && g / r <= .62 && b / r < .18;
+}
+
+test('default and orange accents use saturated orange instead of brown in both themes', async t => {
+  assert.equal(isOrange([143, 91, 0]), false, 'the old brown must be rejected');
+  const f = await fixture({ width: 1280, height: 900 }), { page } = f; t.after(f.close);
+  await f.open('chat-a');
+  const css = await fs.readFile(path.join(__dirname, '../app/globals.css'), 'utf8');
+  await page.addStyleTag({ content: css.replace(/^@import[^\n]*\n/gm, '') });
+  for (const mode of ['light', 'dark']) for (const accent of ['amber', 'orange']) {
+    const colours = await page.evaluate(({ mode, accent }) => {
+      document.documentElement.classList.toggle('dark', mode === 'dark');
+      document.documentElement.dataset.accent = accent;
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--primary)'; document.body.append(probe);
+      const primary = getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number);
+      probe.remove();
+      return { primary, action: getComputedStyle(document.documentElement).getPropertyValue('--primary-action').trim() };
+    }, { mode, accent });
+    assert.ok(isOrange(colours.primary), `${mode} ${accent} must look orange: ${colours.primary}`);
+    assert.equal(colours.action, '#ff8a00');
+  }
+});
 const SHOTS = process.env.ELPIS_THEMES_SHOTS || path.join(process.env.HOME, '.cache/elpis-tests/night-themes');
 async function appearance(page) {
   await openSettings(page);
