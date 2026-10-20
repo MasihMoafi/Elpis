@@ -17,6 +17,21 @@ async function command(page, name) {
   await page.getByRole('option', { name: new RegExp('^' + name) }).click();
 }
 
+test('arrow keys do not advance guide topics; mouse selection still works', async () => {
+  const f = await fixture(), { page } = f;
+  try {
+    await command(page, 'Guide');
+    const current = guide(page).getByRole('button', { name: 'Choose a pattern', exact: true });
+    await current.click();
+    await guide(page).getByRole('heading', { name: 'Choose a pattern' }).waitFor();
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'Choose a pattern');
+    assert.ok(await guide(page).getByText('Debate + judge', { exact: true }).isVisible());
+    await guide(page).getByRole('button', { name: 'Read a run', exact: true }).click();
+    await guide(page).getByRole('heading', { name: 'Read a run' }).waitFor();
+  } finally { await f.close(); }
+});
+
 test('The command menu opens the guide; topics and the Workflows back link work without starting a run', async () => {
   const f = await fixture(), { page } = f;
   try {

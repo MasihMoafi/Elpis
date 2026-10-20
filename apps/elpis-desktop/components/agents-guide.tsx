@@ -48,7 +48,7 @@ export function AgentsGuide({ onBack }: { onBack: () => void }) {
   const topic = topics[index];
   return <section aria-label="Guide to managing agents" className="mx-auto max-w-3xl space-y-3 lg:space-y-5">
     <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft size={14} />Back to Workflows</Button>
-    <nav aria-label="Guide topics" className="flex flex-wrap gap-2">
+    <nav aria-label="Guide topics" data-arrows="off" className="flex flex-wrap gap-2">
       {topics.map((item, at) => <Button key={item.title} variant={at === index ? "secondary" : "ghost"} size="sm" aria-current={at === index ? "page" : undefined} onClick={() => setIndex(at)}>{item.title}</Button>)}
     </nav>
     <article className="space-y-2 text-sm leading-relaxed lg:space-y-3">
