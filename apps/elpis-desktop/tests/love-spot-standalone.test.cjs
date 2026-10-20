@@ -25,13 +25,13 @@ async function browserCopy(page) {
 }
 
 async function standaloneFixture(t, { delaySaves = false, holdIncoming = false, failSaves = false } = {}) {
-  const reference = process.env.LOVE_SPOT_STANDALONE_DIR || path.join(os.homedir(), '.local/lib/excalidraw-local');
+  const reference = process.env.LOVE_SPOT_STANDALONE_DIR || path.join(__dirname, 'fixtures/love-spot-standalone');
   const f = await loveSpotFixture();
   let electron, xvfb;
   t.after(async () => { if (electron) await electron.close(); if (xvfb) xvfb.kill(); await f.close(); });
   const app = path.join(f.root, 'standalone'); await fs.mkdir(path.join(app, 'src'), { recursive: true });
   for (const name of ['main.cjs', 'preload.cjs', 'build.mjs', 'src/app.jsx', 'src/index.html']) await fs.copyFile(path.join(reference, name), path.join(app, name));
-  await fs.symlink(path.join(reference, 'node_modules'), path.join(app, 'node_modules'));
+  await fs.symlink(path.resolve(__dirname, '../node_modules'), path.join(app, 'node_modules'));
   const { syncLoveSpot } = await import('../scripts/sync-love-spot.mjs');
   await syncLoveSpot(app); await syncLoveSpot(app, { build: false });
   if (holdIncoming) {

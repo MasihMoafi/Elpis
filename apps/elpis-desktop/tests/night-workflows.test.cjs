@@ -1,9 +1,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseTheme } = require('./controls.cjs');
-const shots = '/home/masih/.cache/elpis-tests/night-workflows';
+const shots = path.join(os.homedir(), '.cache/elpis-tests/night-workflows');
 const matrix = (page, selector) => page.locator(selector).evaluate(el => {
   const m = new DOMMatrix(getComputedStyle(el).transform);
   return { zoom: m.a, x: m.e, y: m.f };

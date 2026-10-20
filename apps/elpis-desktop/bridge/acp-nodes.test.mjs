@@ -74,7 +74,9 @@ test('cancel by signal sends session/cancel and answers a pending permission as 
   const a = agentSpec(t, 'A');
   const controller = new AbortController();
   const run = runAcpNode(a.spec, { task: '[hang] wait' }, { cwd: a.dir, signal: controller.signal });
-  await (async () => { while (!a.received().some(m => m.method === 'session/prompt')) await pause(10); })();
+  const deadline = Date.now() + 5000;
+  while (!a.received().some(m => m.method === 'session/prompt') && Date.now() < deadline) await pause(10);
+  assert.ok(a.received().some(m => m.method === 'session/prompt'), 'the fake ACP agent never received the prompt');
   controller.abort();
   await assert.rejects(run, /cancelled/);
   assert.ok(a.received().some(m => m.method === 'session/cancel'));

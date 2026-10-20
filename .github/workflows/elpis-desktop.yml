@@ -72,6 +72,10 @@ jobs:
           cache-dependency-path: apps/elpis-desktop/package-lock.json
       - name: Install the locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install the ACP test agent dependencies
+        run: npm ci --prefix ../../tools/elpis-claude --ignore-scripts --no-audit --no-fund
+      - name: Install the Electron test binary
+        run: npm rebuild electron --no-audit --no-fund
       - name: Install Playwright and its Chromium (the version the local tests use)
         run: |
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.62.1

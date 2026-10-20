@@ -28,7 +28,7 @@ const TURNS = [
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
  * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {} } = {}) {
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {}, browserChannel } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set();
   const threads = THREADS.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
@@ -77,7 +77,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     } catch { res.statusCode = 404; res.end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: !process.env.ELPIS_UI_HEADED });
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED });
   const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);
@@ -87,6 +87,9 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().waitFor();
+  const deadline = Date.now() + 6000;
+  while (streams.size === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+  if (streams.size === 0) throw new Error('The fixture did not connect to /api/events');
   const open = async id => {
     await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click();
     await page.locator(`.thread-row.active[data-thread-id="${id}"]`).waitFor();
