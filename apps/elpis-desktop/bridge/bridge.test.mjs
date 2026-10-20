@@ -84,7 +84,8 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         // As the engine: the request only queues the change; the applied settings follow in
         // thread/settings/updated, and only when they changed.
         const p = request.params, before = JSON.stringify(engineSettings.get(p.threadId) ?? null);
-        const applied = { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? { type: 'dangerFullAccess' } : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
+        const applied = p.cwd ? { ...engineSettings.get(p.threadId), cwd: p.cwd } : { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? { type: 'dangerFullAccess' } : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
+        if (p.cwd) threads.get(p.threadId).cwd = p.cwd;
         engineSettings.set(p.threadId, applied); result = {};
         if (JSON.stringify(applied) !== before) setTimeout(() => socket.emit('message', JSON.stringify({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { ...applied, model: threads.get(p.threadId).model ?? MODEL } } })), 5);
         break;
@@ -1417,6 +1418,21 @@ test('bypass permissions selects the engine profile, never a sandbox, and resume
   assert.equal(await reopened({ ...unsandboxed, activePermissionProfile: { id: ':danger-full-access' } }), 'full');
   assert.equal(await reopened({ ...unsandboxed, activePermissionProfile: null }), 'full');
   assert.equal(await reopened({ ...unsandboxed, approvalPolicy: 'on-request', activePermissionProfile: { id: ':bypass-permissions' } }), 'ask', 'bypass needs approvals set to never');
+});
+
+test('a chat moves to another folder for its next turns through the engine settings; only an idle chat, only a real folder', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-move-')));
+  try {
+    assert.deepEqual(await client.setFolder(ROOT, { cwd: dir }), { cwd: dir });
+    assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params, { threadId: ROOT, cwd: dir });
+    assert.equal(threads.get(ROOT).cwd, dir, 'the engine holds the new folder');
+    for (const cwd of ['relative/folder', path.join(dir, 'missing'), 42]) await assert.rejects(client.setFolder(ROOT, { cwd }), /folder/i);
+    threads.get(ROOT).status = { type: 'active' };
+    const updates = socket.sent.filter(message => message.method === 'thread/settings/update').length;
+    await assert.rejects(client.setFolder(ROOT, { cwd: os.tmpdir() }), /finish/i);
+    assert.equal(socket.sent.filter(message => message.method === 'thread/settings/update').length, updates, 'a running chat is not moved');
+  } finally { client.close(); await fs.rm(dir, { recursive: true, force: true }); }
 });
 
 test('changing a chat\'s permissions applies now through the engine settings and reads the mode back', async () => {

@@ -1316,6 +1316,24 @@ export class DesktopClient extends EventEmitter {
       }
     });
   }
+  /** Moves a chat to another folder: its next turns run there (the engine's thread/settings/update `cwd`); earlier turns
+   * keep the folder they ran in. Only an idle chat moves, and only to a folder that exists. Returns the folder the engine
+   * reports. */
+  async setFolder(id, body) {
+    object(body, ['cwd']);
+    if (typeof body.cwd !== 'string' || !path.isAbsolute(body.cwd)) throw new BridgeError('Choose a folder by its full path');
+    let cwd;
+    try { cwd = await fs.promises.realpath(body.cwd); if (!(await fs.promises.stat(cwd)).isDirectory()) throw new Error('not a folder'); }
+    catch { throw new BridgeError('That folder does not exist'); }
+    return this.#mutate(id, async () => {
+      const thread = await this.#current(id);
+      if (thread.status?.type === 'active') throw new BridgeError('Wait for this turn to finish, then change the folder.', 409);
+      await this.#rpc('thread/settings/update', { threadId: id, cwd });
+      const { thread: now } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
+      if (now?.cwd !== cwd) throw new BridgeError(`Elpis did not move this chat to ${cwd}.`, 409);
+      return { cwd };
+    });
+  }
   /** Full access and Bypass permissions never ask, so what this chat was already asking when the person chose one
    * is answered as the new mode would have: allowed, once. Questions (forms, request_user_input) still wait for
    * the person, as do other chats' requests; "Approve for me" leaves requests already put to the person to them. */

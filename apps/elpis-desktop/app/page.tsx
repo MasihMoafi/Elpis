@@ -893,6 +893,17 @@ export default function Home() {
       else if (chosen) await (projects.some(item => item.id === chosen.id) ? selectProject(chosen) : saveProject(chosen));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
+  /** Moves the open chat to a project's folder (A26): its next turns run there; earlier turns keep theirs. */
+  async function moveChat(target: Project | null) {
+    if (!selected || !target) return;
+    const { cwd: moved } = await api<{ cwd: string }>(`/threads/${encodeURIComponent(selected.id)}/folder`, { cwd: target.cwd });
+    patchThread(selected.id, { cwd: moved });
+  }
+  /** The chip's "Choose folder…": the native chooser, then the move; cancelling moves nothing. */
+  async function moveChatToFolder() {
+    try { const chosen = await chooseProject(projects); if (chosen) await moveChat(chosen); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
   /** Forgets the project; its folder and chats stay as they are. */
   async function removeProject(item: Project) {
     const updated = projects.filter(other => other.id !== item.id), current = projectId === item.id ? null : projectId;
@@ -1799,7 +1810,9 @@ export default function Home() {
               {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" title="Stop response: stops the agent’s current turn." onClick={() => selected && stop(selected)}><Square size={14} fill="currentColor" aria-hidden="true" />Stop response</Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? "Send follow-up" : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div>
           </form>}
           <div className="composer-meta">
-            {selected?.cwd && <span className="composer-chip" title={selected.cwd}><FolderIcon size={13} />{folder(selected.cwd)}</span>}
+            {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !!activeTurn || readOnlyRun}
+              selected={projects.find(item => item.cwd.replace(/\/+$/, "") === selected.cwd?.replace(/\/+$/, "")) ?? (selected.cwd ? { id: `folder:${selected.cwd}`, name: folder(selected.cwd), cwd: selected.cwd } : null)}
+              onSelect={moveChat} onAdd={() => void moveChatToFolder()} />}
             {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}
             <span className="composer-hint">{selectedLiveError ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.` : ""}</span>
             <ElpisFeatures threadId={selected?.id} />

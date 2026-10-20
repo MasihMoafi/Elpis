@@ -135,6 +135,7 @@
     "tests/chat-code.test.cjs",
     "tests/chat-edits.test.cjs",
     "tests/chat-files.test.cjs",
+    "tests/chat-folder.test.cjs",
     "tests/chat-worktree.test.cjs",
     "tests/claude-chat.test.cjs",
     "tests/claude-composer.test.cjs",

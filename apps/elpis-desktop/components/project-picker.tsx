@@ -13,10 +13,11 @@ import type { Project } from "@/lib/projects";
 const message = (e: unknown) => e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);
 
 /** Where a new chat works, as in the ChatGPT app: the project named in the new-chat heading
- * and the folder chip above the composer open the same menu. */
-export function ProjectMenu({ projects, selected, disabled, variant, onSelect, onAdd }: {
+ * and the folder chip above the composer open the same menu. A started chat's chip (`label` "Change folder") moves
+ * that chat: `addLabel` names the chooser item, and `allowNone` false drops "Don't work in a project". */
+export function ProjectMenu({ projects, selected, disabled, variant, onSelect, onAdd, label = "Choose project", addLabel = "New project…", allowNone = true }: {
   projects: Project[]; selected: Project | null; disabled: boolean; variant: "heading" | "chip";
-  onSelect: (project: Project | null) => Promise<void>; onAdd: () => void;
+  onSelect: (project: Project | null) => Promise<void>; onAdd: () => void; label?: string; addLabel?: string; allowNone?: boolean;
 }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function choose(project: Project | null) { setBusy(true); setError(""); try { await onSelect(project); } catch (e) { setError(message(e)); } finally { setBusy(false); } }
@@ -24,14 +25,14 @@ export function ProjectMenu({ projects, selected, disabled, variant, onSelect, o
     <DropdownMenu>
       {variant === "heading"
         ? <DropdownMenuTrigger className="project-heading-trigger" title={selected?.cwd} disabled={disabled || busy}>{selected?.name}</DropdownMenuTrigger>
-        : <DropdownMenuTrigger className="composer-chip project-chip" aria-label="Choose project" title={selected?.cwd} disabled={disabled || busy}><FolderIcon size={13} aria-hidden="true" /><span>{selected?.name || "Work in a project"}</span></DropdownMenuTrigger>}
+        : <DropdownMenuTrigger className="composer-chip project-chip" aria-label={label} title={selected?.cwd} disabled={disabled || busy}><FolderIcon size={13} aria-hidden="true" /><span>{selected?.name || "Work in a project"}</span></DropdownMenuTrigger>}
       <DropdownMenuContent align="start" className="project-menu w-72">
         {projects.map(project => <DropdownMenuItem key={project.id} onClick={() => void choose(project)}>
           <FolderIcon aria-hidden="true" /><span className="project-option"><strong>{project.name}</strong><small>{project.cwd}</small></span>
           {project.id === selected?.id && <Check className="ml-auto" aria-label="Current" />}
         </DropdownMenuItem>)}
-        <DropdownMenuItem onClick={onAdd}><PlusIcon aria-hidden="true" />New project…</DropdownMenuItem>
-        {selected && <DropdownMenuItem onClick={() => void choose(null)}><X aria-hidden="true" />Don’t work in a project</DropdownMenuItem>}
+        <DropdownMenuItem onClick={onAdd}><PlusIcon aria-hidden="true" />{addLabel}</DropdownMenuItem>
+        {selected && allowNone && <DropdownMenuItem onClick={() => void choose(null)}><X aria-hidden="true" />Don’t work in a project</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
     {error && <span role="alert" className="project-error">{error}</span>}
