@@ -36,15 +36,22 @@ if (process.argv.includes("app-server")) {
     process.stdout.write(JSON.stringify({ id: msg.id, result }) + "\n");
   });
 } else if (process.env.SIGNOUT_ROLE === "adapter") {
+  fs.appendFileSync(process.env.SIGNOUT_ADAPTER_TRACE + ".env", JSON.stringify({ configDir: process.env.CLAUDE_CONFIG_DIR ?? null }) + "\n");
   // The Claude ACP adapter: records every method it is asked, and answers a prompt at once.
   const send = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
   const configOptions = [{ id: "model", category: "model", type: "select", name: "Model", currentValue: "haiku", options: [
     { value: "default", name: "Default" }, { value: "haiku", name: "Haiku", description: "Fast" }, { value: "sonnet", name: "Sonnet", description: "Balanced" }] }];
-  let sessions = 0;
+  let sessions = 0, held = null;
   readline.createInterface({ input: process.stdin }).on("line", (line) => {
     const msg = JSON.parse(line);
     if (msg.method) fs.appendFileSync(process.env.SIGNOUT_ADAPTER_TRACE, msg.method + "\n");
+    if (msg.method === "session/cancel" && held !== null) { send({ id: held, result: { stopReason: "cancelled" } }); held = null; }
     if (msg.id === undefined) return;
+    if (msg.method === "session/prompt") {
+      fs.appendFileSync(process.env.SIGNOUT_ADAPTER_TRACE + ".prompts", JSON.stringify(msg.params) + "\n");
+      if (msg.params.prompt.some(part => part.text === "hold-account-switch-test")) { held = msg.id; return; }
+    }
+    if (msg.method === "session/cancel" && held !== null) { send({ id: held, result: { stopReason: "cancelled" } }); held = null; }
     const result = msg.method === "initialize" ? { protocolVersion: 1, agentCapabilities: { loadSession: true } }
       : msg.method === "session/new" ? { sessionId: `session-${++sessions}`, configOptions }
       : msg.method === "session/prompt" ? { stopReason: "end_turn" }
@@ -96,7 +103,7 @@ if (process.argv.includes("app-server")) {
     const engine = path.join(root, "engine");
     fs.writeFileSync(engine, `#!${process.execPath}\nimport ${JSON.stringify(self)};\n`, { mode: 0o755 });
     let usageHits = 0;
-    const usage = createServer((req, res) => { usageHits++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ five_hour: { utilization: 41, resets_at: "2030-01-01T00:00:00Z" }, seven_day: { utilization: 86, resets_at: "2030-01-07T00:00:00Z" } })); });
+    const usage = createServer((req, res) => { usageHits++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ five_hour: { utilization: req.headers.authorization === "Bearer second-local-token" ? 73 : 41, resets_at: "2030-01-01T00:00:00Z" }, seven_day: { utilization: 86, resets_at: "2030-01-07T00:00:00Z" } })); });
     await new Promise((resolve) => usage.listen(0, "127.0.0.1", resolve));
     const log = path.join(root, "bridge.log");
     const child = spawn(process.execPath, [process.env.ELPIS_SIGNOUT_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
@@ -156,6 +163,42 @@ if (process.argv.includes("app-server")) {
   const claudeLimit = (reply) => reply.result?.rateLimitsByLimitId?.claude;
   const started = async (client, model) => (await client.call("thread/start", { model, cwd: process.cwd() })).result.thread.id;
   const completed = (client, threadId) => client.notices.find((m) => m.method === "turn/completed" && m.params.threadId === threadId);
+
+  test("switching accounts changes the actual ACP login, usage and identity, retains history, and refuses active-turn switches", async (t) => {
+    const fx = await setup(t), tui = await fx.connect("tui"), desktop = await fx.connect("desktop");
+    const { ClaudeAccounts } = await import("../claude-accounts.mjs");
+    const accounts = new ClaudeAccounts({ home: path.join(fx.root, "home"), dir: fx.state });
+    const second = accounts.add(), configDir = accounts.configDir(second.id);
+    fs.writeFileSync(path.join(configDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "second-local-token", subscriptionType: "pro" } }));
+    fs.writeFileSync(path.join(configDir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "second@example.test" } }));
+    assert.equal((await desktop.call("claudeAccounts/read")).result.accounts.length, 2);
+    assert.equal(claudeLimit(await tui.call("account/rateLimits/read")).primary.usedPercent, 41);
+    assert.ok((await desktop.call("claudeAccounts/write", { action: "select", id: "missing" })).error);
+    const thread = await started(tui, "claude/haiku");
+    const run = async text => {
+      const turn = await tui.call("turn/start", { threadId: thread, input: [{ type: "text", text, text_elements: [] }] });
+      assert.ifError(turn.error); return turn.result.turn.id;
+    };
+    const ended = id => tui.notices.find(message => message.method === "turn/completed" && message.params.turn.id === id);
+    const first = await run("plant-account-one-history");
+    await fx.until(() => ended(first), "primary account turn");
+    const held = await run("hold-account-switch-test");
+    await fx.until(() => fx.adapterCalls().filter(method => method === "session/prompt").length === 2, "held Claude turn");
+    assert.match((await desktop.call("claudeAccounts/write", { action: "select", id: second.id })).error.message, /active Claude response/);
+    assert.equal(accounts.activeId(), "default");
+    await tui.call("turn/interrupt", { threadId: thread, turnId: held });
+    await fx.until(() => ended(held), "interrupted turn");
+    assert.equal((await desktop.call("claudeAccounts/write", { action: "select", id: second.id })).result.activeId, second.id);
+    assert.equal(fx.accounts().claude.email, "second@example.test");
+    assert.equal(claudeLimit(await tui.call("account/rateLimits/read")).primary.usedPercent, 73, "usage comes from the selected account, not the previous account's cache");
+    const next = await run("now use account two");
+    await fx.until(() => ended(next), "second account turn");
+    const envs = fs.readFileSync(path.join(fx.root, "adapter.log.env"), "utf8").trim().split("\n").map(JSON.parse);
+    assert.ok(envs.some(env => env.configDir === configDir), "the real spawned adapter uses the second config directory");
+    const prompts = fs.readFileSync(path.join(fx.root, "adapter.log.prompts"), "utf8").trim().split("\n").map(JSON.parse);
+    assert.match(JSON.stringify(prompts.at(-1)), /plant-account-one-history/, "the fresh account receives the previous conversation");
+    assert.equal(fx.loginUntouched(), true, "primary Claude login files stay intact");
+  });
 
   test("signed in: Claude models, usage and turns work (the baseline for the tests below)", async (t) => {
     const fx = await setup(t);

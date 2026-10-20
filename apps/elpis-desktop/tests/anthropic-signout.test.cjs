@@ -14,7 +14,12 @@ const limit = (limitId, limitName, usedPercent) => ({ limitId, limitName, planTy
 test('Anthropic card: Sign out and Sign in change only Elpis; usage and the model picker follow', async () => {
   const clients = new Set(); const posts = []; let modelRequests = 0;
   // `signedOut`: Elpis's own switch. `claudeCodeIn`: whether Claude Code on this computer is logged in.
-  const state = { signedOut: false, claudeCodeIn: true };
+  const state = { signedOut: false, claudeCodeIn: true, activeId: 'default' };
+  const secondId = '66601136-bf70-4727-8da3-0e2e8efc7e99', accountPosts = [];
+  const claudeAccounts = () => ({ activeId: state.activeId, accounts: [
+    { id: 'default', label: 'Claude 1', email: 'first@example.com', plan: 'max', authenticated: true, signingIn: false, error: null },
+    { id: secondId, label: 'Claude 2', email: 'second@example.com', plan: 'pro', authenticated: true, signingIn: false, error: null },
+  ] });
   const claude = () => state.signedOut ? { state: 'notConnected', models: [], usage: [], signedOut: true }
     : state.claudeCodeIn ? { state: 'connected', models: ['Opus'], usage: [limit('claude', 'Claude', 40)], signedOut: false }
       : { state: 'notConnected', models: [], usage: [], signedOut: false };
@@ -34,6 +39,10 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     if (url.pathname === '/api/models') { modelRequests++; return json({ data: models(), nextCursor: null }); }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/providers/settings') return json(providerSettings);
+    if (url.pathname === '/api/providers/claude-accounts') {
+      if (req.method === 'POST') { const input = JSON.parse(raw); accountPosts.push(input); state.activeId = input.id; }
+      return json(claudeAccounts());
+    }
     if (url.pathname === '/api/providers' && req.method === 'POST') {
       const body = JSON.parse(raw); posts.push(body);
       if (body.action === 'anthropicSignOut') state.signedOut = true;
@@ -75,6 +84,13 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     assert.deepEqual(await card.getByRole('button').allInnerTexts(), ['Sign out']);
     assert.deepEqual(await accounts.locator('[data-provider="openai"]').getByRole('button').allInnerTexts(), ['Sign out'], 'the ChatGPT card keeps its own button');
     await card.screenshot({ path: '/tmp/elpis-anthropic-card-connected.png' });
+    const selector = card.getByRole('combobox', { name: 'Claude account' });
+    await selector.click(); await page.getByRole('option', { name: 'second@example.com · pro', exact: true }).click();
+    await selector.filter({ hasText: 'second@example.com' }).waitFor();
+    assert.deepEqual(accountPosts, [{ action: 'select', id: secondId }]);
+    await card.screenshot({ path: '/tmp/elpis-claude-second-account.png' });
+    await selector.click(); await page.getByRole('option', { name: 'first@example.com · max', exact: true }).click();
+    await selector.filter({ hasText: 'first@example.com' }).waitFor();
 
     // Sign out: only Elpis; the card, the sidebar's usage, the Usage & limits page and the picker all follow.
     const modelsBefore = modelRequests;
