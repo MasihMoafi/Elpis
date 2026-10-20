@@ -33,7 +33,8 @@
     "tests/turn-replacement.test.mjs",
     "tests/workflow-sources.test.cjs",
     "tests/canvas-delete-flow.test.mjs",
-    "tests/love-activity.test.mjs"
+    "tests/love-activity.test.mjs",
+    "tests/love-spot-events.test.mjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",

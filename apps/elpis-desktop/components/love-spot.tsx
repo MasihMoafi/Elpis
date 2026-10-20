@@ -15,6 +15,7 @@ import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
+import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
 import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { agentOf, avatar, characters, makeAgent, upgradeAgentArt, type Character, type LoveAgent } from "@/lib/love-agents";
@@ -261,17 +262,14 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   useEffect(() => {
     if (!editor) return;
     void document.fonts.load("20px Excalifont").catch(report);
-    const events = new EventSource(`/api/love-spot/events?revision=${encodeURIComponent(revision.current)}`);
-    events.onmessage = event => {
+    return subscribeLoveSpotEvents(event => {
       try {
         const data: Update = JSON.parse(event.data);
         if (data.type === "error") setError(data.message);
         else if (data.type === "screenshots") setScreenshots(data.screenshots);
         else if (data.revision !== revision.current) receive(data);
       } catch (e) { report(e); }
-    };
-    events.onerror = () => setError("Love Spot is reconnecting… Your drawing is still here.");
-    return () => events.close();
+    }, () => setError("Love Spot is reconnecting… Your drawing is still here."));
   }, [editor, receive, report]);
 
   useEffect(() => {
