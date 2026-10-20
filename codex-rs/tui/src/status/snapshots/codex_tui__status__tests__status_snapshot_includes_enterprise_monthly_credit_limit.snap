@@ -1,5 +1,6 @@
 ---
 source: tui/src/status/tests.rs
+assertion_line: 1137
 expression: sanitized
 ---
 /status
@@ -15,6 +16,5 @@ expression: sanitized
   Agents.md:             <none>
 
   Token usage:           1.2K total  (800 input + 400 output)
-  Context window:        100% left (1.2K used / 272K)
   Monthly credit limit:  [██████████████░░░░░░] 68% left (resets 07:08 on 7 May)
                          8,000 of 25,000 credits used

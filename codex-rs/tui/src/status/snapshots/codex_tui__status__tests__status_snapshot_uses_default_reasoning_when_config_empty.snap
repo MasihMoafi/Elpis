@@ -1,5 +1,6 @@
 ---
 source: tui/src/status/tests.rs
+assertion_line: 1762
 expression: sanitized
 ---
 /status
@@ -9,11 +10,10 @@ expression: sanitized
   Visit https://chatgpt.com/settings/usage for up-to-date
   information on rate limits and credits
 
-  Model:           gpt-5.1-codex-max (reasoning medium, summaries auto)
-  Directory:       [[workspace]]
-  Permissions:     Custom (workspace with network access, Ask for approval)
-  Agents.md:       <none>
+  Model:        gpt-5.1-codex-max (reasoning medium, summaries auto)
+  Directory:    [[workspace]]
+  Permissions:  Custom (workspace with network access, Ask for approval)
+  Agents.md:    <none>
 
-  Token usage:     750 total  (500 input + 250 output)
-  Context window:  100% left (750 used / 272K)
-  Limits:          data not available yet
+  Token usage:  750 total  (500 input + 250 output)
+  Limits:       data not available yet

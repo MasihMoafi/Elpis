@@ -2111,7 +2111,13 @@ async fn status_snapshot_treats_refreshing_empty_limits_as_unavailable() {
         }
     }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
-    assert!(sanitized.contains("Limits:          not available for this account"));
+    assert!(
+        sanitized.lines().any(|line| {
+            line.split_once("Limits:")
+                .is_some_and(|(_, value)| value.trim() == "not available for this account")
+        }),
+        "{sanitized}"
+    );
 }
 
 #[tokio::test]

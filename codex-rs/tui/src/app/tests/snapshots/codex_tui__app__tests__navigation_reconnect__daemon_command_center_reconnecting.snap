@@ -1,23 +1,24 @@
 ---
 source: tui/src/app/tests/navigation_reconnect_tests.rs
+assertion_line: 302
 expression: "render_bottom_popup(&app.chat_widget, 100)"
 ---
-  Agent command center  Group: Project  g
-   All 2   Needs you 0   Working 1   Ready 1   Inactive 0
+  Agent command center  Group: Project  g  View: list
+   All 2   Needs you 0   Working 1   Ready 1   Done 0   Inactive 0
   ────────────────────────────────────────────────────────────────────────────────────────────────
-  Rename › Keep this task draft!                          │ Task details
-      Tasks                           Model               │
-  /tmp/project  2                                         │ Selected task
-  › ● Selected task                   Unknown             │ ● Working
-    ○ Vanished task                   Unknown             │
-                                                          │ Model: Unknown
-                                                          │ Reasoning: Unknown
+  Rename › Keep this task draft!                          │ ● Selected task
+      Tasks                     Model                     │ Unknown · test-provider · asked by you
+  /tmp/project  2                                         │ ──────────────────────────────────────
+  › ● Selected task             Unknown                   │ you → Unknown  ask
+    ● Vanished task             Unknown                   │ Selected task
                                                           │
-                                                          │ Project
-                                                          │ /tmp/project
+                                                          │ Last message
+                                                          │ Pre-disconnect answer
                                                           │
-                                                          │ Prompt
-                                                          │ Selected task
+                                                          │ ▎ Unknown  ◐ working
+                                                          │
+                                                          │
+                                                          │
                                                           │
                                                           │
                                                           │

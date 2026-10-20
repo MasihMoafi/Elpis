@@ -111,7 +111,7 @@ async fn command_center_new_keeps_startup_draft_visible_through_handoff() -> Res
                 .rev()
                 .map(|row| {
                     row.iter()
-                        .map(ratatui::buffer::Cell::symbol)
+                        .map(|cell| crate::terminal_hyperlinks::strip_osc8(cell.symbol()))
                         .collect::<String>()
                         .trim_end()
                         .to_string()
