@@ -30,6 +30,69 @@ fn trusted_project_edit_targets_project_trust_level() {
 }
 
 #[tokio::test]
+async fn versioned_batch_write_re_reads_and_rejects_stale_version() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    std::fs::write(home.path().join("config.toml"), "")?;
+    let config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .build()
+        .await?;
+    let server =
+        AppServerClient::InProcess(crate::tests::start_test_embedded_app_server(config).await?);
+    let cwd = home.path().display().to_string();
+    let before = read_config_with_layers(server.request_handle(), cwd.clone()).await?;
+    let version = before
+        .layers
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find_map(|layer| {
+            matches!(
+                &layer.name,
+                codex_app_server_protocol::ConfigLayerSource::User { profile: None, .. }
+            )
+            .then(|| layer.version.clone())
+        })
+        .expect("writable user layer");
+
+    write_config_batch_with_version(
+        server.request_handle(),
+        vec![replace_config_value(
+            "features.automatic_context_pruning",
+            serde_json::json!(true),
+        )],
+        Some(version.clone()),
+    )
+    .await?;
+    let saved = read_config_with_layers(server.request_handle(), cwd.clone()).await?;
+    let saved_config = serde_json::to_value(&saved.config)?;
+    assert_eq!(saved_config["features"]["automatic_context_pruning"], true);
+
+    let stale = write_config_batch_with_version(
+        server.request_handle(),
+        vec![replace_config_value(
+            "features.automatic_context_pruning",
+            serde_json::json!(false),
+        )],
+        Some(version),
+    )
+    .await
+    .expect_err("stale version must not write");
+    assert!(
+        format_config_error(&stale)
+            .to_ascii_lowercase()
+            .contains("version")
+    );
+    let unchanged = read_config_with_layers(server.request_handle(), cwd).await?;
+    let unchanged_config = serde_json::to_value(&unchanged.config)?;
+    assert_eq!(
+        unchanged_config["features"]["automatic_context_pruning"],
+        true
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn remote_project_trust_guards_thread_start_and_preserves_repository_decisions() -> Result<()>
 {
     let temp_dir = tempfile::tempdir()?;
