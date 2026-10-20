@@ -174,7 +174,7 @@ jobs:
       - name: Install build dependencies and Rust
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux ripgrep
           rustup toolchain install 1.95.0 --profile minimal --no-self-update
           # This disposable runner must permit the namespaces that the sandbox tests create.
           # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
@@ -300,8 +300,8 @@ jobs:
           set -e
           test "$control_status" -ne 0
           rg -q 'test result: FAILED\. 0 passed; 1 failed;' "$RUNNER_TEMP/elpis-status-negative-checks.log"
-          # --nocapture may place the panic between the test name and FAILED.
-          rg -q '^test chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules \.\.\.' "$RUNNER_TEMP/elpis-status-negative-checks.log"
+          # --nocapture interleaves stdout/stderr; identity need not start a line.
+          rg -Fq 'chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules' "$RUNNER_TEMP/elpis-status-negative-checks.log"
           rg -q '/status omitted an admitted development rule' "$RUNNER_TEMP/elpis-status-negative-checks.log"
       - name: Native UI and retained Elpis interaction tests
         env:
@@ -327,6 +327,7 @@ jobs:
           name: candidate-rendering-differences
           path: |
             ${{ runner.temp }}/elpis-ui-checks.log
+            ${{ runner.temp }}/elpis-status-negative-checks.log
             codex-rs/**/*.snap.new
             codex-rs/**/.*.pending-snap
           include-hidden-files: true
