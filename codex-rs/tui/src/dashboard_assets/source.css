@@ -125,7 +125,8 @@
 .ribbon-metrics div { min-width: 0; padding: 0; }
 .ribbon-metrics span { display: block; color: color-mix(in oklab, var(--color-base-content) 75%, transparent); font-size: 12px; line-height: 1.5; }
 .ribbon-metrics strong { display: block; margin-top: 3px; overflow-wrap: anywhere; font-size: 13px; font-weight: 500; line-height: 1.4; }
-.dashboard-tabs { width: 100%; gap: 3px; padding: 0 12px 20px; }
+/* A pressed row takes the selected row's tint, not daisyUI's near-black neutral (A45). */
+.dashboard-tabs { width: 100%; gap: 3px; padding: 0 12px 20px; --menu-active-bg: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100)); --menu-active-fg: var(--color-primary); }
 .dashboard-tabs .menu-title { margin-top: 14px; padding: 8px 12px; color: color-mix(in oklab, var(--color-base-content) 65%, transparent); font-size: 11px; font-weight: 500; }
 .dashboard-tabs .tab { justify-content: flex-start; height: auto; min-height: 40px; width: 100%; gap: 7px; padding: 10px 12px; border-radius: 7px; color: color-mix(in oklab, var(--color-base-content) 85%, transparent); font-size: 13px; font-weight: 450; line-height: 1.35; text-align: left; white-space: normal; }
 .dashboard-tabs .tab-active { background: color-mix(in oklab, var(--color-primary) 12%, var(--color-base-100)); color: var(--color-primary); font-weight: 550; }

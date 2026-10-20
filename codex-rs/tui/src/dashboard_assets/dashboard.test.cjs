@@ -313,3 +313,38 @@ test('polling clears a removed conversation and rejects its pending transcript',
     assert.doesNotMatch(await page.locator('#agent-chat-items').innerText(), /Removed conversation response/);
   } finally { await browser.close(); }
 });
+
+// A45 (Masih, 20 Oct: a pressed sidebar row turned black with unreadable text): every sidebar row stays readable at
+// rest, hovered, pressed, focused and selected, in both themes.
+for (const colorScheme of ['dark', 'light']) {
+  test(`sidebar rows are readable in every state: ${colorScheme}`, async () => {
+    const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme });
+      await page.route('**/*', route => {
+        const pathname = new URL(route.request().url()).pathname;
+        if (['/', '/dashboard.js', '/dashboard.css', '/dashboard_workflows.js'].includes(pathname)) return route.fulfill({
+          body: readFileSync(path.join(assets, pathname === '/' ? 'index.html' : pathname.slice(1))),
+          contentType: pathname === '/' ? 'text/html' : pathname.endsWith('.css') ? 'text/css' : 'application/javascript',
+        });
+        return route.fulfill({ status: 503, body: 'Unavailable' });
+      });
+      await page.goto('http://fixture.test');
+      const rows = (await page.locator('.dashboard-tabs [role="tab"]').evaluateAll(nodes => nodes.map(n => n.id))).map(id => `#${id}`);
+      assert.ok(rows.length >= 5, `found ${rows.length} sidebar rows`);
+      const settle = () => page.waitForTimeout(250);
+      for (const row of rows) {
+        await page.mouse.move(0, 0); await settle();
+        await readableContrast(page, [row]);
+        await page.hover(row); await settle();
+        await readableContrast(page, [row]);
+        await page.mouse.down(); await settle();
+        await readableContrast(page, [row]);
+        await page.mouse.up(); await page.mouse.move(0, 0); await settle();
+        await readableContrast(page, [row]);
+        await page.locator(row).focus(); await settle();
+        await readableContrast(page, [row]);
+      }
+    } finally { await browser.close(); }
+  });
+}
