@@ -27,6 +27,62 @@ test('Love Spot is beside Canvas and loads its editor only after a real click', 
   } finally { await f.close(); }
 });
 
+for (const colorScheme of ['light', 'dark']) test(`Love Spot red reads clearly and stays off project and chat status controls · ${colorScheme}`, async () => {
+  const cwd = '/tmp/a60-palette-project';
+  const f = await loveSpotFixture({ colorScheme, configureClient: client => {
+    client.listThreads = async () => ({ data: [{ id: 'review', name: 'Review', cwd, modelProvider: 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } }], nextCursor: null });
+  } });
+  try {
+    const { page } = f;
+    await page.evaluate(cwd => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'a60', name: 'Palette project', cwd }], selectedId: 'a60' })), cwd);
+    await page.reload();
+    await page.locator('.project-group .project-toggle svg:not(.sidebar-group-chevron)').waitFor();
+    await page.locator('.thread-row[data-thread-id="review"] .thread-dot[data-state="working"]').first().waitFor();
+    await f.open(page);
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), colorScheme === 'dark');
+    await page.locator('.love-spot-pages button[aria-label="Pages"]').waitFor();
+    await page.locator('.excalidraw input.ToolIcon_type_radio:checked + .ToolIcon__icon').first().waitFor();
+    const result = await page.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      const rgb = value => { context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+      const background = element => {
+        const ancestors = []; for (let node = element; node; node = node.parentElement) ancestors.unshift(node);
+        context.clearRect(0, 0, 1, 1);
+        for (const node of ancestors) { context.fillStyle = getComputedStyle(node).backgroundColor; context.fillRect(0, 0, 1, 1); }
+        return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
+      };
+      const luminance = color => color.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+      const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+      const measure = (selector, property) => { const element = document.querySelector(selector); return contrast(rgb(getComputedStyle(element)[property]), background(element)); };
+      const project = document.querySelector('.project-group .project-toggle svg:not(.sidebar-group-chevron)');
+      const status = document.querySelector('.thread-row[data-thread-id="review"] .thread-dot[data-state="working"]');
+      return {
+        token: getComputedStyle(document.documentElement).getPropertyValue('--love-red').trim().toLowerCase(),
+        navText: measure('.nav-list button[data-nav-page="loveSpot"]', 'color'),
+        navMark: measure('.nav-list button[data-nav-page="loveSpot"] svg', 'fill'),
+        pageText: measure('.love-spot-pages button[aria-label="Pages"]', 'color'),
+        pageColor: rgb(getComputedStyle(document.querySelector('.love-spot-pages button[aria-label="Pages"]')).color),
+        toolMark: measure('.excalidraw input.ToolIcon_type_radio:checked + .ToolIcon__icon', 'color'),
+        appAccent: rgb(getComputedStyle(document.querySelector('.app-shell')).getPropertyValue('--primary')),
+        project: rgb(getComputedStyle(project).color),
+        status: rgb(getComputedStyle(status).borderTopColor),
+      };
+    });
+    if (colorScheme === 'light') assert.equal(result.token, '#8b1017', 'the light blood red stays exact');
+    for (const name of ['navText', 'pageText']) assert.ok(result[name] >= 4.5, `${colorScheme} ${name}: ${result[name].toFixed(2)}:1`);
+    for (const name of ['navMark', 'toolMark']) assert.ok(result[name] >= 3, `${colorScheme} ${name}: ${result[name].toFixed(2)}:1`);
+    const blood = colorScheme === 'dark' ? [228, 98, 104] : [139, 16, 23];
+    if (colorScheme === 'dark') assert.deepEqual(result.pageColor, blood, 'the dark page selector uses the readable Love Spot red');
+    assert.deepEqual(result.project, result.appAccent, `${colorScheme}: project folder uses the app accent`);
+    assert.deepEqual(result.status, result.appAccent, `${colorScheme}: chat status uses the app accent`);
+    assert.notDeepEqual(result.project, blood, `${colorScheme}: project folder keeps the app accent`);
+    assert.notDeepEqual(result.status, blood, `${colorScheme}: chat status keeps the app accent`);
+    console.log(`${colorScheme} Love Spot contrast: ${JSON.stringify(result)}`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the sidebar and combines its bars when they fit · ${colorScheme}`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   const output = path.join(process.env.HOME, '.cache/elpis-tests/love-confirm');
