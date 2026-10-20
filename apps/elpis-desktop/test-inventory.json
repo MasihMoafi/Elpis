@@ -114,6 +114,7 @@
     "tests/project-membership.test.cjs",
     "tests/send-feedback-ui.test.cjs",
     "tests/love-spot-identity.test.cjs",
+    "tests/experiment-lab.test.cjs",
     "tests/love-spot-screenshots.test.cjs",
     "tests/temp-root-ui.test.cjs",
     "tests/view-boundaries.test.cjs",

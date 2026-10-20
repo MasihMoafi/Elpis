@@ -5,16 +5,16 @@ import { randomUUID } from 'node:crypto';
 import { BridgeError, object, text, threadId } from './client.mjs';
 
 export const LAB_MODEL = 'gpt-6-luna';
+export const SOLVED_LIMIT = 10;
 const SCHEMA = { type: 'object', additionalProperties: false, required: ['answer', 'report'], properties: { answer: { type: 'string' }, report: { type: 'string' } } };
 const RULES = 'You are taking part in a self-contained answer-task experiment. Use only the task and supplied predecessor reports. Do not use tools, browse, read files, write files, or delegate. Interpret any role instructions about building or files as producing the corresponding answer or plan in text. Return JSON with answer (only the final answer, no explanation) and report (a concise work summary or critique). Never guess an expected evaluation answer.';
 
 function requestOf(input) {
   object(input, ['pattern', 'task', 'expected', 'repetitions', 'stopWhen', 'stages']);
   const pattern = text(input.pattern, 'pattern', 120), task = text(input.task, 'task', 8000), expected = text(input.expected, 'expected answer', 2000);
-  if (!Number.isInteger(input.repetitions) || input.repetitions < 1 || input.repetitions > 10) throw new BridgeError('Repetitions must be a whole number from 1 to 10');
-  // 'solved' repeats until the pattern's answer passes the check; repetitions is then the cap that bounds a task that never passes.
   const stopWhen = input.stopWhen ?? 'count';
   if (!['count', 'solved'].includes(stopWhen)) throw new BridgeError('Stop condition must be a fixed count or until the task is solved');
+  if (stopWhen === 'count' && (!Number.isInteger(input.repetitions) || input.repetitions < 1 || input.repetitions > SOLVED_LIMIT)) throw new BridgeError('Repetitions must be a whole number from 1 to 10');
   if (!Array.isArray(input.stages) || !input.stages.length || input.stages.length > 24) throw new BridgeError('Choose a nonempty pattern with at most 24 stages');
   const ids = new Set();
   const stages = input.stages.map(item => {
@@ -33,7 +33,7 @@ function requestOf(input) {
     ready.forEach(s => done.add(s.id));
   }
   if (stages.filter(s => !stages.some(next => next.dependsOn.includes(s.id))).length !== 1) throw new BridgeError('Pattern needs one final answer stage');
-  return { pattern, task, expected, repetitions: input.repetitions, stopWhen, stages };
+  return { pattern, task, expected, repetitions: stopWhen === 'solved' ? SOLVED_LIMIT : input.repetitions, stopWhen, stages };
 }
 
 /** One fresh subscription thread per stage; subscribe before turn/start so fast completions are not lost. */
@@ -90,9 +90,9 @@ async function answer(client, prompt, signal, timeoutMs, step) {
 
 /** The record is owned by the bridge, so tab changes and renderer reloads cannot lose a run. */
 export function createExperimentLab({ client, file = path.join(process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'), 'experiment-lab', 'latest.json'), timeoutMs = 90000 } = {}) {
-  let record, controller, running, starting = false, writes = Promise.resolve();
+  let records, record, loading, controller, running, starting = false, writes = Promise.resolve();
   const save = () => {
-    const bytes = JSON.stringify(record);
+    const bytes = JSON.stringify({ version: 2, records });
     writes = writes.catch(() => {}).then(async () => {
       await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
       const temporary = `${file}.tmp`;
@@ -100,15 +100,32 @@ export function createExperimentLab({ client, file = path.join(process.env.ELPIS
     });
     return writes;
   };
-  async function read() {
-    if (record === undefined) {
-      try { record = JSON.parse(await fs.readFile(file, 'utf8')); }
-      catch (cause) { if (cause.code !== 'ENOENT') throw new BridgeError(`Cannot read experiment record: ${cause.message}`, 500); record = null; }
-      if (record?.status === 'running' && !running) { record.status = 'interrupted'; record.error = 'The bridge stopped before this comparison finished.'; await save(); }
-    }
+  async function load() {
+    if (records !== undefined) return;
+    loading ??= (async () => {
+      let stored;
+      try { stored = JSON.parse(await fs.readFile(file, 'utf8')); }
+      catch (cause) { if (cause.code !== 'ENOENT') throw new BridgeError(`Cannot read experiment record: ${cause.message}`, 500); stored = null; }
+      const legacy = stored && !Array.isArray(stored.records);
+      records = legacy ? [stored] : stored?.records ?? [];
+      record = records[0] ?? null;
+      const interrupted = record?.status === 'running' && !running;
+      if (interrupted) { record.status = 'interrupted'; record.error = 'The bridge stopped before this comparison finished.'; }
+      if (legacy || interrupted) await save();
+    })();
+    await loading;
+  }
+  async function read(id) {
+    await load();
     // Do not expose a terminal state until its final write has completed: a reload must see the same result.
     if (running && record?.status !== 'running') await running;
-    return structuredClone(record);
+    const selected = id ? records.find(item => item.id === id) : record;
+    if (id && !selected) throw new BridgeError('Experiment not found', 404);
+    return structuredClone(selected);
+  }
+  async function list() {
+    await load();
+    return records.map(({ id, startedAt, status, request }) => ({ id, startedAt, status, task: request?.task ?? '' }));
   }
   async function trial(arm, repetition, stages) {
     const trial = { arm, repetition, startedAt: new Date().toISOString(), elapsedMs: 0, tokens: null, passed: false, answer: '', steps: [], error: null };
@@ -169,14 +186,17 @@ export function createExperimentLab({ client, file = path.join(process.env.ELPIS
   return {
     busy: () => starting || !!running,
     read,
+    list,
     async start(input) {
       if (starting || running) throw new BridgeError('An experiment is already running', 409);
       starting = true;
       try {
+        await load();
         const request = requestOf(input), providers = await client.providers();
         if (providers.openai?.auth?.state !== 'signedIn' || providers.openai?.auth?.method !== 'ChatGPT') throw new BridgeError('Sign in with your ChatGPT subscription to run the Lab; API-key accounts are not used', 409);
         controller = new AbortController();
         record = { version: 1, id: randomUUID(), status: 'running', startedAt: new Date().toISOString(), model: LAB_MODEL, provider: 'openai', auth: 'ChatGPT', effort: 'low', mode: 'answer-only', check: 'trimmed-exact-match', concurrency: 3, runtime: { node: process.version, platform: process.platform, arch: process.arch }, request, trials: [], error: null };
+        records.unshift(record);
         await save();
         running = execute().catch(async cause => { record.status = 'failed'; record.error = cause.message; await save().catch(() => {}); }).finally(() => { running = null; });
         return structuredClone(record);

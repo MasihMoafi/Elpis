@@ -268,10 +268,10 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/repository' && method === 'GET') return json(response, 200, { repository: await isRepository(await projectDirectory(cwdOf(url))) });
         if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
         if (url.pathname === '/api/experiment-lab') {
-          if (method === 'GET') return json(response, 200, { record: await experimentLab.read() });
+          if (method === 'GET') return json(response, 200, { record: await experimentLab.read(url.searchParams.get('id') || undefined), entries: await experimentLab.list() });
           const input = await body(request);
-          if (input?.action === 'stop') { object(input, ['action']); return json(response, 200, { record: await experimentLab.stop() }); }
-          return json(response, 200, { record: await experimentLab.start(input) });
+          if (input?.action === 'stop') { object(input, ['action']); return json(response, 200, { record: await experimentLab.stop(), entries: await experimentLab.list() }); }
+          return json(response, 200, { record: await experimentLab.start(input), entries: await experimentLab.list() });
         }
         if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());
         if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));
