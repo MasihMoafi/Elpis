@@ -153,7 +153,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
         {change?.checks?.commands.map((command, index) => <details key={index} className="text-sm"><summary>{command.command} · exit {command.code}</summary><pre className="elpis-improve-log">{command.output}</pre></details>)}
         {(error || change?.error) && <p role="alert" className="text-sm text-destructive">{error || change?.error}</p>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
-        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} onClick={() => void action("check")}>Check build &amp; tests</Button><Button variant="outline" disabled={busy || !canKeep} onClick={() => void action("try")}>Try it</Button><Button disabled={busy || !canKeep || change?.status === "ready"} onClick={() => void action("keep")}>Keep</Button></AlertDialogFooter>
+        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} onClick={() => void action("check")}>Check build &amp; tests</Button></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>;
