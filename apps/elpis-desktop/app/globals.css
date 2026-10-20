@@ -766,6 +766,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
    window's drag handle, and leaves room on the right for the system's window buttons. */
 .app-shell.has-title-bar { grid-template-rows:36px minmax(0,1fr); }
 .title-bar { grid-column:1 / -1; display:flex; align-items:center; gap:4px; height:36px; padding:0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 6px; background:var(--sidebar); border-bottom:1px solid var(--hairline); app-region:drag; -webkit-app-region:drag; }
+/* The drawing shares the desktop window; leave its native controls and drag strip accessible. */
+body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .title-bar button { color:var(--muted-foreground); app-region:no-drag; -webkit-app-region:no-drag; }
 .has-title-bar .sidebar:not(.open) .brand > .sidebar-toggle, .has-title-bar .workspace-header > .sidebar-open { display:none !important; }
 .shortcuts-dialog { display:grid; gap:12px; max-width:520px; }

@@ -50,7 +50,20 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
     pull(); document.addEventListener("focusin", pull);
     return () => document.removeEventListener("focusin", pull);
   }, [asking]);
-  useEffect(() => { if (editor) editor.scrollToContent(first.current, { fitToViewport: true, viewportZoomFactor: 0.95 }); }, [editor]);
+  // Excalidraw restores initialData after publishing its API. Fitting before that restore is overwritten.
+  useEffect(() => {
+    if (!editor) return;
+    let fitted = false;
+    const fit = () => {
+      const state = editor.getAppState();
+      if (fitted || state.isLoading || !state.width || !state.height || !editor.getSceneElements().some(element => element.id === BACKGROUND)) return;
+      fitted = true;
+      editor.scrollToContent(first.current, { fitToViewport: true, viewportZoomFactor: 0.9 });
+    };
+    const unsubscribe = editor.onChange(fit);
+    fit();
+    return unsubscribe;
+  }, [editor]);
 
   // The unsent drawing is held until it is added or discarded, so closing the panel never loses it.
   const changed = useCallback((elements: readonly ExcalidrawElement[], _state: unknown, files: BinaryFiles) => {
@@ -89,7 +102,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
     finally { setBusy(false); }
   }
 
-  return createPortal(<div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Draw on the page" className="fixed inset-0 z-40 flex flex-col bg-background text-foreground outline-none"
+  return createPortal(<div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Draw on the page" className="browser-drawing fixed inset-0 z-40 flex flex-col bg-background text-foreground outline-none"
     onKeyDownCapture={event => {
       if (event.key === "Tab" && !asking && root.current) {
         const stops = tabbable(root.current), index = stops.indexOf(document.activeElement as HTMLElement);
