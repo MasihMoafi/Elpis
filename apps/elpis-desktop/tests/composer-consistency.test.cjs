@@ -10,12 +10,15 @@ const probe = page => page.evaluate(() => {
   const workspace = box(q('.workspace-body')), composer = box(q('.composer')), wrap = q('.composer-wrap');
   const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
   const controls = [...q('.composer-controls').querySelectorAll('button, select, [role="combobox"]')].filter(visible).map(box);
+  const approval = box(q('button.composer-pill')), model = box(q('.model-picker-trigger'));
   return {
     shown: composer.width > 0 && composer.height > 0, workspace: Math.round(workspace.width), inset: getComputedStyle(wrap).paddingLeft,
     permission: q('.composer-pill .pill-long').offsetParent ? q('.composer-pill .pill-long').textContent : q('.composer-pill .pill-short').textContent,
     model: q('.model-picker-trigger').innerText, providerLabel: !!q('.composer .model-trigger-provider') && visible(q('.composer .model-trigger-provider')),
     leaks: controls.filter(rect => rect.left < composer.left - 0.5 || rect.right > composer.right + 0.5).length,
     page: document.documentElement.scrollWidth > innerWidth,
+    rowOffset: Math.abs((approval.top + approval.bottom - model.top - model.bottom) / 2),
+    overlaps: controls.flatMap((a, i) => controls.slice(i + 1).filter(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5)).length,
   };
 });
 
@@ -43,8 +46,25 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
       assert.ok(!/\|/.test(m.model) && !/OpenAI|Anthropic|Configured provider/.test(m.model), `model button names the model only: "${m.model}", ${where}`);
       assert.equal(m.permission, m.workspace > 560 ? 'Approve for me' : 'Auto', `permission label by workspace width, ${where}`);
       assert.equal(m.leaks, 0, `every toolbar control stays inside the box, ${where}`);
+      assert.equal(m.overlaps, 0, `toolbar controls do not overlap, ${where}`);
+      assert.ok(m.rowOffset <= 4, `approval and model share the bottom row (${m.rowOffset}px apart), ${where}`);
       assert.equal(m.page, false, `no horizontal page overflow, ${where}`);
       assert.equal(m.inset, m.workspace > 640 ? '32px' : m.workspace > 520 ? '22px' : '12px', `box inset by workspace width, ${where}`);
     }
   });
 }
+
+test('Ask for approval shares the row with Plan mode in a narrow running chat', async t => {
+  const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running: true });
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+  await f.open('chat-a');
+  await f.page.getByRole('button', { name: 'Add files and more' }).click();
+  await f.page.getByRole('menuitem', { name: /Plan mode/ }).click();
+  for (const width of [1100, 760, 500, 390]) {
+    await f.page.setViewportSize({ width, height: 700 });
+    const m = await probe(f.page);
+    assert.ok(m.rowOffset <= 4, `approval and model share a row at ${width}px`);
+    assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
+    assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
+  }
+});

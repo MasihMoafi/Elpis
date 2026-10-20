@@ -215,7 +215,7 @@ button:disabled { cursor:not-allowed; }
 .composer textarea { border:0; box-shadow:none; background:transparent; min-height:44px; max-height:240px; resize:none; font-size:14.5px; padding:2px 0; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
-.composer-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; row-gap:4px; margin-top:4px; }
+.composer-controls { display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:12px; margin-top:4px; }
 .model-select { display:inline-flex; align-items:center; justify-content:space-between; gap:6px; background:transparent; color:var(--muted-foreground); border:1px solid transparent; min-width:0; height:32px; padding:0 8px; max-width:260px; font-size:12.5px; font-weight:500; white-space:nowrap; }
 .model-select:hover { background:var(--hover); color:var(--foreground); }
 .model-select > svg { flex-shrink:0; color:var(--muted-foreground); }
@@ -853,8 +853,8 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .annotation-chips button[aria-pressed="true"] { outline:2px solid color-mix(in oklab, var(--annotation) 45%, transparent); outline-offset:1px; }
 .annotation-error { font-size:12px; color:var(--destructive); }
 .workspace-body { position:relative; }
-.composer .model-controls { flex-wrap:wrap; flex-shrink:0; }
-.composer-right { flex:1 1 auto; flex-wrap:wrap; justify-content:flex-end; }
+.composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
+.composer-right { flex:1 1 auto; flex-wrap:nowrap; min-width:0; justify-content:flex-end; }
 .composer .model-picker-trigger { min-width:88px; max-width:none; flex:0 0 auto; }
 .header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
 /* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
@@ -1200,7 +1200,9 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .chat-collapsed > .workspace-content { visibility:hidden; }
 .full-view > .workspace-content .chat-scroll { --chat-top-inset:14px; padding:var(--chat-top-inset) 16px 8px; }
 .full-view > .workspace-content .composer-wrap { padding:6px 12px 12px; }
-/* Toolbar controls wrap with the pane so their labels remain readable. */
+/* Keep controls on the bottom row using the width of their own chat box. */
+.composer { container:composer / inline-size; }
+.followup-send-icon { display:none; }
 .composer-pill, .composer .model-select { flex-shrink:0; }
 .composer .model-select [data-slot="select-value"] { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .composer .model-select { min-width:64px; }
@@ -1209,9 +1211,28 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 /* Follow the chat pane's width when the browser or another session is beside it. */
 @media(min-width:761px) { @container workspace (max-width:640px) { .chat-scroll { padding-inline:22px; } } }
 @container workspace (max-width:640px) { .composer-wrap { padding-inline:22px; } }
-@container workspace (max-width:560px) { .pill-long { display:none; } .pill-short { display:inline; } }
+@container composer (max-width:640px) { .pill-long { display:none; } .pill-short { display:inline; } }
 @container workspace (max-width:520px) { .composer-wrap { padding-inline:12px; } }
 .effort-short { display:none; }
+@container composer (max-width:780px) {
+  .stop-button, .send-button { width:32px; min-width:32px; padding-inline:0; gap:0; }
+  .composer-action-label { display:none; }
+  .followup-send-icon { display:block; }
+}
+@container composer (max-width:640px) {
+  .composer-right .context-ring { display:none; }
+  .effort-long { display:none; } .effort-short { display:inline; }
+  .composer-controls { gap:8px; }
+  .composer-right { gap:2px; }
+  .composer-pill, .composer .model-select { padding-inline:6px; gap:4px; }
+  .composer .model-picker-trigger { min-width:56px; max-width:130px; flex:0 1 auto; }
+}
+@container composer (max-width:380px) {
+  .composer .model-controls { gap:2px; }
+  .composer-pill .pill-short { display:none; }
+  .plan-pill > span { display:none; }
+  .composer .model-select { min-width:52px; flex-shrink:1; }
+}
 @container workspace (min-width:421px) and (max-width:480px) {
   .composer-right .context-ring { display:none; }
   .composer .effort-long { display:none; } .composer .effort-short { display:inline; }
