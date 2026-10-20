@@ -1,28 +1,29 @@
 ---
 source: tui/src/app/tests/navigation_reconnect_tests.rs
+assertion_line: 409
 expression: "render_bottom_popup(&app.chat_widget, 100)"
 ---
-  Agent command center  Group: Project  g
-   All 2   Needs you 0   Working 1   Ready 1   Inactive 0                          tab/⇧tab filter
+  Agent command center  Group: Project  g  View: list
+   All 2   Needs you 0   Working 1   Ready 1   Done 0   Inactive 0                 tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────
-      Tasks                           Model               │ Task details
-  /tmp/project  2                                         │
-    ● New task                        Unknown             │ Selected task
-  › ○ Selected task                   Unknown             │ ○ Ready
-                                                          │
-                                                          │ Model: Unknown
-                                                          │ Reasoning: Unknown
-                                                          │
-                                                          │ Project
-                                                          │ /tmp/project
-                                                          │
-                                                          │ Prompt
+      Tasks                     Model                     │ ● Selected task
+  /tmp/project  2                                         │ Unknown · test-provider · asked by you
+    ● New task                  Unknown                   │ ──────────────────────────────────────
+  › ● Selected task             Unknown                   │ you → Unknown  ask
                                                           │ Selected task
                                                           │
+                                                          │ ▎ Unknown  ◇ ready
                                                           │
                                                           │
                                                           │
                                                           │
                                                           │
                                                           │
-  ? help  esc back  ↑/↓ move  enter open  n new
+                                                          │
+                                                          │
+                                                          │
+                                                          │
+                                                          │
+                                                          │
+                                                          │
+  ? help  esc back  ↑/↓ move  enter open  s steer  x stop  n new

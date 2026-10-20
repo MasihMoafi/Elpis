@@ -1,9 +1,10 @@
 ---
 source: tui/src/app/daemon_menu_tests.rs
+assertion_line: 126
 expression: "render_bottom_popup(&app.chat_widget,\nwidth).replace(r\"C:\\cli-build\\bin\\codex\",\n\"/x/cli-build/bin/codex\").replace(crate::version::CODEX_CLI_VERSION,\n\"<cli-version>\")"
 ---
-  Agent command center  Group: Project  g
-   All 0   Needs you 0   Working 0   Ready 0   Inactive 0                          tab/⇧tab filter
+  Agent command center  Group: Project  g  View: list
+   All 0   Needs you 0   Working 0   Ready 0   Done 0   Inactive 0                 tab/⇧tab filter
   ────────────────────────────────────────────────────────────────────────────────────────────────
   No tasks yet                                            │
                                                           │

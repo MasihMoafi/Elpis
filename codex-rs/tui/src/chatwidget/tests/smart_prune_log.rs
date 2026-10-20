@@ -233,7 +233,7 @@ fn smart_prune_inline_rows_follow_their_tool_and_activate_with_mouse_and_enter()
         let lines = (0..area.height)
             .map(|y| {
                 (0..area.width)
-                    .map(|x| buffer[(x, y)].symbol())
+                    .map(|x| crate::terminal_hyperlinks::strip_osc8(buffer[(x, y)].symbol()))
                     .collect::<String>()
                     .trim_end()
                     .to_string()
