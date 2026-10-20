@@ -1551,7 +1551,12 @@ wss.on("connection", (ws) => {
       pendingModelList.delete(parsed.id);
       // A subscription Elpis is signed out of offers no models (and is not even started).
       const noModels = { models: [], efforts: {}, fallback: null };
-      const lists = await Promise.all(AGENTS.map((agent) => agent.signedOut?.() ? noModels : Promise.race([catalogFor(agent), new Promise((r) => setTimeout(() => r(noModels), 30000))])));
+      const catalogWithin = (agent) => {
+        let timer;
+        return Promise.race([catalogFor(agent), new Promise((resolve) => { timer = setTimeout(resolve, 30000, noModels); })])
+          .finally(() => clearTimeout(timer));
+      };
+      const lists = await Promise.all(AGENTS.map((agent) => agent.signedOut?.() ? noModels : catalogWithin(agent)));
       const tpl = parsed.result.data[0] ?? {};
       const added = [];
       AGENTS.forEach((agent, i) => {
