@@ -60,13 +60,15 @@ async function main(args) {
   await fs.mkdir(home);
   const summary = { wallMs: 0, testMs: 0, files: [], evidence }, started = performance.now();
   console.log(`Test evidence: ${evidence}`);
-  async function run(name, command, parameters, tier) {
+  async function run(name, command, parameters, tier, seconds = 180) {
     const log = path.join(evidence, name.replaceAll('/', '-') + '.tap'), output = await fs.open(log, 'w');
     const at = performance.now();
     let code;
+    console.log(`RUN ${name} (${tier}; limit ${seconds}s)`);
     try {
       code = await new Promise((resolve, reject) => {
-        const child = spawn(command, parameters, { cwd: root, env: { ...process.env, ELPIS_HOME: home,
+        // Bound the whole process group, including lock acquisition and subprocesses left by a test.
+        const child = spawn('timeout', ['--kill-after=5s', `${seconds}s`, command, ...parameters], { cwd: root, env: { ...process.env, ELPIS_HOME: home,
           EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') }, stdio: ['ignore', output.fd, output.fd] });
         child.on('error', reject); child.on('exit', (status, signal) => resolve(signal ? 1 : status));
       });
@@ -77,24 +79,24 @@ async function main(args) {
     summary.files.push({ name, tier, code, testMs, wallMs: performance.now() - at, log });
     summary.wallMs = performance.now() - started;
     await fs.writeFile(path.join(evidence, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
-    console.log(`${code === 0 ? 'PASS' : 'FAIL'} ${name} (${(testMs / 1000).toFixed(2)}s test; ${((performance.now() - at) / 1000).toFixed(2)}s wall)`);
+    console.log(`${code === 0 ? 'PASS' : code === 124 || code === 137 ? 'TIMEOUT' : 'FAIL'} ${name} (${(testMs / 1000).toFixed(2)}s test; ${((performance.now() - at) / 1000).toFixed(2)}s wall; exit ${code}; ${log})`);
     if (code !== 0) { console.error(text.slice(-6000)); process.exitCode = 1; }
   }
   // Fast tests import bundled prompts too; desktop/package tests consume out/.
-  await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge');
+  await run('bridge-resources', process.execPath, ['bridge/build-resources.mjs'], 'bridge', 120);
   if (process.exitCode) return;
   let rendererBuilt = false;
   for (const tier of selected) {
     if (!rendererBuilt && (tier === 'desktop' || tier === 'ui')) {
-      await run('renderer-build', 'flock', ['/tmp/elpis-desktop-build.lock', 'npm', 'run', '-s', 'build'], tier);
+      await run('renderer-build', 'flock', ['/tmp/elpis-desktop-build.lock', 'npm', 'run', '-s', 'build'], tier, 1200);
       if (process.exitCode) return;
       rendererBuilt = true;
     }
     if (tier === 'ui') {
       // Keep every browser file bounded and serialized with the other workstation workers.
-      for (const file of inventory.ui) await run(file, 'flock', ['/tmp/elpis-desktop-ui.lock', 'timeout', '--kill-after=5s', '180s', process.execPath, '--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
+      for (const file of inventory.ui) await run(file, 'flock', ['/tmp/elpis-desktop-ui.lock', process.execPath, '--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     } else {
-      await run(tier, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', ...inventory[tier]], tier);
+      for (const file of inventory[tier]) await run(file, process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file], tier);
     }
   }
   console.log(`Gate: ${(summary.wallMs / 1000).toFixed(2)}s wall; ${(summary.testMs / 1000).toFixed(2)}s in test runners. ${evidence}/summary.json`);

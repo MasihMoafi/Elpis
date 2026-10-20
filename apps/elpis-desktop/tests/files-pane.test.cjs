@@ -176,7 +176,7 @@ test('Markdown opens as a document; source editing and relative links/images kee
       await f.view.getByRole('button', { name: 'Preview', exact: true }).click();
       await f.view.getByRole('button', { name: 'Open the guide', exact: true }).click();
       await eventually(async () => assert.equal(await f.tabs.getByRole('tab', { name: 'guide.md', exact: true }).getAttribute('aria-selected'), 'true'));
-      assert.match(await f.view.innerText(), /See the parser section/);
+      await eventually(async () => assert.match(await f.view.innerText(), /See the parser section/));
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   }
@@ -199,16 +199,18 @@ function previewPdf() {
 }
 
 test('PDF files open a real document viewer instead of raw bytes', async () => {
-  const f = await open();
+  const f = await open({ browserChannel: 'chromium' });
   try {
     await fs.writeFile(path.join(CWD, 'report.pdf'), previewPdf());
     await openFilesTab(f); await f.row('report.pdf').click();
     const preview = f.view.locator('iframe[title="Preview of report.pdf"]');
     await preview.waitFor();
     assert.equal(await f.editor('report.pdf').count(), 0);
-    await f.page.waitForTimeout(700);
-    const viewer = f.page.frames().find(frame => frame.url().startsWith('chrome-extension://') && frame.url().endsWith('/index.html'));
-    assert.ok(viewer, 'the native PDF viewer has loaded');
+    const viewer = await eventually(async () => {
+      const frame = f.page.frames().find(frame => frame.url().startsWith('chrome-extension://') && frame.url().endsWith('/index.html'));
+      assert.ok(frame, 'the native PDF viewer has loaded');
+      return frame;
+    });
     await viewer.locator('pdf-viewer').waitFor();
     await eventually(async () => assert.equal(await viewer.locator('pdf-viewer').evaluate(element => element.documentDimensions?.pageDimensions?.length), 2, 'both PDF pages have been decoded by the viewer'));
     const loaded = await viewer.locator('pdf-viewer').evaluate(element => ({ pages: element.documentDimensions.pageDimensions, loaded: element.loaded_, state: element.loadState_ }));

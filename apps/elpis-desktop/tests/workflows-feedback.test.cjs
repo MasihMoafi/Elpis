@@ -1,9 +1,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseOption, chooseTheme, controlValue } = require('./controls.cjs');
-const shots = '/home/masih/.cache/elpis-tests/workflows-feedback';
+const shots = path.join(os.homedir(), '.cache/elpis-tests/workflows-feedback');
 const agent = (id, x = 0, y = 0, extra = {}) => ({ id, type: 'agent', position: { x, y }, data: { title: id, instruction: `Do ${id}`, model: null, provider: null, effort: null, writeScopes: ['src'], acceptanceCriteria: ['Done'], ...extra } });
 const wire = (source, target, extra = {}) => ({ id: `${source}->${target}`, source, target, ...extra });
 const selected = f => f.canvas.locator('.react-flow__node.selected').evaluateAll(nodes => nodes.map(n => n.dataset.id).sort());
