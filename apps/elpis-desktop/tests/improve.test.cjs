@@ -4,15 +4,16 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
-const row = { id: 'change-1', branch: 'improve/20261018-button', cwd: '/tmp/change', status: 'review', head: 'abc', dirty: false, diff: 'diff --git a/button b/button\n--- a/button\n+++ b/button\n@@ -1 +1 @@\n-Send\n+Go', checks: { passed: true, head: 'abc', commands: [{ command: 'node --test', code: 0, output: 'tests 1\npass 1' }] }, thread: { id: 'chat-a' } };
+const row = { id: 'change-1', branch: 'improve/20261018-button', cwd: '/tmp/change', status: 'review', head: 'abc', dirty: false, diff: 'diff --git a/button b/button\n--- a/button\n+++ b/button\n@@ -1 +1 @@\n-Send\n+Go', checks: null, thread: { id: 'chat-a' } };
+const checkedRow = { ...row, checks: { passed: true, head: 'abc', commands: [{ command: 'node --test', code: 0, output: 'tests 1\npass 1' }] } };
 async function setup(colorScheme = 'light', failCapture = false) {
   let started = false;
   const f = await fixture({ colorScheme, width: 1200, height: 800, routes: {
     '/api/improvements': body => { if (body) { started = true; return row; } return { data: started ? [{ id: row.id, threadId: 'chat-a' }] : [] }; },
     '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
     '/api/improvements/change-1': () => row,
-    '/api/improvements/change-1/check': () => row,
-    '/api/improvements/change-1/keep': () => ({ ...row, status: 'ready', note: '/tmp/ready.md' }),
+    '/api/improvements/change-1/check': () => checkedRow,
+    '/api/improvements/change-1/keep': () => ({ ...checkedRow, status: 'ready', note: '/tmp/ready.md' }),
   } });
   await f.page.evaluate(({ PNG, failCapture }) => { window.__captures = []; window.__tries = []; window.elpisDesktop.improve = { capture: async rect => { window.__captures.push(rect); if (failCapture) throw Error('Capture failed'); return { image: PNG }; }, try: async id => { window.__tries.push(id); return { opened: true }; } }; }, { PNG, failCapture });
   await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
@@ -31,11 +32,22 @@ for (const colorScheme of ['light', 'dark']) test(`Ctrl+K improvement opens a po
     const sent = f.posts.find(post => post.path === '/api/improvements');
     assert.equal(sent.body.request, 'Rename Send to Go'); assert.equal(sent.body.target.image, PNG);
     assert.match(sent.body.target.id, /app\/page.tsx#Home/);
-    const review = page.getByRole('dialog', { name: 'Review Elpis change' }); await review.getByText('Build and tests passed', { exact: true }).waitFor();
+    const review = page.getByRole('dialog', { name: 'Review Elpis change' });
+    await review.getByText('Run build and tests on this commit before trying or keeping it.', { exact: true }).waitFor();
+    assert.equal(await review.getByRole('button', { name: 'Try it', exact: true }).isDisabled(), true);
+    assert.equal(await review.getByRole('button', { name: 'Keep', exact: true }).isDisabled(), true);
     assert.ok(await review.getByText('Go', { exact: true }).count());
     if (process.env.ELPIS_IMPROVE_SHOTS) { await fs.mkdir(process.env.ELPIS_IMPROVE_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_IMPROVE_SHOTS, `improve-${colorScheme}.png`) }); }
+    const checkResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/improvements/change-1/check');
+    await review.getByRole('button', { name: 'Check build & tests', exact: true }).click(); assert.equal((await checkResponse).ok(), true);
+    await review.getByText('Build and tests passed', { exact: true }).waitFor();
+    assert.equal(await review.getByRole('button', { name: 'Try it', exact: true }).isEnabled(), true);
+    assert.equal(await review.getByRole('button', { name: 'Keep', exact: true }).isEnabled(), true);
     await review.getByRole('button', { name: 'Try it', exact: true }).click(); assert.deepEqual(await page.evaluate(() => window.__tries), ['change-1']);
     await review.getByRole('button', { name: 'Keep', exact: true }).click(); await review.getByText(/Ready for coordinator/).waitFor();
+    assert.ok(f.posts.some(post => post.path === '/api/improvements/change-1/check'));
+    assert.ok(f.posts.some(post => post.path === '/api/improvements/change-1/keep'));
+    assert.ok(f.posts.every(post => !post.path.startsWith('/improvements/')));
     await review.getByRole('button', { name: 'Close', exact: true }).click();
     const overlap = await page.evaluate(() => { const a = document.querySelector('.elpis-improve-review-button').getBoundingClientRect(), b = document.querySelector('[aria-label="Show side panel"]').getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; });
     assert.equal(overlap, false, 'review action shares the header layout without covering the panel control');
