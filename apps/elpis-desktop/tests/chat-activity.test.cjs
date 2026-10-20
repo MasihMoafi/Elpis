@@ -37,7 +37,7 @@ function history(now) {
   ];
 }
 
-async function fixture() {
+async function fixture({ longGroup = false } = {}) {
   const steered = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -47,7 +47,11 @@ async function fixture() {
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol' }], nextCursor: null });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : [thread], nextCursor: null });
     // Newest first, as the bridge pages history.
-    if (url.pathname === '/api/threads/work' && req.method === 'GET') return json({ thread, data: history(Date.now()).reverse(), nextCursor: null });
+    if (url.pathname === '/api/threads/work' && req.method === 'GET') {
+      const entries = history(Date.now());
+      if (longGroup) entries.splice(2, 0, ...Array.from({ length: 24 }, (_, index) => ({ turnId: 't1', item: { id: `long-${index}`, type: 'commandExecution', command: `node inspect-${index}.mjs`, cwd: '/tmp/demo', status: 'completed', exitCode: 0, aggregatedOutput: 'Inspection complete.', commandActions: unknown(`node inspect-${index}.mjs`) } })));
+      return json({ thread, data: entries.reverse(), nextCursor: null });
+    }
     if (url.pathname === '/api/threads/work/resume') return json({ thread, activeTurnId: 't2' });
     if (url.pathname === '/api/threads/work/steer') { steered.push(JSON.parse(raw)); return json({}); }
     if (url.pathname.startsWith('/api/')) return json({});
@@ -245,28 +249,33 @@ test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does
 
 
 test('tool details and groups collapse from the bottom, return focus, and still reopen from the top', async () => {
-  const app = await fixture();
+  const app = await fixture({ longGroup: true });
   try {
     const { page, errors } = await app.open();
     await page.locator('.worked-for > summary').click();
-    const group = page.locator('.activity-group').filter({ hasText: /^Ran 2 commands/ });
+    const group = page.locator('.activity-group').first();
     const head = group.locator('> summary');
     await head.click();
     const step = group.locator('.step').first();
     const stepHead = step.locator('> summary');
-    await stepHead.click();
+    if (!await step.evaluate(node => node.open)) await stepHead.click();
+    if (process.env.ELPIS_TEST_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_TEST_SCREENSHOTS, 'elpis-tool-collapse.png') });
     await step.getByRole('button', { name: 'Collapse details', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('.activity-group .step').open);
     assert.equal(await stepHead.evaluate(node => node === document.activeElement), true);
     assert.equal(await group.evaluate(node => node.open), true, 'closing one tool keeps the group open');
     await stepHead.press('Enter');
     await step.getByRole('button', { name: 'Collapse details', exact: true }).waitFor();
-    await page.emulateMedia({ reducedMotion: 'reduce' });
+    assert.ok(await group.evaluate(node => node.getBoundingClientRect().height > innerHeight), 'exercise a group longer than the viewport');
     await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('.activity-group').open);
     assert.equal(await head.evaluate(node => node === document.activeElement), true);
     await head.press('Enter');
     await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).waitFor();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).click();
+    await page.waitForFunction(() => { const head = document.querySelector('.activity-group > summary'); const box = head.getBoundingClientRect(); return !head.parentElement.open && box.top >= 0 && box.bottom <= innerHeight; });
+    assert.equal(await head.evaluate(node => node === document.activeElement), true);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 });
