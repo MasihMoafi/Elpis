@@ -73,7 +73,7 @@ test('keyboard shortcuts return to the field that opened them, and edit Cancel r
  // Prime a popup trigger: its historical focus must not win over the actual keyboard origin.
  await page.getByRole('button',{name:'Add files and more',exact:true}).click();await page.keyboard.press('Escape');
  const search=page.getByLabel('Search conversations');await search.focus();await page.keyboard.press('Control+/');const dialog=page.getByRole('alertdialog');await dialog.waitFor();
- await page.getByLabel('Search keyboard shortcuts').fill('no-match');await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});await page.waitForTimeout(180);
+ await page.getByLabel('Search keyboard shortcuts').fill('no-match');await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});await page.waitForFunction(()=>!document.querySelector('[data-base-ui-inert]'));
  assert.equal(await search.evaluate(e=>e===document.activeElement),true,'restore the actual keyboard origin');
  await open();await page.getByRole('button',{name:'Edit message',exact:true}).click();await page.getByLabel('Edited message').waitFor();await page.getByRole('button',{name:'Cancel',exact:true}).click();await page.waitForTimeout(180);
  assert.equal(await focused(),true);assert.equal(await composer.inputValue(),'');assert.equal(await page.getByText('Check everyday interactions',{exact:true}).count(),1);

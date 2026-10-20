@@ -59,7 +59,7 @@ async function fixture(run, { desktop = true } = {}) {
     const shot = async name => { if (process.env.ELPIS_SHOTS) { await fs.mkdir(process.env.ELPIS_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_SHOTS, `${name}.png`) }); } };
     const menu = () => page.getByRole('menu');
     const items = async () => { await menu().waitFor(); return menu().getByRole('menuitem').evaluateAll(list => list.map(item => { const copy = item.cloneNode(true); copy.querySelectorAll('kbd').forEach(key => key.remove()); return copy.textContent.trim(); })); };
-    const closeMenu = async () => { await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); };
+    const closeMenu = async () => { await page.keyboard.press('Escape'); await menu().waitFor({ state: 'detached' }); await page.waitForFunction(() => !document.querySelector('[data-base-ui-inert]')); };
     const lastPrevented = async () => { await page.waitForTimeout(60); return page.evaluate(() => window.__contextmenu.at(-1)); };
     // Compare the shared actions' dimensions and style, accounting for the extra right-click action's height.
     const popup = async () => menu().evaluate(element => { const box = element.getBoundingClientRect(), style = getComputedStyle(element), change = [...element.querySelectorAll('[role="menuitem"]')].find(item => item.textContent.trim() === 'Change this…'); return { width: Math.round(box.width), height: Math.round(box.height - (change?.getBoundingClientRect().height ?? 0)), background: style.backgroundColor, border: style.borderTopColor, radius: style.borderTopLeftRadius, font: style.fontSize }; });
