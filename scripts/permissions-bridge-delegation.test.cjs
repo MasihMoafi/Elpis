@@ -301,6 +301,9 @@ async function main() {
         const opened = await request('thread/resume', { threadId: working.id, excludeTurns: true,
           initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(error => ({ error: error.message }));
         assert.equal(opened.thread?.status?.type, 'active', `another client opens the running helper (${opened.error ?? 'opened'})`);
+        // The app finds the turn to show (and Stop) from the latest page of turns.
+        const latest = await request('thread/turns/list', { threadId: working.id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
+        assert.equal(latest.data?.[0]?.status, 'inProgress', 'another client sees the helper’s running turn');
         followed = notification('turn/completed', working.id).catch(() => null);
         const read = await request('thread/read', { threadId: working.id, includeTurns: false });
         assert.equal(read.thread.status?.type, 'active', 'thread/read has the same live status');
