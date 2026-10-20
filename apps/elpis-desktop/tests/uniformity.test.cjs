@@ -12,6 +12,7 @@ const { leaveSettings, openSettings } = require('./controls.cjs');
 /** Every visible button on the page now: its kind and its look. */
 async function looks(page, where) {
   await page.mouse.move(1, 1);
+  await page.waitForTimeout(200); // Observe settled button colors after a navigation transition.
   return page.evaluate(where => {
     (document.activeElement instanceof HTMLElement) && document.activeElement.blur();
     const SKIP = '.xterm, .excalidraw, .react-flow, .cm-editor, [inert], [hidden], [aria-hidden="true"]';
