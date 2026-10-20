@@ -80,6 +80,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils
+      - name: Install audio processing tool
+        run: sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install Playwright and its Chromium (the version the local tests use)
         run: |
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.62.1
