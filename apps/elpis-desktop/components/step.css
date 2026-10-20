@@ -1,7 +1,7 @@
 /* One step of agent work in an opened group (components/step.tsx): a sentence, its time or counts at the right, and a
    bordered card under it. Commands, tools, searches, edits and reasoning all draw it. */
 .step { margin:6px 0 12px; }
-.step-head { display:flex; align-items:baseline; gap:12px; min-height:24px; padding:2px 6px; margin-inline-start:-6px; list-style:none; font-size:13.5px; color:var(--muted-foreground); }
+.step-head { display:flex; align-items:baseline; gap:12px; min-height:28px; padding:2px 6px; margin-inline-start:-6px; list-style:none; font-size:13.5px; color:var(--muted-foreground); }
 .step-head::-webkit-details-marker { display:none; }
 .step-head::after { content:""; flex:none; width:10px; text-align:center; font-size:15px; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
 summary.step-head { cursor:pointer; transition:color .12s, background .12s; }
