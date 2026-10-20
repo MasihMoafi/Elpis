@@ -478,11 +478,11 @@ test('worker approvals follow recorded ancestry and name the requester; resolved
   client.close();
 });
 
-test('prompt index route pages the full thread and returns only ordered, bounded user text', async t => {
+test('prompt index route pages the full thread and returns ordered, bounded prompt and reply previews', async t => {
   const prompt = (turnId, content) => ({ turnId, item: { id: `u-${turnId}`, type: 'userMessage', content } });
   const promptPages = {
-    start: { data: [prompt('t5', [{ type: 'text', text: 'Fifth prompt' }]), { turnId: 't5', item: { id: 'reply', type: 'agentMessage', text: 'Private reply' } }, prompt('t4', [{ type: 'text', text: 'Fourth prompt' }])], nextCursor: 'middle' },
-    middle: { data: [prompt('t3', [{ type: 'text', text: 'Third prompt' }]), prompt('t2', [{ type: 'text', text: 'Second prompt' }])], nextCursor: 'oldest' },
+    start: { data: [{ turnId: 't5', item: { id: 'reply-later', type: 'agentMessage', text: 'Later fifth answer' } }, { turnId: 't5', item: { id: 'reply', type: 'agentMessage', text: 'Fifth answer' } }, prompt('t5', [{ type: 'text', text: 'Fifth prompt' }]), prompt('t4', [{ type: 'text', text: 'Fourth prompt' }])], nextCursor: 'middle' },
+    middle: { data: [{ turnId: 't3', item: { id: 'reply-3', type: 'agentMessage', content: [{ type: 'text', text: 'Third answer' }] } }, prompt('t3', [{ type: 'text', text: 'Third prompt' }]), { turnId: 't2', item: { id: 'reply-2', type: 'agentMessage', text: 'B'.repeat(700) } }, prompt('t2', [{ type: 'text', text: 'Second prompt' }])], nextCursor: 'oldest' },
     oldest: { data: [prompt('t1', [{ type: 'text', text: 'A'.repeat(240) }, { type: 'image', image: 'not text' }])], nextCursor: null },
   };
   const { client, socket } = fixture({ promptPages }); await client.initialize();
@@ -499,7 +499,8 @@ test('prompt index route pages the full thread and returns only ordered, bounded
   assert.deepEqual(result.data.map(row => row.turnId), ['t1', 't2', 't3', 't4', 't5']);
   assert.equal(result.data[0].text, 'A'.repeat(200));
   assert.deepEqual(result.data.slice(1).map(row => row.text), ['Second prompt', 'Third prompt', 'Fourth prompt', 'Fifth prompt']);
-  assert.doesNotMatch(JSON.stringify(result), /Private reply|not text/);
+  assert.deepEqual(result.data.map(row => row.reply), ['', 'B'.repeat(600), 'Third answer', '', 'Fifth answer']);
+  assert.doesNotMatch(JSON.stringify(result), /not text/);
   assert.deepEqual(socket.sent.filter(row => row.method === 'thread/items/list').map(row => row.params.cursor ?? null), [null, 'middle', 'oldest']);
   assert.equal((await fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: '{}' })).status, 405);
 });
