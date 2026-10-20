@@ -8,7 +8,7 @@ import rehypeHighlight from "rehype-highlight";
 import { Button } from "@/components/ui/button";
 import { FileRefLink } from "@/components/file-ref";
 import { linkFilePaths, parseHref, resolveRef } from "@/lib/file-refs";
-import { fileAssetUrl } from "@/lib/files-pane";
+import { fileAssetUrl, fileScope, useHost } from "@/lib/files-pane";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -47,6 +47,17 @@ function MarkdownLink({ href, children, ...props }: React.ComponentProps<"a">) {
   return <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
 }
 
+function ChatImage({ src, alt }: { src?: string; alt?: string }) {
+  const { cwd } = useHost();
+  const ref = parseHref(src || "");
+  const absolute = ref ? resolveRef(ref, cwd).abs : undefined;
+  const scope = absolute?.startsWith("/") ? fileScope(cwd, absolute) : null;
+  const url = scope ? fileAssetUrl(scope.cwd, scope.path) : ref ? undefined : src;
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!url || failed === url) return <span className="text-muted-foreground">{alt || "Image"} (image unavailable)</span>;
+  return <img src={url} alt={alt || ""} loading="lazy" onError={() => setFailed(url)} />;
+}
+
 const directional = (tag: "p" | "ul" | "ol" | "blockquote" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "th" | "td") =>
   ({ node: _node, ...props }: HTMLAttributes<HTMLElement> & { node?: unknown }) => createElement(tag, { ...props, dir: "auto" });
 const components: Components = {
@@ -54,6 +65,7 @@ const components: Components = {
   pre: ({ node, ...props }) => <CodeBlock language={languageOf(node)} {...props} />,
   table: ({ node: _node, ...props }) => <div className="markdown-table" role="region" aria-label="Scrollable table" tabIndex={0}><table {...props} /></div>,
   a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
+  img: ({ src, alt }) => <ChatImage src={typeof src === "string" ? src : undefined} alt={alt} />,
 };
 
 /** Only blocks that name their language are coloured: guessing one paints plain text and logs in wrong colours. */

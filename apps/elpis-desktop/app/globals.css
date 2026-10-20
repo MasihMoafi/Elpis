@@ -1302,12 +1302,15 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .canvas-characters:not([open]) > .dropdown-content { display:none; }
 .canvas-characters > .dropdown-content { position:absolute; bottom:calc(100% + 8px); left:0; width:190px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
 
-/* One blood-red brand color for Love Spot in both themes. */
+/* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }
-.app-shell[data-workspace="loveSpot"] { --primary:var(--love-red); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
+.dark { --love-red:#e46268; }
+:is(.love-spot, .love-spot-tools) { --primary:var(--love-red); --primary-foreground:#fff; --gold:var(--primary); --ring:var(--primary); --accent-mark:var(--primary); --primary-action:var(--love-red); --primary-action-content:#fff; }
+.dark :is(.love-spot, .love-spot-tools) { --primary-foreground:var(--background); --primary-action-content:var(--background); }
 .nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 .thread-origin[data-origin="Love Spot"] { color:var(--foreground); }
 .love-unread { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:50%; font-size:11px; line-height:1; font-weight:600; margin-left:auto; background:var(--love-red); color:#fff; box-shadow:0 0 12px color-mix(in oklab, var(--love-red) 55%, transparent); }
+.dark .love-unread { color:var(--background); }
 
 .workflow-history { position:relative; margin-left:auto; }
 .workflow-history-list { position:absolute; left:0; top:calc(100% + 8px); z-index:30; width:min(380px, calc(100vw - 36px)); max-height:60vh; overflow:auto; padding:14px; background:var(--card); color:var(--foreground); }

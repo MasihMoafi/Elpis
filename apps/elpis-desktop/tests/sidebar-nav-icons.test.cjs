@@ -22,17 +22,38 @@ async function iconPixels(page, png, positions) {
   }, { png: png.toString('base64'), positions });
 }
 
-test('every sidebar page icon is a text-coloured vector, Love Spot included', async () => {
+test('sidebar page icons remain vectors, including the Love Spot brand mark', async () => {
   const f = await fixture({ width: 1280 });
   try {
     const nav = f.page.locator('aside.sidebar nav[aria-label="Workspace"]');
     await nav.getByRole('button', { name: 'Love Spot', exact: true }).waitFor();
     const icons = await nav.locator('button').evaluateAll(buttons => buttons.map(button => {
-      const icon = button.firstElementChild, paint = icon?.tagName === 'svg' ? icon.getAttribute('fill') === 'currentColor' || icon.getAttribute('stroke') === 'currentColor' : false;
-      return `${button.textContent.trim()}: ${icon?.tagName}${paint ? ' currentColor' : ''}`;
+      const name = button.textContent.trim(), icon = button.firstElementChild;
+      const vector = icon?.tagName === 'svg' && !icon.querySelector('image');
+      const paint = vector && (icon.getAttribute('fill') === 'currentColor' || icon.getAttribute('stroke') === 'currentColor' || !!icon.querySelector('[fill="currentColor"], [stroke="currentColor"]'));
+      return { name, valid: vector && (name === 'Love Spot' || paint) };
     }));
-    assert.ok(icons.some(line => line.startsWith('Love Spot')), icons.join('\n'));
-    assert.deepEqual(icons.filter(line => !line.endsWith('svg currentColor')), [], 'icons outside the family');
+    assert.ok(icons.some(icon => icon.name === 'Love Spot'));
+    assert.deepEqual(icons.filter(icon => !icon.valid), [], 'icons outside the family');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav mark in ${theme} theme`, async () => {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1280, height: 800 });
+  try {
+    if (theme === 'dark') await chooseTheme(f.page, theme);
+    const loveSpot = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true });
+    const lab = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Lab', exact: true });
+    const expected = theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(228, 98, 104)';
+    const iconColor = () => loveSpot.locator('svg').evaluate(icon => getComputedStyle(icon).color);
+
+    await lab.click();
+    assert.equal(await loveSpot.getAttribute('aria-current'), null);
+    assert.equal(await iconColor(), expected, 'brand color remains visible when Love Spot is inactive');
+    await loveSpot.click();
+    assert.equal(await loveSpot.getAttribute('aria-current'), 'page');
+    assert.equal(await iconColor(), expected, 'brand color remains consistent when Love Spot is active');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
