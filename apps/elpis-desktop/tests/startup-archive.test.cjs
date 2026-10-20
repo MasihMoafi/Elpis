@@ -15,7 +15,7 @@ const sol = { id: 'sol', model: 'sol', displayName: 'Sol' };
 const latest = { id: 'latest-model', model: 'latest-model', displayName: 'Latest model' };
 
 async function fixture(t, { modelFailure = false, holdModels = false, descendantCount = 0, archivedDescendantCount = 0, descendantFailure = false, descendantCursor = null } = {}) {
-  const clients = new Set(), posts = [], requests = [], errors = [], held = [];
+  const clients = new Set(), loveClients = new Set(), posts = [], requests = [], errors = [], held = [];
   const archived = new Set(), deleted = new Set();
   const threads = ['a', 'b', 'c'].map(id => ({ id, name: `Availability chat ${id.toUpperCase()}`, model: 'sol', modelProvider: 'openai', cwd: '/tmp/availability-fixture', parentThreadId: id === 'c' ? 'a' : null, status: { type: 'idle' }, desktopAccess: { mode: 'direct', writable: true } }));
   const archivedDescendantIds = Array.from({ length: archivedDescendantCount }, (_, index) => `archived-unloaded-${index + 1}`);
@@ -37,6 +37,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
     if (pathname.startsWith('/api/')) requests.push({ method: req.method, path: pathname });
     const json = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
+    if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(pathname)) { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': fixture\n\n'); loveClients.add(res); req.on('close', () => loveClients.delete(res)); return; }
     if (req.method === 'POST') {
       let raw = ''; for await (const chunk of req) raw += chunk;
       const body = raw ? JSON.parse(raw) : {}; if (!(pathname.endsWith('/rewind') && body.action === 'status')) posts.push({ path: pathname, body });
@@ -88,7 +89,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let browser;
-  t.after(async () => { if (!requests.length || process.env.ELPIS_AVAILABILITY_DEBUG) t.diagnostic(JSON.stringify({ body: await page.locator('body').innerText(), archived: [...archived], requests })); for (const finish of held) { try { finish({ error: 'Fixture ended' }, 503); } catch {} } await browser?.close(); for (const client of clients) client.end(); await new Promise(resolve => server.close(resolve)); assert.deepEqual(errors, [], 'Fixture must have no endpoint or renderer failures'); });
+  t.after(async () => { if (!requests.length || process.env.ELPIS_AVAILABILITY_DEBUG) t.diagnostic(JSON.stringify({ body: await page.locator('body').innerText(), archived: [...archived], requests })); for (const finish of held) { try { finish({ error: 'Fixture ended' }, 503); } catch {} } await browser?.close(); for (const client of [...clients, ...loveClients]) client.end(); await new Promise(resolve => server.close(resolve)); assert.deepEqual(errors, [], 'Fixture must have no endpoint or renderer failures'); });
   browser = await chromium.launch({ headless: true, executablePath: process.env.ELPIS_CHROMIUM || undefined });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const network = await page.context().newCDPSession(page); await network.send('Network.enable'); await network.send('Network.setCacheDisabled', { cacheDisabled: true });
