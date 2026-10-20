@@ -26,11 +26,11 @@ test('prompt rail opens a readable outline and navigates with pointer and keyboa
     await panel.waitFor();
     await f.page.mouse.move(1200, 680);
     await panel.waitFor({ state: 'detached' });
+    const message = f.page.locator('.chat-content .message.user').first(), closed = await message.boundingBox();
     await rail.hover();
     await panel.waitFor();
-    const panelBox = await panel.boundingBox();
-    const messageBox = await f.page.locator('.chat-content .message.user').first().boundingBox();
-    assert.ok(panelBox && messageBox && panelBox.x + panelBox.width <= messageBox.x, 'the outline never covers message text');
+    // The list floats over the margin, as Claude's and ChatGPT's do: opening it never moves the chat.
+    assert.deepEqual(await message.boundingBox(), closed, 'opening the outline does not move the transcript');
     await panel.locator('[data-slot="prompt-row"]').first().click();
     await f.page.waitForFunction(() => {
       const root = document.querySelector('.chat-scroll');

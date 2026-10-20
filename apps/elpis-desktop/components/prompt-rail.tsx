@@ -9,8 +9,10 @@ const firstLine = (text: string) => text.trim().split(/\r?\n/, 1)[0] || "Prompt"
 const labelOf = (text: string) => { const line = firstLine(text); return line.length > 80 ? `${line.slice(0, 79)}…` : line; };
 
 /** The complete prompt index comes from the bridge; rendered turns supply positions for reading and scrolling. */
-export function PromptRail({ scroller, threadId, entries, hasEarlier, loading, onLoadEarlier }: {
+export function PromptRail({ scroller, threadId, entries, hasEarlier, loading, onLoadEarlier, onNavigate }: {
   scroller: RefObject<HTMLElement | null>;
+  /** Called before a jump, so the transcript stops following the newest message (it would pull the view back down). */
+  onNavigate: () => void;
   threadId: string | null;
   entries: Entry[];
   hasEarlier: boolean;
@@ -30,6 +32,7 @@ export function PromptRail({ scroller, threadId, entries, hasEarlier, loading, o
   const goTo = (turnId: string) => {
     const root = scroller.current, element = elements.current.get(turnId);
     if (!root || !element) return false;
+    onNavigate();
     root.scrollTo({ top: root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - 16, behavior: "smooth" });
     setCurrent(turnId);
     return true;
