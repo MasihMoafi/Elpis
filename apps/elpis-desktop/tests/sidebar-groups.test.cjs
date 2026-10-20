@@ -152,6 +152,37 @@ test('a group collapses and expands by click and by key, stays so after a reload
   } finally { await f.close(); }
 });
 
+test('a thread row expands and collapses its agents by click and keyboard', async () => {
+  const parent = { ...LISTED[0], name: 'Task ID: CI-GATE-1 (make the Elpis desktop test gate on GitHub Actions)' };
+  const child = { ...LISTED[1], id: 'agent-child', name: 'Nested agent', parentThreadId: parent.id };
+  const grandchild = { ...LISTED[2], id: 'nested-agent-child', name: 'Agent under the task', parentThreadId: child.id };
+  const routes = { '/api/threads': (_body, url) => {
+    const ancestor = url.searchParams.get('ancestorThreadId');
+    return { data: ancestor === parent.id ? [child] : ancestor === child.id ? [grandchild] : ancestor ? [] : [parent, ...LISTED.slice(1)], nextCursor: null };
+  } };
+  const f = await fixture({ routes }), { page } = f;
+  try {
+    const parentRow = row(page, parent.id);
+    await parentRow.locator('.thread-link').click();
+    await row(page, child.id).waitFor();
+    const childRow = row(page, child.id);
+    const expand = childRow.getByRole('button', { name: `Expand agents in ${child.name}` });
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false');
+    await expand.click();
+    await row(page, grandchild.id).waitFor();
+    const collapse = childRow.getByRole('button', { name: `Collapse agents in ${child.name}` });
+    assert.equal(await collapse.getAttribute('aria-expanded'), 'true');
+    await collapse.click();
+    assert.equal(await row(page, grandchild.id).count(), 0, 'collapsing hides nested agents');
+    const collapsed = childRow.getByRole('button', { name: `Expand agents in ${child.name}` });
+    await collapsed.focus();
+    await page.keyboard.press('Enter');
+    await row(page, grandchild.id).waitFor();
+    assert.equal(await childRow.getByRole('button', { name: `Collapse agents in ${child.name}` }).getAttribute('aria-expanded'), 'true');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a group is renamed and deleted from its menu; deleting puts its chats back under Recents and posts nothing', async () => {
   const f = await fixture({ storage: saved([['g1', 'Work']], { 'chat-a': 'g1', 'chat-b': 'g1' }) }), { page } = f;
   try {

@@ -1451,6 +1451,7 @@ export default function Home() {
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
   const ordinaryThreads = threads.filter(thread => !isAgentRun(thread));
   const agentRuns = threads.filter(isAgentRun);
+  const agentParents = new Set(threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []));
   const runActions: MenuAction[] = [
     { id: "hide", label: "Hide Agent runs", run: () => {
       try { savePreferences({ showAgentRuns: false }); requestAnimationFrame(() => searchInput.current?.focus()); }
@@ -1646,6 +1647,7 @@ export default function Home() {
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
+    const canExpandAgents = isAgent(thread) || isAgentRun(thread) || agentParents.has(thread.id);
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
@@ -1660,6 +1662,11 @@ export default function Home() {
           onDragStart: (event: React.DragEvent<HTMLElement>) => { dragging.current = thread.id; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-chat", thread.id); },
           onDragEnd: () => { dragging.current = null; setDrop(null); } } : {})} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
+      {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} aria-expanded={!!expanded[thread.id]} title={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} onClick={() => {
+        if (expanded[thread.id]) setExpanded(previous => ({ ...previous, [thread.id]: false }));
+        else if (agentParents.has(thread.id)) setExpanded(previous => ({ ...previous, [thread.id]: true }));
+        else void loadChildren(thread.id);
+      }}><ChevronRight size={13} className={expanded[thread.id] ? "rotate-90" : undefined} /></Button>}
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
@@ -1688,11 +1695,18 @@ export default function Home() {
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return filtered.filter(c => c.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{descendants(child.id, depth + 1, next)}</div>);
+    return filtered.filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, undefined, next));
+  }
+  function threadBranch(thread: Thread, depth = 0, section?: string, seen = new Set<string>()) {
+    return <div key={thread.id}>{threadRow(thread, depth, section)}{expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
+  }
+  function runDescendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
+    if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
+    return searchedThreads.filter(child => child.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{expanded[child.id] && runDescendants(child.id, depth + 1, next)}</div>);
   }
   useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
   /** A listed chat and, when shown, its agents under it. */
-  const chatRows = (section: string) => (thread: Thread) => <div key={thread.id}>{threadRow(thread, 0, section)}{expanded[thread.id] && descendants(thread.id, 1)}</div>;
+  const chatRows = (section: string) => (thread: Thread) => threadBranch(thread, 0, section);
   const needsYou = (thread: Thread) => agentState(thread, waitingIds) === "waiting" || !!attention.plans[thread.id];
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
    * closed group holding a chat that needs you says so, as Claude's does. */
@@ -1747,7 +1761,7 @@ export default function Home() {
             return <SidebarGroup key={item.id} kind="project" name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
               wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={area}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
-              empty={!chats.length}>{chats.map(t => threadRow(t))}</SidebarGroup>; })}
+              empty={!chats.length}>{chats.map(t => threadBranch(t))}</SidebarGroup>; })}
         </section>}
         {!searchTerm && <section aria-label="Session Manager chat"><Button variant="ghost" size="sm" className="w-full justify-start gap-2" aria-label="Open Session Manager" title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={!ready || !connected || openingSessionManager} onClick={() => void openSessionManager()}><Layers size={14} />Session Manager</Button></section>}
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows("pinned"))}</section>}
@@ -1760,7 +1774,7 @@ export default function Home() {
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
           {recentChats.map(chatRows("recents"))}
         </section>}
-        {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadRow(thread))}</div>}
+        {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadBranch(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
@@ -1771,7 +1785,7 @@ export default function Home() {
             <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} />Agent runs ({agentRuns.length})</Button>
             <MoreMenu actions={runActions} label="Agent runs actions" title="Hide Agent runs or delete their history" />
           </RightClickMenu>
-          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{agentRuns.map(thread => threadRow(thread, 1))}
+          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{agentRuns.map(thread => <div key={thread.id}>{threadRow(thread, 1)}{expanded[thread.id] && runDescendants(thread.id, 2)}</div>)}
             {Object.entries(childCursors).filter(([id, cursor]) => cursor && !hidden.current.has(id)).map(([id, cursor]) => <Button key={id} variant="ghost" size="xs" className="w-full justify-start" disabled={loadingChildren[id]} onClick={() => void loadChildren(id, cursor!, false)}><span className="truncate">More agents from {find(id) ? title(find(id)!) : "parent conversation"}</span></Button>)}
           </div>}
         </section>}
