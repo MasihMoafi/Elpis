@@ -98,3 +98,19 @@ test('active composer controls keep a clear gap at the reported window width', a
     assert.equal(await f.page.locator(selector).evaluate(element => element.matches(':hover')), true, `${selector} remains an independent mouse target`);
   }
 });
+
+for (const model of ['sol', 'claude/claude-sonnet-5-5']) {
+  test(`running permission controls stay in the toolbar row: ${model}`, async () => {
+    const fx = await startFixture({ models: [{ model, displayName: model }], threads: [thread(model, true)], turns: turns(true) });
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    try {
+      const page = await browser.newPage({ viewport: { width: 500, height: 1050 } });
+      await openChat(page, fx);
+      const p = await probe(page);
+      assert.equal(p.visible, true);
+      assert.equal(p.leaks.length, 0, JSON.stringify(p));
+      assert.ok(p.toolbarRows <= 2, JSON.stringify(p));
+      assert.ok(p.permissionLabel.includes('Auto') || p.permissionLabel.includes('Approve'), JSON.stringify(p));
+    } finally { await browser.close(); await fx.close(); }
+  });
+}
