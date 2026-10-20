@@ -2459,7 +2459,7 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
       checkIdle(); return;
     }
-    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || (!helperConns.has(ws) && ["thread/resume", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method)))) {
+    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || (!helperConns.has(ws) && ["thread/resume", "thread/read", "thread/turns/list", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method)))) {
       owner.dispatch(msg, ws); return;
     }
     if (msg.method === "thread/delete") { deleteThread(msg); return; }
