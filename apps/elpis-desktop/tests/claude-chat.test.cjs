@@ -100,26 +100,26 @@ test('Rewind to here asks first, then drops that turn and every later one and pu
 test('a rail of ticks at the transcript’s left edge marks each prompt; a tick scrolls to it and the current one is lit', () => using({}, async f => {
   const { page } = f;
   await f.open('chat-a');
-  const rail = page.getByRole('navigation', { name: 'Prompts' }), ticks = rail.getByRole('button');
+  const rail = page.getByRole('navigation', { name: 'User messages' }), ticks = rail.locator('[data-slot="prompt-mark"]');
   await rail.waitFor();
   assert.equal(await ticks.count(), 4, 'one tick per prompt');
   const lit = () => rail.locator('[aria-current="true"]').getAttribute('aria-label');
-  assert.equal(await lit(), 'Go to prompt: Run them.', 'the end of the chat is on the last prompt');
-  const place = await page.evaluate(() => { const r = document.querySelector('nav[aria-label="Prompts"]').getBoundingClientRect(), s = document.querySelector('.chat-scroll').getBoundingClientRect(); return { left: r.left - s.left, top: r.top - s.top, bottom: s.bottom - r.bottom, width: r.width }; });
+  assert.equal(await lit(), 'Jump to user message 4', 'the end of the chat is on the last prompt');
+  const place = await page.evaluate(() => { const r = document.querySelector('nav[aria-label="User messages"]').getBoundingClientRect(), s = document.querySelector('.chat-scroll').getBoundingClientRect(); return { left: r.left - s.left, top: r.top - s.top, bottom: s.bottom - r.bottom, width: r.width }; });
   assert.ok(place.left >= 0 && place.left <= 24, `at the left edge: ${place.left}px`);
-  assert.ok(place.top >= 0 && place.bottom >= 0 && place.width <= 24, `a thin rail inside the transcript: ${JSON.stringify(place)}`);
+  assert.ok(place.top >= 0 && place.bottom >= 0 && place.width <= 42, `a rail inside the transcript: ${JSON.stringify(place)}`);
   const boxes = await ticks.evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return [r.top, r.bottom]; }));
   for (let i = 1; i < boxes.length; i++) assert.ok(boxes[i][0] >= boxes[i - 1][1], 'ticks do not overlap');
   const topOf = text => page.evaluate(label => { const s = document.querySelector('.chat-scroll'); const el = [...document.querySelectorAll('.message.user')].find(node => node.textContent.includes(label)); return Math.round(el.getBoundingClientRect().top - s.getBoundingClientRect().top); }, text);
   await ticks.first().click();
   await eventually(async () => { const top = await topOf('Explain the parser.'); assert.ok(top >= -2 && top <= 140, `the first prompt is at the top: ${top}px`); });
-  assert.equal(await lit(), 'Go to prompt: Explain the parser.');
+  assert.equal(await lit(), 'Jump to user message 1');
   await ticks.nth(2).click();
-  await eventually(async () => assert.equal(await lit(), 'Go to prompt: Add tests.'));
+  await eventually(async () => assert.equal(await lit(), 'Jump to user message 3'));
   const top = await eventually(async () => { const t = await topOf('Add tests.'); assert.ok(t >= -2 && t <= 140, `${t}px`); return t; });
   assert.ok(top <= 140);
   await page.locator('.chat-scroll').evaluate(node => node.scrollTo({ top: node.scrollHeight }));
-  await eventually(async () => assert.equal(await lit(), 'Go to prompt: Run them.'));
+  await eventually(async () => assert.equal(await lit(), 'Jump to user message 4'));
 }));
 
 for (const colorScheme of ['light', 'dark']) {

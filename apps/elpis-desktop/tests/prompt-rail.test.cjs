@@ -33,6 +33,10 @@ test('one hovered or focused mark previews only its turn and expands nearby mark
     });
     assert.ok(aligned.gap >= 0 && aligned.gap <= 20, `card sits beside the mark: ${JSON.stringify(aligned)}`);
     assert.ok(aligned.vertical < 10, `card centers on the mark: ${JSON.stringify(aligned)}`);
+    await f.page.waitForFunction(() => {
+      const widths = [...document.querySelectorAll('[data-slot="prompt-mark"] i')].map(node => node.getBoundingClientRect().width);
+      return widths[2] > widths[1] && widths[1] > widths[0];
+    });
     const widths = await marks.evaluateAll(nodes => nodes.map(node => node.querySelector('i').getBoundingClientRect().width));
     assert.ok(widths[2] > widths[0], `hovered mark is wider: ${widths}`);
     assert.ok(widths[1] > widths[0], `nearby mark grows: ${widths}`);
