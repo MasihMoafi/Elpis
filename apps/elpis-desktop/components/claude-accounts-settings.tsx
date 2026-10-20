@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { api } from "@/lib/api";
 
-type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; signingIn: boolean; error: string | null };
+type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; duplicate: boolean; signingIn: boolean; error: string | null };
 type Accounts = { activeId: string; accounts: Account[]; authUrl?: string };
 
 export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: number; onChanged?: () => Promise<void> | void }) {
@@ -38,14 +38,15 @@ export function ClaudeAccountsSettings({ refreshKey, onChanged }: { refreshKey: 
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
-  const pending = data?.accounts.find(account => !account.authenticated);
+  const pending = data?.accounts.find(account => !account.authenticated || account.duplicate);
   return <div className="grid gap-3" aria-label="Claude accounts">
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {data && <>
       <label className="field">Claude account<OptionSelect aria-label="Claude account" value={data.activeId} disabled={busy} onChange={event => void action("select", event.target.value)}>
-        {data.accounts.map(account => <option key={account.id} value={account.id} disabled={!account.authenticated}>{account.email ?? account.label}{account.plan ? ` · ${account.plan}` : ""}{account.authenticated ? "" : " · Sign in needed"}</option>)}
+        {data.accounts.map(account => <option key={account.id} value={account.id} disabled={!account.authenticated || account.duplicate}>{account.email ?? account.label}{account.plan ? ` · ${account.plan}` : ""}{account.duplicate ? " · Same account" : account.authenticated ? "" : " · Sign in needed"}</option>)}
       </OptionSelect></label>
       <p className="provider-note">Switch accounts when your current account reaches its limit. Conversations stay in Elpis.</p>
+      {data.accounts.some(account => account.duplicate) && <p role="alert" className="text-sm text-destructive">Both logins use the same Claude account and share its usage limit. Sign in to Claude 2 with a different account.</p>}
       {(data.accounts.length < 2 || pending) && <div><Button size="sm" variant="outline" disabled={busy || signingIn} onClick={() => void action("login", pending?.id)}>{signingIn ? "Waiting for sign-in…" : pending ? `Sign in to ${pending.label}` : "Add Claude account"}</Button></div>}
       {signingIn && <form className="grid gap-2" onSubmit={event => { event.preventDefault(); void action("code", loginId ?? data.accounts.find(account => account.signingIn)?.id); }}>
         <label className="field">Sign-in code<Input aria-label="Claude sign-in code" type="password" autoComplete="off" value={code} onChange={event => setCode(event.target.value)} placeholder="Paste the code from the Claude page" /></label>

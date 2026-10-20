@@ -50,6 +50,21 @@ test("unknown accounts, malformed state and extra accounts never fall back to an
   assert.throws(() => accounts.snapshot(), /Claude account settings/);
 });
 
+test("signing into the same account twice cannot masquerade as a second usage allowance", t => {
+  const { home, accounts } = fixture(t), second = accounts.add();
+  fs.writeFileSync(path.join(home, ".claude", ".claude.json"), "{}");
+  assert.equal(accounts.account("default").email, "first@example.com", "an unrelated config does not mask the original login identity");
+  fs.writeFileSync(path.join(accounts.configDir(second.id), ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "different-token-same-account" } }));
+  fs.writeFileSync(path.join(accounts.configDir(second.id), ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "FIRST@example.com" } }));
+  assert.equal(accounts.snapshot().accounts[1].duplicate, true);
+  assert.throws(() => accounts.select(second.id), /same Claude account and share its limit/);
+  assert.equal(accounts.activeId(), "default");
+  fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "first@example.com", organizationUuid: "personal" } }));
+  fs.writeFileSync(path.join(accounts.configDir(second.id), ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "first@example.com", organizationUuid: "work" } }));
+  assert.equal(accounts.snapshot().accounts[1].duplicate, false, "distinct organizations can have separate subscriptions under the same email");
+  accounts.select(second.id);
+});
+
 test("Claude's actual CLI sign-in flow accepts a browser code into the isolated account", async t => {
   const { dir, accounts } = fixture(t), second = accounts.add();
   const cli = path.join(dir, "fake-claude.mjs");
