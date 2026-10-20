@@ -1298,6 +1298,7 @@ export class DesktopClient extends EventEmitter {
   async resume(id, body) {
     object(body, []);
     const result = await this.#attach(id);
+    void this.#releaseLeft(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');
       return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, serviceTier: result.serviceTier ?? null, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result), planMode: result.collaborationMode?.mode === 'plan' };
@@ -1306,6 +1307,17 @@ export class DesktopClient extends EventEmitter {
       this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }).catch(() => ({ data: [] }))]);
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     return { thread: this.#decorate(thread), activeTurnId: turns.data?.find(turn => turn.status === 'inProgress')?.id ?? null };
+  }
+  /** Stops following the idle chats left behind, so Elpis can unload them and end their tool
+   * servers; a chat that is working, changing or awaiting an answer stays followed. */
+  async #releaseLeft(opened) {
+    for (const id of [...this.#owned]) {
+      if (id === opened || this.#attaching.has(id) || this.#mutating.has(id) || [...this.#approvals.values()].some(approval => approval.ownerThreadId === id || approval.params.threadId === id)) continue;
+      const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
+      if (!thread || thread.status?.type === 'active' || !this.#owned.has(id) || this.#mutating.has(id)) continue;
+      this.#forgetSubscription(id);
+      await this.#rpc('thread/unsubscribe', { threadId: id }).catch(() => {});
+    }
   }
   async #current(id) {
     await this.#attach(id);
