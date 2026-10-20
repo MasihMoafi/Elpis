@@ -12,7 +12,7 @@ import { startDesktopServer } from './server.mjs';
 const CHAT = '00000000-0000-0000-0000-0000000000a1';
 const AGENT = '00000000-0000-0000-0000-0000000000a2';
 
-function fixture({ cwd } = {}) {
+function fixture({ cwd, items = [] } = {}) {
   const threads = new Map([
     [CHAT, { id: CHAT, cwd, source: 'cli', canAcceptDirectInput: true, status: { type: 'idle' } }],
     [AGENT, { id: AGENT, cwd, source: { subAgent: { thread_spawn: { agent_path: '/root/helper' } } }, canAcceptDirectInput: false, status: { type: 'idle' } }],
@@ -27,6 +27,7 @@ function fixture({ cwd } = {}) {
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       case 'thread/resume': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
       case 'thread/compact/start': result = {}; break;
+      case 'thread/items/list': result = { data: items.map(item => ({ turnId: 'turn-1', item })), nextCursor: null }; break;
       case 'review/start': result = { turn: { id: 'review-turn', status: 'inProgress', items: [] }, reviewThreadId: request.params.threadId }; break;
       default: throw new Error(`Unexpected protocol method ${request.method}`);
     }
@@ -90,6 +91,25 @@ test('review starts the engine review inline for each of the terminal\'s targets
   } finally { client.close(); }
 });
 
+test('outside Git, Changes and /diff show the edits the chat recorded, a file edited twice as one; /review still needs Git', async () => {
+  const plain = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-slash-plain-'));
+  const change = (file, type, diff, status = 'completed') => ({ id: `${file}-${type}`, type: 'fileChange', status, changes: [{ path: path.join(plain, file), kind: { type }, diff }] });
+  const items = [change('notes.md', 'add', 'one\ntwo\n'), change('src/app.py', 'update', '@@ -1,2 +1,2 @@\n a = 1\n-b = 2\n+b = 3\n'),
+    { id: 'said', type: 'agentMessage', text: 'Done' }, change('notes.md', 'update', '@@ -2 +2 @@\n-two\n+three\n'), change('skip.txt', 'add', 'no\n', 'declined')];
+  const { client } = fixture({ cwd: plain, items }); await client.initialize();
+  try {
+    const list = await client.git(CHAT, 'changes');
+    assert.deepEqual([list.root, list.recorded, list.truncated], [plain, true, false]);
+    assert.deepEqual(list.files.map(file => [file.path, file.status, file.added, file.removed, file.binary]), [['notes.md', 'added', 3, 1, false], ['src/app.py', 'modified', 1, 1, false]]);
+    assert.deepEqual(await client.git(CHAT, 'file', 'notes.md'), { diff: '@@ -0,0 +1,2 @@\n+one\n+two\n@@ -2 +2 @@\n-two\n+three\n', truncated: false, binary: false });
+    await assert.rejects(client.git(CHAT, 'file', 'skip.txt'), /no change/i);
+    const { diff } = await client.git(CHAT, 'diff');
+    assert.match(diff, /^--- a\/notes\.md\n\+\+\+ b\/notes\.md\n@@ -0,0 \+1,2 @@\n\+one\n/);
+    assert.match(diff, /\n--- a\/src\/app\.py\n\+\+\+ b\/src\/app\.py\n@@ -1,2 \+1,2 @@\n a = 1\n-b = 2\n\+b = 3\n/);
+    await assert.rejects(client.git(CHAT, 'review'), /not a Git repository/);
+  } finally { client.close(); await fs.rm(plain, { recursive: true, force: true }); }
+});
+
 test('git choices and diff come from the chat\'s own folder: branches, recent commits, tracked and untracked changes', async () => {
   const dir = await repository(), plain = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-slash-plain-'));
   const { client, threads } = fixture({ cwd: dir }); await client.initialize();
@@ -105,7 +125,6 @@ test('git choices and diff come from the chat\'s own folder: branches, recent co
     await assert.rejects(client.git(CHAT, 'other'), /view/);
     threads.get(CHAT).cwd = plain;
     await assert.rejects(client.git(CHAT, 'review'), /not a Git repository/);
-    await assert.rejects(client.git(CHAT, 'diff'), /not a Git repository/);
     delete threads.get(CHAT).cwd;
     await assert.rejects(client.git(CHAT, 'diff'), /folder/);
   } finally { client.close(); await fs.rm(dir, { recursive: true, force: true }); await fs.rm(plain, { recursive: true, force: true }); }

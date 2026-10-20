@@ -13,7 +13,8 @@ import "@/components/changes-panel.css";
 
 type Status = "modified" | "added" | "deleted" | "untracked" | "conflicted";
 type Change = { path: string; status: Status; added: number; removed: number; binary: boolean };
-type ChangeList = { root: string; files: Change[]; truncated: boolean };
+/** `recorded`: the folder has no Git, so the list is the edits this chat recorded (bridge/recorded-changes.mjs). */
+type ChangeList = { root: string; files: Change[]; truncated: boolean; recorded?: boolean };
 type FileDiff = { diff: string; truncated: boolean; binary: boolean };
 
 /** While a turn runs the agent keeps editing, so the list is read again this often. */
@@ -30,8 +31,8 @@ const WARNING: Record<Status, string> = {
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 const folderOf = (root: string, file: string) => file.includes("/") ? `${root.replace(/\/+$/, "")}/${file.slice(0, file.lastIndexOf("/"))}` : root;
 
-/** The side panel's Changes tab, the review surface: the chat's working-tree changes against the last commit, a list of
- * files and the open file's diff. It reads while a turn runs and once when it ends. Discard is the only write, one file at
+/** The side panel's Changes tab, the review surface: the chat's working-tree changes against the last commit (outside Git,
+ * the edits the chat recorded), a list of files and the open file's diff. It reads while a turn runs and once when it ends. Discard is the only write, one file at
  * a time and only after a confirmation; nothing here commits, pushes or opens a pull request. */
 export function ChangesPanel({ threadId, running }: { threadId: string | undefined; running: boolean }) {
   const [list, setList] = useState<ChangeList | null>(null), [error, setError] = useState(""), [note, setNote] = useState("");
@@ -89,8 +90,9 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
     {!threadId ? <p className="changes-note">Open a chat to see the changes in its folder.</p>
       : error ? <p role="alert" className="changes-note changes-error">{error}</p>
       : !list ? <p role="status" className="changes-note">Reading the changes…</p>
-      : !list.files.length ? <p className="changes-note">No changes in this folder.</p>
+      : !list.files.length ? <p className="changes-note">{list.recorded ? "This chat has not edited any file here yet." : "No changes in this folder."}</p>
       : <>
+        {list.recorded && <p className="changes-note">This folder has no Git, so these are the edits this chat made.</p>}
         <ul className="change-list" aria-label="Changed files">{list.files.map(file => <li key={file.path}>
           <FileRefLink target={{ path: `${list.root}/${file.path}` }} label={file.path} className="change-row" current={file.path === shown?.path}>
             <span className="change-status" data-status={file.status} title={LABEL[file.status]}>{LETTER[file.status]}</span>
@@ -103,7 +105,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
           <div className="diff-head">
             <span className="diff-title" title={shown.path}><FileRefLink target={{ path: `${list.root}/${shown.path}` }}>{shown.path}</FileRefLink></span>
             {window.elpisDesktop?.openFolder && <Button type="button" variant="ghost" size="xs" onClick={() => showInFolder(shown)}><FolderIcon size={13} aria-hidden="true" />Show in folder</Button>}
-            <Button type="button" variant="destructive" size="xs" disabled={running} title={running ? "Wait for the turn to finish" : `Throw away the changes to ${shown.path}`} onClick={() => { setFailure(""); setConfirming(shown); }}><Undo2 size={13} aria-hidden="true" />Discard</Button>
+            {!list.recorded && <Button type="button" variant="destructive" size="xs" disabled={running} title={running ? "Wait for the turn to finish" : `Throw away the changes to ${shown.path}`} onClick={() => { setFailure(""); setConfirming(shown); }}><Undo2 size={13} aria-hidden="true" />Discard</Button>}
           </div>
           {note && <p role="alert" className="changes-note changes-error">{note}</p>}
           <div className="diff-body" tabIndex={0}>

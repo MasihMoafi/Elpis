@@ -6,7 +6,7 @@ import { BridgeError } from './client.mjs';
 import { CHAT_WORKTREE } from '../lib/chat-worktree.ts';
 
 const DIFF_LIMIT = 400_000;
-const NOT_A_REPOSITORY = 'This chat\'s folder is not a Git repository.';
+export const NOT_A_REPOSITORY = 'This chat\'s folder is not a Git repository.';
 // Read-only Git, with the repository's own helpers switched off: its config may name programs to run.
 // A file's name is read as a name: no glob, no pathspec magic.
 const SAFE = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '--no-optional-locks', '--literal-pathspecs'];

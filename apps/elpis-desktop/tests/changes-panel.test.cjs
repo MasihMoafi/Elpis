@@ -41,7 +41,7 @@ async function fixture(run, { width = 1130, height = 660, colorScheme = 'light' 
     if (url.pathname === '/api/threads/chat-one/git' && req.method === 'GET') {
       state.reads.push(url.search);
       if (state.error) return json({ error: state.error }, 409);
-      if (url.searchParams.get('view') === 'changes') return json({ root: state.root, files: state.files, truncated: false });
+      if (url.searchParams.get('view') === 'changes') return json({ root: state.root, files: state.files, truncated: false, ...(state.recorded ? { recorded: true } : {}) });
       if (url.searchParams.get('view') === 'file') return json({ diff: state.diffs[url.searchParams.get('path')] ?? '', truncated: false, binary: false });
     }
     if (url.pathname === '/api/threads/chat-one/git' && req.method === 'POST') {
@@ -201,6 +201,24 @@ test('Changes tab: Show in folder opens the changed file\'s folder; a folder tha
     state.error = null; state.files = [];
     await side.getByRole('button', { name: 'Refresh changes', exact: true }).click();
     await eventually(async () => assert.match(await side.innerText(), /No changes in this folder\./));
+  });
+});
+
+test('Changes tab outside Git: the edits the chat recorded, as + and − lines, said so, and no Discard', async () => {
+  await fixture(async ({ page, side, state }) => {
+    state.recorded = true; state.root = '/work/notes';
+    state.files = [{ path: 'notes.md', status: 'added', added: 3, removed: 1, binary: false }];
+    state.diffs = { 'notes.md': '@@ -0,0 +1,2 @@\n+one\n+two\n@@ -2 +2 @@\n-two\n+three\n' };
+    await openChanges({ page, side });
+    const diff = side.getByRole('region', { name: 'Diff of notes.md' });
+    await diff.locator('.diff-line.add').first().waitFor();
+    assert.match(await side.innerText(), /This folder has no Git, so these are the edits this chat made\./);
+    assert.deepEqual(await diff.locator('.diff-line.add .diff-text').allInnerTexts(), ['one', 'two', 'three']);
+    assert.deepEqual(await diff.locator('.diff-line.del .diff-text').allInnerTexts(), ['two']);
+    assert.equal(await side.getByRole('button', { name: 'Discard', exact: true }).count(), 0, 'nothing to restore without Git');
+    state.files = [];
+    await side.getByRole('button', { name: 'Refresh changes', exact: true }).click();
+    await eventually(async () => assert.match(await side.innerText(), /This chat has not edited any file here yet\./));
   });
 });
 

@@ -15,7 +15,8 @@ import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { SkillTrash, skillRoots } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
-import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff } from './git.mjs';
+import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
+import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowRuns } from './workflow-acp.mjs';
@@ -1385,7 +1386,25 @@ export class DesktopClient extends EventEmitter {
     threadId(id);
     if (!['review', 'diff', 'changes', 'file', 'branch'].includes(view)) throw new BridgeError('Choose a Git view: review, diff, changes, file or branch');
     const cwd = await this.#folderOf(id);
-    return view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : view === 'branch' ? currentBranch(cwd) : workingDiff(cwd);
+    try { return await (view === 'review' ? reviewChoices(cwd) : view === 'changes' ? changedFiles(cwd) : view === 'file' ? fileDiff(cwd, file) : view === 'branch' ? currentBranch(cwd) : workingDiff(cwd)); }
+    catch (error) {
+      // Outside Git, the changes are the edits this chat recorded (bridge/recorded-changes.mjs); /review needs Git.
+      if (error.message !== NOT_A_REPOSITORY || !['changes', 'file', 'diff'].includes(view)) throw error;
+      const recorded = recordedChanges(cwd, await this.#chatItems(id));
+      return view === 'changes' ? recorded.changes : view === 'file' ? recorded.file(file) : recorded.diff();
+    }
+  }
+  /** Every item of a chat, oldest first, at most 50 pages of 200. */
+  async #chatItems(id) {
+    const items = [], seen = new Set(); let cursor;
+    for (let page = 0; page < 50; page++) {
+      const result = await this.#itemsPage({ threadId: id, limit: 200, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
+      items.push(...(Array.isArray(result?.data) ? result.data : []).map(entry => entry?.item).filter(Boolean));
+      cursor = result?.nextCursor;
+      if (!cursor || seen.has(cursor)) break;
+      seen.add(cursor);
+    }
+    return items;
   }
   /** The review surface's only write: throw one changed file away (the window asks first). */
   async discardChange(id, body) {
