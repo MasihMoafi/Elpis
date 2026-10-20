@@ -105,6 +105,7 @@
     "desktop/love-spot.test.cjs"
   ],
   "ui": [
+    "tests/love-spot-identity.test.cjs",
     "tests/love-spot-screenshots.test.cjs",
     "tests/temp-root-ui.test.cjs",
     "tests/view-boundaries.test.cjs",

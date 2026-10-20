@@ -63,6 +63,10 @@ export function taskFromPath(path: unknown) {
   const task = typeof path === "string" ? path.split("/").filter(Boolean).at(-1)?.replace(/[_-]+/g, " ").trim() : "";
   return task ? task[0].toUpperCase() + task.slice(1) : "";
 }
+/** Love Spot records the card's name in the conversation title. */
+export function agentName(thread?: Thread | null): string {
+  return thread?.name?.match(/^Love Spot · (.+)$/u)?.[1]?.trim() || thread?.agentNickname?.trim() || "";
+}
 /** Use recorded task metadata before an agent's instruction preamble. */
 export function title(thread: Thread) {
   if (thread.name?.trim()) return thread.name.trim();
