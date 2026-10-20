@@ -96,7 +96,7 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
     <div className="annotation-bar">
       <span className="annotation-status">{state.annotating ? <><i aria-hidden="true" />Annotating</> : "Annotations"}{count > 0 && ` · ${count}`}</span>
       <ol className="annotation-chips" aria-label="Pending comments">
-        {comments.map(item => <li key={item.id}><button type="button" aria-label={`Edit comment ${item.number}: ${item.label}`} title={`${item.label}\n${item.body}`} aria-pressed={draft?.editing && draft.id === item.id || undefined}
+        {comments.map(item => <li key={item.id}><button data-slot="annotation-pin" type="button" aria-label={`Edit comment ${item.number}: ${item.label}`} title={`${item.label}\n${item.body}`} aria-pressed={draft?.editing && draft.id === item.id || undefined}
           onClick={() => { if (!state.annotating) void command("annotate", { value: true }).then(() => command("commentEdit", { id: item.id })); else void command("commentEdit", { id: item.id }); }}>{item.number}</button></li>)}
       </ol>
       {error && <span role="alert" className="annotation-error">{error}</span>}

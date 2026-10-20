@@ -89,7 +89,7 @@ export function ContextFiles({ threadId, onOpenFile, onReady }: { threadId: stri
         <ul>{rows.map(file => <li key={file.path} data-context-path={file.path} data-included={file.included} title={file.reason}>
           <Switch size="sm" aria-label={`Include ${file.name}`} title={file.reason} checked={file.included} disabled={!file.selectable || saving !== null} onCheckedChange={included => void save(file, included)} />
           <div className="context-file-detail">
-            <button type="button" className="context-file-name" title={file.path} aria-label={`Open ${file.name}`} onClick={() => open(file)}><bdi>{file.name}</bdi></button>
+            <button data-slot="file-name-link" type="button" className="context-file-name" title={file.path} aria-label={`Open ${file.name}`} onClick={() => open(file)}><bdi>{file.name}</bdi></button>
             <div className="context-file-meta"><span>≈{tokens(file.estimatedTokens)} est. tokens</span><span className="context-file-state">{saving === file.path ? "Saving…" : file.included ? "INCLUDED" : "EXCLUDED"}</span></div>
           </div>
         </li>)}</ul>

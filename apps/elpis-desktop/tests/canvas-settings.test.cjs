@@ -30,7 +30,7 @@ for (const iso of [false, true]) test(`${iso ? '3D' : '2D'} settings load every 
   } });
   const { page, canvas } = fixture;
   try {
-    if (iso) await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    if (iso) await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     if (iso) await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click(); else await fixture.node('Quillon · Part 1').click();
     const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     await chooseOption(panel.getByRole('combobox', { name: 'Provider', exact: true }), 'anthropic-credits');
@@ -50,11 +50,11 @@ for (const iso of [false, true]) test(`${iso ? '3D' : '2D'} settings load every 
     const saved = await fixture.saved();
     const agent = saved.nodes.find(node => node.data.title === 'Configured answer');
     assert.equal(agent.data.model, 'claude-opus-5-5'); assert.equal(agent.data.provider, 'anthropic-credits'); assert.equal(agent.data.effort, 'xhigh');
-    await canvas.getByRole('button', { name: 'Flat', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
     await fixture.node('Configured answer').getByText('Opus 5.5', { exact: false }).waitFor();
     for (const theme of ['light', 'dark']) {
       if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
-      if (iso) await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+      if (iso) await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
       await fs.mkdir('/tmp/canvas-rebuild', { recursive: true });
       await page.screenshot({ path: `/tmp/canvas-rebuild/settings-${iso ? 'iso' : 'flat'}-${theme}.png` });
     }

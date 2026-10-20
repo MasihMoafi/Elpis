@@ -57,11 +57,11 @@ export function SettingsNotice({ tone = "status", children }: { tone?: "status" 
   return <p className={`settings-notice${tone === "alert" ? " alert" : ""}`} role={tone}>{children}</p>;
 }
 
-type Option<T extends string> = { value: T; label: string; disabled?: boolean; icon?: ReactNode };
+type Option<T extends string> = { value: T; label: string; disabled?: boolean; icon?: ReactNode; title?: string };
 /** A small set of mutually exclusive choices shown side by side. */
-export function Segmented<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: Option<T>[]; onChange: (value: T) => void; disabled?: boolean }) {
-  return <div role="radiogroup" aria-label={label} className="segmented">
-    {options.map(option => <Button key={option.value} type="button" variant="ghost" size="sm" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled} onClick={() => onChange(option.value)}>{option.icon}{option.label}</Button>)}
+export function Segmented<T extends string>({ label, value, options, onChange, disabled, className }: { label: string; value: T; options: Option<T>[]; onChange: (value: T) => void; disabled?: boolean; className?: string }) {
+  return <div role="radiogroup" aria-label={label} className={className ? `segmented ${className}` : "segmented"}>
+    {options.map(option => <Button data-slot="segment" key={option.value} title={option.title} type="button" variant="ghost" size="sm" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled} onClick={() => onChange(option.value)}>{option.icon}{option.label}</Button>)}
   </div>;
 }
 

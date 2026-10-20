@@ -3,4 +3,3 @@
 .turn .user-turn { margin-bottom:44px; }
 .turn .message.agent, .chat-content .message.agent { margin-bottom:40px; }
 .user-turn .message-actions, .message.agent .message-actions { gap:6px; margin-top:6px; }
-.message-actions button { min-width:28px; min-height:28px; }

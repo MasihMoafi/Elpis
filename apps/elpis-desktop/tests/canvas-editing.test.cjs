@@ -6,7 +6,7 @@ const { chooseTheme } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
 const graph = { name: 'Editing', nodes: ['a', 'b', 'c'].map((id, i) => ({ id, type: 'agent', position: { x: i === 2 ? 480 : 240, y: i * 140 }, data: { title: ['Kivo', 'Orun', 'Vela'][i], instruction: 'Write the result', model: null, writeScopes: [['src'], ['docs'], ['tests']][i], acceptanceCriteria: [] } })), edges: [{ id: 'a->c', source: 'a', target: 'c' }, { id: 'b->c', source: 'b', target: 'c' }] };
-async function mode(f, iso) { await f.canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit(); }
+async function mode(f, iso) { await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit(); }
 async function wireClick(f, selector) {
   const p = await f.canvas.locator(selector).first().evaluate(el => { const p = el.getPointAtLength(el.getTotalLength() * .55); const q = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM()); return { x: q.x, y: q.y }; });
   await f.page.mouse.click(p.x, p.y);
@@ -137,7 +137,7 @@ const board = (f, iso) => f.canvas.locator(iso ? '.iso-board' : '.react-flow');
 const select = (f, iso, id = 'a') => f.canvas.locator(iso ? `.iso-label[data-for="${id}"]` : `.react-flow__node[data-id="${id}"]`).click();
 async function setup(iso) {
   const f = await openCanvas({ graph, width: 1280 });
-  await f.canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
+  await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
   await f.fit();
   return f;
 }

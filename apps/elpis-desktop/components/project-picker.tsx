@@ -25,7 +25,7 @@ export function ProjectMenu({ projects, selected, disabled, variant, onSelect, o
     <DropdownMenu>
       {variant === "heading"
         ? <DropdownMenuTrigger className="project-heading-trigger" title={selected?.cwd} disabled={disabled || busy}>{selected?.name}</DropdownMenuTrigger>
-        : <DropdownMenuTrigger className="composer-chip project-chip" aria-label={label} title={selected?.cwd} disabled={disabled || busy}><FolderIcon size={13} aria-hidden="true" /><span>{selected?.name || "Work in a project"}</span></DropdownMenuTrigger>}
+        : <DropdownMenuTrigger data-slot="composer-chip" className="composer-chip project-chip" aria-label={label} title={selected?.cwd} disabled={disabled || busy}><FolderIcon size={13} aria-hidden="true" /><span>{selected?.name || "Work in a project"}</span></DropdownMenuTrigger>}
       <DropdownMenuContent align="start" className="project-menu w-72">
         {projects.map(project => <DropdownMenuItem key={project.id} onClick={() => void choose(project)}>
           <FolderIcon aria-hidden="true" /><span className="project-option"><strong>{project.name}</strong><small>{project.cwd}</small></span>
@@ -113,7 +113,7 @@ export function EnvironmentMenu({ folder, disabled, worktree, onWorktree }: { fo
   useEffect(() => { if (repository === false && worktree) onWorktree(false); }, [repository, worktree, onWorktree]);
   const Icon = worktree ? GitBranch : Laptop;
   return <DropdownMenu>
-    <DropdownMenuTrigger className="composer-chip project-chip" aria-label="Where this chat works" title={worktree ? `A new worktree of ${folder}` : folder ?? DEFAULT_FOLDER} disabled={disabled}><Icon size={13} aria-hidden="true" /><span>{worktree ? "Worktree" : "Local"}</span></DropdownMenuTrigger>
+    <DropdownMenuTrigger data-slot="composer-chip" className="composer-chip project-chip" aria-label="Where this chat works" title={worktree ? `A new worktree of ${folder}` : folder ?? DEFAULT_FOLDER} disabled={disabled}><Icon size={13} aria-hidden="true" /><span>{worktree ? "Worktree" : "Local"}</span></DropdownMenuTrigger>
     <DropdownMenuContent align="start" className="project-menu w-72">
       <DropdownMenuItem onClick={() => onWorktree(false)}><Laptop aria-hidden="true" /><span className="project-option"><strong>Local</strong><small>{folder ?? DEFAULT_FOLDER}</small></span>{!worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>
       <DropdownMenuItem disabled={repository !== true} onClick={() => onWorktree(true)}><GitBranch aria-hidden="true" /><span className="project-option"><strong>Worktree</strong><small>{repository === false ? "Needs a Git repository with a commit" : "Own worktree, new branch"}</small></span>{worktree && <Check className="ml-auto" aria-label="Current" />}</DropdownMenuItem>

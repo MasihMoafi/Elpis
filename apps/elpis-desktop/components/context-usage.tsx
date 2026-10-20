@@ -179,7 +179,7 @@ function LedgerView({ ledger, loading, unavailable, expanded, onToggle, compact 
     : `Measured total · estimated category ${capacity ? "shares" : "tokens"}`;
   const measured = used !== null;
   return <>
-    <button type="button" className="context-ledger-head" aria-expanded={categories.length ? expanded : undefined} disabled={!categories.length} onClick={onToggle}>
+    <button data-slot="ledger-head" type="button" className="context-ledger-head" aria-expanded={categories.length ? expanded : undefined} disabled={!categories.length} onClick={onToggle}>
       <span>Context window</span>{summary && <span className="context-ledger-summary">{summary}</span>}
       {categories.length > 0 && <ChevronRight size={12} aria-hidden="true" className="context-ledger-caret" data-expanded={expanded || undefined} />}
     </button>

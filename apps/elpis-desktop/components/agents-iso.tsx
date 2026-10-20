@@ -1,5 +1,6 @@
 "use client";
 
+import { Segmented } from "@/components/settings/rows";
 import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -103,10 +104,9 @@ function Chevrons({ route, live }: { route: Ground[]; live: boolean }) {
 
 /** The header's switch between the flat board and this isometric view. */
 export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: boolean) => void }) {
-  return <div className="segmented canvas-view" role="group" aria-label="Workflows view">
-    {([["Flat", false, "Edit the graph: drag, wire and add agents"], ["Isometric", true, "Select and connect agents on the isometric board; Enter opens the selected agent"]] as const).map(([label, value, hint]) =>
-      <Button key={label} variant={iso === value ? "secondary" : "ghost"} size="sm" aria-pressed={iso === value} title={hint} onClick={() => onChange(value)}>{label}</Button>)}
-  </div>;
+  return <Segmented label="Workflows view" className="canvas-view" value={iso ? "iso" : "flat"} onChange={value => onChange(value === "iso")} options={[
+    { value: "flat", label: "Flat", title: "Edit the graph: drag, wire and add agents" },
+    { value: "iso", label: "Isometric", title: "Select and connect agents on the isometric board; Enter opens the selected agent" }]} />;
 }
 
 /** `father`: the agents past the Mother's ten, which the Father runs (lib/canvas.ts `parents`). */
@@ -362,7 +362,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     {places.filter(place => place.kind === "agent").flatMap(place => (["target", "source"] as const).map(end => {
       const point = screen(place.at), offset = ellipse(shapeOf(place).ring).rx * view.zoom;
       const at = { x: point.x + (end === "source" ? offset : -offset), y: point.y };
-      return <button key={`${place.id}-${end}`} type="button" className="iso-port" data-kind="agent" data-node={place.id} data-end={end} aria-label={`${end === "source" ? "Output" : "Input"} of ${titleOf(place.id)}`} title={end === "source" ? "Drag to another agent's input, or drop to add an agent" : "Drag from another agent's output"} style={{ left: at.x, top: at.y, "--kind": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties}
+      return <button data-slot="iso-port" key={`${place.id}-${end}`} type="button" className="iso-port" data-kind="agent" data-node={place.id} data-end={end} aria-label={`${end === "source" ? "Output" : "Input"} of ${titleOf(place.id)}`} title={end === "source" ? "Drag to another agent's input, or drop to add an agent" : "Drag from another agent's output"} style={{ left: at.x, top: at.y, "--kind": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties}
         onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }}
         onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); root.current?.focus({ preventScroll: true }); root.current?.setPointerCapture(event.pointerId); setWireDrag({ id: place.id, end, from: at, to: at }); }}
         onClick={event => { event.stopPropagation(); if (event.detail === 0) { const box = event.currentTarget.getBoundingClientRect(); onCommand({ x: box.left, y: box.bottom }, place.id, end); } }} />;
@@ -400,14 +400,14 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
         taken.push(labelBox(position, width));
         return <span key={wire.id}>
           <svg className="iso-flow-leader" aria-hidden="true"><line x1={at.x} y1={at.y} x2={position.x} y2={position.y} /></svg>
-          <button className="iso-flow-label" title={wire.label} style={{ left: position.x, top: position.y }} onClick={event => onWireClick(event, wire)}>{wire.label}</button>
+          <button data-slot="flow-label" className="iso-flow-label" title={wire.label} style={{ left: position.x, top: position.y }} onClick={event => onWireClick(event, wire)}>{wire.label}</button>
         </span>;
       })}
     </div>
     <div className="iso-hud iso-controls" role="toolbar" aria-label="Zoom">
-      <button type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
-      <button type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
-      <button type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
+      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
+      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
+      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
       <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Drag</b>Pan</span></span>
     </div>
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}

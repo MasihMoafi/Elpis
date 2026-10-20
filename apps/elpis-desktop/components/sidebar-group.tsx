@@ -21,7 +21,7 @@ export function SidebarGroup({ kind, name, title, icon, open, active, onToggle, 
   const own = KIND[kind];
   return <div className={`sidebar-group ${own.group}`} role="group" aria-label={name}>
     {wrap(<div className={`sidebar-group-row ${own.row}${active ? " active" : ""}`} />, menu => <>
-      <button type="button" className={`sidebar-group-toggle ${own.toggle}`} aria-expanded={open} title={title} onClick={onToggle}>
+      <button data-slot="group-toggle" type="button" className={`sidebar-group-toggle ${own.toggle}`} aria-expanded={open} title={title} onClick={onToggle}>
         <ChevronRight size={13} className="sidebar-group-chevron" aria-hidden="true" />{icon}<span className="sidebar-group-name" title={title === undefined ? name : undefined}>{name}</span>{note}
       </button>
       <span className={`sidebar-group-actions ${own.actions}`}>{menu}</span>{trailing}

@@ -200,7 +200,7 @@ test('keep-flow reconnects the implicit Mother and does not duplicate an existin
 for (const iso of [false, true]) test(`${iso ? 'isometric' : 'flat'} provider filters models through inspector and Dashboard settings`, async () => {
   const f = await openCanvas({ graph: { name: 'Provider models', nodes: [agent('Answer 1', 0, 0, { model: 'gpt-6.1-sol', effort: 'high' })], edges: [] }, settings: { providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'anthropic-credits', displayName: 'Anthropic API' }] }, providerModels: { 'anthropic-credits': [{ id: 'opus', model: 'claude-opus-5-5', displayName: 'Opus 5.5' }, { id: 'sonnet', model: 'claude-sonnet-5', displayName: 'Sonnet 5' }] } });
   try {
-    if (iso) await f.canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    if (iso) await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const node = iso ? f.canvas.locator('.iso-node[data-kind="agent"]') : f.node('Answer 1');
     await node.click();
     const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });

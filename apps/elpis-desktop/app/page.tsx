@@ -1589,8 +1589,8 @@ export default function Home() {
           onDragStart: (event: React.DragEvent<HTMLElement>) => { dragging.current = thread.id; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-chat", thread.id); },
           onDragEnd: () => { dragging.current = null; setDrop(null); } } : {})} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
       {menu => <>
-      {state === "unread" ? <button className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
-      <button className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
+      {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
+      <button data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
         {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
@@ -1659,8 +1659,8 @@ export default function Home() {
     <aside className={`sidebar${sidebar ? " open" : ""}`} aria-label="Workspace navigation" onKeyDown={sidebarKeys}>
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><img src={brandMark} alt="Elpis" width={73} height={36} /></div>
       <nav className="nav-list" aria-label="Workspace">
-        <Button className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        {arrangedPages.map(page => <Button key={page.id} variant="ghost" draggable data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
+        <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
+        {arrangedPages.map(page => <Button data-slot="nav-row" key={page.id} variant="ghost" draggable data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
           title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}
           onDragStart={event => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-page", page.id); }}
           onDragOver={event => { if (event.dataTransfer.types.includes("text/x-elpis-page")) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
@@ -1806,7 +1806,7 @@ export default function Home() {
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
-              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" className="model-select" value={turnEffort} onChange={e => selected ? setOverride(selected.id, { effort: e.target.value }) : setEffort(e.target.value)} disabled={!ready || busy}>
+              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? setOverride(selected.id, { effort: e.target.value }) : setEffort(e.target.value)} disabled={!ready || busy}>
                 <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
@@ -1831,9 +1831,9 @@ export default function Home() {
       </div>
       {selected && teamRoot && team.length > 0 && agentsPanel && !panelShown && <aside className="team-panel" aria-label="Agents in this chat">
         <div className="team-heading"><span>Agents</span><small>{team.filter(thread => agentState(thread, waitingIds) === "working").length} working · {team.length} total</small></div>
-        <button className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
+        <button data-slot="team-row" className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
         {team.map(thread => { const state = agentState(thread, waitingIds);
-          return <button key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => loadThread(thread)} title={activity[thread.id] || title(thread)}>
+          return <button data-slot="team-row" key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => loadThread(thread)} title={activity[thread.id] || title(thread)}>
             <span className="team-state" aria-label={stateLabels[state]}><i /></span>
             <span className="team-title">{title(thread)}{thread.agentNickname && thread.agentNickname !== title(thread) && <em>{thread.agentNickname}</em>}</span>
             <small>{state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ")}</small>

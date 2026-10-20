@@ -28,7 +28,7 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
   const current = MODES.find(item => item.id === mode) ?? MODES[0];
   return <>
     <DropdownMenu>
-      <DropdownMenuTrigger className={`composer-pill permissions-${mode} ${dangerous(mode)}`} disabled={disabled} aria-label="Change permissions" title="Change permissions (Shift+Tab in the message box cycles Ask, Approve for me and Plan)">
+      <DropdownMenuTrigger data-slot="composer-chip" className={`composer-pill permissions-${mode} ${dangerous(mode)}`} disabled={disabled} aria-label="Change permissions" title="Change permissions (Shift+Tab in the message box cycles Ask, Approve for me and Plan)">
         <current.Icon size={14} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
@@ -86,7 +86,7 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
 
 /** Shown beside "+" while Plan mode is on; its button turns it off. */
 export function PlanPill({ disabled, onOff }: { disabled?: boolean; onOff: () => void }) {
-  return <span className="composer-pill plan-pill"><PlanIcon size={14} aria-hidden="true" /><span>Plan</span><button type="button" aria-label="Turn plan mode off" title="Turn plan mode off" disabled={disabled} onClick={onOff}><X size={12} /></button></span>;
+  return <span className="composer-pill plan-pill"><PlanIcon size={14} aria-hidden="true" /><span>Plan</span><button data-slot="pill-remove" type="button" aria-label="Turn plan mode off" title="Turn plan mode off" disabled={disabled} onClick={onOff}><X size={12} /></button></span>;
 }
 
 /** Beside Send while a turn runs, as Claude's "More send options": sends this one message the way the send key does not

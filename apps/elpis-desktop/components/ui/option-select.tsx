@@ -2,7 +2,9 @@
 import { Children, Fragment, isValidElement, useState, type ReactNode } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 type Change = { target: { value: string }; currentTarget: { value: string } };
-type Props = Omit<React.ComponentProps<"select">, "onChange" | "value" | "defaultValue" | "multiple"> & {
+type Props = Omit<React.ComponentProps<"select">, "onChange" | "value" | "defaultValue" | "multiple" | "size"> & {
+  /** The trigger's size, as the shared select has them. */
+  size?: "sm" | "default";
   value?: string | number; defaultValue?: string | number; onChange?: (event: Change) => void;
 };
 type Item = { value: string; label: ReactNode; hint?: string; disabled: boolean };

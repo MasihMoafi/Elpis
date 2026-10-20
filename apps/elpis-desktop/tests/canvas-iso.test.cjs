@@ -50,8 +50,8 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     const shoot = async name => { if (shots) { await fs.mkdir(shots, { recursive: true }); await page.waitForTimeout(400); await page.screenshot({ path: path.join(shots, `${name}.png`) }); } };
 
     // The header switches the board between Flat (editing) and Isometric (watching and clicking).
-    const view = canvas.getByRole('group', { name: 'Workflows view', exact: true });
-    const flat = view.getByRole('button', { name: 'Flat', exact: true }), iso = view.getByRole('button', { name: 'Isometric', exact: true });
+    const view = canvas.getByRole('radiogroup', { name: 'Workflows view', exact: true });
+    const flat = view.getByRole('radio', { name: 'Flat', exact: true }), iso = view.getByRole('radio', { name: 'Isometric', exact: true });
     assert.deepEqual([await flat.getAttribute('aria-pressed'), await iso.getAttribute('aria-pressed')], ['true', 'false']);
     await iso.click();
     assert.equal(await iso.getAttribute('aria-pressed'), 'true');

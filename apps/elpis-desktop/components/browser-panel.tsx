@@ -116,7 +116,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
       <div className="browser-address">
         {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><TriangleAlert size={12} aria-hidden="true" /><span className="browser-security-text">Not secure</span></span>}
         <Input ref={address} aria-label="Search or enter a URL" placeholder="Search or enter a URL" value={value} onChange={e => active && setEdit({ tab: active.id, value: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { setEdit(null); address.current?.blur(); } }} spellCheck={false} autoComplete="off" />
-        {active && active.zoom !== 100 && <button type="button" className="browser-zoom" title="Reset zoom to 100%" onClick={() => void command("zoom", { value: "reset" })}>{active.zoom}%</button>}
+        {active && active.zoom !== 100 && <button data-slot="zoom-reset" type="button" className="browser-zoom" title="Reset zoom to 100%" onClick={() => void command("zoom", { value: "reset" })}>{active.zoom}%</button>}
       </div>
       <Button type="button" variant="ghost" size="sm" className="browser-annotate" aria-pressed={state.annotating} aria-label="Annotate this page" title="Annotate: point at items to ask about or change"
         disabled={!active || !/^https?:/.test(active.url)} onClick={() => void command("annotate")}>
@@ -203,7 +203,7 @@ function BrowserOptions({ browser, tab, onNotice, onAttach, imagesAllowed }: { b
       <div className="browser-zoom-row" role="group" aria-label="Zoom">
         <span>Zoom</span>
         <Button type="button" variant="ghost" size="icon-xs" aria-label="Zoom out" disabled={!page} onClick={() => void command("zoom", { value: "out" })}>−</Button>
-        <button type="button" className="browser-zoom-value" title="Reset zoom" disabled={!page} onClick={() => void command("zoom", { value: "reset" })}>{tab?.zoom ?? 100}%</button>
+        <button data-slot="zoom-reset" type="button" className="browser-zoom-value" title="Reset zoom" disabled={!page} onClick={() => void command("zoom", { value: "reset" })}>{tab?.zoom ?? 100}%</button>
         <Button type="button" variant="ghost" size="icon-xs" aria-label="Zoom in" disabled={!page} onClick={() => void command("zoom", { value: "in" })}>+</Button>
       </div>
       <div role="separator" className="browser-options-separator" />

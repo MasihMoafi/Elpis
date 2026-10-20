@@ -11,7 +11,7 @@ const matrix = (page, selector) => page.locator(selector).evaluate(el => {
 for (const iso of [false, true]) test(`${iso ? 'isometric' : 'flat'}: scroll pans, modifier and pinch zoom at the pointer`, async () => {
   const f = await openCanvas();
   try {
-    if (iso) await f.canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    if (iso) await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const board = f.canvas.locator(iso ? '.iso-board' : '.react-flow__pane');
     const selector = iso ? '.iso-world' : '.react-flow__viewport';
     const box = await board.boundingBox();
@@ -54,7 +54,7 @@ test('ordinary agents retain distinct identity colors in both views', async () =
   const f = await openCanvas();
   try {
     for (const iso of [false, true]) {
-      await f.canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
+      await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
       const colors = await f.canvas.locator(iso ? '.iso-node[data-kind="agent"]' : '.agent-node[data-kind="agent"]').evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
       assert.equal(new Set(colors).size, 4);
     }
@@ -105,7 +105,7 @@ test('Space applies numbered patterns to characters, preserves editable prompts,
     assert.equal(await f.canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true }).count(), 0);
     await command(5); await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click(); await fs.mkdir(shots, { recursive: true });
     for (const iso of [false, true]) {
-      await f.canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
+      await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
       if (iso) { await command(2); assert.equal((await f.saved()).edges.length, 0); await command(5); }
       for (const theme of ['light', 'dark']) {
         if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme); await f.fit();

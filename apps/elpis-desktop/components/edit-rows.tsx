@@ -46,7 +46,7 @@ export function TurnChanges({ items, onViewChanges }: { items: Item[]; onViewCha
   if (!turn.files.length) return null;
   return <section className="turn-changes" aria-label="Changes in this turn">
     <div className="turn-changes-head">
-      <button type="button" className="turn-changes-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button data-slot="changes-toggle" type="button" className="turn-changes-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="turn-changes-name">Changes</span><span>{turn.files.length === 1 ? "1 file" : `${turn.files.length} files`}</span><Counts added={turn.added} removed={turn.removed} />
       </button>
       {onViewChanges && <Button type="button" variant="outline" size="xs" title="Show the changes in the Changes tab" onClick={onViewChanges}>View changes</Button>}

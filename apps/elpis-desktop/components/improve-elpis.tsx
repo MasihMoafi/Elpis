@@ -125,7 +125,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     finally { setBusy(false); }
   }
   const canKeep = !!change?.checks?.passed && !change.dirty && change.checks.head === change.head;
-  const changeItem = <button type="button" role="menuitem" className="elpis-change-menuitem" onClick={() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); void begin(pointed.current); }}>Change this…</button>;
+  const changeItem = <button data-slot="change-menuitem" type="button" role="menuitem" className="elpis-change-menuitem" onClick={() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); void begin(pointed.current); }}>Change this…</button>;
   return <>
     {menu?.isConnected && createPortal(changeItem, menu)}
     {fallback && !menu && createPortal(<div data-improve-menu role="menu" className="elpis-change-menu" style={{ left: Math.min(fallback.x, window.innerWidth - 170), top: Math.min(fallback.y, window.innerHeight - 50) }}>{changeItem}</div>, document.body)}

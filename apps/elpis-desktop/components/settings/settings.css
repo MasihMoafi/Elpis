@@ -50,12 +50,11 @@ form.settings-card, .settings-card:has(> .field) { gap:16px; }
 .archived-bulk { display:flex; align-items:center; gap:8px; min-height:36px; margin:12px 0 8px; padding-inline:17px; }
 .archived-check { display:flex; align-items:center; gap:16px; margin-right:auto; font-size:14px; color:var(--muted-foreground); cursor:pointer; }
 .archived-check input, .archived-row-check { width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
-/* One control size on every page: buttons, inputs, selects and search share a height and type size; segmented
- * options and icon or link buttons keep their own. Description-like notes share the row description's size. */
+/* One field size on every page: inputs, selects and search share a height and type size. Buttons keep the size
+ * they ask for, as everywhere (rule R5). Description-like notes share the row description's size. */
 .settings-page { --settings-control-h:32px; }
-.settings-page :is([data-slot="button"]:not([class~="size-6"], [class~="size-7"], [class~="size-8"], [class~="size-9"], .h-auto, .segmented > *), [data-slot="input"], [data-slot="select-trigger"], .model-picker-trigger, .search-field) { height:var(--settings-control-h); min-height:var(--settings-control-h); font-size:13px; }
+.settings-page :is([data-slot="input"], [data-slot="select-trigger"], .model-picker-trigger, .search-field) { height:var(--settings-control-h); min-height:var(--settings-control-h); font-size:13px; }
 .settings-page [data-slot="textarea"] { font-size:13px; }
-.settings-page .segmented > button { height:calc(var(--settings-control-h) - 4px); }
 .settings-page .field { font-size:13.5px; }
 .settings-page :is(.provider-note, .settings-card .text-xs, .settings-stack .text-xs) { font-size:12.5px; }
 .settings-card > :empty { display:none; }

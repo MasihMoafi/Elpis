@@ -167,7 +167,7 @@ try {
   for (const theme of ['light', 'dark']) {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
     for (const iso of [false, true]) {
-      await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
+      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
       await canvas.getByRole('button', { name: /fit view/i }).click(); await page.waitForTimeout(500);
       const name = `${plan}-${iso ? '3d' : '2d'}-${theme}`;
       await page.screenshot({ path: path.join(evidence, `${name}.png`) });

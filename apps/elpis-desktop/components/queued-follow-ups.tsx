@@ -43,7 +43,7 @@ function Tray({ threadId, items, activeTurnId, onError, onComplete, onEdit }: { 
     </li>
   </ul>;
 
-  if (!open) return <button type="button" aria-expanded="false" className={`${TRAY} ${ROW} text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50`} onClick={() => setOpen(true)}>
+  if (!open) return <button data-slot="queued-row" type="button" aria-expanded="false" className={`${TRAY} ${ROW} text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50`} onClick={() => setOpen(true)}>
     <span className="shrink-0 font-medium">{count(items.length)}</span>
     <span className="min-w-0 flex-1 truncate text-muted-foreground">Next: {preview(first)}</span>
     <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />

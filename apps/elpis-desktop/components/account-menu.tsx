@@ -24,7 +24,7 @@ function whoIs(data: ReturnType<typeof useProviderUsage>["data"], error: string)
 export function AccountMenu({ refreshKey, dark, onTheme, onSettings, onAccounts }: { refreshKey: number; dark: boolean; onTheme: () => void; onSettings: () => void; onAccounts: () => void }) {
   const { data, error } = useProviderUsage(refreshKey), { name, plan, label } = whoIs(data, error);
   return <DropdownMenu>
-    <DropdownMenuTrigger className="account-row" aria-label={label} title={label}>
+    <DropdownMenuTrigger data-slot="account-row" className="account-row" aria-label={label} title={label}>
       <span className="account-avatar" aria-hidden="true">{name[0]?.toUpperCase()}</span>
       <span className="account-name">{name}</span>
       {plan && <span className="account-plan">{plan}</span>}

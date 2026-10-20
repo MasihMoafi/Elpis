@@ -132,7 +132,7 @@ export function UsagePanel({ refreshKey, onOpen }: { refreshKey: number; onOpen:
   const { data, error } = useProviderUsage(refreshKey);
   const rows = data ? ([["ChatGPT", data.openai?.auth?.state === "signedIn" ? data.openai.usage : []], ["Anthropic", data.claude?.usage], ["Antigravity", data.gemini?.usage]] as const)
     .map(([name, limits]) => ({ name, window: tightest([...(limits ?? [])]) })).filter(row => row.window) : [];
-  return <button type="button" className="usage-summary" aria-label="Usage and limits" title="Usage and limits" onClick={onOpen}>
+  return <button data-slot="usage-summary" type="button" className="usage-summary" aria-label="Usage and limits" title="Usage and limits" onClick={onOpen}>
     {rows.map(({ name, window }) => { const used = Math.max(0, Math.min(100, window!.usedPercent!));
       return <span key={name} className={`usage-row${used >= 95 ? " critical" : used >= 80 ? " high" : ""}`} title={[`${windowLabel(window!.windowDurationMins)} limit`, countdown(window!.resetsAt)].filter(Boolean).join(" · ")}>
         <span>{name}</span><span className="usage-left">{Math.round(100 - used)}% left</span><i style={{ "--used": `${used}%` } as React.CSSProperties} />

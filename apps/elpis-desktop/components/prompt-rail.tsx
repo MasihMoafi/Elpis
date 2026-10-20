@@ -44,6 +44,6 @@ export function PromptRail({ scroller, version }: { scroller: RefObject<HTMLElem
     setCurrent(index);
   };
   return <nav ref={rail} className="prompt-rail" aria-label="Prompts">
-    {prompts.map((text, index) => <button key={index} type="button" className="prompt-tick" aria-label={`Go to prompt: ${labelOf(text)}`} title={labelOf(text)} aria-current={index === current ? "true" : undefined} onClick={() => goTo(index)}><i /></button>)}
+    {prompts.map((text, index) => <button data-slot="prompt-mark" key={index} type="button" className="prompt-tick" aria-label={`Go to prompt: ${labelOf(text)}`} title={labelOf(text)} aria-current={index === current ? "true" : undefined} onClick={() => goTo(index)}><i /></button>)}
   </nav>;
 }

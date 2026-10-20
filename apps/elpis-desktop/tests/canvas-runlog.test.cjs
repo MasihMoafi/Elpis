@@ -38,7 +38,7 @@ test('the complete chronological log retains starts, tasks, checks and actual re
     await log.getByRole('button', { name: /AGENT STARTED.*Quillon · Answer 1/ }).click();
     const dashboard = canvas.getByRole('dialog', { name: 'Quillon · Answer 1 info' }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Close info' }).click();
-    await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await log.getByRole('button', { name: /CHECK PASSED.*Tally/ }).focus(); await page.keyboard.press('Enter');
     await canvas.getByRole('dialog', { name: 'Nuvani · Tally the answers info' }).waitFor();
     assert.deepEqual(f.errors, []);
@@ -48,17 +48,17 @@ test('the complete chronological log retains starts, tasks, checks and actual re
 test('the timer advances in either view and stops on completion, including a new run', async () => {
   const f = await staged(); const { canvas, page } = f;
   try {
-    await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const clock = canvas.getByRole('region', { name: 'Run clock', exact: true });
     await clock.waitFor(); const first = await clock.locator('strong').innerText();
     await page.waitForFunction(value => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, first);
     assert.ok(await clock.locator('strong').evaluate(el => parseFloat(getComputedStyle(el).fontSize)) >= 32);
-    await canvas.getByRole('button', { name: 'Flat', exact: true }).click(); await clock.waitFor();
+    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click(); await clock.waitFor();
     f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
     const ended = await clock.locator('strong').innerText(); await page.waitForTimeout(2100);
     assert.equal(await clock.locator('strong').innerText(), ended);
-    await canvas.getByRole('button', { name: 'Isometric', exact: true }).click(); assert.equal(await clock.locator('strong').innerText(), ended);
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click(); assert.equal(await clock.locator('strong').innerText(), ended);
     f.advance(0); await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(value => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, ended);
     assert.equal(await clock.locator('strong').innerText(), '00:00');
@@ -75,7 +75,7 @@ test('Kahn waves stay visible with the sidebar closed; waiting inputs clear only
     assert.match(await order.innerText(), /Kahn/i);
     assert.equal(await order.locator('li').count(), 2);
     for (const iso of [false, true]) {
-      await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
+      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
       if (iso) await canvas.locator('.iso-label').filter({ hasText: 'Nuvani · Tally the answers' }).click(); else await f.node('Nuvani · Tally the answers').click();
       assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Answer 1.*Veyra · Answer 2.*Orilo · Answer 3/);
     }
@@ -88,7 +88,7 @@ test('Kahn waves stay visible with the sidebar closed; waiting inputs clear only
     assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Answer 1.*check/);
     f.advance(2); await order.locator('li[data-status="running"]').filter({ hasText: /Wave 2/i }).waitFor();
     assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /All inputs captured/);
-    await canvas.getByRole('button', { name: 'Flat', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
     assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /All inputs captured/);
   } finally { await f.close(); }
 });
@@ -145,7 +145,7 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
       }
       if (state === 'after') { f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor(); }
       for (const iso of [false, true]) {
-        await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
+        await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
         await assertUiFit(canvas, `${state} ${iso ? '3D' : '2D'} ${width} ${theme}`);
         await page.screenshot({ path: `/tmp/canvas-runlog/${width}-${theme}-${iso ? '3d' : '2d'}-${state}.png` });
       }

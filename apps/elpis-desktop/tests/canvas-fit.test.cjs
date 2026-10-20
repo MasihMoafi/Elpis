@@ -11,7 +11,7 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
     await page.waitForTimeout(350);
     for (const iso of [false, true]) {
-      await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
+      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
       await assertUiFit(canvas, `${iso ? '3D' : '2D'} canvas`);
       if (iso) await canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]').click(); else await f.node('Quillon · Part 1').click();
       const panel = canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
@@ -40,7 +40,7 @@ for (const theme of ['light', 'dark']) test(`a finished run's board fits in both
     await page.waitForFunction(() => /Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''), null, { timeout: 20000 });
     await canvas.getByRole('region', { name: 'Run clock' }).or(canvas.getByLabel('Run clock')).first().waitFor();
     for (const iso of [false, true]) {
-      await canvas.getByRole('button', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
+      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
       await assertUiFit(canvas, `finished ${iso ? '3D' : '2D'} board`);
     }
   } finally { await f.close(); }

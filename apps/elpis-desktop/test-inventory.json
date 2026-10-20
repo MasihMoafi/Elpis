@@ -213,6 +213,7 @@
     "tests/terminal.test.cjs",
     "tests/ui-fit-checker.test.cjs",
     "tests/undo-delete.test.cjs",
+    "tests/uniformity.test.cjs",
     "tests/usability.test.cjs",
     "tests/ux-everyday.test.cjs",
     "tests/view-errors.test.cjs",

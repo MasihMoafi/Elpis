@@ -15,7 +15,7 @@ export function FileRefLink({ target, children, label, className = "", current }
   const actions = useFileActions({ abs: found.abs, rel: found.rel, inside: found.inside, line: found.line }, setError, open);
   const key = (event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } };
   return <>
-    <RightClickMenu actions={actions} area={<button type="button" aria-label={label} aria-current={current || undefined} className={`file-ref ${className}`} title={found.abs} onClick={event => { event.preventDefault(); event.stopPropagation(); open(); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); key(event); }} />}>{children}</RightClickMenu>
+    <RightClickMenu actions={actions} area={<button data-slot="file-ref" type="button" aria-label={label} aria-current={current || undefined} className={`file-ref ${className}`} title={found.abs} onClick={event => { event.preventDefault(); event.stopPropagation(); open(); }} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") event.stopPropagation(); key(event); }} />}>{children}</RightClickMenu>
     {error && <span role="alert" className="file-ref-error">{error}</span>}
   </>;
 }

@@ -53,7 +53,7 @@ function useDecisionKeys(root: RefObject<HTMLElement | null>, keys: DecisionKeys
 export function ChoiceRow({ index, label, description, shortcut, checked, primary, disabled, onClick, rowRef }: { index?: number; label: string; description?: ReactNode; shortcut?: string; checked?: boolean; primary?: boolean; disabled?: boolean; onClick: () => void; rowRef?: (element: HTMLButtonElement | null) => void }) {
   const id = useId();
   const radio = checked !== undefined;
-  return <button ref={rowRef} type="button" className="choice" data-primary={primary || undefined} disabled={disabled} onClick={onClick} aria-label={label}
+  return <button data-slot="choice" ref={rowRef} type="button" className="choice" data-primary={primary || undefined} disabled={disabled} onClick={onClick} aria-label={label}
     aria-describedby={description ? id : undefined} aria-keyshortcuts={index === undefined ? undefined : String(index + 1)} {...(radio ? { role: "radio", "aria-checked": checked } : {})}>
     {index === undefined ? <span className="choice-key" data-radio={radio || undefined} aria-hidden="true" /> : <kbd className="choice-key" aria-hidden="true">{index + 1}</kbd>}
     <span className="choice-text" aria-hidden="true"><span className="choice-label">{label}</span>{description && <span className="choice-note" id={id}>{description}</span>}</span>

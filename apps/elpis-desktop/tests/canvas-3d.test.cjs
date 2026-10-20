@@ -9,7 +9,7 @@ const middle = async loc => { const r = await loc.boundingBox(); return { x: r.x
 test('3D selection, dashboard, shared settings and delete/undo work together', async () => {
   const f = await openCanvas(); const { page, canvas } = f;
   try {
-    await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const agent = canvas.locator('.iso-node[aria-label^="Quillon · Part 1:"]');
     await agent.click(); await canvas.locator('.iso-node[aria-label^="Veyra · Part 2:"]').click({ modifiers: ['Shift'] });
     assert.equal(await canvas.locator('.iso-node[aria-pressed="true"]').count(), 2);
@@ -30,7 +30,7 @@ test('3D selection, dashboard, shared settings and delete/undo work together', a
 test('3D ports connect and drop to create; changes persist on the flat board', async () => {
   const f = await openCanvas(); const { page, canvas } = f;
   try {
-    await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await canvas.getByRole('button', { name: 'Output of Quillon · Part 1', exact: true }).click();
     await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).waitFor();
     await page.keyboard.press('Escape');
@@ -44,7 +44,7 @@ test('3D ports connect and drop to create; changes persist on the flat board', a
     await page.keyboard.type('Follow in 3D');
     saved = await f.saved(); const added = saved.nodes.find(n => n.data.title === 'Follow in 3D').id;
     assert.ok(saved.edges.some(e => e.source === to && e.target === added));
-    await canvas.getByRole('button', { name: 'Flat', exact: true }).click(); await f.agentCount(5, '3D edits appear in 2D');
+    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click(); await f.agentCount(5, '3D edits appear in 2D');
     assert.equal(await f.wires.count(), 5);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -53,7 +53,7 @@ test('3D ports connect and drop to create; changes persist on the flat board', a
 test('3D middle and scroll pan; Space opens patterns; Home fits; F frames', async () => {
   const f = await openCanvas({ width: 900, height: 700 }); const { page, canvas } = f;
   try {
-    await canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const board = canvas.locator('.iso-board'), world = board.locator('.iso-world'), r = await board.boundingBox(), start = { x: r.x + 20, y: r.y + 20 };
     const fitted = await world.getAttribute('transform');
     await drag(page, start, { x: start.x + 60, y: start.y + 40 }, 'middle');
@@ -78,7 +78,7 @@ test('3D dense long labels stay inside the board without overlapping when all ar
   const graph = { name: 'Dense labels', maxAgents: 12, nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 420 }, data: {} }, ...Array.from({ length: 12 }, (_, n) => ({ id: `answer-${n}`, type: 'agent', position: { x: 240, y: n * 120 }, data: { title: `A long independent answer number ${n + 1} with details`, instruction: 'Save the answer', model: null, writeScopes: ['src'], acceptanceCriteria: [] } }))], edges: [] };
   const f = await openCanvas({ width: 900, height: 700, graph });
   try {
-    await f.canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await f.canvas.locator('.iso-board').focus(); await f.page.keyboard.press('Control+a');
     const { assertUiFit } = require('./ui-fit.cjs');
     await assertUiFit(f.canvas.locator('.iso-board'), 'dense labels');
@@ -91,7 +91,7 @@ test('3D dense long labels stay inside the board without overlapping when all ar
 test('3D labels select and open the matching agent', async () => {
   const f = await openCanvas();
   try {
-    await f.canvas.getByRole('button', { name: 'Isometric', exact: true }).click();
+    await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const label = f.canvas.locator('.iso-label').filter({ hasText: 'Veyra · Part 2' });
     await label.click();
     assert.equal(await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).inputValue(), 'Veyra · Part 2');

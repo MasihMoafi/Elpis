@@ -65,8 +65,8 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
     {/* Both quick-create buttons add one successor linked only from this agent. */}
-    <button type="button" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
-    <button type="button" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
+    <button data-slot="agent-plus" type="button" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
+    <button data-slot="agent-plus" type="button" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
   </div>;
 }
 
@@ -241,7 +241,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
     </p>
     <p className="quick-add-crumb">{shown.name === "providers" ? "Providers" : shown.name === "models" ? `Models · ${providers.find(provider => provider.id === shown.provider)?.label ?? ""}` : `Thinking · ${shown.model.label}`}{level && <span>← back</span>}</p>
     <div role="listbox" aria-label={shown.name === "providers" ? "Providers" : shown.name === "models" ? "Models" : "Thinking levels"} className="quick-add-list">
-      {rows.map((row, index) => <button key={row.key} type="button" role="option" aria-selected={row === current} className="quick-add-option"
+      {rows.map((row, index) => <button data-slot="quick-add-option" key={row.key} type="button" role="option" aria-selected={row === current} className="quick-add-option"
         onMouseEnter={() => setActive(index)} onClick={() => { setActive(index); (row.open ?? row.take)(); }}>
         <span className="select-option">{row.label}{row.hint && <small>{row.hint}</small>}</span>{row.more && <ChevronRight size={14} className="quick-add-more" />}
       </button>)}
@@ -268,7 +268,7 @@ function CanvasMenu({ at, name, title, detail, items, onDelete, onClose }: { at:
       else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }}>
     <p className="hud-menu-title quick-add-title"><span>{title}</span>{detail && <span>{detail}</span>}</p>
-    <div ref={list} className="quick-add-list">{items.map((item, index) => <button key={item.label} type="button" role="menuitem" autoFocus={index === 0} className="quick-add-option" onClick={() => { onClose(); item.take(); }}>
+    <div ref={list} className="quick-add-list">{items.map((item, index) => <button data-slot="quick-add-option" key={item.label} type="button" role="menuitem" autoFocus={index === 0} className="quick-add-option" onClick={() => { onClose(); item.take(); }}>
       <span className="select-option">{item.label}{item.hint && <small>{item.hint}</small>}</span>{item.keys && <kbd>{item.keys}</kbd>}</button>)}</div>
   </div>;
 }
@@ -344,7 +344,7 @@ function FolderPicker({ cwd, folders, error, value, own, onChange }: { cwd?: str
   return <div className="canvas-folders" role="group" aria-label="May write">
     <span>May write</span>
     <span className="canvas-folders-chosen">{own && <span className="canvas-chip" title={`${own}: its own folder. The run makes it, and the agent and its check write their reports there.`}><span className="canvas-chip-label">{own}</span></span>}
-      {value.map(folder => <span key={folder} className="canvas-chip" title={folderLabel(folder)}><span className="canvas-chip-label">{folderLabel(folder)}</span><button type="button" aria-label={`Remove ${folderLabel(folder)}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>
+      {value.map(folder => <span key={folder} className="canvas-chip" title={folderLabel(folder)}><span className="canvas-chip-label">{folderLabel(folder)}</span><button data-slot="chip-remove" type="button" aria-label={`Remove ${folderLabel(folder)}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>
     {!cwd ? <small>Agents write inside a project: choose one at the top.</small>
       : error ? <small role="alert">{error}</small>
       : <OptionSelect aria-label="Add a folder" value="" onChange={event => { if (event.target.value) onChange([...value, event.target.value]); }}>
@@ -373,7 +373,7 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
   return <div ref={panel} className="agent-dashboard hud-menu" role="dialog" aria-label={`${data.title} info`} data-kind="agent" data-status={status}
     onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
     <header><span className="agent-node-kind">Agent{wave ? ` · wave ${wave}` : ""} · {STATUS_LABEL[status]}</span><strong>{data.title || "Untitled"}</strong>
-      <button type="button" aria-label="Close info" autoFocus onClick={onClose}><X size={14} /></button></header>
+      <Button variant="ghost" size="icon-xs" aria-label="Close info" autoFocus onClick={onClose}><X size={14} /></Button></header>
     <dl>
       <div><dt>Model</dt><dd>{modelLabel}{data.effort ? ` · ${data.effort} thinking` : ""}</dd></div>
       <div><dt>Inputs needed</dt><dd>{waitsFor.length ? waitsFor.join(", ") : "All inputs captured"}</dd></div>
@@ -1150,7 +1150,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {run && <section className="canvas-log-panel" aria-label="Run capture">
         <p className="hud-menu-title">Run log · {log.length} events</p>
         <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
-          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><button type="button" title={`Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}><time>+{clock(line.at - run.startedAt)}</time><span title={line.text}>{line.text}</span></button></li>)}
+          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><button data-slot="log-line" type="button" title={`Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}><time>+{clock(line.at - run.startedAt)}</time><span title={line.text}>{line.text}</span></button></li>)}
         </ol>
       </section>}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
@@ -1194,8 +1194,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}</p>}
       {undoLoad && !notice && !planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
-        <button type="button" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></button></p>}
-      {notice && <p className="canvas-notice" role="alert">{notice}{needProject && !cwd && projectMenu}<button type="button" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></button></p>}
+        <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></Button></p>}
+      {notice && <p className="canvas-notice" role="alert">{notice}{needProject && !cwd && projectMenu}<Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button></p>}
     </div>
     {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
@@ -1260,7 +1260,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           <span>Critical path · {critical.length} rounds</span>{critical.map(titleOf).join(" → ")}</p>}
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
-        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><button type="button" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
+        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><button data-slot="pattern-card" type="button" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
           <strong>{template.name}{graph.template === template.id && <span className="canvas-template-loaded">On the board</span>}</strong>
           <Shape shape={shapes.get(template.id) ?? []} /><small>{template.description}</small>
           {template.caution && <small className="canvas-template-caution">{template.caution}</small>}

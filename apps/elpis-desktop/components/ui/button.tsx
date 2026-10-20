@@ -37,6 +37,11 @@ const buttonVariants = cva(
         "icon-lg": "size-9",
       },
     },
+    // A ghost button has one colour wherever it sits (rule R5): an icon is muted until hovered, a label is in the text colour.
+    compoundVariants: [
+      { variant: "ghost", size: ["icon", "icon-xs", "icon-sm", "icon-lg"], class: "text-muted-foreground" },
+      { variant: "ghost", size: ["default", "xs", "sm", "lg"], class: "text-foreground" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",
@@ -53,6 +58,8 @@ function Button({
   return (
     <ButtonPrimitive
       data-slot="button"
+      data-variant={variant ?? "default"}
+      data-size={size ?? "default"}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

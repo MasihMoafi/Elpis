@@ -11,11 +11,11 @@ export function ElpisFeatures({ threadId }: { threadId?: string }) {
   if (!state && !threadId) return null;
   return <div role="group" aria-label="Elpis features" className="elpis-features">
     {threadId && <Tooltip content={ledger.tooltip} detail="Open what this chat's context holds (/context)">
-      <button type="button" className="feature-chip" {...{ [CONTEXT_TOGGLE_ATTRIBUTE]: "" }} onClick={() => window.dispatchEvent(new Event(TOGGLE_CONTEXT_EVENT))}><ContextRingIcon pct={ledger.pct} size={14} />Ledger</button>
+      <button data-slot="feature-chip" type="button" className="feature-chip" {...{ [CONTEXT_TOGGLE_ATTRIBUTE]: "" }} onClick={() => window.dispatchEvent(new Event(TOGGLE_CONTEXT_EVENT))}><ContextRingIcon pct={ledger.pct} size={14} />Ledger</button>
     </Tooltip>}
     {state && switchRows(state).map(row => {
       const on = saving === row.field ? !row.on : row.on;
-      return <button key={row.field} type="button" className="feature-chip" aria-pressed={on} disabled={switchLocked(state, saving, row.field)} title={`${row.label}: ${error || (!state.write.available && state.write.reason) || (saving === row.field ? row.saving : row.detail)}`} onClick={() => void save(row.field, !row.on)}>
+      return <button data-slot="feature-chip" key={row.field} type="button" className="feature-chip" aria-pressed={on} disabled={switchLocked(state, saving, row.field)} title={`${row.label}: ${error || (!state.write.available && state.write.reason) || (saving === row.field ? row.saving : row.detail)}`} onClick={() => void save(row.field, !row.on)}>
         <i className="feature-dot" aria-hidden="true" />{row.label}
       </button>;
     })}
