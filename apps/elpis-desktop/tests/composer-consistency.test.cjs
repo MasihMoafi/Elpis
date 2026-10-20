@@ -73,4 +73,28 @@ test('Ask for approval shares the row with Plan mode in a narrow running chat', 
   assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
   assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
   assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
+  });
+
+test('active composer controls keep a clear gap at the reported window width', async t => {
+  const chat = { id: 'chat-a', name: 'Fix the parser', preview: 'x', cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } };
+  const f = await fixture({ width: 1067, height: 700, colorScheme: 'dark', running: true, routes: {
+    '/api/threads/chat-a/resume': () => ({ thread: chat, activeTurnId: 't4' }),
+    '/api/threads/chat-a/permissions': () => ({ permissions: 'auto' }),
+  } });
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+  await f.open('chat-a');
+  await f.page.getByLabel('Message Elpis').pressSequentially('Keep this follow-up ready');
+  const gap = async (left, right) => {
+    const a = await f.page.locator(left).boundingBox(), b = await f.page.locator(right).boundingBox();
+    assert.ok(a && b, `both ${left} and ${right} are visible`);
+    return b.x - (a.x + a.width);
+  };
+  assert.ok(await gap('.model-picker-trigger', '.composer [aria-label="Reasoning effort"]') >= 8, 'model and effort selectors have breathing room');
+  assert.ok(await gap('.stop-button', '.send-button') >= 8, 'stop and follow-up actions have breathing room');
+
+  for (const selector of ['.stop-button', '.send-button']) {
+    const box = await f.page.locator(selector).boundingBox();
+    await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    assert.equal(await f.page.locator(selector).evaluate(element => element.matches(':hover')), true, `${selector} remains an independent mouse target`);
+  }
 });

@@ -629,7 +629,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
 .composer-controls { margin-top:6px; }
-.composer-right { display:flex; align-items:center; gap:4px; min-width:0; }
+.composer-right { display:flex; align-items:center; gap:8px; min-width:0; }
 .composer-right .dictation-control { margin-top:0; }
 .composer .dictation-status:empty { display:none; }
 .composer-plus { color:var(--muted-foreground); }
