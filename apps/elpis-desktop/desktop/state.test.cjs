@@ -247,8 +247,11 @@ test('chat groups, their chats and the sidebar order persist across a desktop re
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-groups-state-')), 'workspace.json');
   const store = createStateStore(file), groups = JSON.stringify({ groups: [{ id: 'g1', name: 'Work' }], members: { 'chat-1': 'g1' }, groupBy: 'custom', sortBy: 'name', collapsed: [] });
   await store.set('elpis-chat-groups-v1', groups);
+  await store.set('elpis-session-manager-v1', 'manager-thread');
   assert.equal(createStateStore(file).read()['elpis-chat-groups-v1'], groups);
+  assert.equal(createStateStore(file).read()['elpis-session-manager-v1'], 'manager-thread');
   await assert.rejects(store.set('elpis-chat-groups-v2', groups), /Unsupported/);
+  await assert.rejects(store.set('elpis-session-manager-v2', 'manager-thread'), /Unsupported/);
 });
 
 test('reading options patch the preferences as the renderer saves them; wrong values are refused', async () => {

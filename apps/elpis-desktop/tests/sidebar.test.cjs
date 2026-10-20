@@ -19,7 +19,7 @@ async function eventually(check) {
 test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hover actions', async () => {
   const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
   const threads = names.map(name => ({ id: name.toLowerCase(), name, preview: name, cwd: '/tmp/elpis-sidebar-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } }));
-  const deleted = [];
+  const deleted = [], creates = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -27,6 +27,12 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
+    if (url.pathname === '/api/threads' && req.method === 'POST') {
+      const body = JSON.parse(raw); creates.push(body);
+      const manager = { id: 'session-manager', name: 'Session Manager', preview: '', model: 'gpt-6-luna', status: { type: 'idle' } };
+      if (!threads.some(item => item.id === manager.id)) threads.unshift(manager);
+      return json({ thread: manager });
+    }
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.get('ancestorThreadId') ? [] : threads.filter(item => !deleted.includes(item.id)), nextCursor: null });
     if (url.pathname === '/api/trash') { const { threadIds } = JSON.parse(raw); deleted.push(...threadIds); return json({ trashed: threadIds }); }
     if (url.pathname.endsWith('/delete')) { deleted.push(id); return json({ deleted: true, alsoDeleted: [] }); }
@@ -148,6 +154,15 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await link('foxtrot').click(); await page.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ی', code: 'KeyD', bubbles: true })));
     await dialog.getByText('Delete “Foxtrot”?').waitFor();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    assert.equal(creates.length, 0, 'the manager chat is created only when opened');
+    const managerButton = page.getByRole('button', { name: 'Open Session Manager', exact: true });
+    await managerButton.click();
+    await eventually(async () => assert.deepEqual(creates, [{ sessionManager: true, permissions: 'ask' }]));
+    await eventually(async () => assert.ok(await page.locator('.thread-row[data-thread-id="session-manager"]').count()));
+    await page.reload();
+    await page.getByRole('button', { name: 'Open Session Manager', exact: true }).click();
+    await eventually(async () => assert.equal(creates.length, 1, 'reopening uses the saved manager chat'));
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

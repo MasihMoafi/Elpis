@@ -97,6 +97,7 @@ import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effort
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
+const SESSION_MANAGER_ID_KEY = "elpis-session-manager-v1";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 function ObservabilityView() { return <div className="page-scroll" data-view="observability" />; }
@@ -124,6 +125,9 @@ const NAV_PAGES = [
 export default function Home() {
   const preferences = useAppPreferences();
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [sessionManagerId, setSessionManagerId] = useState("");
+  const [openingSessionManager, setOpeningSessionManager] = useState(false);
+  const openingSessionManagerRef = useRef(false);
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
@@ -174,6 +178,7 @@ export default function Home() {
   const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
   const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
   useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
+  useEffect(() => { setSessionManagerId(appStorage().getItem(SESSION_MANAGER_ID_KEY) ?? ""); }, []);
   function updateGroups(change: (state: ChatGroups) => ChatGroups) {
     const next = change(chatGroupsRef.current);
     chatGroupsRef.current = next; setChatGroups(next);
@@ -830,6 +835,27 @@ export default function Home() {
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => openNewChat(tabDraftKey(activeTab(tabsRef.current)));
+  async function openSessionManager() {
+    if (openingSessionManagerRef.current) return;
+    openingSessionManagerRef.current = true; setOpeningSessionManager(true);
+    try {
+      const savedId = appStorage().getItem(SESSION_MANAGER_ID_KEY) || sessionManagerId;
+      if (savedId) {
+        const existing = threads.find(thread => thread.id === savedId);
+        if (existing) { await loadThread(existing); return; }
+        try {
+          const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(savedId)}?limit=1`);
+          if (result.thread) { upsertThread(result.thread); await loadThread(result.thread); return; }
+        } catch { /* The saved manager was removed; create a fresh dedicated chat below. */ }
+      }
+      const result = await api<{ thread: Thread }>("/threads", { sessionManager: true, permissions: "ask" });
+      const managerId = result.thread.id;
+      if (window.elpisDesktop?.storage?.saveItem) await window.elpisDesktop.storage.saveItem(SESSION_MANAGER_ID_KEY, managerId);
+      else appStorage().setItem(SESSION_MANAGER_ID_KEY, managerId);
+      setSessionManagerId(managerId); upsertThread(result.thread); await loadThread(result.thread);
+    } catch (cause) { setError(`Could not open Session Manager: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    finally { openingSessionManagerRef.current = false; setOpeningSessionManager(false); }
+  }
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
     if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
@@ -1723,6 +1749,7 @@ export default function Home() {
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
               empty={!chats.length}>{chats.map(t => threadRow(t))}</SidebarGroup>; })}
         </section>}
+        {!searchTerm && <section aria-label="Session Manager chat"><Button variant="ghost" size="sm" className="w-full justify-start gap-2" aria-label="Open Session Manager" title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={!ready || !connected || openingSessionManager} onClick={() => void openSessionManager()}><Layers size={14} />Session Manager</Button></section>}
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows("pinned"))}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
         {(loveChats.length > 0 || workflowChats.length > 0) && <div className="section-label">Agent chats</div>}
