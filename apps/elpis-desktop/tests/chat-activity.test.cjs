@@ -190,16 +190,16 @@ test('a running step reads as a sentence with a live timer and animated dots', a
     await page.waitForTimeout(2300);
     const later = seconds((await timer.innerText()).trim());
     assert.ok(later >= first + 2, `the timer advances (${first}s, then ${later}s)`);
-    const facet = live.locator('.elpis-working-facet');
-    assert.equal(await facet.evaluate(node => getComputedStyle(node).animationName), 'elpis-facets', 'the illuminated edge advances');
+    const rotor = live.locator('.elpis-working-rotor');
+    assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationName), 'elpis-orbit', 'the filled shape rotates');
     assert.equal(await page.locator('.turn-working').count(), 0, 'one live line at a time: the running step, not a second "Working"');
     assert.deepEqual(errors, []);
     await page.close();
 
     const still = await app.open({ reducedMotion: 'reduce' });
-    const stillFacet = still.page.locator('.activity-group .elpis-working-facet');
-    await stillFacet.waitFor();
-    assert.equal(await stillFacet.evaluate(node => getComputedStyle(node).animationDuration), '6s', 'reduced motion: only the illuminated edge changes, once per second');
+    const slowRotor = still.page.locator('.activity-group .elpis-working-rotor');
+    await slowRotor.waitFor();
+    assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationDuration), '12s', 'reduced motion slows the rotation');
   } finally { await app.close(); }
 });
 

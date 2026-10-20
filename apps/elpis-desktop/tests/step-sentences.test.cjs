@@ -56,7 +56,7 @@ test('finished groups read as Claude words them, and a described step reads as i
   assert.match(await single.locator('.step-script').innerText(), /ls -la \/tmp\/build/);
 }));
 
-test('a running step has its sentence, ticking timer and Elpis facets, in both themes and under reduced motion', () => using(async ({ page }) => {
+test('a running step has its sentence, ticking timer and filled rotor, in both themes and under reduced motion', () => using(async ({ page }) => {
   const live = page.locator('.activity-group').filter({ has: page.locator('.elpis-working-mark') });
   await live.locator('.live-timer').waitFor();
   assert.equal((await live.locator('.live-label').innerText()).trim(), SENTENCE, 'the sentence, not "Running <command>"');
@@ -68,12 +68,13 @@ test('a running step has its sentence, ticking timer and Elpis facets, in both t
   const later = seconds((await timer.innerText()).trim());
   assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
   assert.equal(await page.locator('.turn-working').count(), 0, 'one live line: the running step, not a second "Working"');
-  const facet = live.locator('.elpis-working-facet');
-  const offset = () => facet.evaluate(node => getComputedStyle(node).strokeDashoffset);
-  assert.equal(await facet.evaluate(node => getComputedStyle(node).animationName), 'elpis-facets');
-  const firstEdge = await offset();
+  const rotor = live.locator('.elpis-working-rotor');
+  const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
+  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationName), 'elpis-orbit');
+  const firstRotation = await rotation();
   await page.waitForTimeout(700);
-  assert.notEqual(await offset(), firstEdge, 'the illuminated edge advances');
+  assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');
+  assert.equal(await live.locator('.elpis-working-mark image').count(), 0, 'the working mark has no E');
   // Light, then dark: the row is fully inside the chat column and legible.
   for (const scheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(200);
@@ -83,8 +84,7 @@ test('a running step has its sentence, ticking timer and Elpis facets, in both t
     await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
-  assert.equal(await facet.evaluate(node => getComputedStyle(node).animationDuration), '6s', 'reduced motion: one illuminated edge per second');
-  assert.equal(await live.locator('.elpis-working-mark').evaluate(node => getComputedStyle(node).transform), 'none', 'the geometry stays still');
+  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '12s', 'reduced motion slows the rotation');
 }));
 
 for (const value of [
