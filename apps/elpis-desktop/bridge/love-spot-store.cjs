@@ -13,6 +13,9 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const fail = (message, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const hash = value => createHash('sha256').update(value).digest('hex');
+async function trashFile(file) {
+  await exec('gio', ['trash', file]).catch(async e => { try { await fs.access(file); throw e; } catch (missing) { if (missing.code !== 'ENOENT') throw missing; } });
+}
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
 const screenshotId = (name, bytes) => `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
 function validate(scene) {
@@ -246,13 +249,27 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     return { current: current.scene.page, pages: [...listed.values()].sort((a, b) => b.modified - a.modified || a.name.localeCompare(b.name)) };
   }
   async function changePage(input) {
-    if (!record(input) || !['new', 'switch', 'rename'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))) throw fail('Invalid page action');
+    if (!record(input) || !['new', 'switch', 'rename', 'delete'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
+      || (input.action === 'delete' && (input.name === undefined || !input.page))) throw fail('Invalid page action');
     if (input.name !== undefined) pageName(input.name);
     return locked(async () => {
       const current = await read();
       if (input.page) samePage(input.page, current.scene.page);
       const listed = await names(pages);
       let name = input.name;
+      if (input.action === 'delete') {
+        const file = pageFile(name);
+        try { await fs.access(file); }
+        catch (e) { if (e.code === 'ENOENT') throw fail('That page could not be found.', 404); throw e; }
+        if (name !== current.scene.page.name) { await trashFile(file); return current; }
+        await fs.mkdir(pages, { recursive: true });
+        await atomic(file, JSON.stringify(current.scene));
+        let index = new Set([...listed, `${current.scene.page.name}.excalidraw`]).size + 1;
+        let nextName;
+        do { nextName = `Page ${index++}`; } while (listed.includes(`${nextName}.excalidraw`) || nextName === name);
+        await trashFile(file);
+        return persist({ type: 'excalidraw', version: 2, source: 'Love Spot', elements: [], files: {}, appState: {}, page: { name: nextName, session: randomUUID() } });
+      }
       if (input.action === 'new' && name === undefined) {
         let index = new Set([...listed, `${current.scene.page.name}.excalidraw`]).size + 1;
         do { name = `Page ${index++}`; } while (listed.includes(`${name}.excalidraw`));
@@ -394,7 +411,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         let data; try { data = validate(JSON.parse(await fs.readFile(file, 'utf8'))); } catch { continue; }
         await save({ ...data, page: data.page ?? (await read()).scene.page });
         // Commit before consuming. Two readers may both merge the same inbox file; the merge is idempotent.
-        await exec('gio', ['trash', file]).catch(async e => { try { await fs.access(file); throw e; } catch (missing) { if (missing.code !== 'ENOENT') throw missing; } });
+        await trashFile(file);
       }
       await ensureSharing();
       let added = peerServer?.listening ? await receiveScreenshots() : false;

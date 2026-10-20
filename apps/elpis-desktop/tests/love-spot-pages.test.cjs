@@ -1,9 +1,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { createTestTempDir, removeTestTempDir } = require('./temp-root.cjs');
 
 test('opening a saved page does not rewrite it; the first real edit still saves', async () => {
   const shape = { type: 'rectangle', x: 0, y: 0, width: 120, height: 80, version: 1, versionNonce: 1 };
@@ -69,8 +71,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboa
     await f.open(f.page); await f.draw(f.page);
     await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'original page did not save');
     const other = await f.newPage(); await f.open(other);
-    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'New page', exact: true }).click();
+    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 3' && s.elements.length === 0, 'new page was not empty');
     await other.getByRole('button', { name: 'Pages', exact: true }).waitFor();
     await other.getByText('Page 3', { exact: true }).waitFor();
@@ -96,6 +97,66 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboa
     assert.equal((await f.scene()).elements.filter(e => !e.isDeleted).length, 1, 'a delayed save mixed drawings');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
+});
+
+test('Love Spot creates a page from its toolbar and keeps Agents available', async () => {
+  const f = await loveSpotFixture();
+  try {
+    await f.open(f.page);
+    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
+    await f.waitFor(s => s.page?.name === 'Page 2' && s.elements.length === 0, 'the direct New page action did not create an empty page');
+    const agents = f.page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true });
+    await agents.click();
+    await f.page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
+    assert.equal(await f.page.getByRole('button', { name: 'Inspect Researcher', exact: true }).count(), 1);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('Love Spot can delete a page, and cancelling leaves its drawing intact', async () => {
+  const oldXdgDataHome = process.env.XDG_DATA_HOME;
+  const tempBase = path.join(os.homedir(), '.cache/elpis-tests');
+  await fs.mkdir(tempBase, { recursive: true });
+  const trashRoot = createTestTempDir(path.join(tempBase, 'love-spot-page-trash-'));
+  process.env.XDG_DATA_HOME = path.join(trashRoot, 'data');
+  let f;
+  try {
+    f = await loveSpotFixture();
+    await f.open(f.page);
+    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
+    await f.waitFor(s => s.page?.name === 'Page 2', 'the page to delete was not created');
+    await f.draw(f.page);
+    await f.waitFor(s => s.page?.name === 'Page 2' && s.elements.some(e => !e.isDeleted), 'the drawing to delete was not saved');
+    await f.page.getByRole('button', { name: 'Delete current page', exact: true }).click();
+    let dialog = f.page.getByRole('alertdialog');
+    await dialog.getByText('Delete “Page 2”?', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    const cancelled = await f.scene();
+    assert.equal(cancelled.page.name, 'Page 2', 'cancelling must leave the active page in place');
+    assert.ok(cancelled.elements.some(e => !e.isDeleted), 'cancelling must keep the drawing');
+    await fs.access(path.join(f.directory, 'pages', 'Page 2.excalidraw'));
+
+    await f.page.getByRole('button', { name: 'Delete current page', exact: true }).click();
+    dialog = f.page.getByRole('alertdialog');
+    await dialog.getByText('Delete “Page 2”?', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Delete page', exact: true }).click();
+    await f.waitFor(s => s.page?.name === 'Page 3', 'deleting the current page must open a fresh page');
+    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: /^Current page\b/ }).waitFor();
+    await f.page.getByRole('menuitem', { name: /^Page 2\b/ }).waitFor({ state: 'detached' });
+    assert.equal(await f.page.getByRole('menuitem', { name: /^Page 2\b/ }).count(), 0, 'deleted pages must leave the list');
+    assert.equal(await f.page.getByRole('menuitem', { name: /^Current page\b/ }).count(), 1, 'other pages must remain available');
+    const trashed = JSON.parse(await fs.readFile(path.join(trashRoot, 'data', 'Trash', 'files', 'Page 2.excalidraw'), 'utf8'));
+    assert.ok(trashed.elements.some(e => !e.isDeleted), 'the recoverable page must keep its drawing');
+    assert.deepEqual(f.errors, []);
+  } finally {
+    try { if (f) await f.close(); }
+    finally {
+      if (oldXdgDataHome === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = oldXdgDataHome;
+      removeTestTempDir(trashRoot);
+    }
+  }
 });
 
 test('Love Spot light images: tall screenshots and pasted SVGs shrink, deletion prunes disk files and undo restores pixels', async () => {

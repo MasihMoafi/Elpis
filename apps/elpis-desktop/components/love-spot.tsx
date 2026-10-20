@@ -3,13 +3,14 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, Plus, Trash2, X } from "lucide-react";
 import { CaptureUpdateAction, Excalidraw, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
@@ -61,6 +62,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const [menu, setMenu] = useState<{ x: number; y: number; text: string }>();
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
+  const [pageToDelete, setPageToDelete] = useState<string>();
   const [pageBusy, setPageBusy] = useState(false), [renaming, setRenaming] = useState(false), [pageName, setPageName] = useState("");
   const currentPage = useRef<BoardPage>(undefined);
   const lastPoint = useRef<{ x: number; y: number }>(undefined);
@@ -385,7 +387,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     finally { placingScreenshot.current = undefined; setChoosing(false); }
   }
 
-  async function changePage(action: "new" | "switch" | "rename", name?: string) {
+  async function changePage(action: "new" | "switch" | "rename" | "delete", name?: string) {
     if (pageBusy || !editor) return;
     setPageBusy(true);
     try {
@@ -489,7 +491,6 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
             <span className="truncate max-w-40">{page?.name ?? "Pages"}</span><ChevronDown aria-hidden="true" size={14} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-96 max-w-80 overflow-y-auto">
-            <DropdownMenuItem onClick={() => void changePage("new")}>New page</DropdownMenuItem>
             <DropdownMenuItem onClick={() => { setPageName(page?.name ?? ""); setRenaming(true); }}>Rename page</DropdownMenuItem>
             {pages.map(item => <DropdownMenuItem key={item.name} onClick={() => void changePage("switch", item.name)}>
               <Check aria-hidden="true" className={item.name === page?.name ? "shrink-0" : "invisible shrink-0"} />
@@ -498,6 +499,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
             {pagesError && <DropdownMenuItem disabled className="whitespace-normal text-muted-foreground">{pagesError}</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button variant="outline" size="sm" disabled={!editor || pageBusy} onClick={() => void changePage("new")}><Plus aria-hidden="true" />New page</Button>
+        <Button variant="ghost" size="sm" aria-label="Delete current page" title="Delete current page" disabled={!editor || pageBusy || !page} onClick={() => setPageToDelete(page?.name)}><Trash2 aria-hidden="true" />Delete</Button>
         {renaming && <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); void changePage("rename", pageName.trim()); }}>
           <Input autoFocus aria-label="Page name" value={pageName} maxLength={100} className="max-w-48" onChange={event => setPageName(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setRenaming(false); }} />
           <Button variant="outline" size="sm" type="submit" disabled={pageBusy || !pageName.trim()}>Save</Button>
@@ -520,6 +523,18 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     </div>;
   return <section className="love-spot" aria-label="Love Spot">
     {toolbarHost ? createPortal(tools, toolbarHost) : tools}
+    <AlertDialog open={!!pageToDelete} onOpenChange={open => { if (!open) setPageToDelete(undefined); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete “{pageToDelete}”?</AlertDialogTitle>
+          <AlertDialogDescription>This page moves to Trash. A blank page opens so you can keep drawing.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
+          <Button type="button" variant="destructive" disabled={pageBusy} onClick={() => { const name = pageToDelete; setPageToDelete(undefined); if (name) void changePage("delete", name); }}>Delete page</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     {screenshots.length > 0 && <section className="love-spot-screenshots" aria-label="New screenshots">
       <div className="love-spot-screenshots-heading"><strong>New screenshots</strong><span>Only shared when you add them. Click or drag onto the drawing.</span></div>
       <ul className="love-spot-screenshots-list">{screenshots.map(shot => <li key={shot.id}>
