@@ -254,6 +254,30 @@ test('chat groups, their chats and the sidebar order persist across a desktop re
   await assert.rejects(store.set('elpis-session-manager-v2', 'manager-thread'), /Unsupported/);
 });
 
+test('saved project memberships and Session Manager survive a full workspace round trip', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-union-')), 'workspace.json');
+  const saved = {
+    'elpis-theme': 'dark', 'elpis-chat-tabs-v1': '["h2"]', 'elpis-browser-sessions-v1': '{}',
+    'elpis-sidebar-width': '282', 'elpis-preferences-v1': '{"accent":"orange"}',
+    'elpis-projects-v1': '[{"id":"p","path":"/tmp/elpis-project"}]',
+    'elpis-project-chats-v1': '{"h2":"p"}', 'elpis-pinned-chats-v1': '["h2"]',
+    'elpis-terminal-height': '240', 'elpis-last-chat': 'h2', 'elpis-session-manager-v1': 'manager-thread',
+    'elpis-workflow-draft-v1': '{}', 'elpis-editor-v1': '{}', 'elpis-chat-attention-v1': '{}',
+    'elpis-chat-groups-v1': '{"groups":[]}', 'elpis-draft-v1:h2': 'Unsent draft',
+  };
+  const original = JSON.stringify(saved); fs.writeFileSync(file, original);
+  const store = createStateStore(file);
+  assert.deepEqual(store.read(), saved);
+  assert.equal(fs.readFileSync(file, 'utf8'), original, 'reading must preserve the original file');
+  await store.set('elpis-project-chats-v1', '{"h2":"p","chat-2":"p"}');
+  await store.set('elpis-session-manager-v1', 'manager-thread-2');
+  const expected = { ...saved, 'elpis-project-chats-v1': '{"h2":"p","chat-2":"p"}', 'elpis-session-manager-v1': 'manager-thread-2' };
+  assert.deepEqual(createStateStore(file).read(), expected, 'reopen must retain every saved key and draft');
+  const persisted = fs.readFileSync(file, 'utf8');
+  await assert.rejects(store.set('elpis-project-chats-v2', '{}'), /Unsupported/);
+  assert.equal(fs.readFileSync(file, 'utf8'), persisted, 'unknown keys must not change saved state');
+});
+
 test('reading options patch the preferences as the renderer saves them; wrong values are refused', async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-reading-state-')), 'workspace.json');
   const store = createStateStore(file), key = 'elpis-preferences-v1';
