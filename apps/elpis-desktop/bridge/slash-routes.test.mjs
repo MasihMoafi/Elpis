@@ -12,7 +12,7 @@ import { startDesktopServer } from './server.mjs';
 const CHAT = '00000000-0000-0000-0000-0000000000a1';
 const AGENT = '00000000-0000-0000-0000-0000000000a2';
 
-function fixture({ cwd, items = [] } = {}) {
+function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, supportsFast = true, refuseTier = false } = {}) {
   const threads = new Map([
     [CHAT, { id: CHAT, cwd, source: 'cli', canAcceptDirectInput: true, status: { type: 'idle' } }],
     [AGENT, { id: AGENT, cwd, source: { subAgent: { thread_spawn: { agent_path: '/root/helper' } } }, canAcceptDirectInput: false, status: { type: 'idle' } }],
@@ -25,7 +25,11 @@ function fixture({ cwd, items = [] } = {}) {
     switch (request.method) {
       case 'initialize': result = { userAgent: 'slash-test' }; break;
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
-      case 'thread/resume': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
+      case 'thread/resume': result = { thread: structuredClone(threads.get(request.params.threadId)), model: 'gpt-6-luna', modelProvider: provider, serviceTier }; break;
+      case 'model/list': result = { data: [{ model: 'gpt-6-luna', serviceTiers: supportsFast ? [{ id: 'priority', name: 'Fast' }] : [] }], nextCursor: null }; break;
+      case 'thread/settings/update':
+        if (!refuseTier) serviceTier = request.params.serviceTier;
+        result = {}; break;
       case 'thread/compact/start': result = {}; break;
       case 'thread/items/list': result = { data: items.map(item => ({ turnId: 'turn-1', item })), nextCursor: null }; break;
       case 'review/start': result = { turn: { id: 'review-turn', status: 'inProgress', items: [] }, reviewThreadId: request.params.threadId }; break;
@@ -149,6 +153,8 @@ test('HTTP: compact, review and git are routed, POST-only or GET-only, behind th
   assert.equal((await post(`/api/threads/${CHAT}/compact`, {})).status, 401, 'no session, no compaction');
   const cookie = (await post('/api/session', { token })).headers.get('set-cookie').split(';')[0];
   const get = pathname => fetch(origin + pathname, { headers: { Cookie: cookie } });
+  assert.equal((await post(`/api/threads/${CHAT}/service-tier`, { enabled: true }, cookie)).status, 200);
+  assert.deepEqual(calls('thread/settings/update').at(-1).params, { threadId: CHAT, serviceTier: 'priority' });
   assert.equal((await post(`/api/threads/${CHAT}/compact`, { instructions: 'short' }, cookie)).status, 200);
   assert.deepEqual(calls('thread/compact/start').at(-1).params, { threadId: CHAT, instructions: 'short' });
   const review = await post(`/api/threads/${CHAT}/review`, { target: { type: 'uncommittedChanges' } }, cookie);
@@ -171,4 +177,40 @@ test('HTTP: compact, review and git are routed, POST-only or GET-only, behind th
   assert.equal((await post(`/api/threads/${CHAT}/git`, { action: 'discard', path: 'b.txt' }, cookie)).status, 200);
   await assert.rejects(fs.access(path.join(dir, 'b.txt')), 'the new file is gone');
   assert.deepEqual((await (await get(`/api/threads/${CHAT}/git?view=changes`)).json()).files.map(file => file.path), ['a.txt']);
+});
+
+
+test('/fast toggles the real OpenAI thread service tier and accepts explicit on/off', async () => {
+  const { client, calls } = fixture(); await client.initialize();
+  try {
+    assert.equal((await client.setServiceTier(CHAT, {})).serviceTier, 'priority');
+    assert.equal((await client.setServiceTier(CHAT, {})).serviceTier, 'default');
+    assert.equal((await client.setServiceTier(CHAT, { enabled: true })).serviceTier, 'priority');
+    assert.equal((await client.setServiceTier(CHAT, { enabled: false })).serviceTier, 'default');
+    assert.deepEqual(calls('thread/settings/update').map(call => call.params),
+      ['priority', 'default', 'priority', 'default'].map(serviceTier => ({ threadId: CHAT, serviceTier })));
+    assert.equal(calls('turn/start').length, 0, 'changing speed never starts a model turn');
+  } finally { client.close(); }
+});
+
+test('/fast rejects other providers, unsupported models, invalid options and background agents before changing speed', async () => {
+  for (const [options, id, body, message] of [
+    [{ provider: 'anthropic' }, CHAT, {}, /OpenAI/],
+    [{ supportsFast: false }, CHAT, {}, /does not offer Fast/],
+    [{}, CHAT, { enabled: 'yes' }, /on or off/],
+    [{}, CHAT, { secret: true }, /Unsupported request fields/],
+    [{}, AGENT, {}, /parent|background|agent/i],
+  ]) {
+    const { client, calls } = fixture(options); await client.initialize();
+    try {
+      await assert.rejects(client.setServiceTier(id, body), message);
+      assert.equal(calls('thread/settings/update').length, 0);
+    } finally { client.close(); }
+  }
+});
+
+test('/fast reports an engine that does not apply the requested tier', async () => {
+  const { client } = fixture({ refuseTier: true }); await client.initialize();
+  try { await assert.rejects(client.setServiceTier(CHAT, { enabled: true }), /did not apply/); }
+  finally { client.close(); }
 });

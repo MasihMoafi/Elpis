@@ -47,6 +47,7 @@ import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
 import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
+import { fastServiceTier } from "@/lib/service-tier.mjs";
 import { SlashMenu, useSlashMenu, type SlashCommand } from "@/components/slash-menu";
 import { MentionMenu, useMentionMenu } from "@/components/mention-menu";
 import { NavButtons } from "@/components/nav-buttons";
@@ -1337,9 +1338,34 @@ export default function Home() {
     ["Folder", chatFolder || "Default folder"],
     ["Chat", selected?.id ?? "Not started yet"],
   ];
+  async function chooseFast(args?: string) {
+    const choice = args?.trim().toLowerCase();
+    if (choice && choice !== 'on' && choice !== 'off') { setSlashNotice('Use /fast, /fast on or /fast off.'); return; }
+    const provider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
+    if (provider !== 'openai') { setSlashNotice('/fast is available for OpenAI models.'); return; }
+    setBusy(true); setSlashNotice('');
+    try {
+      let serviceTier: string;
+      if (selected) {
+        const applied = await api<{ serviceTier: string }>(`/threads/${encodeURIComponent(selected.id)}/service-tier`, choice ? { enabled: choice === 'on' } : {});
+        serviceTier = applied.serviceTier;
+        patchThread(selected.id, { serviceTier });
+      } else {
+        const current = await reloadSettings();
+        const enabled = choice ? choice === 'on' : !['fast', 'priority'].includes(current.options?.serviceTier ?? '');
+        const chosen = models.find(item => item.model === (turnModel || current.main.model));
+        if (enabled && !fastServiceTier(chosen)) throw new Error('This model does not offer Fast on this account.');
+        serviceTier = enabled ? 'fast' : 'default';
+        await saveSettings('/settings', { version: current.version, options: { serviceTier } });
+      }
+      setSlashNotice(['fast', 'priority'].includes(serviceTier) ? 'Fast is on for subsequent turns. It uses plan limits faster.' : 'Fast is off. Standard speed is selected.');
+    } catch (error) { setSlashNotice(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  }
   const slashCommands: SlashCommand[] = [
     { name: "btw", description: "Ask a quick side question without adding to the session", available: !!selected, args: true, run: askSideQuestion },
     { name: "model", description: "choose what model and reasoning effort to use", available: !busy, run: () => openComposerControl("Model") },
+    { name: "fast", description: "toggle OpenAI Fast speed: /fast [on|off]", available: !busy && !readOnlyRun, args: true, run: chooseFast },
     { name: "effort", description: "change how hard the model thinks: /effort [low|medium|high|…]", available: !busy && turnEfforts.length > 0, args: true, run: chooseEffort },
     { name: "pruner-model", description: "view or set the model that prunes context; follows /memory-model when unset", run: () => openSettings("configuration") },
     { name: "memory-model", description: "set Smart Prune's fallback model; memory uses the responding agent", run: () => openSettings("configuration") },

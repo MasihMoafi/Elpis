@@ -1,7 +1,21 @@
 "use client";
 
 import { Children, useState, type ReactNode } from "react";
+import { ChevronUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import "@/components/step.css";
+
+/** Close the nearest disclosure and bring its header back into view, keeping keyboard focus usable. */
+export function CollapseDetails({ label }: { label: string }) {
+  return <Button type="button" variant="ghost" size="sm" className="tool-collapse" onClick={event => {
+    const details = event.currentTarget.closest('details');
+    const summary = details?.querySelector<HTMLElement>(':scope > summary');
+    if (!details || !summary) return;
+    details.open = false;
+    summary.focus({ preventScroll: true });
+    summary.scrollIntoView({ block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  }}><ChevronUp size={14} aria-hidden="true" />{label}</Button>;
+}
 
 /** One step of agent work as a row of an opened group, as Claude's desktop app draws them: a sentence, its time or its
  * +N −M at the right, and a bordered card that opens under it. Commands, tools, searches, edits and reasoning all draw
@@ -14,6 +28,6 @@ export function Step({ title, meta, body, open = false, failed = false }: { titl
   if (Children.toArray(body).length === 0) return <div className={className}><div className="step-head">{head}</div></div>;
   return <details className={className} open={open} onToggle={event => setShown(event.currentTarget.open)}>
     <summary className="step-head">{head}</summary>
-    {shown && <div className="step-card">{body}</div>}
+    {shown && <div className="step-card">{body}<CollapseDetails label="Collapse details" /></div>}
   </details>;
 }
