@@ -1,7 +1,7 @@
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mjs";
 export type Thread = {
   id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string;
-  reasoningEffort?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
+  reasoningEffort?: string | null; serviceTier?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
   updatedAt?: number; recencyAt?: number; createdAt?: number;
   agentNickname?: string | null; agentRole?: string | null;
   source?: string | {subAgent?:unknown;custom?:string};
@@ -13,7 +13,7 @@ export type Entry = { turnId: string; item: Item; startedAtMs?: number; complete
 /** Where the bridge serves an entry's recorded pictures and sounds (`/<index>` after it); it serves only what the
  * chat's record holds. */
 export const mediaUrl = (threadId: string, entry: Entry) => `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(entry.turnId)}/items/${encodeURIComponent(entry.item.id)}/media`;
-export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string };
+export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string; serviceTiers?: { id: string; name: string; description?: string }[] };
 export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; options?:{approvalPolicy:string|null;sandboxMode:string|null}; managed?:{modelProvider:string|null} };
 export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: import("./approvals").ElicitationParams & { permissions?: import("./approvals").RequestPermissionProfile; cwd?: string; availableDecisions?: unknown[]; threadId?: string; turnId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isOther?:boolean;isSecret?:boolean;options?:{label:string;description?:string}[]|null}[] } };
 /** The error for a reply that is not what the app asked for (an older bridge, a proxy's page). A view checks the part it

@@ -17,7 +17,7 @@ const fork = { ...chat, id: 'fork', name: 'Cache chat (fork)', forkedFromId: 'ch
 const created = { ...chat, id: 'created', name: null, preview: 'New chat', reasoningEffort: null };
 // Newest first, as the bridge pages history.
 const history = [{ turnId: 'turn-1', item: { id: 'reply', type: 'agentMessage', text: 'The cache is fixed.' } }, { turnId: 'turn-1', item: { id: 'ask', type: 'userMessage', content: [{ type: 'text', text: 'Fix the cache.' }] } }];
-const models = [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }];
+const models = [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6', serviceTiers: [{ id: 'priority', name: 'Fast' }], supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }];
 const commits = [{ sha: 'a'.repeat(40), subject: 'Fix the cache' }, { sha: 'b'.repeat(40), subject: 'Add the cache' }];
 let server, browser, url; const posts = [], clients = new Set();
 const emit = (method, params) => { for (const client of clients) client.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
@@ -38,6 +38,7 @@ before(async () => {
     if (route.pathname === '/api/health') return json({ connected: true });
     if (route.pathname === '/api/models') return json({ data: models, nextCursor: null });
     if (route.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, options: { approvalPolicy: null, sandboxMode: null }, managed: {}, write: { available: true } });
+    if (route.pathname === '/api/threads/chat/service-tier') return json({ serviceTier: JSON.parse(body || '{}').enabled === false ? 'default' : 'priority' });
     if (route.pathname === '/api/threads' && req.method === 'POST') return json({ thread: created });
     if (route.pathname === '/api/threads') return json({ data: route.searchParams.get('ancestorThreadId') === 'chat' ? [child] : route.searchParams.has('ancestorThreadId') ? [] : [chat], nextCursor: null });
     if (route.pathname === '/api/threads/chat/fork') return json({ thread: fork });
@@ -94,8 +95,8 @@ const card = panel => panel.locator('dl > div').evaluateAll(rows => Object.fromE
 /** Typing after a command goes to the composer, wherever the command left the focus. */
 async function typesIntoComposer(page, composer, text) { await page.keyboard.type(text); assert.equal(await composer.inputValue(), text, 'typing goes to the composer'); await composer.fill(''); }
 
-const NEW_CHAT = ['/model', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/theme', '/mcp', '/rag'];
-const OPEN_CHAT = ['/btw', '/model', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/theme', '/mcp', '/rag'];
+const NEW_CHAT = ['/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/theme', '/mcp', '/rag'];
+const OPEN_CHAT = ['/btw', '/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/theme', '/mcp', '/rag'];
 const RUNNING_TURN = OPEN_CHAT.filter(name => !['/review', '/init', '/compact', '/prune', '/fork', '/rag', '/export'].includes(name));
 
 test('"/" lists the terminal\'s commands the app can run, in its order: a new chat, an open chat, and one with a turn running', async () => {
@@ -414,6 +415,26 @@ test('in a chat, /fork, /rename, /delete, /archive and /new act on that chat, an
     await page.getByText('What should we build?', { exact: true }).waitFor();
     assert.equal(await focused(page), 'textarea:Message Elpis');
     assert.equal(turns().length, 0, 'no command is sent as a message');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+
+test('/fast changes OpenAI speed without sending a message, and gives clear on/off feedback', async () => {
+  const { page, context, errors, openChat, run } = await open();
+  try {
+    await openChat();
+    await run('/fast');
+    await page.getByText('Fast is on for subsequent turns. It uses plan limits faster.', { exact: true }).waitFor();
+    assert.deepEqual(posts.filter(post => post.path.endsWith('/service-tier')).at(-1).body, {});
+    await run('/fast off');
+    await page.getByText('Fast is off. Standard speed is selected.', { exact: true }).waitFor();
+    assert.deepEqual(posts.filter(post => post.path.endsWith('/service-tier')).at(-1).body, { enabled: false });
+    const changes = posts.filter(post => post.path.endsWith('/service-tier')).length;
+    await run('/fast maybe');
+    await page.getByText('Use /fast, /fast on or /fast off.', { exact: true }).waitFor();
+    assert.equal(posts.filter(post => post.path.endsWith('/service-tier')).length, changes);
+    assert.equal(posts.filter(post => post.path.endsWith('/turns')).length, 0);
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

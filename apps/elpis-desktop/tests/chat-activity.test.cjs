@@ -242,3 +242,31 @@ test('while a turn runs, Enter follows the follow-up setting and Ctrl+Enter does
     assert.equal(app.steered.length, 2);
   } finally { await app.close(); }
 });
+
+
+test('tool details and groups collapse from the bottom, return focus, and still reopen from the top', async () => {
+  const app = await fixture();
+  try {
+    const { page, errors } = await app.open();
+    await page.locator('.worked-for > summary').click();
+    const group = page.locator('.activity-group').filter({ hasText: /^Ran 2 commands/ });
+    const head = group.locator('> summary');
+    await head.click();
+    const step = group.locator('.step').first();
+    const stepHead = step.locator('> summary');
+    await stepHead.click();
+    await step.getByRole('button', { name: 'Collapse details', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.activity-group .step').open);
+    assert.equal(await stepHead.evaluate(node => node === document.activeElement), true);
+    assert.equal(await group.evaluate(node => node.open), true, 'closing one tool keeps the group open');
+    await stepHead.press('Enter');
+    await step.getByRole('button', { name: 'Collapse details', exact: true }).waitFor();
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('.activity-group').open);
+    assert.equal(await head.evaluate(node => node === document.activeElement), true);
+    await head.press('Enter');
+    await group.getByRole('button', { name: 'Collapse tool calls', exact: true }).waitFor();
+    assert.deepEqual(errors, []);
+  } finally { await app.close(); }
+});

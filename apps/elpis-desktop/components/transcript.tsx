@@ -1,5 +1,7 @@
 "use client";
 
+import { CollapseDetails } from "@/components/step";
+
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { pruneOf } from "@/lib/smart-prune";
 import type { Entry, Item } from "@/lib/api";
@@ -114,7 +116,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
       {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
     </summary>
-    <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}</div>
+    <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}{open && <CollapseDetails label="Collapse tool calls" />}</div>
   </details>;
 }
 

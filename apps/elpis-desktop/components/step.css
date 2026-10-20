@@ -44,3 +44,7 @@ summary.step-head:focus-visible { outline:2px solid var(--ring); outline-offset:
 .turn-changes-toggle:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .turn-changes-name { color:var(--foreground); }
 .turn-changes-body { margin:6px 0 0 4px; padding-left:12px; border-left:1px solid var(--border); }
+
+/* A quiet closing action at the end of an expanded tool or group. */
+.tool-collapse { display:flex; align-items:center; gap:6px; margin:6px 8px; color:var(--muted-foreground); }
+.tool-collapse:hover { color:var(--foreground); }

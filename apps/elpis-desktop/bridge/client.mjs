@@ -1,3 +1,4 @@
+import { fastServiceTier } from '../lib/service-tier.mjs';
 import { EventEmitter } from 'node:events';
 import { isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1282,7 +1283,7 @@ export class DesktopClient extends EventEmitter {
     const result = await this.#attach(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');
-      return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result), planMode: result.collaborationMode?.mode === 'plan' };
+      return { thread: this.#decorate({ ...result.thread, model: result.model ?? result.thread.model, serviceTier: result.serviceTier ?? null, reasoningEffort: result.reasoningEffort ?? result.thread.reasoningEffort }), activeTurnId: active?.id ?? null, permissions: modeOf(result), planMode: result.collaborationMode?.mode === 'plan' };
     }
     const [{ thread }, turns] = await Promise.all([this.#rpc('thread/read', { threadId: id, includeTurns: false }),
       this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }).catch(() => ({ data: [] }))]);
@@ -1338,6 +1339,30 @@ export class DesktopClient extends EventEmitter {
   /** Changes a chat's permission mode now, as the terminal's /permissions does: the engine applies it to
    * the running turn and later ones, and a bridged (Claude, Antigravity) chat follows the engine's
    * thread/settings/updated. Returns the mode the engine reports, never the one asked for. */
+  /** Change the current chat's speed through the engine; this never starts a model turn. */
+  async setServiceTier(id, body) {
+    object(body, ['enabled']);
+    if ('enabled' in body && typeof body.enabled !== 'boolean') throw new BridgeError('Choose Fast on or off');
+    return this.#mutate(id, async () => {
+      const thread = await this.#current(id);
+      if (!thread.desktopAccess.writable) throw new BridgeError("Only this agent's parent can change its speed.", 409);
+      const current = await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });
+      if (current.modelProvider !== 'openai') throw new BridgeError('/fast is available for OpenAI models.', 409);
+      const enabled = body.enabled ?? !['fast', 'priority'].includes(current.serviceTier);
+      let fastTier;
+      if (enabled) {
+        const models = await this.models();
+        const model = models.data?.find(model => model.model === current.model);
+        fastTier = fastServiceTier(model);
+        if (!fastTier) throw new BridgeError(`${current.model} does not offer Fast on this account.`, 409);
+      }
+      const serviceTier = enabled ? fastTier : 'default';
+      await this.#rpc('thread/settings/update', { threadId: id, serviceTier });
+      const applied = await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });
+      if (applied.serviceTier !== serviceTier) throw new BridgeError('Elpis did not apply the requested speed. Try again.', 409);
+      return { serviceTier };
+    });
+  }
   async setPermissions(id, body) {
     object(body, ['permissions']);
     const mode = permissionMode(body.permissions);
