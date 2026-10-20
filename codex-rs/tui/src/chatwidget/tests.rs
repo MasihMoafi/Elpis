@@ -304,6 +304,7 @@ mod review_picker_tests;
 mod session_model_selection_tests;
 mod side;
 mod slash_commands;
+mod config_panel;
 mod smart_prune_log;
 #[path = "tests/sparkle_submission_tests.rs"]
 mod sparkle_submission_tests;
