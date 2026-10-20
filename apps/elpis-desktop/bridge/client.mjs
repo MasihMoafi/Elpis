@@ -1564,7 +1564,7 @@ export class DesktopClient extends EventEmitter {
       try { this.answerApproval(key, body); } catch {}
     }
   }
-  async steer(id, body) {
+  async steer(id, body, { fallback = true } = {}) {
     object(body, ['text', 'expectedTurnId', 'attachments', 'mentions']);
     const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments, body.mentions);
     const params = { threadId: id, expectedTurnId: text(body.expectedTurnId, 'turn ID', 200), input };
@@ -1575,7 +1575,7 @@ export class DesktopClient extends EventEmitter {
       catch (error) {
         // The turn the app saw has ended or another replaced it: the message joins the running
         // turn, or starts a new one, as in the terminal, instead of failing.
-        if (error.code !== -32600 || !/^(no active turn to steer|expected active turn id)/.test(error.engineMessage)) throw error;
+        if (!fallback || error.code !== -32600 || !/^(no active turn to steer|expected active turn id)/.test(error.engineMessage)) throw error;
         const running = (await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' })).data?.find(turn => turn.status === 'inProgress')?.id;
         if (running && running !== params.expectedTurnId) return this.#rpc('turn/steer', { ...params, expectedTurnId: running });
         if (running) throw error;
@@ -1724,7 +1724,7 @@ export class DesktopClient extends EventEmitter {
     if (!instruction) throw new BridgeError('Write what Elpis should do instead');
     const offered = pending.params.availableDecisions;
     if (offered && !offered.includes('decline')) throw new BridgeError('Decision is not offered for this request');
-    await this.steer(pending.params.threadId, { text: instruction, expectedTurnId: pending.params.turnId });
+    await this.steer(pending.params.threadId, { text: instruction, expectedTurnId: pending.params.turnId }, { fallback: false });
     return this.answerApproval(id, { decision: 'decline' });
   }
 }
