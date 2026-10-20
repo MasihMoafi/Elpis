@@ -52,21 +52,23 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     await fs.mkdir(output, { recursive: true });
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
-      assert.equal(await icon.evaluate(svg => getComputedStyle(svg).fill), 'rgb(139, 16, 23)');
-      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--love-red').trim().toLowerCase()), '#8b1017');
+      const red = theme === 'dark' ? '#e83b43' : '#8b1017';
+      assert.equal(await icon.evaluate(svg => getComputedStyle(svg).fill), theme === 'dark' ? 'rgb(228, 98, 104)' : 'rgb(139, 16, 23)');
+      assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--love-red').trim().toLowerCase()), red);
       await page.screenshot({ path: path.join(output, `${theme}.png`) });
     }
     const shell = page.locator('.app-shell');
-    assert.notEqual(await shell.evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim().toLowerCase()), '#8b1017');
     await page.locator('[data-nav-page="loveSpot"]').click();
     await page.waitForFunction(() => document.querySelector('.app-shell')?.dataset.workspace === 'loveSpot');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => document.documentElement.classList.toggle('dark', theme === 'dark'), theme);
-      const palette = await shell.evaluate(el => {
+      const red = theme === 'dark' ? '#e83b43' : '#8b1017';
+      const palette = await page.locator('.love-spot-tools').evaluate(el => {
         const style = getComputedStyle(el);
         return ['--primary', '--primary-action', '--primary-foreground', '--primary-action-content'].map(token => style.getPropertyValue(token).trim().toLowerCase());
       });
-      assert.deepEqual(palette, ['#8b1017', '#8b1017', '#fff', '#fff']);
+      assert.deepEqual(palette, [red, red, theme === 'dark' ? '#0a0b0d' : '#fff', theme === 'dark' ? '#0a0b0d' : '#fff']);
+      assert.notEqual(await shell.evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim().toLowerCase()), red);
     }
   } finally {
     await browser.close();
