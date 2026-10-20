@@ -1451,6 +1451,8 @@ export default function Home() {
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
   const ordinaryThreads = threads.filter(thread => !isAgentRun(thread));
   const agentRuns = threads.filter(isAgentRun);
+  const agentRunIds = new Set(agentRuns.map(thread => thread.id));
+  const topLevelAgentRuns = agentRuns.filter(thread => !thread.parentThreadId || !agentRunIds.has(thread.parentThreadId));
   const agentParents = new Set(threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []));
   const runActions: MenuAction[] = [
     { id: "hide", label: "Hide Agent runs", run: () => {
@@ -1785,7 +1787,7 @@ export default function Home() {
             <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} />Agent runs ({agentRuns.length})</Button>
             <MoreMenu actions={runActions} label="Agent runs actions" title="Hide Agent runs or delete their history" />
           </RightClickMenu>
-          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{agentRuns.map(thread => <div key={thread.id}>{threadRow(thread, 1)}{expanded[thread.id] && runDescendants(thread.id, 2)}</div>)}
+          {agentRunsOpen && <div id="agent-runs" role="region" aria-label="Agent runs">{topLevelAgentRuns.map(thread => <div key={thread.id}>{threadRow(thread, 1)}{expanded[thread.id] && runDescendants(thread.id, 2)}</div>)}
             {Object.entries(childCursors).filter(([id, cursor]) => cursor && !hidden.current.has(id)).map(([id, cursor]) => <Button key={id} variant="ghost" size="xs" className="w-full justify-start" disabled={loadingChildren[id]} onClick={() => void loadChildren(id, cursor!, false)}><span className="truncate">More agents from {find(id) ? title(find(id)!) : "parent conversation"}</span></Button>)}
           </div>}
         </section>}

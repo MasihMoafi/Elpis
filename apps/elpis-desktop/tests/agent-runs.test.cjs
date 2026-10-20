@@ -5,20 +5,22 @@ const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
 const notice = 'Run by an agent in the background; open its parent to talk to it';
 const normal = (id, name) => ({ id, name, cwd: CWD, source: 'cli', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct', reason: null } });
-async function mixed({ continueError = false, restoredRun = false, pagedChildren = false, ...options } = {}) {
+async function mixed({ continueError = false, restoredRun = false, pagedChildren = false, nestedChildren = false, ...options } = {}) {
   const parent = normal('chat-a', 'Fix the parser'), own = normal('chat-b', 'Worker · my own chat');
   const run = { ...normal('exec-run', 'Worker · inspect'), source: 'exec', parentThreadId: parent.id, desktopAccess: { writable: false, mode: 'continue', canContinue: true, reason: notice } };
   const child = { ...run, id: 'child-run', name: 'Review the fix', source: { subAgent: { thread_spawn: { agent_path: '/root/review' } } }, status: { type: 'active' }, desktopAccess: { ...run.desktopAccess, canContinue: false } };
+  const nested = { ...child, id: 'nested-run', name: 'Nested agent', parentThreadId: run.id };
   const orphan = { ...run, id: 'orphan-run', name: 'Unlinked background run', parentThreadId: null };
   const additional = { ...run, id: 'more-run', name: 'Another background task' };
   const continued = { ...normal('continued', 'Worker · inspect (continued)'), source: 'appServer', forkedFromId: run.id };
   const threads = [parent, own, run, child, orphan];
   const routes = { '/api/threads': (_body, url) => {
     if (!url.searchParams.has('ancestorThreadId')) return { data: threads, nextCursor: null };
+    if (nestedChildren && url.searchParams.get('ancestorThreadId') === run.id) return { data: [nested], nextCursor: null };
     if (!pagedChildren || url.searchParams.get('ancestorThreadId') !== parent.id) return { data: [], nextCursor: null };
     return { data: url.searchParams.has('cursor') ? [additional] : [run], nextCursor: url.searchParams.has('cursor') ? null : 'child-page' };
   } };
-  for (const thread of [parent, own, run, child, orphan, continued, additional]) {
+  for (const thread of [parent, own, run, child, nested, orphan, continued, additional]) {
     routes[`/api/threads/${thread.id}`] = () => ({ thread, data: [{ turnId: 'result', item: { id: 'result', type: 'agentMessage', text: 'Recorded background result.' } }], nextCursor: null });
     routes[`/api/threads/${thread.id}/resume`] = () => ({ thread, activeTurnId: thread.status.type === 'active' ? 'working' : null });
   }
@@ -107,6 +109,29 @@ test('Show agents opens the folded group, which owns child pagination and folds 
     await row(page, 'chat-a').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Hide agents', exact: true }).click();
     assert.equal(await group.count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a background run expands and collapses its nested agents', async () => {
+  const f = await mixed({ nestedChildren: true }), { page } = f;
+  try {
+    const toggle = page.getByRole('button', { name: 'Agent runs (3)', exact: true });
+    await toggle.click();
+    const run = row(page, 'exec-run'), expand = run.getByRole('button', { name: 'Expand agents in Worker · inspect' });
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false');
+    await expand.click();
+    const nestedRows = page.locator('aside.sidebar .thread-row[data-thread-id="nested-run"]');
+    await nestedRows.first().waitFor();
+    assert.equal(await nestedRows.count(), 1, 'the nested run is shown under its parent only');
+    const collapse = run.getByRole('button', { name: 'Collapse agents in Worker · inspect' });
+    assert.equal(await collapse.getAttribute('aria-expanded'), 'true');
+    await collapse.click();
+    assert.equal(await nestedRows.count(), 0, 'collapsing hides nested agents');
+    await run.getByRole('button', { name: 'Expand agents in Worker · inspect' }).focus();
+    await page.keyboard.press('Enter');
+    await nestedRows.first().waitFor();
+    assert.equal(await nestedRows.count(), 1);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
