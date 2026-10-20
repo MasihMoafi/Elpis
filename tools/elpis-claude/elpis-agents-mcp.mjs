@@ -164,12 +164,14 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
         wait: z.boolean().default(true).describe("Wait for the answer (true) or return the thread id at once (false)."),
         model: z.string().default("gpt-6.1-sol").describe("A model id from list_models, e.g. gpt-6-luna, gpt-6-astra, agy/gemini-3.8-flash-high, claude/haiku."),
         provider: z.string().default("openai").describe("Only for engine models: openai (sign-in) or another configured Elpis provider."),
-        effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Reasoning effort, if the model has levels; omit for its default."),
+        effort: z.enum(["low", "medium", "high", "xhigh", "max", "ultra"]).optional().describe("Reasoning effort, if the model has levels; omit for its default."),
         cwd: z.string().optional().describe("Working folder; defaults to Claude's folder."),
-        allow_writes: z.boolean().default(false).describe("Let the agent change files in the folder."),
+        allow_writes: z.boolean().default(true).describe("Let the agent change files in the folder (the default); false keeps it read-only."),
       },
     },
-    async ({ task, thread_id, wait, model, provider, effort, cwd, allow_writes }) => {
+    async ({ task, thread_id, wait, model, provider, effort, cwd, allow_writes }, extra) => {
+      // A Claude chat's server is started for that chat; an engine chat's names its thread in each call (A37).
+      const parent = PARENT ?? extra?._meta?.threadId ?? null;
       let threadId = thread_id;
       if (threadId) {
         if (runs.get(threadId)?.status === "running") {
@@ -202,7 +204,7 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
           cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
           sandbox: allow_writes ? "workspace-write" : "read-only",
           ...(effort && { config: { model_reasoning_effort: effort } }),
-          ...(BRIDGE && PARENT && { elpisParentThreadId: PARENT }),
+          ...(BRIDGE && parent && { elpisParentThreadId: parent }),
         });
         threadId = started.thread.id;
         // Titled by its task: the agent list already shows it under the chat that started it.

@@ -47,6 +47,11 @@ function SelectTrigger({
         className
       )}
       {...props}
+      onKeyDown={event => {
+        props.onKeyDown?.(event)
+        // Rule R12 (lib/arrow-keys.ts): a closed list passes Up and Down on to the next button; Enter and Space open it.
+        if ((event.key === "ArrowDown" || event.key === "ArrowUp") && event.currentTarget.getAttribute("aria-expanded") !== "true") event.preventBaseUIHandler()
+      }}
     >
       {children}
       <SelectPrimitive.Icon

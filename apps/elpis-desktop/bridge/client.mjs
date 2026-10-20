@@ -488,6 +488,23 @@ export class DesktopClient extends EventEmitter {
     const items = await this.#itemsPage({ threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
     return { thread: this.#decorate(thread), ...items };
   }
+  async readPrompts(id) {
+    threadId(id);
+    const prompts = new Map(), cursors = new Set();
+    let cursor;
+    do {
+      const page = await this.readThread(id, cursor ? { cursor, limit: 100 } : { limit: 100 });
+      for (const { turnId, item } of page.data) {
+        if (item?.type !== 'userMessage' || typeof turnId !== 'string') continue;
+        const text = Array.isArray(item.content) ? item.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
+        prompts.set(turnId, Array.from(text.trim()).slice(0, 200).join(''));
+      }
+      cursor = page.nextCursor;
+      if (cursor && cursors.has(cursor)) throw new BridgeError('Repeated history cursor', 502);
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return { data: [...prompts].reverse().map(([turnId, text]) => ({ turnId, text })) };
+  }
   /** One page of a chat's items. A chat Elpis keeps only as whole turns (older history, or a new chat before its
    * first message is recorded) has no item pages: the engine answers -32601, and the TUI then reads whole turns
    * (its LegacyOnly history). So does this: the page is cut from thread/read's turns, behind a cursor of its own. */

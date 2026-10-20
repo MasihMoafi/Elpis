@@ -46,6 +46,10 @@ const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow"
 // Elpis's own tools for a Claude or Antigravity session: helpers on other models (when it may
 // delegate) and durable memory (a chat the user started, not a helper; the tool itself checks
 // the workspace opted in).
+// A37: an engine chat delegates like a Claude one. The engine names the calling thread in each MCP
+// tool call's `_meta.threadId`, so its server needs no parent of its own; given as config overrides.
+const engineAgentsConfig = () => Object.fromEntries(mcpServersFor(true, null, null).map((s) =>
+  [`mcp_servers.${s.name}`, { command: s.command, args: s.args, env: Object.fromEntries(s.env.map((e) => [e.name, e.value])) }]));
 const mcpServersFor = (subagents, parentThreadId, memoryCwd) => {
   const agents = subagents && !process.env.ACP_BRIDGE_NO_AGENTS;
   if (!agents && !memoryCwd) return [];
@@ -369,10 +373,17 @@ const AUTHORITY = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissi
 const UNSANDBOXED = [":danger-full-access", ":bypass-permissions"];
 const WRITABLE = [":workspace", ...UNSANDBOXED];
 const writableFor = (threadId) => WRITABLE.includes(chatAccess.get(threadId)?.profile) && helperScope.get(threadId)?.ceiling !== "read-only";
+const fullFor = (threadId) => UNSANDBOXED.includes(chatAccess.get(threadId)?.profile) && [undefined, "danger-full-access"].includes(helperScope.get(threadId)?.ceiling);
+// A48 (Masih, 20 Oct: "Full access by default for everyone; subagents never ask; Full access, not
+// Bypass"): a helper that asks to write gets Full Access below a Full Access or Bypass chat, a
+// workspace below a Workspace chat, and read-only otherwise.
+const CEILINGS = ["read-only", "workspace-write", "danger-full-access"];
+const lowest = (...ceilings) => CEILINGS[Math.min(...ceilings.map((c) => Math.max(0, CEILINGS.indexOf(c))))];
+const helperCeiling = (requested, parentThreadId) => requested !== "workspace-write" || !writableFor(parentThreadId) ? "read-only"
+  : fullFor(parentThreadId) ? "danger-full-access" : "workspace-write";
 // A reopened helper's ceiling: the lower of the stored one and this bridge's, lowered to what
 // its chat allows now. A record from before ceilings were kept is read-only.
-const ceilingOf = (threadId, d) => d.requested === "workspace-write" && d.ceiling === "workspace-write"
-  && helperScope.get(threadId)?.ceiling !== "read-only" && writableFor(d.parentThreadId) ? "workspace-write" : "read-only";
+const ceilingOf = (threadId, d) => lowest(d.ceiling, helperScope.get(threadId)?.ceiling ?? "danger-full-access", helperCeiling(d.requested, d.parentThreadId));
 // Lowers the ceiling of every helper below a chat that may still write. Resolves once each open
 // copy has applied it or been stopped; null when there was nothing to lower.
 function reduceHelpers(threadId) {
@@ -380,7 +391,7 @@ function reduceHelpers(threadId) {
   for (const d of pendingHelpers) if (d.parentThreadId === threadId) d.ceiling = "read-only";
   for (const [id, h] of helperScope) {
     if (h.parentThreadId !== threadId) continue;
-    if (h.ceiling === "workspace-write") { h.ceiling = "read-only"; for (const restrict of h.owners) work.push(restrict(id)); }
+    if (h.ceiling !== "read-only") { h.ceiling = "read-only"; for (const restrict of h.owners) work.push(restrict(id)); }
     const nested = reduceHelpers(id);
     if (nested) work.push(nested);
   }
@@ -487,7 +498,7 @@ wss.on("connection", (ws) => {
     const recipient = route?.client ?? ws;
     if (!msg.method && openingReplies.delete(msg.id) && msg.result?.thread) subscriptions.get(recipient)?.add(msg.result.thread.id);
     if (route) { forwarded.delete(msg.id); sendClient(recipient, { ...msg, id: route.id }); }
-    else if (owner?.ws === ws && msg.method && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
+    else if (owner?.ws === ws && !owner.nativeHelper && msg.method && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
       for (const client of viewers(msg.params.threadId)) sendClient(client, msg);
     } else sendClient(recipient, msg);
     // Hydration reaches the terminal before a pending question for that chat.
@@ -580,11 +591,16 @@ wss.on("connection", (ws) => {
         || [...providerOwners].some(([tid, owner]) => owner.ws === ws && viewers(tid).length)) return;
       context.close(); contexts.delete(context);
       for (const [tid, owner] of providerOwners) if (owner.ws === ws) providerOwners.delete(tid);
-      for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
+      releaseHelpers();
       for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
     },
   };
   contexts.add(context);
+  const dispatchOwned = (msg, client) => {
+    const id = `forward-${randomUUID()}`;
+    forwarded.set(id, { client, id: msg.id, owner: ws });
+    handleMessage(JSON.stringify({ ...msg, id }));
+  };
   function claimProvider(tid, result) {
     if (!claudeModel.has(tid)) return;
     if (result) resumeResults.set(tid, { ...result, thread: { ...result.thread } });
@@ -600,11 +616,21 @@ wss.on("connection", (ws) => {
           thread.status = owner.status();
         }
       },
-      dispatch: (msg, client) => {
-        const id = `forward-${randomUUID()}`;
-        forwarded.set(id, { client, id: msg.id, owner: ws });
-        handleMessage(JSON.stringify({ ...msg, id }));
-      },
+      dispatch: dispatchOwned,
+    };
+    providerOwners.set(tid, owner);
+  }
+  function claimEngineHelper(tid, h) {
+    if (providerOwners.has(tid) && providerOwners.get(tid).ws !== ws) return;
+    const owner = {
+      ws,
+      nativeHelper: true,
+      model: () => h.model ?? null,
+      effort: () => null,
+      status: () => h.activeOwner ? { type: "active", activeFlags: [] } : { type: "idle" },
+      decorate: (thread) => { thread.status = owner.status(); },
+      lastTurn: () => h.lastTurn,
+      dispatch: dispatchOwned,
     };
     providerOwners.set(tid, owner);
   }
@@ -629,7 +655,7 @@ wss.on("connection", (ws) => {
       for (const k of ["approvalPolicy", "approvalsReviewer", "activePermissionProfile", "cwd", "collaborationMode", "serviceTier", "disabledPluginIds"]) if (s[k] !== undefined) cached[k] = s[k];
       if (s.sandboxPolicy) cached.sandbox = s.sandboxPolicy;
     }
-    const wasWritable = chatAccess.has(threadId) ? writableFor(threadId) : null;
+    const wasWritable = chatAccess.has(threadId) ? writableFor(threadId) : null, wasFull = chatAccess.has(threadId) ? fullFor(threadId) : null;
     if (s.approvalPolicy) threadPolicy.set(threadId, s.approvalPolicy);
     const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
     const profile = s.permissions ?? s.activePermissionProfile?.id
@@ -638,8 +664,8 @@ wss.on("connection", (ws) => {
     threadAccess.set(threadId, { profile: profile ?? prev.profile, reviewer: s.approvalsReviewer ?? prev.reviewer });
     chatAccess.set(threadId, { policy: threadPolicy.get(threadId), profile: threadAccess.get(threadId).profile });
     for (const confirm of confirmations.get(threadId) ?? []) confirm(threadAccess.get(threadId).profile);
-    // A chat that can no longer write lowers its helpers' ceilings.
-    if (writableFor(threadId)) return null;
+    // A chat that can no longer write, or that leaves Full Access, lowers its helpers' ceilings.
+    if (writableFor(threadId) && (fullFor(threadId) || wasFull !== true)) return null;
     if (wasWritable !== false) persistReduction(threadId).then((saved) => {
       if (saved) return;
       log(`helpers of ${threadId}: reduction not saved`);
@@ -800,13 +826,24 @@ wss.on("connection", (ws) => {
     return true;
   }
   async function markHelpers(result, ancestor) {
+    await storeChain;
     const store = await loadStore();
     const helpers = store._delegations ?? {};
     let changed = false;
+    const markHelperTurn = (t) => {
+      const turn = providerOwners.get(t.id)?.lastTurn?.();
+      if (!turn) return false;
+      const turns = Array.isArray(t.turns) ? t.turns : (t.turns = []);
+      const index = turns.findIndex((listed) => listed.id === turn.id);
+      if (index < 0) turns.push(turn);
+      else turns[index] = { ...turns[index], status: turn.status };
+      return true;
+    };
     for (const t of [result?.thread, ...(Array.isArray(result?.data) ? result.data : [])]) {
       if (!t || typeof t !== "object") continue;
       if (helpers[t.id] && t.parentThreadId == null) { t.parentThreadId = helpers[t.id].parentThreadId; changed = true; }
       changed = ownModel(t, store) || changed;
+      if (Array.isArray(result?.data)) changed = markHelperTurn(t) || changed;
     }
     if (ancestor && Array.isArray(result?.data)) {
       const below = new Set([ancestor]);
@@ -815,7 +852,13 @@ wss.on("connection", (ws) => {
       for (const id of below) {
         if (id === ancestor || have.has(id)) continue;
         const t = (await engineCall("thread/read", { threadId: id, includeTurns: false }).catch(() => null))?.thread;
-        if (t) { result.data.push({ ...t, parentThreadId: helpers[id].parentThreadId }); changed = true; }
+        if (t) {
+          t.parentThreadId = helpers[id].parentThreadId;
+          ownModel(t, store);
+          markHelperTurn(t);
+          result.data.push(t);
+          changed = true;
+        }
       }
     }
     return changed;
@@ -1090,6 +1133,8 @@ wss.on("connection", (ws) => {
   // /experimental and hand edits alike, as GPT turns do.
   const subagentsAllowed = (cwd) => engineCall("config/read", { includeLayers: false, cwd })
     .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
+  // The engine's own chats and helpers get the delegate tool while the Subagents switch is on (A37).
+  const withAgents = async (params) => { if (params && await subagentsAllowed(params.cwd)) params.config = { ...params.config, ...engineAgentsConfig() }; };
   const activeTurns = new BusyMap(); // thread id -> its running Claude or Antigravity turn
   const engineTurns = new BusyMap(); // thread id -> its running engine turn
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
@@ -1115,6 +1160,13 @@ wss.on("connection", (ws) => {
     engineCall("thread/settings/update", { threadId: tid, permissions: profile }).catch((e) => settle(false, e?.message ?? JSON.stringify(e)));
   });
   const ownHelpers = new Map(); // helper thread id open on this connection -> { applying, waiting, failed }
+  const releaseHelpers = () => {
+    for (const tid of ownHelpers.keys()) {
+      const h = helperScope.get(tid);
+      h?.owners.delete(restrictHelper);
+      if (h?.activeOwner === restrictHelper) h.activeOwner = null;
+    }
+  };
   // A helper this connection's engine runs, which could not be restricted, stops. A delegate
   // connection serves only its helper: its tool hears that the turn failed, and its engine ends.
   // A TUI's engine also runs the user's other chats: only the helper's turn is interrupted, and
@@ -1163,15 +1215,18 @@ wss.on("connection", (ws) => {
   const openHelper = (tid, d, ceiling) => {
     let h = helperScope.get(tid);
     if (!h) helperScope.set(tid, h = { parentThreadId: d.parentThreadId, requested: d.requested, ceiling, owners: new Set() });
-    if (ceiling === "read-only") h.ceiling = "read-only";
+    h.ceiling = lowest(h.ceiling, ceiling);
+    h.model = d.model ?? h.model;
     h.owners.add(restrictHelper);
     ownHelpers.set(tid, { applying: null, waiting: [], failed: false });
     threadSandbox.set(tid, h.ceiling);
+    if (helperConns.has(ws) && !isBridged(h.model)) claimEngineHelper(tid, h);
     return h;
   };
   // A request for a helper's thread asks for no more than its ceiling: a read-only helper is
-  // asked to be read-only, and none is given Full Access. `field` is the request's sandbox field.
+  // asked to be read-only, and only a Full Access one is given Full Access, never Bypass. `field` is the request's sandbox field.
   const boundAccess = (p, ceiling, field) => {
+    if (ceiling === "danger-full-access") { if (p.permissions === ":bypass-permissions") p.permissions = ":danger-full-access"; return; }
     const wide = UNSANDBOXED.includes(p.permissions) || p[field] === "danger-full-access" || ["dangerFullAccess", "externalSandbox"].includes(p[field]?.type);
     if (ceiling === "workspace-write" && !wide) return;
     delete p.permissions; delete p[field];
@@ -1184,7 +1239,8 @@ wss.on("connection", (ws) => {
     const h = openHelper(tid, r, r.ceiling);
     if (h.ceiling !== r.stored) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = h.ceiling; });
     const profile = threadAccess.get(tid)?.profile;
-    const want = h.ceiling === "read-only" ? ":read-only" : UNSANDBOXED.includes(profile) ? ":workspace" : null;
+    const want = h.ceiling === "read-only" ? ":read-only" : h.ceiling === "workspace-write" ? (UNSANDBOXED.includes(profile) ? ":workspace" : null)
+      : profile === ":bypass-permissions" ? ":danger-full-access" : null;
     if (!want || profile === want) return true;
     if (bridged) { applyProfile(tid, want); return true; }
     const ok = await applyProfile(tid, want);
@@ -1201,7 +1257,7 @@ wss.on("connection", (ws) => {
     const savedStore = await loadStore();
     const d = tid && savedStore._delegations?.[tid];
     const existing = providerOwners.get(tid);
-    if (existing && existing.ws !== ws) {
+    if (existing && existing.ws !== ws && !existing.nativeHelper) {
       const route = forwarded.get(msg.id); forwarded.delete(msg.id); pendingResume.delete(msg.id); resumeOptions.delete(msg.id); openingReplies.delete(msg.id);
       existing.dispatch({ ...msg, id: route?.id ?? msg.id }, route?.client ?? ws); return;
     }
@@ -1230,11 +1286,12 @@ wss.on("connection", (ws) => {
       claimProvider(tid);
     }
     if (d) {
-      const r = { parentThreadId: d.parentThreadId, requested: d.requested ?? "read-only", ceiling: ceilingOf(tid, d), stored: d.ceiling };
+      const r = { parentThreadId: d.parentThreadId, model: d.model, requested: d.requested ?? "read-only", ceiling: ceilingOf(tid, d), stored: d.ceiling };
       pendingHelpers.add(r);
       pendingAdopt.set(msg.id, r);
       boundAccess(msg.params, r.ceiling, "sandbox");
     }
+    if (!claudeModel.has(tid)) await withAgents(msg.params);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
   // A thread/settings/updated that waits for helpers to apply a reduction keeps its place: any
@@ -1254,6 +1311,22 @@ wss.on("connection", (ws) => {
     }
     if (parsed?.method === "turn/started" && parsed.params?.turn?.id) engineTurns.set(parsed.params.threadId, parsed.params.turn.id);
     if (parsed?.method === "turn/completed") { engineTurns.delete(parsed.params?.threadId); checkIdle(); }
+    const helperId = parsed?.params?.threadId;
+    const helperOwner = providerOwners.get(helperId);
+    const helper = helperOwner?.nativeHelper && helperOwner.ws === ws ? helperScope.get(helperId) : null;
+    if (helper) {
+      const turn = parsed.params?.turn;
+      if (parsed.method === "turn/started" && turn?.id) {
+        helper.lastTurn = { ...turn, items: [], itemsView: "notLoaded" };
+        helper.activeOwner = restrictHelper;
+      } else if (parsed.method === "turn/completed" && turn?.id === helper.lastTurn?.id) {
+        helper.lastTurn = { ...turn, items: [], itemsView: "notLoaded" };
+        helper.activeOwner = null;
+      } else if (parsed.method === "thread/status/changed") {
+        if (parsed.params.status?.type === "active") helper.activeOwner = restrictHelper;
+        else if (["idle", "notLoaded"].includes(parsed.params.status?.type) && helper.activeOwner === restrictHelper) helper.activeOwner = null;
+      }
+    }
     // An unsubscribed native thread no longer sends its turn/completed here. The engine
     // broadcasts thread/closed after its work stops and its unsubscribed runtime unloads.
     if (parsed?.method === "thread/closed") engineTurns.delete(parsed.params?.threadId);
@@ -2027,11 +2100,12 @@ wss.on("connection", (ws) => {
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
   async function startThread(msg) {
     const p = msg.params ?? {};
-    if (p.elpisParentThreadId) {
-      // The helper's ceiling (helperScope): its chat's Full Access is never passed on.
+    const helper = !!p.elpisParentThreadId;
+    if (helper) {
+      // The helper's ceiling (helperScope, helperCeiling): a writer below a Full Access chat gets Full Access.
       const parentThreadId = p.elpisParentThreadId;
-      const requested = p.sandbox === "workspace-write" ? "workspace-write" : "read-only";
-      p.sandbox = requested === "workspace-write" && writableFor(parentThreadId) ? "workspace-write" : "read-only";
+      const requested = ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only";
+      p.sandbox = helperCeiling(requested, parentThreadId);
       delete p.permissions;
       const d = { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested, ceiling: p.sandbox };
       pendingDelegation.set(msg.id, d);
@@ -2048,13 +2122,14 @@ wss.on("connection", (ws) => {
       const def = (await loadStore())._default;
       engineDefault ??= engineCall("config/read", { includeLayers: false }).then((r) => r?.config?.model ?? null, () => null);
       // A saved Claude default waits while Elpis is signed out of it: the new chat gets the engine's own model.
-      if (def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
+      // A helper keeps the model its delegate named, even the engine's default (A49: gpt-6.1-sol helpers ran on Claude).
+      if (!helper && def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
     }
     if (pick) {
       rememberStart(msg.id, pick);
       p.model = null;
       if (p.config) delete p.config.model_reasoning_effort;
-    }
+    } else await withAgents(msg.params);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
 
@@ -2382,7 +2457,9 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
       checkIdle(); return;
     }
-    if (msg.method && owner && owner.ws !== ws) { owner.dispatch(msg, ws); return; }
+    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || (!helperConns.has(ws) && ["turn/steer", "turn/interrupt"].includes(msg.method)))) {
+      owner.dispatch(msg, ws); return;
+    }
     if (msg.method === "thread/delete") { deleteThread(msg); return; }
     if (["thread/start", "thread/fork", "thread/resume"].includes(msg.method)) openingReplies.add(msg.id);
     if (process.env.ACP_BRIDGE_DEBUG && msg.method && (process.env.ACP_BRIDGE_DEBUG === "all" || !/^thread\/(read|turns\/list|list|loaded)/.test(msg.method))) log(`tui-> ${redactSecrets(line).slice(0, 600)}`);
@@ -2435,7 +2512,7 @@ wss.on("connection", (ws) => {
         await storeChain;
         const historyStore = await loadStore();
         const tid = msg.params?.threadId;
-        if (claudeModel.has(tid) || (historyStore[tid]?.model || historyStore[tid]?.providerHistory) || providerOwners.has(tid) || childIds.has(tid)) await listProviderHistory(msg, historyStore);
+        if (claudeModel.has(tid) || (historyStore[tid]?.model || historyStore[tid]?.providerHistory) || (providerOwners.has(tid) && !providerOwners.get(tid).nativeHelper) || childIds.has(tid)) await listProviderHistory(msg, historyStore);
         else engine.stdin.write(JSON.stringify(msg) + "\n");
       })().catch(error => toTui({ id: msg.id, error: Number.isInteger(error.code) ? error : { code: -32603, message: error.message } }));
       return;
@@ -2586,7 +2663,7 @@ wss.on("connection", (ws) => {
     for (const relay of relayed.values()) relay.clients.delete(ws);
     for (const [id, route] of forwarded) if (route.client === ws) forwarded.delete(id);
     if (!process.env.ELPIS_SHARED_BRIDGE || helperConns.has(ws)) {
-      for (const tid of ownHelpers.keys()) helperScope.get(tid)?.owners.delete(restrictHelper);
+      releaseHelpers();
       for (const d of [...pendingDelegation.values(), ...pendingAdopt.values()]) pendingHelpers.delete(d);
       await storeChain; context.close(); contexts.delete(context);
       for (const [tid, owner] of providerOwners) if (owner.ws === ws) providerOwners.delete(tid);

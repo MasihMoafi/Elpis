@@ -188,9 +188,9 @@ async function main() {
       return { ...t, wrote: fs.existsSync(ctl.marker) };
     }
     // The model's step in an engine turn: once released, write in the workspace with the default sandbox.
-    function scriptedWrite() {
+    function scriptedWrite(before = '') {
       const id = ++files, marker = path.join(cwd, `engine-${id}`);
-      const item = call(`write_${id}`, 'exec_command', { cmd: `printf helper > '${marker}'` });
+      const item = call(`write_${id}`, 'exec_command', { cmd: `${before}printf helper > '${marker}'` });
       provider.actions.push({ hang: true }, message('Done.'));
       return { marker, release: () => {
         const response = [...provider.hanging][0];
@@ -203,8 +203,8 @@ async function main() {
       } };
     }
     // An engine helper's turn through its delegate tool.
-    async function engineHelper(delegate, args, during) {
-      const step = scriptedWrite();
+    async function engineHelper(delegate, args, during, before) {
+      const step = scriptedWrite(before);
       const t = await turn(delegate, { model: 'gpt-5.5', provider: 'fixture', ...args }, () => provider.hanging.size > 0, step.release, during);
       if (t.status === 'completed') assert.equal(provider.actions.length, 0, 'the helper used every scripted model response');
       provider.actions.length = 0;
@@ -243,6 +243,93 @@ async function main() {
       }
     }
 
+    await group('saved Claude default and explicit engine helper model', async () => {
+      const engineModel = (await request('config/read', { includeLayers: false })).config.model;
+      const setDefault = model => request('config/batchWrite', { edits: [{ keyPath: 'model', value: model, mergeStrategy: 'replace' }] });
+      await setDefault('claude/haiku');
+      try {
+        const user = await request('thread/start', { cwd, model: engineModel, ...tuiFields });
+        assert.equal(user.model, 'claude/haiku', 'a new user chat sending the engine default still takes the saved Claude default');
+        pass('Saved Claude default: a new user chat sending the engine default uses Claude');
+
+        const delegate = await delegateServer(await parent('default'));
+        const before = provider.requests.length;
+        provider.actions.push(message('Done.'));
+        // Release the existing Claude fixture too, so a misrouted helper finishes and exposes its model.
+        const helper = await claudeHelper(delegate, { model: engineModel, provider: 'fixture' });
+        assert.equal(helper.status, 'completed');
+        // Read, not resume: the delegate server still holds the helper as its one writer.
+        const read = await request('thread/read', { threadId: helper.threadId, includeTurns: false });
+        assert.equal(read.thread.model, engineModel, 'a helper explicitly requesting the engine default must keep that model');
+        const requests = provider.requests.slice(before);
+        assert.equal(requests.length, 1, 'the helper ran through the local engine provider');
+        assert.equal(requests[0].body.model, engineModel, 'the provider received the requested helper model');
+        const stored = JSON.parse(fs.readFileSync(path.join(storeDir, 'sessions.json'), 'utf8'))[helper.threadId];
+        assert.equal(stored?.session, undefined, 'the engine helper must not create a Claude session');
+        assert.equal(stored?.turns?.length ?? 0, 0, 'the engine helper must not create Claude turns');
+        pass('Saved Claude default: an explicit engine helper runs and reports the engine model');
+      } finally {
+        provider.actions.length = 0;
+        await setDefault(engineModel);
+      }
+    });
+
+    await group('engine helper status in the agents tree', async () => {
+      const chat = await parent('default');
+      const delegate = await delegateServer(chat);
+      const list = () => request('thread/list', { ancestorThreadId: chat, modelProviders: [], archived: false,
+        limit: 100, useStateDbOnly: true });
+      const listed = async id => (await list()).data.find(thread => thread.id === id);
+      assert.deepEqual((await list()).data, [], 'a delegate server does not invent an unstarted helper');
+      const unownedSteer = { threadId: '00000000-0000-4000-8000-000000000000',
+        expectedTurnId: '00000000-0000-4000-8000-000000000000', input: [{ type: 'text', text: 'Unknown helper.' }] };
+      let unownedError;
+      await assert.rejects(request('turn/steer', unownedSteer), error => { unownedError = error.message; return true; });
+
+      const claude = await claudeHelper(delegate, { allow_writes: true });
+      const claudeBefore = await listed(claude.threadId);
+      assert.equal(claudeBefore?.status?.type, 'idle', 'the Claude helper is idle after its turn');
+
+      const steerText = 'A50 steer delivered to the running helper';
+      const before = provider.requests.length;
+      const engine = await engineHelper(delegate, { allow_writes: true }, async () => {
+        const working = (await list()).data.find(thread => thread.id !== claude.threadId);
+        assert(working?.id, 'the running engine helper is listed as a descendant');
+        assert.equal(working.status?.type, 'active', 'the running helper is Working in the agents tree');
+        const read = await request('thread/read', { threadId: working.id, includeTurns: false });
+        assert.equal(read.thread.status?.type, 'active', 'thread/read has the same live status');
+        const turnId = working.turns.at(-1)?.id;
+        assert(turnId, 'the listed running turn can be steered');
+        const steer = await request('turn/steer', { threadId: working.id, expectedTurnId: turnId,
+          input: [{ type: 'text', text: steerText }] });
+        assert.equal(steer.turnId, turnId, 'the delegate engine answered the other client');
+      });
+      assert.equal(engine.status, 'completed');
+      assert(provider.requests.slice(before).some(r => JSON.stringify(r.body.input).includes(steerText)),
+        'the delegate engine sent the steer text in its next Responses request');
+      const done = await listed(engine.threadId);
+      assert.equal(done?.status?.type, 'idle', 'the completed helper is idle in the agents tree');
+      assert.equal(done.turns.at(-1)?.status, 'completed', 'the completed helper is Done in the agents tree');
+      const read = await request('thread/read', { threadId: engine.threadId, includeTurns: true });
+      assert.equal(read.thread.status?.type, 'idle', 'thread/read has the completed status');
+      assert.equal(read.thread.turns.at(-1)?.status, 'completed', 'thread/read retains the completed turn');
+      const claudeAfter = await listed(claude.threadId);
+      assert.deepEqual(claudeAfter.status, claudeBefore.status, 'engine status tracking leaves Claude status unchanged');
+
+      const interrupted = await engineHelper(delegate, { allow_writes: true }, async () => {
+        const working = (await list()).data.find(thread => ![claude.threadId, engine.threadId].includes(thread.id));
+        assert.equal(working?.status?.type, 'active', 'the second engine helper is running');
+        const turnId = working.turns.at(-1)?.id;
+        assert(turnId, 'the listed running turn can be interrupted');
+        await request('turn/interrupt', { threadId: working.id, turnId });
+      });
+      assert.equal(interrupted.status, 'interrupted', 'the other client interrupted the delegate turn');
+      assert.equal(interrupted.wrote, false, 'the interrupted helper never ran its scripted write');
+      await assert.rejects(request('turn/steer', unownedSteer), { message: unownedError },
+        'a steer for an unowned thread keeps its original error');
+      pass('Engine helpers show Working then Done, route another client’s steer and interrupt, and leave other statuses unchanged');
+    });
+
     // Controls: the helper's own scope under a writable (Default) parent.
     await group('Claude helper controls', async () => {
       const delegate = await delegateServer(await parent('default'));
@@ -261,6 +348,10 @@ async function main() {
       const readOnly = await engineHelper(delegate, { allow_writes: false });
       assert.equal(readOnly.wrote, false, 'the read-only sandbox must block the write');
       pass('Default parent: a read-only engine helper is sandboxed');
+      // Masih, 20 Oct: "read-only agents are of no use to us"; a helper writes unless told not to.
+      const unspecified = await engineHelper(delegate, {});
+      assert.equal(unspecified.prompts, 0, 'prompts'); assert.equal(unspecified.wrote, true, 'a helper may write by default');
+      pass('Default parent: a helper started without allow_writes writes');
     });
     // A helper may not exceed its parent's confirmed permissions when it starts.
     await group('Read Only parent, writable Claude helper', async () => {
@@ -315,6 +406,19 @@ async function main() {
       const engine = await engineHelper(delegate, { allow_writes: false });
       assert.equal(engine.wrote, false, 'write');
       pass('a Full Access parent starts a read-only engine helper sandboxed');
+    });
+    // A48 (Masih, 20 Oct: "Full access by default for everyone; subagents never ask"): a writing helper of a
+    // Full Access chat gets Full Access. The workspace sandbox refuses a local server (listen EPERM); Full Access does not.
+    await group('Full Access parent gives a writing helper Full Access', async () => {
+      const listen = `'${process.execPath}' -e "require('net').createServer().listen(0, '127.0.0.1', () => process.exit(0)).on('error', () => process.exit(1))" && `;
+      const full = await parent('full');
+      const engine = await engineHelper(await delegateServer(full), { allow_writes: true }, undefined, listen);
+      assert.equal(engine.wrote, true, 'a writing helper of a Full Access chat opens a local server');
+      pass('a Full Access parent starts a writing engine helper with Full Access');
+      const workspace = await parent('default');
+      const capped = await engineHelper(await delegateServer(workspace), { allow_writes: true }, undefined, listen);
+      assert.equal(capped.wrote, false, 'a writing helper of a Workspace chat stays in the workspace sandbox');
+      pass('a Workspace parent keeps a writing engine helper in the workspace sandbox');
     });
     // A reduction is sticky; a later grant reaches only new helpers, up to what they ask for.
     await group('sticky reduction', async () => {
