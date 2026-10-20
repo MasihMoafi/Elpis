@@ -194,7 +194,8 @@ export class DesktopClient extends EventEmitter {
     const openSocket = async () => {
       await options.beforeConnect?.();
       const socketPath = existingSocket(options.socketPath);
-      const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: 8 * 1024 * 1024 });
+      // Match ws's bounded default: one recorded tool result can exceed 8 MiB.
+      const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: 100 * 1024 * 1024 });
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => { socket.terminate(); reject(new BridgeError('Bridge connection timed out', 504)); }, 10000);
         socket.once('open', () => { clearTimeout(timer); resolve(); });
