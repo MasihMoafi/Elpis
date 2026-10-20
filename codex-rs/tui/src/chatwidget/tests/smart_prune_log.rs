@@ -227,7 +227,7 @@ fn smart_prune_inline_rows_follow_their_tool_and_activate_with_mouse_and_enter()
     for width in [80, 120] {
         let mut view = TranscriptView::default();
         view.set_presentation(true, HistoryRenderMode::Rich);
-        let area = Rect::new(0, 0, width, 16);
+        let area = Rect::new(0, 0, width, 30);
         let mut buffer = Buffer::empty(area);
         view.render(area, &mut buffer, &cells);
         let lines = (0..area.height)
@@ -240,9 +240,18 @@ fn smart_prune_inline_rows_follow_their_tool_and_activate_with_mouse_and_enter()
             })
             .collect::<Vec<_>>();
         let screen = lines.join("\n");
-        assert!(screen.find("Smart Prune ·").unwrap() < screen.find("git status").unwrap());
+        assert!(
+            screen.find("Smart Prune ·").unwrap() < screen.find("git status").unwrap(),
+            "the first audit follows its tool before the second command: {screen}"
+        );
         assert_eq!(screen.matches("Smart Prune ·").count(), 1);
-        assert_chatwidget_snapshot!(format!("smart_prune_inline_{width}"), screen);
+        assert_eq!(screen.matches("Smart Prune failed ·").count(), 1);
+        assert!(screen.contains("6.3k → 182 tokens"));
+        assert!(screen.contains("The pruner timed out."));
+        assert!(
+            screen.find("git status").unwrap() < screen.find("Smart Prune failed ·").unwrap(),
+            "the failed audit follows the second command: {screen}"
+        );
         let row = lines
             .iter()
             .position(|line| line.contains("Smart Prune ·"))
