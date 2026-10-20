@@ -243,6 +243,37 @@ async function main() {
       }
     }
 
+    await group('saved Claude default and explicit engine helper model', async () => {
+      const engineModel = (await request('config/read', { includeLayers: false })).config.model;
+      const setDefault = model => request('config/batchWrite', { edits: [{ keyPath: 'model', value: model, mergeStrategy: 'replace' }] });
+      await setDefault('claude/haiku');
+      try {
+        const user = await request('thread/start', { cwd, model: engineModel, ...tuiFields });
+        assert.equal(user.model, 'claude/haiku', 'a new user chat sending the engine default still takes the saved Claude default');
+        pass('Saved Claude default: a new user chat sending the engine default uses Claude');
+
+        const delegate = await delegateServer(await parent('default'));
+        const before = provider.requests.length;
+        provider.actions.push(message('Done.'));
+        // Release the existing Claude fixture too, so a misrouted helper finishes and exposes its model.
+        const helper = await claudeHelper(delegate, { model: engineModel, provider: 'fixture' });
+        assert.equal(helper.status, 'completed');
+        // Read, not resume: the delegate server still holds the helper as its one writer.
+        const read = await request('thread/read', { threadId: helper.threadId, includeTurns: false });
+        assert.equal(read.thread.model, engineModel, 'a helper explicitly requesting the engine default must keep that model');
+        const requests = provider.requests.slice(before);
+        assert.equal(requests.length, 1, 'the helper ran through the local engine provider');
+        assert.equal(requests[0].body.model, engineModel, 'the provider received the requested helper model');
+        const stored = JSON.parse(fs.readFileSync(path.join(storeDir, 'sessions.json'), 'utf8'))[helper.threadId];
+        assert.equal(stored?.session, undefined, 'the engine helper must not create a Claude session');
+        assert.equal(stored?.turns?.length ?? 0, 0, 'the engine helper must not create Claude turns');
+        pass('Saved Claude default: an explicit engine helper runs and reports the engine model');
+      } finally {
+        provider.actions.length = 0;
+        await setDefault(engineModel);
+      }
+    });
+
     // Controls: the helper's own scope under a writable (Default) parent.
     await group('Claude helper controls', async () => {
       const delegate = await delegateServer(await parent('default'));

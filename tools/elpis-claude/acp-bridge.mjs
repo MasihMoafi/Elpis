@@ -2027,7 +2027,8 @@ wss.on("connection", (ws) => {
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
   async function startThread(msg) {
     const p = msg.params ?? {};
-    if (p.elpisParentThreadId) {
+    const helper = !!p.elpisParentThreadId;
+    if (helper) {
       // The helper's ceiling (helperScope): its chat's Full Access is never passed on.
       const parentThreadId = p.elpisParentThreadId;
       const requested = p.sandbox === "workspace-write" ? "workspace-write" : "read-only";
@@ -2048,7 +2049,8 @@ wss.on("connection", (ws) => {
       const def = (await loadStore())._default;
       engineDefault ??= engineCall("config/read", { includeLayers: false }).then((r) => r?.config?.model ?? null, () => null);
       // A saved Claude default waits while Elpis is signed out of it: the new chat gets the engine's own model.
-      if (def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
+      // A helper keeps the model its delegate named, even the engine's default (A49: gpt-6.1-sol helpers ran on Claude).
+      if (!helper && def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
     }
     if (pick) {
       rememberStart(msg.id, pick);
