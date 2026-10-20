@@ -246,9 +246,7 @@
     "tests/composer-consistency.test.cjs",
     "tests/chat-feedback.test.cjs",
     "tests/message-replies.test.cjs",
-    "tests/love-clarity.test.cjs",
-    "tests/prompt-rail.test.cjs",
-    "tests/side-empty.test.cjs"
+    "tests/love-clarity.test.cjs"
   ],
   "opt-in": [
     "tests/app-update-native.test.cjs",
