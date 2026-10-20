@@ -15,7 +15,7 @@ const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, browserConfig } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -72,7 +72,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       case 'config/mcpServer/reload': result = {}; break;
       case 'thread/items/list': result = request.params.turnId
         ? replacementPages?.[request.params.cursor ?? 'start'] ?? { data: [{ turnId: request.params.turnId, item: { type: 'userMessage', id: 'prompt', content: [{ type: 'text', text: 'Original prompt', textElements: [] }] } }], nextCursor: null }
-        : { data: [{ turnId: 't1', item: { type: 'agentMessage', id: 'item1', text: 'Actual fixture transcript' }, startedAtMs: 1 }], nextCursor: null }; break;
+        : promptPages?.[request.params.cursor ?? 'start'] ?? { data: [{ turnId: 't1', item: { type: 'agentMessage', id: 'item1', text: 'Actual fixture transcript' }, startedAtMs: 1 }], nextCursor: null }; break;
       case 'model/list': result = { data: [{ id: MODEL, model: MODEL, displayName: 'Test model' }, { id: 'claude/opus', model: 'claude/opus', displayName: 'Opus (Claude subscription)' }], nextCursor: null }; break;
       case 'thread/start': {
         const thread = { id: CREATED, source: 'cli', canAcceptDirectInput: true, status: { type: 'idle' } };
@@ -437,6 +437,32 @@ test('worker approvals follow recorded ancestry and name the requester; resolved
   assert.ok(events.some(event=>event.type==='approvalResolved'&&event.data.id===last.id));
   assert.equal(client.pendingApprovals.length,0);
   client.close();
+});
+
+test('prompt index route pages the full thread and returns only ordered, bounded user text', async t => {
+  const prompt = (turnId, content) => ({ turnId, item: { id: `u-${turnId}`, type: 'userMessage', content } });
+  const promptPages = {
+    start: { data: [prompt('t5', [{ type: 'text', text: 'Fifth prompt' }]), { turnId: 't5', item: { id: 'reply', type: 'agentMessage', text: 'Private reply' } }, prompt('t4', [{ type: 'text', text: 'Fourth prompt' }])], nextCursor: 'middle' },
+    middle: { data: [prompt('t3', [{ type: 'text', text: 'Third prompt' }]), prompt('t2', [{ type: 'text', text: 'Second prompt' }])], nextCursor: 'oldest' },
+    oldest: { data: [prompt('t1', [{ type: 'text', text: 'A'.repeat(240) }, { type: 'image', image: 'not text' }])], nextCursor: null },
+  };
+  const { client, socket } = fixture({ promptPages }); await client.initialize();
+  const app = await startDesktopServer({ client }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin;
+  const token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
+  assert.equal(auth.status, 200);
+  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  const route = `/api/threads/${ROOT}/prompts`;
+  const response = await fetch(origin + route, { headers: { Cookie: cookie } });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.deepEqual(result.data.map(row => row.turnId), ['t1', 't2', 't3', 't4', 't5']);
+  assert.equal(result.data[0].text, 'A'.repeat(200));
+  assert.deepEqual(result.data.slice(1).map(row => row.text), ['Second prompt', 'Third prompt', 'Fourth prompt', 'Fifth prompt']);
+  assert.doesNotMatch(JSON.stringify(result), /Private reply|not text/);
+  assert.deepEqual(socket.sent.filter(row => row.method === 'thread/items/list').map(row => row.params.cursor ?? null), [null, 'middle', 'oldest']);
+  assert.equal((await fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: '{}' })).status, 405);
 });
 
 test('HTTP requires capability/cookie, strict origin/host, allowlisted routes and contained assets', async t => {

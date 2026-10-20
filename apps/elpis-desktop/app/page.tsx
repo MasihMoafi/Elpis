@@ -1193,7 +1193,31 @@ export default function Home() {
     setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
     if (request.current === originalRequest) restoreComposerFocus(originalFocus);
   }
-  async function older() { if (!selected || !itemCursor) return; setLoading(true); const id = selected.id; try { const result = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(itemCursor)}`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (selectedRef.current?.id === id) { stickToBottom.current = false; if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop }; setEntries(prev => [...result.data.reverse(), ...prev]); setItemCursor(result.nextCursor); } } catch (e) { setError(String(e)); } finally { setLoading(false); } }
+  async function older(untilTurnId?: string): Promise<boolean> {
+    if (!selected || !itemCursor) return false;
+    setLoading(true);
+    const id = selected.id, pages: Entry[] = [], seen = new Set<string>();
+    let cursor: string | null = itemCursor, found = false;
+    try {
+      while (cursor) {
+        if (seen.has(cursor)) throw new Error("Repeated conversation cursor");
+        seen.add(cursor);
+        const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(cursor)}`);
+        if (!Array.isArray(result.data)) throw unreadable("conversations");
+        found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage");
+        pages.unshift(...result.data.reverse());
+        cursor = result.nextCursor;
+        if (!untilTurnId || found || selectedRef.current?.id !== id) break;
+      }
+      if (selectedRef.current?.id !== id) return false;
+      stickToBottom.current = false;
+      if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop };
+      setEntries(prev => [...pages, ...prev]);
+      setItemCursor(cursor);
+      return untilTurnId ? found : true;
+    } catch (e) { setError(String(e)); return false; }
+    finally { setLoading(false); }
+  }
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
   const openInTui = (thread: Thread) => {
@@ -1789,7 +1813,7 @@ export default function Home() {
       {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView /></ViewBoundary>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div className="chat-content">
-          {itemCursor && <Button variant="outline" disabled={loading} onClick={older}>Load earlier messages</Button>}
+          {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           {conversation}
@@ -1799,7 +1823,7 @@ export default function Home() {
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
-        </div><PromptRail scroller={scroll} version={shownEntries} /></div></div>
+        </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} hasEarlier={!!itemCursor} loading={loading} onLoadEarlier={older} /></div></div>
         <div className="composer-wrap">
           {sideChat && selected?.id === sideChat.parentId && <SideChat key={sideChat.parentId} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }} />}
           <ViewBoundary label="This panel" resetKey={panel}>
