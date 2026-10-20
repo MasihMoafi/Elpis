@@ -102,10 +102,10 @@ test('mutate during the real gate', () => {
         if (!scenario.endsWith('-failure')) throw error;
         assert.equal(error.status, 1); output = error.stdout;
       }
-      if (scenario === 'resource-failure') { assert.match(output, /FAIL bridge-resources/); assert.doesNotMatch(output, /PASS fast|renderer-build/); }
-      if (scenario === 'renderer-failure') { assert.match(output, /FAIL renderer-build/); assert.doesNotMatch(output, /PASS desktop/); }
-      if (scenario === 'fast-only') { assert.match(output, /PASS bridge-resources[\s\S]*PASS fast/); assert.doesNotMatch(output, /renderer-build/); }
-      if (scenario === 'desktop-only') assert.match(output, /PASS renderer-build[\s\S]*PASS desktop/);
+      if (scenario === 'resource-failure') { assert.match(output, /FAIL bridge-resources/); assert.doesNotMatch(output, /RUN tests\/state\.test\.mjs|renderer-build/); }
+      if (scenario === 'renderer-failure') { assert.match(output, /FAIL renderer-build/); assert.doesNotMatch(output, /RUN desktop\/idle\.test\.mjs/); }
+      if (scenario === 'fast-only') { assert.match(output, /PASS bridge-resources[\s\S]*PASS tests\/state\.test\.mjs/); assert.doesNotMatch(output, /renderer-build/); }
+      if (scenario === 'desktop-only') assert.match(output, /PASS renderer-build[\s\S]*PASS desktop\/idle\.test\.mjs/);
       const commit = git(['rev-parse', 'HEAD']);
       const record = path.join(home, '.local/state/elpis-gate', `${commit}.json`);
       if (scenario === 'clean') {
