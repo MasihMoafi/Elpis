@@ -106,13 +106,6 @@ impl App {
         let scrollbar_width =
             u16::from(self.transcript_view.reserves_scrollbar()).min(transcript_width);
         let body_width = transcript_width.saturating_sub(scrollbar_width);
-        // Elpis: the Ledger's title is level with the first transcript line: one row below the
-        // session header card, past the gap that follows it, so the header, not the Ledger, opens
-        // the screen. The offset stays fixed when the transcript scrolls.
-        let ledger_top = self
-            .session_header_height(body_width)
-            .saturating_add(1)
-            .min(screen_size.height);
         let frame_requester = tui.frame_requester();
         // Elpis: the hint row shares the composer's column, left of the Context Ledger.
         let composer_hint = self.composer_hint(transcript_width);
@@ -177,12 +170,7 @@ impl App {
             main_width,
             bottom_height,
         );
-        let ledger_column = Rect::new(main_width, /*y*/ 0, ledger_width, screen_size.height);
-        let ledger_area = Rect {
-            y: ledger_top,
-            height: screen_size.height - ledger_top,
-            ..ledger_column
-        };
+        let ledger_area = Rect::new(main_width, /*y*/ 0, ledger_width, screen_size.height);
         let mut rendered_cursor = None;
         let mut footer_height_changed = false;
         let mut feedback_tick = None;
@@ -192,7 +180,7 @@ impl App {
                 Rect::new(/*x*/ 0, /*y*/ 0, main_width, available),
                 frame.buffer,
             );
-            ratatui::widgets::Clear.render(ledger_column, frame.buffer);
+            ratatui::widgets::Clear.render(ledger_area, frame.buffer);
             let mut completion_tip_area = view.render_with_turn_tip_space(
                 Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
                 frame.buffer,
