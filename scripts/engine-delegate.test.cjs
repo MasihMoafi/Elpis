@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
-const { Provider, message } = require('./lib/mock-provider.js');
+const { Provider, message, call } = require('./lib/mock-provider.js');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const wait = async (f, label) => { const until = Date.now() + 30000; while (!f()) { assert(Date.now() < until, `timed out: ${label}`); await pause(20); } };
 const search = { type: 'tool_search_call', call_id: 'search_1', execution: 'client', arguments: { query: 'delegate a task to a helper agent' } };
@@ -99,6 +99,27 @@ async function main() {
       last = (await req('thread/read', { threadId: helperId, includeTurns: true }).catch(() => null))?.thread?.turns?.at(-1)?.status;
     assert.equal(last, 'completed', 'the helper finishes');
     console.log('PASS after the app closes and reopens, a running helper keeps working and finishes');
+
+    // Stop on a helper (from the app or TUI) also ends the command it left running in the background.
+    const started = path.join(cwd, 'stop-started'), wrote = path.join(cwd, 'stop-wrote');
+    const stopping = body => body.input.some(i => i.role === 'user' && JSON.stringify(i.content).includes('ENGINE_STOP_FIXTURE'));
+    let helperRequests = 0;
+    const stopRoute = body => !stopping(body) ? message('Chat done.') : ++helperRequests === 1
+      ? call('stop_cmd', 'exec_command', { cmd: `printf s > '${started}'; sleep 3; printf x > '${wrote}'`, yield_time_ms: 250 }) : { hang: true };
+    const stopChat = await chatTurn(tool => {
+      provider.actions.push(stopRoute, stopRoute, stopRoute);
+      return { type: 'function_call', call_id: 'delegate_3', name: tool.name, ...(tool.namespace && { namespace: tool.namespace }),
+        arguments: JSON.stringify({ task: 'ENGINE_STOP_FIXTURE: run the command.', model: 'gpt-5.5', provider: 'fixture', allow_writes: true, wait: false }) };
+    });
+    await wait(() => provider.hanging.size === 1, 'the helper waits while its command runs');
+    assert.ok(fs.existsSync(started), 'the helper started its command');
+    const stopId = Object.entries(JSON.parse(fs.readFileSync(store, 'utf8'))._delegations).find(([, d]) => d.parentThreadId === stopChat.chat)?.[0];
+    const running = (await req('thread/turns/list', { threadId: stopId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' })).data?.[0];
+    assert.equal(running?.status, 'inProgress', 'the client sees the helper\u2019s running turn');
+    await req('turn/interrupt', { threadId: stopId, turnId: running.id });
+    await pause(4500);
+    assert.equal(fs.existsSync(wrote), false, 'Stop ended the command the helper left running');
+    console.log('PASS Stop on a helper ends its turn and the command it left running');
 
     await req('config/batchWrite', { edits: [{ keyPath: 'features.multi_agent', value: false, mergeStrategy: 'replace' }] });
     const off = await chatTurn(() => message('Done.'));
