@@ -2680,6 +2680,8 @@ wss.on("connection", (ws) => {
       return;
     }
     engine.stdin.write(line + "\n");
+    // Stopping a helper also ends the commands it left running, which would otherwise finish its work.
+    if (msg.method === "turn/interrupt" && owner?.nativeHelper && owner.ws === ws) engineCall("thread/backgroundTerminals/clean", { threadId: msg.params.threadId }).catch(() => {});
   }
   const engineExited = () => {
     if (context.failed || engine.closing) return;
