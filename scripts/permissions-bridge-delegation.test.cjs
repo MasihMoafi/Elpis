@@ -261,6 +261,10 @@ async function main() {
       const readOnly = await engineHelper(delegate, { allow_writes: false });
       assert.equal(readOnly.wrote, false, 'the read-only sandbox must block the write');
       pass('Default parent: a read-only engine helper is sandboxed');
+      // Masih, 20 Oct: "read-only agents are of no use to us"; a helper writes unless told not to.
+      const unspecified = await engineHelper(delegate, {});
+      assert.equal(unspecified.prompts, 0, 'prompts'); assert.equal(unspecified.wrote, true, 'a helper may write by default');
+      pass('Default parent: a helper started without allow_writes writes');
     });
     // A helper may not exceed its parent's confirmed permissions when it starts.
     await group('Read Only parent, writable Claude helper', async () => {
