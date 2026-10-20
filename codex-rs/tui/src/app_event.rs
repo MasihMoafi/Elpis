@@ -1548,6 +1548,10 @@ pub(crate) enum AppEvent {
     /// Re-open the permissions presets popup.
     OpenPermissionsPopup,
 
+    /// Open the searchable settings catalog or hand a selected row to its existing control.
+    OpenConfigPanel(Option<String>),
+    ConfigPanelShortcut(crate::slash_command::SlashCommand),
+
     /// Open the branch picker option from the review popup.
     OpenReviewBranchPicker(PathBuf),
 
