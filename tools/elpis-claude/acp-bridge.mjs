@@ -6,6 +6,7 @@ import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signo
 import { ClaudeAccounts } from "./claude-accounts.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
