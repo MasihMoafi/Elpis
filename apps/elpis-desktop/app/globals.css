@@ -594,9 +594,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .elpis-working-dot { fill:currentColor; animation:elpis-blink 2s ease-in-out infinite; }
 @keyframes elpis-orbit { to { transform:rotate(360deg); } }
 @keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
-@media (prefers-reduced-motion:reduce) {
-  .elpis-working-rotor { animation-duration:12s; }
-}
 .turn-stopped { margin:6px 0 18px; font-size:13px; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:6px; padding:3px 0; font-size:14px; color:var(--muted-foreground); }
 .sh-command { color:var(--sh-command); }
