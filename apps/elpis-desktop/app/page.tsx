@@ -89,7 +89,7 @@ import { Tab, TabStrip } from "@/components/tab-strip";
 import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
 import { readDraft, writeDraft } from "@/lib/drafts";
 import { AttachmentChips } from "@/components/attachment-chips";
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, withoutSubmittedAttachments, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title, agentName,
@@ -306,10 +306,6 @@ export default function Home() {
     catch { setAttachments([]); setError("Saved attachments could not be restored. Add the files again before sending."); }
     setFileNotice("");
   }, [savedAttachments, setAttachments]);
-  const clearSubmittedAttachments = (id: string, submitted: Attachment[]) => {
-    const remaining = withoutSubmittedAttachments(savedAttachments(id), submitted); saveAttachments(id, remaining);
-    if ((selectedRef.current?.id || newDraftKey.current) === id) setAttachments(remaining);
-  };
   async function addFiles(files: File[]) {
     if (!files.length) return;
     if (shellMode) { setFileNotice("Bash mode is on, so nothing was added. Press Backspace in the empty message box to return to chat, then try again."); return; }
@@ -1052,9 +1048,6 @@ export default function Home() {
           const targetKey = hasNewerForkDraft ? `recovery-${result.thread.id}` : result.thread.id;
           saveDraft(targetKey, sentText); saveAttachments(targetKey, sentAttachments); upsertThread(result.thread);
           setRuntimeNotices(previous => ({ ...previous, [result.thread!.id]: result.sendError + (hasNewerForkDraft ? " Your current draft is kept; recover the unsent message below." : "") }));
-          if (savedDraft(thread.id) === sentText) saveDraft(thread.id, "");
-          clearSubmittedAttachments(thread.id, sentAttachments); clearSubmittedAttachments(originalId, sentAttachments);
-          if (selectedRef.current?.id === thread.id && textRef.current === sentText && request.current === originalRequest) setText("");
           if (selectedRef.current?.id === thread.id && request.current === originalRequest) await loadThread(result.thread);
           return;
         }
@@ -1069,17 +1062,10 @@ export default function Home() {
         }
         if (result.thread) {
           upsertThread(result.thread);
-          if (savedDraft(thread.id) === sentText) saveDraft(thread.id, "");
-          clearSubmittedAttachments(thread.id, sentAttachments); clearSubmittedAttachments(originalId, sentAttachments);
-          if (selectedRef.current?.id === thread.id && textRef.current === sentText && request.current === originalRequest) setText("");
           if (selectedRef.current?.id === thread.id && request.current === originalRequest) await loadThread(result.thread);
           return;
         }
       }
-      if (savedDraft(originalId) === sentText) saveDraft(originalId, "");
-      if (savedDraft(thread.id) === sentText) saveDraft(thread.id, "");
-      clearSubmittedAttachments(originalId, sentAttachments); clearSubmittedAttachments(thread.id, sentAttachments);
-      if (selectedRef.current?.id === thread.id && textRef.current === sentText && originalRequest === request.current) setText("");
     } catch (e) {
       updateSubmission({ failed: true });
       for (const mention of sentMentions) pickedMentions.current.set(mention.path, mention);

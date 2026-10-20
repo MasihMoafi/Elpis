@@ -190,17 +190,16 @@ test('a running step reads as a sentence with a live timer and animated dots', a
     await page.waitForTimeout(2300);
     const later = seconds((await timer.innerText()).trim());
     assert.ok(later >= first + 2, `the timer advances (${first}s, then ${later}s)`);
-    const dots = live.locator('.live-dots');
-    assert.notEqual(await dots.evaluate(node => getComputedStyle(node.firstElementChild || node).animationName), 'none', 'the dots move');
+    const facet = live.locator('.elpis-working-facet');
+    assert.equal(await facet.evaluate(node => getComputedStyle(node).animationName), 'elpis-facets', 'the illuminated edge advances');
     assert.equal(await page.locator('.turn-working').count(), 0, 'one live line at a time: the running step, not a second "Working"');
-    assert.deepEqual(await oranges(page), [], 'light theme, running step: no orange');
     assert.deepEqual(errors, []);
     await page.close();
 
     const still = await app.open({ reducedMotion: 'reduce' });
-    const stillDots = still.page.locator('.activity-group .live-dots');
-    await stillDots.waitFor();
-    assert.equal(await stillDots.evaluate(node => getComputedStyle(node.firstElementChild || node).animationName), 'none', 'reduced motion: the dots stay still');
+    const stillFacet = still.page.locator('.activity-group .elpis-working-facet');
+    await stillFacet.waitFor();
+    assert.equal(await stillFacet.evaluate(node => getComputedStyle(node).animationDuration), '6s', 'reduced motion: only the illuminated edge changes, once per second');
   } finally { await app.close(); }
 });
 

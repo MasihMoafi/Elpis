@@ -1,6 +1,7 @@
 "use client";
 
 import { CollapseDetails } from "@/components/step";
+import { WorkingMark } from "@/components/working-mark";
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { pruneOf } from "@/lib/smart-prune";
@@ -128,7 +129,7 @@ function LiveStep({ label, since }: { label: string; since?: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   return <>
-    <span className="live-dots" aria-hidden="true"><i /><i /><i /></span>
+    <WorkingMark />
     <span className="live-label">{label}</span>
     {now - start >= TIMER_FROM_MS && <>{" "}<span className="live-timer">{elapsed(now - start)}</span></>}
   </>;

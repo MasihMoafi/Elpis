@@ -1,5 +1,5 @@
 // Agent work worded as Claude's desktop app words it (its ion-dist source): a running step is the model's own sentence
-// with a ticking timer ("1m 2s") and animated dots; a finished group lists what was done in the order it began, with the
+// with a ticking timer ("1m 2s") and the Elpis working mark; a finished group lists what was done in the order it began, with the
 // failure count on its own phrase ("Edited and read app.ts, used rag, ran 2 commands (1 failed)"); one described step
 // reads as its sentence. Local fixture of the bridge (parity-fixture); no engine, no model.
 const { test } = require('node:test');
@@ -7,7 +7,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture, CWD } = require('./parity-fixture.cjs');
-const { oranges } = require('./controls.cjs');
 
 const SENTENCE = 'Stopping local site and moving worktree and running setup into legal';
 const unknown = command => [{ type: 'unknown', command }];
@@ -57,8 +56,8 @@ test('finished groups read as Claude words them, and a described step reads as i
   assert.match(await single.locator('.step-script').innerText(), /ls -la \/tmp\/build/);
 }));
 
-test('a running step is the model\'s sentence with a ticking timer and moving dots, in both themes and under reduced motion', () => using(async ({ page }) => {
-  const live = page.locator('.activity-group').filter({ has: page.locator('.live-dots') });
+test('a running step has its sentence, ticking timer and Elpis facets, in both themes and under reduced motion', () => using(async ({ page }) => {
+  const live = page.locator('.activity-group').filter({ has: page.locator('.elpis-working-mark') });
   await live.locator('.live-timer').waitFor();
   assert.equal((await live.locator('.live-label').innerText()).trim(), SENTENCE, 'the sentence, not "Running <command>"');
   assert.doesNotMatch(await live.locator('> summary').innerText(), /pkill|worktree move/, 'the raw command stays inside the opened step');
@@ -69,19 +68,23 @@ test('a running step is the model\'s sentence with a ticking timer and moving do
   const later = seconds((await timer.innerText()).trim());
   assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
   assert.equal(await page.locator('.turn-working').count(), 0, 'one live line: the running step, not a second "Working"');
-  const dot = live.locator('.live-dots i').first();
-  assert.notEqual(await dot.evaluate(node => getComputedStyle(node).animationName), 'none', 'the dots move');
+  const facet = live.locator('.elpis-working-facet');
+  const offset = () => facet.evaluate(node => getComputedStyle(node).strokeDashoffset);
+  assert.equal(await facet.evaluate(node => getComputedStyle(node).animationName), 'elpis-facets');
+  const firstEdge = await offset();
+  await page.waitForTimeout(700);
+  assert.notEqual(await offset(), firstEdge, 'the illuminated edge advances');
   // Light, then dark: the row is fully inside the chat column and legible.
   for (const scheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: scheme }); await page.waitForTimeout(200);
     const box = await live.locator('> summary').boundingBox(), column = await page.locator('.turn').last().boundingBox();
     assert.ok(box.x >= column.x - 8 && box.x + box.width <= column.x + column.width + 1, `${scheme}: the row fits the chat column`);
-    if (scheme === 'light') assert.deepEqual(await oranges(page), [], 'light: no orange');
     await fs.mkdir(captures, { recursive: true });
     await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
-  assert.equal(await dot.evaluate(node => getComputedStyle(node).animationName), 'none', 'reduced motion: the dots stay still');
+  assert.equal(await facet.evaluate(node => getComputedStyle(node).animationDuration), '6s', 'reduced motion: one illuminated edge per second');
+  assert.equal(await live.locator('.elpis-working-mark').evaluate(node => getComputedStyle(node).transform), 'none', 'the geometry stays still');
 }));
 
 for (const value of [

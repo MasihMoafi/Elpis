@@ -552,11 +552,15 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
 .live-label { color:var(--foreground); }
 .live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
-.live-dots { display:inline-flex; gap:3px; flex-shrink:0; color:color-mix(in oklch, var(--primary) 70%, var(--muted-foreground)); }
-.live-dots i { width:5px; height:5px; border-radius:50%; background:currentColor; animation:live-dot 1.2s ease-in-out infinite; }
-.live-dots i:nth-child(2) { animation-delay:.2s; } .live-dots i:nth-child(3) { animation-delay:.4s; }
-@keyframes live-dot { 0%, 80%, 100% { opacity:.25; transform:translateY(0); } 40% { opacity:1; transform:translateY(-2px); } }
-@media (prefers-reduced-motion:reduce) { .live-dots i { animation:none; opacity:.7; } }
+.elpis-working-mark { width:28px; height:28px; flex-shrink:0; vertical-align:middle; color:#92600d; }
+.dark .elpis-working-mark { color:#e6b95e; }
+.elpis-working-mark path { fill:none; stroke:currentColor; stroke-width:1.2; }
+.elpis-working-frame { opacity:.25; }
+.elpis-working-mark .elpis-working-detail { opacity:.3; stroke-width:.7; }
+.elpis-working-facet { stroke-dasharray:1 5; animation:elpis-facets 3.6s steps(6,end) infinite; }
+@keyframes elpis-facets { to { stroke-dashoffset:-6; } }
+/* Keep the geometry still; reduced motion changes only one illuminated edge per second. */
+@media (prefers-reduced-motion:reduce) { .elpis-working-facet { animation-duration:6s; } }
 .turn-stopped { margin:6px 0 18px; font-size:13px; color:var(--muted-foreground); }
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:6px; padding:3px 0; font-size:14px; color:var(--muted-foreground); }
 .sh-command { color:var(--sh-command); }
