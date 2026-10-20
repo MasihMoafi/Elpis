@@ -232,17 +232,33 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Conversation and activity surfaces share the same quiet hierarchy. */
 .chat-view { display:flex; flex-direction:column; flex:1; min-height:0; }
 .chat-scroll-wrap { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
-/* Prompt rail and outline: the list floats over the transcript's margin, as Claude's and ChatGPT's do; opening it never moves the chat. */
-.prompt-rail { position:absolute; left:6px; top:12px; bottom:12px; z-index:2; width:16px; }
-.prompt-rail-marks { display:flex; flex-direction:column; align-items:center; width:100%; height:100%; overflow-y:auto; scrollbar-width:none; }
-.prompt-tick { flex:none; display:flex; align-items:center; justify-content:center; width:16px; height:14px; padding:0; border:0; border-radius:3px; background:none; cursor:pointer; }
+/* One mark per user turn; the rail scrolls within a centered viewport. */
+.prompt-rail { position:absolute; left:6px; top:50%; transform:translateY(-50%); z-index:2; width:42px; height:min(70vh, 40rem, calc(100% - 24px)); }
+.prompt-rail-marks { display:flex; flex-direction:column; align-items:center; width:100%; height:100%; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
+.prompt-rail-marks::-webkit-scrollbar { display:none; }
+.prompt-tick { flex:none; display:flex; align-items:center; justify-content:center; width:42px; height:10px; padding:0; border:0; border-radius:3px; background:none; cursor:pointer; }
 .prompt-tick:first-child { margin-top:auto; } .prompt-tick:last-child { margin-bottom:auto; }
-.prompt-tick i { display:block; width:11px; height:3px; border-radius:1px; background:var(--muted-foreground); transition:width .12s, background .12s; }
-.prompt-tick:hover i, .prompt-tick[aria-current="true"] i { width:15px; }
-.prompt-tick[aria-current="true"] i { background:var(--foreground); }
+.prompt-tick i { display:block; width:10px; height:3px; border-radius:1px; background:var(--muted-foreground); transition:width .15s, background .15s; }
+.prompt-tick[aria-current="true"] i { width:14px; background:var(--foreground); }
+.prompt-tick[data-bookmarked="true"] i { width:16px; height:4px; background:var(--primary); }
+.prompt-tick[data-distance="3"] i { width:14px; }
+.prompt-tick[data-distance="2"] i { width:20px; }
+.prompt-tick[data-distance="1"] i { width:27px; }
+.prompt-tick[data-distance="0"] i { width:38px; background:var(--foreground); }
 .prompt-tick:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
-.prompt-panel { position:absolute; left:100%; top:50%; transform:translateY(-50%); width:240px; max-height:min(100%, 600px); overflow-y:auto; overscroll-behavior:contain; }
-@media(min-width:761px) { @container workspace (min-width:641px) { .workspace-body:not(.full-view) .chat-scroll-wrap:has(.prompt-rail) .load-earlier-messages { display:none; } } }
+.prompt-preview { position:absolute; left:calc(100% + 12px); transform:translateY(-50%); width:320px; max-width:calc(100vw - 80px); padding:10px 12px; border-radius:var(--radius); color:var(--foreground); background:var(--card); }
+.prompt-preview::before { content:""; position:absolute; top:0; bottom:0; right:100%; width:12px; }
+.prompt-preview-heading { display:flex; align-items:center; gap:8px; min-width:0; }
+.prompt-preview-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:20px; }
+.prompt-preview-reply { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; margin:3px 0 0; overflow:hidden; overflow-wrap:anywhere; white-space:pre-line; font-size:13px; line-height:19px; color:var(--muted-foreground); }
+.prompt-bookmark { display:inline-flex; flex:none; align-items:center; justify-content:center; width:24px; height:24px; min-height:0; padding:0; border:0; border-radius:var(--radius-sm); color:var(--muted-foreground); background:transparent; }
+.prompt-bookmark:hover, .prompt-bookmark:focus-visible { background:var(--muted); color:var(--foreground); }
+.prompt-bookmark[aria-pressed="true"] { color:var(--primary); }
+.prompt-preview-skeleton { display:grid; gap:7px; margin-top:8px; }
+.prompt-preview-skeleton .skeleton { display:block; width:100%; height:11px; border-radius:var(--radius-sm); background:var(--muted); }
+.prompt-preview-skeleton .skeleton:nth-of-type(2) { width:90%; }
+.prompt-preview-skeleton .skeleton:nth-of-type(3) { width:75%; }
+@media(min-width:761px) { @container workspace (min-width:641px) { .workspace-body:not(.full-view) .chat-scroll-wrap:has(.prompt-rail[data-indexed="true"]) .load-earlier-messages { display:none; } } }
 @media(max-width:760px) { .prompt-rail { display:none; } }
 @container workspace (max-width:640px) { .prompt-rail { display:none; } }
 .full-view > .workspace-content .prompt-rail { display:none; }

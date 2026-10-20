@@ -1875,7 +1875,7 @@ export default function Home() {
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
-        </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} hasEarlier={!!itemCursor} loading={loading} onLoadEarlier={older} onNavigate={() => { stickToBottom.current = false; }} /></div></div>
+        </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { stickToBottom.current = false; }} /></div></div>
         <div className="composer-wrap">
           {sideChat && selected?.id === sideChat.parentId && <SideChat key={sideChat.parentId} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }} />}
           <ViewBoundary label="This panel" resetKey={panel}>
