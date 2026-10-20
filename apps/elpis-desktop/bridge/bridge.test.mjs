@@ -104,6 +104,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         break;
       }
       case 'turn/interrupt': threads.get(request.params.threadId).status = { type: 'idle' }; result = {}; break;
+      case 'thread/unsubscribe': result = { status: 'unsubscribed' }; break;
       case 'workGraph/list': result = {data:workflowRecords.filter(graph => graph.rootThreadId === request.params.rootThreadId)}; break;
       case 'workGraph/runWithProviders':
       case 'workGraph/run': result = {graphId:'graph-1',threadId:request.params.rootThreadId,turnId:'workflow-turn'}; break;
@@ -507,6 +508,21 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   assert.deepEqual(params, { threadId: CREATED, input: [{ type: 'text', text: 'Do the task', text_elements: [] }], model: MODEL });
   assert.equal(socket.sent.some(row => row.method === 'thread/resume'), false);
   client.close(); assert.equal(socket.closed, true);
+});
+
+test('opening a chat lets Elpis unload the idle chats left behind, never a working one (A47)', async () => {
+  const { client, socket } = fixture(); await client.initialize(); await client.models();
+  const released = () => socket.sent.filter(row => row.method === 'thread/unsubscribe').map(row => row.params.threadId);
+  const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setTimeout(resolve, 5)); };
+  await client.createThread({ model: MODEL });
+  await client.resume(ROOT, {}); await settle();
+  assert.deepEqual(released(), [CREATED]);
+  // Back in the left chat, it is followed again and runs a turn; leaving it then keeps it followed.
+  await client.resume(CREATED, {}); await settle();
+  assert.deepEqual(released(), [CREATED, ROOT]);
+  await client.send(CREATED, { text: 'Work', model: MODEL });
+  await client.resume(ROOT, {}); await settle();
+  assert.deepEqual(released(), [CREATED, ROOT]);
 });
 
 test('a message to a chat the app wrongly thinks busy is delivered, not refused as unavailable (A58)', async () => {
