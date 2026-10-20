@@ -29,7 +29,7 @@ const TURNS = [
  * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. */
 async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {}, browserChannel } = {}) {
-  const posts = [], turns = start.map(turn => [...turn]), streams = new Set();
+  const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set();
   const threads = THREADS.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
   const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
@@ -44,6 +44,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     const chat = threads.find(item => item.id === url.pathname.split('/')[3]);
     if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
+    if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(url.pathname)) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(': fixture\n\n'); loveStreams.add(res); req.on('close', () => loveStreams.delete(res)); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     // A route answers with its value, or with { __http: status, error } for a refusal.
@@ -99,7 +100,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const copied = () => page.evaluate(() => window.__copied);
   /** Sends a bridge event (approval, approvalResolved, message …) to the page, as the bridge's /api/events does. */
   const emit = (event, data) => { for (const stream of streams) stream.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
-  const close = async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); };
+  const close = async () => { await browser.close(); for (const stream of loveStreams) stream.end(); await new Promise(resolve => server.close(resolve)); };
   /** How many pages are listening to /api/events: an event emitted before a pane subscribes never reaches it. */
   const listening = () => streams.size;
   return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening };
