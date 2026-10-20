@@ -12,7 +12,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mjs';
-import { verifyRendererReceipt } from './renderer-artifact-gate.mjs';
+import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -41,11 +41,14 @@ try {
   const destination = path.join(os.homedir(), '.local/lib/elpis-desktop/versions', `${name}-${commit.slice(0, 9)}`);
   if (fs.existsSync(destination)) throw new Error(`${destination} already exists.`);
   const renderer = actions ? ['--out-directory', await actionsRenderer(commit)] : [];
+  assertSourceCommit(root, commit);
   execFileSync(process.execPath, ['desktop/package.mjs', '--source', '.', '--destination', destination, '--link-runtime',
     '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...renderer], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
   if (actions) await verifyRendererReceipt({ root, out: path.join(destination, 'app/out'), commit });
+  await verifyPackagedSources({ root, destination, commit });
   const staged = `${link}.new-${process.pid}`;
   fs.symlinkSync(path.join(destination, 'launch'), staged);
+  assertSourceCommit(root, commit);
   fs.renameSync(staged, link);
   console.log(`Installed ${commit.slice(0, 9)} as ${destination}.\nRoll back: ln -sfn ${previous} ${link}`);
 } catch (error) {

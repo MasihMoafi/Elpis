@@ -1,4 +1,4 @@
-// Tests the exported renderer, retaining the deployed desktop's regression checkpoint.
+// Tests the exported renderer and saved workspace against the installed desktop checkpoint.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -8,14 +8,44 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkInventory, discoverTests } from './test-gate.mjs';
 
-// A deployed checkpoint, not blanket user acceptance of everything in that commit.
-export const baselineCommit = '478059e831017526b9aef8d2f83e0f19f6113314';
+// The reconstructed installed desktop and saved-workspace regression, not blanket user acceptance.
+export const baselineCommit = 'bc4261027056dace49854e23104bcd5b58ed9747';
 export const receiptName = '.elpis-ui-receipt.json';
+const stateTest = 'desktop/state.test.cjs';
 const appPrefix = 'apps/elpis-desktop/';
 const appRoot = fileURLToPath(new URL('../', import.meta.url));
 const digest = value => createHash('sha256').update(value).digest('hex');
 const git = (root, args, options = {}) => execFileSync('git', args, { cwd: root, encoding: 'utf8', ...options });
 const blob = bytes => createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+const trackedFiles = (root, commit, paths) => new Map(git(root, ['ls-tree', '-r', '--full-tree', commit, '--', ...paths]).trim().split('\n').filter(Boolean).map(line => {
+  const match = line.match(/^\d+ blob ([a-f0-9]+)\t(.+)$/);
+  assert(match, `Unexpected tracked source entry: ${line}`);
+  return [match[2].slice(appPrefix.length), match[1]];
+}));
+
+export function assertSourceCommit(root, commit) {
+  assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), commit, 'Source HEAD changed during installation');
+  assert.equal(git(root, ['status', '--porcelain', '--untracked-files=no']).trim(), '', 'Tracked source changed during installation');
+}
+
+/** A clean working tree alone cannot detect a source mutation copied into a package and then reverted. */
+export async function verifyPackagedSources({ root = appRoot, destination, commit }) {
+  const manifest = JSON.parse(await fs.readFile(path.join(destination, 'manifest.json'), 'utf8'));
+  assert(manifest.schemaVersion === 1 && Array.isArray(manifest.files), 'Invalid desktop package manifest');
+  const tracked = trackedFiles(root, commit, [appPrefix]), checked = new Set();
+  for (const file of manifest.files) {
+    assert(typeof file.path === 'string' && !path.isAbsolute(file.path) && !file.path.split('/').includes('..'), 'Invalid packaged path');
+    const source = file.path.startsWith('app/') ? file.path.slice(4) : null;
+    // The packager deliberately generates app/package.json; other tracked source files retain their Git bytes.
+    if (!source || source === 'package.json' || !tracked.has(source)) continue;
+    assert(!checked.has(source), `Duplicate packaged source: ${source}`);
+    const packaged = path.join(destination, file.path);
+    assert((await fs.lstat(packaged)).isFile(), `Packaged source must be a regular file: ${source}`);
+    assert.equal(blob(await fs.readFile(packaged)), tracked.get(source), `Packaged production bytes differ from source commit: ${source}`);
+    checked.add(source);
+  }
+  assert(checked.has('desktop/main.cjs'), 'Desktop package manifest omits its tracked entry point');
+}
 
 async function treeFiles(root, relative = '') {
   const files = [];
@@ -42,24 +72,24 @@ export async function planSuite(root = appRoot, baseline = baselineCommit) {
   const retained = JSON.parse(git(root, ['show', `${baseline}:${appPrefix}test-inventory.json`]));
   const inventory = JSON.parse(await fs.readFile(path.join(root, 'test-inventory.json'), 'utf8'));
   checkInventory(inventory, await discoverTests(root));
-  const oldFiles = new Map(git(root, ['ls-tree', '-r', '--full-tree', baseline, '--', `${appPrefix}tests/`]).trim().split('\n').filter(Boolean).map(line => {
-    const match = line.match(/^\d+ blob ([a-f0-9]+)\t(.+)$/);
-    assert(match, `Unexpected baseline test entry: ${line}`);
-    return [match[2].slice(appPrefix.length), match[1]];
-  }));
+  const oldFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`, `${appPrefix}${stateTest}`]);
   const currentFiles = new Map(await Promise.all((await treeFiles(path.join(root, 'tests'))).map(async name => [`tests/${name}`, blob(await fs.readFile(path.join(root, 'tests', name)))])));
+  try { currentFiles.set(stateTest, blob(await fs.readFile(path.join(root, stateTest)))); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
   const testNames = new Set([...Object.values(retained).flat(), ...Object.values(inventory).flat()]);
   const supportHash = files => digest(JSON.stringify([...files].filter(([name]) => !testNames.has(name)).sort()));
   const support = { baseline: supportHash(oldFiles), candidate: supportHash(currentFiles) };
   const item = (source, name, files) => {
-    assert(name.startsWith('tests/') && !name.split('/').includes('..'), `Invalid UI test path: ${name}`);
+    assert((name.startsWith('tests/') || name === stateTest) && !name.split('/').includes('..'), `Invalid regression path: ${name}`);
     assert(files.has(name), `Missing ${source} UI regression: ${name}`);
     return { source, name, blob: files.get(name) };
   };
   assert(retained.ui.length > 0 && inventory.ui.length > 0, 'The UI inventory must not be empty');
-  const files = retained.ui.map(name => item('baseline', name, oldFiles));
-  for (const name of inventory.ui) {
-    if (support.baseline !== support.candidate || !retained.ui.includes(name) || currentFiles.get(name) !== oldFiles.get(name)) files.push(item('candidate', name, currentFiles));
+  assert(retained.desktop.includes(stateTest), 'The checkpoint must retain the saved-workspace regression');
+  const retainedNames = [stateTest, ...retained.ui];
+  const files = retainedNames.map(name => item('baseline', name, oldFiles));
+  for (const name of [...(inventory.desktop.includes(stateTest) ? [stateTest] : []), ...inventory.ui]) {
+    if (support.baseline !== support.candidate || !retainedNames.includes(name) || currentFiles.get(name) !== oldFiles.get(name)) files.push(item('candidate', name, currentFiles));
   }
   return { baseline, support, files };
 }
@@ -84,10 +114,16 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit)
   const scratch = await fs.mkdtemp(path.join(base, 'renderer-gate-'));
   try {
     const repository = git(root, ['rev-parse', '--show-toplevel']).trim();
-    const archive = git(repository, ['archive', baseline, `${appPrefix}tests`], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
+    const archive = git(repository, ['archive', baseline, `${appPrefix}tests`, `${appPrefix}${stateTest}`], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
     execFileSync('tar', ['-x', '-C', scratch], { input: archive });
     const retainedRoot = path.join(scratch, appPrefix);
-    for (const entry of await fs.readdir(root)) if (entry !== 'tests') await fs.symlink(path.join(root, entry), path.join(retainedRoot, entry));
+    for (const entry of await fs.readdir(root)) {
+      if (entry === 'desktop') {
+        for (const child of await fs.readdir(path.join(root, entry))) if (child !== 'state.test.cjs') {
+          await fs.symlink(path.join(root, entry, child), path.join(retainedRoot, entry, child));
+        }
+      } else if (entry !== 'tests') await fs.symlink(path.join(root, entry), path.join(retainedRoot, entry));
+    }
     return { scratch, root: retainedRoot };
   } catch (error) { execFileSync('gio', ['trash', scratch]); throw error; }
 }
@@ -95,7 +131,9 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit)
 export async function runUiFile(file, root, evidence, home, env = process.env) {
   const childEnv = { ...env, HOME: home, ELPIS_HOME: path.join(home, 'elpis'), CODEX_HOME: path.join(home, 'codex'),
     ELPIS_CONFIG_DIR: path.join(home, 'elpis'), XDG_CONFIG_HOME: path.join(home, '.config'), XDG_CACHE_HOME: path.join(home, '.cache'),
-    XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state') };
+    XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'), TMPDIR: path.join(home, 'tmp'),
+    EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') };
+  await fs.mkdir(childEnv.TMPDIR, { recursive: true });
   delete childEnv.NODE_TEST_CONTEXT;
   console.log(`RUN ${file.source}: ${file.name}`);
   const result = spawnSync(process.execPath, ['--test', '--test-timeout=180000', '--test-reporter=tap', file.name], {
@@ -161,7 +199,7 @@ export async function runGate({ root = appRoot, evidence, baseline = baselineCom
     assert.equal(digest(JSON.stringify(await planSuite(root, baseline))), digest(JSON.stringify(plan)), 'UI test sources changed during verification');
     const receipt = { schemaVersion: 1, commit, baseline, planHash: digest(JSON.stringify(plan)), rendererHash: before, files };
     await fs.writeFile(path.join(out, receiptName), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
-    console.log(`Verified ${files.length} UI files against renderer ${before}.`);
+    console.log(`Verified ${files.length} regression files against renderer ${before}.`);
     return receipt;
   } finally { execFileSync('gio', ['trash', retained.scratch]); }
 }
