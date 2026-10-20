@@ -1357,3 +1357,5 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .workflow-history-list small, .workflow-history-list p { color:var(--muted-foreground); }
 
 .nav-list button[data-nav-page="loveSpot"]:has(.love-unread) { background:color-mix(in oklab, var(--love-red) 12%, transparent); box-shadow:inset 2px 0 var(--love-red); }
+
+[data-drop-target="true"] { outline:1px solid var(--primary); outline-offset:-1px; background:var(--hover); }

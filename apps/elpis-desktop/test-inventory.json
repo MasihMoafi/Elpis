@@ -37,6 +37,8 @@
     "tests/love-spot-events.test.mjs"
   ],
   "bridge": [
+    "bridge/observability-turns.test.mjs",
+    "bridge/observability.test.mjs",
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",
     "bridge/acp-nodes.test.mjs",
@@ -107,6 +109,8 @@
     "desktop/love-spot.test.cjs"
   ],
   "ui": [
+    "tests/approved-working-mark.test.cjs",
+    "tests/project-membership.test.cjs",
     "tests/send-feedback-ui.test.cjs",
     "tests/love-spot-identity.test.cjs",
     "tests/love-spot-screenshots.test.cjs",
