@@ -24,6 +24,7 @@ use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
@@ -116,7 +117,7 @@ const ITEMS: &[Item] = &[
         section: 1,
         name: "Experimental features",
         scope: "new chats",
-        key: None,
+        key: Some("features"),
         action: Action::Shortcut(SlashCommand::Experimental),
         hint: "Open the existing experimental features panel.",
     },
@@ -156,7 +157,7 @@ const ITEMS: &[Item] = &[
         section: 3,
         name: "MCP tools",
         scope: "new chats",
-        key: None,
+        key: Some("mcp_servers"),
         action: Action::Shortcut(SlashCommand::Mcp),
         hint: "Inspect MCP connections and sign in.",
     },
@@ -164,7 +165,7 @@ const ITEMS: &[Item] = &[
         section: 3,
         name: "Apps",
         scope: "new chats",
-        key: None,
+        key: Some("apps"),
         action: Action::Shortcut(SlashCommand::Apps),
         hint: "Manage app connections.",
     },
@@ -172,7 +173,7 @@ const ITEMS: &[Item] = &[
         section: 3,
         name: "Hooks",
         scope: "new chats",
-        key: None,
+        key: Some("hooks"),
         action: Action::Shortcut(SlashCommand::Hooks),
         hint: "Inspect and manage lifecycle hooks.",
     },
@@ -378,6 +379,32 @@ impl ConfigPanelView {
         let Some(snapshot) = &self.snapshot else {
             return "Loading…".to_string();
         };
+        if item.name == "Config layers" {
+            return format!(
+                "{} layers",
+                snapshot.config.layers.as_ref().map_or(0, Vec::len)
+            );
+        }
+        if item.name == "Open config file" {
+            return snapshot
+                .config
+                .layers
+                .as_ref()
+                .and_then(|layers| {
+                    layers.iter().find_map(|layer| {
+                        if let ConfigLayerSource::User {
+                            file,
+                            profile: None,
+                        } = &layer.name
+                        {
+                            Some(file.display().to_string())
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .unwrap_or_else(|| "unavailable".to_string());
+        }
         let Some(key) = item.key else {
             return "Open to view".to_string();
         };
@@ -389,11 +416,22 @@ impl ConfigPanelView {
             Some(serde_json::Value::String(value)) => value.clone(),
             Some(serde_json::Value::Bool(value)) => if *value { "on" } else { "off" }.to_string(),
             Some(serde_json::Value::Number(value)) => value.to_string(),
+            Some(serde_json::Value::Array(value)) => format!("{} configured", value.len()),
+            Some(serde_json::Value::Object(value)) => format!("{} configured", value.len()),
             _ => "default".to_string(),
         }
     }
 
     fn source(&self, item: Item) -> &'static str {
+        if item.name == "Pruner model" {
+            return "pruner settings";
+        }
+        if item.name == "Open config file" {
+            return "user config";
+        }
+        if item.name == "Config layers" {
+            return "engine config";
+        }
         if item.scope == "terminal" {
             return "terminal preferences";
         }
@@ -431,6 +469,7 @@ impl ConfigPanelView {
             Some(ConfigLayerSource::Project { .. }) => "project config",
             Some(ConfigLayerSource::SessionFlags) => "session flags",
             Some(ConfigLayerSource::PackagedDefaults { .. }) => "packaged defaults",
+            _ if matches!(key, "features" | "mcp_servers" | "apps" | "hooks") => "merged layers",
             _ => "built-in default",
         }
     }
@@ -936,6 +975,7 @@ impl Renderable for ConfigPanelView {
             vec![Line::from("No matching setting")]
         };
         Paragraph::new(detail_lines)
+            .wrap(Wrap { trim: false })
             .block(
                 Block::default()
                     .borders(Borders::ALL)
