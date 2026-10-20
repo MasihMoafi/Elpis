@@ -21,6 +21,8 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
   try {
     const { page } = f;
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+    await page.locator(".brand img").evaluate(image => image.decode());
+    await page.waitForTimeout(1100);
     const group = page.getByRole('group', { name: 'Love Spot', exact: true });
     await group.getByText('Review', { exact: true }).waitFor();
     assert.equal(await page.getByRole('region', { name: 'Recents', exact: true }).getByText('Review', { exact: true }).count(), 0);

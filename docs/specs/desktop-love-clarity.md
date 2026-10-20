@@ -36,3 +36,9 @@ Implemented locally: user default config `gpt-6.1-sol`/`xhigh`; splash ribbon re
 Checks: production renderer builds; fast gate passes (192 tests); protocol, workflow, activity, inventory and packaging checks pass (139 tests); six focused UI files pass (33 tests). Visual review caught remaining purple canvas container colors; these were corrected and the visible-color check was added. Screenshots: `~/.cache/elpis-tests/love-clarity/`. No running chats have been terminated.
 
 Pending: automatic connected-item execution, section access policy, peer/supervisor communication semantics, and which pictured composer control is unwanted. The clarification questions remain unanswered. Website refresh and real action recordings follow the desktop work.
+
+
+Integration: a newer local bundle (`prompt-rail-8aef7416c`) was selected while this work was being packaged. Its source was merged here to retain the prompt rail, helper delegation/control, and MCP form improvements. The original launcher was restored while checking the combined build. Two pre-existing unregistered UI checks from that branch were assigned to the UI inventory. Agent cards without portraits keep their earlier dimensions; only portrait cards become wider for the enlarged art.
+
+
+Final combined verification: production build and fast gate pass (192 checks); 140 protocol/workflow/activity/inventory/package checks pass. The combined renderer passed 33 other UI checks, then both Love Spot checks passed with the visible selected-tool fill and text verified red. This also retains the prompt rail, empty-side-panel and canvas-fit checks from the installed branch. Original-fork retry and user visual acceptance remain outstanding.
