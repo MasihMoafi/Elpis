@@ -130,7 +130,7 @@ async fn status_command_renders_native_and_foreign_instruction_sources() {
 
     let rendered = match rx.try_recv() {
         Ok(AppEvent::InsertHistoryCell(cell)) => {
-            lines_to_single_string(&cell.display_lines(/*width*/ 80))
+            lines_to_single_string(&cell.display_lines(/*width*/ 200))
         }
         other => panic!("expected status output, got {other:?}"),
     };
@@ -139,9 +139,266 @@ async fn status_command_renders_native_and_foreign_instruction_sources() {
         "expected /status to show native-relative and environment-native foreign paths, got: {rendered}"
     );
     assert!(
-        !rendered.contains("Agents.md  <none>"),
-        "expected /status to avoid stale <none> when app-server provided instruction sources, got: {rendered}"
+        rendered.contains("discovered (admission unverified)"),
+        "native discovery alone must not claim admission, got: {rendered}"
     );
+}
+
+fn status_instruction_row(chat: &mut ChatWidget) -> String {
+    lines_to_single_string(&chat.status_output_cell(false, None).display_lines(1_000))
+        .lines()
+        .find(|line| line.contains("Agents.md"))
+        .expect("status instruction row")
+        .to_string()
+}
+
+fn reload_status_instruction_sources(
+    chat: &mut ChatWidget,
+    rule_roots: &[AbsolutePathBuf],
+) -> anyhow::Result<()> {
+    chat.manual_memory_cache.sources =
+        crate::legacy_core::elpis_context::continuity_sources_with_dev_rule_roots(
+            Some(&elpis_memory_dir(chat.config_ref())),
+            chat.config.cwd.as_path(),
+            &chat.instruction_source_paths_as_path_bufs(),
+            rule_roots,
+            None,
+        )?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_command_reports_admitted_development_rules() -> anyhow::Result<()> {
+    let root = tempfile::tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.cwd = AbsolutePathBuf::from_absolute_path(root.path().join("project"))?;
+    let rules = AbsolutePathBuf::from_absolute_path(root.path().join("rules"))?;
+    std::fs::create_dir_all(&chat.config.cwd)?;
+    std::fs::create_dir_all(&rules)?;
+    let rule = rules.join("selected-rules.md");
+    std::fs::write(&rule, "Configured development rule")?;
+    chat.instruction_source_paths.clear();
+    reload_status_instruction_sources(&mut chat, std::slice::from_ref(&rules))?;
+    let source = chat
+        .manual_memory_cache
+        .sources
+        .iter()
+        .find(|source| source.path.as_path() == rule.as_path())
+        .expect("the configured rule must be discovered")
+        .clone();
+    assert!(source.admitted, "the real loader must admit this rule");
+    let admitted = status_instruction_row(&mut chat);
+    assert!(
+        admitted.contains("selected-rules.md"),
+        "/status omitted an admitted development rule: {admitted}"
+    );
+    assert!(admitted.contains("admitted:"), "{admitted}");
+
+    crate::legacy_core::elpis_context::set_continuity_source_admitted(
+        Some(&elpis_memory_dir(chat.config_ref())),
+        chat.config.cwd.as_path(),
+        &source.name,
+        false,
+    )?;
+    reload_status_instruction_sources(&mut chat, std::slice::from_ref(&rules))?;
+    let excluded = status_instruction_row(&mut chat);
+    assert!(!excluded.contains("selected-rules.md"), "{excluded}");
+    assert!(excluded.contains("admitted: <none>"), "{excluded}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_command_reports_admitted_ledger_instructions_and_filters_ordinary_files() {
+    use crate::legacy_core::elpis_context::ContinuitySource;
+    use crate::legacy_core::elpis_context::ContinuitySourceCategory;
+
+    for (file, category, admitted, discovered, expected) in [
+        (
+            "AGENTS.md",
+            ContinuitySourceCategory::Files,
+            true,
+            false,
+            Some("AGENTS.md"),
+        ),
+        (
+            "selected-rules.md",
+            ContinuitySourceCategory::Instructions,
+            true,
+            false,
+            Some("selected-rules.md"),
+        ),
+        (
+            "AGENTS.md",
+            ContinuitySourceCategory::Instructions,
+            false,
+            false,
+            None,
+        ),
+        (
+            "AGENTS.md",
+            ContinuitySourceCategory::Instructions,
+            false,
+            true,
+            None,
+        ),
+        (
+            "AGENTS.md",
+            ContinuitySourceCategory::Instructions,
+            true,
+            true,
+            Some("AGENTS.md"),
+        ),
+        (
+            "README.md",
+            ContinuitySourceCategory::Files,
+            true,
+            false,
+            None,
+        ),
+    ] {
+        let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+        chat.instruction_source_paths = if discovered {
+            vec![PathUri::from_abs_path(&chat.config.cwd.join(file))]
+        } else {
+            Vec::new()
+        };
+        chat.manual_memory_cache.sources = vec![ContinuitySource {
+            name: file.to_string(),
+            path: chat.config.cwd.join(file).to_path_buf(),
+            bytes: 40,
+            estimated_tokens: 10,
+            category,
+            origin: "manual addition",
+            lifetime: "selected by user",
+            reason: "selected instruction fixture",
+            admitted,
+            selectable: true,
+        }];
+
+        let agents = status_instruction_row(&mut chat);
+        if let Some(expected) = expected {
+            assert!(
+                agents.contains(&format!("admitted: {expected}")),
+                "admitted Ledger instruction missing from status: {agents}"
+            );
+            assert!(
+                !agents.contains("<none>"),
+                "selected Ledger instruction was reported as absent"
+            );
+        } else {
+            assert!(
+                agents.contains("admitted: <none>"),
+                "excluded or ordinary files must not be reported as instructions: {agents}"
+            );
+        }
+        assert!(
+            !agents.contains("discovered"),
+            "a matching Ledger row establishes admission: {agents}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn status_command_deduplicates_ancestors_and_obeys_persisted_native_exclusion()
+-> anyhow::Result<()> {
+    let root = tempfile::tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.cwd = AbsolutePathBuf::from_absolute_path(root.path().join("project/nested"))?;
+    std::fs::create_dir_all(&chat.config.cwd)?;
+    let ancestor = chat
+        .config
+        .cwd
+        .parent()
+        .expect("ancestor")
+        .join("AGENTS.md");
+    let project = chat.config.cwd.join("AGENTS.md");
+    std::fs::write(&ancestor, "Ancestor rule")?;
+    std::fs::write(&project, "Project rule")?;
+    chat.instruction_source_paths = vec![
+        PathUri::from_abs_path(&ancestor),
+        PathUri::from_abs_path(&project),
+        PathUri::from_abs_path(&ancestor),
+    ];
+    let memories = elpis_memory_dir(chat.config_ref());
+    for admitted in [true, false] {
+        for name in ["Global AGENTS.md", "Project AGENTS.md"] {
+            crate::legacy_core::elpis_context::set_continuity_source_admitted(
+                Some(&memories),
+                chat.config.cwd.as_path(),
+                name,
+                admitted,
+            )?;
+        }
+        let rules = chat.config.codex_home.join("fixture-rules");
+        reload_status_instruction_sources(&mut chat, &[rules])?;
+        let row = status_instruction_row(&mut chat);
+        if admitted {
+            assert!(row.contains(&format!("..{}AGENTS.md", std::path::MAIN_SEPARATOR)));
+            assert_eq!(row.matches("AGENTS.md").count(), 2, "{row}");
+        } else {
+            assert!(row.contains("admitted: <none>"), "{row}");
+            assert!(!row.contains("AGENTS.md"), "withdrawn native rules: {row}");
+        }
+        assert!(!row.contains("discovered"), "{row}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_command_keeps_queued_admission_separate_until_commit() {
+    use crate::legacy_core::elpis_context::ContinuitySource;
+    use crate::legacy_core::elpis_context::ContinuitySourceCategory;
+
+    for admitted in [false, true] {
+        let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+        let path = chat.config.cwd.join("AGENTS.md");
+        chat.instruction_source_paths = vec![PathUri::from_abs_path(&path)];
+        chat.manual_memory_cache.sources = vec![ContinuitySource {
+            name: "Project AGENTS.md".to_string(),
+            path: path.to_path_buf(),
+            bytes: 40,
+            estimated_tokens: 10,
+            category: ContinuitySourceCategory::Instructions,
+            origin: "runtime instructions",
+            lifetime: "every turn",
+            reason: "applicable project rules",
+            admitted,
+            selectable: true,
+        }];
+        show_context_ledger(&mut chat);
+        chat.last_rendered_width.set(Some(120));
+        chat.turn_lifecycle.agent_turn_running = true;
+        assert!(
+            chat.handle_context_ledger_key_event(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::ALT,
+            ))
+        );
+        assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Char(' '))));
+        assert_eq!(chat.context_ledger.pending_context_admissions.len(), 1);
+        assert_eq!(chat.continuity_sources()[0].admitted, !admitted);
+        let pending = status_instruction_row(&mut chat);
+        let expected_before = if admitted { "AGENTS.md" } else { "<none>" };
+        assert!(
+            pending.contains(&format!("admitted: {expected_before}")),
+            "{pending}"
+        );
+        assert!(
+            pending.contains("changes queued for next turn"),
+            "{pending}"
+        );
+
+        chat.turn_lifecycle.agent_turn_running = false;
+        chat.commit_staged_context_admissions("status-admission-fixture");
+        assert!(chat.context_ledger.pending_context_admissions.is_empty());
+        let committed = status_instruction_row(&mut chat);
+        let expected_after = if admitted { "<none>" } else { "AGENTS.md" };
+        assert!(
+            committed.contains(&format!("admitted: {expected_after}")),
+            "{committed}"
+        );
+        assert!(!committed.contains("queued"), "{committed}");
+    }
 }
 
 #[tokio::test]

@@ -68,7 +68,8 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
           await new Promise(resolve => terminal.write(text + '\x1b[?25l', resolve));
           host.style.width = `${host.querySelector('.xterm-screen').getBoundingClientRect().width}px`;
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          const row = Array.from({ length: rows }, (_, y) => y).find(y => terminal.buffer.active.getLine(y)?.getCell(width - 9)?.getChars() === '✕');
+          const label = terminal.buffer.active.getLine(0)?.getCell(width - 3)?.getChars() === '╳' ? ' ╳ ' : ' ✕ Close ';
+          const row = Array.from({ length: rows }, (_, y) => y).find(y => terminal.buffer.active.getLine(y)?.getCell(width - label.length)?.getChars() === label.trim()[0]);
           if (row === undefined) throw Error('Missing Close glyph in replayed ANSI cells');
           const color = (cell, foreground) => {
             const isDefault = foreground ? cell.isFgDefault() : cell.isBgDefault();
@@ -76,12 +77,12 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
             const value = foreground ? cell.getFgColor() : cell.getBgColor();
             return isDefault ? { mode: 'default' } : { mode: isRGB ? 'rgb' : 'palette', value };
           };
-          return { row, theme, button: Array.from({ length: 9 }, (_, offset) => {
-            const cell = terminal.buffer.active.getLine(row).getCell(width - 10 + offset);
+          return { row, theme, label, button: Array.from({ length: label.length }, (_, offset) => {
+            const cell = terminal.buffer.active.getLine(row).getCell(width - label.length - 1 + offset);
             return { text: cell.getChars(), bold: Boolean(cell.isBold()), foreground: color(cell, true), background: color(cell, false) };
           }) };
         }, { width: capture.width, light: capture.light, rows, text: lines.join('\r\n') });
-        assert.equal(cells.button.map(cell => cell.text).join(''), ' ✕ Close ', 'ANSI replay must retain the native Close cells');
+        assert.equal(cells.button.map(cell => cell.text).join(''), cells.label, 'ANSI replay must retain the native Close cells');
         const png = capture.name.replace(/\.ansi$/, '.png');
         await page.locator('#terminal').screenshot({ path: path.join(evidence, png) });
         rendered.push({ input: capture.name, png, columns: capture.width, rows, ansiSha256: sha256(Buffer.from(raw)), pngSha256: sha256(fs.readFileSync(path.join(evidence, png))), ...cells });

@@ -10,7 +10,8 @@ const path = require('node:path');
 const { Provider } = require('../lib/mock-provider.js');
 
 const repo = path.resolve(__dirname, '../..');
-const closeLabel = ' ✕ Close ';
+const closeLabels = [' ╳ ', ' ✕ Close '];
+const ledgerOpen = text => text.includes('CONTEXT LEDGER') && closeLabels.some(label => text.includes(label.trim()));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 let interrupted;
@@ -134,39 +135,40 @@ async function check({ binary, output, phase }, width, light) {
     tm('set-option', '-p', '-t', 'check', 'window-style', light ? 'fg=#111111,bg=#ffffff' : 'fg=#eeeeee,bg=#111111');
     literal(['env', '-i', ...Object.entries(env).map(([k, v]) => `${k}=${v}`), binary, '--remote', address, '-C', cwd].map(quote).join(' '));
     key('Enter');
-    await until(text => text.includes('CONTEXT LEDGER') && text.includes('✕ Close'));
+    await until(ledgerOpen);
     await pause(200);
     const text = save('open');
     const lines = text.split('\n');
-    const closeY = lines.findIndex(line => line.includes('✕ Close'));
+    const closeLabel = closeLabels.find(label => lines.some(line => line.includes(label.trim())));
+    const closeY = lines.findIndex(line => line.includes(closeLabel.trim()));
     const titleY = lines.findIndex(line => line.includes('CONTEXT LEDGER'));
     const left = width - [...closeLabel].length - 1;
-    result.geometry = { closeY, titleY, left, buttonWidth: 9, glyphX: lines[closeY].indexOf('✕') };
-    result.layoutPass = closeY + 1 === titleY && !lines[closeY].includes('CONTEXT');
-    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: Close row ${closeY}; title row ${titleY}; expected title row ${closeY + 1}`;
+    result.geometry = { closeY, titleY, left, buttonWidth: [...closeLabel].length, glyphX: lines[closeY].indexOf(closeLabel.trim()) };
+    result.layoutPass = closeLabel === ' ╳ ' && result.geometry.buttonWidth === 3 && closeY === 0 && titleY === 1 && !lines[closeY].includes('CONTEXT');
+    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: Close ${JSON.stringify(closeLabel)} on row ${closeY}; title row ${titleY}; expected compact 3-cell Close row 0 and title row 1`;
     const ledgerLeft = lines[titleY].indexOf('│');
     result.visibleFixtureSourceRows = lines.map(line => line.slice(Math.max(0, ledgerLeft))).filter(line => line.includes('AGENTS.md'));
     result.sourceFilenameWrappingChecked = false;
     must(lines[closeY].slice(left) === closeLabel + ' ', 'Painted Close label or right margin differs');
     for (const x of [left - 1, width - 1]) {
       click(x, closeY); await pause(120);
-      must(capture(false).includes('✕ Close'), `Outside cell x=${x} closed Ledger`);
+      must(ledgerOpen(capture(false)), `Outside cell x=${x} closed Ledger`);
     }
     result.outsideMouseCells = 2;
     if (closeY !== titleY) {
       click(left + 1, titleY); await pause(120);
-      result.titleRowMiss = capture(false).includes('✕ Close');
+      result.titleRowMiss = ledgerOpen(capture(false));
       must(result.titleRowMiss, 'Title row acquired the Close hitbox');
     }
     result.positiveMouseCells = 0;
     for (let x = left; x < width - 1; x++) {
-      click(x, closeY); await until(text => !text.includes('✕ Close'));
+      click(x, closeY); await until(text => !ledgerOpen(text));
       result.positiveMouseCells++;
-      key('Tab'); await until(text => text.includes('✕ Close'));
+      key('Tab'); await until(ledgerOpen);
     }
-    key('Escape'); await until(text => !text.includes('✕ Close'));
-    key('Tab'); await until(text => text.includes('✕ Close'));
-    key('Tab'); await until(text => !text.includes('✕ Close'));
+    key('Escape'); await until(text => !ledgerOpen(text));
+    key('Tab'); await until(ledgerOpen);
+    key('Tab'); await until(text => !ledgerOpen(text));
     result.keyboard = ['Escape', 'Tab'];
   } catch (error) {
     result.errors.push(error.stack);
@@ -205,7 +207,7 @@ async function check({ binary, output, phase }, width, light) {
   const result = {
     ...config, binarySha256, binaryUnchanged: binarySha256 === await sha256(config.binary), interrupted: interrupted || null,
     sourceFixture: path.relative(repo, __filename), harnessSha256: await sha256(__filename), checks,
-    allPositiveControlsPass: checks.length === 4 && checks.every(check => !check.errors.length && check.positiveMouseCells === 9 && check.privateProfileTrashed),
+    allPositiveControlsPass: checks.length === 4 && checks.every(check => !check.errors.length && check.positiveMouseCells === check.geometry.buttonWidth && check.privateProfileTrashed),
     layoutPasses: checks.filter(check => check.layoutPass === true).length,
     layoutFailures: checks.filter(check => check.layoutPass === false).length,
   };
