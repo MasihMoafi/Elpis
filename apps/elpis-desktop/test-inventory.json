@@ -1,6 +1,7 @@
 {
   "fast": [
     "tests/account-events.test.cjs",
+    "tests/config-sections.test.mjs",
     "tests/agents-iso.test.mjs",
     "tests/agents.test.mjs",
     "tests/api-errors.test.mjs",
@@ -106,6 +107,7 @@
     "desktop/love-spot.test.cjs"
   ],
   "ui": [
+    "tests/config-navigation.test.cjs",
     "tests/send-feedback-ui.test.cjs",
     "tests/love-spot-identity.test.cjs",
     "tests/experiment-lab.test.cjs",
