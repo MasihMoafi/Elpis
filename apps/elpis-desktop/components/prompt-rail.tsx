@@ -67,7 +67,8 @@ export function PromptRail({ scroller, threadId, entries, hasEarlier, loading, o
     if (!threadId) return;
     let cancelled = false;
     void api<{ data: Prompt[] }>(`/threads/${encodeURIComponent(threadId)}/prompts`).then(result => {
-      if (!cancelled && Array.isArray(result.data)) setIndexed({ threadId, data: result.data });
+      // A reply of another shape (an older bridge) is ignored, as a failed read is.
+      if (!cancelled && Array.isArray(result.data) && result.data.every(row => typeof row?.turnId === "string" && typeof row?.text === "string")) setIndexed({ threadId, data: result.data });
     }).catch(() => { /* The rendered turns remain available if the prompt index cannot be read. */ });
     return () => { cancelled = true; };
   }, [threadId, revision]);

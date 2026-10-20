@@ -68,6 +68,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     if (chat && url.pathname.endsWith('/turns')) return json({ turn: { id: 't-new' } });
     // Recorded media: every item's picture is the same small PNG.
     if (chat && /\/media\/\d+$/.test(url.pathname)) { res.setHeader('content-type', 'image/png'); res.end(PNG); return; }
+    if (chat && url.pathname.endsWith('/prompts')) return json({ data: chat.id === 'chat-a' ? turns.map(([turnId, text]) => ({ turnId, text })) : [] });
     if (chat && req.method === 'GET') return json({ thread: chat, data: chat.id === 'chat-a' ? entries().reverse() : [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try {
