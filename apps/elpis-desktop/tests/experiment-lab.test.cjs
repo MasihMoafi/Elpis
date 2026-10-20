@@ -44,6 +44,7 @@ test('Lab hides the number for until-finished, sends ten, and keeps earlier expe
     assert.match(names[0], /Second task.*completed/);
     assert.match(names[1], /First task.*completed/);
     await history.getByRole('button', { name: /First task/ }).click();
+    await f.page.waitForFunction(() => document.querySelector('[aria-label="Lab"] [aria-label="Task"]')?.value === 'First task');
     assert.equal(await lab.getByRole('textbox', { name: 'Task', exact: true }).inputValue(), 'First task');
     await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
     assert.deepEqual(f.errors, []);

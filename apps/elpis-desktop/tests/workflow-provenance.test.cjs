@@ -206,11 +206,13 @@ test('Lab offers “Until the task finishes”, sends and restores the choice, a
     await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
     assert.equal(requests[0].stopWhen, 'solved'); assert.equal(requests[0].repetitions, 10);
     assert.match(await lab.getByRole('status').innerText(), /Completed · Repetition 2 of up to 10 · 4 trials/);
-    assert.match(await lab.innerText(), /Solved on repetition 2: the pattern’s answer matched[\s\S]*Export JSON before starting another/);
+    assert.match(await lab.innerText(), /Solved on repetition 2: the pattern’s answer matched/);
+    assert.equal(await lab.getByRole('button', { name: 'New experiment', exact: true }).isEnabled(), true);
+    assert.equal(await lab.getByRole('button', { name: 'Export JSON', exact: true }).isEnabled(), true);
     await f.page.reload();
     const again = await open();
     assert.equal(await again.getByRole('radio', { name: 'Until the task finishes', exact: true }).getAttribute('aria-checked'), 'true', 'the saved choice returns after a reload');
-    assert.equal(await again.getByRole('spinbutton', { name: 'Repetition limit', exact: true }).inputValue(), '5');
+    assert.equal(await again.getByRole('spinbutton').count(), 0, 'the saved until-finished choice still asks for no number');
     for (const theme of ['light', 'dark']) for (const [width, height] of [[1130, 660], [400, 760]]) {
       await f.page.setViewportSize({ width: 1130, height: 660 });
       if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
