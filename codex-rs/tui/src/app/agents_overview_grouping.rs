@@ -24,7 +24,7 @@ impl AgentsOverviewView {
             .is_some_and(|ranks| ranks.contains_key(&self.rows[index].thread_id))
     }
 
-    pub(super) fn visible_indices(&self) -> Vec<usize> {
+    pub(in crate::app) fn visible_indices(&self) -> Vec<usize> {
         let state = self.state();
         let search = state.search.to_lowercase();
         let (_, status_group) = super::command_center::TASK_FILTERS[state.status_filter];
