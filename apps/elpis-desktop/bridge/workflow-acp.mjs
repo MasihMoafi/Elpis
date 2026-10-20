@@ -46,8 +46,9 @@ export function validateWorkflow(tasks, roundLimit) {
 }
 
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
+/** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onPermission, onSession } = {}) {
+  onPermission, onSession, onEnd } = {}) {
   const records = new Map(), active = new Map();
   let loaded;
   const load = () => loaded ??= (async () => {
@@ -145,7 +146,10 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       const completed = { ...record }; record.status = 'running';
       try { await save(completed); }
       catch (error) { completed.status = 'failed'; completed.error = `Could not save the workflow result: ${error.message}`; }
-      finally { active.delete(record.rootThreadId); await fs.unlink(path.join(stateDir, `${record.rootThreadId}.lock`)).catch(() => {}); records.set(record.id, completed); }
+      finally {
+        active.delete(record.rootThreadId); await fs.unlink(path.join(stateDir, `${record.rootThreadId}.lock`)).catch(() => {}); records.set(record.id, completed);
+        if (onEnd) void Promise.resolve().then(() => onEnd(structuredClone(completed))).catch(error => console.error('Workflow next stage:', error.message));
+      }
     }
   }
   return {
@@ -173,6 +177,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       return { graphId: record.id, threadId: params.rootThreadId, turnId: record.id };
     },
     cancel(rootThreadId) { const controller = active.get(rootThreadId); if (!controller) return false; controller.abort(); return true; },
+    /** Records how a run's next stage goes (`next`: its chat, run, status, whether its report was delivered). */
+    async note(id, patch) {
+      await load(); const record = records.get(id);
+      if (!record?.next) return;
+      record.next = { ...record.next, ...patch }; await save(record);
+    },
     close() { for (const controller of active.values()) controller.abort(); },
   };
 }

@@ -1,5 +1,6 @@
 // The Father: past the Mother's ten agents, the rest run under him in his own chat, once her part has succeeded, and
-// he reports to her (lat.md/tasks.md, 17 October 2026).
+// he reports to her (lat.md/tasks.md, 17 October 2026). The bridge runs both stages (A41, 20 October): the fixture plays
+// its part (tests/canvas-fixture.cjs), and the screen only sends the run and shows it.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
@@ -38,24 +39,22 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     await motherPanel.getByText(/The Father runs 3 more agents in his own chat once her part has succeeded, and reports to her/).waitFor();
     await motherPanel.getByRole('button', { name: 'Done', exact: true }).click();
 
-    // The run: her ten first, in her chat; when her part has succeeded, his three in his own chat.
+    // The run: her ten first, in her chat; when her part has succeeded, the bridge starts his three in his own chat and
+    // delivers his report to hers. The screen sends one run and only shows what the bridge reports (A41).
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Finished'), null, { timeout: 15000 });
-    assert.equal(runs.length, 2);
+    assert.equal(posts.filter(post => post.path === '/api/workflows/run').length, 1, 'the screen sends one run');
+    assert.equal(runs.length, 2, 'her run, then his, which the bridge started');
     const [hers, his] = runs, chats = posts.filter(post => post.path === '/api/threads');
-    assert.deepEqual([hers.tasks.length, his.tasks.length], [20, 6], 'ten agents and their checks for her; three and theirs for him');
-    assert.notEqual(his.rootThreadId, hers.rootThreadId, 'he has his own chat');
-    assert.match(chats[1].body.name, /^Father · /);
-    assert.match(chats[1].body.instructions, /You are the Father/);
-    assert.deepEqual(chats.map(chat => chat.body.agents), [true, true], 'both run chats ask for the multi-agent runtime');
+    assert.deepEqual([hers.tasks.length, hers.next.tasks.length], [20, 6], 'ten agents and their checks for her; three and theirs for him');
+    assert.equal(his.rootThreadId, 'chat-father', 'he has his own chat');
+    assert.match(hers.next.thread.name, /^Father · /);
+    assert.match(hers.next.thread.instructions, /You are the Father/);
+    assert.deepEqual(chats.map(chat => chat.body.agents), [true], 'the screen opens only her chat, with the multi-agent runtime');
     const hisIds = new Set(his.tasks.map(task => task.id));
     assert.ok(his.tasks.every(task => task.dependsOn.every(id => hisIds.has(id))), 'his tasks wait only for his own');
     assert.ok(his.tasks.some(task => task.title === 'Nuvani · Join the parts'), 'the joiner, in the second wave, is his');
-    const sent = posts.filter(post => post.path === `/api/threads/${hers.rootThreadId}/turns`);
-    assert.equal(sent.length, 1, 'the Father delivers one report to the Mother');
-    assert.ok(sent[0].body.text.includes(his.rootThreadId), 'the report identifies the Father chat');
-    assert.ok(sent[0].body.text.includes(his.graphId), 'the report identifies his graph');
-    for (const task of his.tasks) assert.ok(sent[0].body.text.includes(`Accepted result: ${task.title}`), `${task.title} result reaches the Mother`);
+    assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 0, 'the screen sends no report: the bridge does');
     // As on Deus Ex's board: a run clock, stopped once the run is done, and a log of what happened, newest last.
     assert.match(await canvas.getByLabel('Run clock').innerText(), /^Run done\s*\d\d:\d\d$/i);
     const lines = await canvas.getByRole('log', { name: 'Run log' }).locator('li').allInnerTexts();
@@ -71,36 +70,19 @@ const twelve = { name: 'Twelve writers', maxAgents: 12, edges: [], nodes: Array.
   data: { title: `Writer ${i + 1}`, instruction: 'Write the result', model: null, writeScopes: ['src'], acceptanceCriteria: [] },
 })) };
 
-test('a rejected Father report stays running, retries delivery, and retains the failed graph evidence', async () => {
-  const { page, canvas, runs, posts, errors, close } = await openCanvas({ graph: twelve,
+test('a Father report the bridge could not deliver says why, and the run stays open without a second Father', async () => {
+  const { page, canvas, runs, posts, errors, close } = await openCanvas({ graph: twelve, refuseReport: 'try again',
     listed: (run, looks) => looks ? { id: run.graphId, status: run.graphId === 'graph-1' ? 'succeeded' : 'failed',
-      error: run.graphId === 'graph-2' ? 'Father check failed' : null,
       tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Evidence ${task.id}` } })) } : undefined,
   });
-  let attempts = 0, release;
-  const held = new Promise(resolve => { release = resolve; });
   try {
-    await page.route('**/api/threads/chat-1/turns', async route => {
-      attempts++;
-      if (attempts === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'try again' }) });
-      await held; await route.continue();
-    });
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await canvas.getByRole('alert').filter({ hasText: 'Father report not delivered: try again' }).waitFor();
     assert.match(await canvas.locator('.canvas-header [role=status]').innerText(), /^Running/);
-    assert.equal(runs.length, 2, 'no duplicate Father run');
-    release();
-    await page.waitForFunction(() => document.querySelector('.canvas-header [role=status]')?.textContent?.includes('Finished'));
-    assert.equal(attempts, 2);
-    const sent = posts.filter(post => post.path === '/api/threads/chat-1/turns');
-    assert.equal(sent.length, 1, 'one accepted delivery');
-    assert.match(sent[0].body.text, /Status: failed/);
-    assert.match(sent[0].body.text, /Father check failed/);
-    assert.match(sent[0].body.text, /Evidence a12/);
-    assert.equal(await canvas.getByRole('alert').filter({ hasText: 'Father report not delivered' }).count(), 0, 'successful retry clears its delivery error');
-    await canvas.getByRole('alert').filter({ hasText: 'Father check failed' }).waitFor();
+    assert.equal(runs.length, 2, 'no second Father run');
+    assert.equal(posts.filter(post => /\/turns$/.test(post.path)).length, 0);
     assert.deepEqual(errors, []);
-  } finally { release(); await close(); }
+  } finally { await close(); }
 });
 
 test('a failed Mother does not start the Father or send his report', async () => {

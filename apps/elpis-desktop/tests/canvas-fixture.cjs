@@ -17,11 +17,13 @@ function planFor(body, fill = ['src']) {
   return { name: '', agents: /^fix/i.test(body.goal) ? [...kept, { key: 'new', title: body.goal, prompt: body.goal, folders: ['src'], doneWhen: ['It works'], waitsFor: [] }] : kept };
 }
 
-/** `folders` are the project's folders (none: a flat project); `repository` is whether the project folder is a git
+/** `refuseReport`: the bridge could not deliver the Father's report, for this reason. `folders` are the project's
+ * folders (none: a flat project); `repository` is whether the project folder is a git
  * repository (GET /api/repository); `graph` is a board saved on the
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, folders = ['docs', 'src', 'src/lib', 'tests'] } = {}) {
+const ENDED = new Set(['succeeded', 'completed', 'failed', 'cancelled']);
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '' } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -44,7 +46,23 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (url.pathname === '/api/workflows/run') { const body = JSON.parse(raw); runs.push({ ...body, graphId: `graph-${runs.length + 1}`, looks: 0 }); return json({ graphId: `graph-${runs.length}`, threadId: body.rootThreadId, turnId: 't' }); }
     if (url.pathname === '/api/workflows') {
       const mine = runs.filter(item => item.rootThreadId === url.searchParams.get('threadId'));
-      return json({ data: mine.map(item => { const looks = item.looks++, status = looks ? 'succeeded' : 'running'; return listed?.(item, looks) ?? { id: item.graphId, name: item.name, status, tasks: item.tasks.map(task => ({ id: task.id, status, assignedThreadId: null })) }; }) });
+      return json({ data: mine.map(item => {
+        const looks = item.looks++, status = looks ? 'succeeded' : 'running';
+        const graph = listed?.(item, looks) ?? { id: item.graphId, name: item.name, status, tasks: item.tasks.map(task => ({ id: task.id, status, assignedThreadId: null })) };
+        // As the bridge does with a run's next stage (bridge/client.mjs #workflowEnded): once her part has succeeded his
+        // starts in his own chat (`chat-father`), and when his ends his report counts as delivered (`refuseReport` says why not).
+        if (item.next) {
+          if (!item.stage && ENDED.has(graph.status)) {
+            if (graph.status !== 'succeeded') item.stage = { status: 'cancelled' };
+            else { const his = { ...item.next, rootThreadId: 'chat-father', graphId: `graph-${runs.length + 1}`, looks: 0 }; runs.push(his); item.stage = { threadId: his.rootThreadId, graphId: his.graphId, status: 'running' }; }
+          }
+          const his = item.stage?.graphId && runs.find(run => run.graphId === item.stage.graphId);
+          if (his?.ended && !item.stage.reported) item.stage = { ...item.stage, status: his.ended, ...(refuseReport ? { error: `Father report not delivered: ${refuseReport}` } : { reported: true }) };
+          graph.next = { ...(item.stage ?? { status: 'waiting' }) };
+        }
+        if (ENDED.has(graph.status)) item.ended = graph.status;
+        return graph;
+      }) });
     }
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);

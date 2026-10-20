@@ -9,9 +9,11 @@ the board says Finished; naming the Mother in his instructions is insufficient.
   terminal status, accepted task results and any failure or merge error.
 - Report failed Father graphs too. If the Mother fails, cancel the pending
   Father's part without creating his chat or sending a report.
-- Keep the board running until delivery succeeds. A rejected delivery remains
-  visible and can retry; do not start the Father again or duplicate a delivered
-  report during subsequent polls.
+- The bridge owns both stages (bridge/client.mjs `#workflowEnded`, 20 Oct), so
+  a run goes on when the Workflows screen is closed: it starts the Father after
+  her part succeeds and delivers his report, trying a refused delivery again a
+  few times. The reason stays on her record when it never goes through, and the
+  board shows it and keeps running; the Father is never started twice.
 - Preserve the current model choices, worktree isolation and merge behavior.
   No engine, installed application, profile or provider configuration changes.
 

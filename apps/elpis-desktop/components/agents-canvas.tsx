@@ -27,7 +27,8 @@ import { PATTERNS, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, C
 type Run = { rootThreadId: string; graphId: string; status: string; startedAt: number; endedAt?: number; father?: { tasks: RunTask[]; threadId?: string; graphId?: string; status: string; reported?: boolean } };
 /** Whether the whole run is over: her part, and his if he has one. */
 const over = (run: Run) => FINISHED.has(run.status) && (!run.father || (FINISHED.has(run.father.status) && (!run.father.threadId || run.father.reported)));
-type Listed = { data: { id: string; status: string; error?: string | null; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown }[] }[] };
+/** `next`: the stage the bridge runs after this one (the Father's part): his chat and run, and whether his report reached her. */
+type Listed = { data: { id: string; status: string; error?: string | null; next?: { threadId?: string; graphId?: string; status: string; reported?: boolean; error?: string | null }; tasks: { id: string; status: TaskStatus; assignedThreadId: string | null; failureReason?: string | null; result?: unknown }[] }[] };
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
@@ -538,28 +539,18 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       polling = true;
       try {
         let next = run;
-        if (!FINISHED.has(run.status)) { const found = await read(run.rootThreadId, run.graphId); if (found && found.status !== run.status) next = { ...next, status: found.status }; }
-        const father = next.father;
-        if (father?.threadId && father.graphId && !father.reported) {
-          const found = await read(father.threadId, father.graphId);
-          if (found) {
-            if (found.status !== father.status) next = { ...next, father: { ...father, status: found.status } };
-            if (FINISHED.has(found.status)) {
-              // Deliver the engine's accepted results, with their origin, to the Mother's actual chat.
-              // Keep following the run if delivery fails; no second Father is started (docs/specs/canvas-father-report.md).
-              const text = [`Report from the Father · ${father.threadId}`, `Work graph: ${father.graphId}`, `Status: ${found.status}`,
-                found.error, ...found.tasks.map(task => `${titleOf(task.id.replace(/-check$/, ""))}${task.id.endsWith("-check") ? " (check)" : ""}: ${task.status}\n${JSON.stringify(task.result ?? { failure: task.failureReason ?? null })}`),
-                "This is the Father's completed run report. Acknowledge it briefly without tools, edits, or another run."].filter(Boolean).join("\n\n");
-              try { await api(`/threads/${encodeURIComponent(run.rootThreadId)}/turns`, { text }); }
-              catch (error) { if (live) setNotice(`Father report not delivered: ${error instanceof Error ? error.message : String(error)}`); return; }
-              setNotice(current => current.startsWith("Father report not delivered:") ? "" : current);
-              next = { ...next, father: { ...father, status: found.status, reported: true } };
-              setLog(current => [...current, { at: Date.now(), text: "FATHER REPORT RECEIVED · DATASTORE CAPTURED · Mother", tone: "done" }]);
-            }
-          }
+        // Her record says how his stage goes: the bridge starts the Father after her part and delivers his report
+        // (bridge/client.mjs #workflowEnded), so the run goes on when this screen is closed.
+        const hers = await read(run.rootThreadId, run.graphId);
+        if (hers && hers.status !== run.status) next = { ...next, status: hers.status };
+        const father = next.father, stage = hers?.next;
+        if (father && stage && (stage.threadId !== father.threadId || stage.status !== father.status || !!stage.reported !== !!father.reported)) {
+          next = { ...next, father: { ...father, threadId: stage.threadId, graphId: stage.graphId, status: stage.status, reported: stage.reported } };
+          if (stage.reported && !father.reported) setLog(current => [...current, { at: Date.now(), text: "FATHER REPORT RECEIVED · DATASTORE CAPTURED · Mother", tone: "done" }]);
         }
-        // Her part done: the Father starts his, in his own chat; if hers failed, his never starts.
-        if (father && !father.threadId && FINISHED.has(next.status)) next = { ...next, father: next.status === "succeeded" || next.status === "completed" ? await startFather(father.tasks) : { ...father, status: "cancelled" } };
+        if (stage?.error && live) setNotice(stage.error);
+        // His own run is read in a poll that did not just change him: the change restarts this effect, which reads at once.
+        if (next.father === father && father?.threadId && father.graphId && !father.reported) await read(father.threadId, father.graphId);
         if (live && next !== run) setRun(over(next) ? { ...next, endedAt: Date.now() } : next);
       } catch (error) { if (live) setNotice(error instanceof Error ? error.message : String(error)); }
       finally { polling = false; }
@@ -1039,20 +1030,21 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   }
 
   // The Father's part: his own chat, on her model, told who he is; it starts once hers has succeeded.
-  async function startFather(tasks: RunTask[]): Promise<NonNullable<Run["father"]>> {
-    const goal = mother.brief.trim();
-    const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: `Father · ${graph.name || "Workflows"}`.slice(0, 120),
-      ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}),
-      instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n") });
-    const result = await runPart(created.thread.id, `Father · ${graph.name || "Workflows"}`, tasks);
-    return { tasks, threadId: created.thread.id, graphId: result.graphId, status: "running" };
+  /** The Father's part as the bridge starts it after hers: his chat (her model, the goal and his role as instructions)
+   * and his tasks, in worktrees when he has several writers in a git repository. */
+  async function fatherPart(tasks: RunTask[]) {
+    const goal = mother.brief.trim(), name = `Father · ${graph.name || "Workflows"}`.slice(0, 120);
+    const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
+    const { rootThreadId: _root, name: _name, ...stage } = runPayload("", name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository);
+    return { ...stage, name, thread: { name, instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n"),
+      ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}) } };
   }
 
   // Sends one part of the run. With several writing agents in a git repository, each works in its own worktree and
   // Elpis merges them into the project's branch after the run; without a repository Elpis refuses that, so it isn't asked.
-  async function runPart(rootThreadId: string, name: string, tasks: RunTask[]) {
+  async function runPart(rootThreadId: string, name: string, tasks: RunTask[], next?: Awaited<ReturnType<typeof fatherPart>>) {
     const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
-    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository) });
+    return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository), ...(next ? { next } : {}) });
   }
 
   async function start() {
@@ -1072,7 +1064,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       // on for this chat alone; the Ledger's SUBAGENTS switch still governs every other chat.
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: ready.name.slice(0, 120) || "Workflows",
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
-      const result = await runPart(created.thread.id, ready.name || "Workflows", built.mother);
+      const result = await runPart(created.thread.id, ready.name || "Workflows", built.mother, built.father.length ? await fatherPart(built.father) : undefined);
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setStarting(false); }

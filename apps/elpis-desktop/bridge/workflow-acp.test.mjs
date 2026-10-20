@@ -12,6 +12,7 @@ import { startDesktopServer } from './server.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
+const FATHER = '00000000-0000-0000-0000-00000000000f';
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const task = (id, dependsOn = [], instruction = 'Seed workflow-acp-739') => ({ id, title: id, instruction, kind: 'explore', dependsOn, writeScopes: [], acceptanceCriteria: ['Return evidence'] });
@@ -20,20 +21,25 @@ function fixture(t, overrides = {}) {
   const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
   const root = { id: ROOT, cwd: dir, source: 'cli', model: 'm-fast', modelProvider: 'openai', status: { type: 'idle' } };
+  // Chats the bridge starts (the Father's) are kept, so reading one returns it.
+  const threads = new Map([[ROOT, root]]);
   socket.send = raw => {
     const row = JSON.parse(raw); socket.sent.push(row); if (!row.id) return;
     const result = row.method === 'model/list' ? { data: [{ id: 'm-fast', model: 'm-fast' }] }
       : row.method === 'thread/list' ? { data: [root], nextCursor: null }
-      : row.method === 'thread/read' || row.method === 'thread/resume' ? { thread: root }
+      : row.method === 'thread/read' || row.method === 'thread/resume' ? { thread: threads.get(row.params.threadId) ?? root }
+      : row.method === 'thread/start' ? (() => { const made = { ...root, id: FATHER, cwd: row.params.cwd ?? dir }; threads.set(FATHER, made); return { thread: made }; })()
+      : row.method === 'turn/start' && socket.refuseTurns > 0 && socket.refuseTurns-- ? { __error: 'busy' }
+      : row.method === 'turn/start' ? { turn: { id: `turn-${socket.sent.length}`, status: 'inProgress', items: [] } }
       : row.method === 'workGraph/list' ? { data: [] }
       : row.method.startsWith('workGraph/run') ? { graphId: 'native', threadId: ROOT } : {};
-    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: row.id, result })));
+    queueMicrotask(() => socket.emit('message', JSON.stringify(result?.__error ? { id: row.id, error: { code: -32000, message: result.__error } } : { id: row.id, result })));
   };
   const log = id => {
     const p = path.join(dir, `${id}.jsonl`);
     return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   };
-  const client = new DesktopClient(socket, { rewindHome: path.join(dir, 'rewind'), workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.model }), ...overrides } });
+  const client = new DesktopClient(socket, { rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.model }), ...overrides } });
   t.after(() => { client.close(); removeTestTempDir(tempRoot); });
   const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
   const finished = async id => {
@@ -147,6 +153,39 @@ test('every agent writes: a check gets its own folder, and folders the run names
   assert.ok(fs.statSync(path.join(f.dir, 'agents/writer/check')).isDirectory());
   const opened = f.log('check').find(row => row.method === 'session/new').params._meta.elpis.workflow;
   assert.deepEqual([opened.kind, opened.writeScopes], ['verify', ['agents/writer/check']]);
+});
+// A41: stages belong to the bridge, not to the Workflows screen, so a run goes on when that screen is closed.
+const staged = async (f, id) => { let graph; for (let n = 0; n < 400; n++) { graph = (await f.client.workflows(ROOT)).data.find(item => item.id === id); if (graph?.next && ['cancelled', 'failed'].includes(graph.next.status) || graph?.next?.reported || graph?.next?.error) return graph; await pause(25); } throw Error(`the next stage did not settle: ${JSON.stringify(graph?.next)}`); };
+const fatherPart = { name: 'Father · Team', thread: { name: 'Father · Team', instructions: 'You are the Father.' }, tasks: [task('f')] };
+test('the Father part starts from the bridge after the Mother part, in his own chat, and his report reaches hers', { timeout: 30000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  const r = await f.run([task('m')], { next: fatherPart });
+  assert.equal((await f.finished(r.graphId)).status, 'succeeded');
+  const graph = await staged(f, r.graphId);
+  assert.deepEqual([graph.next.threadId, graph.next.status, graph.next.reported], [FATHER, 'succeeded', true]);
+  assert.equal(f.log('f').filter(row => row.method === 'session/prompt').length, 1, "the Father's agent ran");
+  assert.match(f.socket.sent.find(row => row.method === 'thread/start').params.developerInstructions, /You are the Father\./);
+  const report = f.socket.sent.find(row => row.method === 'turn/start' && row.params.threadId === ROOT);
+  assert.match(JSON.stringify(report.params.input), /Report from the Father[\s\S]*Status: succeeded/);
+});
+test("a refused Father report is tried again, and its reason is kept when it never goes through", { timeout: 30000 }, async t => {
+  for (const [refusals, reported] of [[2, true], [9, false]]) {
+    const f = fixture(t); await f.client.initialize(); f.socket.refuseTurns = refusals;
+    const r = await f.run([task('m')], { next: fatherPart });
+    const graph = await staged(f, r.graphId);
+    if (!reported) for (let n = 0; n < 200 && !graph.next.error; n++) Object.assign(graph, (await f.client.workflows(ROOT)).data.find(item => item.id === r.graphId)), await pause(25);
+    assert.equal(!!graph.next.reported, reported);
+    if (!reported) assert.match(graph.next.error, /^Father report not delivered: busy/);
+    assert.equal(f.socket.sent.filter(row => row.method === 'turn/start' && row.params.threadId === ROOT).length, reported ? 3 : 4);
+  }
+});
+test('a Mother part that fails never starts the Father', { timeout: 30000 }, async t => {
+  const f = fixture(t); await f.client.initialize();
+  const r = await f.run([task('m', [], '[crash]')], { next: fatherPart });
+  assert.equal((await f.finished(r.graphId)).status, 'failed');
+  assert.equal((await staged(f, r.graphId)).next.status, 'cancelled');
+  assert.equal(f.socket.sent.some(row => row.method === 'thread/start'), false);
+  assert.equal(f.log('f').length, 0);
 });
 test('ACP permissions use the existing approval panel and the offered decision reaches the agent', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();

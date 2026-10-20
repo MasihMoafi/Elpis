@@ -160,12 +160,14 @@ export class DesktopClient extends EventEmitter {
   #workflowRuns; #acpApprovals = new Map();
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
+  #reportAttempts; #reportRetryMs;
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
   #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
+    this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
     this.#githubConnector = githubConnector;
     this.#skillTrash = new SkillTrash(skillTrashOptions);
@@ -178,7 +180,7 @@ export class DesktopClient extends EventEmitter {
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(elpisHome(), 'desktop-workflows'),
       onPermission: (record, task, request, signal) => this.#workflowPermission(record, task, request, signal),
-      onSession: (_record, _task, id) => { this.#known.add(id); }, ...workflowOptions });
+      onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record), ...workflowOptions });
     this.#bind(socket);
   }
   #bind(socket) {
@@ -919,12 +921,10 @@ export class DesktopClient extends EventEmitter {
     const native = await this.#rpc('workGraph/list', {rootThreadId:id});
     return { data: [...(native.data ?? []), ...await this.#workflowRuns.list(id)] };
   }
-  async runWorkflow(body) {
-    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','isolation','roundLimit']);
-    const id=threadId(body.rootThreadId);
-    const params={rootThreadId:id,name:text(body.name,'workflow name',256),tasks:[]};
-    if(!Array.isArray(body.tasks)||body.tasks.length<1||body.tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
-    for(const task of body.tasks){
+  /** One stage's tasks, checked as the scheduler takes them. */
+  #workflowTasks(tasks) {
+    if(!Array.isArray(tasks)||tasks.length<1||tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
+    return tasks.map(task=>{
       object(task,['id','kind','title','instruction','dependsOn','environmentId','writeScopes','acceptanceCriteria','provider','model','reasoningEffort','feedbackFrom']);
       if(!['explore','implement','verify','fix'].includes(task.kind))throw new BridgeError('Unknown task role');
       const next={id:text(task.id,'task ID',100),kind:task.kind,title:text(task.title,'task title',256),instruction:text(task.instruction,'task instructions')};
@@ -947,9 +947,11 @@ export class DesktopClient extends EventEmitter {
         if(!/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(next.model))throw new BridgeError('Invalid ACP model ID');
       }
       if(task.reasoningEffort!==undefined)next.reasoningEffort=this.#effort(task.reasoningEffort);
-      params.tasks.push(next);
-    }
-    if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;
+      return next;
+    });
+  }
+  /** A stage's limits: how many agents at once, how long, and whether writers work in worktrees. */
+  #workflowLimits(body,params){
     for(const key of ['maxConcurrency','maxRuntimeSeconds'])if(body[key]!==undefined){
       if(!Number.isSafeInteger(body[key])||body[key]<1||(key==='maxConcurrency'&&body[key]>32)||(key==='maxRuntimeSeconds'&&body[key]>2147483))throw new BridgeError(`Invalid ${key}`);
       params[key]=body[key];
@@ -959,12 +961,59 @@ export class DesktopClient extends EventEmitter {
       if(body.isolation!=='worktree')throw new BridgeError('Workflow isolation must be "worktree" or absent');
       params.isolation=body.isolation;
     }
+    return params;
+  }
+  /** `next`: the stage that runs after this one has succeeded (the Father's part), in its own chat (`thread`). The bridge
+   * starts it and delivers its report here (#workflowEnded), so the run goes on with the Workflows screen closed. */
+  async runWorkflow(body) {
+    object(body, ['rootThreadId','name','tasks','maxConcurrency','maxRuntimeSeconds','isolation','roundLimit','next']);
+    const id=threadId(body.rootThreadId);
+    const params=this.#workflowLimits(body,{rootThreadId:id,name:text(body.name,'workflow name',256),tasks:this.#workflowTasks(body.tasks)});
+    if(body.roundLimit!==undefined)params.roundLimit=body.roundLimit;
+    if(body.next!==undefined){
+      object(body.next,['name','tasks','thread','maxConcurrency','isolation']);
+      object(body.next.thread,['name','instructions','model','provider']);
+      const thread={name:text(body.next.thread.name,'chat name',120),instructions:text(body.next.thread.instructions,'chat instructions',32000),
+        ...(body.next.thread.model!==undefined?{model:text(body.next.thread.model,'model',200)}:{}),...(body.next.thread.provider!==undefined?{provider:text(body.next.thread.provider,'provider',200)}:{})};
+      params.next=this.#workflowLimits(body.next,{name:text(body.next.name,'workflow name',256),tasks:this.#workflowTasks(body.next.tasks),thread,status:'waiting'});
+    }
     return this.#mutate(id,async()=>{
       const current=await this.#current(id);
       if(current.desktopAccess.mode==='continue')throw new BridgeError('Run workflows from a root conversation; this agent takes turns only from its parent',409);
       if(current.status?.type==='active')throw new BridgeError('Wait for the current turn to finish before running a workflow',409);
       return this.#workflowRuns.start(params,current);
     });
+  }
+  /** A run has ended. A stage that succeeded starts its `next` in a new chat; one that failed or stopped never does. A
+   * run started that way (`report`) sends its report to the chat it came from. */
+  async #workflowEnded(record) {
+    const from=record.report?.from??record.id;
+    try{
+      if(record.report){
+        const lines=[`Report from the Father · ${record.rootThreadId}`,`Work graph: ${record.id}`,`Status: ${record.status}`,record.error,
+          ...record.tasks.map(task=>`${task.title}: ${task.status}\n${JSON.stringify(task.result??{failure:task.failureReason??null})}`),
+          "This is the Father's completed run report. Acknowledge it briefly without tools, edits, or another run."].filter(Boolean);
+        // A refused delivery is tried again a few times; the reason stays on her record if it never goes through.
+        for(let attempt=1;;attempt++){
+          try{await this.send(record.report.to,{text:lines.join('\n\n')});break;}
+          catch(error){
+            if(attempt>=this.#reportAttempts){await this.#workflowRuns.note(from,{status:record.status,reported:false,error:`Father report not delivered: ${String(error?.message??error).slice(0,300)}`});return;}
+            await new Promise(resolve=>setTimeout(resolve,this.#reportRetryMs*attempt));
+          }
+        }
+        await this.#workflowRuns.note(from,{status:record.status,reported:true,error:null});
+        return;
+      }
+      const next=record.next;
+      if(!next||next.threadId||next.status!=='waiting')return;
+      if(record.status!=='succeeded'){await this.#workflowRuns.note(from,{status:'cancelled'});return;}
+      const mother=await this.#current(record.rootThreadId);
+      const created=await this.createThread({...(mother.cwd?{cwd:mother.cwd}:{}),agents:true,name:next.thread.name,instructions:next.thread.instructions,
+        ...(next.thread.model?{model:next.thread.model}:{}),...(next.thread.provider?{provider:next.thread.provider}:{})});
+      const {thread:_thread,status:_status,...stage}=next;
+      const run=await this.#workflowRuns.start({...stage,rootThreadId:created.thread.id,report:{to:record.rootThreadId,from:record.id}},created.thread);
+      await this.#workflowRuns.note(from,{threadId:created.thread.id,graphId:run.graphId,status:'running'});
+    }catch(error){await this.#workflowRuns.note(from,{status:'failed',error:String(error?.message??error).slice(0,500)}).catch(()=>{});}
   }
   /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
    * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
