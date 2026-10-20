@@ -14,11 +14,11 @@ const limit = (limitId, limitName, usedPercent) => ({ limitId, limitName, planTy
 test('Anthropic card: Sign out and Sign in change only Elpis; usage and the model picker follow', async () => {
   const clients = new Set(); const posts = []; let modelRequests = 0;
   // `signedOut`: Elpis's own switch. `claudeCodeIn`: whether Claude Code on this computer is logged in.
-  const state = { signedOut: false, claudeCodeIn: true, activeId: 'default' };
+  const state = { signedOut: false, claudeCodeIn: true, activeId: 'default', signingIn: false };
   const secondId = '66601136-bf70-4727-8da3-0e2e8efc7e99', accountPosts = [];
   const claudeAccounts = () => ({ activeId: state.activeId, accounts: [
     { id: 'default', label: 'Claude 1', email: 'first@example.com', plan: 'max', authenticated: true, signingIn: false, error: null },
-    { id: secondId, label: 'Claude 2', email: 'second@example.com', plan: 'pro', authenticated: true, signingIn: false, error: null },
+    { id: secondId, label: 'Claude 2', email: 'second@example.com', plan: 'pro', authenticated: !state.signingIn, signingIn: state.signingIn, error: null },
   ] });
   const claude = () => state.signedOut ? { state: 'notConnected', models: [], usage: [], signedOut: true }
     : state.claudeCodeIn ? { state: 'connected', models: ['Opus'], usage: [limit('claude', 'Claude', 40)], signedOut: false }
@@ -40,7 +40,11 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/providers/settings') return json(providerSettings);
     if (url.pathname === '/api/providers/claude-accounts') {
-      if (req.method === 'POST') { const input = JSON.parse(raw); accountPosts.push(input); state.activeId = input.id; }
+      if (req.method === 'POST') {
+        const input = JSON.parse(raw); accountPosts.push(input);
+        if (input.action === 'select') state.activeId = input.id;
+        if (input.action === 'code' && input.id === secondId) state.signingIn = false;
+      }
       return json(claudeAccounts());
     }
     if (url.pathname === '/api/providers' && req.method === 'POST') {
@@ -91,6 +95,21 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
     await card.screenshot({ path: '/tmp/elpis-claude-second-account.png' });
     await selector.click(); await page.getByRole('option', { name: 'first@example.com · max', exact: true }).click();
     await selector.filter({ hasText: 'first@example.com' }).waitFor();
+
+    state.signingIn = true;
+    await page.reload(); await openSettings(page, 'Models & accounts');
+    const code = page.getByLabel('Claude sign-in code', { exact: true });
+    await code.waitFor(); assert.equal(await code.getAttribute('type'), 'password');
+    const complete = page.getByRole('button', { name: 'Complete sign-in', exact: true });
+    assert.equal(await complete.isDisabled(), true);
+    await code.fill('fixture-browser-code#state');
+    await page.setViewportSize({ width: 420, height: 900 });
+    assert.equal(await code.isVisible(), true);
+    await card.screenshot({ path: '/tmp/elpis-claude-code-narrow.png' });
+    await complete.click(); await code.waitFor({ state: 'hidden' });
+    assert.deepEqual(accountPosts.at(-1), { action: 'code', id: secondId, code: 'fixture-browser-code#state' });
+    assert.equal(state.activeId, 'default', 'finishing sign-in preserves the selected account');
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     // Sign out: only Elpis; the card, the sidebar's usage, the Usage & limits page and the picker all follow.
     const modelsBefore = modelRequests;
