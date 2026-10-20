@@ -69,11 +69,16 @@ test('appearance choices persist through real desktop IPC, rebase across windows
   const f = windows(t), a = f.open(1), b = f.open(2);
   a.preferences.savePreferences({ accent: 'teal' }); await f.settle();
   b.preferences.savePreferences({ chatFont: 'serif' }); await f.settle();
+  const customThemes = '[{"id":"palette-1","name":"My palette"}]';
+  a.preferences.savePreferences({ customThemes, selectedPalette: 'palette-1' }); await f.settle();
   const saved = JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']);
   assert.equal(saved.accent, 'teal'); assert.equal(saved.chatFont, 'serif');
+  assert.equal(saved.customThemes, customThemes); assert.equal(saved.selectedPalette, 'palette-1');
   for (const window of [a, b]) {
     assert.equal(window.preferences.readPreferences().accent, 'teal');
     assert.equal(window.preferences.readPreferences().chatFont, 'serif');
+    assert.equal(window.preferences.readPreferences().customThemes, customThemes);
+    assert.equal(window.preferences.readPreferences().selectedPalette, 'palette-1');
     assert.deepEqual(window.errors, []);
   }
   for (const changes of [{ accent: 'bad' }, { chatFont: 'bad' }])

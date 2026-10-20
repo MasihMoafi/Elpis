@@ -35,13 +35,17 @@ export type Preferences = {
   codeFont: string;
   chatFont: ChatFont;
   accent: Accent;
+  /** JSON encoded user-authored palettes; stored as text so Electron's preference patch stays atomic. */
+  customThemes: string;
+  /** Selected Appearance palette id, or "elpis" for the built-in palette. */
+  selectedPalette: string;
   /** The sidebar's page order (lib/nav-order.ts): page ids joined by commas; pages not listed keep their place at the end. */
   navOrder: string;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
   softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
-  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", chatFont: "default", accent: "amber", navOrder: "",
+  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "",
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";
 const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = {

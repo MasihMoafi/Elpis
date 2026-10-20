@@ -15,7 +15,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
   // The first answer reports Antigravity's usage; later ones omit it, as the subscription bridge does while it rereads.
   const providers = () => ({
     openai: { auth: { state: 'signedOut' }, usage: [], usageError: null },
-    claude: claudeSignedOut ? { state: 'notConnected', models: [], usage: [] } : { state: 'connected', models: ['Opus'], usage: [limit('claude', 'Claude', 40)] },
+    claude: claudeSignedOut ? { state: 'notConnected', models: [], usage: [] } : { state: 'connected', models: ['Opus'], usage: [limit('claude', 'Claude', 97)] },
     gemini: requests === 1 ? { state: 'connected', models: ['Gemini 3 Pro'], usage: [limit('antigravity-pro', 'Gemini Pro', 30)] }
       // The bridge's answer when it could not read the model list: unknown, which is not a sign-out.
       : modelListUnread ? { state: 'unknown', models: [], usage: [] } : { state: 'available', models: ['Gemini 3 Pro'], usage: [] },
@@ -56,7 +56,9 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     const panel = page.getByRole('button', { name: 'Usage and limits', exact: true });
     await panel.filter({ hasText: 'Antigravity' }).waitFor();
-    assert.equal((await panel.innerText()).replace(/\s+/g, ' ').trim(), 'Anthropic 60% left Antigravity 70% left');
+    assert.equal((await panel.innerText()).replace(/\s+/g, ' ').trim(), 'Anthropic 3% left Antigravity 70% left');
+    const criticalRed = await panel.locator('.usage-row.critical i').evaluate(element => getComputedStyle(element).backgroundImage);
+    assert.match(criticalRed, /rgb\(181, 16, 46\)/, 'critical usage uses the blood-red theme token');
     // A chat configured for "Never ask" and "Full access" starts in Full access.
     assert.equal(await page.locator('.composer-pill.permissions-full').count(), 1);
 
@@ -79,7 +81,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     assert.equal(busiest, 1, 'one usage request at a time');
     assert.match(await card('gemini').innerText(), /30% used/);
     await leaveSettings(page);
-    assert.equal((await panel.innerText()).replace(/\s+/g, ' ').trim(), 'Anthropic 60% left Antigravity 70% left');
+    assert.equal((await panel.innerText()).replace(/\s+/g, ' ').trim(), 'Anthropic 3% left Antigravity 70% left');
 
     // Signing out clears that account's usage.
     claudeSignedOut = true; accountChanged(); await settled(5);

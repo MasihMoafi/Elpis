@@ -119,6 +119,7 @@
     "tests/temp-root-ui.test.cjs",
     "tests/view-boundaries.test.cjs",
     "tests/night-themes.test.cjs",
+    "tests/custom-themes.test.cjs",
     "tests/agents-guide.test.cjs",
     "tests/anthropic-signout.test.cjs",
     "tests/approvals.test.cjs",
