@@ -16,8 +16,8 @@ export function AttachmentChips({ attachments, disabled, onRemove }: { attachmen
       const reply = readReply(part);
       if (reply) return <li key={part.id} className="w-full min-w-0"><ReplyPreview reply={reply} disabled={disabled} onRemove={() => onRemove(part.id)} /></li>;
       const { Icon, kind, ext } = fileKind(part.name), caption = part.type === "image" ? "Image" : kind;
-      return <li key={part.id} data-slot="attachment-chip" className="flex h-14 min-w-0 max-w-full items-center gap-2 rounded-lg border bg-muted/30 p-1.5 pr-1 text-sm">
-        <span data-slot="attachment-thumb" className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+      return <li key={part.id} data-slot="attachment-chip" className="flex h-14 min-w-0 max-w-full items-center gap-2 hud-cut border border-border bg-card text-card-foreground p-1.5 pr-1 text-sm">
+        <span data-slot="attachment-thumb" className="grid size-11 shrink-0 place-items-center overflow-hidden hud-cut-sm bg-muted text-muted-foreground">
           {part.type === "image" ? <img src={part.dataUrl} alt={part.name} className="size-full object-cover" /> : <Icon size={20} strokeWidth={1.5} aria-hidden="true" />}
         </span>
         <span className="grid min-w-0 gap-0.5">

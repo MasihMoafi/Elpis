@@ -186,3 +186,10 @@ Masih clarified that the logo to recolor is Love Spot’s heart icon inside Elpi
 - Feature: Keep Session Manager above Projects and all chats, accessible during search and scrolling.
 - Feature: Wake its agent after three chats are created within approximately twenty minutes or run simultaneously; coordinator review is a proposed default while clarification is pending.
 - Keep: Existing account activation ownership and preservation constraints; this source checkpoint is not an activation.
+## Workflow character assignment — 20 October 2026
+
+Masih asks to add or change characters on existing workflow agents, including
+plain nodes such as Veyra and Orin in his screenshot. Changing artwork must
+preserve the node’s existing work and connections. Local implementation and
+fixture evidence are recorded in ES.md; integration and Masih’s acceptance remain
+open.
