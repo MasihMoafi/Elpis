@@ -421,6 +421,29 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   client.close(); assert.equal(socket.closed, true);
 });
 
+test('a message to a chat the app wrongly thinks busy is delivered, not refused as unavailable (A58)', async () => {
+  const { client, socket } = fixture(); await client.initialize(); await client.models();
+  await client.createThread({ model: MODEL });
+  // As the engine: a steer naming any turn but the running one is refused.
+  const send = socket.send; let running = null;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    const refusal = request.params?.input?.[0]?.text === 'Review this' ? 'active turn uses a different output schema'
+      : request.params?.expectedTurnId === running ? null : running ? `expected active turn id \`${request.params?.expectedTurnId}\` but found \`${running}\`` : 'no active turn to steer';
+    if (request.method !== 'turn/steer' || !refusal) return send(raw);
+    socket.sent.push(request); queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: refusal } })));
+  };
+  // The turn the app saw has finished: the message starts a new turn.
+  assert.equal((await client.steer(CREATED, { text: 'Are you there?', expectedTurnId: 'finished-turn' })).turn?.id, 'new-turn');
+  assert.equal(socket.sent.findLast(row => row.method === 'turn/start').params.input[0].text, 'Are you there?');
+  // Another turn replaced it: the message joins the running turn instead.
+  running = 'running-turn';
+  assert.equal((await client.steer(CREATED, { text: 'Also this', expectedTurnId: 'new-turn' })).turnId, 'running-turn');
+  assert.equal(socket.sent.filter(row => row.method === 'turn/start').length, 1);
+  // Any other refusal keeps the engine's reason instead of a bare code.
+  await assert.rejects(client.steer(CREATED, { text: 'Review this', expectedTurnId: 'running-turn' }), /different output schema/);
+});
+
 test('approvals are only forwarded for owned roots and only accept exact offered decisions, including amendments', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.createThread({});
   const events = []; client.on('event', event => events.push(event));
