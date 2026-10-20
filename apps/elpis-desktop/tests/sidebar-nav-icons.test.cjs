@@ -58,6 +58,25 @@ for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav m
   } finally { await f.close(); }
 });
 
+for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav mark in ${theme} theme`, async () => {
+  const f = await fixture({ viewport: { width: 1280, height: 800 } });
+  try {
+    await chooseTheme(f.page, theme);
+    const loveSpot = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true });
+    const lab = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Lab', exact: true });
+    const expected = theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(232, 59, 67)';
+    const iconColor = () => loveSpot.locator('svg').evaluate(icon => getComputedStyle(icon).color);
+
+    await lab.click();
+    assert.equal(await loveSpot.getAttribute('aria-current'), null);
+    assert.equal(await iconColor(), expected, 'brand color remains visible when Love Spot is inactive');
+    await loveSpot.click();
+    assert.equal(await loveSpot.getAttribute('aria-current'), 'page');
+    assert.equal(await iconColor(), expected, 'brand color remains consistent when Love Spot is active');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('Agents is absent from workspace navigation and commands; Workflows and sidebar Agent runs remain', async () => {
   const f = await fixture({ routes: { '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [
     { id: 'chat-a', name: 'Parent chat', status: { type: 'idle' } },

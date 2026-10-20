@@ -95,6 +95,9 @@ button:disabled { cursor:not-allowed; }
 .nav-list button svg, .settings-nav button[role="tab"] svg, .back-link svg { flex-shrink:0; color:var(--muted-foreground); }
 .back-link { display:flex; align-items:center; cursor:pointer; }
 .nav-list button[aria-current="page"] svg, .settings-nav button[role="tab"].active svg { color:var(--primary); }
+:root { --love-red:#8B1017; }
+.dark { --love-red:#e83b43; }
+.nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
 @keyframes pulse { 50% { opacity:.35; } }
 /* Search fields: one component (components/ui/search-field.tsx), one look, wherever they are. */
 /* The magnifier and text line up with the navigation rows' icons and labels (same 8px inset, 18px icon, 10px gap). */
