@@ -2111,7 +2111,11 @@ async fn status_snapshot_treats_refreshing_empty_limits_as_unavailable() {
         }
     }
     let sanitized = sanitize_directory(rendered_lines).join("\n");
-    assert!(sanitized.contains("Limits:          not available for this account"));
+    let limits = sanitized
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("Limits:"))
+        .expect("a Limits row is present");
+    assert_eq!(limits.trim(), "not available for this account");
 }
 
 #[tokio::test]
