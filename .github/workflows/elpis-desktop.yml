@@ -76,6 +76,10 @@ jobs:
         run: npm ci --prefix ../../tools/elpis-claude --ignore-scripts --no-audit --no-fund
       - name: Install the Electron test binary
         run: npm rebuild electron --no-audit --no-fund
+      - name: Install PDF text extraction tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Install Playwright and its Chromium (the version the local tests use)
         run: |
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.62.1
