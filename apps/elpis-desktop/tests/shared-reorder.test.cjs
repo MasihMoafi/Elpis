@@ -24,6 +24,26 @@ test('A70/R29: chats and Settings use the same ReorderItem and native event hand
     assert.ok(!/ReorderButton|onDragStart:/.test(source), `${file} has no duplicate drag implementation`);
   }
 });
+test('ReorderItem preserves agent indentation when a context menu supplies its own inline style', () => {
+  const { transpileModule, ModuleKind, JsxEmit } = require('typescript');
+  const React = require('react');
+  const source = readFileSync(path.join(__dirname, '../components/reorder.tsx'), 'utf8');
+  const code = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX } }).outputText;
+  const component = { exports: {} };
+  new Function('require', 'module', 'exports', code)(require, component, component.exports);
+  for (const enabled of [false, true]) for (const depth of [0, 1, 2]) {
+    const row = component.exports.ReorderItem({
+      enabled, itemId: 'agent', reorder: { itemProps: () => ({ draggable: true }) },
+      render: React.createElement('div', { style: { paddingLeft: `${depth * 14}px` } }),
+      style: { userSelect: 'none' }, children: 'Agent title',
+    });
+    assert.equal(row.props.style.paddingLeft, `${depth * 14}px`, 'the nested row keeps its depth');
+    assert.equal(row.props.style.userSelect, 'none', 'the menu retains its own interaction style');
+    assert.equal(row.props.children, 'Agent title');
+    assert.equal(row.props.draggable, enabled ? true : undefined);
+  }
+});
+
 for (const theme of ['light', 'dark']) test(`A70/R29: Settings matches the approved solid chat drag, motion, drop line and native events (${theme})`, async () => {
   const f = await fixture({ height: 1100, storage: { 'elpis-theme': theme, ...projectStorage } });
   try {

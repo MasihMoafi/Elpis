@@ -421,3 +421,30 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
   if (mode === 'transient-identity') assert.match(result.stderr, /Packaged desktop identity differs/);
   assert.equal(await fs.readlink(selected), mode === 'valid' ? path.join(path.dirname(path.dirname(previous)), `candidate-${commit.slice(0, 9)}/launch`) : previous);
 });
+
+
+test('approved retained updates pin exact bytes, keep other tests, and reject a changed uncommitted repair', async t => {
+  const f = await fixture(t);
+  const name = 'tests/helper.cjs', bytes = Buffer.from('module.exports = "approved helper";');
+  const blob = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+  await fs.writeFile(path.join(f.root, name), bytes);
+  const updates = { [name]: { blob, approval: f.baseline, reason: 'Approved helper replaces the obsolete lookup' } };
+  const plan = await planSuite(f.root, f.baseline, updates);
+  assert.notEqual(plan.support.baseline, (await planSuite(f.root, f.baseline)).support.baseline);
+  assert.equal(plan.files[1].source, 'baseline', 'unrelated regression remains retained');
+  const retained = await prepareBaseline(f.root, f.baseline, updates);
+  try {
+    assert.deepEqual(await fs.readFile(path.join(retained.root, name)), bytes);
+    assert.equal(await fs.realpath(path.join(retained.root, 'implementation.cjs')), path.join(f.root, 'implementation.cjs'));
+  } finally { execFileSync('gio', ['trash', retained.scratch]); }
+  await fs.writeFile(path.join(f.root, name), 'unreviewed change');
+  await assert.rejects(planSuite(f.root, f.baseline, updates), /pinned retained/);
+  await assert.rejects(prepareBaseline(f.root, f.baseline, updates), /pinned retained/);
+  await fs.writeFile(path.join(f.root, name), bytes);
+  await f.commitSource();
+  await fs.writeFile(path.join(f.root, name), 'another candidate');
+  const pinned = await prepareBaseline(f.root, f.baseline, updates);
+  try { assert.deepEqual(await fs.readFile(path.join(pinned.root, name)), bytes, 'after commit the retained blob is independent of the candidate'); }
+  finally { execFileSync('gio', ['trash', pinned.scratch]); }
+  await assert.rejects(planSuite(f.root, f.baseline, { '../escape': updates[name] }), /Invalid retained/);
+});

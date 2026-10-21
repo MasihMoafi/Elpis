@@ -15,6 +15,53 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 // Round 2 (f96171ccb): the merged repairs (gatefix) keep every case; the earlier baseline still had the pre-merge copies.
 // Round 3 (988aad0e7): combofix scoped the dropdown helper (c23e326c8) and wf1b aimed three Workflows tests at the current UI; every case kept.
 export const baselineCommit = '988aad0e78bd264c00e435be07598e79f08941e8';
+// GATE10: only these audited copies need updated expectations or fixtures. Each pin names
+// the commit implementing the approved behavior; all other retained tests keep their original bytes.
+// Blob pins also cover the small fixture repairs in this change, without advancing the checkpoint.
+export const retainedUpdates = {
+  "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/controls.cjs": {
+      "blob": "612e8501e5739e60cb4baa508b899543eea99f50",
+      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
+      "reason": "A87/R28: one exact logo accent replaces the former amber and Send orange"
+    },
+    "tests/elpis-features.test.cjs": {
+      "blob": "4ea61facc7acc9044ebaf5bce4ad52f900b8a98d",
+      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
+      "reason": "A87/R28: feature controls keep their one-click checks with the approved logo accent"
+    },
+    "tests/dashboard-fixture.cjs": {
+      "blob": "0ddd1f09d25d8af2603dd3666789543b5a04fc28",
+      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
+      "reason": "A132/R30: shared TUI assets and dashboard routes replace the removed desktop API"
+    },
+    "tests/observability.test.cjs": {
+      "blob": "7a248fd62f85f7d14ac5f1d317e0f0b214e20672",
+      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
+      "reason": "A132/R30: retain deletion/totals and complete tool/prompt disclosure against the TUI dashboard"
+    },
+    "tests/page-column.test.cjs": {
+      "blob": "96349c75cfd27647dc4c72ec33826e7ce9f5645c",
+      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
+      "reason": "A132/R30: Observability uses a frame; retain overflow checks for every remaining shared shell"
+    },
+    "tests/page-column.cjs": {
+      "blob": "0b7fed1852f2513490a63ad2d28f3699bfbd54f5",
+      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
+      "reason": "A132/R30: shared column measurements exclude the independently scrolling dashboard frame"
+    },
+    "tests/view-boundaries.test.cjs": {
+      "blob": "eba78f5bd8e2715d70018e4562253ae41704be2f",
+      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
+      "reason": "A121/A70: navigation buttons have labels; inject the Ledger failure into its view, not its navigation button"
+    },
+    "tests/provider-usage.test.cjs": {
+      "blob": "f7224436280cca61f9856afdde3b606d8687e5a5",
+      "approval": "988aad0e78bd264c00e435be07598e79f08941e8",
+      "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action"
+    }
+  }
+};
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
 const appPrefix = 'apps/elpis-desktop/';
@@ -80,12 +127,24 @@ export async function rendererHash(out) {
   return hash.digest('hex');
 }
 
+/** Resolve an immutable replacement, including a not-yet-staged repair with exactly the pinned bytes. */
+async function retainedUpdate(root, name, pin) {
+  assert(/^tests\/[^\0]+$/.test(name) && !name.split('/').includes('..'), `Invalid retained path: ${name}`);
+  assert(/^[a-f0-9]{40}$/.test(pin.blob) && /^[a-f0-9]{40}$/.test(pin.approval) && pin.reason, `Invalid retained pin: ${name}`);
+  let bytes;
+  try { bytes = git(root, ['cat-file', 'blob', pin.blob], { encoding: 'buffer', stdio: ['pipe', 'pipe', 'pipe'] }); }
+  catch { bytes = await fs.readFile(path.join(root, name)); }
+  assert.equal(blob(bytes), pin.blob, `Changed pinned retained regression: ${name}`);
+  return bytes;
+}
+
 /** The immutable baseline owns retained tests; candidate source owns implementations. */
-export async function planSuite(root = appRoot, baseline = baselineCommit) {
+export async function planSuite(root = appRoot, baseline = baselineCommit, updates = retainedUpdates[baseline] ?? {}) {
   const retained = JSON.parse(git(root, ['show', `${baseline}:${appPrefix}test-inventory.json`]));
   const inventory = JSON.parse(await fs.readFile(path.join(root, 'test-inventory.json'), 'utf8'));
   checkInventory(inventory, await discoverTests(root));
   const oldFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`, `${appPrefix}${stateTest}`]);
+  for (const [name, pin] of Object.entries(updates)) oldFiles.set(name, blob(await retainedUpdate(root, name, pin)));
   const currentFiles = new Map(await Promise.all((await treeFiles(path.join(root, 'tests'))).map(async name => [`tests/${name}`, blob(await fs.readFile(path.join(root, 'tests', name)))])));
   try { currentFiles.set(stateTest, blob(await fs.readFile(path.join(root, stateTest)))); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -121,7 +180,7 @@ export function passingCounts(text) {
 }
 
 /** Keep baseline fixtures beside their tests, but resolve production imports and out/ to the candidate. */
-export async function prepareBaseline(root = appRoot, baseline = baselineCommit) {
+export async function prepareBaseline(root = appRoot, baseline = baselineCommit, updates = retainedUpdates[baseline] ?? {}) {
   // Keep screenshot sockets short, on a filesystem that supports the Trash cleanup.
   const base = path.join(os.homedir(), '.cache');
   await fs.mkdir(base, { recursive: true });
@@ -131,6 +190,11 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit)
     const archive = git(repository, ['archive', baseline, `${appPrefix}tests`, `${appPrefix}${stateTest}`], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
     execFileSync('tar', ['-x', '-C', scratch], { input: archive });
     const retainedRoot = path.join(scratch, appPrefix);
+    for (const [name, pin] of Object.entries(updates)) {
+      const bytes = await retainedUpdate(root, name, pin);
+      await fs.mkdir(path.dirname(path.join(retainedRoot, name)), { recursive: true });
+      await fs.writeFile(path.join(retainedRoot, name), bytes);
+    }
     // /init and /personal compare the renderer with the candidate terminal's canonical resources.
     await fs.symlink(path.join(repository, 'codex-rs'), path.join(scratch, 'codex-rs'));
     for (const entry of await fs.readdir(root)) {

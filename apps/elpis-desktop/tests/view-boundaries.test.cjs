@@ -27,7 +27,8 @@ async function throwView(page, selector) {
 for (const view of [
   { name: 'Love Spot', selector: '.love-spot' },
   { name: 'Workflows', selector: '.agents-canvas' },
-  { name: 'Ledger', selector: '[aria-label="Ledger"]' },
+  // dd2ca3576 labels navigation buttons too; inject the failure in the Ledger view.
+  { name: 'Ledger', selector: '.customize[aria-label="Ledger"]' },
   { name: 'Settings', selector: '.settings-layout' },
   { name: 'Chat', selector: '.elpis-features' },
   { name: 'Observability', selector: '[data-view="observability"]' },

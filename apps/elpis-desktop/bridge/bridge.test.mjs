@@ -167,7 +167,8 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
-  const client = new DesktopClient(socket, { browserConfig, sessionManagerConfig, archiveDirectory, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
+  // 156e765a4 adds optional gh instructions. Provider routing tests must not read the operator's connector or credentials.
+  const client = new DesktopClient(socket, { browserConfig, sessionManagerConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -807,7 +808,12 @@ test('HTTP requires capability/cookie, strict origin/host, allowlisted routes an
   const settings = await (await get('/api/settings')).json(); assert.equal(settings.smartPrune.enabled, true);
   assert.doesNotMatch(JSON.stringify(settings), /PRIVATE CONFIG SECRET|private\/config/);
   const context = await (await get(`/api/threads/${ROOT}/context`)).json(); assert.equal(context.tokenUsage, null);
-  for (const route of ['/api/observability', `/api/observability/chats/${ROOT}`]) assert.equal((await get(route)).status, 200, 'the Observability page exposes its recorded chat data');
+  // A132 (189f5bd0d): Observability now serves the authenticated TUI dashboard.
+  for (const route of ['/api/dashboard', '/api/dashboard/', '/api/dashboard/agents.json']) {
+    assert.equal((await fetch(origin + route)).status, 401, `${route} requires a session`);
+    assert.equal((await get(route)).status, 200, `${route} is available after authentication`);
+  }
+  for (const route of ['/api/observability', `/api/observability/chats/${ROOT}`]) assert.equal((await get(route)).status, 404, 'the retired desktop API is not exposed');
   assert.equal((await post('/api/settings', { background_model: 'changed' }, { Cookie: cookie })).status, 400);
   assert.equal((await post(`/api/threads/${ROOT}/context`, {}, { Cookie: cookie })).status, 405);
   assert.equal((await get('/api/threads?archived=yes')).status, 400);

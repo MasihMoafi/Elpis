@@ -63,36 +63,40 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     // A chat configured for "Never ask" and "Full access" starts in Full access.
     assert.equal(await page.locator('.composer-pill.permissions-full').count(), 1);
 
+    // A125 (988aad0e7) reconciles the initial SSE connection as well as reconnects.
+    // Establish that startup count before checking that opening Settings adds no request.
+    await settled(2);
+    const startupRequests = requests;
     await openSettings(page);
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     const usage = page.getByRole('tabpanel', { name: 'Usage & limits', exact: true });
     const card = id => usage.locator(`.usage-card[data-provider="${id}"]`);
     await card('gemini').getByText('30% used').waitFor();
-    await settled(1); // the page reads the same store: opening it asks nothing
+    await settled(startupRequests); // the page reads the same store: opening it asks nothing
     assert.equal(await usage.getByText('Selected conversation · context').count(), 0);
     assert.equal(await usage.locator('dt').count(), 0, 'no chat context table');
 
     // An account event refreshes every view with one request; the omitted usage keeps its last value.
-    accountChanged(); await settled(2);
+    accountChanged(); await settled(startupRequests + 1);
     assert.match(await card('gemini').innerText(), /Gemini Pro · 5-hour limit[\s\S]*30% used/);
     assert.doesNotMatch(await card('gemini').innerText(), /Usage not reported/);
     // A refresh asked for while one is running waits for it, then runs once.
     await usage.getByRole('button', { name: 'Refresh', exact: true }).click(); accountChanged(); accountChanged();
-    await settled(4);
+    await settled(startupRequests + 3);
     assert.equal(busiest, 1, 'one usage request at a time');
     assert.match(await card('gemini').innerText(), /30% used/);
     await leaveSettings(page);
     assert.equal((await panel.innerText()).replace(/\s+/g, ' ').trim(), 'Anthropic 3% left Antigravity 70% left');
 
     // Signing out clears that account's usage.
-    claudeSignedOut = true; accountChanged(); await settled(5);
+    claudeSignedOut = true; accountChanged(); await settled(startupRequests + 4);
     await panel.filter({ hasNotText: 'Anthropic' }).waitFor();
     await openSettings(page);
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();
     await card('claude').getByText('Sign in with Claude Code to see Claude usage.').waitFor();
     assert.match(await card('gemini').innerText(), /30% used/);
     // A refresh that could not read the model list leaves Antigravity's usage in place.
-    modelListUnread = true; accountChanged(); await settled(6);
+    modelListUnread = true; accountChanged(); await settled(startupRequests + 5);
     assert.match(await card('gemini').innerText(), /30% used/);
     assert.doesNotMatch(await card('gemini').innerText(), /Usage not reported|Sign in/);
 
