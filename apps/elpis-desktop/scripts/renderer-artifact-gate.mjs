@@ -8,8 +8,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkInventory, discoverTests } from './test-gate.mjs';
 
-// The reconstructed installed desktop and saved-workspace regression, not blanket user acceptance.
-export const baselineCommit = 'bc4261027056dace49854e23104bcd5b58ed9747';
+// The retained UI regressions: the 21 October integration of every approved desktop fix. Move it only in a commit that
+// names the request (Masih's words) that changes a retained behaviour; never to make a failing gate pass.
+export const baselineCommit = '21343157b57ac2cd2c9a101ab7f39bcadfaaac53';
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
 const appPrefix = 'apps/elpis-desktop/';
