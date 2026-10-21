@@ -163,6 +163,8 @@ const MCP_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 export class DesktopClient extends EventEmitter {
   #socket; #pending = new Map(); #owned = new Set(); #known = new Set(); #models = new Set();
   #catalog = null;
+  /** The Claude account list last seen: which account is active and which are signed in. */
+  #claudeAccountsKey;
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
   #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
   #sideChats = new Map();
@@ -734,7 +736,14 @@ export class DesktopClient extends EventEmitter {
       throw error;
     }
     if (!result || !Array.isArray(result.accounts) || typeof result.activeId !== 'string') throw new BridgeError('Claude accounts could not be read.', 502);
-    if (input?.action === 'select') this.emit('event', { type: 'account', data: { method: 'claudeAccounts/write' } });
+    // A Claude sign-in, code or switch changes which models answer, so the shared model list cannot outlive it (Masih,
+    // 21 October: "the anthropic's double-login which was fixed is now broken"). A login that finishes in the
+    // background is seen on the next read.
+    const key = JSON.stringify([result.activeId, result.accounts.map(account => [account?.id, !!account?.authenticated, !!account?.duplicate])]);
+    const changed = this.#claudeAccountsKey !== undefined && key !== this.#claudeAccountsKey;
+    this.#claudeAccountsKey = key;
+    if (input !== undefined || changed) this.#catalog = null;
+    if (input?.action === 'select' || input?.action === 'code' || changed) this.emit('event', { type: 'account', data: { method: 'claudeAccounts/write' } });
     return result;
   }
   /** Elpis's own Anthropic sign-out, kept by the Elpis bridge for the terminal and every window: only Elpis stops using

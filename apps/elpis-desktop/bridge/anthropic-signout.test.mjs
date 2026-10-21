@@ -127,3 +127,43 @@ test('a bridge without the switch cannot sign out, says so, and the providers st
     assert.equal(providers.claude.state, 'connected');
   } finally { f.client.close(); }
 });
+
+// Masih, 21 October: "the anthropic's double-login which was fixed is now broken". The shared model list (a1cd69635)
+// outlived a Claude sign-in or switch, so the app kept asking for a sign-in that had already succeeded.
+test('a Claude sign-in, code or switch reloads the model list instead of reusing the cached one', async () => {
+  for (const input of [{ action: 'code', id: '66601136-bf70-4727-8da3-0e2e8efc7e99', code: 'abc#def' }, { action: 'select', id: '66601136-bf70-4727-8da3-0e2e8efc7e99' }, { action: 'login', id: 'default' }]) {
+    const f = fixture(); await f.client.initialize();
+    try {
+      await f.client.models();
+      const lists = () => methods(f.socket).filter(method => method === 'model/list').length;
+      await f.client.models();
+      assert.equal(lists(), 1, 'readers share one model list');
+      await f.client.claudeAccounts(input);
+      await f.client.models();
+      assert.equal(lists(), 2, `${input.action}: the next reader gets a fresh model list`);
+    } finally { f.client.close(); }
+  }
+});
+
+test('a Claude login that finishes in the background reloads the model list once it is seen', async () => {
+  const f = fixture(); await f.client.initialize(); const events = [];
+  f.client.on('event', event => events.push(event));
+  const send = f.socket.send; let authenticated = false;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'claudeAccounts/read') return send(raw);
+    f.socket.sent.push(request);
+    queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: { activeId: 'default', accounts: [{ id: 'default', label: 'Claude 1', authenticated }] } })));
+  };
+  try {
+    await f.client.claudeAccounts(); await f.client.models();
+    const lists = () => methods(f.socket).filter(method => method === 'model/list').length;
+    await f.client.claudeAccounts(); await f.client.models();
+    assert.equal(lists(), 1, 'an unchanged account list keeps the shared model list');
+    assert.equal(events.filter(event => event.type === 'account').length, 0);
+    authenticated = true;
+    await f.client.claudeAccounts(); await f.client.models();
+    assert.equal(lists(), 2, 'a login seen on the next read reloads the model list');
+    assert.equal(events.filter(event => event.type === 'account').length, 1, 'and tells every window');
+  } finally { f.client.close(); }
+});
