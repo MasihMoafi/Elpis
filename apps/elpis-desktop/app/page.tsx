@@ -6,6 +6,7 @@ import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type C
 import { AgentsIcon, ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Activity, Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ReorderButton } from "@/components/reorder-button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
@@ -1853,13 +1854,9 @@ export default function Home() {
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><img src={brandMark} alt="" width={73} height={36} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        {arrangedPages.map(page => <Button data-slot="nav-row" key={page.id} variant="ghost" draggable data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
-          title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}
-          onDragStart={event => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-page", page.id); }}
-          onDragOver={event => { if (event.dataTransfer.types.includes("text/x-elpis-page")) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
-          onDrop={event => { const id = event.dataTransfer.getData("text/x-elpis-page"); if (!id || id === page.id) return; event.preventDefault(); const box = event.currentTarget.getBoundingClientRect(); reorderPages(move(arrangedPages.map(item => item.id), id, { target: page.id, after: event.clientY > box.top + box.height / 2 })); }}
-          onKeyDown={event => { if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return; event.preventDefault(); event.stopPropagation(); reorderPages(move(arrangedPages.map(item => item.id), page.id, { by: event.key === "ArrowUp" ? -1 : 1 })); requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-nav-page="${page.id}"]`)?.focus()); }}>
-          <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>)}
+        {arrangedPages.map(page => <ReorderButton data-slot="nav-row" key={page.id} variant="ghost" data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
+          title={page.name} itemId={page.id} order={arrangedPages.map(item => item.id)} dragType="text/x-elpis-page" onReorder={reorderPages}>
+          <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</ReorderButton>)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <SessionManagerRow id={sessionManagerId} active={!!sessionManagerId && selected?.id === sessionManagerId && view === "chat"} disabled={!ready || !connected || openingSessionManager} onOpen={() => void openSessionManager()} />

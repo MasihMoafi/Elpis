@@ -318,6 +318,21 @@ test('reading options patch the preferences as the renderer saves them; wrong va
   for (const changes of [{ transcriptSize: 'xl' }, { transcriptWidth: 'full' }, { interfaceFont: 'comic' }, { codeFont: 12 }]) await assert.rejects(store.patch({ key, baseRevision: 1, changes }), /Unsupported/, JSON.stringify(changes));
 });
 
+test('A70: Settings orders patch independently and survive reopening the real desktop store', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-settings-order-')), 'workspace.json');
+  const key = 'elpis-preferences-v1', store = createStateStore(file);
+  await store.set(key, JSON.stringify({ navOrder: 'canvas,customize', sendShortcut: 'modEnter' }));
+  await store.patch({ key, baseRevision: 1, changes: { settingsSectionOrder: 'advanced,app,models,permissions,context,connections' } });
+  await store.patch({ key, baseRevision: 2, changes: { settingsPageOrder: 'appearance,general,notifications' } });
+  assert.deepEqual(JSON.parse(createStateStore(file).read()[key]), {
+    navOrder: 'canvas,customize', sendShortcut: 'modEnter',
+    settingsSectionOrder: 'advanced,app,models,permissions,context,connections', settingsPageOrder: 'appearance,general,notifications',
+  });
+  for (const changes of [{ settingsSectionOrder: [] }, { settingsPageOrder: false }]) {
+    await assert.rejects(store.patch({ key, baseRevision: 3, changes }), /Unsupported/);
+  }
+});
+
 test('retrying the same value after an actual write failure really persists it', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-retry-'));
   const file = path.join(dir, 'workspace.json');

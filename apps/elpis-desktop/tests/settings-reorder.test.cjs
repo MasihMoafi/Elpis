@@ -1,0 +1,47 @@
+// Built CI renderer + mock bridge: regression evidence only; real-app acceptance uses settings-reorder.runtime.cjs.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { fixture } = require('./parity-fixture.cjs');
+const { check, drag } = require('./settings-reorder-check.cjs');
+const { openSettings } = require('./controls.cjs');
+
+for (const theme of ['light', 'dark']) test(`A70: Settings reorder, cancel, keyboard and reload (${theme})`, async () => {
+  const f = await fixture({ height: 1080, storage: { 'elpis-theme': theme } });
+  try {
+    await check(f.page, { theme, shots: process.env.ELPIS_A70_SHOTS });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('A70: failed storage leaves Settings order unchanged and explains the error', async () => {
+  const f = await fixture({ height: 1080 });
+  try {
+    await openSettings(f.page);
+    const sections = f.page.locator('.settings-nav [data-slot="section-link"]'), original = await sections.allTextContents();
+    // Refuse exactly the same synchronous persistence boundary that a full browser store refuses.
+    await f.page.evaluate(() => { window.elpisDesktop.storage.setItem = () => { throw Error('A70 disk unavailable'); }; });
+    await sections.first().focus(); await f.page.keyboard.press('Alt+ArrowDown');
+    await f.page.getByRole('alert').filter({ hasText: 'Could not save Settings order: A70 disk unavailable' }).waitFor();
+    assert.deepEqual(await sections.allTextContents(), original);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('A13/A70: the shared sidebar navigation still reorders by keyboard and drag', async () => {
+  const f = await fixture({ height: 1080 });
+  try {
+    const rows = f.page.locator('aside.sidebar [data-nav-page]');
+    const ids = () => rows.evaluateAll(elements => elements.map(element => element.dataset.navPage));
+    const expected = await ids();
+    await rows.first().focus(); await f.page.keyboard.press('Alt+ArrowDown');
+    [expected[0], expected[1]] = [expected[1], expected[0]];
+    assert.deepEqual(await ids(), expected);
+    assert.equal(await rows.nth(1).evaluate(element => element === document.activeElement), true);
+    await drag(f.page, rows.last(), rows.first());
+    expected.unshift(expected.pop());
+    assert.deepEqual(await ids(), expected);
+    await f.page.reload(); await rows.first().waitFor();
+    assert.deepEqual(await ids(), expected);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
