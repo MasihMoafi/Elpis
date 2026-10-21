@@ -47,6 +47,7 @@ import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
+import { ThreadLink } from "@/components/thread-link";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog, SessionManagerRow, useChatListOrder } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
 import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
@@ -1758,15 +1759,17 @@ export default function Home() {
       }}><ChevronRight size={13} className={expanded[thread.id] ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
-      <button data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
+      <ThreadLink name={name} data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)}>
         <span className="thread-title">{name}</span>
         {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {origin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
-      </button>
-      {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
-      {menu}
+      </ThreadLink>
+      <span className="thread-row-actions">
+        {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
+        {menu}
+      </span>
       </>}
     </ThreadActions>;
   }

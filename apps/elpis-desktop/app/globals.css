@@ -377,12 +377,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .brand img { width:73px; height:36px; flex-shrink:0; }
 .brand-home { flex:0 0 auto; }
 .thread-row { display:flex; align-items:center; gap:2px; min-width:0; padding-right:2px; min-height:34px; }
-.thread-row:hover, .thread-row[data-popup-open] { background:var(--hover); }
-.thread-row.active { background:var(--selected); }
+.thread-row:hover, .thread-row[data-popup-open] { --thread-row-tint:var(--hover); background:var(--hover); }
+.thread-row.active { --thread-row-tint:var(--selected); background:var(--selected); }
 .thread-row.child .thread-link { color:var(--muted-foreground); }
 .thread-row.child.active .thread-link, .thread-row.child:hover .thread-link { color:var(--foreground); }
-.thread-row .thread-actions { opacity:0; flex-shrink:0; transition:opacity .15s; }
-.thread-row:hover .thread-actions, .thread-row[data-popup-open] .thread-actions, .thread-row.active .thread-actions, .thread-row .thread-actions[aria-expanded="true"], .thread-row .thread-actions:focus-visible { opacity:1; }
 .thread-row.child .thread-title { font-size:12.5px; }
 .thread-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .thread-nickname { display:none; }
@@ -714,7 +712,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-ring-icon[data-level="warning"] .context-ring-fill { stroke:var(--warning); }
 .context-ring-icon[data-level="critical"] .context-ring-fill { stroke:var(--destructive); }
 /* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */
-.hud-tooltip { display:grid; gap:2px; max-width:260px; padding:6px 10px; border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); font-size:var(--text-small); line-height:1.35; box-shadow:var(--shadow); pointer-events:none; }
+.hud-tooltip { display:grid; gap:2px; max-width:min(260px, var(--available-width, 260px)); overflow-wrap:anywhere; padding:6px 10px; border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); font-size:var(--text-small); line-height:1.35; box-shadow:var(--shadow); pointer-events:none; }
 .hud-tooltip small { color:var(--muted-foreground); font-size:var(--text-small); }
 /* The ring's popover, laid out as Claude's: a 360px card; rows inset 16px; the context section is a muted header row, a thin
  * bar and the categories below it. It shows the TUI Context Ledger's CONTEXT WINDOW section on one full-window scale. */
@@ -782,7 +780,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Sidebar */
 /* Group labels in the sidebar and in Settings' navigation. */
 .section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
-.thread-row { position:relative; }
+.thread-row { position:relative; container-type:inline-size; }
 /* Keep the agents chevron in the left gutter at every depth; only the row's padding indents agents. */
 .thread-row > button[aria-expanded]:first-child { position:absolute; margin-left:-8px; width:12px; background:transparent; box-shadow:none; }
 .thread-row > button[aria-expanded]:first-child svg { width:12px; height:12px; }
@@ -799,9 +797,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }
 .thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
-.thread-row.selected { background:var(--selected); }
+.thread-row.selected { --thread-row-tint:var(--selected); background:var(--selected); }
+/* Overlay controls: the name keeps the full row at rest and during hover/focus. Match the row's tint over the sidebar. */
+.thread-row-actions { position:absolute; right:2px; top:50%; transform:translateY(-50%); display:inline-flex; align-items:center; gap:2px; padding-left:12px; background:linear-gradient(var(--thread-row-tint, transparent), var(--thread-row-tint, transparent)), var(--sidebar); mask-image:linear-gradient(to right, transparent, #000 12px); opacity:0; pointer-events:none; transition:opacity .15s; }
+.thread-row:hover .thread-row-actions, .thread-row:focus-within .thread-row-actions, .thread-row[data-popup-open] .thread-row-actions { opacity:1; pointer-events:auto; }
 .row-hover-actions { display:none; align-items:center; }
-.thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
+/* Narrow rows keep Pin and Archive in the same existing menu. */
+@container (min-width:216px) { .row-hover-actions { display:inline-flex; } }
+@media(hover:none) { .thread-row-actions { opacity:1; pointer-events:auto; } }
 .row-hover-actions button { color:var(--muted-foreground); }
 .row-hover-actions button:hover { color:var(--primary); }
 /* A chat's status dot, before its title: a still amber ring while it runs, filled amber when it finished unseen, red on error. */
