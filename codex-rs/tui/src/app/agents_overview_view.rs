@@ -195,6 +195,11 @@ enum AgentsOverviewMouseTarget {
 pub(super) struct AgentsOverviewViewState {
     mouse_targets: Vec<(Rect, AgentsOverviewMouseTarget)>,
     scroll: usize,
+    // The selected task's conversation scrolls under the mouse wheel and starts at its top for each task.
+    details_area: Rect,
+    details_scroll: usize,
+    details_max_scroll: usize,
+    details_thread: Option<ThreadId>,
     page_height: usize,
     status_filter: usize,
     help: bool,

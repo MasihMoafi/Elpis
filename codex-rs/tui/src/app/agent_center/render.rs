@@ -135,6 +135,7 @@ impl Renderable for AgentsOverviewView {
         let footer_hints = self.center_footer_hints();
         let mut state = self.state();
         state.mouse_targets.clear();
+        state.details_area = Rect::default();
         let filter_keys = if state.editing_metadata() {
             String::new()
         } else {

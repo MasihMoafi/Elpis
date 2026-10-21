@@ -12,6 +12,15 @@ impl AgentsOverviewView {
         let Some(row) = self.selected_row() else {
             return;
         };
+        let requested_scroll = {
+            let mut state = self.state();
+            if state.details_thread != Some(row.thread_id) {
+                state.details_thread = Some(row.thread_id);
+                state.details_scroll = 0;
+            }
+            state.details_area = area;
+            state.details_scroll
+        };
         let width = usize::from(area.width);
         let own_style = self.provider_style(row, Style::default());
         let parent = self
@@ -270,20 +279,40 @@ impl AgentsOverviewView {
             body.extend(remap_wrapped_line(&line, wrapped));
         }
         let available = usize::from(area.height).saturating_sub(rendered.len());
+        let (mut scroll, mut max_scroll) = (0, 0);
         if body.len() > available {
-            // Clip complete display lines without attaching a link to the ellipsis.
-            // Live state, attention and usage keep their existing priority.
+            // Clip complete display lines without attaching a link to an ellipsis. Live state, attention and usage
+            // keep their existing priority below; the conversation above them scrolls under the mouse wheel, with an
+            // ellipsis where lines are hidden (Masih, 21 October: scroll "to see what it did").
             let footer = body.split_off(footer_start);
-            let head = available.saturating_sub(footer.len() + 1);
-            body.truncate(head);
-            if available > 0 {
-                body.push(HyperlinkLine::new("…".dim().into()));
+            let room = available.saturating_sub(footer.len());
+            if room > 2 {
+                // The last page keeps one line for the ellipsis above it.
+                max_scroll = body.len() + 1 - room;
+                scroll = requested_scroll.min(max_scroll);
             }
-            body.extend(
+            let ellipsis = || HyperlinkLine::new("…".dim().into());
+            let (above, below) = (scroll > 0, scroll == 0 || scroll < max_scroll);
+            let shown = room.saturating_sub(usize::from(above) + usize::from(below));
+            let mut window = Vec::new();
+            if above {
+                window.push(ellipsis());
+            }
+            window.extend(body.drain(scroll..(scroll + shown).min(body.len())));
+            if below && available > 0 {
+                window.push(ellipsis());
+            }
+            window.extend(
                 footer
                     .into_iter()
-                    .take(available.saturating_sub(body.len())),
+                    .take(available.saturating_sub(window.len())),
             );
+            body = window;
+        }
+        {
+            let mut state = self.state();
+            state.details_scroll = scroll;
+            state.details_max_scroll = max_scroll;
         }
         rendered.extend(body);
         Paragraph::new(visible_lines(rendered.clone())).render(area, buf);

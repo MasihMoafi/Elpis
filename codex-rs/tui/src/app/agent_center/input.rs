@@ -7,11 +7,38 @@ use crossterm::event::MouseEvent;
 use crossterm::event::MouseEventKind;
 use ratatui::layout::Position;
 
+/// Lines one wheel notch moves the selected task's conversation, as terminals scroll text.
+const DETAILS_SCROLL_LINES: usize = 3;
+
 impl AgentsOverviewView {
     pub(in crate::app::agents_overview_view) fn command_center_mouse(
         &mut self,
         event: MouseEvent,
     ) -> bool {
+        if matches!(
+            event.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ) {
+            // The wheel over the selected task reads its whole conversation instead of the hidden transcript.
+            let mut state = self.state();
+            if state.help
+                || state.stop_target.is_some()
+                || !state
+                    .details_area
+                    .contains(Position::new(event.column, event.row))
+            {
+                return false;
+            }
+            state.details_scroll = if event.kind == MouseEventKind::ScrollUp {
+                state.details_scroll.saturating_sub(DETAILS_SCROLL_LINES)
+            } else {
+                state
+                    .details_scroll
+                    .saturating_add(DETAILS_SCROLL_LINES)
+                    .min(state.details_max_scroll)
+            };
+            return true;
+        }
         if event.kind != MouseEventKind::Down(MouseButton::Left) || !event.modifiers.is_empty() {
             return false;
         }

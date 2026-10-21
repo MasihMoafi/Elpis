@@ -259,6 +259,70 @@ async fn demo_list_selected_conversation_shows_delegate_tools_reply_steer_and_li
 }
 
 #[tokio::test]
+async fn wheel_over_selected_conversation_reads_everything_the_agent_did() {
+    // Masih, 21 October: a long agent conversation stopped at an ellipsis; the wheel must reach what it did.
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+    let app = make_test_app().await;
+    let parent = model_thread(42, None, "Fix usage", "Claude Opus 5.5", "anthropic");
+    let mut child = model_thread(
+        43,
+        Some(ThreadId::from_u128(42)),
+        "Find emitter",
+        "GPT-6.1 Sol",
+        "openai",
+    );
+    let mut items = vec![
+        serde_json::json!({"type":"userMessage", "id":"ask", "content":[{"type":"text", "text":"Find the usage emitter.", "text_elements":[]}]}),
+    ];
+    items.extend((1..=30).map(|step| serde_json::json!({"type":"commandExecution", "id":format!("step-{step}"), "command":format!("rg step-{step:02}"), "cwd":"/tmp/project", "status":"completed", "commandActions":[]})));
+    child
+        .turns
+        .push(demo_turn("completed", serde_json::Value::Array(items)));
+    let mut view = app.agents_overview_view(vec![parent, child], Some(ThreadId::from_u128(43)));
+    let (width, height) = (160, 24);
+    let first = screen(&view, width, height);
+    assert!(first.contains("rg step-01"), "{first}");
+    assert!(
+        !first.contains("rg step-30"),
+        "a short window hides later steps:\n{first}"
+    );
+    // Columns 94 onwards hold the selected task at this width; the list keeps the left.
+    let wheel = |kind, column| MouseEvent {
+        kind,
+        column,
+        row: 10,
+        modifiers: KeyModifiers::NONE,
+    };
+    for _ in 0..20 {
+        assert!(view.handle_mouse_event(wheel(MouseEventKind::ScrollDown, 150)));
+        screen(&view, width, height);
+    }
+    let last = screen(&view, width, height);
+    assert!(
+        last.contains("rg step-30"),
+        "scrolling reaches the latest step:\n{last}"
+    );
+    assert!(!last.contains("rg step-01"), "{last}");
+    assert!(
+        last.contains("▎ GPT-6.1 Sol  "),
+        "its status stays pinned below:\n{last}"
+    );
+    for _ in 0..20 {
+        assert!(view.handle_mouse_event(wheel(MouseEventKind::ScrollUp, 150)));
+        screen(&view, width, height);
+    }
+    assert_eq!(
+        screen(&view, width, height),
+        first,
+        "scrolling back restores the first page"
+    );
+    assert!(
+        !view.handle_mouse_event(wheel(MouseEventKind::ScrollDown, 10)),
+        "the wheel over the list is not the conversation's"
+    );
+}
+
+#[tokio::test]
 async fn demo_list_refresh_keeps_the_fetched_conversation_on_the_real_projection_path() -> Result<()>
 {
     let mut app = make_test_app().await;
