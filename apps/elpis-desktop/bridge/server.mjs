@@ -1,7 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
@@ -107,6 +107,25 @@ export async function startDesktopServer(options = {}) {
   const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
+  // Provider continuations include consumed native item IDs and can exceed the HTTP
+  // query limit. Keep that engine state here; the renderer gets a short, chat-bound
+  // continuation. The prompt index uses the engine directly and cannot evict these.
+  const historyCursors = new Map();
+  const exposeHistoryCursor = (id, cursor) => {
+    if (typeof cursor !== 'string' || cursor.length <= 4096) return cursor;
+    const token = 'desktop-page:' + createHash('sha256').update(id).update('\0').update(cursor).digest('base64url');
+    historyCursors.delete(token);
+    historyCursors.set(token, { id, cursor });
+    if (historyCursors.size > 256) historyCursors.delete(historyCursors.keys().next().value);
+    return token;
+  };
+  const resolveHistoryCursor = (id, cursor) => {
+    if (!cursor?.startsWith('desktop-page:')) return cursor;
+    const saved = historyCursors.get(cursor);
+    if (!saved || saved.id !== id) throw new BridgeError('This conversation history page has expired. Reopen the chat and try again.');
+    historyCursors.delete(cursor); historyCursors.set(cursor, saved);
+    return saved.cursor;
+  };
   // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
   const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id),
     listChats: params => client.observabilityChats(params), turnsOf: (id, params) => client.observabilityTurns(id, params), graphsOf: id => client.workflows(id) });
@@ -324,7 +343,12 @@ export async function startDesktopServer(options = {}) {
           const id = decodeURIComponent(thread[1]);
           if (thread[2] === 'shell' && method === 'POST') return json(response, 200, await client.shellCommand(id, await body(request)));
           if (thread[2] === 'side-chat' && method === 'POST') return json(response, 200, await client.createSideChat(id, await body(request)));
-          if (!thread[2] && method === 'GET') return json(response, 200, await client.readThread(id, pageQuery(url)));
+          if (!thread[2] && method === 'GET') {
+            const query = pageQuery(url);
+            if (query.cursor) query.cursor = resolveHistoryCursor(id, query.cursor);
+            const page = await client.readThread(id, query);
+            return json(response, 200, { ...page, nextCursor: exposeHistoryCursor(id, page.nextCursor) });
+          }
           if (thread[2] === 'prompts' && method === 'GET') return json(response, 200, await client.readPrompts(id));
           if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
           if (thread[2] === 'git' && method === 'GET') {

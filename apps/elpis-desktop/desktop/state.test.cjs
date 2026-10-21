@@ -10,6 +10,14 @@ const { EventEmitter } = require('node:events');
 const vm = require('node:vm');
 const { spawn } = require('node:child_process');
 
+test('prompt bookmarks survive reopening the desktop store', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-prompt-bookmarks-')), 'workspace.json');
+  const key = 'elpis:prompt-rail-bookmarks:chat-1';
+  await createStateStore(file).set(key, '["turn-1","turn-2"]');
+  assert.equal(createStateStore(file).read()[key], '["turn-1","turn-2"]');
+  await assert.rejects(() => createStateStore(file).set('elpis:prompt-rail-bookmarks:../config', '[]'), /Unsupported/);
+});
+
 test('saved project chat assignments preserve the workspace and remain writable after restart', async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-project-chat-state-')), 'workspace.json');
   const assignments = JSON.stringify({ 'chat-1': 'project-1' });

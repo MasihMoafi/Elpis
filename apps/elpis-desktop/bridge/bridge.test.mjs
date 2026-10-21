@@ -670,12 +670,61 @@ test('prompt index route pages the full thread and returns ordered, bounded prom
   assert.equal(response.status, 200);
   const result = await response.json();
   assert.deepEqual(result.data.map(row => row.turnId), ['t1', 't2', 't3', 't4', 't5']);
+  assert.deepEqual(result.data.map(row => row.itemId), ['u-t1', 'u-t2', 'u-t3', 'u-t4', 'u-t5']);
   assert.equal(result.data[0].text, 'A'.repeat(200));
   assert.deepEqual(result.data.slice(1).map(row => row.text), ['Second prompt', 'Third prompt', 'Fourth prompt', 'Fifth prompt']);
   assert.deepEqual(result.data.map(row => row.reply), ['', 'B'.repeat(600), 'Third answer', '', 'Fifth answer']);
   assert.doesNotMatch(JSON.stringify(result), /not text/);
   assert.deepEqual(socket.sent.filter(row => row.method === 'thread/items/list').map(row => row.params.cursor ?? null), [null, 'middle', 'oldest']);
   assert.equal((await fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: '{}' })).status, 405);
+});
+
+test('the prompt index keeps the original item ID when a turn spans pages of steering messages (A98)', async () => {
+  const prompt = (itemId, text) => ({ turnId: 'long-turn', item: { id: itemId, type: 'userMessage', content: [{ type: 'text', text }] } });
+  const { client } = fixture({ promptPages: {
+    start: { data: [prompt('last-steer', 'Later steering')], nextCursor: 'middle' },
+    middle: { data: [prompt('earlier-steer', 'Earlier steering')], nextCursor: 'oldest' },
+    oldest: { data: [prompt('original', 'The original prompt')], nextCursor: null },
+  } });
+  try {
+    await client.initialize();
+    assert.deepEqual((await client.readPrompts(ROOT)).data, [{ turnId: 'long-turn', itemId: 'original', text: 'The original prompt', reply: '' }]);
+  } finally { client.close(); }
+});
+
+test('provider history cursors fit the HTTP query and stay bound to their chat (A98)', async t => {
+  // providerPage records consumed native item IDs. A valid 100-item continuation
+  // already exceeds pageQuery's 4096-character HTTP limit.
+  const cursor = 'acp-page:' + Buffer.from(JSON.stringify({ nativeSeen: Array.from({ length: 100 }, () => randomUUID()) })).toString('base64url');
+  assert.ok(cursor.length > 4096);
+  const prompt = turnId => ({ turnId, item: { id: turnId, type: 'userMessage', content: [{ type: 'text', text: turnId }] } });
+  const { client, socket } = fixture({ promptPages: {
+    start: { data: [prompt('newest')], nextCursor: cursor },
+    [cursor]: { data: [prompt('oldest')], nextCursor: null },
+  } });
+  await client.initialize();
+  const app = await startDesktopServer({ client }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin;
+  const token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ token }) });
+  const headers = { Cookie: auth.headers.get('set-cookie').split(';')[0] };
+  const read = (id, after) => fetch(`${origin}/api/threads/${id}?limit=100${after ? '&cursor=' + encodeURIComponent(after) : ''}`, { headers });
+  const first = await (await read(ROOT)).json();
+  assert.ok(first.nextCursor.length <= 4096, `HTTP cursor is ${first.nextCursor.length} characters`);
+  assert.equal((await (await read(ROOT)).json()).nextCursor, first.nextCursor, 'repeated pages share a continuation');
+  const wrongChat = await read(CHILD, first.nextCursor);
+  assert.equal(wrongChat.status, 400);
+  const count = socket.sent.filter(row => row.method === 'thread/items/list').length;
+  const stale = await read(ROOT, 'desktop-page:unknown');
+  assert.equal(stale.status, 400);
+  assert.match((await stale.json()).error, /history|conversation/i);
+  assert.equal(socket.sent.filter(row => row.method === 'thread/items/list').length, count, 'unknown continuations never reach the engine');
+  const second = await read(ROOT, first.nextCursor);
+  assert.equal(second.status, 200);
+  assert.deepEqual((await second.json()).data.map(row => row.turnId), ['oldest']);
+  assert.equal(socket.sent.filter(row => row.method === 'thread/items/list').at(-1).params.cursor, cursor, 'the engine receives its original cursor');
+  const index = await (await fetch(`${origin}/api/threads/${ROOT}/prompts`, { headers })).json();
+  assert.deepEqual(index.data.map(row => row.turnId), ['oldest', 'newest']);
 });
 
 test('HTTP requires capability/cookie, strict origin/host, allowlisted routes and contained assets', async t => {

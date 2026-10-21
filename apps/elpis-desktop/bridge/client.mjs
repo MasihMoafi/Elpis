@@ -534,7 +534,7 @@ export class DesktopClient extends EventEmitter {
         if (typeof turnId !== 'string') continue;
         if (item?.type === 'userMessage') {
           const text = Array.isArray(item.content) ? item.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
-          prompts.set(turnId, Array.from(text.trim()).slice(0, 200).join(''));
+          prompts.set(turnId, { itemId: item.id, text: Array.from(text.trim()).slice(0, 200).join('') });
         } else if (item?.type === 'agentMessage') {
           const text = typeof item.text === 'string' ? item.text : Array.isArray(item.content) ? item.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
           if (text.trim()) replies.set(turnId, Array.from(text.trim()).slice(0, 600).join(''));
@@ -544,7 +544,7 @@ export class DesktopClient extends EventEmitter {
       if (cursor && cursors.has(cursor)) throw new BridgeError('Repeated history cursor', 502);
       if (cursor) cursors.add(cursor);
     } while (cursor);
-    return { data: [...prompts].reverse().map(([turnId, text]) => ({ turnId, text, reply: replies.get(turnId) ?? '' })) };
+    return { data: [...prompts].reverse().map(([turnId, prompt]) => ({ turnId, ...prompt, reply: replies.get(turnId) ?? '' })) };
   }
   /** One page of a chat's items. A chat Elpis keeps only as whole turns (older history, or a new chat before its
    * first message is recorded) has no item pages: the engine answers -32601, and the TUI then reads whole turns

@@ -1275,8 +1275,9 @@ export default function Home() {
     setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
     if (request.current === originalRequest) restoreComposerFocus(originalFocus);
   }
-  async function older(untilTurnId?: string): Promise<boolean> {
+  async function older(untilTurnId?: string, untilItemId?: string): Promise<boolean> {
     if (!selected || !itemCursor) return false;
+    const revision = request.current;
     setLoading(true);
     const id = selected.id, pages: Entry[] = [], seen = new Set<string>();
     let cursor: string | null = itemCursor, found = false;
@@ -1286,19 +1287,20 @@ export default function Home() {
         seen.add(cursor);
         const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(cursor)}`);
         if (!Array.isArray(result.data)) throw unreadable("conversations");
-        found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage");
+        found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
         pages.unshift(...result.data.reverse());
         cursor = result.nextCursor;
-        if (!untilTurnId || found || selectedRef.current?.id !== id) break;
+        if (!untilTurnId || found || selectedRef.current?.id !== id || request.current !== revision) break;
       }
-      if (selectedRef.current?.id !== id) return false;
+      if (selectedRef.current?.id !== id || request.current !== revision) return false;
+      setError("");
       stickToBottom.current = false;
       if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop };
       setEntries(prev => [...pages, ...prev]);
       setItemCursor(cursor);
       return untilTurnId ? found : true;
-    } catch (e) { setError(String(e)); return false; }
-    finally { setLoading(false); }
+    } catch (e) { if (request.current === revision) setError(String(e)); return false; }
+    finally { if (request.current === revision) setLoading(false); }
   }
   const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */

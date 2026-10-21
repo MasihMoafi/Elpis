@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Bookmark } from "lucide-react";
 import { api, type Entry } from "@/lib/api";
+import { appStorage } from "@/lib/projects";
+import { messageDomId } from "@/lib/message-reply";
+import { entryKey } from "@/lib/submitted-messages";
 
-type Prompt = { turnId: string; text: string; reply?: string };
+type Prompt = { turnId: string; itemId?: string; text: string; reply?: string };
+type Target = Pick<Prompt, "turnId" | "itemId"> & { threadId: string };
 type PromptList = { threadId: string; data: Prompt[] };
 type IndexState = { threadId: string; status: "loading" | "ready" | "error" };
 type Hovered = { turnId: string; top: number };
@@ -12,7 +16,7 @@ const firstLine = (text: string) => text.trim().split(/\r?\n/, 1)[0] || "(No con
 const isPrompt = (row: unknown): row is Prompt => {
   if (typeof row !== "object" || row === null) return false;
   const value = row as Record<string, unknown>;
-  return typeof value.turnId === "string" && typeof value.text === "string" && (value.reply === undefined || typeof value.reply === "string");
+  return typeof value.turnId === "string" && (value.itemId === undefined || typeof value.itemId === "string") && typeof value.text === "string" && (value.reply === undefined || typeof value.reply === "string");
 };
 
 /** The bridge indexes every prompt; rendered turns supply positions for reading and scrolling. */
@@ -22,7 +26,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   onNavigate: () => void;
   threadId: string | null;
   entries: Entry[];
-  onLoadEarlier: (untilTurnId?: string) => Promise<boolean>;
+  onLoadEarlier: (untilTurnId?: string, untilItemId?: string) => Promise<boolean>;
 }) {
   const [indexed, setIndexed] = useState<PromptList | null>(null);
   const [indexState, setIndexState] = useState<IndexState | null>(null);
@@ -30,20 +34,24 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   const [current, setCurrent] = useState<string | null>(null);
   const [hovered, setHovered] = useState<Hovered | null>(null);
   const [saved, setSaved] = useState<{ threadId: string; ids: Set<string> } | null>(null);
+  const [target, setTarget] = useState<Target | null>(null);
+  const [loadRevision, setLoadRevision] = useState(0);
   const previewId = useId();
   const rail = useRef<HTMLElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   const marks = useRef<HTMLDivElement>(null);
   const elements = useRef(new Map<string, HTMLElement>());
   const loadedOrder = useRef<string[]>([]);
-  const pending = useRef<string | null>(null);
+  const loadingEarlier = useRef(false);
   const frame = useRef(0);
 
-  const goTo = (turnId: string) => {
-    const root = scroller.current, element = elements.current.get(turnId);
-    if (!root || !element) return false;
+  const elementOf = ({ turnId, itemId }: Pick<Prompt, "turnId" | "itemId">) => itemId ? document.getElementById(messageDomId(JSON.stringify([turnId, itemId]))) : elements.current.get(turnId);
+  const goTo = (target: Target) => {
+    const root = scroller.current, element = elementOf(target);
+    if (!root || !element || !root.contains(element)) return false;
     onNavigate();
-    root.scrollTo({ top: root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - 16, behavior: "smooth" });
-    setCurrent(turnId);
+    root.scrollTo({ top: root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - 16, behavior: "instant" });
+    setCurrent(target.turnId);
     return true;
   };
   const place = () => {
@@ -57,19 +65,21 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   const read = () => {
     const root = scroller.current;
     if (!root || !threadId) return;
-    const ids = [...new Set(entries.filter(entry => entry.item.type === "userMessage").map(entry => entry.turnId))];
-    const sections = [...root.querySelectorAll<HTMLElement>("section.turn[data-prompt]")];
-    const found = sections.map((element, index) => ({ element, turnId: ids[index], text: (element.querySelector(".message.user:not(.editing)")?.textContent ?? "").trim() })).filter(prompt => !!prompt.turnId);
+    const seen = new Set<string>();
+    const found = entries.filter(entry => {
+      if (entry.item.type !== "userMessage" || seen.has(entry.turnId)) return false;
+      seen.add(entry.turnId); return true;
+    }).flatMap(entry => {
+      const message = document.getElementById(messageDomId(entryKey(entry)));
+      const element = message?.closest<HTMLElement>("section.turn");
+      return element && root.contains(element) ? [{ element, turnId: entry.turnId, itemId: entry.item.id, text: (message?.querySelector(".message.user:not(.editing)")?.textContent ?? "").trim() }] : [];
+    });
+    found.sort((a, b) => a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
     elements.current = new Map(found.map(prompt => [prompt.turnId, prompt.element]));
     loadedOrder.current = found.map(prompt => prompt.turnId);
-    const data = found.map(({ turnId, text }) => ({ turnId, text }));
-    setLoaded(previous => previous?.threadId === threadId && previous.data.length === data.length && previous.data.every((prompt, index) => prompt.turnId === data[index].turnId && prompt.text === data[index].text) ? previous : { threadId, data });
+    const data = found.map(({ turnId, itemId, text }) => ({ turnId, itemId, text }));
+    setLoaded(previous => previous?.threadId === threadId && previous.data.length === data.length && previous.data.every((prompt, index) => prompt.turnId === data[index].turnId && prompt.itemId === data[index].itemId && prompt.text === data[index].text) ? previous : { threadId, data });
     place();
-    if (pending.current && elements.current.has(pending.current)) {
-      const target = pending.current;
-      pending.current = null;
-      requestAnimationFrame(() => goTo(target));
-    }
   };
   const show = (turnId: string, button: HTMLButtonElement) => {
     if (!rail.current) return;
@@ -80,12 +90,16 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   const lastUser = entries.filter(entry => entry.item.type === "userMessage").at(-1);
   const revision = (lastUser?.turnId ?? "") + ":" + (lastUser?.clientPending ? "pending" : "saved");
   useEffect(() => {
-    elements.current.clear(); loadedOrder.current = []; pending.current = null;
+    elements.current.clear(); loadedOrder.current = [];
+    setTarget(null);
     setCurrent(null); setHovered(null);
     if (!threadId) return;
     try {
-      const stored = JSON.parse(localStorage.getItem("elpis:prompt-rail-bookmarks:" + threadId) ?? "[]");
-      setSaved({ threadId, ids: new Set(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []) });
+      const key = "elpis:prompt-rail-bookmarks:" + threadId, storage = appStorage();
+      const persisted = storage.getItem(key), stored = JSON.parse(persisted ?? localStorage.getItem(key) ?? "[]");
+      const ids = new Set(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []);
+      setSaved({ threadId, ids });
+      if (persisted === null && ids.size) storage.setItem(key, JSON.stringify([...ids]));
     } catch { setSaved({ threadId, ids: new Set() }); }
   }, [threadId]);
   useEffect(() => {
@@ -102,12 +116,63 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   }, [threadId, revision]);
   useEffect(read, [threadId, entries]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (!target || target.threadId !== threadId) return;
+    const element = elementOf(target);
+    if (element && scroller.current?.contains(element)) {
+      for (let parent = element.parentElement; parent && parent !== scroller.current; parent = parent.parentElement) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+      }
+      const turn = element.closest<HTMLElement>("section.turn") ?? element;
+      const visibility = turn.style.contentVisibility;
+      turn.style.contentVisibility = "visible";
+      let frame = 0, passes = 0, stable = 0;
+      // Offscreen turns use estimated heights (content-visibility). Rendering them changes
+      // the destination after the first scroll; finish positioning before releasing the target.
+      const settle = () => {
+        if (!goTo(target)) return;
+        frame = requestAnimationFrame(() => {
+          const root = scroller.current, element = elementOf(target);
+          if (!root || !element) return;
+          const top = Math.max(0, Math.min(root.scrollHeight - root.clientHeight, root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - 16));
+          stable = Math.abs(root.scrollTop - top) < 2 ? stable + 1 : 0;
+          if (++passes < 12 && stable < 2) frame = requestAnimationFrame(settle);
+          else if (!loadingEarlier.current) setTarget(current => current === target ? null : current);
+        });
+      };
+      frame = requestAnimationFrame(settle);
+      return () => { cancelAnimationFrame(frame); turn.style.contentVisibility = visibility; };
+    }
+    if (loadingEarlier.current) return;
+    loadingEarlier.current = true;
+    onNavigate();
+    void onLoadEarlier(target.turnId, target.itemId).then(found => {
+      if (!found) setTarget(current => current === target ? null : current);
+    }).finally(() => {
+      loadingEarlier.current = false;
+      setLoadRevision(revision => revision + 1);
+    });
+  }, [threadId, target, entries, loadRevision, onLoadEarlier]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
     const root = scroller.current; if (!root) return;
     const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(place); };
     root.addEventListener("scroll", onScroll, { passive: true });
     return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(frame.current); };
   }, [scroller]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { marks.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" }); }, [current, indexed]);
+  useLayoutEffect(() => {
+    if (!hovered || !card.current || !rail.current || !scroller.current) return;
+    const fit = () => {
+      if (!card.current || !rail.current || !scroller.current) return;
+      const bounds = scroller.current.getBoundingClientRect(), railTop = rail.current.getBoundingClientRect().top;
+      const half = card.current.getBoundingClientRect().height / 2;
+      const top = Math.max(bounds.top + half + 8, Math.min(bounds.bottom - half - 8, railTop + hovered.top)) - railTop;
+      if (Math.abs(top - hovered.top) > 0.5) setHovered(current => current === hovered ? { ...current, top } : current);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(card.current); observer.observe(scroller.current);
+    return () => observer.disconnect();
+  }, [hovered, indexed, indexState, scroller]);
 
   const loadedPrompts = loaded?.threadId === threadId ? loaded.data : [];
   const indexedPrompts = indexed?.threadId === threadId ? indexed.data : [];
@@ -118,21 +183,19 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
   const reply = preview && indexedPrompts.find(prompt => prompt.turnId === preview.turnId)?.reply;
   const previewUnavailable = indexState?.threadId === threadId && indexState.status !== "loading";
   const activeIndex = hovered ? prompts.findIndex(prompt => prompt.turnId === hovered.turnId) : -1;
-  if (prompts.length < 2) return null;
+  if (!prompts.length) return null;
 
-  const select = (turnId: string) => {
-    if (goTo(turnId)) return;
-    pending.current = turnId;
-    void onLoadEarlier(turnId).then(found => { if (!found && pending.current === turnId) pending.current = null; });
+  const select = ({ turnId, itemId }: Prompt) => {
+    if (threadId) setTarget({ threadId, turnId, itemId });
   };
   const toggleBookmark = (turnId: string) => {
     if (!threadId) return;
     const ids = new Set(bookmarks);
     if (ids.has(turnId)) ids.delete(turnId); else ids.add(turnId);
     setSaved({ threadId, ids });
-    try { localStorage.setItem("elpis:prompt-rail-bookmarks:" + threadId, JSON.stringify([...ids])); } catch { /* The current chat still reflects the choice. */ }
+    try { appStorage().setItem("elpis:prompt-rail-bookmarks:" + threadId, JSON.stringify([...ids])); } catch { /* The current chat still reflects the choice. */ }
   };
-  return <nav ref={rail} className="prompt-rail" aria-label="User messages" data-indexed={indexedPrompts.length >= 2}
+  return <nav ref={rail} className="prompt-rail" aria-label="User messages" data-indexed={indexedPrompts.length > 0}
     onMouseLeave={() => { if (!rail.current?.contains(document.activeElement)) setHovered(null); }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHovered(null); }}
     onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); (event.target as HTMLElement).blur(); setHovered(null); } }}>
@@ -147,10 +210,10 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
           aria-describedby={hovered?.turnId === prompt.turnId ? previewId : undefined}
           onMouseEnter={event => show(prompt.turnId, event.currentTarget)}
           onFocus={event => show(prompt.turnId, event.currentTarget)}
-          onClick={() => select(prompt.turnId)}><i aria-hidden="true" /></button>;
+          onClick={() => select(prompt)}><i aria-hidden="true" /></button>;
       })}
     </div>
-    {preview && <div id={previewId} className="prompt-preview card card-border rounded-box border border-border bg-base-100 text-base-content shadow-lg" style={{ top: hovered.top }}>
+    {preview && <div ref={card} id={previewId} className="prompt-preview card card-border rounded-box border border-border bg-base-100 text-base-content shadow-lg" style={{ top: hovered.top }}>
       <div className="prompt-preview-heading">
         <span data-preview-text className="prompt-preview-title truncate font-medium">{firstLine(preview.text)}</span>
         <button type="button" className="prompt-bookmark btn btn-ghost btn-square btn-xs" aria-label={bookmarks.has(preview.turnId) ? "Remove bookmark" : "Bookmark turn"}
