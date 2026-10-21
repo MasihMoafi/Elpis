@@ -18,6 +18,7 @@ import { plainText } from "@/lib/message-copy";
 import "@/components/message-actions.css";
 import { ReplyPreview } from "@/components/message-reply";
 import { messageDomId, readReply } from "@/lib/message-reply";
+import { questionReplies, questionReplyText } from "@/lib/question-reply";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
@@ -87,7 +88,7 @@ function MessageButtons({actions}:{actions:MessageAction[]}) {
   </>;
 }
 /** Sending an edit replaces this message and every later turn through Elpis (thread/revert), then starts the edited turn. */
-function UserMessage({body,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent}:{onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
+function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,onEdit,onRewind,editBlockedReason,editDraft,onEditDraftChange,editPending,time,onReply,reference,replyContent}:{onReply?:()=>void;reference?:string;replyContent?:React.ReactNode;body:string;bodyContent?:React.ReactNode;attachments:string[];attachmentContent?:React.ReactNode;copyText?:string;onEdit?:(text:string)=>Promise<void>;onRewind?:()=>void;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;time?:number}) {
   const [localEditing,setEditing]=useState(false);const [localDraft,setLocalDraft]=useState(body);const [localBusy,setBusy]=useState(false);const [error,setError]=useState("");
   const busy=localBusy||!!editPending;
   const editing=onEditDraftChange?editDraft!==undefined:localEditing,draft=onEditDraftChange?editDraft??body:localDraft;
@@ -102,7 +103,7 @@ function UserMessage({body,attachments,attachmentContent,copyText,onEdit,onRewin
   </form>;
   const whole=()=>copyText ?? [body,...attachments].filter(Boolean).join("\n");
   const actions:MessageAction[]=[...replyAction(onReply),copyTextAction(whole,false),copyAction("Copy message",whole),...(onEdit?[{id:"edit",label:"Edit message",menuLabel:"Edit and retry",title:"Edit and resend",icon:<Pencil size={14}/>,run:()=>{setDraft(body);setError("");setEditing(true);}}]:[]),...rewindAction(onRewind)];
-  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}{body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
+  return <RightClickMenu actions={menuActions(actions)} area={<div className="user-turn" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}><div className="message user">{replyContent}{bodyContent ?? body}{attachmentContent || (attachments.length>0&&<ul className="mt-2 space-y-1 text-sm" aria-label="Message attachments">{attachments.map((label,index)=><li key={index}>{label}</li>)}</ul>)}{!body&&!attachments.length&&<span>Message content unavailable.</span>}</div><div className="message-actions">
     {time&&<time className="message-time" dateTime={new Date(time).toISOString()} title={new Date(time).toLocaleString()}>{new Date(time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</time>}
     <MessageButtons actions={actions}/>
     {!onEdit&&editBlockedReason&&<Button variant="ghost" size="icon-xs" aria-label="Why editing is unavailable" title={editBlockedReason} onClick={()=>setError(previous=>previous?"":editBlockedReason)}><Pencil size={14}/></Button>}
@@ -114,7 +115,12 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const replies=attached.flatMap(({part,file})=>{const reply=file?readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}):null;return reply?[reply]:[];});
     const reason=editBlockedReason||(attachments.length?"This message contains attachments that this app cannot safely resend.":undefined);
     const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.filter(({part,file})=>!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)})).map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><summary className="cursor-pointer break-all">{file}</summary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
-    return <UserMessage onReply={onReply} reference={reference} replyContent={replies.map(reply=><ReplyPreview key={reply.reference} reply={reply}/>)} body={content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n")} copyText={content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n")} attachments={attachments} attachmentContent={attachmentContent} onEdit={reason?undefined:onEdit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
+    const originalBody=content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n"), answers=questionReplies(originalBody);
+    const body=answers?questionReplyText(answers):originalBody;
+    const bodyContent=answers?<div className="space-y-3">{answers.map((reply,index)=><div key={index} className="space-y-1"><p className="text-sm text-muted-foreground" dir="auto">{reply.question}</p><p dir="auto">{reply.answer}</p></div>)}</div>:undefined;
+    const copyText=answers?[body,...content.filter(part=>part.type!=="text"||fileAttachment(part)).map(part=>part.type==="text"?text(part.text):attachmentLabel(part))].join("\n"):content.map(part=>part.type==="text"?text(part.text):attachmentLabel(part)).join("\n");
+    const edit=reason||!onEdit?undefined:answers?(value:string)=>onEdit(value===body?originalBody:value):onEdit;
+    return <UserMessage onReply={onReply} reference={reference} replyContent={replies.map(reply=><ReplyPreview key={reply.reference} reply={reply}/>)} body={body} bodyContent={bodyContent} copyText={copyText} attachments={attachments} attachmentContent={attachmentContent} onEdit={edit} onRewind={onRewind} editBlockedReason={reason} editDraft={editDraft} onEditDraftChange={onEditDraftChange} editPending={editPending} time={time}/>;
   }
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
