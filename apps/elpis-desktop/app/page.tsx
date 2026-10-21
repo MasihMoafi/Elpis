@@ -1900,7 +1900,7 @@ export default function Home() {
       <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
       <div className="sidebar-footer"><AccountMenu refreshKey={accountRefresh} dark={dark} onTheme={() => setTheme(dark ? "light" : "dark")} onSettings={() => openSettings("general")} onAccounts={manageConnections} /></div>
       <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
-      <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} />
+      <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
     </aside>
     <main className="workspace" style={panelShown && !fullView && side.width ? { "--side-w": `clamp(380px, ${side.width}px, 70%)` } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>

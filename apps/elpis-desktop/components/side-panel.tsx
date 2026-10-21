@@ -18,6 +18,7 @@ import { attach, detach, onOpenPage, onRequest, openRef } from "@/lib/files-pane
 import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import { api } from "@/lib/api";
 import type { BrowserTab } from "@/lib/desktop";
+import { ResizeEdge } from "@/components/resize-edge";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
 export type TerminalTab = { key: string; n: number; cwd: string; threadId?: string };
@@ -144,7 +145,7 @@ type Props = {
  * and `data-float` tells the CSS what floats over it (the chat's card or its pill), so the page and the shell leave
  * that corner free. */
 export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, running = false, launch, covered, onAttach, imagesAllowed }: Props) {
-  const { setWidth } = panel, [resizing, setResizing] = useState(false);
+  const [resizing, setResizing] = useState(false);
   // Tells the Files tab where this chat works and that it can open files (a path clicked in a reply is a file ref only then).
   useEffect(() => { attach(cwd); }, [cwd]);
   useEffect(() => detach, []);
@@ -158,17 +159,12 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       await command("new", { url });
     } catch { openRef({ path: abs }, { asText: true }); }
   }) : undefined, [browserApi, command]); // eslint-disable-line react-hooks/exhaustive-deps
-  const element = useRef<HTMLElement>(null), drag = useRef<{ x: number; width: number } | null>(null);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel;
-  const resizeTo = (next: number) => setWidth(Math.max(MIN_WIDTH, Math.round(next)));
   const full = panel.full, floating = full ? panel.chatCollapsed ? "pill" : "card" : undefined;
-  return <section ref={element} className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${MIN_WIDTH}px` } as CSSProperties}>
-    <div className="side-resize" role="separator" aria-label="Resize side panel" aria-orientation="vertical" tabIndex={0}
-      onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resizeTo((element.current?.getBoundingClientRect().width ?? 400) + (event.key === "ArrowLeft" ? 32 : -32)); } }}
-      onPointerDown={event => { drag.current = { x: event.clientX, width: element.current?.getBoundingClientRect().width ?? 400 }; event.currentTarget.setPointerCapture(event.pointerId); setResizing(true); }}
-      onPointerMove={event => { if (drag.current) resizeTo(drag.current.width + drag.current.x - event.clientX); }}
-      onPointerUp={() => { drag.current = null; setResizing(false); }} onPointerCancel={() => { drag.current = null; setResizing(false); }} />
+  return <section className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${MIN_WIDTH}px` } as CSSProperties}>
+    <ResizeEdge className="side-resize" label="Resize side panel" width={panel.width} min={MIN_WIDTH} initial={400} grows="left" step={32}
+      onResize={panel.setWidth} onClose={panel.closePanel} onDraggingChange={setResizing} />
     <div className="side-header">
       <TabStrip label="Side panel tabs" activeKey={shown?.key ?? null} add={kinds.length > 0 && <DropdownMenu>
         <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New side panel tab" title="New tab: terminal, browser, changes or files" />}><PlusIcon size={15} /></DropdownMenuTrigger>
