@@ -3,5 +3,5 @@ source: tui/src/app/agents_overview_tests.rs
 assertion_line: 80
 expression: "snapshot.join(\"\\n\")"
 ---
-    ● Named task                Unknown                   │ ────────────────────────────────────── | title style: Style::new().fg(Color::Rgb(242, 205, 205)).bg(Color::Reset).underline_color(Color::Reset)
-    ● Named task                Unknown                   │ ────────────────────────────────────── | title style: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset)
+    ● Named task                Unknown                   │ Started by you | title style: Style::new().fg(Color::Rgb(242, 205, 205)).bg(Color::Reset).underline_color(Color::Reset)
+    ● Named task                Unknown                   │ Started by you | title style: Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset)

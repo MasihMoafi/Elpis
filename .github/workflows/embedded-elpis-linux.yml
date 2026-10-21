@@ -290,8 +290,22 @@ jobs:
         run: |
           set -euo pipefail
           status_source=tui/src/chatwidget/status_controls.rs
+          # Parent of 85ad6c41e, before /status included admitted Ledger instructions.
+          status_baseline=653ff4e7e1868265c5c5868521f79346135b9cf8
+          original_status="$status_baseline:codex-rs/$status_source"
           trap 'git restore --source=HEAD --worktree -- "$status_source"' EXIT
-          git show fea460113de6a23f00f1ad44c5cc8984e2184fb6:codex-rs/tui/src/chatwidget/status_controls.rs > "$status_source"
+          # Keep the pinned baseline available after it leaves the shallow checkout.
+          if ! git cat-file -e "$original_status"; then
+            git fetch --no-tags --depth=1 origin "$status_baseline"
+          fi
+          git show "$original_status" > "$status_source"
+          # A75 added a caller; the original implementation did not refresh status.
+          cat >> "$status_source" <<'RS'
+
+          impl ChatWidget {
+              pub(super) fn refresh_status_instruction_sources(&self) {}
+          }
+          RS
           set +e
           cargo test --profile dev-small --locked -p codex-tui --lib \
             chatwidget::tests::status_command_tests::status_command_reports_admitted_development_rules \

@@ -1,6 +1,6 @@
 ---
 source: tui/src/app/agents_overview_tests.rs
-assertion_line: 1465
+assertion_line: 1588
 expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{project}  3\"),\n&normalized_project_group).replace(&project, \"/tmp/project\")"
 ---
   Agent command center  Group: Project  g  View: list
@@ -8,17 +8,17 @@ expression: "render_bottom_popup(&app.chat_widget,\n96).replace(&format!(\"{proj
   ────────────────────────────────────────────────────────────────────────────────────────────
       Tasks                   Model                   │ ● Build the dashboard
   /tmp/project  4                                     │ GPT-6.1-Sol · OpenAI · asked by you
-  › ● Build the dashboard     GPT-6.1-Sol             │ ──────────────────────────────────────
-    └─● Inspect keyboard sh…  Unknown                 │ you → GPT-6.1-Sol  ask
-    ● Repair authentication   Unknown                 │ Build the dashboard
-    ● Review yesterday's ch…  Unknown                 │
+  › ● Build the dashboard     GPT-6.1-Sol             │ Started by you
+    └─● Inspect keyboard sh…  Unknown                 │ Children: Inspect keyboard shortcuts ·
+    ● Repair authentication   Unknown                 │ 0 running
+    ● Review yesterday's ch…  Unknown                 │ you → GPT-6.1-Sol  ask
+                                                      │ Build the dashboard
+                                                      │
                                                       │ ▎ GPT-6.1-Sol  ! needs you
                                                       │
                                                       │ Agent: Inspect keyboard shortcuts
                                                       │ Open task to review.
                                                       │ Waiting for approval.
-                                                      │
-                                                      │
                                                       │
                                                       │
                                                       │
