@@ -915,7 +915,6 @@ impl ListSelectionView {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn set_search_query(&mut self, query: String) {
         self.search_query = query;
         self.apply_filter();
@@ -1248,6 +1247,10 @@ impl BottomPaneView for ListSelectionView {
 
     fn selected_index(&self) -> Option<usize> {
         self.selected_actual_idx()
+    }
+
+    fn search_query(&self) -> Option<&str> {
+        self.is_searchable.then_some(self.search_query.as_str())
     }
 
     fn active_tab_id(&self) -> Option<&str> {

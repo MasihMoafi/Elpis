@@ -1147,6 +1147,19 @@ impl MessageProcessor {
                 .pruner_read()
                 .await
                 .map(|response| Some(response.into())),
+            // Subscription account state belongs to the bridge, which intercepts these RPCs.
+            // A standalone engine has no Claude accounts and must never write a second index.
+            ClientRequest::ClaudeAccountsRead { .. } => Ok(Some(
+                codex_app_server_protocol::ClaudeAccountsReadResponse {
+                    active_id: "default".to_string(),
+                    accounts: Vec::new(),
+                    auth_url: None,
+                }
+                .into(),
+            )),
+            ClientRequest::ClaudeAccountsWrite { .. } => Err(method_not_found(
+                "Claude account switching requires the Elpis Claude bridge",
+            )),
             ClientRequest::PrunerWrite { params, .. } => self
                 .config_processor
                 .pruner_write(params)

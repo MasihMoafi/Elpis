@@ -22,6 +22,7 @@ impl ChatWidget {
             return;
         }
         // Elpis: a thread on a provider the app server does not list gets that provider's list.
+        self.fetch_claude_accounts();
         if self.elpis_open_model_popup_for_other_provider() {
             return;
         }

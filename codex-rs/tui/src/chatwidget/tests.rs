@@ -302,6 +302,8 @@ mod review_mode;
 mod review_picker_tests;
 #[path = "tests/session_model_selection_tests.rs"]
 mod session_model_selection_tests;
+#[path = "tests/claude_accounts_tests.rs"]
+mod claude_accounts_tests;
 mod side;
 mod slash_commands;
 mod config_panel;

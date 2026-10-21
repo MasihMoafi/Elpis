@@ -30,6 +30,8 @@ mod background_task_defaults_tests;
 mod browsing_pagination_tests;
 #[path = "tests/buffered_replay.rs"]
 mod buffered_replay;
+#[path = "tests/claude_accounts_tests.rs"]
+mod claude_accounts_tests;
 #[path = "tests/connector_policy.rs"]
 mod connector_policy;
 #[path = "tests/disconnect_tests.rs"]

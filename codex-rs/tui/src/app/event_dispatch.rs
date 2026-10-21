@@ -2285,6 +2285,21 @@ impl App {
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
             }
+            AppEvent::FetchClaudeAccounts { request_id } => {
+                app_server.fetch_claude_accounts(request_id, self.app_event_tx.clone());
+            }
+            AppEvent::ClaudeAccountsLoaded { request_id, result } => {
+                self.chat_widget.on_claude_accounts_loaded(request_id, result);
+            }
+            AppEvent::OpenClaudeAccounts => {
+                self.chat_widget.open_claude_accounts_popup();
+            }
+            AppEvent::SelectClaudeAccount { id } => {
+                match app_server.select_claude_account(id).await {
+                    Ok(snapshot) => self.chat_widget.on_claude_account_selected(snapshot),
+                    Err(error) => self.chat_widget.add_error_message(format!("Could not switch Claude account: {error}")),
+                }
+            }
             AppEvent::OpenAdvancedReasoningPopup { model } => {
                 self.chat_widget.open_advanced_reasoning_popup(model);
             }

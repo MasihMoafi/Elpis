@@ -75,6 +75,11 @@ pub(crate) trait BottomPaneView: Renderable {
         None
     }
 
+    /// Preserve typed list searches when a background reply refreshes the rows.
+    fn search_query(&self) -> Option<&str> {
+        None
+    }
+
     /// Apply a matching background suggestion when this view supports text prefills.
     fn apply_text_suggestion(
         &mut self,

@@ -352,6 +352,7 @@ pub(crate) use self::elpis_providers::elpis_picker_providers;
 pub(crate) use self::elpis_providers::is_bridged_model;
 pub(crate) use self::elpis_providers::load_elpis_provider_models;
 pub(crate) use self::elpis_providers::set_elpis_catalog_provider;
+mod claude_accounts;
 mod notifications;
 mod session_model_selection;
 use self::notifications::Notification;
@@ -570,6 +571,8 @@ pub(crate) struct ChatWidget {
     has_codex_backend_auth: bool,
     model_catalog: Arc<ModelCatalog>,
     model_popup_request_id: Option<uuid::Uuid>,
+    claude_accounts: Option<codex_app_server_protocol::ClaudeAccountsReadResponse>,
+    claude_accounts_request_id: Option<uuid::Uuid>,
     permission_popup_request_id: Option<uuid::Uuid>,
     permission_discovery: Option<crate::permission_discovery::PermissionDiscovery>,
     worktree_popup_request_id: Option<uuid::Uuid>,

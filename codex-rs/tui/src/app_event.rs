@@ -1334,6 +1334,17 @@ pub(crate) enum AppEvent {
         request_id: uuid::Uuid,
         result: Result<Vec<ModelPreset>, String>,
     },
+    FetchClaudeAccounts {
+        request_id: uuid::Uuid,
+    },
+    ClaudeAccountsLoaded {
+        request_id: uuid::Uuid,
+        result: Result<codex_app_server_protocol::ClaudeAccountsReadResponse, String>,
+    },
+    OpenClaudeAccounts,
+    SelectClaudeAccount {
+        id: String,
+    },
 
     FetchPermissionProfiles {
         request_id: uuid::Uuid,

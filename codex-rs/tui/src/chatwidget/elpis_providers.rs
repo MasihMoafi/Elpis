@@ -445,6 +445,9 @@ impl ChatWidget {
                 },
             ));
         }
+        if let Some(row) = self.claude_accounts_picker_row() {
+            rows.push(("elpis:claude-accounts".to_string(), row));
+        }
         rows
     }
 
@@ -465,6 +468,17 @@ impl ChatWidget {
     /// Every configured provider, each with what it needs to answer, and each bridged
     /// subscription while the model list carries its models.
     pub(crate) fn open_elpis_provider_popup(&mut self) {
+        self.fetch_claude_accounts();
+        self.show_elpis_provider_popup();
+    }
+
+    pub(super) fn refresh_elpis_provider_popup(&mut self) {
+        if self.bottom_pane.has_view(ELPIS_PROVIDER_SELECTION_VIEW_ID) {
+            self.show_elpis_provider_popup();
+        }
+    }
+
+    fn show_elpis_provider_popup(&mut self) {
         // A bridged subscription's model answers instead of the configured provider.
         let active = match bridged_provider_of_model(self.current_model()) {
             Some(bridged) => bridged.id.to_string(),
@@ -475,7 +489,7 @@ impl ChatWidget {
             &self.config.model_provider_id,
             &self.model_catalog.try_list_models().unwrap_or_default(),
         );
-        let items: Vec<SelectionItem> = providers
+        let mut items: Vec<SelectionItem> = providers
             .into_iter()
             .map(|(id, name)| {
                 let provider_for_action = id.clone();
@@ -497,8 +511,15 @@ impl ChatWidget {
                 }
             })
             .collect();
-        let initial_selected_idx = items.iter().position(|item| item.is_current);
-        self.bottom_pane.show_selection_view(SelectionViewParams {
+        if let Some(row) = self.claude_accounts_picker_row() {
+            items.push(row);
+        }
+        let selected_index = self
+            .bottom_pane
+            .selected_index_for_present_view(ELPIS_PROVIDER_SELECTION_VIEW_ID);
+        let initial_selected_idx =
+            selected_index.or_else(|| items.iter().position(|item| item.is_current));
+        let params = SelectionViewParams {
             view_id: Some(ELPIS_PROVIDER_SELECTION_VIEW_ID),
             title: Some("Choose a provider".to_string()),
             subtitle: Some(
@@ -510,7 +531,13 @@ impl ChatWidget {
             search_placeholder: Some("Search providers".to_string()),
             initial_selected_idx,
             ..SelectionViewParams::picker()
-        });
+        };
+        if self.bottom_pane.has_view(ELPIS_PROVIDER_SELECTION_VIEW_ID) {
+            self.bottom_pane
+                .replace_selection_view_if_present(ELPIS_PROVIDER_SELECTION_VIEW_ID, params);
+        } else {
+            self.bottom_pane.show_selection_view(params);
+        }
     }
 
     /// Shows a "loading" picker while the App lists `provider_id`'s models, and returns the id

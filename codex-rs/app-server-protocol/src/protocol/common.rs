@@ -1467,6 +1467,17 @@ client_request_definitions! {
         serialization: global_shared_read("config"),
         response: v2::ConfigReadResponse,
     },
+    ClaudeAccountsRead => "claudeAccounts/read" {
+        params: v2::ClaudeAccountsReadParams,
+        serialization: global_shared_read("claude-accounts"),
+        response: v2::ClaudeAccountsReadResponse,
+    },
+    ClaudeAccountsWrite => "claudeAccounts/write" {
+        params: v2::ClaudeAccountsWriteParams,
+        serialization: global("claude-accounts"),
+        manual_payload_conversion: manual,
+        response: v2::ClaudeAccountsReadResponse,
+    },
     #[experimental("pruner/read")]
     PrunerRead => "pruner/read" {
         params: v2::PrunerReadParams,
@@ -3761,6 +3772,59 @@ mod tests {
             serde_json::to_value(&request)?,
         );
         Ok(())
+    }
+
+    #[test]
+    fn claude_accounts_requests_and_responses_round_trip_bridge_payloads() -> Result<()> {
+        for wire in [
+            json!({"id": 1, "method": "claudeAccounts/read", "params": {}}),
+            json!({"id": 2, "method": "claudeAccounts/write", "params": {"action": "select", "id": "default"}}),
+            json!({"id": 3, "method": "claudeAccounts/write", "params": {"action": "login"}}),
+            json!({"id": 4, "method": "claudeAccounts/write", "params": {"action": "login", "id": "default"}}),
+            json!({"id": 5, "method": "claudeAccounts/write", "params": {"action": "code", "id": "default", "code": "browser-code"}}),
+        ] {
+            let request: ClientRequest = serde_json::from_value(wire.clone())?;
+            assert_eq!(serde_json::to_value(request)?, wire);
+        }
+        for extra in [None, Some("https://claude.ai/oauth/authorize")] {
+            let mut wire = json!({
+                "activeId": "default",
+                "accounts": [{
+                    "id": "default", "label": "Claude 1", "email": null, "plan": "max",
+                    "authenticated": true, "duplicate": false, "signingIn": false, "error": null
+                }]
+            });
+            if let Some(url) = extra {
+                wire["authUrl"] = json!(url);
+            }
+            let response: v2::ClaudeAccountsReadResponse = serde_json::from_value(wire.clone())?;
+            assert_eq!(serde_json::to_value(&response)?, wire);
+            assert_eq!(
+                serde_json::to_value(ClientResponsePayload::ClaudeAccountsRead(response.clone()))?,
+                wire
+            );
+            assert_eq!(
+                serde_json::to_value(ClientResponsePayload::ClaudeAccountsWrite(response))?,
+                wire
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn claude_accounts_write_rejects_invalid_actions_and_missing_selection() {
+        for params in [
+            json!({"action": "select"}),
+            json!({"action": "delete", "id": "default"}),
+            json!({"action": "select", "id": "default", "unsupported": true}),
+        ] {
+            assert!(
+                serde_json::from_value::<ClientRequest>(json!({
+                    "id": 1, "method": "claudeAccounts/write", "params": params
+                }))
+                .is_err()
+            );
+        }
     }
 
     #[test]
