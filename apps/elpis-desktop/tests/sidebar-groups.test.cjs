@@ -285,7 +285,9 @@ const contrast = ({ text, background }) => { const [a, b] = [luminance(text), lu
 
 for (const colorScheme of ['light', 'dark']) for (const width of [1280, 1440]) test(`light and dark: groups, Group and sort and Move to group fit and read well (${colorScheme}, ${width})`, async () => {
   const storage = { ...saved([['g1', 'Customer requests and follow-ups'], ['g2', 'Home']], { 'chat-a': 'g1', 'chat-b': 'g1', 'chat-c': 'g2' }, { collapsed: ['g2'] }),
-    'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p1', name: 'parity-fixture', cwd: CWD }], selectedId: null }) };
+    'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p1', name: 'parity-fixture', cwd: CWD }], selectedId: null }),
+    // Project membership is explicit (TASKS.md:111): the project holds the chat outside both groups.
+    'elpis-project-chats-v1': JSON.stringify({ 'chat-d': 'p1' }) };
   const f = await fixture({ colorScheme, width, height: 900, storage, routes: listed }), { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });

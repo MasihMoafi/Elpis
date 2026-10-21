@@ -199,7 +199,7 @@ test('a running step reads as a sentence with a live timer and animated dots', a
     const still = await app.open({ reducedMotion: 'reduce' });
     const slowRotor = still.page.locator('.activity-group .elpis-working-rotor');
     await slowRotor.waitFor();
-    assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationDuration), '12s', 'reduced motion slows the rotation');
+    assert.equal(await slowRotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
   } finally { await app.close(); }
 });
 

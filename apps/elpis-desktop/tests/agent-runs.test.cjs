@@ -26,7 +26,8 @@ async function mixed({ continueError = false, restoredRun = false, pagedChildren
   }
   routes['/api/threads/exec-run/continue'] = () => { if (continueError) return { __http: 409, error: 'The engine cannot continue this run.' }; threads.push(continued); return { thread: continued }; };
   routes['/api/threads/continued/turns'] = () => ({ turn: { id: 'new-turn' } });
-  const storage = { 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'parser', name: 'Parser project', cwd: CWD }], selectedId: null }), 'elpis-pinned-chats-v1': JSON.stringify(['exec-run']), 'elpis-chat-attention-v1': JSON.stringify({ unread: ['exec-run', 'child-run'], plans: {} }) };
+  // Project membership is explicit (TASKS.md:111): the two personal chats belong to the project.
+  const storage = { 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'parser', name: 'Parser project', cwd: CWD }], selectedId: null }), 'elpis-project-chats-v1': JSON.stringify({ 'chat-a': 'parser', 'chat-b': 'parser' }), 'elpis-pinned-chats-v1': JSON.stringify(['exec-run']), 'elpis-chat-attention-v1': JSON.stringify({ unread: ['exec-run', 'child-run'], plans: {} }) };
   if (restoredRun) storage['elpis-chat-tabs-v1'] = JSON.stringify({ tabs: [{ id: 'saved-tab', threadId: 'exec-run', title: 'Worker · inspect' }], activeId: 'saved-tab' });
   const f = await fixture({ ...options, routes, storage });
   return { ...f, run, child, threads };
