@@ -60,16 +60,15 @@ function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (s
 function ModelChoice({ label, value, models, provider, catalogStatus, disabled, inheritLabel, onChange }: {
   label: string; value: string | null; models: Model[]; provider: string; catalogStatus?: string; disabled: boolean; inheritLabel?: string; onChange: (value: string | null) => void;
 }) {
-  if (models.length) return <OptionSelect aria-label={label} className="settings-choice" value={value ?? ""} onChange={event => onChange(event.target.value || null)} disabled={disabled}>
+  return <div role="group" aria-label={`${label} choices`} className="grid min-w-0 gap-1 text-sm">
+    {models.length ? <OptionSelect aria-label={label} className="settings-choice" value={value ?? ""} onChange={event => onChange(event.target.value || null)} disabled={disabled}>
     {inheritLabel ? <option value="">{inheritLabel}</option> : !value && <option value="" disabled>Choose a model</option>}
     {value && !models.some(model => model.model === value) && <option value={value}>Current configured model</option>}
     {models.map(model => <option key={model.model} value={model.model}>{model.displayName || model.model}</option>)}
-  </OptionSelect>;
-  return <div className="grid min-w-0 gap-1 text-sm">
-    <span className="text-muted-foreground">{value ? "Current configured model" : inheritLabel ?? "No model chosen"}</span>
+    </OptionSelect> : <span className="text-muted-foreground">{value ? "Current configured model" : inheritLabel ?? "No model chosen"}</span>}
     {catalogStatus && <span role="status" className="text-xs text-muted-foreground">{catalogStatus}</span>}
-    <details><summary className="cursor-pointer">Advanced: custom model</summary><p className="text-xs text-muted-foreground">No model catalog is available for {provider}.</p>
-      <Input aria-label={label} value={value ?? ""} onChange={event => onChange(event.target.value.trim() || null)} placeholder="Model name supplied by this connection" maxLength={200} disabled={disabled} />
+    <details><summary className="cursor-pointer">Advanced: custom model</summary><p className="text-xs text-muted-foreground">{models.length ? `Enter a model ID supported by ${provider}.` : `No model catalog is available for ${provider}.`}</p>
+      <Input aria-label={models.length ? `Custom ${label}` : label} value={value ?? ""} onChange={event => onChange(event.target.value.trim() || null)} placeholder="Model name supplied by this connection" maxLength={200} disabled={disabled} />
     </details>
   </div>;
 }
@@ -86,15 +85,27 @@ export function ModelSettings({ value, models }: { value: ElpisSettings; models:
   </SettingsGroup>;
 }
 
+/** The Models overview edits the same defaults as Configuration. */
+export function DefaultModelSettings({ value }: { value: ElpisSettings }) {
+  const { models, error } = useModelCatalog();
+  return <>
+    <CatalogNotice error={error} />
+    <SettingsGroup>
+      <ModelPair which="main" value={value} models={models} modelTitle="Default model" />
+    </SettingsGroup>
+  </>;
+}
+
 const PAIRS = {
   main: { name: "Main", model: "New chats start with this model, here and in the TUI. Change it per chat in the composer.", provider: "The connection the main model runs on." },
   background: { name: "Background", model: "Smart Prune falls back to this model.", provider: "The connection the background model runs on." },
 };
 /** One model and the provider it runs on, saved together. The main model can't be cleared; the background one can. */
-function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value: ElpisSettings; models: Model[] }) {
+function ModelPair({ which, value, models, modelTitle }: { which: keyof typeof PAIRS; value: ElpisSettings; models: Model[]; modelTitle?: string }) {
   const [draft, setDraft] = useState<Partial<Background>>({});
   const saver = useSaver();
   const saved = value[which], current = { ...saved, ...draft }, { name } = PAIRS[which];
+  const title = modelTitle ?? `${name} model`;
   const catalogs = useProviderCatalogs(value, models, [current.provider]);
   const pinned = which === "main" && value.managed?.modelProvider ? value.managed.modelProvider : null;
   const update = (key: keyof Background, text: string | null) => {
@@ -103,12 +114,12 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
   };
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft({}); }, reloaded.text);
   if (!editable(value)) return <>
-    <SettingRow title={`${name} model`}><span className="text-sm">{which === "main" && saved.model ? modelLabel(saved.model, models) : shown(saved.model)}</span></SettingRow>
+    <SettingRow title={title}><span className="text-sm">{which === "main" && saved.model ? modelLabel(saved.model, models) : shown(saved.model)}</span></SettingRow>
     <SettingRow title={`${name} provider`} description={value.write.reason}><span className="text-sm">{shown(saved.provider)}</span></SettingRow>
   </>;
   return <>
-    <SettingRow title={`${name} model`} description={PAIRS[which].model}>
-      <ModelChoice label={`${name} model`} value={current.model} models={catalogs.forProvider(current.provider)} provider={catalogs.connectionLabel(current.provider)} catalogStatus={catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel={which === "main" ? undefined : "Default background model"} onChange={model => update("model", model)} />
+    <SettingRow title={title} description={PAIRS[which].model}>
+      <ModelChoice label={title} value={current.model} models={catalogs.forProvider(current.provider)} provider={catalogs.connectionLabel(current.provider)} catalogStatus={catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel={which === "main" ? undefined : "Default background model"} onChange={model => update("model", model)} />
     </SettingRow>
     <SettingRow title={`${name} provider`} description={pinned ? "Pinned by your requirements." : PAIRS[which].provider}>
       <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={current.provider ?? ""} onChange={event => update("provider", event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{providerOptions(draft.provider ?? saved.provider ?? "", value.providers)}</OptionSelect>

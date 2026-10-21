@@ -41,14 +41,18 @@ export type Preferences = {
   selectedPalette: string;
   /** The sidebar's page order (lib/nav-order.ts): page ids joined by commas; pages not listed keep their place at the end. */
   navOrder: string;
-  /** Settings section order and page order within each section, using the same arranger as the sidebar. */
+  /** Settings section and page order, using the same arranger as the sidebar. */
   settingsSectionOrder: string;
   settingsPageOrder: string;
+  /** JSON page-id → section-id overrides. Unknown ids are ignored by Settings. */
+  settingsPageGroups: string;
+  /** JSON action-id → custom key combination (empty disables the binding). */
+  shortcutBindings: string;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
   softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
-  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", settingsSectionOrder: "", settingsPageOrder: "",
+  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";
 const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = {

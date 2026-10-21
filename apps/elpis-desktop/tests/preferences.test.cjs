@@ -78,6 +78,50 @@ test('OBSRM: empty, partial, repeated and long legacy orders load through the re
   }
 });
 
+test('custom app shortcuts replace defaults, disable, reset and reload without changing typing or native gestures', () => {
+  browser(); const use = loader();
+  const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');
+  const press = (key, code, modifiers = {}) => ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
+  const original = press(',', 'Comma', { ctrlKey: true });
+  const custom = press('y', 'KeyY', { ctrlKey: true, altKey: true });
+  assert.deepEqual(shortcuts.shortcutFor(original, true), { id: 'settings' });
+  preferences.savePreferences({ shortcutBindings: JSON.stringify({ settings: 'Ctrl+Alt+Y', search: '' }) });
+  assert.deepEqual(shortcuts.shortcutFor(custom, true), { id: 'settings' });
+  assert.equal(shortcuts.shortcutFor(original, false), null);
+  assert.equal(shortcuts.shortcutFor(press('K', 'KeyK', { ctrlKey: true, shiftKey: true }), false), null);
+  assert.equal(shortcuts.shortcutConflict('settings', 'Ctrl+N', preferences.readPreferences()), 'New chat');
+  assert.equal(shortcuts.shortcutConflict('settings', 'Shift+Super+N', preferences.readPreferences()), 'New Session in New Window');
+  assert.equal(shortcuts.shortcutConflict('settings', 'Alt+Left', preferences.readPreferences()), 'Back to the previous chat or page');
+  assert.equal(loader()('lib/shortcuts.ts').configuredShortcuts(preferences.readPreferences()).find(item => item.id === 'settings').keys[0], 'Ctrl+Alt+Y');
+  assert.deepEqual(shortcuts.shortcutFor(press('z', 'KeyZ', { ctrlKey: true }), true), null, 'typing keeps native undo');
+  assert.deepEqual(shortcuts.shortcutFor(press('1', 'Digit1', { altKey: true }), false), { id: 'go-to-chat', index: 0 });
+  for (const saved of ['{broken', '[]', 'null', '{"obsolete":"Ctrl+Y","settings":42}']) {
+    preferences.savePreferences({ shortcutBindings: saved });
+    assert.deepEqual(shortcuts.shortcutFor(original, false), { id: 'settings' });
+  }
+  preferences.savePreferences({ shortcutBindings: '{}' });
+  assert.deepEqual(shortcuts.shortcutFor(original, false), { id: 'settings' });
+  assert.equal(shortcuts.shortcutFor(custom, false), null);
+  assert.equal(shortcuts.keyCombination(press('{', 'BracketLeft', { ctrlKey: true, shiftKey: true })), 'Ctrl+Shift+[');
+  assert.equal(shortcuts.keyCombination(press('Control', 'ControlLeft', { ctrlKey: true })), null);
+});
+
+test('app and Quick Entry share recording without triggering the old shortcut; Quick Entry keeps its reserved keys', () => {
+  browser(); const use = loader(), { ShortcutRecorder } = use('components/settings/system-settings.tsx');
+  const recorded = [], refused = [], calls = [];
+  const props = { label: 'Test shortcut', shortcut: '', onRecord: key => recorded.push(key), onRefuse: text => refused.push(text) };
+  const press = (overrides = {}) => ({ code: 'KeyN', key: 'n', ctrlKey: true, altKey: false, shiftKey: false, metaKey: false,
+    preventDefault: () => calls.push('prevent'), stopPropagation: () => calls.push('stop'),
+    nativeEvent: { stopImmediatePropagation: () => calls.push('immediate') }, ...overrides });
+  ShortcutRecorder(props).props.onKeyDown(press());
+  assert.equal(recorded.length, 0); assert.match(refused[0], /reserved/);
+  ShortcutRecorder({ ...props, reserved: [] }).props.onKeyDown(press());
+  assert.deepEqual(recorded, ['Ctrl+N']); assert.deepEqual(calls.slice(-3), ['prevent', 'stop', 'immediate']);
+  const before = calls.length;
+  ShortcutRecorder(props).props.onKeyDown(press({ code: 'Tab', key: 'Tab', ctrlKey: false }));
+  assert.equal(calls.length, before, 'plain Tab leaves the recorder');
+});
+
 test('preferences keep valid choices on this device, and the desktop reads the same close setting', () => {
   const env = browser(), use = loader();
   const { readPreferences, savePreferences, DEFAULT_PREFERENCES, PREFERENCES_KEY } = use('lib/preferences.ts');

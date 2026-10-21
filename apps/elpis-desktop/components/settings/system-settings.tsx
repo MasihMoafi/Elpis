@@ -6,35 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { DesktopQuickEntry, QuickEntryStatus } from "@/lib/desktop";
 import type { Preferences } from "@/lib/preferences";
+import { keyCombination } from "@/lib/shortcuts";
 import { SettingRow, SettingsGroup } from "@/components/settings/rows";
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
-const MODIFIER_KEYS = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight"];
 // Claude's reserved combinations (its Linux and Windows part).
 const RESERVED = ["Ctrl+W", "Ctrl+N", "Ctrl+O", "Ctrl+T", "Ctrl+S", "Ctrl+C", "Ctrl+V"];
 const RESERVED_TEXT = "This shortcut is reserved for common actions. Try a different combination.";
 
-/** The Electron accelerator a key press names, modifiers in Linux order; null while only modifiers are held. */
-function acceleratorOf(event: KeyboardEvent): string | null {
-  if (MODIFIER_KEYS.includes(event.code)) return null;
-  const { code } = event;
-  const key = code.startsWith("Key") ? code.slice(3) : code.startsWith("Digit") ? code.slice(5) : code.startsWith("Arrow") ? code.slice(5)
-    : code === "Space" ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : code;
-  return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super", key].filter(Boolean).join("+");
-}
-
 /** Claude's shortcut recorder: focus it and press the new combination. A key without a modifier (other than F1–F24)
  * or a common action's combination is refused before anything is registered. */
-function ShortcutRecorder({ label, shortcut, disabled, onRecord, onRefuse }: { label: string; shortcut: string; disabled?: boolean; onRecord: (accelerator: string) => void; onRefuse: (text: string) => void }) {
+export function ShortcutRecorder({ label, shortcut, disabled, onRecord, onRefuse, reserved = RESERVED }: { label: string; shortcut: string; disabled?: boolean; onRecord: (accelerator: string) => void; onRefuse: (text: string) => void; reserved?: readonly string[] }) {
   function keyDown(event: KeyboardEvent) {
     // Tab leaves; a plain arrow, Home or End (never a valid shortcut) moves to the next control, as everywhere (lib/arrow-keys.ts).
     const plainKey = !(event.altKey || event.ctrlKey || event.metaKey || event.shiftKey);
     if ((event.key === "Tab" && plainKey) || (plainKey && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(event.key)) || event.nativeEvent.isComposing) return;
     event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation();
-    const accelerator = acceleratorOf(event);
+    const accelerator = keyCombination(event);
     if (!accelerator) return;
     const plain = !accelerator.includes("+") && !/^F([1-9]|1[0-9]|2[0-4])$/.test(accelerator);
-    if (plain || RESERVED.includes(accelerator)) { onRefuse(RESERVED_TEXT); return; }
+    if (plain || reserved.includes(accelerator)) { onRefuse(RESERVED_TEXT); return; }
     onRecord(accelerator);
   }
   return <Button variant="outline" className="min-w-[120px]" aria-label={label} title="Press the new shortcut" disabled={disabled} onKeyDown={keyDown}>

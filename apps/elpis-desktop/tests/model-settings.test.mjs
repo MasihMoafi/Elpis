@@ -45,9 +45,11 @@ const settings = {
 const MAINTENANCE='components/settings/maintenance.tsx';
 const render=(name,props)=>renderToStaticMarkup(React.createElement(load(MAINTENANCE)[name],props));
 
-test('catalog-backed maintenance models are selections instead of identifier fields', () => {
+test('catalog-backed maintenance models keep selections and offer custom IDs in a closed advanced disclosure', () => {
   const html = render('BackgroundSettings', { value: settings, models }) + render('MemorySettings', { value: settings, models });
-  assert.equal((html.match(/<input[^>]*>/g)??[]).filter(tag=>!tag.includes('aria-hidden="true"')&&!tag.includes('type="hidden"')).some(tag=>tag.includes('value="gpt-6-sol"')),false);
+  assert.match(html, /<details><summary[^>]*>Advanced: custom model/);
+  assert.doesNotMatch(html, /<details open/);
+  for (const label of ['Background model', 'Memory extraction model', 'Memory consolidation model']) assert.match(html, new RegExp(`aria-label="Custom ${label}"`));
   assert.match(html, /Sol 6/);
   assert.match(html, /Memory extraction model/);
   assert.match(html, /Default conversation model/);

@@ -5,13 +5,15 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { SHORTCUTS } from "@/lib/shortcuts";
+import { configuredShortcuts } from "@/lib/shortcuts";
+import { usePreferences } from "@/lib/preferences";
 
 /** Ctrl+/ — the ChatGPT app's searchable shortcut list, limited to what Elpis implements. */
 export function ShortcutsDialog({ open, onOpenChange, returnFocus }: { open: boolean; onOpenChange: (open: boolean) => void; returnFocus?: RefObject<HTMLElement | null> }) {
   const [query, setQuery] = useState("");
+  const preferences = usePreferences();
   const terms = query.toLowerCase().trim();
-  const shown = SHORTCUTS.filter(item => !terms || `${item.label} ${item.keys.join(" ")}`.toLowerCase().includes(terms));
+  const shown = configuredShortcuts(preferences).filter(item => !terms || `${item.label} ${item.keys.join(" ")}`.toLowerCase().includes(terms));
   return <AlertDialog open={open} onOpenChange={next => { onOpenChange(next); if (!next) setQuery(""); }}>
     <AlertDialogContent className="shortcuts-dialog" finalFocus={returnFocus}>
       <div className="flex items-center justify-between"><AlertDialogTitle>Keyboard shortcuts</AlertDialogTitle><Button variant="ghost" size="icon-sm" aria-label="Close" onClick={() => onOpenChange(false)}><X size={16} /></Button></div>

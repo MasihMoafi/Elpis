@@ -23,11 +23,12 @@ import { SearchField } from "@/components/ui/search-field";
 import { ViewBoundary } from "@/components/view-boundary";
 import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice, SettingsScope } from "@/components/settings/rows";
 import { SettingsLoader } from "@/components/settings/config-choice";
+import { DefaultModelSettings } from "@/components/settings/maintenance";
 import { SECTIONS, type ConfigSectionId } from "@/lib/config-sections";
 import type { Thread } from "@/lib/api";
 import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 import { arrange, move } from "@/lib/nav-order";
-import { savePreferences, usePreferences } from "@/lib/preferences";
+import { savePreferences, usePreferences, type Preferences } from "@/lib/preferences";
 
 /** Existing control pages stay mounted so each control has one owner and unsaved drafts survive navigation. */
 const TABS = [
@@ -69,31 +70,47 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
   const preferences = usePreferences();
   const [orderError, setOrderError] = useState("");
   const groups = arrange(SECTIONS, preferences.settingsSectionOrder.split(","));
-  const pages = arrange(TABS, preferences.settingsPageOrder.split(","));
-  const reorder = (key: "settingsSectionOrder" | "settingsPageOrder", ids: string[]) => {
-    try { savePreferences({ [key]: ids.join(",") }); setOrderError(""); }
+  let savedGroups: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(preferences.settingsPageGroups);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) savedGroups = parsed as Record<string, unknown>;
+  } catch { /* A damaged layout keeps the default memberships. */ }
+  const pages = arrange(TABS, preferences.settingsPageOrder.split(",")).map(page => ({ ...page,
+    group: groups.find(group => group.id === savedGroups[page.id])?.id ?? page.group,
+  }));
+  const reorder = (patch: Partial<Preferences>) => {
+    try { savePreferences(patch); setOrderError(""); }
     catch (cause) { setOrderError(cause instanceof Error ? cause.message : String(cause)); }
   };
   const sectionOrder: string[] = groups.map(item => item.id);
-  const sectionsReorder = useReorder({ dragType: "text/x-elpis-settings-section", order: () => sectionOrder,
-    canDrop: (id, target) => sectionOrder.includes(id) && sectionOrder.includes(target),
-    onMove: (id, place) => reorder("settingsSectionOrder", move(sectionOrder, id, place)) });
   const pageGroup = (id: string) => pages.find(page => page.id === id)?.group;
-  const pagesReorder = useReorder({ dragType: "text/x-elpis-settings-page",
-    order: id => pages.filter(page => page.group === pageGroup(id)).map(page => page.id),
-    canDrop: (id, target) => !!pageGroup(id) && pageGroup(id) === pageGroup(target),
+  const pageOrder = groups.flatMap(group => pages.filter(page => page.group === group.id).map(page => page.id));
+  const keyboardPageOrder = groups.flatMap(group => {
+    const ids = pages.filter(page => page.group === group.id).map(page => page.id);
+    return ids.length ? ids : [group.id];
+  });
+  const settingsReorder = useReorder({ dragType: "text/x-elpis-settings",
+    order: id => sectionOrder.includes(id) ? sectionOrder : keyboardPageOrder,
+    canDrop: (id, target) => sectionOrder.includes(id) ? sectionOrder.includes(target) : !!pageGroup(id) && (sectionOrder.includes(target) || !!pageGroup(target)),
+    dropInto: (id, target) => !!pageGroup(id) && sectionOrder.includes(target),
     onMove: (id, place) => {
-      const group = pageGroup(id), ids = move(pages.filter(page => page.group === group).map(page => page.id), id, place);
-      let index = 0;
-      reorder("settingsPageOrder", pages.map(page => page.group === group ? ids[index++] : page.id));
+      if (sectionOrder.includes(id)) { reorder({ settingsSectionOrder: move(sectionOrder, id, place).join(",") }); return; }
+      const destination = place.into ? place.target : pageGroup(place.target);
+      if (!destination) return;
+      // Save position and membership in one preference transaction; a failed save changes neither.
+      const memberships = Object.fromEntries(pages.map(page => [page.id, page.id === id ? destination : page.group]));
+      const ids = place.into ? [...pageOrder.filter(page => page !== id), id] : move(pageOrder, id, place);
+      reorder({ settingsPageOrder: ids.join(","), settingsPageGroups: JSON.stringify(memberships) });
     } });
   const [query, setQuery] = useState("");
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const shown = pages.filter(item => terms.every(term => `${item.label} ${item.words}`.toLowerCase().includes(term)));
   const visibleGroups = groups.filter(group => !terms.length || terms.every(term => `${group.label} ${group.description}`.toLowerCase().includes(term)) || shown.some(item => item.group === group.id));
   const [tab, setTab] = useState<SettingsDestination>(initialTab);
+  const [modelOverviewVisited, setModelOverviewVisited] = useState(initialTab === "models");
   const [visited, setVisited] = useState<Tab[]>(TABS.some(item => item.id === initialTab) ? [initialTab as Tab] : []);
   const selectTab = (next: SettingsDestination) => {
+    if (next === "models") setModelOverviewVisited(true);
     const page = TABS.find(page => page.id === next);
     if (page) setVisited(previous => previous.includes(page.id) ? previous : [...previous, page.id]);
     setTab(next);
@@ -103,7 +120,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
   const selectedSection = SECTIONS.find(section => section.id === tab);
   const sectionList = (sections: typeof SECTIONS[number][]) => <SettingsGroup>
     {sections.map(section => <SettingRow key={section.id} title={<h3 data-config-section={section.id}>{section.label}</h3>} description={section.description}>
-      <ReorderItem reorder={sectionsReorder} itemId={section.id} render={<Button variant="outline" title={`${section.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(section.id)}>Open {section.label}</Button>} />
+      <ReorderItem reorder={settingsReorder} itemId={section.id} render={<Button variant="outline" title={`${section.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(section.id)}>Open {section.label}</Button>} />
     </SettingRow>)}
   </SettingsGroup>;
   const sectionPage = selectedSection && <>
@@ -112,7 +129,6 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       {selectedSection.pages.map(link => { const item = TABS.find(page => page.id === link.tab)!; return <SettingRow key={link.tab} title={link.title} description={`Open ${item.label} settings.`} scope={link.scope}>
         <Button variant="outline" onClick={() => selectTab(item.id)}>Open {item.label}</Button>
       </SettingRow>; })}
-      {selectedSection.id === "models" && <SettingsLoader>{settings => <SettingRow title="Default model" scope="new chats"><span>{settings.main.model ?? "Elpis default"}</span></SettingRow>}</SettingsLoader>}
       {selectedSection.id === "connections" && onCustomize && <SettingRow title="Plugins & skills" description="Open the existing plugins and skills controls." scope="new chats"><Button variant="outline" onClick={onCustomize}>Open</Button></SettingRow>}
       {selectedSection.id === "context" && threadId && <SettingRow title="Context Ledger" description="Choose what this chat admits into context. Saved defaults do not change its admission choices." scope="this chat"><Button variant="outline" onClick={onChatContext}>Open Context Ledger</Button></SettingRow>}
       {selectedSection.id === "models" && threadId && <SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow>}
@@ -144,13 +160,14 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />
       <div role="tablist" aria-label="Settings sections" aria-orientation="vertical">
         {visibleGroups.map(group => { const items = shown.filter(item => item.group === group.id);
-          return <div key={group.id} className="settings-nav-group"><ReorderItem reorder={sectionsReorder} itemId={group.id} render={<Button data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} title={`${group.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(group.id)}>{group.label}</Button>} />
-            {items.map(item => <ReorderItem key={item.id} reorder={pagesReorder} itemId={item.id} render={<Button data-slot="nav-row" variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} title={`${item.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(item.id)}><item.Icon size={15} aria-hidden="true" />{item.label}</Button>} />)}
+          return <div key={group.id} className="settings-nav-group"><ReorderItem reorder={settingsReorder} itemId={group.id} render={<Button data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} title={`${group.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(group.id)}>{group.label}</Button>} />
+            {items.map(item => <ReorderItem key={item.id} reorder={settingsReorder} itemId={item.id} render={<Button data-slot="nav-row" variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} title={`${item.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(item.id)}><item.Icon size={15} aria-hidden="true" />{item.label}</Button>} />)}
           </div>; })}
         {!visibleGroups.length && <p className="settings-nav-empty">No setting matches.</p>}
       </div>
     </nav>
     <div className="settings-page">{orderError && <SettingsNotice tone="alert">Could not save Settings order: {orderError}</SettingsNotice>}{tab === "sections" && <><SettingsHeader title="Settings" description="Choose a section to set up Elpis." />{sectionList(groups)}</>}{sectionPage}
+      {modelOverviewVisited && <div hidden={tab !== "models"}><SettingsScope value="new chats"><SettingsLoader>{settings => <DefaultModelSettings value={settings} />}</SettingsLoader></SettingsScope></div>}
       {visited.map(section => <div key={section} role="tabpanel" id={`settings-panel-${section}`} aria-labelledby={`settings-tab-${section}`} hidden={tab !== section}><ViewBoundary resetKey={navigationKey}><SettingsScope value={TABS.find(item => item.id === section)!.scope}>
         {page(section)}
       </SettingsScope></ViewBoundary></div>)}

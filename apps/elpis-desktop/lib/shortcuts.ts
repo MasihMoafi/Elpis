@@ -1,3 +1,5 @@
+import { readPreferences, type Preferences } from "@/lib/preferences";
+
 /** The ChatGPT app's shortcuts that Elpis implements. One list for the handler's documentation,
  * the Ctrl+/ dialog and Settings › Keyboard shortcuts; add a row only with its handler. */
 export type Shortcut = { id: string; group: "Chat" | "Navigation" | "App"; label: string; keys: string[] };
@@ -46,9 +48,59 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "shortcuts", group: "App", label: "Show keyboard shortcuts", keys: ["Ctrl+/"] },
 ];
 
-/** Which shortcut a key event triggers, if any. `typing` is true inside text fields, where only
- * shortcuts with Ctrl apply. */
+// These actions run through shortcutFor. The other entries document native window controls,
+// mouse gestures or keys whose meaning depends on focus in the composer/sidebar.
+const APP_BINDINGS = new Set([
+  "new-chat", "side-chat", "rename", "archive", "pin", "undo-delete", "command-menu", "search",
+  "previous-chat", "next-chat", "new-tab", "close-tab", "next-tab", "previous-tab", "back", "forward",
+  "terminal", "full-view", "files", "sidebar", "copy-folder", "settings", "shortcuts",
+]);
+export const canCustomizeShortcut = (id: string) => APP_BINDINGS.has(id);
+
+export function shortcutBindings(preferences: Pick<Preferences, "shortcutBindings">): Record<string, string> {
+  try {
+    const value: unknown = JSON.parse(preferences.shortcutBindings);
+    if (value && typeof value === "object" && !Array.isArray(value)) return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => APP_BINDINGS.has(entry[0]) && typeof entry[1] === "string" && entry[1].length < 100));
+  } catch { /* Invalid saved bindings keep their defaults. */ }
+  return {};
+}
+
+export function configuredShortcuts(preferences: Pick<Preferences, "shortcutBindings">): Shortcut[] {
+  const bindings = shortcutBindings(preferences);
+  return SHORTCUTS.map(item => Object.hasOwn(bindings, item.id) ? { ...item, keys: bindings[item.id] ? [bindings[item.id]] : [] } : item);
+}
+
+type KeyPress = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
+/** Stable physical punctuation names keep Ctrl+Shift+[ independent of the keyboard's shifted character. */
+export function keyCombination(event: KeyPress): string | null {
+  if (/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(event.code)) return null;
+  const punctuation: Record<string, string> = { BracketLeft: "[", BracketRight: "]", Backquote: "`", Semicolon: ";", Quote: "'", Slash: "/", Backslash: "\\", Comma: ",", Period: ".", Minus: "-", Equal: "=" };
+  const key = punctuation[event.code] ?? (event.code.startsWith("Key") ? event.code.slice(3) : event.code.startsWith("Digit") ? event.code.slice(5)
+    : event.code.startsWith("Arrow") ? event.code.slice(5) : event.code === "Space" ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.code);
+  return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super", key].filter(Boolean).join("+");
+}
+
+const normalized = (keys: string) => keys.replace(/Super|Command|Cmd/g, "Ctrl")
+  .replace("←", "Left").replace("→", "Right").toLowerCase().split("+").sort().join("+");
+export function shortcutConflict(id: string, binding: string, preferences: Pick<Preferences, "shortcutBindings">): string | undefined {
+  return configuredShortcuts(preferences).find(item => item.id !== id && item.keys.some(key => normalized(key) === normalized(binding)))?.label;
+}
+
+/** Which app shortcut a key event triggers. Undo and copy-folder retain their text-field behavior. */
 export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string; index?: number } | null {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !/^F\d+$/.test(event.code)) return null;
+  const bindings = shortcutBindings(readPreferences()), pressed = keyCombination(event);
+  for (const [id, binding] of Object.entries(bindings)) {
+    if (binding && pressed && normalized(binding) === normalized(pressed)) {
+      return typing && (id === "undo-delete" || id === "copy-folder") ? null : { id };
+    }
+  }
+  const hit = defaultShortcutFor(event, typing);
+  return hit && Object.hasOwn(bindings, hit.id) ? null : hit;
+}
+
+function defaultShortcutFor(event: KeyboardEvent, typing: boolean): { id: string; index?: number } | null {
   const ctrl = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
   if (ctrl && !event.altKey && !event.shiftKey) {
     if (key === "n") return { id: "new-chat" };

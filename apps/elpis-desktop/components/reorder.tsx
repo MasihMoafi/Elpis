@@ -9,11 +9,12 @@ type Options = {
   order: (id: string) => readonly string[];
   onMove: (id: string, place: Place) => void | Promise<void>;
   canDrop?: (id: string, target: string) => boolean;
+  dropInto?: (id: string, target: string) => boolean;
 };
 
 /** The chat list's native drag interaction. Lists own their membership and save transaction; every row shares
  * the preview, insertion line, cancellation and keyboard movement. No wrapper changes the row or its menu. */
-export function useReorder({ dragType, order, onMove, canDrop = () => true }: Options) {
+export function useReorder({ dragType, order, onMove, canDrop = () => true, dropInto = () => false }: Options) {
   const dragging = useRef<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; mark: Mark } | null>(null);
   const clear = () => { dragging.current = null; setDrop(null); };
@@ -24,13 +25,13 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true }: Op
       if (!id || !event.dataTransfer.types.includes(dragType) || !allowed(id, key)) return;
       event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move";
       const box = event.currentTarget.getBoundingClientRect();
-      const mark = into ? "into" : event.clientY > box.top + box.height / 2 ? "after" : "before";
+      const mark = into || dropInto(id, key) ? "into" : event.clientY > box.top + box.height / 2 ? "after" : "before";
       setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
     };
     return {
       "data-reorder": "target",
       "data-drop": drop?.id === key ? drop.mark : undefined,
-      "data-drop-target": into && drop?.id === key || undefined,
+      "data-drop-target": (into || drop?.mark === "into") && drop?.id === key || undefined,
       onDragEnter: over, onDragOver: over,
       onDragLeave: (event: DragEvent<HTMLElement>) => {
         if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDrop(previous => previous?.id === key ? null : previous);
@@ -41,7 +42,7 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true }: Op
         clear();
         if (!id || !accept) return;
         event.preventDefault(); event.stopPropagation();
-        onMove(id, { target: key, after: mark === "after", into });
+        onMove(id, { target: key, after: mark === "after", into: into || dropInto(id, key) });
       },
     };
   }
@@ -64,9 +65,12 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true }: Op
         const target = at < 0 ? undefined : ids[at + by];
         if (!target || !allowed(id, target)) return;
         const focused = document.activeElement;
-        const saved = onMove(id, { target, after: by > 0, into: false });
+        const saved = onMove(id, { target, after: by > 0, into: dropInto(id, target) });
         void Promise.resolve(saved).then(() => requestAnimationFrame(() => {
-          if (focused instanceof HTMLElement && focused.isConnected && document.activeElement === document.body) focused.focus();
+          if (focused instanceof HTMLElement && document.activeElement === document.body) {
+            const next = focused.isConnected ? focused : focused.id ? document.getElementById(focused.id) : null;
+            next?.focus();
+          }
         }));
       },
     };
