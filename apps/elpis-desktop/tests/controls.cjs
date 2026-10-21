@@ -1,9 +1,18 @@
 // Exercise the visible shadcn controls, including their portals, rather than
 // mutating hidden inputs or retaining native-select-only test operations.
-async function chooseOption(locator, value) {
+async function openList(locator) {
   const page = locator.page();
   await locator.click();
-  const list = page.getByRole('listbox');
+  // A select can live inside an open combobox (the advanced model form).
+  // Follow its aria-controls after the portal mounts, keeping this exact list
+  // for the close assertion instead of matching the outer combobox's list.
+  const id = await locator.and(page.locator('[aria-controls]')).getAttribute('aria-controls');
+  const content = page.locator(`[id=${JSON.stringify(id)}]`);
+  return content.and(page.getByRole('listbox')).or(content.getByRole('listbox'));
+}
+async function chooseOption(locator, value) {
+  const page = locator.page();
+  const list = await openList(locator);
   const options = list.getByRole('option');
   const option = value && typeof value === 'object' && 'label' in value
     ? list.getByRole('option', { name: value.label, exact: true })
@@ -109,8 +118,7 @@ const unapprovedOranges = (page, exclude = '') => oranges(page, exclude, true);
  * the check mark. Measures the glyphs themselves (a Range), so ellipsis and overflow:hidden both count as cut. */
 async function optionsCut(trigger) {
   const page = trigger.page();
-  await trigger.click();
-  const list = page.getByRole('listbox');
+  const list = await openList(trigger);
   await list.waitFor();
   const cut = await list.evaluate(listbox => {
     const box = element => element.getBoundingClientRect();

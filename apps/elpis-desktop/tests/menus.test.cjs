@@ -113,3 +113,43 @@ test('existing chat keeps both pending model and effort, and sends the visible c
   const turn = calls.find(call => call.method === 'POST' && call.path === '/api/threads/existing/turns');
   assert.deepEqual(turn.data, {text:'Keep the model and effort together.',model:'gpt-5.5',effort:'high'});
 }));
+
+const { fixture: parityFixture } = require('./parity-fixture.cjs');
+const { chooseOption } = require('./controls.cjs');
+
+for (const colorScheme of ['light', 'dark']) test(`nested provider selection closes its own list and keeps the model form usable in ${colorScheme}`, async () => {
+  const f = await parityFixture({ colorScheme, routes: {
+    '/api/settings': () => ({ background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: false },
+      main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'local', displayName: 'Local endpoint' }], managed: {} }),
+  } });
+  const { page } = f;
+  const model = page.getByLabel('Model', { exact: true });
+  try {
+    await model.click();
+    await page.getByText('Advanced: use an unlisted model', { exact: true }).click();
+    const provider = page.getByLabel('Provider', { exact: true });
+    await chooseOption(provider, 'local');
+    assert.equal(await provider.getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.getByRole('listbox').count(), 1, 'the model list belongs to the still-open model form');
+    const id = page.getByLabel('Model ID', { exact: true });
+    await id.fill('local/custom-model');
+    await provider.focus(); await provider.press('Enter');
+    await page.getByRole('option', { name: 'Local endpoint', exact: true }).waitFor();
+    await provider.press('Enter');
+    assert.equal(await provider.getAttribute('aria-expanded'), 'false', 'keyboard selection closes the provider list');
+    assert.equal(await id.inputValue(), 'local/custom-model');
+    await page.getByRole('button', { name: 'Use model', exact: true }).click();
+    await page.getByRole('listbox').waitFor({ state: 'detached' });
+    assert.equal(await model.getAttribute('data-value'), 'local/custom-model');
+    for (const close of ['Escape', 'outside']) {
+      await model.click();
+      await page.getByLabel('Search models', { exact: true }).waitFor();
+      if (close === 'Escape') await page.getByLabel('Search models', { exact: true }).press('Escape');
+      else await page.locator('aside.sidebar .brand').click();
+      await page.getByRole('listbox').waitFor({ state: 'detached' });
+      assert.equal(await model.getAttribute('aria-expanded'), 'false');
+    }
+    assert.deepEqual(f.posts.filter(post => post.path !== '/api/session'), [], 'choosing a model never saves settings or sends a message');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
