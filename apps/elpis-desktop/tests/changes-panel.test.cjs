@@ -42,7 +42,7 @@ async function fixture(run, { width = 1130, height = 660, colorScheme = 'light' 
       state.reads.push(url.search);
       if (state.error) return json({ error: state.error }, 409);
       if (url.searchParams.get('view') === 'changes') return json({ root: state.root, files: state.files, truncated: false, ...(state.recorded ? { recorded: true } : {}) });
-      if (url.searchParams.get('view') === 'file') return json({ diff: state.diffs[url.searchParams.get('path')] ?? '', truncated: false, binary: false });
+      if (url.searchParams.get('view') === 'file') return json({ diff: state.diffs[url.searchParams.get('path')] ?? '', truncated: false, binary: false, ...state.fileValues?.[url.searchParams.get('path')] });
     }
     if (url.pathname === '/api/threads/chat-one/git' && req.method === 'POST') {
       const body = JSON.parse(raw); state.posts.push(body);
@@ -204,22 +204,76 @@ test('Changes tab: Show in folder opens the changed file\'s folder; a folder tha
   });
 });
 
-test('Changes tab outside Git: the edits the chat recorded, as + and − lines, said so, and no Discard', async () => {
-  await fixture(async ({ page, side, state }) => {
+for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: plain recorded lines, selection and reload (${colorScheme})`, async () => {
+  await fixture(async ({ page, side, state, shoot }) => {
     state.recorded = true; state.root = '/work/notes';
-    state.files = [{ path: 'notes.md', status: 'added', added: 3, removed: 1, binary: false }];
-    state.diffs = { 'notes.md': '@@ -0,0 +1,2 @@\n+one\n+two\n@@ -2 +2 @@\n-two\n+three\n' };
+    state.files = [{ path: 'notes.md', status: 'added', added: 3, removed: 1, binary: false },
+      { path: 'middle.txt', status: 'deleted', added: 0, removed: 1, binary: false },
+      { path: 'last.txt', status: 'modified', added: 1, removed: 0, binary: false }];
+    state.diffs = { 'notes.md': '@@ -0,0 +1,2 @@\n+one\n+two\n@@ -2 +2 @@\n-two\n+three\n', 'middle.txt': '@@ -1 +0,0 @@\n-gone\n', 'last.txt': '@@ -0,0 +1 @@\n+last\n' };
     await openChanges({ page, side });
     const diff = side.getByRole('region', { name: 'Diff of notes.md' });
     await diff.locator('.diff-line.add').first().waitFor();
     assert.match(await side.innerText(), /This folder has no Git, so these are the edits this chat made\./);
     assert.deepEqual(await diff.locator('.diff-line.add .diff-text').allInnerTexts(), ['one', 'two', 'three']);
     assert.deepEqual(await diff.locator('.diff-line.del .diff-text').allInnerTexts(), ['two']);
+    await shoot(`recorded-${colorScheme}`);
+    const gutters = await diff.locator('.diff-no, .diff-hunk').count(), signs = await diff.locator('.diff-sign').allInnerTexts();
     assert.equal(await side.getByRole('button', { name: 'Discard', exact: true }).count(), 0, 'nothing to restore without Git');
+    for (const name of ['middle.txt', 'last.txt', 'notes.md']) {
+      await side.getByRole('button', { name: `View diff of ${name}`, exact: true }).click();
+      await side.getByRole('region', { name: `Diff of ${name}` }).locator('.diff-text').first().waitFor();
+    }
+    await page.reload();
+    await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await page.locator('.thread-row[data-thread-id="chat-one"] .thread-link').click();
+    const show = page.getByRole('button', { name: 'Show side panel', exact: true });
+    if (await show.isVisible()) await show.click();
+    const tab = side.getByRole('tab', { name: 'Changes', exact: true });
+    if (await tab.count()) await tab.click(); else await openChanges({ page, side });
+    await diff.locator('.diff-line.add').first().waitFor();
+    assert.deepEqual(await diff.locator('.diff-text').allInnerTexts(), ['one', 'two', 'two', 'three'], 'reload keeps the recorded order');
+    state.files = state.files.slice(0, 1);
+    await side.getByRole('button', { name: 'Refresh changes', exact: true }).click();
+    await eventually(async () => assert.match(await side.locator('.changes-summary').innerText(), /1 file changed/));
     state.files = [];
     await side.getByRole('button', { name: 'Refresh changes', exact: true }).click();
     await eventually(async () => assert.match(await side.innerText(), /This chat has not edited any file here yet\./));
-  });
+    assert.equal(gutters, 0, 'recorded history is plain +/- lines, without Git gutters or hunk headers');
+    assert.deepEqual(signs, ['+', '+', '-', '+']);
+  }, { colorScheme });
+});
+
+for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: long and binary recorded edits stay inside the panel (${colorScheme})`, async () => {
+  await fixture(async ({ page, side, state, shoot }) => {
+    state.recorded = true;
+    state.files = [{ path: 'long.txt', status: 'modified', added: 5000, removed: 0, binary: false },
+      { path: 'picture.bin', status: 'added', added: 0, removed: 0, binary: true },
+      ...Array.from({ length: 80 }, (_, i) => ({ path: `folder/file-${i}.txt`, status: 'modified', added: 1, removed: 0, binary: false }))];
+    state.diffs = { 'long.txt': '@@ -0,0 +1,5000 @@\n' + ('+' + 'long '.repeat(200) + '\n').repeat(5000) };
+    state.fileValues = { 'long.txt': { truncated: true }, 'picture.bin': { binary: true } };
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    const delay = async route => { await pending; await route.continue(); };
+    await page.route('**/git?view=changes', delay);
+    try {
+      await openChanges({ page, side });
+      await side.getByText('Reading the changes…', { exact: true }).waitFor();
+    } finally { release(); await page.unrouteAll({ behavior: 'wait' }); }
+    const body = side.locator('.diff-body');
+    await body.getByText('Showing the first part only;', { exact: false }).waitFor();
+    assert.equal(await side.locator('.change-list > li').count(), 82);
+    assert.ok(await body.locator('.diff-line').count() <= 4000);
+    assert.equal(await body.evaluate(el => getComputedStyle(el).overflowX), 'auto');
+    const bounds = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: innerWidth }));
+    assert.ok(bounds.body <= bounds.viewport + 1, 'the long diff scrolls inside its panel');
+    await shoot(`recorded-long-${colorScheme}`);
+    await side.getByRole('button', { name: 'View diff of picture.bin', exact: true }).click();
+    await body.getByText(/A binary file;/).waitFor();
+    assert.equal(await body.locator('.diff-line').count(), 0);
+    await shoot(`recorded-binary-${colorScheme}`);
+    assert.match(await body.innerText(), /A binary file; no text lines were recorded\./);
+  }, { colorScheme, width: 900, height: 700 });
 });
 
 test('Changes tab: dark theme, same layout, nothing cut off', async () => {

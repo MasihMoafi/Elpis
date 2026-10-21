@@ -130,8 +130,9 @@ export async function changedFiles(chatFolder) {
 
 /** The entry for one name in the list of changes, or an error: nothing else is read or touched. */
 async function entryOf(chatFolder, file) {
+  const cwd = await repoRoot(chatFolder);
   changeName(file);
-  const cwd = await repoRoot(chatFolder), entry = (await statusEntries(cwd, file)).find(item => item.path === file);
+  const entry = (await statusEntries(cwd, file)).find(item => item.path === file);
   if (!entry) throw new BridgeError(NOT_CHANGED, 409);
   return { ...entry, cwd };
 }

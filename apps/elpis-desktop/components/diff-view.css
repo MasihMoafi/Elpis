@@ -5,6 +5,7 @@
 .diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:12px/20px var(--mono); }
 .diff-lines { width:max-content; min-width:100%; }  /* every line as wide as the longest, so the colours end together */
 .diff-line { display:grid; grid-template-columns:44px 44px 16px 1fr; }
+.diff-lines.plain .diff-line { grid-template-columns:16px 1fr; padding-inline-start:8px; }
 .diff-no { padding:0 8px; text-align:right; color:var(--subtle-foreground); user-select:none; }
 .diff-sign { text-align:center; user-select:none; }
 .diff-text { padding-inline-end:16px; white-space:pre; }

@@ -1707,15 +1707,19 @@ export class DesktopClient extends EventEmitter {
   }
   /** Every item of a chat, oldest first, at most 50 pages of 200. */
   async #chatItems(id) {
+    // A saved session can return empty item pages until the engine has loaded its turns.
+    await this.#attach(id);
     const items = [], seen = new Set(); let cursor;
     for (let page = 0; page < 50; page++) {
       const result = await this.#itemsPage({ threadId: id, limit: 200, sortDirection: 'asc', ...(cursor ? { cursor } : {}) });
-      items.push(...(Array.isArray(result?.data) ? result.data : []).map(entry => entry?.item).filter(Boolean));
+      if (!Array.isArray(result?.data)) throw new BridgeError('Could not read the recorded edits.', 502);
+      items.push(...result.data.map(entry => entry?.item).filter(Boolean));
       cursor = result?.nextCursor;
-      if (!cursor || seen.has(cursor)) break;
+      if (!cursor) return items;
+      if (seen.has(cursor)) throw new BridgeError('Repeated recorded edits cursor.', 502);
       seen.add(cursor);
     }
-    return items;
+    throw new BridgeError('This chat has more recorded edits than this view can read.', 409);
   }
   /** The review surface's only write: throw one changed file away (the window asks first). */
   async discardChange(id, body) {

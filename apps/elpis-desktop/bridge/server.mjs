@@ -352,7 +352,7 @@ export async function startDesktopServer(options = {}) {
           if (thread[2] === 'prompts' && method === 'GET') return json(response, 200, await client.readPrompts(id));
           if (thread[2] === 'context' && method === 'GET') return json(response, 200, await client.context(id));
           if (thread[2] === 'git' && method === 'GET') {
-            if ([...url.searchParams.keys()].some(key => key !== 'view' && key !== 'path')) throw new BridgeError('Unsupported Git query');
+            if ([...url.searchParams.keys()].some(key => key !== 'view' && key !== 'path') || url.searchParams.getAll('view').length !== 1 || url.searchParams.getAll('path').length > 1) throw new BridgeError('Unsupported Git query');
             return json(response, 200, await client.git(id, url.searchParams.get('view'), url.searchParams.get('path') ?? undefined));
           }
           if (thread[2] === 'git' && method === 'POST') return json(response, 200, await client.discardChange(id, await body(request, 65536)));

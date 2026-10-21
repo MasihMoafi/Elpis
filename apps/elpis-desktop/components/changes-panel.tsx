@@ -29,7 +29,8 @@ const WARNING: Record<Status, string> = {
   conflicted: "The file goes back to its last committed version and the merge result is lost.",
 };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
-const folderOf = (root: string, file: string) => file.includes("/") ? `${root.replace(/\/+$/, "")}/${file.slice(0, file.lastIndexOf("/"))}` : root;
+const pathOf = (root: string, file: string) => file.startsWith("/") ? file : `${root.replace(/\/+$/, "")}/${file}`;
+const folderOf = (root: string, file: string) => { const full = pathOf(root, file); return full.slice(0, full.lastIndexOf("/")) || "/"; };
 
 /** The side panel's Changes tab, the review surface: the chat's working-tree changes against the last commit (outside Git,
  * the edits the chat recorded), a list of files and the open file's diff. It reads while a turn runs and once when it ends. Discard is the only write, one file at
@@ -94,7 +95,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
       : <>
         {list.recorded && <p className="changes-note">This folder has no Git, so these are the edits this chat made.</p>}
         <ul className="change-list" aria-label="Changed files">{list.files.map(file => <li key={file.path}>
-          <FileRefLink target={{ path: `${list.root}/${file.path}` }} label={file.path} className="change-row" current={file.path === shown?.path}>
+          <FileRefLink target={{ path: pathOf(list.root, file.path) }} label={file.path} className="change-row" current={file.path === shown?.path}>
             <span className="change-status" data-status={file.status} title={LABEL[file.status]}>{LETTER[file.status]}</span>
             <span className="change-path" title={file.path}>{file.path.includes("/") && <span className="dir">{file.path.slice(0, file.path.lastIndexOf("/") + 1)}</span>}{file.path.slice(file.path.lastIndexOf("/") + 1)}</span>
             {file.binary ? <span className="change-counts">binary</span> : <Counts added={file.added} removed={file.removed} />}
@@ -103,7 +104,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
         </li>)}</ul>
         {shown && <section className="diff-view" aria-label={`Diff of ${shown.path}`}>
           <div className="diff-head">
-            <span className="diff-title" title={shown.path}><FileRefLink target={{ path: `${list.root}/${shown.path}` }}>{shown.path}</FileRefLink></span>
+            <span className="diff-title" title={shown.path}><FileRefLink target={{ path: pathOf(list.root, shown.path) }}>{shown.path}</FileRefLink></span>
             {window.elpisDesktop?.openFolder && <Button type="button" variant="ghost" size="xs" onClick={() => showInFolder(shown)}><FolderIcon size={13} aria-hidden="true" />Show in folder</Button>}
             {!list.recorded && <Button type="button" variant="destructive" size="xs" disabled={running} title={running ? "Wait for the turn to finish" : `Throw away the changes to ${shown.path}`} onClick={() => { setFailure(""); setConfirming(shown); }}><Undo2 size={13} aria-hidden="true" />Discard</Button>}
           </div>
@@ -111,9 +112,9 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
           <div className="diff-body" tabIndex={0}>
             {current?.error ? <p role="alert" className="changes-note changes-error">{current.error}</p>
               : !lines ? <p role="status" className="changes-note">Reading the diff…</p>
-              : current?.value?.binary ? <p className="changes-note">A binary file; Git shows no lines.</p>
+              : current?.value?.binary ? <p className="changes-note">{list.recorded ? "A binary file; no text lines were recorded." : "A binary file; Git shows no lines."}</p>
               : !lines.length ? <p className="changes-note">No lines to show.</p>
-              : <><DiffLines lines={lines} path={`${list.root}/${shown.path}`} />
+              : <><DiffLines lines={lines} path={pathOf(list.root, shown.path)} plain={list.recorded} />
                 {(lines.length > DIFF_LINE_LIMIT || current?.value?.truncated) && <p className="changes-note">Showing the first part only; the diff is larger than this view keeps.</p>}</>}
           </div>
         </section>}

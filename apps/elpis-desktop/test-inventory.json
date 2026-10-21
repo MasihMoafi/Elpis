@@ -64,6 +64,7 @@
     "bridge/files.test.mjs",
     "bridge/folders.test.mjs",
     "bridge/git.test.mjs",
+    "bridge/recorded-changes.test.mjs",
     "bridge/github-connector.test.mjs",
     "bridge/improve.test.mjs",
     "bridge/love-agents.test.mjs",
@@ -278,6 +279,7 @@
     "tests/turn-time.test.cjs"
   ],
   "opt-in": [
+    "tests/changes-installed.runtime.cjs",
     "tests/app-update-native.test.cjs",
     "tests/love-spot-performance.test.cjs",
     "tests/app-fix-2.runtime.mjs",
