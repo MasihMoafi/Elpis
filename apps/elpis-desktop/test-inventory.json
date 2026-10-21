@@ -229,7 +229,6 @@
     "tests/sidebar-focus.test.cjs",
     "tests/sidebar-groups.test.cjs",
     "tests/sidebar-indent.test.cjs",
-    "tests/sidebar-hover-label.test.cjs",
     "tests/sidebar-nav-icons.test.cjs",
     "tests/sidebar-order.test.cjs",
     "tests/sidebar-parity.test.cjs",
