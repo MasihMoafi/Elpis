@@ -1,3 +1,4 @@
+import { agentParentId } from "./agent-runs.mjs";
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mjs";
 export type Thread = {
   id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string;
@@ -84,10 +85,10 @@ export function title(thread: Thread) {
   return isAgent(thread) ? `Untitled agent · ${thread.id.slice(-8)}` : "Untitled conversation";
 }
 const subAgentSource = (thread: Thread) => typeof thread.source === "object" && thread.source !== null && "subAgent" in thread.source;
-export const isUnlinkedAgent = (thread:Thread,threads:Thread[]) => thread.parentThreadId
-  ? !threads.some(parent=>parent.id===thread.parentThreadId)
+export const isUnlinkedAgent = (thread:Thread,threads:Thread[]) => agentParentId(thread)
+  ? !threads.some(parent=>parent.id===agentParentId(thread))
   : subAgentSource(thread);
-export const isAgent = (thread: Thread) => !!thread.parentThreadId || subAgentSource(thread);
+export const isAgent = (thread: Thread) => !!agentParentId(thread) || subAgentSource(thread);
 
 // Subscription models reach Elpis through its bridge by a model-ID prefix while the engine still
 // reports its own provider, so the model is the truthful source of the provider.

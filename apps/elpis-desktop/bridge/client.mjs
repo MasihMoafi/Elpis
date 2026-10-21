@@ -1,6 +1,6 @@
 import { fastServiceTier } from '../lib/service-tier.mjs';
 import { EventEmitter } from 'node:events';
-import { isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
+import { agentParentId, isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -438,6 +438,8 @@ export class DesktopClient extends EventEmitter {
   }
   #decorate(thread) {
     if (!thread || typeof thread.id !== 'string') throw new BridgeError('Elpis returned an invalid thread', 502);
+    const parentThreadId = agentParentId(thread);
+    if (parentThreadId) thread = { ...thread, parentThreadId };
     this.#known.add(thread.id);
     const recorded = this.#workflowTitles.get(thread.id);
     if (recorded?.source===thread.source?.subAgent?.other && recorded && (!thread.parentThreadId || thread.parentThreadId===recorded.rootThreadId)) {

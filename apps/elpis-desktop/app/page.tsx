@@ -356,6 +356,7 @@ export default function Home() {
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({});
   const rootPaging = useRef(false), loadedRootPages = useRef(false);
   const childPaging = useRef(new Set<string>()), loadedChildPages = useRef(new Set<string>());
+  const checkedChildren = useRef(new Set<string>());
   const [settingsVisited, setSettingsVisited] = useState(false);
   const [settingsNavigation, setSettingsNavigation] = useState(0);
   const [activeTurns, setActiveTurns] = useState<Record<string, string>>({});
@@ -699,6 +700,7 @@ export default function Home() {
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = true) => {
     if (childPaging.current.has(id)) return;
+    checkedChildren.current.add(id);
     childPaging.current.add(id); setLoadingChildren(prev => ({ ...prev, [id]: true }));
     try {
       const result = await api<{ data: Thread[]; nextCursor: string | null }>(`/threads?ancestorThreadId=${encodeURIComponent(id)}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`); if (!Array.isArray(result.data)) throw unreadable("conversations");
@@ -1521,7 +1523,6 @@ export default function Home() {
   const ordinaryThreads = threads.filter(thread => !isAgentRun(thread));
   const agentRuns = threads.filter(isAgentRun);
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
-  const topLevelAgentRuns = agentRuns.filter(thread => !thread.parentThreadId || !agentRunIds.has(thread.parentThreadId));
   const agentParents = new Set(threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []));
   const runActions: MenuAction[] = [
     { id: "hide", label: "Hide Agent runs", run: () => {
@@ -1532,7 +1533,7 @@ export default function Home() {
   ];
   const ordinaryUnread = attention.unread.filter(id => ordinaryThreads.some(thread => thread.id === id));
   const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
-  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
+  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !(searchTerm ? filtered : searchedThreads).some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results keep the search's order.
@@ -1544,6 +1545,22 @@ export default function Home() {
   const workflowChats = searchTerm ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !chatOrigin(thread, loveActivity.threads));
   const ordered = [...pinnedChats, ...(grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(originOpen.love ? loveChats : []), ...(originOpen.workflows ? workflowChats : []), ...recentChats];
+  // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
+  const inlineAgents = new Set<string>();
+  const collectAgents = (id: string, seen = new Set<string>()) => {
+    if (!expanded[id] || seen.has(id)) return;
+    const next = new Set(seen).add(id);
+    for (const child of searchedThreads.filter(thread => thread.parentThreadId === id)) {
+      inlineAgents.add(child.id); collectAgents(child.id, next);
+    }
+  };
+  for (const root of [...ordered, ...ordinaryThreads.filter(thread => !isAgent(thread) && projectChats[thread.id] && !collapsedProjects[projectChats[thread.id]] && !pins.includes(thread.id))]) collectAgents(root.id);
+  const topLevelAgentRuns = agentRuns.filter(thread => !inlineAgents.has(thread.id) && (!thread.parentThreadId || !agentRunIds.has(thread.parentThreadId)));
+  // Check newly visible agents once, so only agents with actual children get an expansion control.
+  useEffect(() => {
+    for (const thread of threads) if ((isAgent(thread) || isAgentRun(thread)) && !checkedChildren.current.has(thread.id)
+      && (inlineAgents.has(thread.id) || (preferences.showAgentRuns && agentRunsOpen))) void loadChildren(thread.id, undefined, false);
+  });
   // Esc stops the running reply, as in Claude, wherever in the chat the focus is, unless a menu, dialog or field owns the key.
   const escapeStops = useRef<(event: KeyboardEvent) => void>(() => {});
   escapeStops.current = event => { if (selected && !readOnlyRun && activeTurn && view === "chat" && stopsOnEscape(event)) { event.preventDefault(); void stop(selected); } };
@@ -1720,7 +1737,7 @@ export default function Home() {
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
-    const canExpandAgents = isAgent(thread) || isAgentRun(thread) || agentParents.has(thread.id);
+    const canExpandAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined}
       onMoveToProject={!isAgent(thread) ? setProjectMove : undefined}
       attention={attentionFor(thread.id)}
@@ -1734,13 +1751,13 @@ export default function Home() {
       area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""} data-[drop=before]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[dragging]:opacity-50`} data-thread-id={thread.id} data-drop={drop?.id === thread.id ? drop.mark : undefined} data-dragging={dragging.current === thread.id && drop ? "" : undefined}
         {...(!depth && !isAgent(thread) && !searchTerm ? { draggable: true, ...dropTarget(section ?? sectionOf(thread.id), thread.id),
           onDragStart: (event: React.DragEvent<HTMLElement>) => { dragging.current = thread.id; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-chat", thread.id); },
-          onDragEnd: () => { dragging.current = null; setDrop(null); setProjectDrop(null); } } : {})} style={depth ? { paddingLeft: `${Math.min(depth, 5) * 14}px` } : undefined} />}>
+          onDragEnd: () => { dragging.current = null; setDrop(null); setProjectDrop(null); } } : {})} style={depth ? { paddingLeft: `${depth * 14}px` } : undefined} />}>
       {menu => <>
       {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} aria-expanded={!!expanded[thread.id]} title={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} onClick={() => {
         if (expanded[thread.id]) setExpanded(previous => ({ ...previous, [thread.id]: false }));
-        else if (agentParents.has(thread.id)) setExpanded(previous => ({ ...previous, [thread.id]: true }));
-        else void loadChildren(thread.id);
+        else { setExpanded(previous => ({ ...previous, [thread.id]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
       }}><ChevronRight size={13} className={expanded[thread.id] ? "rotate-90" : undefined} /></Button>}
+      {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
@@ -1769,7 +1786,7 @@ export default function Home() {
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return filtered.filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, undefined, next));
+    return (searchTerm ? filtered : searchedThreads).filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, undefined, next));
   }
   function threadBranch(thread: Thread, depth = 0, section?: string, seen = new Set<string>()) {
     return <div key={thread.id}>{threadRow(thread, depth, section)}{expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;

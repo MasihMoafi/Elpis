@@ -360,6 +360,19 @@ test('background sources are excluded from ordinary lists and search, and explic
   } finally { client.close(); }
 });
 
+test('listed spawned agents recover their parent from recorded source without grouping independent desktop chats', async () => {
+  const { client, threads } = fixture(); await client.initialize();
+  threads.get(CHILD).parentThreadId = null;
+  threads.set(FORK, { id: FORK, source: 'vscode', name: 'Elpis — keyboard shortcuts', status: { type: 'idle' } });
+  try {
+    const listed = (await client.listThreads({ includeAgentRuns: true })).data;
+    const agent = listed.find(thread => thread.id === CHILD);
+    assert.equal(agent.parentThreadId, ROOT, 'the source records subAgent.thread_spawn.parent_thread_id');
+    assert.equal(agent.desktopAccess.writable, false);
+    assert.equal(listed.find(thread => thread.id === FORK).parentThreadId, undefined, 'a name is not evidence of parentage');
+  } finally { client.close(); }
+});
+
 test('background runs are read-only; only an idle run may explicitly continue in a normal chat without sending', async () => {
   const { client, socket, threads } = fixture(); await client.initialize();
   threads.set(CREATED, { id: CREATED, source: 'exec', name: 'Worker · inspect', parentThreadId: ROOT, model: MODEL, modelProvider: 'openai', canAcceptDirectInput: true, status: { type: 'active' } });

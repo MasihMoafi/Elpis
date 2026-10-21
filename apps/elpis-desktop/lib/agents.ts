@@ -1,4 +1,5 @@
 import type { Approval, Thread } from './api';
+import { agentParentId } from './agent-runs.mjs';
 
 /** What each state is called wherever a chat's state is shown. */
 export const stateLabels = { working: 'Working', idle: 'Idle', error: 'Error', waiting: 'Needs input', unread: 'Unread response', unknown: 'Status unavailable' } as const;
@@ -32,5 +33,8 @@ export function mergeListedThreads(current: Thread[], incoming: Thread[], hidden
   const updates = new Map(incoming.map(thread => [thread.id, thread]));
   const order = [...new Set((prepend ? [...incoming, ...current] : [...current, ...incoming]).map(thread => thread.id))];
   const known = new Map(current.map(thread => [thread.id, thread]));
-  return order.filter(id => !hidden.has(id)).map(id => ({ ...known.get(id), ...updates.get(id), id }));
+  return order.filter(id => !hidden.has(id)).map(id => {
+    const thread = { ...known.get(id), ...updates.get(id), id }, parentThreadId = agentParentId(thread);
+    return parentThreadId ? { ...thread, parentThreadId } : thread;
+  });
 }
