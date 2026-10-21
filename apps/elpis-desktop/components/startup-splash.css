@@ -1,32 +1,13 @@
-/* Motion from the website's ribbon.css and home-proposal.css: reverse its 580 ms
- * signature turn for M → E, then draw its flowing ribbon. Fixed brand colours keep
- * this opening dark in either app theme. Custom motion has no UI-library equivalent. */
-.startup-splash {
-  position:fixed; inset:0; z-index:100; display:grid; place-items:center; overflow:hidden;
-  background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark;
-  background-image:radial-gradient(ellipse at 50% 45%, #f2a6260d, transparent 60%);
-  transition:opacity ease;
-}
+/* The Elpis website's boot screen in its default dark version (website/source.css: .ace-boot, .ace-logo, --tui-*).
+ * Fixed brand colours keep this opening dark in either app theme; the sweep is a colour change, not movement.
+ * A terminal boot screen has no UI-library equivalent. */
+.startup-splash { position:fixed; inset:0; z-index:100; display:grid; place-items:center; background:#080b09; color:#dce1dc; color-scheme:dark; font:15px/1.4 var(--mono, monospace); transition:opacity ease; }
 .startup-splash.leaving { opacity:0; pointer-events:none; }
-.splash-stage { position:relative; display:grid; justify-items:center; gap:24px; }
-.splash-logo { display:block; width:clamp(112px, 18vmin, 160px); height:auto; transform-origin:center; user-select:none; }
-.splash-name { margin:0 -.32em 0 0; font:300 26px/1 var(--serif, system-ui, sans-serif); letter-spacing:.32em; text-transform:uppercase; }
-@media (prefers-reduced-motion:no-preference) {
-  .splash-logo { animation:splash-m-to-e 580ms cubic-bezier(.22,.7,.2,1) both; }
-  .splash-name { animation:splash-colour 650ms ease 320ms both; }
-}
-@keyframes splash-m-to-e {
-  0%, 18% { transform:rotate(90deg); }
-  100% { transform:rotate(0); }
-}
-@keyframes splash-colour {
-  0%, 18% { opacity:0; }
-  100% { opacity:1; }
-}
-@keyframes splash-flow {
-  from { stroke-dashoffset:1; opacity:0; }
-  to { stroke-dashoffset:0; opacity:.3; }
-}
-@media (prefers-reduced-motion:reduce) {
-  .startup-splash { transition:none; }
-}
+.startup-splash > div { width:min(620px, 86vw); }
+.splash-logo { margin:0; font-family:"DejaVu Sans Mono", "Liberation Mono", monospace; letter-spacing:0; color:#7d5941; font-size:clamp(12px, 1.6vw, 19px); line-height:1.05; }
+.splash-logo .warm { color:#df8d58; }
+.splash-logo .hot { color:#f5ce7b; text-shadow:0 0 12px rgba(229,173,85,.55); }
+.startup-splash p { margin:22px 0; color:#879087; }
+.splash-log { display:grid; gap:7px; color:#aeb6af; }
+.splash-log .ok { color:#69a99d; }
+.splash-log .pending { color:#879087; }

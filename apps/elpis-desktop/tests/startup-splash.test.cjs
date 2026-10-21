@@ -1,4 +1,5 @@
-// The Elpis symbol rotates upright without the extra ribbon, in both themes.
+// The Elpis website's boot screen (website/index.html, paintAceLogo): the ELPIS logo with its gold sweep, dark in both themes.
+// Masih, 18 Oct: "just use the normal Elpis animation from my website in the app; default dark mode version"; no ribbon (20 Oct).
 // Runs the exported renderer against the mock bridge; no engine or real desktop profile.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -27,42 +28,33 @@ async function starting(t, { colorScheme = 'light', reducedMotion = 'no-preferen
   return { ...f, release: pathname => gates[pathname ?? hold[0]]() };
 }
 
-/** Seek the actual CSS motion rather than waiting for approximate wall-clock frames. */
-const frame = (page, ms) => page.evaluate(ms => {
-  for (const animation of document.querySelector('.startup-splash').getAnimations({ subtree: true })) { animation.pause(); animation.currentTime = ms; }
-  const logo = document.querySelector('.splash-logo'), box = logo.getBoundingClientRect();
-  const transform = getComputedStyle(logo).transform;
-  const [a, b] = transform === 'none' ? [1, 0] : transform.match(/matrix\(([^)]+)\)/)[1].split(',').map(Number);
-  const trail = document.querySelector('.splash-ribbon path');
-  return { logo: Math.round(Math.atan2(b, a) * 180 / Math.PI), centre: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)],
-    ribbon: trail && { offset: parseFloat(getComputedStyle(trail).strokeDashoffset), opacity: Number(getComputedStyle(trail).opacity) } };
-}, ms);
+/** Columns of the logo's first row that the gold sweep is lighting ("hot", as on the website). */
+const hot = page => page.evaluate(() => {
+  let column = 0; const lit = [];
+  for (const node of document.querySelector('.splash-logo').firstElementChild.childNodes) {
+    if (node.nodeType === 1 && node.classList.contains('hot')) lit.push(column);
+    column += node.textContent.length;
+  }
+  return lit;
+});
 
-for (const colorScheme of ['light', 'dark']) test(`startup: symbol rotates upright without an added ribbon (${colorScheme})`, async t => {
-  const { page } = await starting(t, { colorScheme });
+for (const colorScheme of ['light', 'dark']) test(`startup: the website's ELPIS boot screen and its gold sweep (${colorScheme})`, async t => {
+  const { page } = await starting(t, { colorScheme, freeze: true });
   const splash = page.locator('.startup-splash');
-  const logo = page.locator('.splash-logo');
-  assert.match(await logo.getAttribute('src'), /\/branding\/elpis-symbol-amber\.svg$/);
-  await page.waitForFunction(() => document.querySelector('.splash-logo')?.naturalWidth > 0);
-  assert.equal(await splash.locator('.splash-dial, .splash-ticks, .splash-arcs, .splash-hex, .splash-scope, .splash-sweep, .splash-boot-panel, .splash-boot, .splash-meter').count(), 0, 'No HUD parts remain');
-  const ground = await splash.evaluate(el => ({ background: getComputedStyle(el).backgroundColor,
-    before: getComputedStyle(el, '::before').backgroundImage, after: getComputedStyle(el, '::after').backgroundImage }));
-  assert.equal(ground.background, 'rgb(10, 11, 13)', 'The brand opening stays dark even when the app theme is light');
-  assert.doesNotMatch(ground.before + ground.after, /repeating-linear-gradient/, 'No HUD floor grid remains');
-  const m = await frame(page, 0), mid = await frame(page, 240), e = await frame(page, 800), end = await frame(page, 2000);
-  assert.equal(m.logo, 90, 'The first frame is the M');
-  assert.ok(mid.logo > 0 && mid.logo < 90, `A real quarter turn between M and E: ${mid.logo}°`);
-  assert.equal(e.logo, 0, 'The final mark is the upright Elpis E');
-  assert.equal(end.logo, 0, 'The E stays upright while startup waits');
-  assert.deepEqual(m.centre, e.centre, 'The mark rotates about its centre');
-  assert.ok(Math.abs(m.centre[0] - 640) < 1, 'The mark is centred in the window');
-  assert.equal(await splash.locator('.splash-ribbon').count(), 0, 'No extra ribbon is added to the initial animation');
-  assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getTiming().iterations === Infinity)), false, 'App startup plays once');
+  const rows = await page.locator('.splash-logo').evaluate(el => el.textContent.trimEnd().split('\n'));
+  assert.deepEqual([rows.length, rows[0]], [6, '███████╗ ██╗     ██████╗ ██╗███████╗'], 'The website logo, with the E\'s first block restored');
+  await splash.getByText('portable context for terminal coding agents').waitFor();
+  assert.match(await splash.locator('.splash-log').innerText(), /· Elpis engine connected[\s\S]*conversations loaded[\s\S]*\[[█░]{12}\]/, 'Boot lines wait for the engine they name');
+  assert.equal(await splash.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(8, 11, 9)', 'The website\'s dark default even when the app theme is light');
+  assert.equal(await splash.locator('img, .splash-ribbon, .splash-name').count(), 0, 'No rotating M→E symbol and no ribbon');
+  await page.clock.runFor(400); const early = await hot(page);
+  await page.clock.runFor(400); const later = await hot(page);
+  assert.ok(early.length && later.length && later[0] > early[0], `The gold sweep runs left to right: ${early} → ${later}`);
   if (process.env.ELPIS_SPLASH_SHOTS) {
     await fs.mkdir(process.env.ELPIS_SPLASH_SHOTS, { recursive: true });
-    for (const [name, ms] of [['0', 0], ['0.4', 400], ['0.8', 800], ['1.2', 1200], ['end', 2000]]) {
-      await frame(page, ms);
+    for (const name of ['0.8', '1.2', '1.6']) {
       await page.screenshot({ path: path.join(process.env.ELPIS_SPLASH_SHOTS, `${colorScheme}-${name}.png`) });
+      await page.clock.runFor(400);
     }
   }
 });
@@ -74,18 +66,20 @@ test('startup: the splash waits for conversations even after the engine connects
   await response;
   await page.waitForTimeout(300);
   assert.equal(await page.locator('.startup-splash.leaving').count(), 0, 'The chats are not in yet');
+  assert.match(await page.locator('.splash-log').innerText(), /✓ Elpis engine connected[\s\S]*· conversations loaded/, 'Each boot line is ticked only when its part has loaded');
   release('/api/threads');
   await page.locator('.startup-splash.leaving').waitFor({ state: 'attached' });
 });
 
-test('reduced motion: nothing on the startup splash moves and the E stays upright', async t => {
-  const { page } = await starting(t, { colorScheme: 'dark', reducedMotion: 'reduce' });
+test('reduced motion (GNOME animations off): nothing moves, but the gold sweep still runs as a colour change', async t => {
+  const { page } = await starting(t, { colorScheme: 'dark', reducedMotion: 'reduce', freeze: true });
   const splash = page.locator('.startup-splash');
-  assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).length), 0, 'Reduced motion must stop all splash animation');
+  assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).length), 0, 'No CSS movement');
   assert.equal(await page.locator('.splash-logo').evaluate(el => getComputedStyle(el).transform), 'none');
+  await page.clock.runFor(400); const early = await hot(page);
+  await page.clock.runFor(400); const later = await hot(page);
+  assert.ok(early.length && later.length && later[0] > early[0], `Masih's desktop has animations off; the sweep must still play: ${early} → ${later}`);
   if (process.env.ELPIS_SPLASH_SHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_SPLASH_SHOTS, 'reduced-motion.png') });
-  const before = await splash.innerHTML(); await page.waitForTimeout(140);
-  assert.equal(await splash.innerHTML(), before, 'No JavaScript animation continues in reduced motion');
 });
 
 test('readiness starts a short fade immediately and real mouse clicks pass through it', async t => {
