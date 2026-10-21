@@ -111,7 +111,8 @@ for (const colorScheme of ['light', 'dark']) {
       assert.deepEqual((await choiceNames(second)).map(([key]) => key), ['1', '2', '3'], 'the keys move to the next question');
       await page.keyboard.press('3');
       const other = card.getByRole('textbox', { name: 'Other answer: Add tests?', exact: true });
-      await other.waitFor(); assert.equal(await other.evaluate(element => element === document.activeElement), true);
+      await other.waitFor(); await other.and(page.locator(':focus')).waitFor();
+      assert.equal(await other.evaluate(element => element === document.activeElement), true);
       await other.fill('Only snapshot tests'); await other.press('Enter');
       await until(() => approvalPosts(posts).length === 1, 'the answers');
       assert.deepEqual(approvalPosts(posts)[0], { path: '/api/approvals/c1', body: { answers: { scope: ['Parser and lexer'], tests: ['None of the above', 'user_note: Only snapshot tests'] } } });

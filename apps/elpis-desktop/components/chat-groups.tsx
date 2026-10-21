@@ -95,8 +95,7 @@ export function GroupNameDialog({ open, state, group, switches, onSave, onClose 
         <AlertDialogDescription>{group ? "The group's chats stay in it." : switches ? "The list will switch to Custom groups to show it." : "Groups are kept on this computer."}</AlertDialogDescription>
       </AlertDialogHeader>
       <form aria-label={group ? "Rename group" : "New group"} className="grid gap-4" onSubmit={event => { event.preventDefault(); if (!problem) onSave(name.trim()); }}>
-        <Input aria-label="Group name" placeholder="Group name" maxLength={80} value={name} onChange={event => setName(event.target.value)} autoFocus aria-invalid={shown ? true : undefined} aria-describedby={shown ? "group-name-problem" : undefined} />
-        {shown && <p id="group-name-problem" role="alert" className="text-sm text-destructive">{problem}</p>}
+        <Input aria-label="Group name" placeholder="Group name" maxLength={80} value={name} onChange={event => setName(event.target.value)} autoFocus aria-invalid={shown ? true : undefined} aria-description={shown || undefined} />
         <AlertDialogFooter>
           <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
           <Button type="submit" disabled={!!problem} disabledReason={problem || undefined}>{group ? "Save" : "Create group"}</Button>

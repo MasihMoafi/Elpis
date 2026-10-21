@@ -129,6 +129,8 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit)
     const archive = git(repository, ['archive', baseline, `${appPrefix}tests`, `${appPrefix}${stateTest}`], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
     execFileSync('tar', ['-x', '-C', scratch], { input: archive });
     const retainedRoot = path.join(scratch, appPrefix);
+    // /init and /personal compare the renderer with the candidate terminal's canonical resources.
+    await fs.symlink(path.join(repository, 'codex-rs'), path.join(scratch, 'codex-rs'));
     for (const entry of await fs.readdir(root)) {
       if (entry === 'desktop') {
         for (const child of await fs.readdir(path.join(root, entry))) if (child !== 'state.test.cjs') {

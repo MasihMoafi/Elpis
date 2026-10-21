@@ -262,8 +262,7 @@ test('Love Spot standalone Electron and Elpis exchange mouse strokes in under a 
   await standalone.waitForTimeout(300);
   assert.equal((await f.scene()).elements.filter(e => e.type === 'image').length, 1);
   // A page switch replaces the standalone scene, including its old tombstones and history.
-  await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
-  await f.page.getByRole('menuitem', { name: 'New page', exact: true }).click();
+  await f.page.getByRole('button', { name: 'New page', exact: true }).click();
   await f.waitFor(s => s.page?.name === 'Page 2' && s.elements.length === 0, 'new page was not created');
   await standalone.waitForTimeout(400);
   await f.draw(standalone);

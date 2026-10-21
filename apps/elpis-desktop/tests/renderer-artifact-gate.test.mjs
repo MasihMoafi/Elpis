@@ -249,6 +249,25 @@ test('unchanged test/helper bytes deduplicate; changed helpers require the candi
   } finally { execFileSync('gio', ['trash', retained.scratch]); }
 });
 
+test('retained UI tests can read the candidate terminal prompts and personal skill', async t => {
+  const f = await fixture(t);
+  const resources = ['tui/assets/prompt_for_init_command.md', 'skills/src/assets/personal/SKILL.md'];
+  for (const name of resources) {
+    const file = path.join(f.repo, 'codex-rs', name);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `candidate ${name}`);
+  }
+  const retained = await prepareBaseline(f.root, f.baseline);
+  try {
+    assert.match(await fs.readFile(path.join(retained.root, 'tests/helper.cjs'), 'utf8'), /retained helper/);
+    for (const name of resources) {
+      const file = path.resolve(retained.root, '../../codex-rs', name);
+      assert.equal(await fs.readFile(file, 'utf8'), `candidate ${name}`);
+      assert.equal(await fs.realpath(file), path.join(f.repo, 'codex-rs', name));
+    }
+  } finally { execFileSync('gio', ['trash', retained.scratch]); }
+});
+
 test('a candidate cannot drop the saved-workspace test and reinstate a reader that rejects project memberships', async t => {
   const f = await fixture(t);
   await fs.rename(path.join(f.root, 'desktop/state.test.cjs'), path.join(f.repo, 'dropped-state.test.cjs'));

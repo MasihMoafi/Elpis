@@ -3,11 +3,14 @@
 async function chooseOption(locator, value) {
   const page = locator.page();
   await locator.click();
-  const options = page.getByRole('option');
+  const list = page.getByRole('listbox');
+  const options = list.getByRole('option');
   const option = value && typeof value === 'object' && 'label' in value
-    ? page.getByRole('option', { name: value.label, exact: true })
+    ? list.getByRole('option', { name: value.label, exact: true })
     : options.and(page.locator(`[data-value=${JSON.stringify(String(value))}]`));
   await option.click();
+  // The next control must not see the previous select's options during its exit animation.
+  await list.waitFor({ state: 'detached' });
 }
 async function controlValue(locator) {
   if (await locator.getAttribute('data-value') !== null) return locator.getAttribute('data-value');
@@ -59,12 +62,14 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
     const probe = document.createElement('span'); probe.style.color = value; document.body.append(probe);
     const pixel = [...rgba(getComputedStyle(probe).color)]; probe.remove(); return pixel;
   };
-  const accents = approvedAccents ? ['#e89d34', '#ff8a00'].map(resolve) : [];
-  const focus = approvedAccents ? resolve('color-mix(in oklch, #e89d34 80%, var(--hud-edge))') : [];
+  const accents = ['#e89d34', '#ff8a00'].map(resolve);
+  const focus = resolve('color-mix(in oklch, #e89d34 80%, var(--hud-edge))');
   const message = approvedAccents ? resolve('color-mix(in oklch, #e89d34 70%, transparent)') : [];
   const approved = (element, property, colour) => {
-    if (!approvedAccents) return false;
     const pixel = rgba(colour), same = expected => expected.length === pixel.length && expected.every((value, at) => value === pixel[at]);
+    // A67's outlined working hexagon uses Send orange, even when logo amber is allowed elsewhere.
+    if (property === 'stroke' && element.matches('.elpis-working-rotor')) return same(accents[1]);
+    if (property === 'color' && !approvedAccents) return false;
     return accents.some(same)
       || (/^border-.*-color$/.test(property) && element.matches('.composer, .composer-tray') && same(focus))
       || (property === 'border-right-color' && element.matches('.message.user') && same(message));
@@ -78,7 +83,6 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
     return hue >= 15 && hue <= 50 && saturation >= 0.5 && light >= 0.25 && light <= 0.85;
   };
   const colours = text => text.match(/(?:rgba?|color|oklab|oklch|lab|lch|hsla?)\([^()]*\)|#[0-9a-f]{3,8}\b/gi) ?? [];
-  const samePaint = (a, b) => rgba(a).every((channel, index) => channel === rgba(b)[index]);
   const name = element => `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${[...element.classList].slice(0, 2).map(c => `.${c}`).join('')}`;
   const hits = new Set();
   for (const element of document.querySelectorAll('body *')) {
@@ -92,15 +96,8 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
     if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) checks.push(['outline-color', style.outlineColor]);
     if (element instanceof SVGElement) checks.push(['fill', style.fill], ['stroke', style.stroke]);
     for (const [property, value] of checks) {
-      if (!approvedAccents && property === 'background-color' && element.matches('[data-slot="button"].primary-cut')) continue;
-      if (!approvedAccents && property === 'fill' && element.closest('.elpis-working-mark')) continue;
-      // A67 restored an outlined hexagon; its stroke uses A87's approved Send orange.
-      if (property === 'stroke' && element.matches('.elpis-working-rotor') &&
-        String(rgba(value)) === String(rgba(style.getPropertyValue('--primary-action')))) continue;
       for (const colour of colours(value ?? '')) if (orange(colour) && !approved(element, property, colour)) {
-        const accent = property !== 'color' && ['#e89d34', '#ff8a00'].some(hex => samePaint(colour, hex));
-        const composerEdge = property.startsWith('border-') && element.matches('.composer, .composer-tray') && samePaint(colour, style.getPropertyValue('--edge'));
-        if (!accent && !composerEdge) hits.add(`${name(element)}: ${property} ${colour}`);
+        hits.add(`${name(element)}: ${property} ${colour}`);
       }
     }
   }
