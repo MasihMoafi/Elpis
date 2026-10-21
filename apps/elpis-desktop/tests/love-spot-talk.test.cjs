@@ -163,6 +163,7 @@ test('a reply reaches the board after navigating away; text-only models receive 
     await f.page.waitForResponse(response => response.url().endsWith('/api/love-spot/talk') && response.request().method() === 'POST');
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.waitFor(s => s.elements.some(e => e.text === 'I am here with you.'), 'navigation lost the reply');
+    await f.page.locator('.nav-list .love-unread').waitFor();
     assert.equal(f.turns[0].attachments.some(a => a.type === 'image'), false);
     assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /Still here when you return/);
     await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click();

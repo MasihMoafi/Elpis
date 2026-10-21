@@ -1877,7 +1877,7 @@ export default function Home() {
       <nav className="nav-list" aria-label="Workspace">
         <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
         {arrangedPages.map(page => <ReorderButton data-slot="nav-row" key={page.id} variant="ghost" data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
-          title={page.name} itemId={page.id} order={arrangedPages.map(item => item.id)} dragType="text/x-elpis-page" onReorder={reorderPages}>
+          aria-label={page.name} title={page.name} itemId={page.id} order={arrangedPages.map(item => item.id)} dragType="text/x-elpis-page" onReorder={reorderPages}>
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</ReorderButton>)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />

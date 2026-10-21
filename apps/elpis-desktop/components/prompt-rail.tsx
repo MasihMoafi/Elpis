@@ -126,11 +126,21 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
       const visibility = turn.style.contentVisibility;
       turn.style.contentVisibility = "visible";
       let frame = 0, passes = 0, stable = 0;
+      let positionedTop = scroller.current?.scrollTop ?? 0;
+      const superseded = () => {
+        const root = scroller.current;
+        if (!root || Math.abs(root.scrollTop - positionedTop) <= 2) return false;
+        setTarget(current => current === target ? null : current);
+        return true;
+      };
       // Offscreen turns use estimated heights (content-visibility). Rendering them changes
       // the destination after the first scroll; finish positioning before releasing the target.
       const settle = () => {
-        if (!goTo(target)) return;
+        if (superseded() || !goTo(target)) return;
+        positionedTop = scroller.current!.scrollTop;
         frame = requestAnimationFrame(() => {
+          // A later scroll belongs to the user; an old jump must not pull it back.
+          if (superseded()) return;
           const root = scroller.current, element = elementOf(target);
           if (!root || !element) return;
           const top = Math.max(0, Math.min(root.scrollHeight - root.clientHeight, root.scrollTop + element.getBoundingClientRect().top - root.getBoundingClientRect().top - 16));

@@ -15,7 +15,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
   const f = await fixture({ desktop: false, routes: { '/api/trash': body => ({ trashed: body.threadIds }) } });
   const site = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
-    res.end(`<title>Page ${req.url}</title><style>:root{color-scheme:light dark}body{background:Canvas;color:CanvasText}</style><h1>Session page ${req.url}</h1><input aria-label="Session note"><button class="btn" onclick="document.querySelector('h1').textContent=document.querySelector('input').value">Save</button>`);
+    res.end(`<title>Page ${req.url}</title><style>:root{color-scheme:light dark}body{background:Canvas;color:CanvasText}</style><h1>Session page ${req.url}</h1><input aria-label="Session note"><button class="btn" onclick="const heading=document.querySelector('h1');heading.textContent=document.querySelector('input').value;heading.dataset.saved='true'">Save</button>`);
   });
   await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${site.address().port}`;
@@ -51,6 +51,8 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     assert.ok(backgroundPage.viewport.width > 0 && backgroundPage.viewport.height > 0, 'a never-shown session has a usable viewport');
     await backgroundCall('browser_type', { tabId: backgroundTab, selector: 'input', text: 'FIRST_BACKGROUND_PROOF' });
     await backgroundCall('browser_click', { tabId: backgroundTab, selector: 'button' });
+    // Native input dispatch is asynchronous. Wait for its DOM result before reading a snapshot.
+    await backgroundCall('browser_wait', { tabId: backgroundTab, selector: 'h1[data-saved]' });
     assert.match((await backgroundCall('browser_snapshot', { tabId: backgroundTab })).text, /FIRST_BACKGROUND_PROOF/);
     assert.equal((await backgroundCall('browser_screenshot', { tabId: backgroundTab })).content[0].type, 'image');
     await assert.rejects(callBrowser(background.path, 'browser_snapshot', { tabId: backgroundTab }, background.other), /closed/);
@@ -99,11 +101,13 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     await electron.waitForEvent('console', { predicate: () => false, timeout: 50 }).catch(() => {});
     await call('b', 'browser_type', { tabId: b.id, selector: 'input', text: 'Only session B' });
     await call('b', 'browser_click', { tabId: b.id, selector: 'button' });
+    await call('b', 'browser_wait', { tabId: b.id, selector: 'h1[data-saved]' });
     await electron.evaluate(() => { if (!global.releaseBrowserRead) throw Error('A read did not start'); global.releaseBrowserRead(); });
     assert.match((await pendingA).text, /Session page \/a-next/);
     assert.match((await call('b', 'browser_snapshot', { tabId: b.id })).text, /Only session B/);
     await call('a', 'browser_type', { tabId: a.id, selector: 'input', text: 'Only hidden session A' });
     await call('a', 'browser_click', { tabId: a.id, selector: 'button' });
+    await call('a', 'browser_wait', { tabId: a.id, selector: 'h1[data-saved]' });
     assert.match((await call('a', 'browser_snapshot', { tabId: a.id })).text, /Only hidden session A/);
     assert.match((await call('b', 'browser_snapshot', { tabId: b.id })).text, /Only session B/);
     await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a-next`, 'B tools did not select or navigate A');

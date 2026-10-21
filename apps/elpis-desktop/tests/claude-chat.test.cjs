@@ -198,6 +198,18 @@ test('a rail of ticks at the transcript’s left edge marks each prompt; a tick 
   await eventually(async () => assert.equal(await lit(), 'Jump to user message 4'));
 }));
 
+test('a newer scroll to the end wins over a prompt jump still settling', () => using({}, async f => {
+  const { page } = f;
+  await f.open('chat-a');
+  await page.clock.install(); await page.clock.pauseAt(Date.now() + 1000);
+  const rail = page.getByRole('navigation', { name: 'User messages' });
+  await rail.locator('[data-slot="prompt-mark"]').nth(2).click();
+  await page.clock.runFor(16);
+  await page.locator('.chat-scroll').evaluate(node => node.scrollTo({ top: node.scrollHeight, behavior: 'instant' }));
+  await page.clock.runFor(128);
+  assert.equal(await rail.locator('[aria-current="true"]').getAttribute('aria-label'), 'Jump to user message 4');
+}));
+
 for (const colorScheme of ['light', 'dark']) {
   test(`with the side panel open the panel header lines up with the chat tabs and the message box keeps one row at 1130 px (${colorScheme})`, () => using({ colorScheme }, async f => {
     const { page } = f;

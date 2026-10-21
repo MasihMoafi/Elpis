@@ -27,6 +27,24 @@ test('A70: failed storage leaves Settings order unchanged and explains the error
   } finally { await f.close(); }
 });
 
+test('A70: a pending reorder never takes focus back from the next control', async () => {
+  const f = await fixture({ height: 1080 });
+  try {
+    await openSettings(f.page);
+    await f.page.clock.install();
+    await f.page.clock.pauseAt(Date.now() + 1000);
+    const sections = f.page.locator('.settings-nav [data-slot="section-link"]');
+    const moved = sections.first(), next = sections.nth(2);
+    const nextName = await next.textContent();
+    await moved.focus(); await f.page.keyboard.press('Alt+ArrowDown');
+    const destination = sections.filter({ hasText: nextName });
+    await destination.focus();
+    await f.page.clock.runFor(32);
+    assert.equal(await destination.evaluate(element => element === document.activeElement), true, 'the next control keeps focus after the reorder frame');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('A13/A70: the shared sidebar navigation still reorders by keyboard and drag', async () => {
   const f = await fixture({ height: 1080 });
   try {
