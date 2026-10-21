@@ -392,7 +392,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .settings-mode .settings-layout { height:100%; max-width:none; gap:0; grid-template-columns:256px minmax(0,1fr); }
 .settings-mode .settings-nav { position:static; height:100%; overflow:auto; align-content:start; background:var(--sidebar); border-right:1px solid var(--hairline); padding:10px 8px 16px; gap:6px; }
 .settings-mode .settings-page { max-width:none; height:100%; overflow:auto; padding:48px 40px 64px; }
-.settings-mode .settings-page > [role="tabpanel"] { max-width:860px; margin:0 auto; }
+.settings-mode .settings-page { --settings-content-width:860px; }
+.settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
 .settings-title { margin:10px 8px 4px; font:500 19px/1.3 var(--serif); }
 .settings-nav [role="tablist"] { display:grid; gap:1px; }

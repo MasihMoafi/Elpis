@@ -43,20 +43,28 @@ const ScopeContext = createContext<SettingScope | null>(null);
 export function SettingsScope({ value, children }: { value: SettingScope; children: ReactNode }) {
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }
-type RowProps = { title: ReactNode; description?: ReactNode; children?: ReactNode; stacked?: boolean; id?: string; scope?: SettingScope };
-/** One setting. Its control carries its own label. `stacked` puts a wide control (text area, list) under the text. */
-export function SettingRow({ title, description, children, stacked, id, scope }: RowProps) {
-  const inheritedScope = useContext(ScopeContext);
-  const effectiveScope = scope ?? inheritedScope;
-  return <div className={`settings-row${stacked ? " stacked" : ""}`}>
-    <div className="settings-row-text"><div className="settings-row-heading"><div className="settings-row-title" id={id}>{title}</div>{effectiveScope && <span className="settings-scope">{effectiveScope}</span>}</div>{description && <div className="settings-row-description">{description}</div>}</div>
-    {children && <div className="settings-row-control">{children}</div>}
+/** The single row shell, also used by feedback and archive rows. */
+function RowFrame({ children, control, leading, stacked, actions }: { children: ReactNode; control?: ReactNode; leading?: ReactNode; stacked?: boolean; actions?: boolean }) {
+  return <div data-slot="settings-row" className={`settings-row${stacked ? " stacked" : ""}${actions ? " settings-actions" : ""}`}>
+    {leading}
+    <div className="settings-row-text">{children}</div>
+    {control && <div className="settings-row-control">{control}</div>}
   </div>;
 }
 
+type RowProps = { title: ReactNode; description?: ReactNode; children?: ReactNode; leading?: ReactNode; stacked?: boolean; id?: string; scope?: SettingScope | null };
+/** One setting. Its control carries its own label. `stacked` puts a wide control (text area, list) under the text. */
+export function SettingRow({ title, description, children, leading, stacked, id, scope }: RowProps) {
+  const inheritedScope = useContext(ScopeContext);
+  const effectiveScope = scope === undefined ? inheritedScope : scope;
+  return <RowFrame stacked={stacked} leading={leading} control={children}>
+    <div className="settings-row-heading"><div className="settings-row-title" id={id}>{title}</div>{effectiveScope && <span className="settings-scope">{effectiveScope}</span>}</div>{description && <div className="settings-row-description">{description}</div>}
+  </RowFrame>;
+}
+
 /** The last row of a group with a Save button and its feedback. */
-export function SettingsActions({ children, feedback }: { children: ReactNode; feedback?: ReactNode }) {
-  return <div className="settings-row settings-actions"><div className="settings-row-text">{feedback}</div><div className="settings-row-control">{children}</div></div>;
+export function SettingsActions({ children, feedback }: { children?: ReactNode; feedback?: ReactNode }) {
+  return <RowFrame actions control={children}>{feedback}</RowFrame>;
 }
 
 /** Feedback under a group or row: saved, failed, or why a control is unavailable. */

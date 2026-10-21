@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArchiveRestore, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
-import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { SettingRow, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { api, unreadable, title, type Thread } from "@/lib/api";
 
@@ -85,21 +85,16 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
     </div>}
     <DeleteChatsDialog threads={deleting} onDelete={remove} onClose={() => setDeleting(null)} alwaysConfirm />
     {!!threads?.length && <ul className="settings-rows">
-      {threads.map(thread => <ThreadActions key={thread.id} thread={thread} onDelete={remove} area={<li className="settings-row archived-row" data-thread-id={thread.id} />}>{menu => <>
-        <input type="checkbox" className="accent-primary archived-row-check" aria-label={`Select ${title(thread)}`} checked={picked.includes(thread.id)} onChange={event => setPicked(prev => event.target.checked ? [...prev, thread.id] : prev.filter(id => id !== thread.id))} />
-        <div className="settings-row-text">
-          <div className="settings-row-title truncate">{title(thread)}</div>
-          {thread.agentNickname && <div className="settings-row-description">{thread.agentNickname}</div>}
-          <div className="settings-row-description">
-            {thread.archivedAt ? <time dateTime={new Date(thread.archivedAt).toISOString()}>Archived {new Date(thread.archivedAt).toLocaleString()}</time> : "Archive date unavailable"}
-          </div>
-          <div className="settings-row-description">{thread.archiveReason || "Reason unavailable for this older archive."}</div>
-        </div>
-        <div className="settings-row-control">
+      {threads.map(thread => <ThreadActions key={thread.id} thread={thread} onDelete={remove} area={<li className="archived-row" data-thread-id={thread.id} />}>{menu => <SettingRow title={title(thread)} scope={null}
+        leading={<input type="checkbox" className="accent-primary archived-row-check" aria-label={`Select ${title(thread)}`} checked={picked.includes(thread.id)} onChange={event => setPicked(prev => event.target.checked ? [...prev, thread.id] : prev.filter(id => id !== thread.id))} />}
+        description={<>
+          {thread.agentNickname && <div>{thread.agentNickname}</div>}
+          <div>{thread.archivedAt ? <time dateTime={new Date(thread.archivedAt).toISOString()}>Archived {new Date(thread.archivedAt).toLocaleString()}</time> : "Archive date unavailable"}</div>
+          <div>{thread.archiveReason || "Reason unavailable for this older archive."}</div>
+        </>}>
           <Button variant="outline" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
           {menu}
-        </div>
-      </>}</ThreadActions>)}
+      </SettingRow>}</ThreadActions>)}
     </ul>}
     {cursor && <Button variant="ghost" className="mt-2 w-full" onClick={() => load(cursor)}>Load more</Button>}
   </div>;

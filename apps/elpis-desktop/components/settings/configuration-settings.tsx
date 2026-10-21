@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { FileRefLink } from "@/components/file-ref";
 import { api } from "@/lib/api";
 import { editable, reloadSettings, saveOptions, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
-import { SaveFeedback, SettingRow, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
+import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
@@ -38,7 +38,7 @@ function ConfigOptionsGroup({ settings }: { settings: ElpisSettings }) {
     {OPTIONS.map(option => <ConfigChoice key={option.name} settings={settings} {...option} disabled={!writable || saver.pending !== null}
       allowed={option.name === "approvalPolicy" ? settings.managed?.allowedApprovalPolicies : option.name === "sandboxMode" ? settings.managed?.allowedSandboxModes : null}
       onSave={patch => void saver.run(option.name, () => saveOptions(settings, patch), `${option.title} saved. Applies to new conversations.`)} />)}
-    {saver.outcome && <div className="settings-row settings-actions"><SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} /></div>}
+    {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
   </SettingsGroup>;
 }
 
