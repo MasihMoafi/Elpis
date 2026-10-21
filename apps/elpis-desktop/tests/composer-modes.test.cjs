@@ -180,3 +180,23 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
     await f.page.screenshot({ path: path.join(dir, `${colorScheme}-${width}.png`) });
   }));
 }
+
+test('Forward sends a finished side-chat answer to the working agent, and is absent until then (A38)', () => using({ routes: {
+  '/api/threads/chat-a/side-chat': () => ({ threadId: 'side-a' }),
+  '/api/side-chats/side-a/turns': () => ({ turn: { id: 'side-turn' } }),
+} }, async f => {
+  await f.composer.click(); await f.page.keyboard.press('Control+;');
+  const panel = side(f.page), box = panel.getByRole('textbox', { name: 'Side question', exact: true });
+  const forward = panel.getByRole('button', { name: 'Forward', exact: true });
+  await box.fill('Which file owns the parser?'); await box.press('Enter');
+  await eventually(() => assert.equal(sent(f, '/side-chats/side-a/turns').length, 1));
+  f.emit('sideChat', { method: 'item/completed', params: { threadId: 'side-a', turnId: 'side-turn', item: { id: 'answer', type: 'agentMessage', text: 'lib/parser.ts owns it.' } } });
+  await panel.getByText('lib/parser.ts owns it.', { exact: true }).waitFor();
+  assert.equal(await forward.count(), 0, 'no Forward while the side answer is still running');
+  f.emit('sideChat', { method: 'turn/completed', params: { threadId: 'side-a', turn: { id: 'side-turn', status: 'completed' } } });
+  await forward.waitFor();
+  assert.equal(sent(f, '/threads/chat-a/turns').length, 0, 'nothing reaches the main chat before Forward');
+  await forward.click();
+  await eventually(() => assert.equal(sent(f, '/threads/chat-a/turns').length, 1));
+  assert.match(sent(f, '/threads/chat-a/turns')[0].body.text, /From the side chat:\s+lib\/parser\.ts owns it\./);
+}));

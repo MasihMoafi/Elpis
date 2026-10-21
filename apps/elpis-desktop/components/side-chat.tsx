@@ -10,8 +10,9 @@ import { mergeLiveItem, runtimeErrorNotice } from "@/lib/live-events";
 
 export type SideRequest = { id: number; text: string; kind?: "recap" };
 
-/** An ephemeral fork's messages live only in this panel, never in the main transcript or drafts. */
-export function SideChat({ parentId, open, question, onClose }: { parentId: string; open: boolean; question?: SideRequest; onClose: () => void }) {
+/** An ephemeral fork's messages live only in this panel, never in the main transcript or drafts, until Forward sends
+ * its latest answer to the working agent (Masih, A38). */
+export function SideChat({ parentId, open, question, onClose, onForward }: { parentId: string; open: boolean; question?: SideRequest; onClose: () => void; onForward?: (answer: string) => void }) {
   const isRecap = question?.kind === "recap";
   const [draft, setDraft] = useState("");
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -44,6 +45,7 @@ export function SideChat({ parentId, open, question, onClose }: { parentId: stri
     };
   }, []);
   useEffect(() => { if (open) input.current?.focus(); }, [open]);
+  const answer = busy ? "" : [...entries].reverse().find(entry => entry.item.type === "agentMessage" && typeof entry.item.text === "string" && entry.item.text.trim())?.item.text?.trim() ?? "";
   useEffect(() => { if (content.current) content.current.scrollTop = content.current.scrollHeight; }, [entries, busy]);
 
   async function send(text = latestDraft.current) {
@@ -83,6 +85,7 @@ export function SideChat({ parentId, open, question, onClose }: { parentId: stri
       {entries.map(entry => <ChatMessage key={entry.item.id} item={entry.item} />)}
       {busy && <p role="status" className="text-sm text-muted-foreground">Elpising…</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {answer && onForward && <Button variant="outline" size="sm" className="self-start" title="Send this answer to the working agent" onClick={() => onForward(answer)}>Forward</Button>}
     </div>
     <form className="side-chat-form" onSubmit={event => { event.preventDefault(); void send(); }}>
       <Textarea ref={input} aria-label="Side question" placeholder="Ask a side question…" value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => {
