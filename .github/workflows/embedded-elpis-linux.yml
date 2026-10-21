@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       verification:
-        description: 'Compiler, UI-only, or full runtime validation'
+        description: 'Compiler, UI-only, full runtime validation, or build-only install package'
         required: true
         default: full
         type: choice
-        options: [check, ui, full]
+        options: [check, ui, full, build]
   push:
     tags: ['v*']
     branches: [next]
@@ -143,12 +143,12 @@ jobs:
           key: ${{ steps.cargo_cache.outputs.cache-primary-key }}
 
   build:
-    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui'
+    if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui' || inputs.verification == 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
       CODEX_SKIP_BWRAP_BUILD: '1'
-      CARGO_BUILD_JOBS: '2'
+      CARGO_BUILD_JOBS: ${{ inputs.verification == 'build' && '4' || '2' }}
       RUST_TEST_THREADS: '1'
       CARGO_PROFILE_RELEASE_LTO: 'false'
       CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
@@ -166,8 +166,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             codex-rs/target
-          key: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: elpis-040-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+          # Build-only runs keep a small release-only cache of their own, so the next one compiles only what changed.
+          key: elpis-040-${{ inputs.verification == 'build' && 'build-' || '' }}${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: elpis-040-${{ inputs.verification == 'build' && 'build-' || '' }}${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
@@ -255,7 +256,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: User and project configuration isolation
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         working-directory: codex-rs
         shell: bash
         run: |
@@ -270,13 +271,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Native Ledger placement and compact Close regressions
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
           node scripts/evals/ledger-close-placement.cjs \
             --binary "$PWD/codex-rs/target/release/elpis" \
             --output "$RUNNER_TEMP/elpis-ledger-native" --phase candidate
       - name: Preserve native Ledger evidence
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: candidate-ledger-native
@@ -284,7 +285,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Prove status regression detects the original missing instructions
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
         working-directory: codex-rs
         shell: bash
         run: |
@@ -321,7 +322,7 @@ jobs:
         env:
           INSTA_UPDATE: new
           INSTA_FORCE_PASS: '1'
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
         working-directory: codex-rs
         shell: bash
         run: |
@@ -348,7 +349,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Core permissions and continuity unit tests
-        if: ${{ !cancelled() && inputs.verification != 'ui' }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-core --lib -- \
@@ -357,7 +358,7 @@ jobs:
             loaded_children_give_up_the_full_access_their_parent_gives_up \
             revocation regains_full_access
       - name: Context and session integration tests
-        if: ${{ !cancelled() && inputs.verification != 'ui' }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
         working-directory: codex-rs
         shell: bash
         run: |
@@ -370,7 +371,7 @@ jobs:
             elpis_instructions_read thread_read_paginated_carrier_persists_before_first_turn \
             2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
       - name: Preserve UI and integration check diagnostics
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: candidate-check-diagnostics
@@ -378,7 +379,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Provider configuration and CLI tests
-        if: ${{ !cancelled() && inputs.verification != 'ui' }}
+        if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-elpis-gateway --lib
@@ -386,16 +387,16 @@ jobs:
           cargo test --profile dev-small --locked -p codex-cli --lib
           cargo test --profile dev-small --locked -p codex-tui --lib branding::tests
       - name: Native permission regressions
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
       - name: Code Mode permission regressions
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" --code-mode
       - name: Claude bridge permission regressions
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis"
       - name: Claude turn delivery and restart recovery through the real native runtime (A124)
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         env:
           A124_ENGINE: ${{ github.workspace }}/codex-rs/target/release/elpis
         run: |
@@ -409,7 +410,7 @@ jobs:
             node --test --test-reporter=tap --test-name-pattern='a bridge restart recovers' tools/elpis-claude/test/turn-delivery.test.mjs > "$RUNNER_TEMP/elpis-claude-restart-$attempt-checks.log" 2>&1
           done
       - name: Preserve Claude restart recovery diagnostics
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: claude-restart-recovery
@@ -423,27 +424,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Gemini bridge permission regressions
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Live admitted context refresh across providers
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
           node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Delegated helper status across server restarts
+        if: ${{ !cancelled() && inputs.verification != 'build' }}
         run: node scripts/delegate-status-restart.test.cjs
       - name: Exec helper ancestry
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         env:
           ELPIS_PARENT_TEST_BINARY: ${{ github.workspace }}/codex-rs/target/release/elpis
         run: node --test codex-rs/exec/tests/parent-runtime.test.cjs
       - name: Delegated helper permission regressions
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
           node scripts/delegate-reload.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
       - name: Shared launcher, native transport, and provider session ownership
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
           node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
           node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher
@@ -453,10 +455,10 @@ jobs:
           node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared
           node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared --gemini
       - name: Real runtime evals and failing controls, without outside network
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
       - name: Clean offline installation
-        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: bash tests/install/clean_linux.sh codex-rs/target/release
       - name: Package Linux binaries and Debian installer
         if: inputs.verification != 'ui'
@@ -484,7 +486,7 @@ jobs:
             (cd dist && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
           done
       - name: Clean Debian installation
-        if: inputs.verification != 'ui'
+        if: inputs.verification != 'ui' && inputs.verification != 'build'
         run: bash tests/install/clean_linux.sh "dist/elpis_${ELPIS_VERSION}_amd64.deb"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: inputs.verification != 'ui'
