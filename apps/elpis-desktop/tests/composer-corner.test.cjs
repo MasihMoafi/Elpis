@@ -47,7 +47,7 @@ for (const colorScheme of ['light', 'dark']) test(`the composer's corner accent 
   await page.locator('.composer textarea').first().focus();
   await oneEdge(page, true, 'while typing');
 
-  await page.locator('.thread-row .thread-link').first().click();
+  await f.open('chat-a');
   await page.locator('.composer-tray').waitFor({ state: 'detached' });
   await oneEdge(page, false, 'in a chat');
   const alone = await corner(page, '.composer');

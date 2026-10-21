@@ -31,14 +31,16 @@ for (const [colorScheme, width, height] of [['light', 1280, 800], ['dark', 900, 
     let release, requested, reads = 0; const held = new Promise(resolve => requested = resolve);
     const f = await fixture({ staticDir: process.env.A20_STATIC_DIR || undefined, width, height, colorScheme, routes: { ...contextRoutes(), '/api/threads/chat-a/context-files': async () => { if (++reads === 1) { requested(); await new Promise(resolve => release = resolve); } return { files: files() }; } } });
     try {
-      await f.open('chat-a'); const ring = f.page.getByRole('button', { name: 'Context window: 25% used', exact: true }); await ring.waitFor();
-      await traceOpening(f.page); await ring.click(); await held; await animationFrames(f.page);
+      await f.open('chat-a'); const ring = f.page.getByRole('button', { name: 'Context window: 25% used', exact: true, includeHidden: true }); await ring.waitFor({ state: 'attached' });
+      assert.equal(await ring.isVisible(), width === 1280, 'narrow composers use the Ledger button instead of the hidden ring');
+      const trigger = width === 1280 ? ring : f.page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true });
+      await traceOpening(f.page); await trigger.click(); await held; await animationFrames(f.page);
       if (process.env.ELPIS_A20_SHOTS) { await fs.mkdir(process.env.ELPIS_A20_SHOTS, { recursive: true }); await f.page.screenshot({ path: `${process.env.ELPIS_A20_SHOTS}/${colorScheme}-${width}x${height}-pending.png` }); }
       release(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); await animationFrames(f.page);
       await assertStableOpening(f.page, 'delayed response');
       if (process.env.ELPIS_A20_SHOTS) { await fs.mkdir(process.env.ELPIS_A20_SHOTS, { recursive: true }); await f.page.screenshot({ path: `${process.env.ELPIS_A20_SHOTS}/${colorScheme}-${width}x${height}.png` }); }
       await f.page.keyboard.press('Escape'); await popupOf(f.page).waitFor({ state: 'hidden' });
-      await ring.focus(); await traceOpening(f.page); await f.page.keyboard.press('Enter');
+      await trigger.focus(); await traceOpening(f.page); await f.page.keyboard.press('Enter');
       await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); await animationFrames(f.page);
       await assertStableOpening(f.page, 'immediate response'); assert.equal(reads, 2, 'every opening reads fresh sources'); assert.deepEqual(f.errors, []);
     } finally { release?.(); await f.close(); }

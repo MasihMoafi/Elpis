@@ -1485,6 +1485,7 @@ export default function Home() {
   }
   const slashCommands: SlashCommand[] = [
     { name: "btw", description: "Ask a quick side question without adding to the session", available: !!selected, args: true, run: askSideQuestion },
+    { name: "recap", description: "Summarize this conversation and its next step", available: !!selected && !readOnlyRun, run: recapConversation },
     { name: "model", description: "choose what model and reasoning effort to use", available: !busy, run: () => openComposerControl("Model") },
     { name: "fast", description: "toggle OpenAI Fast speed: /fast [on|off]", available: !busy && !readOnlyRun, args: true, run: chooseFast },
     { name: "effort", description: "change how hard the model thinks: /effort [low|medium|high|…]", available: !busy && turnEfforts.length > 0, args: true, run: chooseEffort },
@@ -1515,7 +1516,6 @@ export default function Home() {
     { name: "pwd", description: "show the current working directory", available: !!chatFolder, run: () => setSlashNotice(`Current working directory: ${chatFolder}`) },
     { name: "usage", description: "inspect this session; /usage account opens usage and limits", args: true, run: text => { if (text) openSettings("usage"); else setPanel("status"); } },
     { name: "context", description: "show context usage as a grid, by category, with checkpoints and system files", available: !!selected, run: () => window.dispatchEvent(new CustomEvent("elpis:open-context")) },
-    { name: "recap", description: "Summarize this conversation and its next step", available: !!selected && !readOnlyRun, run: recapConversation },
     { name: "config", description: "open Settings or a section: /config [section]", args: true, run: text => openSettings(configDestination(text)) },
     { name: "theme", description: "choose the theme", run: () => openSettings("appearance") },
     { name: "mcp", description: "list and manage MCP servers", run: () => openSettings("mcp") },

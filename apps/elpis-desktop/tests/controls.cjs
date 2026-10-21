@@ -77,6 +77,9 @@ const oranges = (page, exclude = '') => page.evaluate(exclude => {
     for (const [property, value] of checks) {
       if (property === 'background-color' && element.matches('[data-slot="button"].primary-cut')) continue;
       if (property === 'fill' && element.closest('.elpis-working-mark')) continue;
+      // A67 restored an outlined hexagon; its stroke uses A87's approved Send orange.
+      if (property === 'stroke' && element.matches('.elpis-working-rotor') &&
+        String(rgba(value)) === String(rgba(style.getPropertyValue('--primary-action')))) continue;
       for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
     }
   }

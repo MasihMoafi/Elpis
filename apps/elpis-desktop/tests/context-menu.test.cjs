@@ -210,6 +210,7 @@ test('a message right-click opens the message menu, the same list as the hover â
   const hovered = async scope => { await scope.hover(); await scope.getByRole('button', { name: 'More message actions', exact: true }).click(); const list = await items(); await closeMenu(); return list; };
   // Right-click on a message that has no selection.
   const userMenu = await hovered(user);
+  await page.evaluate(() => getSelection().removeAllRanges());
   await user.locator('.message.user').click({ button: 'right' });
   assert.deepEqual(await items(), [...userMenu, 'Change thisâ€¦'], 'a user message keeps the hover actions and appends Improve Elpis');
   assert.ok((await items()).includes('Copy as Markdown'));
@@ -218,15 +219,22 @@ test('a message right-click opens the message menu, the same list as the hover â
   await page.getByRole('menuitem', { name: 'Copy as Markdown', exact: true }).click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Please summarize the cache design.');
   const replyMenu = await hovered(reply);
-  await reply.locator('p').first().click({ button: 'right' });
+  await page.evaluate(() => getSelection().removeAllRanges());
+  const paragraph = reply.locator('p').first();
+  // A paragraph's centre can land on its link. Target plain text for the app-menu case.
+  const plainTextPoint = await paragraph.evaluate(element => {
+    const range = document.createRange(); range.setStart(element.firstChild, 0); range.setEnd(element.firstChild, 3);
+    const text = range.getBoundingClientRect(), box = element.getBoundingClientRect();
+    return { x: text.x - box.x + text.width / 2, y: text.y - box.y + text.height / 2 };
+  });
+  await paragraph.click({ button: 'right', position: plainTextPoint });
   assert.deepEqual(await items(), [...replyMenu, 'Change thisâ€¦'], 'a reply keeps the hover actions and appends Improve Elpis');
   assert.ok((await items()).includes('Copy as Markdown'));
   await shot('message-reply-right-click');
   await page.getByRole('menuitem', { name: 'Copy as Markdown', exact: true }).click();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^The cache keeps one prefix per chat\./);
   // Selected text: the page leaves the right-click to the native Copy.
-  const paragraph = reply.locator('p').first();
-  await paragraph.click({ clickCount: 3 });
+  await paragraph.click({ clickCount: 3, position: plainTextPoint });
   assert.notEqual(await page.evaluate(() => getSelection().toString()), '');
   await paragraph.click({ button: 'right' });
   assert.equal(await lastPrevented(), false, 'selected text shows the native Copy');

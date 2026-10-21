@@ -239,10 +239,11 @@ test('the gap under a reply, up to the next message, holds its hover actions and
   assert.ok(gap >= 40 && gap <= 60, `the gap is ${gap}px`);
 }));
 
-test('the new surfaces paint no orange in the light theme: the @ picker, the + menu, a message menu, the prompt rail, the back buttons and the side panel', () => using({ colorScheme: 'light' }, async f => {
+test('the new surfaces paint no orange in the light theme: the @ picker, the + menu, a message menu, the prompt rail, the back buttons and the side panel', () => using({ colorScheme: 'light', storage: { 'elpis-preferences-v1': JSON.stringify({ accent: 'blue' }) } }, async f => {
   const { page, composer } = f;
   await f.open('chat-a');
   await page.locator('.startup-splash').waitFor({ state: 'detached' });
+  // A87 permits the selected amber accent; a blue accent exposes stray orange without excluding any surface.
   assert.deepEqual(await oranges(page), [], 'the chat with its rail and back buttons');
   await composer.click(); await page.keyboard.type('@'); await page.getByRole('listbox', { name: 'Mentions' }).waitFor();
   assert.deepEqual(await oranges(page), [], 'the @ picker');

@@ -127,15 +127,23 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
     try { await api(`/threads/${encodeURIComponent(threadId)}/compact`, {}); } catch { /* the chat reports a refusal in its own error line */ }
   };
   // Above the message box, level with the ring's right edge: the offset reaches from the ring to the composer's top.
+  // Narrow composers hide the ring; anchoring to its zero rectangle makes collision sizing oscillate.
+  const anchor = () => ({
+    contextElement: ringRef.current?.closest(".composer") ?? undefined,
+    getBoundingClientRect: () => {
+      const ring = ringRef.current;
+      return (ring?.getClientRects().length ? ring : ring?.closest(".composer"))?.getBoundingClientRect() ?? new DOMRect();
+    },
+  });
   const aboveComposer = ({ side }: { side: string }) => {
     const ring = ringRef.current, composer = ring?.closest(".composer");
-    return side === "top" && ring && composer ? ring.getBoundingClientRect().top - composer.getBoundingClientRect().top + 8 : 8;
+    return side === "top" && ring?.getClientRects().length && composer ? ring.getBoundingClientRect().top - composer.getBoundingClientRect().top + 8 : 8;
   };
   return <Popover open={opened} onOpenChange={onOpenChange} triggerId={triggerId}>
     <Tooltip content={tooltip} suppressed={opened}>
       <PopoverTrigger ref={ringRef} id={triggerId} className="context-ring" aria-label={opened && !revealed ? "Loading context window…" : name} aria-busy={opened && !revealed} title={opened && !revealed ? "Loading context window…" : undefined}>{opened && !revealed ? <span aria-hidden="true">…</span> : <ContextRingIcon pct={pct} />}</PopoverTrigger>
     </Tooltip>
-    <PopoverContent side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger" style={{ visibility: revealed ? undefined : "hidden" }}>
+    <PopoverContent anchor={anchor} side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger" style={{ visibility: revealed ? undefined : "hidden" }}>
       <LedgerView ledger={ledger} loading={Boolean(threadId) && !ledger} unavailable={current?.unavailable} expanded={expanded} onToggle={() => setExpanded(value => !value)}
         compact={ledger && used !== null && capacity && pct >= COMPACT_FROM_PERCENT && current?.compact ? { ...current.compact, run: compact } : null} />
       {opened && threadId && <ContextFiles key={threadId} threadId={threadId} onOpenFile={() => setOpened(false)} onReady={markFilesReady} />}

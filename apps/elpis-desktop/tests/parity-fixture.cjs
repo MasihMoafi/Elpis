@@ -26,12 +26,12 @@ const TURNS = [
 ];
 
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
- * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
+ * `threads` replaces the chat list; `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. `nativeClipboard` uses Chromium's clipboard
  * with read/write permissions instead of the default writeText recorder. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, routes = {}, storage = {}, browserChannel, nativeClipboard = false } = {}) {
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, nativeClipboard = false } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set();
-  const threads = THREADS.map(item => ({ ...item, cwd }));
+  const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
   // A turn may give its start time (ms) fifth, or null for a turn with no recorded times; otherwise turns are two
   // minutes apart, ending now.
@@ -50,7 +50,6 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
     if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(url.pathname)) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(': fixture\n\n'); loveStreams.add(res); req.on('close', () => loveStreams.delete(res)); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
-    if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     // A route answers with its value, or with { __http: status, error } for a refusal.
     if (routes[url.pathname]) {
       const reply = await routes[url.pathname](raw ? JSON.parse(raw) : null, url);
@@ -58,6 +57,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
       if (reply?.__asset) { res.writeHead(200, { 'Content-Type': reply.__asset.mimeType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...reply.__asset.headers }); return res.end(reply.__asset.bytes); }
       return json(reply);
     }
+    if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
     if (url.pathname === '/api/files') return json({ data: FILES });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : threads.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
     if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });

@@ -18,6 +18,7 @@ const probe = page => page.evaluate(() => {
     leaks: controls.filter(rect => rect.left < composer.left - 0.5 || rect.right > composer.right + 0.5).length,
     page: document.documentElement.scrollWidth > innerWidth,
     rowOffset: Math.abs((approval.top + approval.bottom - model.top - model.bottom) / 2),
+    toolbarRows: new Set(controls.map(rect => Math.round((rect.top + rect.bottom) / 2))).size,
     overlaps: controls.flatMap((a, i) => controls.slice(i + 1).filter(b => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5)).length,
   };
 });
@@ -100,17 +101,24 @@ test('active composer controls keep a clear gap at the reported window width', a
 });
 
 for (const model of ['sol', 'claude/claude-sonnet-5-5']) {
-  test(`running permission controls stay in the toolbar row: ${model}`, async () => {
-    const fx = await startFixture({ models: [{ model, displayName: model }], threads: [thread(model, true)], turns: turns(true) });
-    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-    try {
-      const page = await browser.newPage({ viewport: { width: 500, height: 1050 } });
-      await openChat(page, fx);
-      const p = await probe(page);
-      assert.equal(p.visible, true);
-      assert.equal(p.leaks.length, 0, JSON.stringify(p));
-      assert.ok(p.toolbarRows <= 2, JSON.stringify(p));
-      assert.ok(p.permissionLabel.includes('Auto') || p.permissionLabel.includes('Approve'), JSON.stringify(p));
-    } finally { await browser.close(); await fx.close(); }
+  test(`running permission controls stay in the toolbar row: ${model}`, async t => {
+    const chat = { id: 'chat-a', name: 'Fix the parser', cwd: '/tmp/parity-fixture', model, modelProvider: model.startsWith('claude/') ? 'claude' : 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } };
+    const f = await fixture({ width: 1100, height: 1050, running: true, threads: [chat], routes: {
+      '/api/models': () => ({ data: [{ id: model, model, displayName: model }], nextCursor: null }),
+      '/api/threads/chat-a/permissions': () => ({ permissions: 'auto' }),
+    } });
+    t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
+    await f.open('chat-a');
+    await f.page.locator('.composer-pill').first().click(); await f.page.getByRole('menuitem', { name: /Approve for me/ }).click();
+    await f.page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    await f.page.setViewportSize({ width: 500, height: 1050 });
+    const p = await probe(f.page);
+    assert.equal(p.shown, true);
+    assert.equal(p.leaks, 0, JSON.stringify(p));
+    assert.equal(p.overlaps, 0, JSON.stringify(p));
+    assert.ok(p.toolbarRows <= 2, JSON.stringify(p));
+    assert.ok(p.rowOffset <= 4, JSON.stringify(p));
+    assert.equal(p.permission, 'Auto', JSON.stringify(p));
+    assert.equal(p.model, model);
   });
 }

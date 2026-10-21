@@ -91,7 +91,8 @@ const seconds = text => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.o
 test('finished work folds into one row per group, opens by click or keyboard, and shows commands as Claude does', async () => {
   const app = await fixture();
   try {
-    const { page, errors } = await app.open();
+    // A87 permits the selected amber accent. Blue still exposes hard-coded orange on these surfaces.
+    const { page, errors } = await app.open({ preferences: { accent: 'blue' } });
     await page.locator('.worked-for > summary').click();
     const groups = page.locator('.activity-group');
     const failedGroup = groups.filter({ hasText: /^Ran 2 commands/ });
@@ -148,6 +149,10 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     assert.ok(luminance(style.background) > 0.75 && luminance(style.background) < 0.97, `light: the chip has a soft tint (${style.background})`);
     assert.ok(contrast(style.color, style.background) >= 4.5, `light: inline code is readable (${contrast(style.color, style.background).toFixed(2)})`);
 
+    const workingHexagon = page.locator('.activity-group .elpis-working-rotor');
+    await workingHexagon.evaluate(node => { node.style.stroke = '#e89d34'; });
+    assert.ok((await oranges(page)).some(hit => hit.startsWith('path.elpis-working-rotor: stroke')), 'the guard still rejects an orange stroke other than the approved Send colour');
+    await workingHexagon.evaluate(node => node.style.removeProperty('stroke'));
     assert.deepEqual(await oranges(page), [], 'light theme, chat with open activity: no orange');
 
     await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(200);
