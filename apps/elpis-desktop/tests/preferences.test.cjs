@@ -148,3 +148,19 @@ test('notifications follow the turn and input choices, skip agents and stopped t
   savePreferences({ turnNotifications: 'always' }); done('root', 't8');
   assert.equal(env.shown.length, 3, 'nothing is shown without permission');
 });
+
+test('queued follow-ups survive a reload or restart and still wait for a completed turn (R4)', async () => {
+  const env = browser();
+  const before = loader();
+  before('lib/preferences.ts').savePreferences({ followUp: 'queue' });
+  assert.equal(before('lib/follow-ups.ts').queueFollowUp('T', 'keep me through a restart'), true);
+  const after = loader();
+  const { queuedFollowUps, sendQueuedFollowUp } = after('lib/follow-ups.ts');
+  assert.deepEqual(queuedFollowUps('T').map(item => item.text), ['keep me through a restart'], 'the restarted app still holds the queue');
+  assert.deepEqual(env.posts, [], 'restoring the queue sends nothing by itself');
+  await sendQueuedFollowUp('turn/completed', { threadId: 'T', turn: { status: 'completed' } });
+  assert.deepEqual(env.posts.map(post => post.body.text), ['keep me through a restart']);
+  assert.deepEqual(loader()('lib/follow-ups.ts').queuedFollowUps('T'), [], 'a sent message is not restored again');
+  env.values.set('elpis-follow-ups-v1', '{"T":[{"text":42}]}');
+  assert.deepEqual(loader()('lib/follow-ups.ts').queuedFollowUps('T'), [], 'a damaged saved queue is ignored, not sent');
+});

@@ -5,15 +5,31 @@ import { api } from "@/lib/api";
 import type { Attachment } from "@/lib/attachments";
 import type { Mention } from "@/lib/mentions";
 import { readPreferences } from "@/lib/preferences";
+import { appStorage } from "@/lib/projects";
 
 /** Settings → General → Follow-up behavior: Queue holds messages sent during a running turn
  * and sends them, one turn each, after it completes. Steer (the default) adds them to the running turn. */
 export type FollowUpOptions = { model?: string; effort?: string; mode?: "plan" | "default"; mentions?: Mention[] };
 export type FollowUp = { id: string; text: string; attachments: Attachment[] } & FollowUpOptions;
 const EMPTY: FollowUp[] = [];
-let queues: Record<string, FollowUp[]> = {};
+/** Queued messages are saved, so a reload or restart never loses them (R4); they still wait for a completed turn or Send now. */
+const KEY = "elpis-follow-ups-v1";
+function saved(): Record<string, FollowUp[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    const value: unknown = JSON.parse(appStorage().getItem(KEY) || "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([, items]) => Array.isArray(items) && items.every(item => item && typeof item.id === "string" && typeof item.text === "string" && Array.isArray(item.attachments))));
+  } catch { return {}; }
+}
+let queues: Record<string, FollowUp[]> = saved();
 const listeners = new Set<() => void>();
-const set = (threadId: string, items: FollowUp[]) => { queues = { ...queues, [threadId]: items }; for (const listener of listeners) listener(); };
+const set = (threadId: string, items: FollowUp[]) => {
+  queues = { ...queues, [threadId]: items };
+  appStorage().setItem(KEY, JSON.stringify(Object.fromEntries(Object.entries(queues).filter(([, queued]) => queued.length))));
+  for (const listener of listeners) listener();
+};
+export const queuedFollowUps = (threadId?: string) => threadId ? queues[threadId] ?? EMPTY : EMPTY;
 const sendTurn = async (threadId: string, item: FollowUp) => {
   const body = { text: item.text, ...(item.attachments.length ? { attachments: item.attachments } : {}), ...(item.mentions?.length ? { mentions: item.mentions } : {}), ...(item.model ? { model: item.model } : {}), ...(item.effort ? { effort: item.effort } : {}), ...(item.mode ? { mode: item.mode } : {}) };
   // The runtime can report the thread busy for a moment after the completion event.
@@ -60,5 +76,5 @@ export async function sendFollowUpNow(threadId: string, id: string, activeTurnId
   } catch (error) { set(threadId, [item, ...(queues[threadId] ?? [])]); throw error; }
 }
 export function useFollowUps(threadId?: string) {
-  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => threadId ? queues[threadId] ?? EMPTY : EMPTY, () => EMPTY);
+  return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => queuedFollowUps(threadId), () => EMPTY);
 }
