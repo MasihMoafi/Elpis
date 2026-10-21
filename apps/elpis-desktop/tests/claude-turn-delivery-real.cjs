@@ -6,6 +6,9 @@
 // Use the installed app/bridge first, then the candidate. Default deliberately loses live
 // final events; --normal exercises late steering acknowledgements instead.
 // --restart crashes the bridge after Claude saves its answer, before any live end.
+// A128: --tool-race starts the second slow tool as the first one ends. Enter
+// must wait for both; --reload-tool reloads while inputs wait; --queued uses
+// Ctrl+Enter for another message, whose answer must follow the current turn.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +17,10 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { parseArgs } = require('node:util');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE);
-const { values } = parseArgs({ options: { app: { type: 'string' }, bridge: { type: 'string' }, engine: { type: 'string' }, port: { type: 'string', default: '9464' }, normal: { type: 'boolean' }, restart: { type: 'boolean' }, evidence: { type: 'string', default: path.join(os.homedir(), '.cache/elpis-tests/a124b') } } });
+const { values } = parseArgs({ options: { app: { type: 'string' }, bridge: { type: 'string' }, engine: { type: 'string' }, port: { type: 'string', default: '9464' }, normal: { type: 'boolean' }, restart: { type: 'boolean' }, 'tool-race': { type: 'boolean' }, 'reload-tool': { type: 'boolean' }, queued: { type: 'boolean' }, evidence: { type: 'string', default: path.join(os.homedir(), '.cache/elpis-tests/a124b') } } });
+assert.ok(!values['reload-tool'] || values['tool-race'], '--reload-tool requires --tool-race');
+assert.ok(!values.queued || values['tool-race'], '--queued requires --tool-race');
+assert.ok(!values['tool-race'] || !values.restart, '--tool-race and --restart are separate scenarios');
 for (const key of ['app', 'bridge', 'engine']) assert.ok(values[key] && path.isAbsolute(values[key]), `--${key} must be an absolute path`);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a124-app-'));
 fs.mkdirSync(values.evidence, { recursive: true });
@@ -27,7 +33,8 @@ const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: path.join(root, 'e
   ELPIS_CONFIG_DIR: path.join(root, 'elpis'), XDG_CONFIG_HOME: path.join(root, '.config'), XDG_CACHE_HOME: path.join(root, '.cache'), XDG_DATA_HOME: path.join(root, '.local/share'),
   XDG_STATE_HOME: path.join(root, '.local/state'), XDG_RUNTIME_DIR: run, TMPDIR: root, ELPIS_ENGINE_BIN: values.engine, ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
   ACP_ADAPTER: path.join(tools, 'test/fake-acp-agent.mjs'), ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'bridge.log'),
-  FAKE_ACP_LOG: agentLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease, FAKE_ACP_STEER_DELAY: '120' };
+  FAKE_ACP_LOG: agentLog, FAKE_ACP_NAME: 'Claude', FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease,
+  FAKE_ACP_NEXT_TOOL_RELEASE: path.join(root, 'next-tool'), FAKE_ACP_STEER_DELAY: '120' };
 const children = [];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, why, ms = 15000) {
@@ -58,7 +65,7 @@ function start(command, args, extra, log) {
     await composer.waitFor();
     await page.getByRole('combobox', { name: 'Model', exact: true }).click();
     await page.locator('[role="option"][data-value="claude/sonnet"]').click();
-    const initial = `[wait] [tool-flight] ${values.normal && !values.restart ? '' : '[record-only] '}A124 original`;
+    const initial = values['tool-race'] ? '[wait] [tool-flight] [tool-race] A128 original' : `[wait] [tool-flight] ${values.normal && !values.restart ? '' : '[record-only] '}A124 original`;
     const send = async text => {
       await composer.fill(text); await composer.press('Enter');
       await page.locator('.message.user').filter({ hasText: text }).waitFor();
@@ -66,10 +73,33 @@ function start(command, args, extra, log) {
     await send(initial);
     await until(() => records().some(row => row.method === 'session/prompt'), 'the first prompt did not reach Claude');
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
-    for (const text of ['a folder path', "maybe you don't even need to login"]) await send(text);
+    const followups = ['a folder path', "maybe you don't even need to login"];
+    for (const text of followups) await send(text);
+    const queuedText = 'A128 queued for later';
+    if (values.queued) {
+      await composer.fill(queuedText); await composer.press('Control+Enter');
+      await page.getByRole('list', { name: 'Queued follow-ups', exact: true }).getByText(queuedText, { exact: true }).waitFor();
+    }
     assert.equal(records().filter(row => row.method === '_session/steering').length, 0, 'the running tool must finish before steering');
+    if (values['reload-tool']) {
+      await page.reload(); await composer.waitFor();
+      await page.locator('.message.user').filter({ hasText: initial }).waitFor();
+      await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    }
     fs.writeFileSync(toolRelease, '');
-    await until(() => records().filter(row => row.method === '_session/steering').length === 2, 'both messages must reach Claude');
+    if (values['tool-race']) {
+      await until(() => records().some(row => row.toolStarted === 't2'), 'the next slow tool did not start');
+      // A history read traverses the real desktop client while the next tool runs.
+      await page.getByRole('button', { name: 'Refresh conversation', exact: true }).click();
+      fs.writeFileSync(env.FAKE_ACP_NEXT_TOOL_RELEASE, '');
+    }
+    await until(() => records().some(row => row.interruptedTool) || records().filter(row => row.method === '_session/steering').length === 2, 'both messages must reach Claude');
+    if (values['tool-race']) {
+      const trace = records();
+      assert.equal(trace.filter(row => row.interruptedTool).length, 0, "Enter must not reject a running tool: The user doesn't want to proceed with this tool use");
+      const finished = trace.findIndex(row => row.toolCompleted === 't2');
+      assert.ok(finished >= 0 && finished < trace.findIndex(row => row.method === '_session/steering'), 'the slow tool completes before the follow-ups arrive');
+    }
     if (values.restart) {
       bridge.kill('SIGSTOP');
       await until(() => /^State:\s+T/m.test(fs.readFileSync(`/proc/${bridge.pid}/status`, 'utf8')), 'the old bridge did not stop before the record');
@@ -94,7 +124,14 @@ function start(command, args, extra, log) {
     await page.getByRole('button', { name: 'Refresh conversation', exact: true }).click();
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
     await page.locator('.message.agent').filter({ hasText: 'answered:' }).waitFor();
-    assert.deepEqual((await page.locator('.message.user').allTextContents()).map(text => text.trim()), [initial, 'a folder path', "maybe you don't even need to login"]);
+    if (values.queued) {
+      await page.locator('.message.agent').filter({ hasText: `answered: ${queuedText}` }).waitFor();
+      const prompts = records().filter(row => row.method === 'session/prompt');
+      assert.equal(prompts.length, 2, 'Ctrl+Enter starts exactly one later turn');
+      assert.ok(prompts[1].params.prompt[0].text.includes(queuedText));
+      assert.equal(records().filter(row => row.method === '_session/steering').length, followups.length, 'Ctrl+Enter does not steer');
+    }
+    assert.deepEqual((await page.locator('.message.user').allTextContents()).map(text => text.trim()), [initial, ...followups, ...(values.queued ? [queuedText] : [])]);
     await send('hello?');
     await page.locator('.message.agent').filter({ hasText: 'answered: hello?' }).waitFor();
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
@@ -104,10 +141,10 @@ function start(command, args, extra, log) {
       await page.emulateMedia({ colorScheme });
       await page.screenshot({ path: path.join(evidence, `${colorScheme}.png`) });
     }
-    console.log(`PASS A124 ${values.restart ? 'restart' : values.normal ? 'normal' : 'lost-events'}: answers in order, idle, hello, reload; home ${root}; evidence ${evidence}`);
+    console.log(`PASS ${values['tool-race'] ? 'A128 tool boundary' : 'A124 ' + (values.restart ? 'restart' : values.normal ? 'normal' : 'lost-events')}: answers in order, idle, hello, reload; home ${root}; evidence ${evidence}`);
   } catch (error) {
     if (page) await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
-    console.error(`FAIL A124: ${error.message}\nHome: ${root}\nEvidence: ${evidence}`); process.exitCode = 1;
+    console.error(`FAIL ${values['tool-race'] ? 'A128' : 'A124'}: ${error.message}\nHome: ${root}\nEvidence: ${evidence}`); process.exitCode = 1;
   } finally {
     await browser?.close();
     for (const child of children.reverse()) {

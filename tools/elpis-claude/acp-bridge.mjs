@@ -1788,6 +1788,7 @@ wss.on("connection", (ws) => {
     const turnState = { threadId, turnId, done, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [], steers: Promise.resolve(), promptEnded: false, bufferedUpdates: null };
     // Claude Code takes a steer at once and drops a tool that is still running (a subagent too),
     // so a steer waits for the running tools, as Claude Code's own queue does.
+    turnState.toolsBusy = busy;
     turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
     lane.onIdle = () => { if (!busy()) turnState.toolsIdle.splice(0).forEach((r) => r()); };
     turnState.snapshot = (view = "full") => ({ ...turn, startedAt, itemsView: view, items: view === "notLoaded" ? [] : view === "summary" ? [userItem, ...(lane.message ? [lane.message] : items.filter(item => item.type === "agentMessage").slice(-1))] : [userItem, ...items, ...(lane.message ? [lane.message] : [])] });
@@ -2405,7 +2406,7 @@ wss.on("connection", (ws) => {
     // tool completion before replying would block the TUI's cancellation request.
     toTui({ id: msg.id, result: { turnId: turn.turnId } });
     const queueForNextTurn = () => {
-      if (steer.cancelled || deletedThreads.has(threadId) || deletingThreads.has(threadId)) return;
+      if (turn.cancelled || steer.cancelled || deletedThreads.has(threadId) || deletingThreads.has(threadId)) return;
       steer.phase = "queued";
       queueOf(threadId).push({ id: randomUUID(), input, clientUserMessageId, steer });
       notify("thread/queue/changed", { threadId });
@@ -2413,7 +2414,6 @@ wss.on("connection", (ws) => {
     };
     const deliver = async () => {
       const sessionId = await turn.ready;
-      if (!turn.promptEnded) await turn.whenToolsIdle();
       if (steer.cancelled) return;
       if (!sessionId || activeTurns.get(threadId) !== turn || turn.cancelled || turn.promptEnded) {
         queueForNextTurn();
@@ -2421,6 +2421,10 @@ wss.on("connection", (ws) => {
       }
       try {
         const prompt = await toAcpPrompt(input);
+        // An idle notification is only a wake-up: another tool can start in the
+        // same transport read, or while attachments are prepared. Check again at
+        // dispatch, with no asynchronous work between the check and the ACP call.
+        while (!turn.promptEnded && !turn.cancelled && !steer.cancelled && turn.toolsBusy()) await turn.whenToolsIdle();
         if (steer.cancelled) return;
         if (activeTurns.get(threadId) !== turn || turn.cancelled || turn.promptEnded) { queueForNextTurn(); return; }
         steer.phase = "dispatching";

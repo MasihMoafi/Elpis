@@ -21,7 +21,7 @@ async function until(check, label, ms = 5000) {
   assert.fail(label);
 }
 
-async function fixture(t, extra = {}) {
+async function fixture(t, extra = {}, { model = "claude/sonnet", prepare } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a124-"));
   const carrier = new mockProvider.Provider();
   await carrier.start();
@@ -42,7 +42,9 @@ async function fixture(t, extra = {}) {
     ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
     ACP_BRIDGE_STORE: storeFile, ACP_BRIDGE_LOG: path.join(root, "bridge.log"), ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
     FAKE_ENGINE_STATE: path.join(root, "native.json"), FAKE_ENGINE_LAZY_PERSIST: "1", FAKE_ENGINE_LOG: path.join(root, "engine.jsonl"),
-    FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease, ...extra };
+    FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease,
+    FAKE_ACP_NEXT_TOOL_RELEASE: path.join(root, "next-tool"), FAKE_ACP_BETWEEN_TOOL_RELEASE: path.join(root, "between-tools"), ...extra };
+  await prepare?.(root, env);
   const bridges = [];
   let errors = "";
   const launch = () => {
@@ -74,7 +76,7 @@ async function fixture(t, extra = {}) {
   };
   const desktop = await connect();
   await desktop.client.models();
-  const created = await desktop.client.createThread({ model: "claude/sonnet", cwd: root });
+  const created = await desktop.client.createThread({ model, cwd: root });
   const id = created.thread.id;
   const restart = async ({ crash = false, reconnect = false } = {}) => {
     const previous = fs.statSync(socketPath);
@@ -95,8 +97,141 @@ async function fixture(t, extra = {}) {
     freeze: async () => { bridge.kill("SIGSTOP"); await until(() => /^State:\s+T/m.test(fs.readFileSync(`/proc/${bridge.pid}/status`, "utf8")), "the old bridge is stopped before Claude writes"); },
     agent: () => lines(agentLog), store: () => fs.existsSync(storeFile) ? JSON.parse(fs.readFileSync(storeFile, "utf8")) : {},
     release: () => fs.writeFileSync(release, ""), releaseTools: () => fs.writeFileSync(toolRelease, ""),
+    releaseNextTool: () => fs.writeFileSync(env.FAKE_ACP_NEXT_TOOL_RELEASE, ""),
+    releaseBetweenTools: () => fs.writeFileSync(env.FAKE_ACP_BETWEEN_TOOL_RELEASE, ""),
     ended: turnId => desktop.events.find(e => e.method === "turn/completed" && e.params.turn.id === turnId) };
 }
+
+for (const count of [1, 4]) test(`A128: ${count} messages during a tool survive the next tool starting before delivery`, { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const initial = "[wait] [tool-flight] [tool-race] original";
+  const { turn } = await f.client.send(f.id, { text: initial });
+  await until(() => f.agent().some(e => e.toolStarted === "t1"), "first slow tool starts");
+  const followups = Array.from({ length: count }, (_, n) => `follow-up ${n + 1} — پیام`);
+  for (const text of followups) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  assert.equal(f.agent().filter(e => e.method === "_session/steering").length, 0);
+  f.releaseTools();
+  await until(() => f.events.some(e => e.method === "item/started" && e.params.item.id === "t2"), "desktop sees the second slow tool");
+  await f.client.readThread(f.id);
+  assert.equal(f.agent().filter(e => e.interruptedTool).length, 0, "Enter must not reject a running tool: The user doesn't want to proceed with this tool use");
+  f.releaseNextTool();
+  await until(() => f.agent().filter(e => e.method === "_session/steering").length === count || f.ended(turn.id), "waiting messages reach the next safe point");
+  f.release();
+  await until(() => f.ended(turn.id), "the original turn ends");
+  assert.equal(f.ended(turn.id).params.turn.status, "completed", "Enter must not interrupt the task");
+  const trace = f.agent();
+  assert.equal(trace.filter(e => e.method === "session/cancel").length, 0);
+  const finished = trace.findIndex(e => e.toolCompleted === "t2");
+  assert.ok(finished >= 0 && finished < trace.findIndex(e => e.method === "_session/steering"), "tool completion precedes delivery");
+  const saved = f.store()[f.id].turns[0];
+  assert.deepEqual(saved.items.filter(i => i.type === "userMessage").map(i => i.content[0].text), [initial, ...followups]);
+  const answer = saved.items.filter(i => i.type === "agentMessage").at(-1).text;
+  for (const text of followups) assert.ok(answer.includes(text));
+  assert.equal((await f.client.readThread(f.id)).thread.status.type, "idle");
+});
+
+test("A128: a message between tools is delivered before the next tool", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [tool-flight] [tool-gap] original" });
+  await until(() => f.agent().some(e => e.toolStarted === "t1"), "first tool starts");
+  f.releaseTools();
+  await until(() => f.agent().some(e => e.betweenTools), "first tool ends");
+  await f.client.steer(f.id, { text: "between the tools", expectedTurnId: turn.id });
+  await until(() => f.agent().some(e => e.method === "_session/steering"), "message reaches Claude at the tool boundary");
+  f.releaseBetweenTools(); f.releaseNextTool(); f.release();
+  await until(() => f.ended(turn.id), "the task completes");
+  assert.equal(f.ended(turn.id).params.turn.status, "completed");
+  const trace = f.agent();
+  assert.equal(trace.filter(e => e.interruptedTool).length, 0);
+  assert.ok(trace.findIndex(e => e.method === "_session/steering") < trace.findIndex(e => e.toolStarted === "t2"));
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered:") && e.params.item.text.includes("between the tools")));
+});
+
+test("A128: Stop interrupts the slow tool and cancels waiting messages", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [tool-flight] [tool-race] stop this" });
+  await until(() => f.agent().some(e => e.toolStarted === "t1"), "slow tool starts");
+  await f.client.steer(f.id, { text: "waiting until it is safe", expectedTurnId: turn.id });
+  await f.client.interrupt(f.id, { turnId: turn.id });
+  await until(() => f.ended(turn.id), "Stop ends the task without releasing the tool gate");
+  assert.equal(f.ended(turn.id).params.turn.status, "interrupted");
+  assert.equal(f.agent().filter(e => e.method === "session/cancel").length, 1);
+  assert.equal(f.agent().filter(e => e.method === "_session/steering").length, 0);
+  const next = await f.client.send(f.id, { text: "after Stop" });
+  await until(() => f.ended(next.turn.id), "a new message after Stop works");
+  assert.equal(f.ended(next.turn.id).params.turn.status, "completed");
+  assert.deepEqual(f.agent().filter(e => e.method === "session/prompt").map(e => e.params.prompt[0].text), ["[wait] [tool-flight] [tool-race] stop this", "after Stop"], "Stop must not silently restart with a waiting message");
+});
+
+test("A128: desktop reload while a tool has waiting messages keeps their order and answer", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const initial = "[wait] [tool-flight] [tool-race] reload this";
+  const { turn } = await f.client.send(f.id, { text: initial });
+  await until(() => f.agent().some(e => e.toolStarted === "t1"), "slow tool starts");
+  await f.client.steer(f.id, { text: "before reload", expectedTurnId: turn.id });
+  f.client.close();
+  const reloaded = await f.connect();
+  await reloaded.client.resume(f.id, {});
+  await reloaded.client.steer(f.id, { text: "after reload", expectedTurnId: turn.id });
+  f.releaseTools();
+  await until(() => reloaded.events.some(e => e.method === "item/started" && e.params.item.id === "t2"), "reloaded desktop sees the next tool");
+  await reloaded.client.readThread(f.id);
+  assert.equal(f.agent().filter(e => e.interruptedTool).length, 0);
+  f.releaseNextTool();
+  await until(() => f.agent().filter(e => e.method === "_session/steering").length === 2, "both waiting messages are delivered");
+  f.release();
+  await until(() => reloaded.events.some(e => e.method === "turn/completed" && e.params.turn.id === turn.id), "reloaded desktop gets the answer and end");
+  const read = await reloaded.client.readThread(f.id);
+  assert.equal(read.thread.status.type, "idle");
+  assert.deepEqual([...read.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content[0].text), [initial, "before reload", "after reload"]);
+  assert.ok(read.data.some(e => e.item.text?.includes("answered:") && e.item.text.includes("after reload")));
+});
+
+for (const count of [1, 4]) test(`A128: GPT keeps its native tool running through ${count} messages`, { timeout: 25000 }, async t => {
+  const native = !engine.endsWith("/test/fake-app-server.mjs");
+  const followups = Array.from({ length: count }, (_, n) => `GPT follow-up ${n + 1} — پیام`);
+  let provider;
+  if (native) {
+    const { Provider } = (await import("../../../scripts/lib/mock-provider.js")).default;
+    provider = new Provider(); await provider.start();
+    t.after(() => provider.close());
+  }
+  const f = await fixture(t, {}, { model: native ? "gpt-5.5" : "luna-test", prepare: async (root, env) => {
+    env.FAKE_ENGINE_TOOL_RELEASE = path.join(root, "native-release");
+    if (!native) return;
+    const { call, message } = (await import("../../../scripts/lib/mock-provider.js")).default;
+    const catalog = JSON.parse(fs.readFileSync(path.join(source, "../../codex-rs/models-manager/models.json"), "utf8")).models.find(m => m.slug === "gpt-5.5");
+    assert.ok(catalog);
+    fs.mkdirSync(env.ELPIS_HOME, { recursive: true });
+    fs.writeFileSync(path.join(env.ELPIS_HOME, "models.json"), JSON.stringify({ models: [catalog] }));
+    fs.writeFileSync(path.join(env.ELPIS_HOME, "config.toml"), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(path.join(env.ELPIS_HOME, "models.json"))}\napproval_policy="never"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\nautomatic_context_pruning=false\n[memories]\ngenerate_memories=false\nuse_memories=false\n[model_providers.fixture]\nname="A128 local inference"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
+    const command = `printf started > ${root}/native-started; while [ ! -f ${env.FAKE_ENGINE_TOOL_RELEASE} ]; do sleep 0.02; done; printf GPT_TOOL_DONE`;
+    provider.actions.push(call("native-slow-tool", "exec_command", { cmd: command, workdir: root, yield_time_ms: 10000 }), request => {
+      const input = JSON.stringify(request.input);
+      assert.ok(input.includes("GPT_TOOL_DONE"), "real native tool result reaches inference");
+      let previous = -1;
+      for (const text of followups) { const index = input.indexOf(text); assert.ok(index > previous, "native steering reaches inference in send order"); previous = index; }
+      return message(`GPT answered: ${followups.join("\n")}`);
+    });
+  } });
+  const { turn } = await f.client.send(f.id, { text: "[native-tool] keep this tool running" });
+  await until(() => f.events.some(e => e.method === "item/started" && e.params.item.type === "commandExecution"), "native tool starts");
+  if (native) await until(() => fs.existsSync(path.join(f.root, "native-started")), "the actual shell is running");
+  for (const text of followups) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  assert.equal(f.ended(turn.id), undefined, "Enter does not end the running task");
+  assert.equal(f.events.filter(e => e.method === "item/completed" && e.params.item.type === "commandExecution").length, 0, "the tool remains in flight");
+  assert.equal(f.agent().filter(e => e.method === "session/prompt" || e.method === "_session/steering").length, 0, "GPT continues through native turn/steer");
+  if (native) assert.equal(provider.requests.length, 1, "inference waits for the tool");
+  fs.writeFileSync(f.env.FAKE_ENGINE_TOOL_RELEASE, "");
+  await until(() => f.ended(turn.id) || provider?.error, "the native tool and answer finish");
+  if (provider?.error) throw provider.error;
+  assert.equal(f.ended(turn.id).params.turn.status, "completed");
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.type === "commandExecution" && e.params.item.exitCode === 0 && e.params.item.aggregatedOutput.includes("GPT_TOOL_DONE")));
+  const answer = f.events.filter(e => e.method === "item/completed" && e.params.item.type === "agentMessage").at(-1).params.item.text;
+  for (const text of followups) assert.ok(answer.includes(text));
+  if (!native) assert.equal(lines(f.env.FAKE_ENGINE_LOG).filter(e => e.method === "turn/interrupt").length, 0);
+  assert.equal((await f.client.readThread(f.id)).thread.status.type, "idle");
+});
 
 for (const count of [0, 1, 2, 4]) test(`Claude delivers a final answer and turn end after ${count} in-flight messages, then hello`, { timeout: 20000 }, async t => {
   const f = await fixture(t, { FAKE_ACP_STEER_DELAY: "120" });

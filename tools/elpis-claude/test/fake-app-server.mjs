@@ -37,9 +37,10 @@ async function runTurn(threadId, turn, text) {
   thread.status = { type: "active", activeFlags: [] };
   thread.turns = [turn];
   let interrupted = false;
+  const followups = [];
   let releaseSteer;
   const steered = new Promise(resolve => { releaseSteer = resolve; });
-  const stopped = new Promise((resolve) => turns.set(turn.id, { steer: releaseSteer, interrupt: () => { interrupted = true; resolve(); } }));
+  const stopped = new Promise((resolve) => turns.set(turn.id, { steer: text => { followups.push(text); releaseSteer(text); }, interrupt: () => { interrupted = true; resolve(); } }));
   const finish = (status, extra = {}) => {
     turns.delete(turn.id);
     turn.status = status;
@@ -58,6 +59,13 @@ async function runTurn(threadId, turn, text) {
   if (text.includes("[fail]")) return finish("failed", { error: { message: "Fake engine failure" } });
   if (text.includes("[commentary]")) await message("note-1", "Looking around first.", "commentary");
   notify("item/reasoning/summaryTextDelta", { threadId, turnId: turn.id, itemId: "think-1", delta: "Thinking briefly.", summaryIndex: 0 });
+  if (text.includes("[native-tool]")) {
+    const item = { type: "commandExecution", id: "native-slow-tool", command: "native-slow-tool", cwd: thread.cwd, status: "inProgress", commandActions: [], aggregatedOutput: "", exitCode: null, durationMs: null };
+    notify("item/started", { threadId, turnId: turn.id, item });
+    while (!interrupted && !fs.existsSync(process.env.FAKE_ENGINE_TOOL_RELEASE)) await pause(10);
+    notify("item/completed", { threadId, turnId: turn.id, item: { ...item, status: interrupted ? "failed" : "completed", aggregatedOutput: "GPT_TOOL_DONE", exitCode: interrupted ? 1 : 0 } });
+    if (interrupted) return finish("interrupted");
+  }
   if (text.includes("[mcp]")) {
     const results = [];
     for (const [key, config] of Object.entries(thread.config ?? {})) {
@@ -97,7 +105,7 @@ async function runTurn(threadId, turn, text) {
   }
   if (text.includes("[hang]")) { await stopped; return finish("interrupted"); }
   if (interrupted) return finish("interrupted");
-  await message("answer-1", `Answer from ${thread.model}: ${decision ? `decision ${decision}. ` : ""}${text}`, "final_answer");
+  await message("answer-1", `Answer from ${thread.model}: ${decision ? `decision ${decision}. ` : ""}${[text, ...followups].join("\n")}`, "final_answer");
   finish(interrupted ? "interrupted" : "completed");
 }
 

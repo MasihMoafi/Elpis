@@ -44,6 +44,12 @@ const app = agent({ name: "fake-acp-agent" })
     log({ method: "_session/steering", params });
     const s = sessions.get(params.sessionId);
     if (!s?.running) return { outcome: "promptRequired", reason: "noRunningTurn" };
+    // Claude's immediate steering interrupts foreground tools. Model that consequence,
+    // rather than silently accepting an unsafe steer as the older fixture did.
+    if (s.rejectToolSteers && s.tool) {
+      log({ interruptedTool: s.tool, error: "The user doesn't want to proceed with this tool use" });
+      s.stopped = true;
+    }
     s.steers.push(params.prompt.filter(b => b.type === "text").map(b => b.text).join("\n"));
     if (process.env.FAKE_ACP_STEER_DELAY) await pause(Number(process.env.FAKE_ACP_STEER_DELAY));
     return { outcome: "injected" };
@@ -53,7 +59,10 @@ const app = agent({ name: "fake-acp-agent" })
     const s = sessions.get(params.sessionId);
     s.running = true;
     s.steers = [];
+    s.stopped = false;
+    s.cancelled = () => { s.stopped = true; };
     const text = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    s.rejectToolSteers = text.includes("[tool-race]") || text.includes("[tool-gap]");
     const say = (update) => client.notify("session/update", { sessionId: params.sessionId, update });
     const chunk = (messageId, body, meta) => say({ sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text: body }, ...(meta ? { _meta: meta } : {}) });
     if (text.includes("[crash]")) { process.stderr.write("fake agent crashed on purpose\n"); await pause(10); process.exit(5); }
@@ -61,7 +70,9 @@ const app = agent({ name: "fake-acp-agent" })
     if (text.includes("[empty]")) return { stopReason: "end_turn" };
     if (text.includes("[commentary-only]")) { await chunk("c1", "Only progress.", { elpis: { phase: "commentary" } }); return { stopReason: "end_turn" }; }
     await chunk("m1", "Thinking about it.");
+    s.tool = "t1";
     await say({ sessionUpdate: "tool_call", toolCallId: "t1", title: "Read notes", kind: "read", status: "in_progress" });
+    log({ toolStarted: "t1" });
     let permission = "";
     if (text.includes("[permission]")) {
       const answer = await client.request("session/request_permission", {
@@ -73,8 +84,38 @@ const app = agent({ name: "fake-acp-agent" })
       permission = `permission: ${answer.outcome.outcome === "selected" ? answer.outcome.optionId : "cancelled"}. `;
       if (answer.outcome.outcome === "cancelled") return { stopReason: "cancelled" };
     }
-    if (text.includes("[tool-flight]")) while (!fs.existsSync(process.env.FAKE_ACP_TOOL_RELEASE)) await pause(10);
-    await say({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" });
+    if (text.includes("[tool-flight]")) while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_TOOL_RELEASE)) await pause(10);
+    if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }
+    if (s.rejectToolSteers) {
+      // A single transport read can contain the end of one tool and the start of
+      // the next. There is no idle slot in which an immediate steer is safe.
+      const updates = [
+        { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" },
+        { sessionUpdate: "tool_call", toolCallId: "t2", title: "Second slow tool", kind: "execute", status: "in_progress", rawInput: { command: "second-slow-tool" }, _meta: { claudeCode: { toolName: "Bash" } } },
+      ];
+      if (text.includes("[tool-gap]")) {
+        s.tool = null;
+        await say(updates[0]);
+        log({ betweenTools: true });
+        while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_BETWEEN_TOOL_RELEASE)) await pause(10);
+        if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }
+        s.tool = "t2";
+        await say(updates[1]);
+      } else {
+        s.tool = "t2";
+        process.stdout.write(updates.map(update => JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId: params.sessionId, update } }) + "\n").join(""));
+      }
+      log({ toolCompleted: "t1" });
+      log({ toolStarted: "t2" });
+      while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_NEXT_TOOL_RELEASE)) await pause(10);
+      await say({ sessionUpdate: "tool_call_update", toolCallId: "t2", status: s.stopped ? "failed" : "completed" });
+      if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }
+      log({ toolCompleted: "t2" });
+    } else {
+      await say({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" });
+      log({ toolCompleted: "t1" });
+    }
+    s.tool = null;
     if (text.includes("[ignore-cancel]")) await new Promise(() => {});
     if (text.includes("[hang]")) { await new Promise((resolve) => { s.cancelled = resolve; }); return { stopReason: "cancelled" }; }
     if (process.env.FAKE_ACP_WRITE) {
@@ -87,7 +128,8 @@ const app = agent({ name: "fake-acp-agent" })
       const passed = fs.existsSync(file) && fs.readFileSync(file, 'utf8') === text;
       checked = JSON.stringify({ passed, summary: passed ? `Read planted result: ${text}` : 'The planted result did not arrive' });
     }
-    if (text.includes("[wait]")) while (!fs.existsSync(process.env.FAKE_ACP_RELEASE)) await pause(10);
+    if (text.includes("[wait]")) while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_RELEASE)) await pause(10);
+    if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }
     const answer = checked ?? process.env.FAKE_ACP_ANSWER ?? `${name}(${s.model}) answered: ${permission}${[text, ...s.steers].join("\n")}`;
     if (text.includes("[record-only]")) {
       const project = s.cwd.replace(/[^a-zA-Z0-9]/g, "-");
@@ -108,7 +150,7 @@ const app = agent({ name: "fake-acp-agent" })
     log({ ended: params.sessionId, answer });
     return { stopReason: "end_turn" };
   })
-  .onNotification("session/cancel", ({ params }) => { log({ method: "session/cancel", params }); sessions.get(params.sessionId)?.cancelled?.(); });
+  .onNotification("session/cancel", ({ params }) => { log({ method: "session/cancel", params }); const s = sessions.get(params.sessionId); if (s) s.stopped = true; s?.cancelled?.(); });
 
 const connection = app.connect(ndJsonStream(Writable.toWeb(process.stdout), Readable.toWeb(process.stdin)));
 connection.closed.then(() => { log({ closed: true }); process.exit(0); });
