@@ -1,4 +1,4 @@
-// node tests/settings-reorder.runtime.cjs APP [9470] COPIED_SESSIONS_DIRECTORY
+// node tests/settings-reorder.runtime.cjs APP [9470] COPIED_SESSIONS_DIRECTORY [--compare-only]
 // Real packaged Electron + its own bridge/engine, no mocks, credentials or real-profile reads.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -13,7 +13,9 @@ async function main() {
   const app = path.resolve(process.argv[2]), port = Number(process.argv[3] || 9470);
   assert.ok(process.argv[4], 'Pass a directory of copied session files (at least four root chats), never credentials');
   const sessions = path.resolve(process.argv[4]);
-  const shots = process.env.ELPIS_A70_SHOTS || '/home/masih/.cache/elpis-tests/a70b/shots/real';
+  // Baseline evidence must capture both themes even if the first comparison fails.
+  const compareOnly = process.argv[5] === '--compare-only', comparisonFailures = [];
+  const shots = process.env.ELPIS_A70_SHOTS || '/home/masih/.cache/elpis-tests/a70c/shots/real';
   assert.ok(port >= 9420 && port <= 9499, 'Use an isolated DevTools port in 9420–9499');
   const url = `http://127.0.0.1:${port}`;
   if (await fetch(`${url}/json/version`).then(() => true, () => false)) throw Error(`Port ${port} is already in use`);
@@ -70,6 +72,16 @@ async function main() {
     let page = await start();
     for (const theme of ['light', 'dark']) {
       await leaveSettings(page); await chooseTheme(page, theme);
+      if (compareOnly) {
+        try {
+          await compare(page, { shots: path.join(shots, theme) });
+          console.log(`PASS ${theme}: native chat and Settings drag appearance`);
+        } catch (error) {
+          comparisonFailures.push(`${theme}: ${error.message}`);
+          console.error(`FAIL ${theme}: ${error.stack}`);
+        }
+        continue;
+      }
       await compare(page, { shots: path.join(shots, theme) });
       const group = page.getByRole('group', { name: 'First', exact: true });
       if (theme === 'light') {
@@ -98,6 +110,7 @@ async function main() {
       await shot(page, shots, `restart-${theme}`);
       console.log(`PASS ${theme}: first/middle/last drag, Escape, keyboard, empty search, reload and real restart`);
     }
+    assert.deepEqual(comparisonFailures, [], 'native chat/Settings comparison in both themes');
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close().catch(() => {});

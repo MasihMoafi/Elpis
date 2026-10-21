@@ -23,8 +23,10 @@ async function feedback(page, source, target, { shots, name } = {}) {
     });
     assert.match(appearance.shadow, /inset/, `${name}: visible chat drop line`);
     await source.evaluate(() => new Promise(resolve => setTimeout(resolve, 200)));
-    appearance.opacity = await source.evaluate(element => getComputedStyle(element).opacity);
-    assert.equal(appearance.opacity, '0.5', `${name}: chat preview opacity`);
+    Object.assign(appearance, await source.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { opacity: style.opacity, translate: style.translate, transform: style.transform };
+    }));
   });
   assert.equal(await target.getAttribute('data-drop'), null, `${name}: drop line clears`);
   assert.equal(await source.getAttribute('data-dragging'), null, `${name}: preview clears`);
@@ -42,7 +44,14 @@ async function compare(page, options = {}) {
   const chat = await feedback(page, chats.last(), chats.first(), { ...options, name: 'chat' });
   await openSettings(page);
   const sections = page.locator('.settings-nav [data-slot="section-link"]');
-  assert.deepEqual(await feedback(page, sections.last(), sections.first(), { ...options, name: 'settings' }), chat);
+  const settings = await feedback(page, sections.last(), sections.first(), { ...options, name: 'settings' });
+  assert.deepEqual(settings, { ...chat, opacity: '1' }, 'Settings keeps native chat motion without an added CSS fade');
+  assert.equal(chat.opacity, '1', 'the shared row must not add transparency to the native drag');
+  assert.equal(settings.translate, 'none', 'reorder rows must not move like pressed action buttons');
+  assert.equal(settings.transform, 'none', 'reorder rows use native drag motion');
+  // Pages move within their section; App & terminal contains several pages.
+  const groupPages = page.locator('.settings-nav-group').filter({ has: page.getByRole('tab', { name: 'General', exact: true }) }).getByRole('tab');
+  assert.deepEqual(await feedback(page, groupPages.last(), groupPages.first(), { ...options, name: 'settings-page' }), chat);
   await leaveSettings(page);
   const sidebar = page.locator('aside.sidebar [data-nav-page]');
   assert.deepEqual(await feedback(page, sidebar.last(), sidebar.first(), { ...options, name: 'sidebar' }), chat);

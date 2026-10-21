@@ -24,7 +24,7 @@ test('A70/R29: chats and Settings use the same ReorderItem and native event hand
     assert.ok(!/ReorderButton|onDragStart:/.test(source), `${file} has no duplicate drag implementation`);
   }
 });
-for (const theme of ['light', 'dark']) test(`A70/R29: Settings and sidebar match chat drag preview, drop line and native events (${theme})`, async () => {
+for (const theme of ['light', 'dark']) test(`A70/R29: Settings matches the approved solid chat drag, motion, drop line and native events (${theme})`, async () => {
   const f = await fixture({ height: 1100, storage: { 'elpis-theme': theme, ...projectStorage } });
   try {
     await compare(f.page, { shots: process.env.ELPIS_A70_SHOTS && path.join(process.env.ELPIS_A70_SHOTS, theme) });
