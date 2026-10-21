@@ -66,8 +66,11 @@ while IFS= read -r -d '' file; do
     mkdir -p "$(dirname "$NEW/$file")"
     cp -a "$R/$file" "$NEW/$file"
 done < <(git -C "$R" ls-files -z tools/elpis-claude)
+# The live launcher is the template: the bundle's own copy can be older (21 Oct: it lacked the
+# pinned TUI frontend and the shared bridge). Only its engine and bridge paths move to the new bundle.
+grep -qF "$OLD/" "$HOME/.local/bin/elpis" || { printf 'the live launcher does not use %s\n' "$OLD" >&2; exit 1; }
 # Literal replacement also supports paths containing sed delimiters or ampersands.
-node - "$OLD/elpis-wrapper" "$NEW/elpis-wrapper" "$OLD" "$NEW" <<'NODE'
+node - "$HOME/.local/bin/elpis" "$NEW/elpis-wrapper" "$OLD" "$NEW" <<'NODE'
 const fs = require('node:fs');
 fs.writeFileSync(process.argv[3], fs.readFileSync(process.argv[2], 'utf8').split(process.argv[4]).join(process.argv[5]), { mode: 0o755 });
 NODE

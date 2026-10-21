@@ -66,6 +66,19 @@ test('installs a self-contained local package and preserves rollback across two 
   assert.equal(readlinkSync(`${f.bin}/elpis-next`), `${f.old}/elpis-next`);
 });
 
+test('the live launcher is kept, with only its engine and bridge paths moved to the new bundle', (t) => {
+  const f = fixture(t);
+  // 21 Oct: the bundle's own wrapper copy was older than the live launcher and lacked its pinned TUI frontend.
+  const live = `#!/bin/sh\nFRONTEND=/elsewhere/tui-frontend\nBRIDGE_DIR=${f.old}/tools/elpis-claude\nexec "${f.old}/elpis-next" "$@"\n`;
+  writeFileSync(`${f.bin}/elpis`, live);
+  const result = f.run('live');
+  assert.equal(result.status, 0, result.stderr);
+  const installed = readFileSync(`${f.bin}/elpis`, 'utf8');
+  assert.equal(installed, live.split(`${f.old}/`).join(`${f.bundle()}/`));
+  assert.match(installed, /^FRONTEND=\/elsewhere\/tui-frontend$/m);
+  assert.ok(!installed.includes(`${f.old}/`), installed);
+});
+
 test('incomplete prerequisites fail before activation', (t) => {
   const f = fixture(t);
   execFileSync('gio', ['trash', `${f.old}/codex-resources/bwrap`]);
