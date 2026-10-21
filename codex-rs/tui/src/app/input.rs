@@ -605,6 +605,16 @@ impl App {
             } else if self.should_reject_side_backtrack_esc(key_event) {
                 self.reject_side_backtrack_esc();
             } else {
+                if key_event.kind == KeyEventKind::Press
+                    && self.chat_widget.is_user_turn_pending_or_running()
+                    && self.chat_widget.composer_is_empty()
+                    && self.chat_widget.no_modal_or_popup_active()
+                {
+                    self.chat_widget.add_info_message(
+                        crate::app_backtrack::ACTIVE_TURN_REWIND_MESSAGE.into(),
+                        /*hint*/ None,
+                    );
+                }
                 let action = self.chat_widget.handle_key_event(key_event);
                 self.handle_clipboard_key_action(tui, action);
             }

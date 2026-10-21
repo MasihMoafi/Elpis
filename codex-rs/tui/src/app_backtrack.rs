@@ -62,6 +62,13 @@ use sha2::Sha256;
 const NO_PREVIOUS_MESSAGE_TO_EDIT: &str = "No previous message to edit.";
 pub(crate) const SIDE_EDIT_PREVIOUS_UNAVAILABLE_MESSAGE: &str =
     "Editing previous prompts is unavailable in side conversations.";
+pub(crate) const ACTIVE_TURN_REWIND_MESSAGE: &str =
+    "Wait for the active turn to finish before rewinding. Esc interrupts the active turn.";
+pub(crate) const OFFLINE_REWIND_MESSAGE: &str = "Reconnect before rewinding the selected message.";
+pub(crate) const CHANGED_THREAD_REWIND_MESSAGE: &str =
+    "The selected conversation changed. Select a message again before rewinding.";
+pub(crate) const MISSING_SELECTION_REWIND_MESSAGE: &str =
+    "The selected message is no longer loaded. Select a message again before rewinding.";
 
 /// Aggregates all backtrack-related state used by the App.
 #[derive(Default)]
@@ -134,11 +141,25 @@ impl App {
         }
 
         if self.chat_widget.thread_id() != Some(selection.thread_id) {
+            self.chat_widget
+                .add_error_message(CHANGED_THREAD_REWIND_MESSAGE.into());
+            return;
+        }
+        if self.is_offline() {
+            self.chat_widget
+                .add_error_message(OFFLINE_REWIND_MESSAGE.into());
+            return;
+        }
+        if self.chat_widget.is_user_turn_pending_or_running() {
+            self.chat_widget
+                .add_error_message(ACTIVE_TURN_REWIND_MESSAGE.into());
             return;
         }
 
         let Some(index) = nth_user_position(&self.transcript_cells, selection.nth_user_message)
         else {
+            self.chat_widget
+                .add_error_message(MISSING_SELECTION_REWIND_MESSAGE.into());
             return;
         };
         self.app_event_tx
@@ -434,6 +455,15 @@ impl App {
     fn overlay_confirm_backtrack(&mut self, tui: &mut tui::Tui) {
         let nth_user_message = self.backtrack.nth_user_message;
         let Some(selection) = self.backtrack_selection(nth_user_message) else {
+            self.chat_widget.add_error_message(
+                if self.scrollback_has_older_history {
+                    "Wait for history to load, then select a message to rewind."
+                } else {
+                    MISSING_SELECTION_REWIND_MESSAGE
+                }
+                .into(),
+            );
+            tui.frame_requester().schedule_frame();
             return;
         };
         self.close_transcript_overlay(tui);
@@ -649,12 +679,11 @@ pub(crate) fn backtrack_prompt_edit_candidate(
             }
             prompt.mention_bindings = mention_bindings_from_user_inputs(content, &display.message);
 
-            if is_steer
-                && turns
-                    .iter()
-                    .any(|turn| matches!(turn.status, TurnStatus::InProgress))
+            if turns
+                .iter()
+                .any(|turn| matches!(turn.status, TurnStatus::InProgress))
             {
-                bail!("Wait for the active turn to finish before rewinding this entire turn.");
+                bail!(ACTIVE_TURN_REWIND_MESSAGE);
             }
             let mut remote_edit_unsupported = false;
             let message_count = if is_steer {
@@ -1183,6 +1212,27 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn rewind_completed_prompt_refuses_any_later_active_turn() {
+        for selected in 0..3 {
+            let mut turns = vec![
+                turn("first", TurnStatus::Completed, 1),
+                turn("middle", TurnStatus::Completed, 1),
+                turn("last", TurnStatus::Completed, 1),
+            ];
+            let text = format!("{}-prompt-0", turns[selected].id);
+            assert!(
+                backtrack_prompt_edit_candidate(&turns, None, selected, &mut prompt(&text), true,)
+                    .is_ok()
+            );
+            turns.push(turn("running", TurnStatus::InProgress, 1));
+            let error =
+                backtrack_prompt_edit_candidate(&turns, None, selected, &mut prompt(&text), true)
+                    .expect_err("an earlier completed prompt must not stop and erase active work");
+            assert_eq!(error.to_string(), ACTIVE_TURN_REWIND_MESSAGE);
+        }
     }
 
     #[test]

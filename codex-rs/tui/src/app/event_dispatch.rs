@@ -67,6 +67,12 @@ impl App {
         if matches!(event, AppEvent::ForkCurrentSession { .. }) {
             self.chat_widget.fork_in_progress = false;
         }
+        if self.reconnect.offline && matches!(event, AppEvent::RevertSessionForPromptEdit { .. }) {
+            self.chat_widget
+                .add_error_message(crate::app_backtrack::OFFLINE_REWIND_MESSAGE.into());
+            tui.frame_requester().schedule_frame();
+            return Ok(AppRunControl::Continue);
+        }
         if self.reconnect.offline
             && !matches!(
                 &event,
@@ -685,6 +691,17 @@ impl App {
                 mut prompt,
             } => {
                 if self.chat_widget.thread_id() != Some(thread_id) {
+                    self.chat_widget.add_error_message(
+                        crate::app_backtrack::CHANGED_THREAD_REWIND_MESSAGE.into(),
+                    );
+                    tui.frame_requester().schedule_frame();
+                    return Ok(AppRunControl::Continue);
+                }
+                if self.chat_widget.is_user_turn_pending_or_running() {
+                    self.chat_widget.add_error_message(
+                        crate::app_backtrack::ACTIVE_TURN_REWIND_MESSAGE.into(),
+                    );
+                    tui.frame_requester().schedule_frame();
                     return Ok(AppRunControl::Continue);
                 }
                 if self.app_server_target.uses_remote_workspace()
@@ -717,6 +734,9 @@ impl App {
                         .ok_or_else(|| color_eyre::eyre::eyre!("the selected thread is no longer available"))?;
                     let (start_item, loaded_tail, latest_turn_id) = {
                         let store = channel.store.lock().await;
+                        if store.active_turn_id.is_some() {
+                            color_eyre::eyre::bail!(crate::app_backtrack::ACTIVE_TURN_REWIND_MESSAGE);
+                        }
                         (
                             store.turns.iter().find_map(|turn| turn.items.first()
                                 .map(|item| (turn.id.clone(), item.id().to_string()))),

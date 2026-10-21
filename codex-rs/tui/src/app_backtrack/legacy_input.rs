@@ -203,8 +203,16 @@ impl App {
             return false;
         }
         match (key.code, key.kind) {
-            (KeyCode::Enter, KeyEventKind::Press) if self.backtrack.base_id.is_some() => {
-                if !self.is_offline() {
+            (KeyCode::Enter, KeyEventKind::Press) => {
+                if self.is_offline() {
+                    self.chat_widget
+                        .add_error_message(OFFLINE_REWIND_MESSAGE.into());
+                    tui.frame_requester().schedule_frame();
+                } else if self.chat_widget.is_user_turn_pending_or_running() {
+                    self.chat_widget
+                        .add_error_message(ACTIVE_TURN_REWIND_MESSAGE.into());
+                    tui.frame_requester().schedule_frame();
+                } else {
                     self.overlay_confirm_backtrack(tui);
                 }
             }

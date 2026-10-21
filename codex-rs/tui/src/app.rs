@@ -1011,6 +1011,22 @@ impl App {
                 && self.chat_widget.no_modal_or_popup_active()
                 && self.keymap.app.open_warnings.is_pressed(*key))
         {
+            if self.backtrack.overlay_preview_active
+                && crate::key_hint::plain(KeyCode::Enter).is_press(*key)
+            {
+                self.chat_widget
+                    .add_error_message(crate::app_backtrack::OFFLINE_REWIND_MESSAGE.into());
+                self.chat_widget.set_footer_hint_override(Some(vec![
+                    ("↵".into(), "reconnect to rewind".into()),
+                    (
+                        crate::key_hint::ctrl(KeyCode::Char('c')).display_label(),
+                        "quit".into(),
+                    ),
+                ]));
+                self.transcript_view.jump_to_latest();
+                tui.frame_requester().schedule_frame();
+                return Ok(AppRunControl::Continue);
+            }
             if self.overlay.is_none()
                 && self.chat_widget.no_modal_or_popup_active()
                 && self.chat_widget.is_external_writer_view()
@@ -1250,6 +1266,8 @@ impl Drop for App {
     }
 }
 
+#[cfg(test)]
+mod rewind_tests;
 #[cfg(test)]
 pub(super) mod test_support;
 #[cfg(test)]

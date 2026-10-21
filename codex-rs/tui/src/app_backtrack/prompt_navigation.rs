@@ -19,15 +19,24 @@ impl App {
             .keymap
             .primary_hint(crate::keymap::KeymapContext::Global, "open_transcript")
             .map(|key| (key.display_label(), "details"));
+        let rewind = if self.is_offline() {
+            "reconnect to rewind"
+        } else if self.chat_widget.is_user_turn_pending_or_running() {
+            "wait for turn"
+        } else if self.backtrack.nth_user_message == usize::MAX {
+            "load history first"
+        } else {
+            "rewind"
+        };
         let mut full_hints = vec![
             ("↑↓/jk".to_string(), "scroll"),
             ("←→/hl".to_string(), "prompts"),
         ];
         full_hints.extend(details.clone());
-        full_hints.extend([("↵".to_string(), "rewind"), ("esc".to_string(), "back")]);
+        full_hints.extend([("↵".to_string(), rewind), ("esc".to_string(), "back")]);
         let mut compact_hints = vec![("↑↓/jk ←→/hl".to_string(), "")];
         compact_hints.extend(details);
-        compact_hints.extend([("↵".to_string(), "rewind"), ("esc".to_string(), "back")]);
+        compact_hints.extend([("↵".to_string(), rewind), ("esc".to_string(), "back")]);
         let line = first_fitting_line(
             [
                 ("Browsing transcript", full_hints.clone()),
@@ -37,13 +46,13 @@ impl App {
                     "Browsing",
                     vec![
                         ("↑↓/jk ←→/hl".to_string(), ""),
-                        ("↵".to_string(), "rewind"),
+                        ("↵".to_string(), rewind),
                         ("esc".to_string(), ""),
                     ],
                 ),
                 (
                     "Browsing",
-                    vec![("↵".to_string(), "rewind"), ("esc".to_string(), "back")],
+                    vec![("↵".to_string(), rewind), ("esc".to_string(), "back")],
                 ),
                 ("Browsing", vec![("esc".to_string(), "back")]),
                 ("Browsing", vec![("esc".to_string(), "")]),
