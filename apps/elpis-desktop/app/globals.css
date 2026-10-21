@@ -1275,7 +1275,6 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
   .plan-pill > span { display:none; }
   .composer .model-select { min-width:52px; flex-shrink:1; }
 }
-@container workspace (min-width:421px) and (max-width:480px) {
 @container workspace (min-width:421px) and (max-width:520px) {
   .composer-right .context-ring { display:none; }
   .composer .effort-long { display:none; } .composer .effort-short { display:inline; }
