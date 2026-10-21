@@ -4,6 +4,7 @@ import path from 'node:path';
 import { BridgeError, elpisHome, object, text } from './client.mjs';
 import { runtimeTools } from './runtime-paths.mjs';
 import { handoffText, runAcpNode } from './acp-nodes.mjs';
+import { interviewReply, INVALID_INTERVIEW_REPLY } from './love-interview.mjs';
 
 // Excalidraw remains the source of truth: bound arrows, not a second edge store.
 export function agentGraph(elements, selected) {
@@ -145,17 +146,18 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
         if (instructions.length > 32000) throw new BridgeError('The role and interview exceed the message limit', 413);
         const spec = nodeSpec({ ...node, id: input.id, prompt: instructions }, env);
         // Elpis already exposes the read-only workflow policy over ACP; no new permission mechanism.
-        if (spec.elpis) spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, workflow: { kind: 'explore', writeScopes: [] } } };
+        if (spec.elpis) spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, ephemeral: true, workflow: { kind: 'explore', writeScopes: [] } } };
         interview = next;
         await patch(input.id, { interview }, true);
-        const result = await runAcpNode(spec, { task: `Continue the interview. Conversation:\n${conversation}` }, {
-          cwd: input.cwd ?? os.homedir(), timeoutMs, signal: controller.signal, onPermission: () => null,
-        });
-        let reply;
-        try { reply = JSON.parse(result.answer.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1')); } catch {}
-        const question = reply?.question, proposal = reply?.task;
-        const line = value => typeof value === 'string' && value.trim() && value.length <= 300 && !/[\r\n]/.test(value);
-        if (!reply || Array.isArray(reply) || Object.keys(reply).length !== 1 || !(line(question) && (question.match(/\?/g) ?? []).length <= 1 || line(proposal) && interview.messages.some(m => m.role === 'user'))) throw new BridgeError('The agent sent an invalid interview reply. Retry to ask it again.', 502);
+        let result;
+        try {
+          result = await runAcpNode(spec, { task: `Continue the interview. Conversation:\n${conversation}` }, {
+            cwd: input.cwd ?? os.homedir(), timeoutMs, signal: controller.signal, onPermission: () => null,
+          });
+        } catch { throw new BridgeError('The agent could not ask its question. Retry to ask it again.', 502); }
+        const reply = interviewReply(result.answer, interview.messages.some(m => m.role === 'user'));
+        if (!reply) throw new BridgeError(INVALID_INTERVIEW_REPLY, 502);
+        const { question, proposal } = reply;
         interview = { messages: question ? [...interview.messages, { role: 'assistant', text: question.trim() }] : interview.messages, ...(proposal ? { proposal: proposal.trim() } : {}), busy: false };
         await patch(input.id, { interview }, true);
         return { interview };

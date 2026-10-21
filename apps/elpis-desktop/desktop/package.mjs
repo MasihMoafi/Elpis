@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 
 /** Every file the packaged app loads besides the renderer; package.test.mjs checks it against their imports. */
 export const productionFiles = [
+  'bridge/love-interview.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
   'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs',
   'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mjs', 'bridge/client.mjs', 'bridge/customize.mjs', 'bridge/skill-trash.mjs', 'bridge/github-connector.mjs', 'bridge/elpis-features.mjs', 'bridge/observability.mjs', 'bridge/smart-prune.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/recorded-changes.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',

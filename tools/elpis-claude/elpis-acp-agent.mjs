@@ -334,10 +334,12 @@ const app = agent({ name: "elpis" })
     await engineReady();
     if (!path.isAbsolute(params.cwd)) throw RequestError.invalidParams(undefined, "cwd must be an absolute path");
     const append = params._meta?.systemPrompt?.append;
+    const ephemeral = params._meta?.elpis?.ephemeral === true;
     const policy = workflowPolicy(params._meta?.elpis?.workflow, params.cwd);
     const config = mcpConfig(params.mcpServers);
     const started = await engine.call("thread/start", {
       cwd: params.cwd,
+      ...(ephemeral ? { ephemeral: true } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(provider ? { modelProvider: provider } : {}),
       approvalPolicy: "on-request", ...(policy ? { permissions: "elpis-workflow" } : { sandbox: "workspace-write" }),
@@ -348,7 +350,7 @@ const app = agent({ name: "elpis" })
     if (typeof id !== "string") throw new RequestError(-32603, "The Elpis engine did not start a thread");
     sessions.set(id, { id, policy, turn: null, announced: new Set(), phases: new Map(), streamed: new Map() });
     const name = params._meta?.elpis?.name;
-    if (typeof name === "string" && name.trim()) await engine.call("thread/name/set", { threadId: id, name: name.trim().slice(0, 120) }).catch(() => {});
+    if (!ephemeral && typeof name === "string" && name.trim()) await engine.call("thread/name/set", { threadId: id, name: name.trim().slice(0, 120) }).catch(() => {});
     return { sessionId: id };
   })
   .onRequest("session/prompt", async ({ params }) => {

@@ -1,4 +1,5 @@
 import { fastServiceTier } from '../lib/service-tier.mjs';
+import { legacyInterview, interviewTurns } from './love-interview.mjs';
 import { EventEmitter } from 'node:events';
 import { agentParentId, isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -168,6 +169,7 @@ export class DesktopClient extends EventEmitter {
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
   #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
   #sideChats = new Map();
+  #interviewThreads = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
   #workflowRuns; #acpApprovals = new Map();
   #checkingApprovals = new Map();
@@ -442,6 +444,8 @@ export class DesktopClient extends EventEmitter {
   }
   #decorate(thread) {
     if (!thread || typeof thread.id !== 'string') throw new BridgeError('Elpis returned an invalid thread', 502);
+    if (legacyInterview(thread)) this.#interviewThreads.add(thread.id);
+    if (this.#interviewThreads.has(thread.id)) thread = { ...thread, preview: '', ...(Array.isArray(thread.turns) ? { turns: interviewTurns(thread.turns) } : {}) };
     const parentThreadId = agentParentId(thread);
     if (parentThreadId) thread = { ...thread, parentThreadId };
     this.#known.add(thread.id);
@@ -524,6 +528,15 @@ export class DesktopClient extends EventEmitter {
     object(options, ['cursor', 'limit']);
     const revision = this.#turnRevisions.get(id);
     const thread = await this.readThreadMetadata(id);
+    if (this.#interviewThreads.has(id)) {
+      const start = options.cursor ? Number(options.cursor.startsWith(WHOLE_TURNS) ? options.cursor.slice(WHOLE_TURNS.length) : NaN) : 0;
+      if (!Number.isSafeInteger(start) || start < 0) throw new BridgeError('Invalid cursor');
+      const saved = await this.#rpc('thread/read', { threadId: id, includeTurns: true });
+      const turns = interviewTurns(saved.thread?.turns ?? []);
+      const entries = turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
+      const end = start + (options.limit ?? 30);
+      return { thread, data: entries.slice(start, end), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
+    }
     const items = await this.#itemsPage({ threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
     // A missed renderer event must not leave its Stop/Working state behind the saved
     // conversation. A newer live turn always takes precedence over this read.
