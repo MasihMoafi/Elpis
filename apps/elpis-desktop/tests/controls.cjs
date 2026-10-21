@@ -49,10 +49,26 @@ async function guardDesktopStore(target) {
 /** Unapproved oranges in the light theme (hue 15–50°, saturated, mid lightness), as `selector: property value`.
  * Masih's shared amber primary button fill is allowed, and so is the working mark drawn in that same colour; its text, edges and all other surfaces stay checked.
  * Colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
-const oranges = (page, exclude = '') => page.evaluate(exclude => {
+const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate(({ exclude, approvedAccents }) => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   const rgba = value => { context.clearRect(0, 0, 1, 1); context.fillStyle = '#000'; context.fillStyle = value; context.fillRect(0, 0, 1, 1); return context.getImageData(0, 0, 1, 1).data; };
+  // A87 approves these exact colours, including the existing focus and message-edge mixes.
+  // Resolve the mixes through CSS just as the renderer does; no hue range is exempted.
+  const resolve = value => {
+    const probe = document.createElement('span'); probe.style.color = value; document.body.append(probe);
+    const pixel = [...rgba(getComputedStyle(probe).color)]; probe.remove(); return pixel;
+  };
+  const accents = approvedAccents ? ['#e89d34', '#ff8a00'].map(resolve) : [];
+  const focus = approvedAccents ? resolve('color-mix(in oklch, #e89d34 80%, var(--hud-edge))') : [];
+  const message = approvedAccents ? resolve('color-mix(in oklch, #e89d34 70%, transparent)') : [];
+  const approved = (element, property, colour) => {
+    if (!approvedAccents) return false;
+    const pixel = rgba(colour), same = expected => expected.length === pixel.length && expected.every((value, at) => value === pixel[at]);
+    return accents.some(same)
+      || (/^border-.*-color$/.test(property) && element.matches('.composer, .composer-tray') && same(focus))
+      || (property === 'border-right-color' && element.matches('.message.user') && same(message));
+  };
   const orange = value => {
     const [r, g, b, a] = rgba(value); if (a < 40) return false;
     const [R, G, B] = [r / 255, g / 255, b / 255], max = Math.max(R, G, B), min = Math.min(R, G, B), light = (max + min) / 2, delta = max - min;
@@ -75,16 +91,18 @@ const oranges = (page, exclude = '') => page.evaluate(exclude => {
     if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0) checks.push(['outline-color', style.outlineColor]);
     if (element instanceof SVGElement) checks.push(['fill', style.fill], ['stroke', style.stroke]);
     for (const [property, value] of checks) {
-      if (property === 'background-color' && element.matches('[data-slot="button"].primary-cut')) continue;
-      if (property === 'fill' && element.closest('.elpis-working-mark')) continue;
+      if (!approvedAccents && property === 'background-color' && element.matches('[data-slot="button"].primary-cut')) continue;
+      if (!approvedAccents && property === 'fill' && element.closest('.elpis-working-mark')) continue;
       // A67 restored an outlined hexagon; its stroke uses A87's approved Send orange.
       if (property === 'stroke' && element.matches('.elpis-working-rotor') &&
         String(rgba(value)) === String(rgba(style.getPropertyValue('--primary-action')))) continue;
-      for (const colour of colours(value ?? '')) if (orange(colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+      for (const colour of colours(value ?? '')) if (orange(colour) && !approved(element, property, colour)) hits.add(`${name(element)}: ${property} ${colour}`);
     }
   }
   return [...hits];
-}, exclude);
+}, { exclude, approvedAccents });
+/** A87: light accents use logo amber and send orange; other oranges (including the former brown) still fail. */
+const unapprovedOranges = (page, exclude = '') => oranges(page, exclude, true);
 /** Opens a select and lists every option whose text is cut off: clipped by the menu or the option, or running under
  * the check mark. Measures the glyphs themselves (a Range), so ellipsis and overflow:hidden both count as cut. */
 async function optionsCut(trigger) {
@@ -129,4 +147,4 @@ async function assertDialogActionsExplained(dialog, expected) {
     if (expected) assert.match(reasons.join(' '), expected);
   }
 }
-module.exports = { assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, sidebar };
+module.exports = { assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar };

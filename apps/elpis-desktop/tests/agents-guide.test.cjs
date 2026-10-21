@@ -86,13 +86,16 @@ test('Canvas help opens the guide and returns to the board', async () => {
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[1280, 800], [900, 700]]) test(`guide topics fit one screen (${colorScheme}, ${width}x${height})`, async () => {
+for (const colorScheme of ['light', 'dark']) for (const [width, height, fallbackFont] of [[1280, 800], [900, 700], [900, 700, 'DejaVu Sans']]) test(`guide topics fit one screen (${colorScheme}, ${width}x${height}${fallbackFont ? ', system fallback font' : ''})`, async () => {
   const f = await fixture({ colorScheme, width, height }), { page } = f;
   try {
     await page.keyboard.press('Control+k');
     await page.keyboard.type('Guide');
     await page.keyboard.press('Enter');
     await guide(page).waitFor();
+    // CI has no workstation Inter font. Check the wider system fallback as well.
+    if (fallbackFont) await page.evaluate(font => document.documentElement.style.setProperty('--ui-font', `"${font}", sans-serif`), fallbackFont);
+    await page.evaluate(() => document.fonts.ready);
     await fs.mkdir('/tmp/agents-guide-shots', { recursive: true });
     for (const name of topics) {
       const button = guide(page).getByRole('button', { name, exact: true });
@@ -102,7 +105,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       assert.ok(await guide(page).evaluate(el => el.getBoundingClientRect().top >= 0 && el.getBoundingClientRect().bottom <= innerHeight), `${name}: the whole topic fits`);
       assert.ok(await guide(page).evaluate(el => { const scroll = el.closest('.page-scroll'); return scroll.scrollHeight <= scroll.clientHeight + 1; }), `${name}: no page scrolling`);
       await page.mouse.move(880, 80);
-      await page.screenshot({ animations: 'disabled', path: `/tmp/agents-guide-shots/${colorScheme}-${width}-${topics.indexOf(name)}.png` });
+      await page.screenshot({ animations: 'disabled', path: `/tmp/agents-guide-shots/${colorScheme}-${width}${fallbackFont ? '-fallback' : ''}-${topics.indexOf(name)}.png` });
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

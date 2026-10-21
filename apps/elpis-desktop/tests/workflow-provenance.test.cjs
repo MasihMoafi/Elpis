@@ -32,11 +32,15 @@ test('Lab is the page after New chat, with history, command search and matching 
     await lab.waitFor();
     for (const theme of ['light', 'dark']) {
       if (theme === 'dark') await chooseTheme(page, theme);
-      const boxes = await nav.getByRole('button').evaluateAll(buttons => buttons.map(button => {
+      await page.waitForFunction(dark => document.documentElement.classList.contains('dark') === dark, theme === 'dark');
+      const boxes = await nav.getByRole('button').evaluateAll((buttons, loveRed) => buttons.map(button => {
         const icon = button.querySelector('svg'), box = icon.getBoundingClientRect(), row = button.getBoundingClientRect();
-        return { x: box.x, width: box.width, height: box.height, offset: box.y - row.y, paint: icon.getAttribute('fill') === 'currentColor' || icon.getAttribute('stroke') === 'currentColor' };
-      }));
-      assert.ok(boxes.every(box => box.paint));
+        const paint = button.dataset.navPage === 'loveSpot'
+          ? icon.getAttribute('fill') === 'var(--love-red)' && getComputedStyle(icon).fill === loveRed
+          : icon.getAttribute('fill') === 'currentColor' || icon.getAttribute('stroke') === 'currentColor';
+        return { x: box.x, width: box.width, height: box.height, offset: box.y - row.y, paint };
+      }), theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)');
+      assert.ok(boxes.every(box => box.paint), `${theme}: sidebar icons use currentColor and Love Spot uses its approved blood red (${JSON.stringify(boxes)})`);
       assert.deepEqual(boxes, boxes.map(() => boxes[0]), `${theme} sidebar icons align`);
       assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
       if (process.env.ELPIS_SHOTS) {

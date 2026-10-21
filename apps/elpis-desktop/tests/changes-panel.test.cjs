@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, oranges } = require('./controls.cjs');
+const { guardDesktopStore, unapprovedOranges } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_CHANGES_SHOTS;
@@ -118,7 +118,7 @@ test('Changes tab: the working-tree file list with status and +/- counts, and th
     const widths = await parser.locator('.diff-line:not(.hunk)').evaluateAll(lines => lines.map(line => Math.round(line.getBoundingClientRect().width)));
     assert.ok(widths.length > 3 && Math.max(...widths) - Math.min(...widths) <= 1, `every line is as wide as the longest, so the colours end together (${widths})`);
     assert.equal(await rows.nth(2).locator('.change-row').getAttribute('aria-current'), 'true', 'the shown file is marked in the list');
-    assert.deepEqual(await oranges(page), [], 'light theme, Changes tab: no orange');
+    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, Changes tab: only approved amber/orange accents');
     // The shared gold primary background is intentional. Other orange surfaces and primary text remain detectable.
     await page.evaluate(() => {
       const probe = document.createElement('div'); probe.id = 'orange-guard-probe';
@@ -126,7 +126,7 @@ test('Changes tab: the working-tree file list with status and +/- counts, and th
       document.body.append(probe);
     });
     try {
-      const hits = await oranges(page);
+      const hits = await unapprovedOranges(page);
       assert.ok(hits.some(hit => hit.startsWith('span: background-color ')), 'unintended orange surfaces still fail');
       assert.ok(hits.some(hit => hit.startsWith('button.primary-cut: color ')), 'orange primary text still fails');
     } finally { await page.locator('#orange-guard-probe').evaluate(node => node.remove()); }

@@ -12,7 +12,7 @@ const os = require('node:os');
 const { promisify } = require('node:util');
 const execFile = promisify(require('node:child_process').execFile);
 const { fixture } = require('./parity-fixture.cjs');
-const { oranges } = require('./controls.cjs');
+const { unapprovedOranges } = require('./controls.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
 /** Retries `check` until it stops throwing: a folder is read by the bridge after the click that opens it. */
@@ -602,13 +602,13 @@ test('Ctrl+Shift+E shows the Files tab and, pressed again on it, closes the pane
   } finally { await f.close(); }
 });
 
-test('light and dark: the pane has no orange in light, and nothing is cut off in either theme', async () => {
+test('light and dark: the pane has only approved amber/orange accents in light, and nothing is cut off in either theme', async () => {
   for (const colorScheme of ['light', 'dark']) {
     const f = await open({ colorScheme });
     try {
       await f.ref('src/lib/parser.ts:2-3').click();
       await f.editor('src/lib/parser.ts').waitFor();
-      if (colorScheme === 'light') assert.deepEqual(await oranges(f.page), [], 'light theme, Files tab: no orange');
+      if (colorScheme === 'light') assert.deepEqual(await unapprovedOranges(f.page), [], 'light theme, Files tab: only approved amber/orange accents');
       const cut = await f.side.locator('.files-pane *').evaluateAll(nodes => nodes.filter(node => {
         if (!node.matches('.task-tab > button, [role="treeitem"], .file-view-path, .files-find input, .file-view-head button')) return false;
         const box = node.getBoundingClientRect(), parent = node.closest('.files-pane').getBoundingClientRect();

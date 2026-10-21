@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, oranges, openSettings, chooseTheme } = require('./controls.cjs');
+const { guardDesktopStore, unapprovedOranges, openSettings, chooseTheme } = require('./controls.cjs');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_FULLVIEW_SHOTS;
@@ -302,7 +302,7 @@ test('the toolbar keeps its address field at the panel’s default width in smal
   }
 }));
 
-test('sizes and styles match the split view, and the light theme has no orange', () => fixture(async ({ page, side, card, pill, enter, exit, openPanel }) => {
+test('sizes and styles match the split view, and the light theme has only approved amber/orange accents', () => fixture(async ({ page, side, card, pill, enter, exit, openPanel }) => {
   await openPanel();
   const look = () => page.evaluate(() => {
     const px = (selector, property) => { const element = document.querySelector(selector); return element ? getComputedStyle(element)[property] : null; };
@@ -310,17 +310,17 @@ test('sizes and styles match the split view, and the light theme has no orange',
     return { tab: size('.side-header .task-tab'), tabFont: px('.side-header .task-tab > button[role="tab"]', 'fontSize'), action: size('.side-action'), composer: px('.composer textarea', 'fontSize'), message: px('.message.agent', 'fontSize'), annotate: size('.browser-annotate')?.[1], user: px('.message.user', 'fontSize') };
   });
   const splitLook = await look();
-  assert.deepEqual(await oranges(page), [], 'light theme, split view: no orange');
+  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, split view: only approved amber/orange accents');
   await enter.click(); await card.waitFor();
   assert.deepEqual(await look(), splitLook, 'full view with the card: tabs, buttons and text keep their sizes');
-  assert.deepEqual(await oranges(page), [], 'light theme, full view with the card: no orange');
+  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, full view with the card: only approved amber/orange accents');
   await page.getByLabel('Message Elpis').focus();
-  assert.deepEqual(await oranges(page), [], 'light theme, composer focused in the card: no orange');
+  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, composer focused in the card: only approved amber/orange accents');
   await card.getByRole('button', { name: 'Collapse floating chat' }).click(); await pill.waitFor();
   assert.deepEqual(await look(), splitLook, 'with the pill: the panel keeps its sizes');
   const pillBox = await pill.boundingBox();
   assert.equal(Math.round(pillBox.height), splitLook.annotate, 'the pill is as tall as the toolbar’s own buttons');
-  assert.deepEqual(await oranges(page), [], 'light theme, collapsed pill: no orange');
+  assert.deepEqual(await unapprovedOranges(page), [], 'light theme, collapsed pill: only approved amber/orange accents');
   await pill.click(); await exit.click(); await enter.waitFor();
   assert.deepEqual(await look(), splitLook, 'back in split view nothing moved');
 }));

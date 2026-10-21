@@ -1,5 +1,5 @@
 // The agents canvas's isometric view (components/agents-iso.tsx), as Deus Ex's hacking screen: every agent a pedestal
-// to click, select and open, the run's state on it and its wires, kept inside the window, and no orange in the light
+// to click, select and open, the run's state on it and its wires, kept inside the window, and only approved amber/orange accents in the light
 // theme. Synthetic HTTP fixture, as tests/canvas.test.cjs. Screenshots go to $ELPIS_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,10 +7,10 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption, oranges, chooseTheme } = require('./controls.cjs');
+const { chooseOption, unapprovedOranges, chooseTheme } = require('./controls.cjs');
 const shots = process.env.ELPIS_SHOTS;
 
-test('agents canvas, isometric: agents as buttons to select and open, run state, inside the window, no orange in light', async () => {
+test('agents canvas, isometric: agents as buttons to select and open, run state, inside the window, only approved amber/orange accents in light', async () => {
   const root = { id: 'root', name: 'Canvas run', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   let polls = 0, ran = null;
   const server = http.createServer(async (req, res) => {
@@ -176,7 +176,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     // The light interface keeps its theme palette; agent identities have their own colors.
     await page.setViewportSize({ width: 1130, height: 660 }); await page.waitForTimeout(300);
     await agent('Veyra · Part 2').hover();
-    assert.deepEqual(await oranges(page, '.iso-node[data-kind="agent"], .iso-port[data-kind="agent"]'), [], 'light theme controls: no orange');
+    assert.deepEqual(await unapprovedOranges(page, '.iso-node[data-kind="agent"], .iso-port[data-kind="agent"]'), [], 'light theme controls: only approved amber/orange accents');
     await shoot('iso-light-1130');
     await chooseTheme(page, 'dark'); await page.waitForTimeout(300);
     await agent('Veyra · Part 2').hover();

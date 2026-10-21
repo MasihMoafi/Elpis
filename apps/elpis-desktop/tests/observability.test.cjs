@@ -69,8 +69,12 @@ test('active list has no deleted chats; each agent reads as prompt, plain work, 
     assert.match(await iris.innerText(), /gpt-6-luna.*verify/);
     assert.deepEqual(await page.locator('.observed-agent > .customize-title h3').allInnerTexts(), ['Mother', 'Iris']);
     await group.getByRole('button', { name: 'Open record', exact: true }).click();
-    await page.getByRole('textbox', { name: `Contents of ${RECORD}`, exact: true }).waitFor();
+    await page.getByRole('article', { name: `Preview of ${RECORD}`, exact: true }).getByRole('heading', { name: 'Fix the parser', exact: true }).waitFor();
+    await page.getByRole('group', { name: 'Document view', exact: true }).getByRole('button', { name: 'Source', exact: true }).click();
+    assert.equal(await page.getByRole('textbox', { name: `Contents of ${RECORD}`, exact: true }).inputValue(), '# Fix the parser\n');
     await page.getByRole('button', { name: 'Observability', exact: true }).click();
+    // Opening a file leaves this page; select the chat again from its refreshed list.
+    await open(page);
     await group.getByRole('heading', { name: 'Mother', exact: true }).waitFor();
     await page.getByRole('button', { name: 'All chats', exact: true }).click();
     await list.getByRole('button', { name: 'Fix the parser', exact: true }).waitFor();

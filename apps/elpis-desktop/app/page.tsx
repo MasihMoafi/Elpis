@@ -1958,7 +1958,7 @@ export default function Home() {
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
-      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView onOpenChat={id => void openObservedChat(id)} hiddenChats={hidden.current} /></ViewBoundary>}
+      {view === "observability" && <div className="page-scroll"><ViewBoundary label="Observability"><ObservabilityView onOpenChat={id => void openObservedChat(id)} hiddenChats={hidden.current} /></ViewBoundary></div>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; setAwayFromBottom(!stickToBottom.current); }}><div className="chat-content">
           {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
