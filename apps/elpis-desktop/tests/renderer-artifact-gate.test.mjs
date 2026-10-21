@@ -212,7 +212,8 @@ if(process.env.MOCK_RECEIPT==='mutated')fs.writeFileSync(path.join(destination,'
   const commit = await f.commitSource();
   if (!['missing', 'stale'].includes(mode)) await runGate(f);
   const home = path.join(f.repo, 'private-home'), bin = path.join(f.repo, 'bin');
-  const previous = path.join(home, '.local/lib/elpis-desktop/versions/previous/launch');
+  // The selected installation carries an earlier commit of this repository, so the install moves forward.
+  const previous = path.join(home, `.local/lib/elpis-desktop/versions/previous-${f.baseline.slice(0, 9)}/launch`);
   await fs.mkdir(path.dirname(previous), { recursive: true });
   await fs.writeFile(previous, 'previous');
   await fs.mkdir(path.join(home, '.local/bin'), { recursive: true });
@@ -240,7 +241,7 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
   if (mode === 'missing' || mode === 'stale' || mode === 'download-source' || mode === 'download-head') {
     assert.match(result.stderr, mode === 'missing' ? /ENOENT.*elpis-ui-receipt/ : mode === 'stale' ? /UI receipt belongs to another commit/ : mode === 'download-head' ? /Source HEAD changed/ : /Tracked source changed/);
     await assert.rejects(fs.access(marker), { code: 'ENOENT' });
-    assert.deepEqual(await fs.readdir(path.dirname(path.dirname(previous))), ['previous']);
+    assert.deepEqual(await fs.readdir(path.dirname(path.dirname(previous))), [path.basename(path.dirname(previous))]);
   } else assert.equal(await fs.readFile(marker, 'utf8'), 'called');
   if (mode === 'mutated') assert.match(result.stderr, /Renderer bytes changed/);
   if (mode === 'package-source' || mode === 'transient-source') assert.match(result.stderr, /Tracked source changed|Packaged production bytes differ/);
