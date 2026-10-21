@@ -576,21 +576,19 @@ async function main() {
       assert.equal(applied.status, 'completed', 'status'); assert.equal(applied.wrote, false, 'write');
       pass('once its restriction applies, the TUI-hosted helper runs read-only');
     });
-    // A second delegate server reopening an open helper: the engine may refuse a second writer;
-    // if it allows one, a reduction must reach both copies.
+    // A second delegate server reaches the existing helper runtime without opening another writer.
     await group('one helper on two delegate servers', async () => {
       const parentId = await parent('default');
       const first = await delegateServer(parentId), second = await delegateServer(parentId);
       const h = await engineHelper(first, { allow_writes: true });
       assert.equal(h.wrote, true, 'the first copy writes before the reduction');
       const reopened = await engineHelper(second, { thread_id: h.threadId });
-      const both = !/already has an active writer/.test(reopened.text);
-      if (both) assert.equal(reopened.wrote, true, `the second copy writes before the reduction: ${reopened.text}`);
+      assert.doesNotMatch(reopened.text, /already has an active writer/);
+      assert.equal(reopened.wrote, true, `the second server writes before the reduction: ${reopened.text}`);
       await select(parentId, 'readOnly');
       assert.equal((await engineHelper(first, { thread_id: h.threadId })).wrote, false, 'the first server\'s copy');
-      if (both) assert.equal((await engineHelper(second, { thread_id: h.threadId })).wrote, false, 'the second server\'s copy');
-      pass(both ? 'a reduction reaches both delegate servers that have the helper open'
-        : 'the engine refuses a second writer, and the reduction reaches the open copy');
+      assert.equal((await engineHelper(second, { thread_id: h.threadId })).wrote, false, 'the second server\'s turn');
+      pass('a reduction reaches the helper controlled by either delegate server');
     });
     // A reduction the store could not save is reported, and holds while the bridge runs.
     await group('reduction not saved', async () => {

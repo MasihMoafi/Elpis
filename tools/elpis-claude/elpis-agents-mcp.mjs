@@ -133,13 +133,9 @@ async function activeTurn(run) {
 }
 
 const threadArg = z.string().describe("Elpis thread id returned by delegate.");
-const known = (thread_id) => runs.has(thread_id)
-  ? null
-  : { content: [{ type: "text", text: `Thread ${thread_id} is not owned by this server; delegated helpers remain visible through delegate_status. Send a follow-up with delegate and thread_id to reopen it.` }], isError: true };
-
 // Read a helper from Elpis without resuming it or adding it to this server's owned runs.
-async function storedRun(threadId) {
-  const conn = connect();
+async function storedRun(threadId, connection) {
+  const conn = connection ?? connect();
   try {
     await conn.ready;
     const thread = (await conn.call("thread/read", { threadId, includeTurns: false }))?.thread;
@@ -150,10 +146,28 @@ async function storedRun(threadId) {
     const items = turn?.items ?? [];
     return {
       label: thread.model ?? "helper", status,
+      parentThreadId: thread.parentThreadId ?? thread.source?.subAgent?.thread_spawn?.parent_thread_id,
+      turnId: status === "running" ? turn?.id ?? null : null,
       commands: items.filter((item) => item.type === "commandExecution").map((item) => item.command),
       text: items.filter((item) => item.type === "agentMessage").map((item) => item.text ?? "").join(""),
       error: turn?.error ?? null,
     };
+  } finally { if (!connection) conn.close(); }
+}
+
+// A replacement MCP process controls the helper through its existing bridge runtime. Reading
+// its current turn does not acquire another writer or cache a status that can go stale.
+async function withRun(threadId, extra, action) {
+  const own = runs.get(threadId);
+  if (own) return action(own);
+  const conn = connect();
+  try {
+    const run = await storedRun(threadId, conn);
+    const parent = PARENT ?? extra?._meta?.threadId;
+    if (!run || !parent || run.parentThreadId !== parent) {
+      return { content: [{ type: "text", text: `Thread ${threadId} is not a delegated helper of this chat.` }], isError: true };
+    }
+    return await action({ ...run, conn, recovered: true });
   } finally { conn.close(); }
 }
 
@@ -201,6 +215,14 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
           const conn = connect();
           try {
             await conn.ready;
+            if (BRIDGE) {
+              const run = await storedRun(threadId, conn);
+              if (!run || !parent || run.parentThreadId !== parent) throw new Error("This thread is not a delegated helper of this chat.");
+              if (run.status === "running") {
+                conn.close();
+                return { content: [{ type: "text", text: `Thread ${threadId} is still working; use delegate_steer or delegate_stop.` }], isError: true };
+              }
+            }
             await conn.call("thread/resume", { threadId });
           } catch (e) {
             conn.close();
@@ -261,10 +283,7 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
       description: "Send a correction to a delegated agent while it is still working; it takes effect in the running turn.",
       inputSchema: { thread_id: threadArg, message: z.string().describe("What the agent should do differently.") },
     },
-    async ({ thread_id, message }) => {
-      const unknown = known(thread_id);
-      if (unknown) return unknown;
-      const run = runs.get(thread_id);
+    async ({ thread_id, message }, extra) => withRun(thread_id, extra, async (run) => {
       const turnId = await activeTurn(run);
       if (!turnId) {
         return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}); send a follow-up with delegate and thread_id.` }], isError: true };
@@ -272,25 +291,34 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
       await run.conn.call("turn/steer", { threadId: thread_id, expectedTurnId: turnId, input: [{ type: "text", text: message, text_elements: [] }] });
       log(`delegate steer thread=${thread_id}`);
       return { content: [{ type: "text", text: `Steered thread ${thread_id}. Check it with delegate_status.` }] };
-    },
+    }),
   );
 
   server.registerTool(
     "delegate_stop",
     { description: "Stop a delegated agent's running turn.", inputSchema: { thread_id: threadArg } },
-    async ({ thread_id }) => {
-      const unknown = known(thread_id);
-      if (unknown) return unknown;
-      const run = runs.get(thread_id);
+    async ({ thread_id }, extra) => withRun(thread_id, extra, async (run) => {
       const turnId = await activeTurn(run);
       if (!turnId) {
         return { content: [{ type: "text", text: `Thread ${thread_id} is not working now (${run.status}).` }] };
       }
       await run.conn.call("turn/interrupt", { threadId: thread_id, turnId });
       log(`delegate stop thread=${thread_id}`);
-      await Promise.race([run.done, new Promise((r) => setTimeout(r, 15000))]);
+      if (run.recovered) {
+        let stopped;
+        const deadline = Date.now() + 15000;
+        do {
+          stopped = await storedRun(thread_id, run.conn);
+          if (stopped?.status !== "running") break;
+          await new Promise((r) => setTimeout(r, 50));
+        } while (Date.now() < deadline);
+        return { content: [{ type: "text", text: report(thread_id, stopped ?? run) }] };
+      }
+      let timer;
+      await Promise.race([run.done, new Promise((r) => { timer = setTimeout(r, 15000); })]);
+      clearTimeout(timer);
       return { content: [{ type: "text", text: report(thread_id) }] };
-    },
+    }),
   );
 }
 

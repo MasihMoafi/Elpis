@@ -40,6 +40,15 @@ async function main() {
       });
     } else if (msg.method === 'thread/read') result = { thread: threads.get(msg.params.threadId) };
     else if (msg.method === 'thread/turns/list') result = { data: threads.get(msg.params.threadId).turns.slice(-1) };
+    else if (msg.method === 'turn/steer') {
+      assert.equal(msg.params.expectedTurnId, threads.get(msg.params.threadId).turns.at(-1).id);
+      result = { turnId: msg.params.expectedTurnId };
+    } else if (msg.method === 'turn/interrupt') {
+      const thread = threads.get(msg.params.threadId), turn = thread.turns.at(-1);
+      assert.equal(msg.params.turnId, turn.id);
+      turn.status = 'interrupted'; thread.status = { type: 'idle' };
+      result = {};
+    }
     else throw Error(`Unexpected ${msg.method}`);
     ws.send(JSON.stringify({ id: msg.id, result }));
   }));
@@ -99,7 +108,7 @@ async function main() {
     ]) {
       threads.set(id, { id, source: 'appServer', parentThreadId: 'parent-chat', model: 'gpt-6.1-sol',
         status: { type: turnStatus === 'inProgress' ? 'active' : 'idle' },
-        turns: [{ status: turnStatus, items: [{ type: 'agentMessage', text: `${id} answer` }] }] });
+        turns: [{ id: `turn-${id}`, status: turnStatus, items: [{ type: 'agentMessage', text: `${id} answer` }] }] });
       const status = await fresh.call('delegate_status', { thread_id: id });
       assert.match(status.content[0].text, new RegExp(`status: ${expected}`));
       assert.match(status.content[0].text, new RegExp(`${id} answer`));
@@ -123,12 +132,23 @@ async function main() {
     assert.doesNotMatch(review.content[0].text, /Review answer/);
     console.log('PASS a regular thread is refused');
 
-    for (const name of ['delegate_steer', 'delegate_stop']) {
-      const refused = await fresh.call(name, { thread_id: id, message: 'Change course.' });
+    const steered = await fresh.call('delegate_steer', { thread_id: 'working-helper', message: 'Change course.' });
+    assert.equal(steered.isError, undefined, JSON.stringify(steered));
+    assert.match(steered.content[0].text, /Steered thread working-helper/);
+    const stopped = await fresh.call('delegate_stop', { thread_id: 'working-helper' });
+    assert.equal(stopped.isError, undefined, JSON.stringify(stopped));
+    assert.match(stopped.content[0].text, /status: interrupted/);
+    assert.equal(methods.includes('thread/resume'), false, 'steer and stop never acquire another writer');
+    console.log('PASS a replacement server steers and stops its chat\'s running helper using the current turn id');
+
+    threads.set('unrelated-helper', { id: 'unrelated-helper', parentThreadId: 'another-chat',
+      status: { type: 'active' }, turns: [{ id: 'unrelated-turn', status: 'inProgress', items: [] }] });
+    for (const name of ['delegate_steer', 'delegate_stop', 'delegate']) {
+      const refused = await fresh.call(name, { thread_id: 'unrelated-helper', task: 'Follow up.', message: 'Change course.' });
       assert.equal(refused.isError, true);
-      assert.match(refused.content[0].text, /visible through delegate_status/);
+      assert.match(refused.content[0].text, /not a delegated helper of this chat/);
     }
-    console.log('PASS an unowned helper cannot be steered or stopped through this server');
+    console.log('PASS another chat\'s helper cannot be steered, stopped or reopened through this server');
   } finally {
     for (const proc of servers) proc.kill();
     for (const client of bridge.clients) client.terminate();

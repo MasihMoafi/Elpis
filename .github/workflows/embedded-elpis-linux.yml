@@ -410,7 +410,9 @@ jobs:
         run: node --test codex-rs/exec/tests/parent-runtime.test.cjs
       - name: Delegated helper permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
-        run: node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
+        run: |
+          node scripts/delegate-reload.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
       - name: Shared launcher, native transport, and provider session ownership
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: |
