@@ -1530,7 +1530,7 @@ export default function Home() {
   ];
   const ordinaryUnread = attention.unread.filter(id => ordinaryThreads.some(thread => thread.id === id));
   const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
-  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id]);
+  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !filtered.some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results keep the search's order.
@@ -1831,7 +1831,7 @@ export default function Home() {
       <section aria-label="Session Manager chat"><Button variant="ghost" size="sm" className="w-full justify-start gap-2" aria-label="Open Session Manager" title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={!ready || !connected || openingSessionManager} onClick={() => void openSessionManager()}><Layers size={14} />Session Manager</Button></section>
       <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><div className="section-label">Projects</div><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
-          {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id);
+          {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));
             return <SidebarGroup key={item.id} kind="project" dropProps={projectDropProps(item.id)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
               wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={area}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
@@ -1842,7 +1842,7 @@ export default function Home() {
         {(loveChats.length > 0 || workflowChats.length > 0) && <div className="section-label">Agent chats</div>}
         {loveChats.length > 0 && <SidebarGroup kind="chat" name="Love Spot" icon={<LoveSpotIcon size={14} />} open={originOpen.love} onToggle={() => setOriginOpen(value => ({ ...value, love: !value.love }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{loveChats.map(thread => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
         {workflowChats.length > 0 && <SidebarGroup kind="chat" name="Workflows" icon={<WorkflowsIcon size={14} />} open={originOpen.workflows} onToggle={() => setOriginOpen(value => ({ ...value, workflows: !value.workflows }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{workflowChats.map(thread => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
-        {(searchTerm ? recentChats.length > 0 : roots.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? projectDropProps(null) : {})}><div className="section-label-row data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]" data-drop={drop?.id === "recents" ? "into" : undefined} {...(grouped ? dropTarget("recents", "recents", true) : {})}><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
+        {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? projectDropProps(null) : {})}><div className="section-label-row data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]" data-drop={drop?.id === "recents" ? "into" : undefined} {...(grouped ? dropTarget("recents", "recents", true) : {})}><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
           {recentChats.map(chatRows("recents"))}
