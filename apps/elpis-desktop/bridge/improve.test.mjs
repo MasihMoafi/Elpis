@@ -22,7 +22,10 @@ async function setup(t, checks = true) {
   const sourceRoot = path.join(root, 'source'); await fs.mkdir(sourceRoot);
   const git = (...args) => execFile('git', args, { cwd: sourceRoot });
   await git('init', '-q'); await git('config', 'user.name', 'Test'); await git('config', 'user.email', 'test@invalid');
-  await fs.writeFile(path.join(sourceRoot, 'button.txt'), 'Send\n'); await git('add', 'button.txt'); await git('commit', '-qm', 'baseline');
+  await git('commit', '--allow-empty', '-qm', 'before desktop');
+  await fs.mkdir(path.join(sourceRoot, 'apps/elpis-desktop'), { recursive: true });
+  await fs.writeFile(path.join(sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
+  await fs.writeFile(path.join(sourceRoot, 'button.txt'), 'Send\n'); await git('add', 'button.txt', 'apps/elpis-desktop/package.json'); await git('commit', '-qm', 'baseline');
   const client = new EventEmitter(); let created, sent;
   client.models = async () => ({ data: [{ model: 'gpt-6-luna' }] });
   client.createThread = async body => { created = body; return { thread: { id: 'fake-thread', cwd: body.cwd, status: { type: 'idle' } } }; };
@@ -43,6 +46,57 @@ test('pointed request starts an ordinary chat in a fresh improve branch with nat
   assert.equal(f.sent().body.attachments[0].dataUrl, PNG);
   assert.equal(await fs.readFile(path.join(f.sourceRoot, 'button.txt'), 'utf8'), 'open-tree edit\n');
   await assert.rejects(f.manager.keep(row.id), /checks|commit/i);
+});
+
+test('source discovery uses the durable main checkout when installed from a throwaway worktree', async t => {
+  const f = await setup(t), worktree = path.join(f.store, 'throwaway');
+  await f.git('worktree', 'add', '--detach', worktree);
+  const manager = await createImprovements({ client: f.client, sourceRoot: worktree, stateDir: path.join(f.store, 'durable'), sourceMap: map });
+  t.after(() => manager.close());
+  assert.deepEqual(await manager.source(), { path: f.sourceRoot, configured: true });
+  await manager.setSource({ path: worktree });
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.store, 'durable/source.json'), 'utf8')).path, f.sourceRoot);
+});
+
+test('an installed source record finds the checkout without choosing a folder and survives a stale saved source', async t => {
+  const f = await setup(t), installation = path.join(f.store, 'installed');
+  await fs.mkdir(path.join(installation, 'app'), { recursive: true });
+  await fs.writeFile(path.join(installation, 'source.json'), JSON.stringify({ path: f.sourceRoot }));
+  const stateDir = path.join(f.store, 'discovery'); await fs.mkdir(stateDir);
+  await fs.writeFile(path.join(stateDir, 'source.json'), JSON.stringify({ path: path.join(f.store, 'removed-worktree') }));
+  const manager = await createImprovements({ client: f.client, appRoot: path.join(installation, 'app'), stateDir, sourceMap: map });
+  t.after(() => manager.close());
+  assert.deepEqual(await manager.source(), { path: f.sourceRoot, configured: true });
+  const row = await manager.start({ request: 'Make this readable', target });
+  assert.equal(row.status, 'working');
+  assert.ok(f.created());
+  await assert.rejects(manager.start({ request: '   ', target }), /Describe the change/);
+});
+
+test('installed source remains usable when the main checkout is on a pre-desktop branch and the install worktree is gone', async t => {
+  const f = await setup(t), installation = path.join(f.store, 'older-main');
+  const commit = (await f.git('rev-parse', 'HEAD')).stdout.trim();
+  await fs.mkdir(path.join(installation, 'app'), { recursive: true });
+  await fs.writeFile(path.join(installation, 'source.json'), JSON.stringify({ path: f.sourceRoot, commit }));
+  await f.git('checkout', '--detach', 'HEAD~1');
+  const manager = await createImprovements({ client: f.client, appRoot: path.join(installation, 'app'), stateDir: path.join(f.store, 'older-main-state'), sourceMap: map });
+  t.after(() => manager.close());
+  assert.deepEqual(await manager.source(), { path: f.sourceRoot, configured: true });
+  assert.deepEqual(await manager.setSource({ path: f.sourceRoot }), { path: f.sourceRoot, configured: true });
+  const row = await manager.start({ request: 'Fix the installed desktop', target });
+  assert.equal(row.base, commit);
+  assert.equal(JSON.parse(await fs.readFile(path.join(row.cwd, 'apps/elpis-desktop/package.json'), 'utf8')).name, 'elpis-desktop');
+});
+
+test('automatic discovery rejects an unrelated Git checkout as well as an invalid folder selection', async t => {
+  const f = await setup(t), unrelated = path.join(f.store, 'unrelated'); await fs.mkdir(unrelated);
+  await execFile('git', ['init', '-q', unrelated]);
+  const manager = await createImprovements({ client: f.client, sourceRoot: unrelated, stateDir: path.join(f.store, 'invalid'), sourceMap: map });
+  t.after(() => manager.close());
+  assert.deepEqual(await manager.source(), { path: null, configured: false });
+  await assert.rejects(manager.setSource({ path: unrelated }), /not an Elpis source checkout/);
+  await assert.rejects(manager.start({ request: 'Readable', target }), /source folder/);
+  assert.equal(f.created(), undefined);
 });
 test('review measures committed diff; Keep writes a coordinator note, restart restores it, later edits invalidate checks', async t => {
   const f = await setup(t), row = await f.manager.start({ request: 'Rename Send to Go', target });

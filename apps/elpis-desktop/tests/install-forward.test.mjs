@@ -5,7 +5,23 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { assertApprovedLooks, assertMovesForward, installationCommit } from '../scripts/install-desktop.mjs';
+import { assertApprovedLooks, assertMovesForward, installationCommit, recordSourceCheckout } from '../scripts/install-desktop.mjs';
+
+test('installation records the durable Elpis checkout, never the throwaway worktree', async () => {
+  const { repo } = await history();
+  await fs.mkdir(path.join(repo, 'apps/elpis-desktop'), { recursive: true });
+  await fs.writeFile(path.join(repo, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
+  execFileSync('git', ['-C', repo, 'add', 'apps/elpis-desktop/package.json']);
+  execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'desktop source']);
+  const commit = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const checkout = `${repo}-installer`;
+  execFileSync('git', ['-C', repo, 'worktree', 'add', '--detach', checkout], { stdio: 'ignore' });
+  const installed = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-source-record-'));
+  await recordSourceCheckout(checkout, installed);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(installed, 'source.json'), 'utf8')), { path: repo, commit });
+  const unrelated = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-non-source-'));
+  await assert.rejects(recordSourceCheckout(unrelated, installed), /durable Elpis source checkout/);
+});
 
 // Keep fixtures in /tmp for boot cleanup: gio trash is unsupported on this mount.
 async function history() {

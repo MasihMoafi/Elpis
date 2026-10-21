@@ -8,8 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { BridgeError, object } from './client.mjs';
 import { attachmentInput } from './attachments.mjs';
 import { verifyImprovement } from './improve-check.mjs';
+import { durableSourceCheckout } from './improve-source.mjs';
 const exec = promisify(execFile);
-const appRoot = fileURLToPath(new URL('..', import.meta.url));
+const defaultAppRoot = fileURLToPath(new URL('..', import.meta.url));
 const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
 const git = async (cwd, ...args) => (await exec('git', [...SAFE, ...args], { cwd, timeout: 30000, maxBuffer: 2 * 1024 * 1024 })).stdout.trim();
 export const IMPROVE_INSTRUCTIONS = `You are improving Elpis in your own isolated git worktree. Work only in this worktree.
@@ -19,26 +20,33 @@ Dependencies may be linked from the source checkout; never edit them or install 
 Delete with gio trash. Never use git add -A, git add ., reset --hard, clean or stash. Stage named files only, inspect git diff --cached --stat and commit your change. Keep unrelated files untouched.
 The app independently checks your committed result. Finish with a short result and trade-offs; the user can Try it or mark it ready for the coordinator.`;
 
-export async function createImprovements({ client, sourceRoot, stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement } = {}) {
+export async function createImprovements({ client, sourceRoot, appRoot = defaultAppRoot, stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement } = {}) {
   const records = new Map(), checking = new Map();
   const sourceFile = path.join(stateDir, 'source.json');
   let chosenSource;
-  async function source() {
+  async function resolveSource() {
     const saved = await fs.readFile(sourceFile, 'utf8').then(JSON.parse).catch(() => null);
-    const candidate = chosenSource || sourceRoot || saved?.path || process.env.ELPIS_SOURCE_REPO || path.resolve(appRoot, '../..');
-    const root = typeof candidate === 'string' && path.isAbsolute(candidate) ? await git(candidate, 'rev-parse', '--show-toplevel').catch(() => null) : null;
-    return { path: root, configured: !!root };
+    const installed = await fs.readFile(path.resolve(appRoot, '../source.json'), 'utf8').then(JSON.parse).catch(() => null);
+    for (const candidate of [chosenSource, saved, sourceRoot && { path: sourceRoot }, { path: process.env.ELPIS_SOURCE_REPO }, installed, sourceRoot ? null : { path: path.resolve(appRoot, '../..') }]) {
+      const resolved = await durableSourceCheckout(candidate?.path, candidate?.commit);
+      if (resolved) return resolved;
+    }
+    return null;
+  }
+  async function source() {
+    const resolved = await resolveSource();
+    return { path: resolved?.path ?? null, configured: !!resolved };
   }
   async function setSource(body) {
     object(body, ['path']);
     if (typeof body.path !== 'string' || !path.isAbsolute(body.path)) throw new BridgeError('Choose a local Elpis source folder');
-    const root = await git(body.path, 'rev-parse', '--show-toplevel').catch(() => null);
-    const identity = root && await fs.readFile(path.join(root, 'apps/elpis-desktop/package.json'), 'utf8').then(JSON.parse).catch(() => null);
-    if (!root || identity?.name !== 'elpis-desktop') throw new BridgeError('This folder is not an Elpis source checkout. Choose the folder containing apps/elpis-desktop.');
-    await fs.writeFile(`${sourceFile}.tmp`, JSON.stringify({ path: root }), { mode: 0o600 });
+    const current = await resolveSource();
+    const resolved = await durableSourceCheckout(body.path) ?? (current && await durableSourceCheckout(body.path, current.commit));
+    if (!resolved) throw new BridgeError('This folder is not an Elpis source checkout. Choose the folder containing apps/elpis-desktop.');
+    await fs.writeFile(`${sourceFile}.tmp`, JSON.stringify(resolved), { mode: 0o600 });
     await fs.rename(`${sourceFile}.tmp`, sourceFile);
-    chosenSource = root;
-    return { path: root, configured: true };
+    chosenSource = resolved;
+    return { path: resolved.path, configured: true };
   }
 
   await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
@@ -94,14 +102,14 @@ export async function createImprovements({ client, sourceRoot, stateDir = proces
     if (typeof body.target.image !== 'string' || !body.target.image.startsWith('data:image/png;base64,')) throw new BridgeError('A region screenshot is required; use the desktop app');
     const attachments = [{ id: 'pointed-region', type: 'image', name: 'Elpis region.png', mimeType: 'image/png', dataUrl: body.target.image }];
     attachmentInput('Screenshot', attachments); // Validate the native image before creating anything.
-    const { path: root } = await source();
-    if (!root) throw new BridgeError('Choose your Elpis source folder in this dialog before starting a change.', 409);
+    const resolved = await resolveSource();
+    if (!resolved) throw new BridgeError('Choose your Elpis source folder in this dialog before starting a change.', 409);
+    const { path: root, commit: base } = resolved;
     await client.models(); // Register the subscription model on this bridge connection before creating a chat.
     const label = typeof body.target.label === 'string' ? body.target.label.slice(0, 300) : '';
     const request = body.request.trim(), id = randomUUID();
     const slug = request.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 42) || 'change';
     const branch = `improve/${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${slug}-${id.slice(0, 8)}`;
-    const base = await git(root, 'rev-parse', 'HEAD');
     const cwd = path.join(stateDir, 'worktrees', id); await fs.mkdir(path.dirname(cwd), { recursive: true });
     await git(root, 'worktree', 'add', '-b', branch, cwd, base);
     const row = { id, cwd, branch, base, request, target: selected, status: 'starting', thread: null, checks: null };

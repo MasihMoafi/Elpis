@@ -108,4 +108,22 @@ async function optionsCut(trigger) {
   await list.waitFor({ state: 'hidden' });
   return cut;
 }
-module.exports = { chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, sidebar };
+/** A disabled primary action must name its missing requirement visibly beside the button, including for keyboard users. */
+async function assertDialogActionsExplained(dialog, expected) {
+  const assert = require('node:assert/strict');
+  const actions = dialog.locator('[data-slot="alert-dialog-footer"] button:disabled').filter({ hasNotText: /^(Cancel|Close)$/ });
+  assert.ok(await actions.count(), 'expected an unavailable action');
+  for (const action of await actions.all()) {
+    const description = await action.getAttribute('aria-describedby');
+    assert.ok(description, `${await action.innerText()} is unavailable without an associated reason`);
+    const reasons = [];
+    for (const id of description.split(/\s+/)) {
+      const reason = dialog.locator(`[id="${id}"]`);
+      assert.equal(await reason.isVisible(), true, `reason ${id} is not visible`);
+      assert.equal(await reason.evaluate(node => !!node.closest('[data-slot="alert-dialog-footer"]')), true, 'reason must be beside the action');
+      reasons.push(await reason.innerText());
+    }
+    if (expected) assert.match(reasons.join(' '), expected);
+  }
+}
+module.exports = { assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, sidebar };

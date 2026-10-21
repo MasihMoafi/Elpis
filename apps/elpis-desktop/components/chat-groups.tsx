@@ -99,7 +99,7 @@ export function GroupNameDialog({ open, state, group, switches, onSave, onClose 
         {shown && <p id="group-name-problem" role="alert" className="text-sm text-destructive">{problem}</p>}
         <AlertDialogFooter>
           <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
-          <Button type="submit" disabled={!!problem}>{group ? "Save" : "Create group"}</Button>
+          <Button type="submit" disabled={!!problem} disabledReason={problem || undefined}>{group ? "Save" : "Create group"}</Button>
         </AlertDialogFooter>
       </form>
     </AlertDialogContent>

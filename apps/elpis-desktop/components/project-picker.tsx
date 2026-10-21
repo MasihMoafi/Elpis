@@ -115,7 +115,7 @@ export function ProjectDialog({ projects, editing, onClose, onSave }: {
       <label className="field">Working folder<Input aria-label="Workspace directory" value={cwd} onChange={e => { setCwd(e.target.value); setError(""); }} placeholder="Absolute folder path" maxLength={4096} required disabled={busy} /></label>
       {typeof window !== "undefined" && window.elpisDesktop?.chooseFolder && <Button type="button" variant="outline" onClick={() => void browse()} disabled={busy}><FolderIcon size={15} />Choose folder…</Button>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      <AlertDialogFooter><Button type="button" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || !cwd.trim()}>{busy ? "Saving…" : "Save project"}</Button></AlertDialogFooter>
+      <AlertDialogFooter><Button type="button" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || !cwd.trim()} disabledReason={busy ? "Saving the project…" : "Choose a project folder."}>{busy ? "Saving…" : "Save project"}</Button></AlertDialogFooter>
     </form>
   </AlertDialogContent></AlertDialog>;
 }

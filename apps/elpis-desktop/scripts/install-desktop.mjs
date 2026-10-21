@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mjs';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
+import { durableSourceCheckout } from '../bridge/improve-source.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -23,6 +24,13 @@ const approvedLooks = JSON.parse(fs.readFileSync(new URL('../approved-looks.json
 const missingCommit = 'The selected installation records no source commit, so this install could drop its fixes; integrate it first.';
 const name = process.argv[2], release = process.argv.includes('--release'), actions = process.argv.includes('--actions'), rollback = process.argv.includes('--rollback');
 const gh = args => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
+
+/** Local installation metadata, derived from Git rather than the disposable checkout used to build/install. */
+export async function recordSourceCheckout(cwd, destination) {
+  const source = await durableSourceCheckout(cwd);
+  if (!source) throw new Error('Cannot locate the durable Elpis source checkout for this installation.');
+  fs.writeFileSync(path.join(destination, 'source.json'), JSON.stringify(source), { mode: 0o600, flag: 'wx' });
+}
 
 /** The commit an installation was built from: the renderer's recorded commit, else the NAME-<commit> suffix of its folder. */
 export function installationCommit(version) {
@@ -88,6 +96,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
     '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...renderer], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
   if (actions) await verifyRendererReceipt({ root, out: path.join(destination, 'app/out'), commit });
   await verifyPackagedSources({ root, destination, commit });
+  await recordSourceCheckout(root, destination);
   const staged = `${link}.new-${process.pid}`;
   fs.symlinkSync(path.join(destination, 'launch'), staged);
   assertSourceCommit(root, commit);

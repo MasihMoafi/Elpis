@@ -55,7 +55,7 @@ export function RewindDialog({ threadId, turnId, prompt, turns, onConfirm, onClo
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>
         <AlertDialogClose render={<Button type="button" variant="outline" autoFocus disabled={busy} />}>Cancel</AlertDialogClose>
-        <Button type="button" variant="destructive" disabled={busy || !preview} onClick={() => void rewind()}>{busy ? "Rewinding…" : "Rewind"}</Button>
+        <Button type="button" variant="destructive" disabled={busy || !preview} disabledReason={busy ? "Rewinding the conversation…" : error || "A rewind preview is required. Wait for it to load, or close and try again."} onClick={() => void rewind()}>{busy ? "Rewinding…" : "Rewind"}</Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>;

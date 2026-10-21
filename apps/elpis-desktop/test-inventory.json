@@ -1,5 +1,6 @@
 {
   "fast": [
+    "tests/dialog-actions.test.cjs",
     "tests/install-forward.test.mjs",
     "tests/account-events.test.cjs",
     "tests/config-sections.test.mjs",
@@ -284,6 +285,7 @@
     "tests/context-files.runtime.mjs",
     "tests/experiment-lab.runtime.mjs",
     "tests/improve-capture.runtime.mjs",
+    "tests/improve-installed.runtime.cjs",
     "tests/love-agents-live.runtime.mjs",
     "tests/love-spot-talk.runtime.mjs",
     "tests/project-journey.runtime.mjs",

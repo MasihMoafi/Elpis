@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type Thread } from "@/lib/api";
 import "@/lib/desktop";
@@ -24,18 +24,20 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
   const [menu, setMenu] = useState<HTMLElement | null>(null), [fallback, setFallback] = useState<{ x: number; y: number } | null>(null);
   const pointed = useRef<Element | null>(null), contextActive = useRef(false);
   const [source, setSource] = useState<{ path: string | null; configured: boolean } | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
   useEffect(() => {
     if (!open) return;
     let disposed = false;
-    void api<{ path: string | null; configured: boolean }>("/improvements/source").then(value => { if (!disposed) setSource(value); }).catch(cause => { if (!disposed) setError(message(cause)); });
+    setSource(null); setSourceLoading(true);
+    void api<{ path: string | null; configured: boolean }>("/improvements/source").then(value => { if (!disposed) setSource(value); }).catch(cause => { if (!disposed) setError(message(cause)); }).finally(() => { if (!disposed) setSourceLoading(false); });
     return () => { disposed = true; };
   }, [open]);
   async function chooseSource() {
-    setError("");
+    setError(""); setBusy(true);
     try {
+      if (!window.elpisDesktop?.chooseFolder) throw Error("Open the desktop app to choose an Elpis source folder.");
       const path = await window.elpisDesktop?.chooseFolder?.();
       if (!path) return;
-      setBusy(true);
       setSource(await api<{ path: string; configured: boolean }>("/improvements/source", { path }));
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
@@ -46,8 +48,12 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     contextActive.current = false; setMenu(null); setFallback(null); setError(""); setTarget(null); setRequest(""); setBusy(true);
     try {
       if (!window.elpisDesktop?.improve) throw Error("Open Elpis desktop to capture the region you want to change.");
-      const region = element ?? document.querySelector(".app-shell"), owner = region?.closest("[data-elpis-source]");
+      const pointed = element ?? document.querySelector(".app-shell");
+      let owner = pointed?.closest("[data-elpis-source]");
       const id = owner?.getAttribute("data-elpis-source");
+      // The source mapper marks every DOM node in a component. Capture its outer row, not just the clicked text.
+      while (owner?.parentElement && owner.parentElement.getAttribute("data-elpis-source") === id) owner = owner.parentElement;
+      const region = owner ?? pointed;
       const map: Record<string, { component: string; file: string }> = await fetch("/elpis-source-map.json").then(response => { if (!response.ok) throw Error("This build has no Elpis source map. Rebuild the desktop app."); return response.json(); });
       if (!region || !id || !Object.hasOwn(map, id)) throw Error("This region has no source entry in this build. Rebuild the desktop app.");
       await paint();
@@ -102,7 +108,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     if (shownReview.current !== version) { shownReview.current = version; setReviewOpen(true); }
   }, [change]);
   async function start() {
-    if (!target || busy) return;
+    if (startReason || !target) return;
     setBusy(true); setError("");
     try {
       const next = await api<Change>("/improvements", { request, target: { id: target.id, label: target.label, image: target.image } });
@@ -124,7 +130,12 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
-  const reasonId = useId(), previewReasonId = useId();
+  const startReason = busy ? "Wait for the current action to finish."
+    : !target ? "Capture a region to change. Close this dialog and choose Change this… on the region again."
+    : sourceLoading || source === null && !error ? "Looking for the Elpis source folder…"
+    : !source?.configured ? "Choose an Elpis source folder to start a change."
+    : !request.trim() ? "Describe what should change."
+    : "";
   const failedCheck = change?.checks?.commands.find(command => command.code !== 0);
   const blockedReason = !change ? "Loading change…"
     : change.status === "checking" ? "Checking build and tests…"
@@ -146,26 +157,25 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
         <AlertDialogHeader><AlertDialogTitle>Improve Elpis</AlertDialogTitle><AlertDialogDescription>Describe the change. Elpis will open a chat in a separate source worktree.</AlertDialogDescription></AlertDialogHeader>
         <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border p-3 text-sm">
           <div className="min-w-0 flex-1"><p className="font-medium">Elpis source folder</p><p className="truncate text-muted-foreground" title={source?.path || undefined}>{source?.path || "Choose the source checkout for your changes."}</p></div>
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void chooseSource()}>Choose source folder</Button>
+          <Button type="button" variant="outline" size="sm" disabled={busy || sourceLoading} onClick={() => void chooseSource()}>Choose source folder</Button>
         </div>
-        {target && <><p className="text-sm text-muted-foreground">{target.component} · {target.file}</p><img className="elpis-improve-region" src={target.image} alt={`Pointed region: ${target.label.slice(0, 80)}`} /></>}
+        {target && <div className="grid min-w-0 gap-2"><div className="min-w-0 text-sm text-muted-foreground"><p>{target.component}</p><p data-slot="improve-source-path" className="truncate font-mono text-xs" title={target.file}>{target.file}</p></div><div className="elpis-improve-preview"><img className="elpis-improve-region" src={target.image} alt={`Pointed region: ${target.label.slice(0, 80)}`} /></div></div>}
         <label className="grid gap-2 text-sm">What should change?<Textarea aria-label="What should change?" value={request} maxLength={16000} onChange={event => setRequest(event.target.value)} disabled={busy} autoFocus /></label>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button><Button disabled={busy || !source?.configured || !target || !request.trim()} onClick={() => void start()}>{busy ? "Starting…" : "Start change"}</Button></AlertDialogFooter>
+        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button><Button disabled={!!startReason} disabledReason={startReason} onClick={() => void start()}>{busy ? "Starting…" : "Start change"}</Button></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
     <AlertDialog open={reviewOpen} onOpenChange={value => { if (!busy) setReviewOpen(value); }}>
       <AlertDialogContent role="dialog" className="elpis-improve-dialog elpis-improve-review">
         <AlertDialogHeader><AlertDialogTitle>Review Elpis change</AlertDialogTitle><AlertDialogDescription>{change?.branch ?? "Loading change…"}</AlertDialogDescription></AlertDialogHeader>
-        <p id={reasonId} role="status" className="text-sm">{blockedReason || (change?.status === "ready" ? "Ready for coordinator review. Your note has been written." : "Build and tests passed")}</p>
-        {!blockedReason && previewReason && <p id={previewReasonId} className="text-sm text-muted-foreground">{previewReason}</p>}
+        {!blockedReason && <p role="status" className="text-sm">{change?.status === "ready" ? "Ready for coordinator review. Your note has been written." : "Build and tests passed"}</p>}
         {change?.dirty && <p className="text-sm">There are uncommitted changes. Commit and check them before continuing.</p>}
         {change?.diff && <div className="diff-body elpis-improve-diff">{change.diff.split(/(?=^diff --git )/m).filter(Boolean).map((file, index) => <section key={index}><p className="px-2 py-1 text-xs font-mono">{file.split("\n")[0]}</p>{/^@@ /m.test(file) ? <DiffLines lines={parseDiff(file)} /> : <pre className="elpis-improve-log">{file}</pre>}</section>)}</div>}
         {change?.truncated && <p className="text-sm">The diff is truncated. Review the full diff in the worktree before keeping.</p>}
         {change?.checks?.commands.map((command, index) => <details key={index} open={command.code !== 0} className="text-sm"><summary>{command.command} · exit {command.code}</summary><pre className="elpis-improve-log">{command.output || (command.code !== 0 ? `Check exited with code ${command.code} without output.` : "")}</pre></details>)}
         {(error || change?.error) && <p role="alert" className="text-sm text-destructive">{error || change?.error}</p>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
-        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} title={change?.status === "checking" ? "Checking build and tests…" : busy ? "Wait for the current action to finish." : undefined} onClick={() => void action("check")}>Check build &amp; tests</Button><Button variant="outline" disabled={!!previewReason} title={previewReason || undefined} aria-describedby={blockedReason ? reasonId : previewReason ? previewReasonId : undefined} onClick={() => void action("try")}>Try it</Button><Button disabled={!canKeep} title={blockedReason || undefined} aria-describedby={blockedReason ? reasonId : undefined} onClick={() => void action("keep")}>Keep</Button></AlertDialogFooter>
+        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} title={change?.status === "checking" ? "Checking build and tests…" : busy ? "Wait for the current action to finish." : undefined} onClick={() => void action("check")}>Check build &amp; tests</Button><Button variant="outline" disabled={!!previewReason} title={previewReason || undefined} onClick={() => void action("try")}>Try it</Button><Button disabled={!canKeep} disabledReason={blockedReason} title={blockedReason || undefined} onClick={() => void action("keep")}>Keep</Button></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>;

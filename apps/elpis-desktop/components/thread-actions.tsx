@@ -116,7 +116,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <AlertDialogFooter>
             <AlertDialogClose render={<Button type="button" variant="outline" disabled={busy} />}>Cancel</AlertDialogClose>
-            <Button type="submit" disabled={busy || !name.trim()}>{busy ? "Saving…" : "Save"}</Button>
+            <Button type="submit" disabled={busy || !name.trim()} disabledReason={busy ? "Saving the conversation name…" : "Enter a conversation name."}>{busy ? "Saving…" : "Save"}</Button>
           </AlertDialogFooter>
         </form>
       </AlertDialogContent>
