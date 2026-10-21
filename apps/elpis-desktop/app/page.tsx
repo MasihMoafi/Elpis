@@ -373,6 +373,8 @@ export default function Home() {
   const [plans, setPlans] = useState<Record<string, TaskPlan>>({});
   // A fast turn can finish over SSE before its HTTP start response arrives.
   const completedTurns = useRef(new Set<string>());
+  // A resume snapshot must not overwrite a turn event that arrived while it was being read.
+  const turnRevisions = useRef<Record<string, number>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [activity, setActivity] = useState<Record<string, string>>({});
   const [liveError, setLiveError] = useState<Record<string, string>>({});
@@ -516,6 +518,15 @@ export default function Home() {
     } catch (cause) { setSearchResults(previous => previous.query === query ? { ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : previous); }
   }
 
+  const reconcileLiveThread = useCallback((id: string, live: Live) => {
+    remember(live.thread); upsertThread(live.thread); rememberModes(id, live);
+    if (selectedRef.current?.id === id) select({ ...selectedRef.current, ...live.thread });
+    if (live.thread.status) statusRevisions.current[id] = (statusRevisions.current[id] ?? 0) + 1;
+    turnRevisions.current[id] = (turnRevisions.current[id] ?? 0) + 1;
+    setActiveTurns(previous => live.activeTurnId && !completedTurns.current.has(live.activeTurnId) ? { ...previous, [id]: live.activeTurnId } : without(previous, id));
+    setLiveError(previous => without(previous, id));
+  }, [select, upsertThread]);
+
   const loadThread = useCallback(async (thread: Thread) => {
     markRead(thread.id);
     // A chat that is already open in another tab brings that tab forward instead of opening twice.
@@ -534,13 +545,12 @@ export default function Home() {
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
     try {
+      const turnRevision = turnRevisions.current[thread.id];
       const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
-      remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); rememberModes(thread.id, live);
-      if (live.activeTurnId && !completedTurns.current.has(live.activeTurnId)) setActiveTurns(prev => ({ ...prev, [thread.id]: live.activeTurnId! }));
-      setLiveError(prev => without(prev, thread.id));
+      if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, upsertThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
+  }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -592,30 +602,39 @@ export default function Home() {
     function disconnected() { wasConnected = false; recovery++; setConnected(false); setApprovals([]); }
     async function reconnect() {
       const attempt = ++recovery, thread = selectedRef.current, requestId = request.current;
+      const ids = new Set(tabsRef.current.tabs.flatMap(tab => tab.threadId ? [tab.threadId] : []));
+      if (thread) ids.add(thread.id);
+      const current = () => !disposed && attempt === recovery;
       setAccountRefresh(value => value + 1);
       void refreshModels();
-      try {
-        await refreshThreads();
-        await reloadSettings().catch(() => null);
-        if (disposed || attempt !== recovery) return;
-        if (!thread) return;
+      // A list page can omit open chats or fail; each tab still needs its own authoritative turn state.
+      void refreshThreads().catch(error => { if (current()) setError(String(error)); });
+      void reloadSettings().catch(() => null);
+      await Promise.all([...ids].map(async id => {
+        const open = () => current() && !hidden.current.has(id) && (selectedRef.current?.id === id || tabsRef.current.tabs.some(tab => tab.threadId === id));
+        const turnRevision = turnRevisions.current[id];
         const historyRevision = liveRevision.current;
-        const history = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
-        if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        select(remember(history.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...history.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(history.nextCursor);
-        const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
-        if (disposed || attempt !== recovery || request.current !== requestId || selectedRef.current?.id !== thread.id) return;
-        remember(live.thread); select({ ...selectedRef.current, ...live.thread }); upsertThread(live.thread); rememberModes(thread.id, live);
-        setActiveTurns(previous => live.activeTurnId && !completedTurns.current.has(live.activeTurnId) ? { ...previous, [thread.id]: live.activeTurnId } : without(previous, thread.id));
-        setLiveError(previous => without(previous, thread.id));
-      } catch (error) {
-        if (!disposed && attempt === recovery && thread) setLiveError(previous => ({ ...previous, [thread.id]: error instanceof Error ? error.message : String(error) }));
-      }
+        const shown = () => open() && request.current === requestId && selectedRef.current?.id === id;
+        // History and resume are independent: a refused history read must not leave a finished turn running.
+        const history = thread?.id === id ? (async () => {
+          const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100`);
+          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); }
+        })() : Promise.resolve();
+        const resume = (async () => {
+          const live = await api<Live>(`/threads/${encodeURIComponent(id)}/resume`, {});
+          if (open() && live.thread?.id === id && turnRevisions.current[id] === turnRevision) reconcileLiveThread(id, live);
+        })();
+        const results = await Promise.allSettled([history, resume]);
+        if (!open()) return;
+        const failed = results.find(result => result.status === "rejected");
+        if (failed?.status === "rejected") setLiveError(previous => ({ ...previous, [id]: failed.reason instanceof Error ? failed.reason.message : String(failed.reason) }));
+      }));
     }
     async function initialize() {
       try {
         await sessionReady();
-        const health = await api<{ connected: boolean }>("/health"); if (disposed) return; wasConnected = health.connected; setConnected(health.connected);
+        // The first stream subscription also catches anything that ended between the initial reads and listening.
+        const health = await api<{ connected: boolean }>("/health"); if (disposed) return; setConnected(health.connected);
         void refreshModels();
         await refreshThreads();
         await reloadSettings().catch(() => null); if (disposed) return;
@@ -638,6 +657,7 @@ export default function Home() {
           notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
           if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
+            turnRevisions.current[threadId] = (turnRevisions.current[threadId] ?? 0) + 1;
             planTurns.current.delete(threadId);
             setAttention(previous => ({ unread: previous.unread.filter(id => id !== threadId), plans: without(previous.plans, threadId) }));
           }
@@ -656,6 +676,8 @@ export default function Home() {
           if (method === "turn/started" && !completedTurns.current.has(params.turn.id)) { setActiveTurns(prev => ({ ...prev, [params.threadId]: params.turn.id })); setRuntimeNotices(prev => without(prev, params.threadId)); setFailedTurns(prev => without(prev, params.threadId)); patchThread(params.threadId, { status: { type: "active" } }); }
           if (method === "turn/started") setStoppedTurns(prev => without(prev, params.threadId));
           if (method === "turn/completed") {
+            turnRevisions.current[params.threadId] = (turnRevisions.current[params.threadId] ?? 0) + 1;
+            statusRevisions.current[params.threadId] = (statusRevisions.current[params.threadId] ?? 0) + 1;
             completedTurns.current.add(params.turn.id);
             setStoppedTurns(prev => params.turn?.status === "interrupted" ? { ...prev, [params.threadId]: params.turn.id } : without(prev, params.threadId));
             setActiveTurns(prev => prev[params.threadId] !== params.turn.id ? prev : without(prev, params.threadId));
@@ -675,7 +697,7 @@ export default function Home() {
           if (method === "thread/status/changed" && params.status) patchThread(params.threadId, { status: params.status });
           // The engine's word that a chat is no longer running ends its turn here too, even if that turn's own end was
           // missed (another window, a reconnect, a dropped stream), so a finished chat never keeps offering a follow-up.
-          if (method === "thread/status/changed" && params.status && params.status.type !== "active") setActiveTurns(prev => without(prev, params.threadId));
+          if (method === "thread/status/changed" && params.status && params.status.type !== "active") { turnRevisions.current[params.threadId] = (turnRevisions.current[params.threadId] ?? 0) + 1; setActiveTurns(prev => without(prev, params.threadId)); }
           // The engine's applied permission mode, from this or any other client.
           if (method === "thread/settings/updated" && params.permissions) setThreadModes(prev => ({ ...prev, [params.threadId]: params.permissions }));
           if (method === "thread/settings/updated" && params.threadSettings?.model) {
@@ -705,7 +727,7 @@ export default function Home() {
       } catch (e) { if (!disposed) setError(String(e)); }
     }
     initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels]);
+  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = true) => {
     if (childPaging.current.has(id)) return;

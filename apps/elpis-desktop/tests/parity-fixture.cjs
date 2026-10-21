@@ -111,6 +111,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const close = async () => { await browser.close(); for (const stream of loveStreams) stream.end(); await new Promise(resolve => server.close(resolve)); };
   /** How many pages are listening to /api/events: an event emitted before a pane subscribes never reaches it. */
   const listening = () => streams.size;
-  return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening };
+  const disconnectEvents = () => { for (const stream of streams) stream.end(); };
+  return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening, disconnectEvents };
 }
 module.exports = { fixture, CWD, FILES, TURNS };
