@@ -6,8 +6,8 @@ expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapsho
 80 columns, 10 rows, running=false, queued=false
 Conversation                                                         ╱──────────
                                                                     │ [●━━━] OFF
-⚠ Heads up, you have less than 10% of your 5h limit left. Run /usage ╲──────────
-  breakdown.
+⚠ Heads up, you have less than 10% of your 5h limit left. Run        ╲──────────
+  /usage for a breakdown.
                                                    ⚠ 5h limit: 8% left · /usage
 
 › Ask Elpis to do anything
@@ -17,8 +17,8 @@ Conversation                                                         ╱──�
 
 80 columns, 12 rows, running=true, queued=false
                                                                     ╱──────────│
-⚠ Heads up, you have less than 5% of your 5h limit left. Run /usage│ [●━━━] OFF│
-  breakdown.                                                        ╲──────────┃
+⚠ Heads up, you have less than 5% of your 5h limit left. Run       │ [●━━━] OFF│
+  /usage for a breakdown.                                           ╲──────────┃
 
 • Elpising (0s • esc to interrupt)
 
@@ -57,8 +57,8 @@ Conversation                                                         ╱──�
 Conversation row 18                                                            │
 Conversation row 19                                                 ╱──────────│
                                                                    │ [●━━━] OFF│
-⚠ Heads up, you have less than 5% of your 5h limit left. Run /usage ╲──────────┃
-  breakdown.                                                                   ┃
+⚠ Heads up, you have less than 5% of your 5h limit left. Run        ╲──────────┃
+  /usage for a breakdown.                                                      ┃
 
 • Elpising (0s • esc to interrupt)
 

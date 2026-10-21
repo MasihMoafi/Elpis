@@ -5,9 +5,8 @@ const assert = require('node:assert/strict');
 const { execFileSync, spawn } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { Provider } = require('../lib/mock-provider.js');
+const { Provider, message } = require('../lib/mock-provider.js');
 
 const repo = path.resolve(__dirname, '../..');
 const onLabel = '[━━━●] ON';
@@ -22,7 +21,9 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { interrupt
 
 function options() {
   const args = process.argv.slice(2);
-  assert.equal(args.length, 6, 'Usage: ledger-close-placement.cjs --binary PATH --output EMPTY_DIR --phase baseline|candidate');
+  const smoke = args.at(-1) === '--smoke';
+  if (smoke) args.pop();
+  assert.equal(args.length, 6, 'Usage: ledger-close-placement.cjs --binary PATH --output EMPTY_DIR --phase baseline|candidate [--smoke]');
   const values = {};
   for (let i = 0; i < args.length; i += 2) {
     assert(['--binary', '--output', '--phase'].includes(args[i]) && !values[args[i]], `Unexpected or duplicate option: ${args[i]}`);
@@ -34,7 +35,7 @@ function options() {
   const output = path.resolve(values['--output']);
   fs.mkdirSync(output, { recursive: true });
   assert.equal(fs.readdirSync(output).length, 0, 'Output directory must be empty; existing evidence is never overwritten');
-  return { binary, output, phase: values['--phase'] };
+  return { binary, output, phase: values['--phase'], smoke };
 }
 
 async function sha256(filename) {
@@ -55,9 +56,10 @@ async function stopServer(server) {
   }
 }
 
-async function check({ binary, output, phase }, width, light) {
+async function check({ binary, output, phase, smoke }, width, light) {
   const label = `${width}-${light ? 'light' : 'dark'}`;
-  const fixtureBase = path.join(os.homedir(), '.cache', 'elpis-tests');
+  // Keep owned profiles on the evidence directory's mount, where gio trash works.
+  const fixtureBase = output;
   assert(Buffer.byteLength(path.join(fixtureBase, 't7-ledger-XXXXXX', 'tmux')) < 100, 'Home-cache path is too long for a private tmux socket');
   fs.mkdirSync(fixtureBase, { recursive: true, mode: 0o700 });
   const fixture = fs.mkdtempSync(path.join(fixtureBase, 't7-ledger-'));
@@ -140,6 +142,12 @@ async function check({ binary, output, phase }, width, light) {
     key('Enter');
     await until(ledgerOpen);
     await pause(200);
+    // Real native transcript rendering, with a deterministic local inference response.
+    // Dense lines expose both covered glyphs and a missing gap; idle screens cannot.
+    provider.actions.push(message(Array(80).fill('X'.repeat(600)).join('\n')));
+    literal('Render the Ledger clearance fixture'); key('Enter');
+    await until(text => text.includes('X'.repeat(20)) && !text.includes('esc to interrupt'));
+    await pause(200);
     const text = save('open');
     const lines = text.split('\n');
     const titleY = lines.findIndex(line => line.includes('CONTEXT LEDGER'));
@@ -151,7 +159,10 @@ async function check({ binary, output, phase }, width, light) {
     result.geometry = { controlY, titleY, left, buttonWidth: [...controlLabel].length };
     result.layoutPass = controlLabel === onLabel && controlY === 0 && titleY === 0 && !/[╳×✕]/u.test(text);
     result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; expected title and ON toggle together on row 0, with no Close row`;
-    const ledgerLeft = lines[titleY].indexOf('│');
+    const ledgerLeft = lines[titleY].indexOf('CONTEXT LEDGER') - 2;
+    const xExtent = text => Math.max(-1, ...text.split('\n').map(row =>
+      row.includes('X'.repeat(8)) ? row.lastIndexOf('X') : -1));
+    const openExtent = xExtent(text);
     result.visibleFixtureSourceRows = lines.map(line => line.slice(Math.max(0, ledgerLeft))).filter(line => line.includes('AGENTS.md'));
     result.sourceFilenameWrappingChecked = false;
     must(lines[controlY].slice(left) === controlLabel + ' ', 'Painted toggle label or right margin differs');
@@ -173,8 +184,11 @@ async function check({ binary, output, phase }, width, light) {
       key('Tab'); await until(text => !ledgerOpen(text));
       literal('placement probe');
       await until(text => text.includes('› placement probe'));
+      // Browse dense rows above completion metadata, including on the shortest viewport.
+      for (let wheel = 0; wheel < 8; wheel++) literal('\x1b[<64;3;3M');
+      await pause(150);
       result.placements = [];
-      for (const height of [10, 11, 12, 13, 14, 8, 7, 6, 40]) {
+      for (const height of [...(smoke ? [10] : Array.from({ length: 31 }, (_, i) => i + 10)), 8, 7, 6, 40]) {
         tm('resize-window', '-t', 'check', '-x', String(width), '-y', String(height));
         await pause(200);
         const closed = save(`closed-${height}`);
@@ -186,27 +200,37 @@ async function check({ binary, output, phase }, width, light) {
         const tabRows = rows.flatMap((row, y) => /╱|╲/u.test(row) || row.includes(offLabel) ? [y] : []);
         const expected = transcriptHeight >= 3 ? 3 : 0;
         const centred = expected === 0 || tabRows[0] === Math.floor((transcriptHeight - 3) / 2);
-        const pass = tabRows.length === expected && centred && tabRows.every(y => y < transcriptHeight);
-        result.placements.push({ height, transcriptHeight, tabRows, pass });
+        const tabX = width - 1 - 12; // dense fixture has a persistent scrollbar
+        const clear = expected === 0 || rows.slice(0, transcriptHeight).every(row =>
+          (row[tabX - 1] || ' ') === ' ' && !row.slice(tabX, width - 1).includes('X'));
+        const reachesEdge = expected === 0 || xExtent(rows.slice(0, transcriptHeight).join('\n')) === tabX - 2;
+        const pass = tabRows.length === expected && centred && tabRows.every(y => y < transcriptHeight) && clear && reachesEdge;
+        result.placements.push({ height, transcriptHeight, tabRows, clear, reachesEdge, pass });
         must(pass, `${width}x${height}: tab must be centred in ${transcriptHeight} transcript rows, above the gap and bottom pane`);
+        must(clear, `${width}x${height}: transcript text occupies the tab gutter or its blank neighbour`);
       }
       result.placementPass = result.placements.every(item => item.pass);
       const closed = capture(false).split('\n');
       const tabY = closed.findIndex(row => row.includes(offLabel));
       assert(tabY >= 0, 'Tall terminal must retain the OFF tab');
       const tabX = closed[tabY].indexOf(offLabel) - 2;
+      key('PageUp'); await pause(150);
+      const scrolled = save('scrolled').split('\n');
+      must(scrolled.findIndex(row => row.includes(offLabel)) === tabY && scrolled[tabY].indexOf(offLabel) - 2 === tabX, 'Scrolling moved the closed tab');
       click(tabX - 1, tabY); await pause(120);
       must(!ledgerOpen(capture(false)), 'A click outside the tab reopened Ledger');
       click(tabX + 2, tabY); await until(ledgerOpen);
       result.tabClickReopens = true;
-      save('reopened');
-      key('M-c'); key('Escape'); await until(text => !ledgerOpen(text));
+      const reopened = save('reopened');
+      result.openWrappingUnchanged = xExtent(reopened) === openExtent;
+      must(result.openWrappingUnchanged, 'The open Ledger acquired a closed-tab gutter');
+      key('M-c'); key('Escape'); key('Escape'); await until(text => !ledgerOpen(text));
       key('Tab'); await until(ledgerOpen);
       key('Tab'); await until(text => !ledgerOpen(text));
       result.keyboard = ['Alt+C', 'Escape', 'Tab'];
     } else {
       result.placementPass = false;
-      key('Escape'); await until(text => !ledgerOpen(text));
+      key('Escape'); key('Escape'); await until(text => !ledgerOpen(text));
       key('Tab'); await until(ledgerOpen);
       key('Tab'); await until(text => !ledgerOpen(text));
       result.keyboard = ['Escape', 'Tab'];
@@ -222,10 +246,10 @@ async function check({ binary, output, phase }, width, light) {
     try { if (provider.server) provider.close(); } catch (error) { result.errors.push(error.stack); }
     try { await stopServer(server); } catch (error) { result.errors.push(error.stack); }
     result.modelRequests = provider.requests.length + provider.titleRequests.length;
-    must(result.modelRequests === 0, 'Idle UI invoked the mock model provider');
+    must(provider.requests.length === 1 && provider.titleRequests.length <= 1, 'Expected one fixture response and at most one session title');
     must(!provider.error, `Unexpected mock-provider traffic: ${provider.error?.message}`);
     try {
-      execFileSync('gio', ['trash', fixture], { timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+      execFileSync('gio', ['trash', fixture], { env: { ...process.env, XDG_DATA_HOME: path.join(output, 'trash-data') }, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
       assert(!fs.existsSync(fixture), 'Owned fixture still exists after gio trash');
       result.privateProfileTrashed = true;
     } catch (error) {
@@ -239,22 +263,32 @@ async function check({ binary, output, phase }, width, light) {
 }
 
 (async () => {
+  if (process.argv[2] === '--snapshot-only') {
+    const file = path.join(repo, 'codex-rs/tui/src/app/snapshots/codex_tui__app__composer_hints__tests__composer_usage_notice.snap');
+    const text = fs.readFileSync(file, 'utf8').split('---\n').slice(2).join('---\n');
+    const first = text.split('\n').slice(1, 5);
+    const content = first.map(row => row.slice(0, 67).trim()).filter(Boolean).join(' ');
+    assert(content.includes('Run /usage for a breakdown.'), 'A105: usage notice glyphs are covered by or touching the tab');
+    console.log('PASS A105: complete usage notice survives wrapping beside the closed tab');
+    return;
+  }
   const config = options();
   const binarySha256 = await sha256(config.binary);
   const checks = [];
-  for (const width of [100, 140]) for (const light of [false, true]) {
+  for (const width of config.smoke ? [80] : [80, 120, 200]) for (const light of config.smoke ? [false] : [false, true]) {
     if (!interrupted) checks.push(await check(config, width, light));
   }
   const result = {
     ...config, binarySha256, binaryUnchanged: binarySha256 === await sha256(config.binary), interrupted: interrupted || null,
     sourceFixture: path.relative(repo, __filename), harnessSha256: await sha256(__filename), checks,
-    allPositiveControlsPass: checks.length === 4 && checks.every(check => !check.errors.length && check.positiveMouseCells === check.geometry.buttonWidth && check.privateProfileTrashed),
+    allPositiveControlsPass: checks.length === (config.smoke ? 1 : 6) && checks.every(check => check.positiveMouseCells === check.geometry?.buttonWidth && check.privateProfileTrashed),
     layoutPasses: checks.filter(check => check.layoutPass === true).length,
     layoutFailures: checks.filter(check => check.layoutPass === false).length,
   };
   result.pass = !interrupted && result.binaryUnchanged && result.allPositiveControlsPass && (config.phase === 'baseline'
-    ? checks.every(check => !check.layoutPass || !check.placementPass)
-    : result.layoutPasses === 4 && checks.every(check => check.placementPass && check.tabClickReopens));
+    ? checks.every(check => (!check.layoutPass || !check.placementPass) && check.errors.every(error =>
+      /^\d+x\d+: (tab must be centred|transcript text occupies)/u.test(error)))
+    : result.layoutPasses === checks.length && checks.every(check => !check.errors.length && check.placementPass && check.tabClickReopens && check.openWrappingUnchanged));
   fs.writeFileSync(path.join(config.output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
   if (!result.pass) process.exitCode = 1;
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

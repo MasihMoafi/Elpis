@@ -39,13 +39,8 @@ impl App {
         false
     }
 
-    fn sync_owned_transcript(&mut self, width: u16) -> bool {
+    fn sync_owned_transcript(&mut self, transcript_width: u16) -> bool {
         let chat_widget = &self.chat_widget;
-        let scrollbar_width = u16::from(self.transcript_view.reserves_scrollbar());
-        let transcript_width = chat_widget
-            .history_wrap_width(width)
-            .saturating_sub(scrollbar_width)
-            .max(1);
         let view = &mut self.transcript_view;
         view.mouse_scroll_speed = self
             .local_settings
@@ -59,10 +54,24 @@ impl App {
             .copy_on_select(&codex_terminal_detection::terminal_info());
         view.set_keymap_bindings(&self.keymap);
         view.set_presentation(view.is_detailed(), chat_widget.history_render_mode());
+        Self::sync_owned_transcript_tail(
+            chat_widget,
+            view,
+            &self.transcript_cells,
+            transcript_width,
+        )
+    }
+
+    fn sync_owned_transcript_tail(
+        chat_widget: &crate::chatwidget::ChatWidget,
+        view: &mut crate::transcript_view::TranscriptView,
+        cells: &[Arc<dyn crate::history_cell::HistoryCell>],
+        transcript_width: u16,
+    ) -> bool {
         let active_key = chat_widget.active_cell_transcript_key();
         let detailed = view.is_detailed();
         let active_ids = chat_widget.active_activity_ids();
-        let expanded = view.sync_live_activity(&self.transcript_cells, active_ids)
+        let expanded = view.sync_live_activity(cells, active_ids)
             && chat_widget.history_render_mode() == HistoryRenderMode::Rich;
         let search_changed = view.sync_search_live_tail(transcript_width, active_key, |width| {
             chat_widget.active_cell_transcript_hyperlink_lines(width)
@@ -97,7 +106,6 @@ impl App {
         } else {
             "esc latest"
         };
-        self.sync_owned_transcript(main_width);
         let transcript_width = self
             .chat_widget
             .history_wrap_width(main_width)
@@ -123,38 +131,36 @@ impl App {
             && !self.chat_widget.is_external_writer_view())
         .then(crate::bottom_pane::ComposerGap::default);
         let mut prompt_footer = self.prompt_navigation_footer(main_width.saturating_sub(/*rhs*/ 2));
-        let chat_widget = &self.chat_widget;
-        let view = &mut self.transcript_view;
-        let active_key = chat_widget.active_cell_transcript_key();
-        view.sync_history_tail(&self.transcript_cells);
-        view.prepare_width(body_width);
-        if view.advance_search(&self.transcript_cells) {
-            tui.frame_requester().schedule_frame();
-        }
         let footer_area = crate::bottom_pane::inset_footer_hint_area(Rect::new(
             /*x*/ 0, /*y*/ 0, main_width, /*height*/ 1,
         ));
-        let footer = view.footer_with_navigation(footer_area.width, motion, latest_navigation);
+        let footer = self.transcript_view.footer_with_navigation(
+            footer_area.width,
+            motion,
+            latest_navigation,
+        );
         // Cap the whole composer (including padding and hints) at two-thirds of the screen,
         // but allow at least 8 rows on small screens, without exceeding the screen itself.
         let max_composer_height = ((u32::from(screen_size.height) * 2 / 3) as u16)
             .max(8)
             .min(screen_size.height);
         let bottom =
-            chat_widget.bottom_pane_renderable(crate::bottom_pane::ComposerRenderOptions {
-                max_height: Some(max_composer_height),
-                footer: prompt_footer.as_ref().or(footer.as_ref()),
-                command_popup_placement: if view.has_active_interaction() {
-                    crate::bottom_pane::CommandPopupPlacement::Hidden
-                } else {
-                    crate::bottom_pane::CommandPopupPlacement::Overlay
-                },
-                composer_gap: composer_gap.as_ref(),
-                working_tip,
-                context_ledger_column: true,
-                ..Default::default()
-            });
-        let dashboard_visible = chat_widget
+            self.chat_widget
+                .bottom_pane_renderable(crate::bottom_pane::ComposerRenderOptions {
+                    max_height: Some(max_composer_height),
+                    footer: prompt_footer.as_ref().or(footer.as_ref()),
+                    command_popup_placement: if self.transcript_view.has_active_interaction() {
+                        crate::bottom_pane::CommandPopupPlacement::Hidden
+                    } else {
+                        crate::bottom_pane::CommandPopupPlacement::Overlay
+                    },
+                    composer_gap: composer_gap.as_ref(),
+                    working_tip,
+                    context_ledger_column: true,
+                    ..Default::default()
+                });
+        let dashboard_visible = self
+            .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_some();
         let bottom_height = if dashboard_visible {
@@ -175,6 +181,19 @@ impl App {
         let mut footer_height_changed = false;
         let mut feedback_tick = None;
         let mut transcript_bottom = available.saturating_sub(u16::from(composer_gap.is_none()));
+        let transcript_area = Rect::new(0, 0, body_width, transcript_bottom);
+        let text_area = self
+            .chat_widget
+            .context_ledger_transcript_area(transcript_area, screen_size.width);
+        self.sync_owned_transcript(text_area.width);
+        let chat_widget = &self.chat_widget;
+        let view = &mut self.transcript_view;
+        let active_key = chat_widget.active_cell_transcript_key();
+        view.sync_history_tail(&self.transcript_cells);
+        view.prepare_width(text_area.width);
+        if view.advance_search(&self.transcript_cells) {
+            tui.frame_requester().schedule_frame();
+        }
         tui.draw(screen_size.height, |frame| {
             ratatui::widgets::Clear.render(
                 Rect::new(/*x*/ 0, /*y*/ 0, main_width, available),
@@ -182,7 +201,7 @@ impl App {
             );
             ratatui::widgets::Clear.render(ledger_area, frame.buffer);
             let mut completion_tip_area = view.render_with_turn_tip_space(
-                Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
+                text_area,
                 frame.buffer,
                 &self.transcript_cells,
                 completion_tip,
@@ -241,8 +260,20 @@ impl App {
                 // their separator. Resizing must not preserve a stale return control.
                 ratatui::widgets::Clear.render(bottom_area, frame.buffer);
                 transcript_bottom = bottom_area.y;
+                let compact_text_area = chat_widget.context_ledger_transcript_area(
+                    Rect::new(0, 0, body_width, transcript_bottom),
+                    screen_size.width,
+                );
+                if compact_text_area.width != text_area.width {
+                    Self::sync_owned_transcript_tail(
+                        chat_widget,
+                        view,
+                        &self.transcript_cells,
+                        compact_text_area.width,
+                    );
+                }
                 completion_tip_area = view.render_with_turn_tip_space(
-                    Rect::new(/*x*/ 0, /*y*/ 0, body_width, transcript_bottom),
+                    compact_text_area,
                     frame.buffer,
                     &self.transcript_cells,
                     completion_tip,

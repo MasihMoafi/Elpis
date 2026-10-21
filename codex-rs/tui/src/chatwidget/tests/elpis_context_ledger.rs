@@ -101,8 +101,16 @@ async fn a105_tab_clears_its_hitbox_when_the_transcript_has_fewer_than_three_row
         assert!(text.iter().all(|row| row.ends_with('.')));
         if height >= 3 {
             assert!(text.join("\n").contains("[●━━━] OFF"));
+            assert_eq!(
+                chat.context_ledger_transcript_area(transcript, 80).width,
+                66
+            );
         } else {
             assert!(!text.join("\n").contains("[●━━━] OFF"));
+            assert_eq!(
+                chat.context_ledger_transcript_area(transcript, 80),
+                transcript
+            );
             assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), 77, 3)));
         }
     }

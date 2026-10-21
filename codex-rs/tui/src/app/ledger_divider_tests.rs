@@ -13,6 +13,101 @@ const SIZE: Size = Size::new(/*width*/ 125, /*height*/ 40);
 const LEDGER_TOGGLE_LABEL: &str = "[━━━●] ON";
 
 #[tokio::test]
+async fn a105_closed_tab_rewraps_complete_text_instead_of_erasing_glyphs() -> Result<()> {
+    for width in [80, 120, 200] {
+        let (mut app, _events, _ops) = make_test_app_with_channels().await;
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
+        let text = "X".repeat(usize::from((width - 13) * 2));
+        app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(vec![
+            Line::from(text.clone()),
+        ]))];
+        let size = Size::new(width, 10);
+        let mut tui = crate::tui::test_support::make_test_tui_with_size(size)?;
+        tui.set_owned_screen(true)?;
+        let bottom = app.render_owned_transcript(&mut tui, size)?;
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let glyphs = (0..bottom.y)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .filter(|&position| buffer[position].symbol() == "X")
+            .count();
+        assert_eq!(
+            glyphs,
+            text.len(),
+            "{width} columns: the tab erased transcript glyphs"
+        );
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a105_closed_tab_reserves_only_its_width_and_a_blank_column() -> Result<()> {
+    for width in [80, 120, 200] {
+        let (mut app, _events, _ops) = make_test_app_with_channels().await;
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
+        app.local_settings.tui.animations = false;
+        app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(
+            vec![Line::from("X".repeat(600)); 100],
+        ))];
+        let mut tui = crate::tui::test_support::make_test_tui_with_size(Size::new(width, 40))?;
+        tui.set_owned_screen(true)?;
+        for height in 10..=40 {
+            let size = Size::new(width, height);
+            tui.terminal.resize(size)?;
+            // Let the scrollbar reserve its column, as on the next real draw event.
+            app.render_owned_transcript(&mut tui, size)?;
+            let bottom = app.render_owned_transcript(&mut tui, size)?;
+            let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+            let body_right = width - u16::from(app.transcript_view.reserves_scrollbar());
+            let tab_x = body_right - 12;
+            for y in 0..bottom.y {
+                assert_eq!(
+                    buffer[(tab_x - 1, y)].symbol(),
+                    " ",
+                    "{width}x{height}, row {y}: gap"
+                );
+                for x in tab_x..body_right {
+                    assert_ne!(
+                        buffer[(x, y)].symbol(),
+                        "X",
+                        "{width}x{height}: text under tab at {x},{y}"
+                    );
+                }
+            }
+            assert!(
+                (0..bottom.y).any(|y| buffer[(tab_x - 2, y)].symbol() == "X"),
+                "excess width lost"
+            );
+            let tab_y = (bottom.y - 3) / 2;
+            assert_eq!(buffer[(tab_x, tab_y + 1)].symbol(), "│");
+            app.transcript_view.scroll(&app.transcript_cells, -3);
+            app.render_owned_transcript(&mut tui, size)?;
+            let scrolled =
+                crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+            assert_eq!(
+                scrolled[(tab_x, tab_y + 1)].symbol(),
+                "│",
+                "scroll moved the tab"
+            );
+        }
+        // Negative control: the open Ledger consumes its usual column, with no tab gutter.
+        crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+        let size = Size::new(width, 40);
+        tui.terminal.resize(size)?;
+        app.render_owned_transcript(&mut tui, size)?;
+        let bottom = app.render_owned_transcript(&mut tui, size)?;
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let text_right = bottom.width - u16::from(app.transcript_view.reserves_scrollbar());
+        assert!(
+            (0..bottom.y).any(|y| buffer[(text_right - 1, y)].symbol() == "X"),
+            "open Ledger changed wrapping"
+        );
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn ledger_wheel_and_focused_paging_leave_the_real_transcript_viewport_in_place() -> Result<()>
 {
     for size in [Size::new(80, 24), Size::new(120, 40), Size::new(200, 60)] {

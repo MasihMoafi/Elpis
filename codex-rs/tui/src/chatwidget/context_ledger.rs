@@ -28,6 +28,7 @@ use crate::terminal_palette::effective_stdout_color_level;
 
 const CONTEXT_LEDGER_TITLE: &str = "CONTEXT LEDGER";
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
+const LEDGER_TAB_WIDTH: u16 = 12;
 const LEDGER_WIDTH: u16 = 52;
 /// A dragged Ledger keeps at least this many columns, so its rows stay readable...
 const LEDGER_MIN_WIDTH: u16 = 28;
@@ -1639,6 +1640,37 @@ impl ChatWidget {
         }
     }
 
+    fn context_ledger_tab_area(&self, transcript: Rect, terminal_width: u16) -> Option<Rect> {
+        if self.context_ledger.visible
+            || self.has_active_view()
+            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
+            || transcript.width < LEDGER_TAB_WIDTH + 1
+            || transcript.height < 3
+        {
+            return None;
+        }
+        Some(Rect::new(
+            transcript.right() - LEDGER_TAB_WIDTH,
+            transcript.y + (transcript.height - 3) / 2,
+            LEDGER_TAB_WIDTH,
+            3,
+        ))
+    }
+
+    /// Wrap every transcript row before the closed tab, leaving one clear column.
+    /// The tab uses the original viewport, so scrolling cannot move its hitbox.
+    pub(crate) fn context_ledger_transcript_area(
+        &self,
+        transcript: Rect,
+        terminal_width: u16,
+    ) -> Rect {
+        self.context_ledger_tab_area(transcript, terminal_width)
+            .map_or(transcript, |tab| Rect {
+                width: tab.x - transcript.x - 1,
+                ..transcript
+            })
+    }
+
     /// A closed panel leaves a small cut-corner tab inside the transcript body. Its caller
     /// excludes the composer gap, bottom pane and scrollbar from this rectangle, and paints
     /// composer popups over it. Popups keep mouse ownership in `handle_context_ledger_mouse`.
@@ -1649,20 +1681,9 @@ impl ChatWidget {
         buf: &mut Buffer,
     ) {
         self.context_ledger.tab.set(None);
-        if self.context_ledger.visible
-            || self.has_active_view()
-            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
-            || transcript.width < 12
-            || transcript.height < 3
-        {
+        let Some(tab) = self.context_ledger_tab_area(transcript, terminal_width) else {
             return;
-        }
-        let tab = Rect::new(
-            transcript.right() - 12,
-            transcript.y + (transcript.height - 3) / 2,
-            12,
-            3,
-        );
+        };
         for (row, text) in [" ╱──────────", "│           ", " ╲──────────"]
             .into_iter()
             .enumerate()
