@@ -12,12 +12,20 @@
 //! fallback" rather than attempting wrapped rendering at zero width, which
 //! would produce empty or unstable output.
 
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 /// Returns the display width Ratatui uses for terminal text without its `u16` limit.
 pub(crate) fn display_width(text: &str) -> usize {
-    UnicodeWidthStr::width(text)
+    if text.is_ascii() {
+        return UnicodeWidthStr::width(text);
+    }
+    // Ratatui paints one grapheme at a time. Whole-string width can collapse
+    // script ligatures such as Farsi's lam-alef across separate painted cells.
+    text.graphemes(true)
+        .map(UnicodeWidthStr::width)
+        .sum::<usize>()
         + text
             .chars()
             .filter(|ch| matches!(ch, '\u{FF9E}' | '\u{FF9F}'))
@@ -60,7 +68,31 @@ mod tests {
     use super::*;
     use crate::line_truncation::line_width;
     use pretty_assertions::assert_eq;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::style::Style;
     use ratatui::text::Line;
+
+    #[test]
+    fn display_width_matches_painted_cells_for_farsi_and_combining_graphemes() {
+        let area = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 1,
+        );
+        for (text, expected) in [
+            ("", 0),
+            ("لا", 2),
+            ("سلام", 4),
+            ("لا لا", 5),
+            ("e\u{301}界👩‍💻", 5),
+            ("ｶﾞﾊﾟ", 4),
+        ] {
+            let mut buffer = Buffer::empty(area);
+            let (end, _) = buffer.set_stringn(0, 0, text, 80, Style::default());
+            assert_eq!(usize::from(end), expected, "{text:?}");
+            assert_eq!(display_width(text), usize::from(end), "{text:?}");
+            assert_eq!(line_width(&Line::from(text)), usize::from(end), "{text:?}");
+        }
+    }
 
     #[test]
     fn display_width_matches_ratatui_halfwidth_sound_marks_without_overflow() {

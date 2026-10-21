@@ -337,19 +337,24 @@ async fn closed_ledger_tab_stays_above_the_bottom_pane_and_reopens_when_clicked(
         )?));
     app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(
         (1..=80)
-            .map(|row| format!("History {row}").into())
+            .map(|row| format!("History {row} {}", "X".repeat(160)).into())
             .collect(),
     ))];
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.set_owned_screen(/*owned*/ true)?;
     // Resize from tall to short as well: a hidden tab must lose its old mouse target.
+    let mut previous_tab_row = None;
     for height in [40, 14, 13, 12, 11, 10, 8, 7, 6] {
         let size = Size::new(/*width*/ 80, height);
-        tui.terminal.resize(size)?;
         crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
+        // Draw consumes the pending geometry; terminal.resize alone leaves the
+        // test backend's fixed 80x24 size in place for the next frame.
+        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
         app.render_owned_transcript(&mut tui, size)?;
+        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
         let bottom = app.render_owned_transcript(&mut tui, size)?;
         let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        assert_eq!(buffer.area, Rect::new(0, 0, 80, height));
         let text = buffer_text(buffer);
         let tab_rows = text
             .lines()
@@ -365,11 +370,26 @@ async fn closed_ledger_tab_stays_above_the_bottom_pane_and_reopens_when_clicked(
         );
         if bottom.y < 3 {
             assert!(tab_rows.is_empty(), "80x{height}: {text}");
+            if let Some(row) = previous_tab_row {
+                assert!(!app.chat_widget.handle_context_ledger_mouse(MouseEvent {
+                    kind: Down(Left),
+                    column: 77,
+                    row,
+                    modifiers: KeyModifiers::NONE,
+                }));
+            }
         } else {
             assert_eq!(tab_rows.len(), 3, "80x{height}: {text}");
+            previous_tab_row = Some(tab_rows[1]);
             assert_eq!(tab_rows[0], (bottom.y - 3) / 2);
             // The overflowing transcript keeps its last column for the scrollbar.
             assert!(app.transcript_view.reserves_scrollbar());
+            // The blank column and the tab gutter stay clear on every transcript row.
+            assert!((0..bottom.y).all(|row| buffer[(66, row)].symbol() == " "));
+            assert!(
+                (0..bottom.y)
+                    .all(|row| (67..79).all(|column| buffer[(column, row)].symbol() != "X"))
+            );
             assert!(tab_rows.iter().all(|row| {
                 let symbol = buffer[(79, *row)].symbol();
                 symbol == "│" || symbol == "┃"
@@ -386,6 +406,7 @@ async fn closed_ledger_tab_stays_above_the_bottom_pane_and_reopens_when_clicked(
                 row: tab_rows[1],
                 modifiers: KeyModifiers::NONE,
             }));
+            tui.screen_size_for_event(&TuiEvent::Resize(size))?;
             app.render_owned_transcript(&mut tui, size)?;
             assert!(
                 buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(

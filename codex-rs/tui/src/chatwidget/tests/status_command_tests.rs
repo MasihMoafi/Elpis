@@ -1,9 +1,35 @@
+//! Retained status-card internals and copy targets. Direct Status dispatch bypasses
+//! composer command lookup; the typed /status command stays removed (A114).
+
 use super::*;
 use crate::chatwidget::ThreadUsageOutcome;
 use assert_matches::assert_matches;
 use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadUsageBreakdownGroup;
 use codex_utils_path_uri::PathUri;
+
+#[tokio::test]
+async fn status_command_stays_unrecognized_in_composer() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+    chat.bottom_pane
+        .set_composer_text("/status".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Unrecognized command '/status'"),
+        "typed /status must stay removed pending A114: {rendered}"
+    );
+    assert!(!rendered.contains("Agents.md"), "{rendered}");
+    assert!(op_rx.try_recv().is_err());
+    assert_eq!(chat.bottom_pane.composer_text(), "/status");
+}
 
 #[tokio::test]
 async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgpt_auth() {
