@@ -1,11 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS_KEY, addGroup, deleteGroup, emptyGroups, groupNameProblem, groupSections, isDefaultView, moveChats, placeChat, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
+import { GROUPS_KEY, addGroup, deleteGroup, emptyGroups, groupNameProblem, groupSections, holdChatOrder, isDefaultView, moveChats, placeChat, prioritizeChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
 
 const storage = (initial = {}) => { const values = new Map(Object.entries(initial)); return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 const chat = (id, name, createdAt) => ({ id, name, ...(createdAt === undefined ? {} : { createdAt }) });
 const nameOf = thread => thread.name;
 const ids = list => list.map(thread => thread.id);
+
+test('A102: recency uses bridge timestamps after merges, with stable ties and no timestamps', () => {
+  const list = [{ id: 'old', updatedAt: 10 }, { id: 'new', updatedAt: 30 }, { id: 'run', updatedAt: 100, recencyAt: 5 }, { id: 'tie', updatedAt: 30 }, { id: 'unknown' }];
+  assert.deepEqual(ids(sortChats(list, 'recency', nameOf)), ['new', 'tie', 'old', 'run', 'unknown']);
+  assert.deepEqual(ids(sortChats([chat('b', 'B'), chat('a', 'A')], 'recency', nameOf)), ['b', 'a']);
+  assert.deepEqual(ids(list), ['old', 'new', 'run', 'tie', 'unknown']);
+});
+
+test('A102: waiting then unread; active, errors, idle and unknown have no attention priority', () => {
+  const list = ['working', 'idle', 'unread', 'error', 'waiting', 'unknown', 'unread', 'waiting'];
+  assert.deepEqual(prioritizeChats(list, value => value), ['waiting', 'waiting', 'unread', 'unread', 'working', 'idle', 'error', 'unknown']);
+  assert.deepEqual(prioritizeChats(['idle', 'working'], value => value), ['idle', 'working']);
+});
+
+test('A102: holding positions keeps fresh statuses, appends arrivals, removes missing chats, and releases to live order', () => {
+  const list = [{ id: 'c', status: 'unread' }, { id: 'a', status: 'waiting' }, { id: 'new' }];
+  assert.deepEqual(ids(holdChatOrder(list, ['a', 'gone', 'c'])), ['a', 'c', 'new']);
+  assert.equal(holdChatOrder(list, ['a', 'c'])[0], list[1], 'current objects, not stale row state');
+  assert.equal(holdChatOrder(list, null), list);
+  assert.deepEqual(holdChatOrder([], ['gone']), []);
+});
 
 test('nothing saved, or something unreadable, is no groups, ungrouped and in last-activity order', () => {
   assert.deepEqual(readGroups(storage()), emptyGroups());

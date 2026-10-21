@@ -218,6 +218,7 @@
     "tests/sidebar-focus.test.cjs",
     "tests/sidebar-groups.test.cjs",
     "tests/sidebar-nav-icons.test.cjs",
+    "tests/sidebar-order.test.cjs",
     "tests/sidebar-parity.test.cjs",
     "tests/sidebar-resize.test.cjs",
     "tests/sidebar-search-fit.test.cjs",

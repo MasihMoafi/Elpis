@@ -1,13 +1,53 @@
 "use client";
 
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
-import { ListFilter, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode, type PointerEvent } from "react";
+import { Layers, ListFilter, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
-import { groupNameProblem, isDefaultView, type ChatGroup, type ChatGroups, type GroupBy, type SortBy } from "@/lib/chat-groups";
+import { groupNameProblem, holdChatOrder, isDefaultView, type ChatGroup, type ChatGroups, type GroupBy, type SortBy } from "@/lib/chat-groups";
+
+/** Hold positions from pointer entry through exit, or release outside after a held click. Statuses still render
+ * immediately. Explicit group/sort/drag commands may release the order. No timers or polling. */
+export function useChatListOrder<T extends { id: string }>(chats: T[]) {
+  const [held, setHeld] = useState<string[] | null>(null), inside = useRef(false), pressed = useRef(false), dragging = useRef(false);
+  const release = () => setHeld(null);
+  useEffect(() => {
+    if (!inside.current && !pressed.current) return;
+    setHeld(previous => {
+      if (!previous) return chats.map(chat => chat.id);
+      const known = new Set(previous), added = chats.filter(chat => !known.has(chat.id)).map(chat => chat.id);
+      return added.length ? [...previous, ...added] : previous;
+    });
+  }, [chats]);
+  useEffect(() => {
+    const start = () => { pressed.current = true; };
+    const end = () => { pressed.current = false; dragging.current = false; if (!inside.current) setHeld(null); };
+    const drag = () => { dragging.current = true; };
+    const cancel = () => { if (!dragging.current) end(); };
+    const blur = () => { inside.current = false; end(); };
+    window.addEventListener("pointerdown", start, true);
+    window.addEventListener("pointerup", end, true);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("dragstart", drag);
+    window.addEventListener("dragend", end);
+    window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); };
+  }, []);
+  return { chats: holdChatOrder(chats, held), release, pointer: {
+    onPointerEnter: () => { inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },
+    onPointerLeave: (event: PointerEvent) => { inside.current = false; if (!pressed.current && !event.buttons) release(); },
+  } };
+}
+
+/** The manager owns one fixed row, using the chat row's existing active appearance. */
+export function SessionManagerRow({ id, active, disabled, onOpen }: { id: string; active: boolean; disabled: boolean; onOpen: () => void }) {
+  return <section aria-label="Session Manager chat"><div className={`thread-row${active ? " active" : ""}`} data-thread-id={id || undefined}>
+    <Layers size={14} className="ml-2 shrink-0" aria-hidden="true" /><button className="thread-link" data-slot="chat-row" aria-label="Open Session Manager" aria-current={active ? "page" : undefined} title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={disabled} onClick={onOpen}><span className="thread-title">Session Manager</span></button>
+  </div></section>;
+}
 
 const GROUP_BY: [GroupBy, string][] = [["custom", "Custom groups"], ["none", "None"]];
 const SORT_BY: [SortBy, string][] = [["recency", "Last activity"], ["created", "Date created"], ["name", "Name"], ["manual", "Manual (drag or Alt+Up/Down)"]];

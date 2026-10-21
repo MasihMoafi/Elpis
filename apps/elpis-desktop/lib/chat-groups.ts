@@ -6,7 +6,7 @@
 export type ChatGroup = { id: string; name: string };
 /** "custom": the sidebar draws a section for each group, then Recents for the rest; "none": Recents holds every chat. */
 export type GroupBy = "none" | "custom";
-/** "recency": the bridge's order (last activity first); "created": newest first; "name": A to Z; "manual": the person's
+/** "recency": the bridge's timestamps (last activity first); "created": newest first; "name": A to Z; "manual": the person's
  * own order (`order`), made by dragging a chat or by Alt+Up/Down on it. */
 export type SortBy = "recency" | "created" | "name" | "manual";
 /** `members`: chat id → group id; `collapsed`: groups drawn closed; `order`: chat ids in the person's order, which Pinned,
@@ -88,10 +88,11 @@ export function toggleCollapsed(state: ChatGroups, id: string): ChatGroups {
 }
 
 const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
-/** A sorted copy. Last activity keeps the given order; ties keep their order; a chat without a creation time goes last.
+/** A sorted copy. Last activity uses bridge timestamps, preserving arrival order for ties or missing times;
+ * a chat without a creation time goes last when sorting by creation.
  * Manual puts the chats the person has not placed (new ones) first, in the given order, then the placed ones in `order`. */
-export function sortChats<T extends { id: string; createdAt?: number }>(threads: T[], sortBy: SortBy, nameOf: (thread: T) => string, order: readonly string[] = []): T[] {
-  if (sortBy === "recency") return [...threads];
+export function sortChats<T extends { id: string; createdAt?: number; updatedAt?: number; recencyAt?: number }>(threads: T[], sortBy: SortBy, nameOf: (thread: T) => string, order: readonly string[] = []): T[] {
+  if (sortBy === "recency") return [...threads].sort((a, b) => (b.recencyAt ?? b.updatedAt ?? 0) - (a.recencyAt ?? a.updatedAt ?? 0));
   if (sortBy === "manual") {
     const place = new Map(order.map((id, index) => [id, index]));
     return [...threads.filter(thread => !place.has(thread.id)), ...threads.filter(thread => place.has(thread.id)).sort((a, b) => place.get(a.id)! - place.get(b.id)!)];
@@ -101,6 +102,27 @@ export function sortChats<T extends { id: string; createdAt?: number }>(threads:
     ? (a: { thread: T }, b: { thread: T }) => byName.compare(nameOf(a.thread), nameOf(b.thread))
     : (a: { thread: T }, b: { thread: T }) => (typeof b.thread.createdAt === "number" ? b.thread.createdAt : -Infinity) - (typeof a.thread.createdAt === "number" ? a.thread.createdAt : -Infinity) || 0;
   return indexed.sort((a, b) => compare(a, b) || a.index - b.index).map(entry => entry.thread);
+}
+
+/** Use the row's state: waiting first, unseen finished replies next. Working and failed replies retain their
+ * ordinary place. Within each tier keep the selected sort, including the person's manual order. */
+export function prioritizeChats<T>(threads: T[], stateOf: (thread: T) => string): T[] {
+  const tiers: T[][] = [[], [], []];
+  for (const thread of threads) {
+    const state = stateOf(thread);
+    tiers[state === "waiting" ? 0 : state === "unread" ? 1 : 2].push(thread);
+  }
+  return tiers.flat();
+}
+
+/** Updated objects still supply current statuses while the pointer holds row positions. Removed rows disappear;
+ * newly loaded rows append until the pointer leaves. */
+export function holdChatOrder<T extends { id: string }>(threads: T[], held: readonly string[] | null): T[] {
+  if (!held) return threads;
+  const current = new Map(threads.map(thread => [thread.id, thread]));
+  const ordered: T[] = [];
+  for (const id of held) { const thread = current.get(id); if (thread) { ordered.push(thread); current.delete(id); } }
+  return [...ordered, ...current.values()];
 }
 
 /** The list drawn by groups: each group, in its order, with its chats in list order (an empty group too), then the rest. */

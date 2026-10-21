@@ -17,7 +17,7 @@ import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { readPins, savePins } from "@/lib/pins";
-import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
+import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { SHORTCUTS, shortcutFor } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
@@ -46,7 +46,7 @@ import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { GroupActions, GroupAndSortMenu, GroupNameDialog } from "@/components/chat-groups";
+import { GroupActions, GroupAndSortMenu, GroupNameDialog, SessionManagerRow, useChatListOrder } from "@/components/chat-groups";
 import { SidebarGroup } from "@/components/sidebar-group";
 import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
@@ -189,8 +189,16 @@ export default function Home() {
   const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
   const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
   useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
-  useEffect(() => { setSessionManagerId(appStorage().getItem(SESSION_MANAGER_ID_KEY) ?? ""); }, []);
+  useEffect(() => {
+    const read = () => setSessionManagerId(appStorage().getItem(SESSION_MANAGER_ID_KEY) ?? "");
+    read();
+    const unsubscribe = window.elpisDesktop?.storage?.onChange?.(key => { if (key === SESSION_MANAGER_ID_KEY) read(); });
+    const changed = (event: StorageEvent) => { if (event.key === SESSION_MANAGER_ID_KEY) read(); };
+    window.addEventListener("storage", changed);
+    return () => { unsubscribe?.(); window.removeEventListener("storage", changed); };
+  }, []);
   function updateGroups(change: (state: ChatGroups) => ChatGroups) {
+    chatListOrder.release();
     const next = change(chatGroupsRef.current);
     chatGroupsRef.current = next; setChatGroups(next);
     if (!writeGroups(next, appStorage())) setError("Could not save chat groups on this device.");
@@ -863,6 +871,7 @@ export default function Home() {
     try {
       const savedId = appStorage().getItem(SESSION_MANAGER_ID_KEY) || sessionManagerId;
       if (savedId) {
+        setSessionManagerId(savedId);
         const existing = threads.find(thread => thread.id === savedId);
         if (existing) { await loadThread(existing); return; }
         try {
@@ -1518,9 +1527,13 @@ export default function Home() {
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
-  const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
+  const searchedThreads = (searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads).filter(thread => thread.id !== sessionManagerId);
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
-  const ordinaryThreads = threads.filter(thread => !isAgentRun(thread));
+  const unreadIds = new Set(attention.unread);
+  const sidebarState = (thread: Thread) => agentState(thread, waitingIds, unreadIds);
+  const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
+  const chatListOrder = useChatListOrder(prioritizeChats(sortChats(threads.filter(thread => thread.id !== sessionManagerId && !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order), thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
+  const ordinaryThreads = chatListOrder.chats;
   const agentRuns = threads.filter(isAgentRun);
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
   const agentParents = new Set(threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []));
@@ -1537,7 +1550,8 @@ export default function Home() {
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results keep the search's order.
-  const listedRoots = searchTerm ? roots : sortChats(roots, chatGroups.sortBy, title, chatGroups.order);
+  const rootIds = new Set(roots.map(thread => thread.id));
+  const listedRoots = searchTerm ? roots : ordinaryThreads.filter(thread => rootIds.has(thread.id));
   const pinnedChats = listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = listedRoots.filter(t => !pins.includes(t.id));
   const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
   const ungroupedChats = grouped ? grouped.ungrouped : unpinnedChats;
@@ -1798,7 +1812,6 @@ export default function Home() {
   useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
   /** A listed chat and, when shown, its agents under it. */
   const chatRows = (section: string) => (thread: Thread) => threadBranch(thread, 0, section);
-  const needsYou = (thread: Thread) => agentState(thread, waitingIds) === "waiting" || !!attention.plans[thread.id];
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
    * closed group holding a chat that needs you says so, as Claude's does. */
   function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
@@ -1847,8 +1860,8 @@ export default function Home() {
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
-      <section aria-label="Session Manager chat"><Button variant="ghost" size="sm" className="w-full justify-start gap-2" aria-label="Open Session Manager" title="Open the dedicated chat for naming, grouping, and archiving sessions" disabled={!ready || !connected || openingSessionManager} onClick={() => void openSessionManager()}><Layers size={14} />Session Manager</Button></section>
-      <div className="thread-list" ref={threadList} onKeyDown={listKeys}>
+      <SessionManagerRow id={sessionManagerId} active={!!sessionManagerId && selected?.id === sessionManagerId && view === "chat"} disabled={!ready || !connected || openingSessionManager} onOpen={() => void openSessionManager()} />
+      <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><div className="section-label">Projects</div><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));
             return <SidebarGroup key={item.id} kind="project" dropProps={projectDropProps(item.id)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
