@@ -12,7 +12,8 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 // names the request (Masih's words) that changes a retained behaviour; never to make a failing gate pass.
 // 21 Oct (A121): moved from 21343157b, whose copies of 35 UI tests never passed (undefined helpers, stale fixtures),
 // to the commit that repairs them case for case. Masih: "You don't need to ask me that; I'm result-oriented."
-export const baselineCommit = '0a8f59254aa17547653f39c10d423a23d7c1656a';
+// Round 2 (f96171ccb): the merged repairs (gatefix) keep every case; the earlier baseline still had the pre-merge copies.
+export const baselineCommit = 'f96171ccb616c6c4c8fd4bf4599d219da7e71a02';
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
 const appPrefix = 'apps/elpis-desktop/';
