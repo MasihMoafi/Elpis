@@ -393,6 +393,34 @@ jobs:
       - name: Claude bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis"
+      - name: Claude turn delivery and restart recovery through the real native runtime (A124)
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        env:
+          A124_ENGINE: ${{ github.workspace }}/codex-rs/target/release/elpis
+        run: |
+          # DesktopClient only needs ws here; reuse the locked bridge dependencies.
+          ln -s "$PWD/tools/elpis-claude/node_modules" apps/elpis-desktop/node_modules
+          mkdir -p apps/elpis-desktop/bridge/resources
+          cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
+          cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
+          node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
+          for attempt in {1..10}; do
+            node --test --test-reporter=tap --test-name-pattern='a bridge restart recovers' tools/elpis-claude/test/turn-delivery.test.mjs > "$RUNNER_TEMP/elpis-claude-restart-$attempt-checks.log" 2>&1
+          done
+      - name: Preserve Claude restart recovery diagnostics
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: claude-restart-recovery
+          path: |
+            ${{ runner.temp }}/elpis-claude-*-checks.log
+            /tmp/a124-*/stderr.log
+            /tmp/a124-*/bridge.log
+            /tmp/a124-*/sessions.json
+            /tmp/a124-*/engine.jsonl
+            /tmp/a124-*/agent.jsonl
+          if-no-files-found: error
+          retention-days: 7
       - name: Gemini bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini

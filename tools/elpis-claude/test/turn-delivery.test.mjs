@@ -1,4 +1,5 @@
-// Real provider bridge -> installed native engine -> DesktopClient. Only inference is scripted.
+// Real provider bridge -> selected engine -> DesktopClient. Inference is scripted.
+// Default: deterministic engine contract; A124_ENGINE=/absolute/native/binary: real runtime gate.
 // A124: follow-ups, late steering replies and reconnects must retain answers and completion.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -12,6 +13,7 @@ import { setTimeout as pause } from "node:timers/promises";
 const { DesktopClient } = await import(process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mjs", import.meta.url));
 
 const source = fileURLToPath(new URL("../", import.meta.url));
+const engine = process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mjs");
 const lines = file => fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(JSON.parse) : [];
 async function until(check, label, ms = 5000) {
   for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = await check(); if (value) return value; }
@@ -25,14 +27,14 @@ async function fixture(t, extra = {}) {
   const release = path.join(root, "release"), toolRelease = path.join(root, "tools");
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: path.join(root, "elpis"), CODEX_HOME: path.join(root, "elpis"), CODEX_AUTH_HOME: root,
     XDG_RUNTIME_DIR: root, XDG_CONFIG_HOME: root, TMPDIR: root, ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: socketPath,
-    ELPIS_ENGINE_BIN: process.env.A124_ENGINE ?? "/home/masih/.local/lib/elpis-next/versions/claude-accounts-20261020-fea460113/elpis-next", ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
+    ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
     ACP_BRIDGE_STORE: storeFile, ACP_BRIDGE_LOG: path.join(root, "bridge.log"), ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
-    FAKE_ENGINE_STATE: path.join(root, "native.json"),
+    FAKE_ENGINE_STATE: path.join(root, "native.json"), FAKE_ENGINE_LAZY_PERSIST: "1", FAKE_ENGINE_LOG: path.join(root, "engine.jsonl"),
     FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease, ...extra };
   const bridges = [];
   let errors = "";
   const launch = () => {
-    const child = spawn(process.execPath, [process.env.A124_BRIDGE ?? path.join(source, "acp-bridge.mjs")], { env, cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(process.execPath, [process.env.A124_BRIDGE ?? path.join(source, "acp-bridge.mjs")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
     child.stderr.on("data", data => { errors += data; });
     bridges.push(child); return child;
   };
@@ -40,10 +42,15 @@ async function fixture(t, extra = {}) {
   const clients = [];
   t.after(async () => {
     clients.forEach(client => client.close());
-    for (const child of bridges) if (child.exitCode === null && child.signalCode === null) { const ended = once(child, "exit"); child.kill("SIGTERM"); await ended; }
+    for (const child of bridges) {
+      if (child.exitCode === null && child.signalCode === null) { const ended = once(child, "exit"); child.kill("SIGTERM"); child.kill("SIGCONT"); await ended; }
+      try { process.kill(-child.pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+    }
     fs.writeFileSync(path.join(root, "stderr.log"), errors);
     // Evidence is retained in this owned throwaway home; never inspect or alter a real home.
     t.diagnostic(`A124 evidence: ${root}`);
+    t.diagnostic(`engine: ${fs.realpathSync(engine)}; bridge: ${env.ELPIS_BRIDGE_SOCKET}`);
+    if (errors.trim()) t.diagnostic(`bridge stderr: ${errors.slice(-2000)}`);
   });
   await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, `bridge starts: ${errors}`);
   const connect = async () => {
@@ -57,14 +64,24 @@ async function fixture(t, extra = {}) {
   await desktop.client.models();
   const created = await desktop.client.createThread({ model: "claude/sonnet", cwd: root });
   const id = created.thread.id;
-  const restart = async () => {
-    clients.forEach(client => client.close());
-    const ended = once(bridge, "exit"); bridge.kill("SIGTERM"); await ended;
+  const restart = async ({ crash = false, reconnect = false } = {}) => {
+    const previous = fs.statSync(socketPath);
+    if (!reconnect) clients.forEach(client => client.close());
+    const ended = once(bridge, "exit");
+    if (crash) process.kill(-bridge.pid, "SIGKILL"); else bridge.kill("SIGTERM");
+    await ended;
     launch();
-    await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, "bridge restarts");
+    await until(() => {
+      if (!fs.existsSync(socketPath)) return false;
+      const next = fs.statSync(socketPath);
+      return (next.ino !== previous.ino || next.ctimeMs !== previous.ctimeMs) && (next.mode & 0o777) === 0o600;
+    }, "the new bridge replaces the dead listener");
+    if (reconnect) { await until(() => desktop.client.connected, "the existing desktop reconnects"); return desktop; }
     return connect();
   };
-  return { ...desktop, id, root, connect, restart, bridge, env, agent: () => lines(agentLog), store: () => fs.existsSync(storeFile) ? JSON.parse(fs.readFileSync(storeFile, "utf8")) : {},
+  return { ...desktop, id, root, connect, restart, bridge, env,
+    freeze: async () => { bridge.kill("SIGSTOP"); await until(() => /^State:\s+T/m.test(fs.readFileSync(`/proc/${bridge.pid}/status`, "utf8")), "the old bridge is stopped before Claude writes"); },
+    agent: () => lines(agentLog), store: () => fs.existsSync(storeFile) ? JSON.parse(fs.readFileSync(storeFile, "utf8")) : {},
     release: () => fs.writeFileSync(release, ""), releaseTools: () => fs.writeFileSync(toolRelease, ""),
     ended: turnId => desktop.events.find(e => e.method === "turn/completed" && e.params.turn.id === turnId) };
 }
@@ -138,12 +155,60 @@ test("a bridge restart recovers a final answer recorded before its live end was 
   const f = await fixture(t);
   const { turn } = await f.client.send(f.id, { text: "[wait] [record-only] restart the bridge" });
   await until(() => f.agent().some(e => e.method === "session/prompt"), "turn starts");
+  // Stop the bridge's event loop while its separate adapter writes the final record.
+  // Recovery cannot win the old 250ms race and accidentally materialize the carrier.
+  await f.freeze();
   f.release();
   await until(() => f.agent().some(e => e.ended), "native Claude answer is saved");
+  assert.equal(f.ended(turn.id), undefined, "no live end was delivered before the crash");
+  assert.equal(f.store()[f.id].active.turnId, turn.id, "completion has not been saved by the bridge");
+  const restarted = await f.restart({ crash: true });
+  const read = await restarted.client.readThread(f.id).catch(error => {
+    t.diagnostic(`restart read rejected: ${error.code}: ${error.engineMessage ?? error.message}`);
+    throw error;
+  });
+  assert.equal(read.thread.status.type, "idle");
+  assert.ok(read.data.some(e => e.turnId === turn.id && e.item.text?.includes("answered:")), "the saved answer survives the restart");
+  assert.equal(read.thread.id, f.id, "recovery preserves the original chat identity");
+  const resumed = await restarted.client.resume(f.id, {});
+  assert.equal(resumed.activeTurnId, null);
+  const hello = await restarted.client.send(f.id, { text: "hello after restart" });
+  await until(() => restarted.events.some(e => e.method === "turn/completed" && e.params.turn.id === hello.turn.id), "the recovered chat can answer again");
+  assert.ok(restarted.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered: hello after restart")));
+});
+
+test("a completed chat survives a graceful bridge restart with several turns in order", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  for (const text of ["first", "middle", "last — پایان"]) {
+    const { turn } = await f.client.send(f.id, { text });
+    await until(() => f.ended(turn.id), "turn completes");
+  }
   const restarted = await f.restart();
   const read = await restarted.client.readThread(f.id);
   assert.equal(read.thread.status.type, "idle");
-  assert.ok(read.data.some(e => e.turnId === turn.id && e.item.text?.includes("answered:")), "the saved answer survives the restart");
+  assert.deepEqual([...read.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content[0].text), ["first", "middle", "last — پایان"]);
+});
+
+test("the existing desktop reconnects after a bridge restart and can read and continue its chat", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "before reconnect" });
+  await until(() => f.ended(turn.id), "first reply ends");
+  await f.restart({ reconnect: true });
+  const read = await f.client.readThread(f.id);
+  assert.equal(read.thread.status.type, "idle");
+  assert.ok(read.data.some(e => e.item.text?.includes("answered: before reconnect")));
+  await f.client.resume(f.id, {});
+  const next = await f.client.send(f.id, { text: "after reconnect" });
+  await until(() => f.ended(next.turn.id), "the reconnect does not strand the next message");
+});
+
+test("a failed carrier persistence barrier rejects the turn before Claude starts", { timeout: 20000, skip: !engine.endsWith("/test/fake-app-server.mjs") && "scripted engine failure" }, async t => {
+  const f = await fixture(t, { FAKE_ENGINE_FAIL_MATERIALIZE: "1" });
+  const { turn } = await f.client.send(f.id, { text: "do not infer without a durable chat" });
+  await until(() => f.ended(turn.id), "persistence failure ends Working");
+  assert.equal(f.ended(turn.id).params.turn.status, "failed");
+  assert.match(f.ended(turn.id).params.turn.error.message, /persistence refused/);
+  assert.equal(f.agent().filter(e => e.method === "session/prompt").length, 0);
 });
 
 test("a missed renderer completion is corrected by the next history read", { timeout: 20000 }, async t => {
@@ -174,7 +239,7 @@ test("a stalled native history mirror cannot hold Claude's answer or completion"
   assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered:")));
 });
 
-test("GPT chat turns still use the native engine and never Claude", { timeout: 20000, skip: !process.env.A124_ENGINE?.endsWith("/test/fake-app-server.mjs") && "scripted native inference only; use the real-app GPT check" }, async t => {
+test("GPT chat turns still use the native engine and never Claude", { timeout: 20000, skip: !engine.endsWith("/test/fake-app-server.mjs") && "scripted native inference only; use the real-app GPT check" }, async t => {
   const f = await fixture(t);
   const created = await f.client.createThread({ model: "luna-test", cwd: f.root });
   const before = f.agent().filter(e => e.method === "session/prompt").length;

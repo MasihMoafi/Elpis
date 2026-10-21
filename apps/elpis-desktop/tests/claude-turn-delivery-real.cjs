@@ -5,6 +5,7 @@
 //   --bridge /path/to/tools/elpis-claude/acp-bridge.mjs --engine /path/to/elpis-next
 // Use the installed app/bridge first, then the candidate. Default deliberately loses live
 // final events; --normal exercises late steering acknowledgements instead.
+// --restart crashes the bridge after Claude saves its answer, before any live end.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -13,9 +14,11 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { parseArgs } = require('node:util');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE);
-const { values } = parseArgs({ options: { app: { type: 'string' }, bridge: { type: 'string' }, engine: { type: 'string' }, port: { type: 'string', default: '9464' }, normal: { type: 'boolean' } } });
+const { values } = parseArgs({ options: { app: { type: 'string' }, bridge: { type: 'string' }, engine: { type: 'string' }, port: { type: 'string', default: '9464' }, normal: { type: 'boolean' }, restart: { type: 'boolean' }, evidence: { type: 'string', default: path.join(os.homedir(), '.cache/elpis-tests/a124b') } } });
 for (const key of ['app', 'bridge', 'engine']) assert.ok(values[key] && path.isAbsolute(values[key]), `--${key} must be an absolute path`);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a124-app-'));
+fs.mkdirSync(values.evidence, { recursive: true });
+const evidence = fs.mkdtempSync(path.join(values.evidence, 'real-app-'));
 const run = path.join(root, 'run'); fs.mkdirSync(run, { mode: 0o700 });
 const socket = path.join(run, 'bridge.sock'), agentLog = path.join(root, 'agent.jsonl');
 const tools = path.resolve(__dirname, '../../../tools/elpis-claude');
@@ -33,7 +36,7 @@ async function until(check, why, ms = 15000) {
 }
 const records = () => fs.existsSync(agentLog) ? fs.readFileSync(agentLog, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
 function start(command, args, extra, log) {
-  const fd = fs.openSync(path.join(root, log), 'a');
+  const fd = fs.openSync(path.join(evidence, log), 'a');
   const child = spawn(command, args, { cwd: root, env: { ...env, ...extra }, detached: true, stdio: ['ignore', fd, fd] });
   fs.closeSync(fd); children.push(child); return child;
 }
@@ -41,7 +44,8 @@ function start(command, args, extra, log) {
 (async () => {
   let browser, page;
   try {
-    start(process.execPath, [values.bridge], { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socket }, 'provider.log');
+    const provider = () => start(process.execPath, [values.bridge], { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socket }, 'provider.log');
+    const bridge = provider();
     await until(() => fs.existsSync(socket) && (fs.statSync(socket).mode & 0o777) === 0o600, 'provider bridge did not listen');
     start('xvfb-run', ['-a', path.join(values.app, 'launch'), '--ozone-platform=x11', `--remote-debugging-port=${values.port}`], { ELPIS_APP_BRIDGE_SOCKET: socket }, 'app.log');
     await until(async () => {
@@ -54,7 +58,7 @@ function start(command, args, extra, log) {
     await composer.waitFor();
     await page.getByRole('combobox', { name: 'Model', exact: true }).click();
     await page.locator('[role="option"][data-value="claude/sonnet"]').click();
-    const initial = `[wait] [tool-flight] ${values.normal ? '' : '[record-only] '}A124 original`;
+    const initial = `[wait] [tool-flight] ${values.normal && !values.restart ? '' : '[record-only] '}A124 original`;
     const send = async text => {
       await composer.fill(text); await composer.press('Enter');
       await page.locator('.message.user').filter({ hasText: text }).waitFor();
@@ -66,8 +70,26 @@ function start(command, args, extra, log) {
     assert.equal(records().filter(row => row.method === '_session/steering').length, 0, 'the running tool must finish before steering');
     fs.writeFileSync(toolRelease, '');
     await until(() => records().filter(row => row.method === '_session/steering').length === 2, 'both messages must reach Claude');
+    if (values.restart) {
+      bridge.kill('SIGSTOP');
+      await until(() => /^State:\s+T/m.test(fs.readFileSync(`/proc/${bridge.pid}/status`, 'utf8')), 'the old bridge did not stop before the record');
+    }
     fs.writeFileSync(release, '');
     await until(() => records().some(row => row.ended), 'Claude did not record its final answer');
+    if (values.restart) {
+      const previous = fs.statSync(socket);
+      const ended = once(bridge, 'exit');
+      process.kill(-bridge.pid, 'SIGKILL'); await ended;
+      provider();
+      await until(() => {
+        if (!fs.existsSync(socket)) return false;
+        const next = fs.statSync(socket);
+        return (next.ino !== previous.ino || next.ctimeMs !== previous.ctimeMs) && (next.mode & 0o777) === 0o600;
+      }, 'the new bridge did not replace the old socket');
+      // The open desktop reconnects through its real client; Ctrl+R then catches up history.
+      await page.reload(); await composer.waitFor();
+      await page.locator('.message.user').filter({ hasText: initial }).waitFor();
+    }
     // This click is the required catch-up read, and also checks persisted message order.
     await page.getByRole('button', { name: 'Refresh conversation', exact: true }).click();
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
@@ -80,18 +102,18 @@ function start(command, args, extra, log) {
     await page.locator('.message.agent').filter({ hasText: 'answered: hello?' }).waitFor();
     for (const colorScheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme });
-      await page.screenshot({ path: path.join(root, `${colorScheme}.png`) });
+      await page.screenshot({ path: path.join(evidence, `${colorScheme}.png`) });
     }
-    console.log(`PASS A124 ${values.normal ? 'normal' : 'lost-events'}: answers in order, idle, hello, reload; ${root}`);
+    console.log(`PASS A124 ${values.restart ? 'restart' : values.normal ? 'normal' : 'lost-events'}: answers in order, idle, hello, reload; home ${root}; evidence ${evidence}`);
   } catch (error) {
-    if (page) await page.screenshot({ path: path.join(root, 'failure.png') }).catch(() => {});
-    console.error(`FAIL A124: ${error.message}\nEvidence: ${root}`); process.exitCode = 1;
+    if (page) await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => {});
+    console.error(`FAIL A124: ${error.message}\nHome: ${root}\nEvidence: ${evidence}`); process.exitCode = 1;
   } finally {
     await browser?.close();
     for (const child of children.reverse()) {
       if (child.exitCode === null && child.signalCode === null) {
         const ended = once(child, 'exit');
-        try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+        try { process.kill(-child.pid, 'SIGTERM'); process.kill(-child.pid, 'SIGCONT'); } catch {}
         await Promise.race([ended, sleep(1500)]);
       }
       // xvfb-run can exit before its Xvfb/Electron children; the group is owned by this check.

@@ -597,6 +597,7 @@ wss.on("connection", (ws) => {
   const pendingSteers = new Map();       // threadId → client message id → undelivered steer
   const claudeEffort = new Map();
   const resumeResults = new Map();
+  const materializedProviders = new Set();
   const context = {
     failed: false,
     claudeBusy: () => [...activeTurns.keys()].some(tid => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
@@ -606,7 +607,7 @@ wss.on("connection", (ws) => {
       cancelRelays(ws, tid);
       for (const cache of [threadCwd, threadSeen, childThreads, childIds, threadPolicy, smartPrune,
         threadSandbox, sessions, claudeModel, claudeEffort, resumeResults, sessionModel,
-        threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers]) cache.delete(tid);
+        threadCollab, threadAccess, lastTurnUsage, forkParent, queues, goals, ownHelpers, pendingSteers, materializedProviders]) cache.delete(tid);
     },
     // An abandoned request is bookkeeping, not running work. Turns (including native
     // background agents) and structured tool calls still outlive their terminal, and so does a chat
@@ -744,7 +745,15 @@ wss.on("connection", (ws) => {
     if (running) { await running.recover?.(); return; }
     await storeChain;
     const saved = (await loadStore())[threadId], active = saved?.active;
-    if (!active?.userItems || processAlive(active.pid) || (saved.agent ?? "claude") !== "claude") return;
+    if (active && processAlive(active.pid)) return;
+    // A fresh connection has no provider owner until resume. History reads also need
+    // that ownership: the native carrier's unloaded status is not Claude's turn status.
+    if (isBridged(saved?.model) && !providerOwners.has(threadId)) {
+      claudeModel.set(threadId, saved.model);
+      if (saved.effort) claudeEffort.set(threadId, saved.effort);
+      claimProvider(threadId);
+    }
+    if (!active?.userItems || (saved.agent ?? "claude") !== "claude") return;
     const project = active.cwd.replace(/[^a-zA-Z0-9]/g, "-");
     const file = join(claudeAccounts.configDir(saved.claudeAccountId ?? "default"), "projects", project, `${saved.session}.jsonl`);
     const final = await recordedClaudeEnd(file, active.transcriptOffset ?? 0, active.inputs ?? []);
@@ -1789,6 +1798,14 @@ wss.on("connection", (ws) => {
     const accountId = agent.key === "claude" ? claudeAccounts.activeId() : null;
     try {
       await pendingMirrors.get(threadId);
+      const carrier = threadSeen.get(threadId);
+      if (!carrier?.ephemeral && carrier?.historyMode === "paginated" && !materializedProviders.has(threadId)) {
+        // Native turns persist at TurnStart; provider turns never enter that path.
+        // A full paginated read is the engine's Standard persistence barrier. Wait
+        // before inference so a crash cannot leave Claude's record without its carrier.
+        await engineCall("thread/read", { threadId, includeTurns: true }, 5000);
+        materializedProviders.add(threadId);
+      }
       refuseSignedOut(agent);
       const acp = await ensureAcp(agent);
       turnState.acp = acp;

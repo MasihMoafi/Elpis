@@ -22,6 +22,10 @@ const send = (msg, socket) => socket ? socket.send(JSON.stringify(msg)) : proces
 let wss;
 const notify = (method, params) => wss ? [...wss.clients].forEach(socket => send({ method, params }, socket)) : send({ method, params });
 const threads = new Map(process.env.FAKE_ENGINE_STATE && fs.existsSync(process.env.FAKE_ENGINE_STATE) ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_STATE, "utf8")) : []); // id -> { model }
+if (process.env.FAKE_ENGINE_LAZY_PERSIST) for (const thread of threads.values()) thread.status = { type: "notLoaded" };
+// The native engine stages a new carrier in memory. A full paginated read materializes it;
+// injected provider history alone only flushes an existing rollout (ThreadPreparation).
+const persist = () => { if (process.env.FAKE_ENGINE_STATE) fs.writeFileSync(process.env.FAKE_ENGINE_STATE, JSON.stringify([...threads])); };
 const waiting = new Map(); // our request id -> resolve
 const turns = new Map(); // turn id -> { interrupt }
 let seq = 0;
@@ -139,16 +143,25 @@ function handle(msg, socket) {
     case "thread/inject_items": if (process.env.FAKE_ENGINE_HOLD_INJECT) return; return reply({});
     case "thread/start": {
       const id = randomUUID();
-      const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, turns: [] };
+      const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, historyMode: "paginated", turns: [] };
       threads.set(id, thread);
-      if (process.env.FAKE_ENGINE_STATE) fs.writeFileSync(process.env.FAKE_ENGINE_STATE, JSON.stringify([...threads]));
+      if (!process.env.FAKE_ENGINE_LAZY_PERSIST) persist();
       reply({ thread, model: thread.model, modelProvider: p.modelProvider ?? "openai", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
       return notify("thread/started", { thread });
     }
     case "thread/name/set": threads.get(p.threadId).name = p.name; return reply({});
     case "thread/list": return reply({ data: [...threads.values()], nextCursor: null });
-    case "thread/resume":
-    case "thread/read": return threads.has(p.threadId) ? reply({ thread: threads.get(p.threadId) }) : error("thread not found");
+    case "thread/resume": {
+      if (!threads.has(p.threadId)) return send({ id: msg.id, error: { code: -32600, message: `thread not loaded: ${p.threadId}` } }, socket);
+      threads.get(p.threadId).status = { type: "idle" };
+      return reply({ thread: threads.get(p.threadId) });
+    }
+    case "thread/read": {
+      if (!threads.has(p.threadId)) return send({ id: msg.id, error: { code: -32600, message: `thread not loaded: ${p.threadId}` } }, socket);
+      if (p.includeTurns && process.env.FAKE_ENGINE_FAIL_MATERIALIZE) return error("persistence refused");
+      if (p.includeTurns) persist();
+      return reply({ thread: threads.get(p.threadId) });
+    }
     case "thread/turns/list": return reply({ data: threads.get(p.threadId).turns, nextCursor: null });
     case "thread/items/list": return reply({ data: [], nextCursor: null });
     case "thread/unsubscribe": return reply({});
