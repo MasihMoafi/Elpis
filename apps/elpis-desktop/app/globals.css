@@ -91,7 +91,7 @@ button:disabled { cursor:not-allowed; }
 .app-shell { display:grid; grid-template-columns:var(--sidebar-width, 256px) minmax(0,1fr); height:100dvh; overflow:hidden; background:var(--background); color:var(--foreground); }
 .sidebar { position:relative; background:var(--sidebar); border-right:1px solid var(--hairline); display:flex; flex-direction:column; min-height:0; padding:10px 8px 8px; gap:6px; }
 .brand { font-size:14px; font-weight:600; letter-spacing:-.01em; padding:4px 8px 8px; display:flex; align-items:center; gap:9px; }
-.nav-list { display:grid; gap:1px; }
+.nav-list { display:grid; gap:1px; min-height:0; overflow-y:auto; }
 /* Navigation rows: the sidebar's and Settings' (which takes the sidebar's place) are one item. */
 .nav-list button, .settings-nav button[role="tab"], .back-link { justify-content:flex-start; width:100%; gap:10px; height:34px; padding:0 8px; border:0; background:none; color:var(--foreground); font-size:13px; font-weight:450; text-align:left; }
 .nav-list button:hover, .settings-nav button[role="tab"]:hover, .back-link:hover { background:var(--hover); }
@@ -116,7 +116,7 @@ button:disabled { cursor:not-allowed; }
 /* Keys: a keycap in shortcut lists, a quiet hint beside a field or menu item. */
 .kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
 .kbd-hint { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
-.thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px; padding:0 4px; }
+.thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:88px; margin:0 -4px; padding:0 4px; }
 .thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:13px; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
@@ -350,7 +350,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
 .brand img { width:73px; height:36px; flex-shrink:0; }
-.brand-home { width:auto; height:auto; padding:0; flex:0 0 auto; }
+.brand-home { flex:0 0 auto; }
 .thread-row { display:flex; align-items:center; gap:2px; min-width:0; padding-right:2px; min-height:34px; }
 .thread-row:hover, .thread-row[data-popup-open] { background:var(--hover); }
 .thread-row.active { background:var(--selected); }

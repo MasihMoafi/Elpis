@@ -35,6 +35,7 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7",
         "icon-lg": "size-9",
+        logo: "h-auto w-auto p-0",
       },
     },
     // A ghost button has one colour wherever it sits (rule R5): an icon is muted until hovered, a label is in the text colour.

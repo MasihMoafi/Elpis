@@ -79,6 +79,8 @@ export function ObservabilityView({ onOpenChat, hiddenChats }: { onOpenChat: (id
     const current = ++request.current; setBusy(true); setError("");
     try {
       const next = await api<Overview>(`/observability?limit=20${more && overview?.chats.nextCursor ? `&cursor=${encodeURIComponent(overview.chats.nextCursor)}` : ""}`);
+      // An unexpected bridge reply shows as an error instead of crashing the view.
+      if (!Array.isArray(next?.chats?.data)) throw Error("Observability returned no chat list");
       if (current === request.current) setOverview(previous => more && previous ? { ...next, chats: { ...next.chats, data: [...previous.chats.data, ...next.chats.data.filter(chat => !previous.chats.data.some(known => known.id === chat.id))] } } : next);
     } catch (cause) { if (current === request.current) setError(message(cause)); }
     finally { if (current === request.current) setBusy(false); }
@@ -100,7 +102,7 @@ export function ObservabilityView({ onOpenChat, hiddenChats }: { onOpenChat: (id
     return () => { request.current++; };
   }, [hiddenKey]);
   const choose = (chat: Chat) => { setSelected(chat); setDetail(null); void loadChat(chat); };
-  return <div className="customize observability" aria-label="Observability">
+  return <div className="customize observability" data-view="observability" aria-label="Observability">
     {selected && <button type="button" className="back-link" onClick={() => { request.current++; setBusy(false); setError(""); setSelected(null); void loadOverview(); }}><ArrowLeft size={18} />All chats</button>}
     {error && <SettingsNotice tone="alert"><FilePathText text={error} /> <Button variant="ghost" size="sm" onClick={() => void (selected ? loadChat(selected) : loadOverview())}>Retry</Button></SettingsNotice>}
     {busy && <SettingsNotice>Reading chats…</SettingsNotice>}
