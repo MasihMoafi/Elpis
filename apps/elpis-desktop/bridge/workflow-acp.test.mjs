@@ -167,6 +167,42 @@ test('every agent writes: a check gets its own folder, and folders the run names
   const opened = f.log('check').find(row => row.method === 'session/new').params._meta.elpis.workflow;
   assert.deepEqual([opened.kind, opened.writeScopes], ['verify', ['agents/writer/check']]);
 });
+
+test('A30: an empty project runs real ACP processes; every writer and check creates its own report, including a whole-project writer', { timeout: 20000 }, async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wf1-reports-'));
+  const env = { workflowFake: {} };
+  const f = fixture(t, { stateDir: path.join(home, 'workflow-state'), env });
+  await f.client.initialize();
+  assert.deepEqual(fs.readdirSync(f.dir), [], 'the run starts in a project with no files or subfolders');
+  const tasks = [], reports = new Map();
+  for (const [index, id] of ['first', 'middle', 'last'].entries()) {
+    const folder = `agents/${id}`, ownReport = `${folder}/report.md`, checkReport = `${folder}/check/report.md`;
+    const content = `# ${id}\n## Result\nPlanted evidence A30-${index}.\n## Evidence\nACP wrote this file.\n## Files\n${ownReport}\n## Open\nNone.\n`;
+    const verdict = `# Check ${id}\n## Verdict\nPassed: read A30-${index}.\n## Evidence\nRead ${ownReport}.\n## Files\n${checkReport}\n## Open\nNone.\n`;
+    const dependencies = index ? ['first', 'first-check', ...(index > 1 ? ['middle', 'middle-check'] : [])] : [];
+    tasks.push({ ...task(id, dependencies, `Write ${ownReport}`), kind: 'implement', writeScopes: [...(id === 'last' ? ['.'] : []), folder] },
+      { ...task(`${id}-check`, [id], `Check ${ownReport} and write ${checkReport}`), kind: 'verify', writeScopes: [`${folder}/check`] });
+    env.workflowFake[id] = { HOME: home, ELPIS_HOME: path.join(home, 'elpis'), CODEX_HOME: path.join(home, 'codex'), FAKE_ACP_WRITE: JSON.stringify({ file: path.join(f.dir, ownReport), text: content }) };
+    env.workflowFake[`${id}-check`] = { HOME: home, ELPIS_HOME: path.join(home, 'elpis'), CODEX_HOME: path.join(home, 'codex'), FAKE_ACP_WRITE: JSON.stringify({ file: path.join(f.dir, checkReport), text: verdict }), FAKE_ACP_EXPECT: JSON.stringify({ file: path.join(f.dir, ownReport), text: content }) };
+    reports.set(ownReport, content); reports.set(checkReport, verdict);
+  }
+  const started = await f.run(tasks);
+  for (const task of tasks) assert.ok(fs.statSync(path.join(f.dir, task.writeScopes.at(-1))).isDirectory(), `${task.id}'s folder exists as soon as the run starts`);
+  const result = await f.finished(started.graphId);
+  assert.equal(result.status, 'succeeded', result.error);
+  for (const [report, content] of reports) assert.equal(fs.readFileSync(path.join(f.dir, report), 'utf8'), content, `real report written: ${report}`);
+  for (const task of tasks) {
+    const session = f.log(task.id).find(row => row.method === 'session/new');
+    assert.ok(session, `${task.id} started its own ACP session`);
+    assert.deepEqual(session.params._meta.elpis.workflow.writeScopes, task.writeScopes);
+    assert.doesNotMatch(session.params._meta.systemPrompt.append, /read.only/i);
+    assert.ok(fs.statSync(path.join(f.dir, task.writeScopes.at(-1))).isDirectory());
+    assert.match(result.tasks.find(item => item.id === task.id).result.summary, task.kind === 'verify' ? /Read planted result/ : /answered/);
+  }
+  assert.equal(new Set(tasks.map(task => task.writeScopes.at(-1))).size, tasks.length);
+  assert.equal(f.socket.sent.some(row => row.method.startsWith('workGraph/run')), false, 'the ACP scheduler, not native work graphs, ran');
+  t.diagnostic('Six ACP child sessions wrote and read all six report.md files; a writer had scope ".". No model or credentials used.');
+});
 // A41: stages belong to the bridge, not to the Workflows screen, so a run goes on when that screen is closed.
 const staged = async (f, id) => { let graph; for (let n = 0; n < 400; n++) { graph = (await f.client.workflows(ROOT)).data.find(item => item.id === id); if (graph?.next && ['cancelled', 'failed'].includes(graph.next.status) || graph?.next?.reported || graph?.next?.error) return graph; await pause(25); } throw Error(`the next stage did not settle: ${JSON.stringify(graph?.next)}`); };
 const fatherPart = { name: 'Father · Team', thread: { name: 'Father · Team', instructions: 'You are the Father.' }, tasks: [task('f')] };

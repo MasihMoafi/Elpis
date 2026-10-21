@@ -941,6 +941,11 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
 .canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
+.canvas-header > .canvas-run-control { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
+.canvas-run-control > button { flex:none; }
+.canvas-run-control .canvas-notice { flex:0 1 auto; min-width:0; margin:0; box-shadow:none; }
+.canvas-run-control .canvas-notice > span { overflow:visible; white-space:normal; overflow-wrap:anywhere; }
+.canvas-run-status { color:var(--muted-foreground); font-size:12px; }
 @container agents-canvas (max-width:760px) {
   .canvas-header > .canvas-name { flex-basis:140px; }
   .canvas-toolbar .canvas-toolbar-keys { display:none; }
@@ -1142,7 +1147,7 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
  * upright titles and chamfered controls in HTML over it. Colours come from the theme's tokens and the agent's --kind;
  * state colours match the flat board's (done --success, live --context, cut --destructive). */
 .canvas-view { flex:none; }
-.iso-board { container:iso-board / inline-size; position:relative; flex:1 1 0; min-height:0; overflow:clip; outline:none; cursor:grab; touch-action:none; user-select:none; --iso-wire:var(--muted-foreground); }
+.iso-board { container:iso-board / inline-size; position:relative; flex:1 1 0; min-height:0; overflow:clip; outline:none; cursor:crosshair; touch-action:none; user-select:none; --iso-wire:var(--muted-foreground); }
 .dark .iso-board { --iso-wire:color-mix(in oklch, var(--foreground) 45%, transparent); background:radial-gradient(ellipse at 45% 40%, color-mix(in oklch, var(--gold) 7%, var(--canvas)), var(--canvas) 70%); }
 .iso-board[data-panning] { cursor:grabbing; }
 .iso-board > svg { position:absolute; inset:0; width:100%; height:100%; }

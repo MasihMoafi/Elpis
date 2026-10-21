@@ -259,6 +259,7 @@
     "tests/love-spot-saving.test.cjs",
     "tests/message-edit.test.cjs",
     "tests/workflows-feedback.test.cjs",
+    "tests/workflows-wf1.test.cjs",
     "tests/browser-sessions-electron.test.cjs",
     "tests/sidebar-reorder.test.cjs",
     "tests/composer-consistency.test.cjs",

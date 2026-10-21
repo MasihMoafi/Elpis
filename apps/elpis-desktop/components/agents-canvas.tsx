@@ -1,7 +1,7 @@
 "use client";
 
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
 import { Check, ChevronRight, ExternalLink, ListOrdered, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
@@ -369,7 +369,10 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
   const data = node.data, panel = useRef<HTMLDivElement>(null);
   // A click anywhere else on the page closes it, as Escape does.
   useEffect(() => {
-    const away = (event: PointerEvent) => { if (!panel.current?.contains(event.target as Element)) onClose(); };
+    const away = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && !panel.current?.contains(target) && !target.closest("[data-agent-info]")) onClose();
+    };
     document.addEventListener("pointerdown", away, true);
     return () => document.removeEventListener("pointerdown", away, true);
   }, [onClose]);
@@ -404,6 +407,11 @@ export function AgentsCanvas(props: Props) {
 /** Models listed by a provider other than the engine's own, fetched once per provider and settings version. */
 const catalogs = new Map<string, { version: string; models?: Model[]; error?: string }>();
 
+function runFailure(detail: string) {
+  if (/EACCES|EPERM|permission|write.*(?:refused|denied)|not writable/i.test(detail)) return `Elpis could not write the run's files. Choose a project you can write to or allow the requested write, then run again. ${detail}`;
+  return `${detail} Review this message and the agents' Info, then try Run graph again.`;
+}
+
 function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
@@ -425,6 +433,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const project = useProjectFolders(cwd);
   const own = useMemo(() => ownFolders(graph), [graph]);
   const [notice, setNotice] = useState("");
+  const runReasonId = useId();
   const [deleted, setDeleted] = useState<string | null>(null);
   useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
   const [flowEdit, setFlowEdit] = useState<{ edge: CanvasEdge; left: number; top: number } | null>(null);
@@ -512,8 +521,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         for (const stop of stops) { const key = `merge ${stop.agent ?? "project"}`; if (!said.current[key]) { said.current[key] = "failed"; fresh.push(stop); } }
         if (fresh.length) setNotice(fresh.map(stop => stopText(stop, stop.agent ? titleOf(stop.agent) : "")).join(" "));
         const failed = found.tasks.find(task => task.status === "failed" && task.failureReason);
-        if (!fresh.length && !failed && found.error) setNotice(found.error);
-        if (!fresh.length && failed) setNotice(`${titleOf(failed.id.replace(/-check$/, ""))}: ${failed.failureReason}`);
+        if (!fresh.length && !failed && found.error) setNotice(runFailure(found.error));
+        if (!fresh.length && failed) setNotice(runFailure(`${titleOf(failed.id.replace(/-check$/, ""))}: ${failed.failureReason}`));
         const stopLines = fresh.map(stop => ({ at: Date.now(), agent: stop.agent ?? undefined, text: stop.agent ? `${titleOf(stop.agent)}: merge clash in ${filesText(stop.files, 3)}` : `Merge blocked: uncommitted changes in ${filesText(stop.files, 3)}`, tone: "fail" as const }));
         const lines = found.tasks.flatMap(task => {
           const previous = said.current[task.id];
@@ -551,11 +560,11 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           next = { ...next, father: { ...father, threadId: stage.threadId, graphId: stage.graphId, status: stage.status, reported: stage.reported } };
           if (stage.reported && !father.reported) setLog(current => [...current, { at: Date.now(), text: "FATHER REPORT RECEIVED · DATASTORE CAPTURED · Mother", tone: "done" }]);
         }
-        if (stage?.error && live) setNotice(stage.error);
+        if (stage?.error && live) setNotice(runFailure(stage.error));
         // His own run is read in a poll that did not just change him: the change restarts this effect, which reads at once.
         if (next.father === father && father?.threadId && father.graphId && !father.reported) await read(father.threadId, father.graphId);
         if (live && next !== run) setRun(over(next) ? { ...next, endedAt: Date.now() } : next);
-      } catch (error) { if (live) setNotice(error instanceof Error ? error.message : String(error)); }
+      } catch (error) { if (live) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
       finally { polling = false; }
     };
     void poll();
@@ -1033,10 +1042,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
-  const [needProject, setNeedProject] = useState(false);
-  useEffect(() => { if (cwd) setNeedProject(false); }, [cwd]);
   async function letElpis(goal: string): Promise<CanvasGraph | null> {
-    if (!cwd) { setNeedProject(true); setNotice("Choose the project the agents work in, then try again."); return null; }
+    if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
     setPlanning(goal); setNotice(""); setMenu(null);
     try {
       const plan = await api<Plan>("/canvas/plan", { goal, cwd, folders: project.folders ?? [], agents: boardForPlan(graph), maxAgents: limit });
@@ -1068,7 +1075,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
 
   async function start() {
     // Agents work inside a project: without one, the notice offers the project menu right there.
-    if (!cwd) { setNeedProject(true); setNotice("Choose the project the agents work in, then run again."); return; }
+    if (!cwd) { setNotice("Choose the project the agents work in, then run again."); return; }
     // Prompts and folders left empty are Elpis's to fill: from the run's goal, or, with none written, from the team as
     // drawn. A run never stops for a missing goal.
     // An agent without folders in a project that has none writes only its own folder: nothing for Elpis to choose.
@@ -1085,7 +1092,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
       const result = await runPart(created.thread.id, ready.name || "Workflows", built.mother, built.father.length ? await fatherPart(built.father) : undefined);
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
-    } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
     finally { setStarting(false); }
   }
 
@@ -1104,11 +1111,18 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} />Auto-arrange</Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
-      <Button size="sm" onClick={() => void start()} disabled={starting || Boolean(run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
+      <div className="canvas-run-control">
+        <Button size="sm" onClick={() => void start()} aria-describedby={notice || starting || run && !over(run) ? runReasonId : undefined} disabled={starting || Boolean(run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
+        {notice ? <div id={runReasonId} className="canvas-notice" role="alert"><span>{notice}</span><Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button></div>
+          : (starting || run && !over(run)) && <span id={runReasonId} className="canvas-run-status" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
+      </div>
     </header>
     <div className="canvas-board" ref={board}
       onPointerDownCapture={event => {
-        if (event.button !== 0 || !event.isPrimary || !(event.target instanceof Element) || !event.target.matches(".react-flow__pane")) return;
+        const target = event.target;
+        if (event.button !== 0 || !event.isPrimary || !(target instanceof Element)) return;
+        const empty = target.matches(".react-flow__pane") || target.closest(".iso-board") && !target.closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label");
+        if (!empty) return;
         boxDrag.current = { x: event.clientX, y: event.clientY, base: event.shiftKey || event.ctrlKey || event.metaKey ? [...selection] : [], moved: false };
         event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation();
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -1120,7 +1134,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         start.moved = true;
         const bounds = event.currentTarget.getBoundingClientRect(), left = Math.min(start.x, event.clientX), top = Math.min(start.y, event.clientY), right = Math.max(start.x, event.clientX), bottom = Math.max(start.y, event.clientY), crossing = event.clientX < start.x;
         setSelectionBox({ x: left - bounds.left, y: top - bounds.top, width: right - left, height: bottom - top, crossing });
-        const picked = [...event.currentTarget.querySelectorAll<HTMLElement>(".react-flow__node:not(.react-flow__node-father)")].filter(node => {
+        const picked = [...event.currentTarget.querySelectorAll<HTMLElement | SVGGElement>(".react-flow__node:not(.react-flow__node-father), .iso-node:not([data-kind='father'])")].filter(node => {
           const box = node.getBoundingClientRect();
           return crossing ? box.left <= right && box.right >= left && box.top <= bottom && box.bottom >= top : box.left >= left && box.right <= right && box.top >= top && box.bottom <= bottom;
         }).map(node => node.dataset.id!);
@@ -1181,7 +1195,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; Tab opens it too">Command <kbd>Tab</kbd></Button>
         <Button variant="ghost" size="sm" aria-label="Arrange by run order" title="Arrange by run order and fit the view" onClick={tidy}><ListOrdered size={14} />Arrange</Button>
         {/* The keys, as Deus Ex's control strip shows them: a few, short; the rest are in each control's tooltip. */}
-        <span className="canvas-toolbar-keys" title={iso ? "Click an agent to select it. Shift adds to the selection. Drag the empty board to pan." : "AutoCAD selection: drag left to right for a solid window (fully inside); right to left for a dashed crossing (touching). Shift adds to the selection."}><span><kbd>Space</kbd>Patterns</span><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Info</span><span><kbd>Shift</kbd>{iso ? "Select several" : "AutoCAD selection"}</span><span><kbd>Ctrl+A</kbd>All</span></span>
+        <span className="canvas-toolbar-keys" title="AutoCAD selection: drag left to right for a solid window (fully inside); right to left for a dashed crossing (touching). Shift adds to the selection. Middle-drag or scroll to pan."><span><kbd>Space</kbd>Patterns</span><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Info</span><span><kbd>Shift</kbd>AutoCAD selection</span><span><kbd>Ctrl+A</kbd>All</span></span>
       </div>
       {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="input input-sm w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
       {patternCommand !== null && <form className="canvas-pattern-command bg-base-100 text-base-content" aria-label="Workflow command" onSubmit={event => {
@@ -1207,7 +1221,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {undoLoad && !notice && !planning && !deleted && <p className="canvas-notice" data-tone="info" role="status">Loaded {undoLoad.loaded}.
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></Button></p>}
-      {notice && <p className="canvas-notice" role="alert">{notice}{needProject && !cwd && projectMenu}<Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button></p>}
     </div>
     {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
@@ -1239,7 +1252,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <FolderPicker cwd={cwd} {...project} value={selected.data.writeScopes} own={own.get(selected.id)} onChange={writeScopes => edit({ writeScopes })} />
       <label>Done when (one per line; its check holds it to these)<Textarea aria-label="Done when" rows={3} value={selected.data.acceptanceCriteria.join("\n")} placeholder={DONE} onChange={event => edit({ acceptanceCriteria: lines(event.target.value) })} /></label>
       <div className="canvas-inspector-actions">
-        <Button variant="outline" size="sm" onClick={() => setDashboardId(selected.id)}>Dashboard <kbd>Enter</kbd></Button>
+        <Button variant="outline" size="sm" data-agent-info={selected.id} aria-expanded={dashboardId === selected.id} onClick={() => setDashboardId(current => current === selected.id ? null : selected.id)}>Info <kbd>Enter</kbd></Button>
         {chat && <Button variant="outline" size="sm" onClick={() => onOpenChat(chat)}><ExternalLink size={14} />Open its chat</Button>}
         <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove([selected.id])}><Trash2 size={14} />Delete agent</Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>Done</Button>

@@ -117,15 +117,15 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     assert.match(await status.innerText(), /Nuvani · Join the parts[\s\S]*Wave 2/);
     assert.equal(await board.locator('.iso-link[data-hot]').count(), 3, 'the three wires into Nuvani · Join the parts light up');
 
-    // The wheel zooms, a drag pans, Fit shows the whole graph again.
+    // The wheel zooms, a middle drag pans, Fit shows the whole graph again.
     const world = board.locator('.iso-world');
     const fitted = await world.getAttribute('transform');
     const middle = await board.boundingBox();
     await page.mouse.move(middle.x + 20, middle.y + 20); await page.keyboard.down('Control'); await page.mouse.wheel(0, -400); await page.keyboard.up('Control'); await page.waitForTimeout(100);
     assert.notEqual(await world.getAttribute('transform'), fitted, 'modifier wheel zooms');
     const zoomed = await world.getAttribute('transform');
-    await page.mouse.move(middle.x + 14, middle.y + 14); await page.mouse.down(); await page.mouse.move(middle.x + 90, middle.y + 60, { steps: 5 }); await page.mouse.up();
-    assert.notEqual(await world.getAttribute('transform'), zoomed, 'a drag pans');
+    await page.mouse.move(middle.x + 14, middle.y + 14); await page.mouse.down({ button: 'middle' }); await page.mouse.move(middle.x + 90, middle.y + 60, { steps: 5 }); await page.mouse.up({ button: 'middle' });
+    assert.notEqual(await world.getAttribute('transform'), zoomed, 'a middle drag pans');
     await board.getByRole('button', { name: 'Fit view', exact: true }).click();
     assert.equal(await world.getAttribute('transform'), fitted, 'Fit shows the whole graph again');
 

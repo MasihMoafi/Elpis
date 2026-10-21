@@ -113,8 +113,8 @@ export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: bo
 export type IsoController = { fit: () => void; frame: () => void; reveal: (ids: string[]) => void; position: (client: Point) => Point; keepView: () => void };
 type Props = { modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
 /** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
- * (Shift adds), a double-click renames an agent and Enter opens its dashboard, the arrows move between agents in run order, the
- * wheel zooms and a drag pans. */
+ * (Shift adds), a double-click renames an agent and Enter opens Info, the arrows move between agents in run order.
+ * The parent owns window/crossing selection in both views; middle-drag and scroll pan, Ctrl/Cmd+scroll zooms. */
 export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
   const root = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, SVGGElement>());
   const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
@@ -290,7 +290,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     onDoubleClick={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onAdd({ x: event.clientX, y: event.clientY }); }}
     onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onBoardMenu(event); }}
     onPointerDown={event => {
-      if (![0, 1].includes(event.button) || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label") || (event.button === 0 && (event.target as Element).closest(".iso-node"))) return;
+      if (event.button !== 1 || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label")) return;
       event.preventDefault(); event.currentTarget.focus({ preventScroll: true });
       drag.current = { x: event.clientX, y: event.clientY, from: view, moved: false };
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -316,8 +316,10 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
         }
         return;
       }
-      const start = drag.current; drag.current = null; setPanning(false); if (start && !start.moved) onSelect([]);
+      drag.current = null; setPanning(false);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     }}
+    onLostPointerCapture={() => { drag.current = null; setPanning(false); setWireDrag(null); }}
     onPointerCancel={() => { drag.current = null; setPanning(false); setWireDrag(null); }}>
     <svg role="group" aria-label="Agents in run order">
       <defs><filter id={blur} x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation={dark ? 11 : 7} /></filter></defs>
@@ -408,7 +410,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
       <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
       <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
       <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
-      <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Drag</b>Pan</span></span>
+      <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Middle-drag</b>Pan</span></span>
     </div>
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
