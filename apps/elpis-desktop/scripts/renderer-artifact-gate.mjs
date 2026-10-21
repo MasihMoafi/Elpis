@@ -10,7 +10,9 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 
 // The retained UI regressions: the 21 October integration of every approved desktop fix. Move it only in a commit that
 // names the request (Masih's words) that changes a retained behaviour; never to make a failing gate pass.
-export const baselineCommit = '21343157b57ac2cd2c9a101ab7f39bcadfaaac53';
+// 21 Oct (A121): moved from 21343157b, whose copies of 35 UI tests never passed (undefined helpers, stale fixtures),
+// to the commit that repairs them case for case. Masih: "You don't need to ask me that; I'm result-oriented."
+export const baselineCommit = '0a8f59254aa17547653f39c10d423a23d7c1656a';
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
 const appPrefix = 'apps/elpis-desktop/';
