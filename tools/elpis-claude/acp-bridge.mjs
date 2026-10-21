@@ -4,12 +4,13 @@ import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs
 import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
 import { ClaudeAccounts } from "./claude-accounts.mjs";
+import { recordedClaudeEnd } from "./claude-turn-record.mjs";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { existsSync, readFileSync, statSync, watch } from "node:fs";
+import { readFile, mkdir } from "node:fs/promises";
 import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const HOME = process.env.HOME;
@@ -335,9 +336,15 @@ class Acp {
     if (this.dead) return Promise.reject({ message: this.dead });
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, method, sessionId: params?.sessionId });
       this.send({ id, method, params });
     });
+  }
+  settleRecorded(sessionId, method, result) {
+    for (const [id, pending] of this.pending) if (pending.sessionId === sessionId && pending.method === method) {
+      this.pending.delete(id);
+      pending.resolve(result);
+    }
   }
   async #handle(msg) {
     if (msg.id !== undefined && !msg.method) {
@@ -732,6 +739,28 @@ wss.on("connection", (ws) => {
     const project = (threadCwd.get(threadId) ?? process.cwd()).replace(/[^a-zA-Z0-9]/g, "-");
     return join(claudeAccounts.configDir(live.accountId ?? "default"), "projects", project, `${live.id}.jsonl`);
   };
+  async function recoverClaudeTurn(threadId) {
+    const running = activeTurns.get(threadId);
+    if (running) { await running.recover?.(); return; }
+    await storeChain;
+    const saved = (await loadStore())[threadId], active = saved?.active;
+    if (!active?.userItems || processAlive(active.pid) || (saved.agent ?? "claude") !== "claude") return;
+    const project = active.cwd.replace(/[^a-zA-Z0-9]/g, "-");
+    const file = join(claudeAccounts.configDir(saved.claudeAccountId ?? "default"), "projects", project, `${saved.session}.jsonl`);
+    const final = await recordedClaudeEnd(file, active.transcriptOffset ?? 0, active.inputs ?? []);
+    if (!final) return;
+    const completedAt = Math.floor(now() / 1000);
+    const turn = { id: active.turnId, items: [...active.userItems, { type: "agentMessage", id: final.id ?? randomUUID(), text: final.text }], itemsView: "full", status: "completed", error: null,
+      startedAt: active.startedAt, startedAtMs: active.startedAtMs, completedAt, durationMs: (completedAt - active.startedAt) * 1000 };
+    await updateStore(st => {
+      if (st[threadId]?.active?.turnId !== active.turnId) return;
+      const { active: unused, ...rest } = st[threadId];
+      st[threadId] = { ...rest, turns: [...(rest.turns ?? []).filter(row => row.id !== turn.id), clipTurn(turn)].slice(-200) };
+    });
+    for (const item of turn.items) notify("item/completed", { threadId, turnId: turn.id, item });
+    notify("turn/completed", { threadId, turn });
+    notify("thread/status/changed", { threadId, status: { type: "idle" } });
+  }
   const attribution = (threadId, used) => {
     const file = transcriptOf(threadId);
     if (file && existsSync(file)) {
@@ -1051,9 +1080,17 @@ wss.on("connection", (ws) => {
     const child = childIds.has(threadId) ? (await storedChildren(null)).get(threadId) : null;
     const turns = new Map((child ? child.turns : claudeTurnsOf(store, threadId)).map(turn => [turn.id, turn]));
     if (running) turns.set(running.turnId, running.snapshot(kind === "turns" ? view : "full"));
-    const records = kind === "turns" ? [...turns.values()] : [...turns.values()].filter(turn => !params.turnId || turn.id === params.turnId).flatMap(turn => (turn.items ?? []).map((item, index) => ({ turnId: turn.id, item, startedAtMs: (turn.startedAt ?? 0) * 1000 + index, completedAtMs: turn.completedAt == null ? null : turn.completedAt * 1000 })));
+    const itemPositions = new Map();
+    const records = kind === "turns" ? [...turns.values()] : [...turns.values()].filter(turn => !params.turnId || turn.id === params.turnId).flatMap(turn => (turn.items ?? []).map((item, index) => {
+      if (turn.startedAtMs != null) itemPositions.set(`${turn.id}:${item.id}`, index);
+      return { turnId: turn.id, item, startedAtMs: turn.startedAtMs ?? (turn.startedAt ?? 0) * 1000 + index, completedAtMs: turn.completedAt == null ? null : turn.completedAt * 1000 };
+    }));
     const idOf = row => kind === "turns" ? row.id : row.item?.id;
-    const keyOf = row => [kind === "turns" ? (row.startedAt ?? 0) : (row.startedAtMs ?? 0), String(idOf(row) ?? "")];
+    const keyOf = row => {
+      const position = itemPositions.get(`${row.turnId}:${row.item?.id}`);
+      return [kind === "turns" ? (row.startedAtMs == null ? row.startedAt ?? 0 : row.startedAtMs / 1000) : row.startedAtMs ?? 0,
+        position == null ? String(idOf(row) ?? "") : `${String(position).padStart(10, "0")}:${idOf(row)}`];
+    };
     const compareKey = (a, b) => ((a[0] - b[0]) || a[1].localeCompare(b[1])) * (direction === "desc" ? -1 : 1);
     const compare = (a, b) => compareKey(keyOf(a), keyOf(b));
     const providerIds = new Set(records.map(idOf));
@@ -1167,6 +1204,7 @@ wss.on("connection", (ws) => {
   // The engine's own chats and helpers get the delegate tool while the Subagents switch is on (A37).
   const withAgents = async (params) => { if (params && await subagentsAllowed(params.cwd)) params.config = { ...params.config, ...engineAgentsConfig() }; };
   const activeTurns = new BusyMap(); // thread id -> its running Claude or Antigravity turn
+  const pendingMirrors = new Map(); // native history copies do not own the provider's turn status
   const engineTurns = new BusyMap(); // thread id -> its running engine turn
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
   // whose authority a restriction reduces; its next prompt applies the confirmed restricted mode.
@@ -1719,12 +1757,13 @@ wss.on("connection", (ws) => {
     notify("turn/started", { threadId, turn: { ...turn, startedAt } });
     notify("turn/costUpdated", { threadId, turnId, cost: { type: "unavailable", reason: "subscriptionAuthentication" } });
     const t0 = now();
+    turn.startedAtMs = t0;
     let firstTokenAt = null;
     const userItem = req.kind === "review"
       ? { type: "enteredReviewMode", id: randomUUID(), review: req.reviewHint }
       : { type: "userMessage", id: randomUUID(), clientId: req.params.clientUserMessageId ?? null, content: input };
     // A chat's first turn is not a saved turn until it ends; this lets any connection list the chat meanwhile.
-    updateStore((st) => { if (!st[threadId]?.turns?.length) st[threadId] = { ...st[threadId], active: { turnId, startedAt, pid: process.pid, preview: previewOf(userItem).trim().slice(0, 500) } }; });
+    updateStore((st) => { st[threadId] = { ...st[threadId], active: { turnId, startedAt, startedAtMs: t0, pid: process.pid, cwd: threadCwd.get(threadId) ?? process.cwd(), userItems: [userItem], preview: previewOf(userItem).trim().slice(0, 500) } }; });
     notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
     notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
 
@@ -1737,7 +1776,7 @@ wss.on("connection", (ws) => {
     // The running turn, from its first moment, so a steer or a stop during setup finds it.
     let sessionReady, finishTurn;
     const done = new Promise((resolve) => { finishTurn = resolve; });
-    const turnState = { threadId, turnId, done, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [] };
+    const turnState = { threadId, turnId, done, sessionId: null, items, closeMessage, cancelled: false, ready: new Promise((r) => { sessionReady = r; }), toolsIdle: [], steers: Promise.resolve(), promptEnded: false, bufferedUpdates: null };
     // Claude Code takes a steer at once and drops a tool that is still running (a subagent too),
     // so a steer waits for the running tools, as Claude Code's own queue does.
     turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
@@ -1749,6 +1788,7 @@ wss.on("connection", (ws) => {
     const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
     const accountId = agent.key === "claude" ? claudeAccounts.activeId() : null;
     try {
+      await pendingMirrors.get(threadId);
       refuseSignedOut(agent);
       const acp = await ensureAcp(agent);
       turnState.acp = acp;
@@ -1828,13 +1868,19 @@ wss.on("connection", (ws) => {
       // The chat's updates draw into this turn; a subagent's come under its own ACP session and
       // draw into its child thread (see spawnSubagent). The turn hears only its own sessions.
       const own = turnState.own = {};
-      own.onUpdate = ({ sessionId: sid, update: u }) => {
+      const drawUpdate = ({ sessionId: sid, update: u }) => {
         if (u.sessionUpdate === "subagent_spawned") { spawnSubagent(u, sid === sessionId ? lane : subLanes.get(sid) ?? lane); return; }
         if (u.sessionUpdate === "subagent_state_update") { finishSubagent(subLanes.get(u.subagentSessionId), u.state); return; }
         const into = sid === sessionId ? lane : subLanes.get(sid);
         if (!into) { log(`update for unknown session ${sid}: ${u.sessionUpdate}`); return; }
         if (into === lane && u.sessionUpdate === "agent_message_chunk") firstTokenAt ??= now();
         into.update(u);
+      };
+      own.onUpdate = update => { if (turnState.bufferedUpdates) turnState.bufferedUpdates.push(update); else drawUpdate(update); };
+      turnState.flushUpdates = () => {
+        const buffered = turnState.bufferedUpdates ?? [];
+        turnState.bufferedUpdates = null;
+        for (const update of buffered) drawUpdate(update);
       };
       const spawnSubagent = (u, parent) => {
         if (!u.subagentSessionId || subLanes.has(u.subagentSessionId)) return;
@@ -1974,7 +2020,51 @@ wss.on("connection", (ws) => {
       }
       if (compacting) ctxChars.delete(threadId);
       else addChars(threadId, "user", prompt.filter((c) => c.type === "text").reduce((n, c) => n + c.text.length, 0));
+      const file = transcriptOf(threadId);
+      let transcriptOffset = 0;
+      try { if (file) transcriptOffset = statSync(file).size; } catch {}
+      const inputs = [prompt.filter(block => block.type === "text").map(block => block.text).join("\n")];
+      turnState.inputs = inputs;
+      await updateStore(st => { if (st[threadId]?.active?.turnId === turnId) Object.assign(st[threadId].active, { transcriptOffset, inputs }); });
+      let recovering;
+      turnState.recover = () => {
+        if (recovering) return recovering;
+        if (!file || turnState.promptEnded || turnState.cancelled) return;
+        return recovering ??= (async () => {
+          const expected = [...inputs];
+          const final = await recordedClaudeEnd(file, transcriptOffset, expected);
+          if (!final || expected.length !== inputs.length || expected.some((text, index) => text !== inputs[index]) || turnState.promptEnded || turnState.cancelled || activeTurns.get(threadId) !== turnState) return;
+          // The record proves this prompt ended even if the adapter lost its live answer/result.
+          turnState.promptEnded = true;
+          turnState.toolsIdle.splice(0).forEach(resolve => resolve());
+          acp.settleRecorded(sessionId, "_session/steering", { outcome: "injected" });
+          await turnState.steers;
+          turnState.flushUpdates();
+          const known = lane.message?.text ?? items.filter(item => item.type === "agentMessage").at(-1)?.text ?? "";
+          if (!known.endsWith(final.text)) lane.say({ type: "agentMessage", id: final.id ?? randomUUID(), text: final.text });
+          acp.send({ method: "session/cancel", params: { sessionId } });
+          acp.settleRecorded(sessionId, "session/prompt", { stopReason: "end_turn" });
+          await done;
+        })().catch(e => log(`turn recovery: ${e.message}`)).finally(() => { recovering = null; });
+      };
+      if (file) {
+        try {
+          await mkdir(dirname(file), { recursive: true });
+          let timer;
+          const watcher = watch(dirname(file), (_event, name) => {
+            if (String(name) !== basename(file)) return;
+            clearTimeout(timer);
+            // Let ordinary ACP delivery finish first. No polling, and no watcher after the turn.
+            timer = setTimeout(() => { void turnState.recover(); }, 250);
+          });
+          watcher.on("error", error => log(`turn record watcher: ${error.message}`));
+          turnState.stopRecordWatch = () => { clearTimeout(timer); watcher.close(); };
+        } catch (error) { log(`turn record watcher: ${error.message}`); }
+      }
       const result = turnState.cancelled ? { stopReason: "cancelled" } : await acp.call("session/prompt", { sessionId, prompt });
+      turnState.promptEnded = true;
+      turnState.toolsIdle.splice(0).forEach(resolve => resolve());
+      await turnState.steers;
       const tu = result.usage;
       if (tu) {
         const turnUsage = { input: tu.inputTokens ?? 0, output: tu.outputTokens ?? 0, cachedRead: tu.cachedReadTokens ?? 0, cachedWrite: tu.cachedWriteTokens ?? 0, total: tu.totalTokens ?? 0 };
@@ -1999,14 +2089,21 @@ wss.on("connection", (ws) => {
         else if (it.type === "agentMessage" && it.text.trim()) { flush(); say("assistant", it.text.trim()); }
       }
       flush();
-      if (!compacting) await engineCall("thread/inject_items", { threadId, items: record })
-        .then(() => log(`recorded Claude turn in thread ${threadId} (${record.length} items)`))
-        .catch((e) => log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`));
+      if (!compacting) {
+        const mirror = engineCall("thread/inject_items", { threadId, items: record }, 5000)
+          .then(() => log(`recorded Claude turn in thread ${threadId} (${record.length} items)`))
+          .catch(e => {
+            log(`record failed for ${threadId}: ${e.message ?? JSON.stringify(e)}`);
+            notify("warning", { threadId, message: "The answer is saved, but its native history copy could not be confirmed." });
+          }).finally(() => { if (pendingMirrors.get(threadId) === mirror) pendingMirrors.delete(threadId); });
+        pendingMirrors.set(threadId, mirror);
+      }
     } catch (e) {
       status = "failed";
       error = { message: acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
       log(`turn error ${JSON.stringify(e)}`);
     }
+    turnState.stopRecordWatch?.();
     sessionReady(null);
     // The ended turn answers for its sessions no more: a late approval from them is refused.
     for (const sid of [turnState.sessionId, ...subLanes.keys()]) {
@@ -2021,14 +2118,14 @@ wss.on("connection", (ws) => {
       notify("item/completed", { item: exit, threadId, turnId, completedAtMs: now() });
       items.push(exit);
     }
-    if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
     cancelRelays(ws, threadId, turnId);
     turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
-      const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 });
+      const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000 });
       await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record].slice(-200) }; });
     }
+    if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
     notify("turn/activityUpdated", { threadId, turnId, status: status === "inProgress" ? "completed" : status, durationMs: now() - t0, timeToFirstTokenMs: firstTokenAt ? firstTokenAt - t0 : null });
     notify("thread/status/changed", { threadId, status: { type: "idle" } });
@@ -2297,39 +2394,47 @@ wss.on("connection", (ws) => {
       notify("thread/queue/changed", { threadId });
       runNext(threadId);
     };
-    const sessionId = await turn.ready;
-    await turn.whenToolsIdle();
-    if (steer.cancelled) return;
-    if (!sessionId || activeTurns.get(threadId) !== turn || turn.cancelled) {
-      queueForNextTurn();
-      return;
-    }
-    try {
-      const prompt = await toAcpPrompt(input);
+    const deliver = async () => {
+      const sessionId = await turn.ready;
+      if (!turn.promptEnded) await turn.whenToolsIdle();
       if (steer.cancelled) return;
-      if (activeTurns.get(threadId) !== turn || turn.cancelled) { queueForNextTurn(); return; }
-      steer.phase = "dispatching";
-      const r = await turn.acp.call("_session/steering", { sessionId, prompt, _meta: { steering: { idleBehavior: "promptRequired" } } });
-      if (r?.outcome === "promptRequired") { queueForNextTurn(); return; }
-      waiting.delete(clientUserMessageId);
-      if (r?._meta?.delivery === "nextTurn") {
-        notify("warning", { threadId, message: "Gemini will read this message after its current reply finishes." });
+      if (!sessionId || activeTurns.get(threadId) !== turn || turn.cancelled || turn.promptEnded) {
+        queueForNextTurn();
+        return;
       }
-      turn.closeMessage();
-      const item = { type: "userMessage", id: randomUUID(), clientId: clientUserMessageId, content: input };
-      notify("item/started", { item, threadId, turnId: turn.turnId, startedAtMs: now() });
-      notify("item/completed", { item, threadId, turnId: turn.turnId, completedAtMs: now() });
-      turn.items.push(item);
-      addChars(threadId, "user", inputSummary(input).length);
-      log(`steered Claude turn ${turn.turnId} (${r?.outcome ?? "ok"})`);
-    } catch (e) {
-      if (steer.phase === "dispatching") {
-        steer.phase = "unconfirmed";
-        notify("warning", { threadId, message: `Waiting message delivery is unconfirmed: ${e?.message ?? JSON.stringify(e)}. Reconnect before retrying it.` });
-      } else {
-        notify("warning", { threadId, message: `Could not prepare the waiting message: ${e?.message ?? JSON.stringify(e)}. Press Up to revise it.` });
-      }
-    }
+      try {
+        const prompt = await toAcpPrompt(input);
+        if (steer.cancelled) return;
+        if (activeTurns.get(threadId) !== turn || turn.cancelled || turn.promptEnded) { queueForNextTurn(); return; }
+        steer.phase = "dispatching";
+        turn.bufferedUpdates = [];
+        const text = prompt.filter(block => block.type === "text").map(block => block.text).join("\n");
+        turn.inputs?.push(text);
+        const r = await turn.acp.call("_session/steering", { sessionId, prompt, _meta: { steering: { idleBehavior: "promptRequired" } } });
+        if (r?.outcome === "promptRequired") { turn.inputs?.pop(); queueForNextTurn(); return; }
+        waiting.delete(clientUserMessageId);
+        if (r?._meta?.delivery === "nextTurn") {
+          notify("warning", { threadId, message: "Gemini will read this message after its current reply finishes." });
+        }
+        turn.closeMessage();
+        const item = { type: "userMessage", id: randomUUID(), clientId: clientUserMessageId, content: input };
+        notify("item/started", { item, threadId, turnId: turn.turnId, startedAtMs: now() });
+        notify("item/completed", { item, threadId, turnId: turn.turnId, completedAtMs: now() });
+        turn.items.push(item);
+        await updateStore(st => { if (st[threadId]?.active?.turnId === turn.turnId) { st[threadId].active.userItems.push(item); st[threadId].active.inputs = turn.inputs; } });
+        addChars(threadId, "user", inputSummary(input).length);
+        log(`steered Claude turn ${turn.turnId} (${r?.outcome ?? "ok"})`);
+      } catch (e) {
+        if (steer.phase === "dispatching") {
+          steer.phase = "unconfirmed";
+          notify("warning", { threadId, message: `Waiting message delivery is unconfirmed: ${e?.message ?? JSON.stringify(e)}. Reconnect before retrying it.` });
+        } else {
+          notify("warning", { threadId, message: `Could not prepare the waiting message: ${e?.message ?? JSON.stringify(e)}. Press Up to revise it.` });
+        }
+      } finally { turn.flushUpdates?.(); }
+    };
+    turn.steers = turn.steers.then(deliver);
+    await turn.steers;
   }
 
   function cancelClaudeSteers(msg) {
@@ -2491,7 +2596,7 @@ wss.on("connection", (ws) => {
       toTui({ id: msg.id, result: { ...claudeAccounts.snapshot(), ...(extra.authUrl && { authUrl: extra.authUrl }) } });
     } catch (e) { toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } }); }
   }
-  function handleMessage(data) {
+  function handleMessage(data, recovered = false) {
     const line = data.toString();
     let msg;
     try { msg = JSON.parse(line); } catch { engine.stdin.write(line + "\n"); return; }
@@ -2529,6 +2634,17 @@ wss.on("connection", (ws) => {
     }
     if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || ["thread/resume", "thread/read", "thread/turns/list", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method))) {
       owner.dispatch(msg, ws); return;
+    }
+    if (pendingMirrors.has(msg.params?.threadId) && ["turn/start", "thread/settings/update", "thread/fork", "thread/revert", "thread/archive", "thread/delete"].includes(msg.method)) {
+      pendingMirrors.get(msg.params.threadId).then(() => handleMessage(data, recovered));
+      return;
+    }
+    if (!recovered && (claudeModel.has(msg.params?.threadId) || !threadSeen.has(msg.params?.threadId)) && ["thread/read", "thread/resume", "thread/turns/list", "thread/items/list", "turn/steer"].includes(msg.method)) {
+      recoverClaudeTurn(msg.params?.threadId).then(() => handleMessage(data, true), error => {
+        log(`turn recovery: ${error.message}`);
+        handleMessage(data, true);
+      });
+      return;
     }
     if (msg.method === "thread/delete") { deleteThread(msg); return; }
     if (["thread/start", "thread/fork", "thread/resume"].includes(msg.method)) openingReplies.add(msg.id);

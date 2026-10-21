@@ -51,6 +51,7 @@
     "bridge/approvals.test.mjs",
     "bridge/attachments.test.mjs",
     "bridge/bridge.test.mjs",
+    "bridge/claude-turn-delivery.test.mjs",
     "bridge/browser-mcp.test.mjs",
     "bridge/canvas-plan.test.mjs",
     "bridge/chat-worktree.test.mjs",

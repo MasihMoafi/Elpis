@@ -172,6 +172,7 @@ export class DesktopClient extends EventEmitter {
   #workflowRuns; #acpApprovals = new Map();
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
+  #turnRevisions = new Map();
   #reportAttempts; #reportRetryMs;
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
@@ -242,7 +243,7 @@ export class DesktopClient extends EventEmitter {
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(new BridgeError(pending.reading ? 'Elpis connection closed while reading. Reload the view after reconnecting.' : 'Elpis connection closed; the request outcome is unknown. Check the conversation before retrying.', 503)); }
     this.#workflowRuns.close();
     this.#pending.clear(); this.#approvals.clear(); this.#checkingApprovals.clear();
-    this.#owned.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear();
+    this.#owned.clear(); this.#attaching.clear(); this.#context.clear(); this.#models.clear(); this.#turnRevisions.clear();
     this.#catalog = null;
     for (const id of this.#sideChats.keys()) this.emit('event', { type: 'sideChat', data: { method: 'thread/closed', params: { threadId: id } } });
     this.#sideChats.clear(); this.#side.clear();
@@ -317,6 +318,7 @@ export class DesktopClient extends EventEmitter {
       return;
     }
     const id = message.params?.threadId ?? message.params?.thread?.id;
+    if (id && ['turn/started', 'turn/completed', 'thread/status/changed'].includes(message.method)) this.#turnRevisions.set(id, (this.#turnRevisions.get(id) ?? 0) + 1);
     if (message.id !== undefined) {
       if (this.#owned.has(id)) this.#admitApproval(message, {ownerThreadId:id});
       else if (!this.#checkingApprovals.has(message.id)) {
@@ -453,7 +455,7 @@ export class DesktopClient extends EventEmitter {
     return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
       canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
-  #forget(id) { this.#browserConfig?.close?.(id); this.#sessionManagerConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); }
+  #forget(id) { this.#browserConfig?.close?.(id); this.#sessionManagerConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); this.#turnRevisions.delete(id); }
   async listThreads(options = {}) {
     object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
     if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
@@ -520,8 +522,14 @@ export class DesktopClient extends EventEmitter {
   }
   async readThread(id, options = {}) {
     object(options, ['cursor', 'limit']);
+    const revision = this.#turnRevisions.get(id);
     const thread = await this.readThreadMetadata(id);
     const items = await this.#itemsPage({ threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
+    // A missed renderer event must not leave its Stop/Working state behind the saved
+    // conversation. A newer live turn always takes precedence over this read.
+    if (thread.model?.startsWith('claude/') && thread.status?.type === 'idle' && this.#turnRevisions.get(id) === revision) {
+      this.emit('event', { type: 'message', data: { method: 'thread/status/changed', params: { threadId: id, status: thread.status } } });
+    }
     return { thread, ...items };
   }
   async readPrompts(id) {

@@ -21,7 +21,7 @@ const log = (entry) => { if (process.env.FAKE_ENGINE_LOG) fs.appendFileSync(proc
 const send = (msg, socket) => socket ? socket.send(JSON.stringify(msg)) : process.stdout.write(JSON.stringify(mcp ? { jsonrpc: "2.0", ...msg } : msg) + "\n");
 let wss;
 const notify = (method, params) => wss ? [...wss.clients].forEach(socket => send({ method, params }, socket)) : send({ method, params });
-const threads = new Map(); // id -> { model }
+const threads = new Map(process.env.FAKE_ENGINE_STATE && fs.existsSync(process.env.FAKE_ENGINE_STATE) ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_STATE, "utf8")) : []); // id -> { model }
 const waiting = new Map(); // our request id -> resolve
 const turns = new Map(); // turn id -> { interrupt }
 let seq = 0;
@@ -133,11 +133,16 @@ function handle(msg, socket) {
   const p = msg.params ?? {};
   switch (msg.method) {
     case "initialize": log({ engineHome: process.env.ELPIS_HOME ?? null }); return reply({ userAgent: "fake-engine/0" });
+    case "model/list": return reply({ data: [{ id: "luna-test", model: "luna-test", displayName: "Test GPT", supportedReasoningEfforts: [] }], nextCursor: null });
+    case "config/read": return reply({ config: { features: { multi_agent: false } } });
+    case "thread/elpisInstructions/read": return reply({});
+    case "thread/inject_items": if (process.env.FAKE_ENGINE_HOLD_INJECT) return; return reply({});
     case "thread/start": {
       const id = randomUUID();
       const thread = { id, cwd: p.cwd, source: "appServer", status: { type: "idle" }, model: p.model ?? "default-model", config: p.config, turns: [] };
       threads.set(id, thread);
-      reply({ thread, model: thread.model, modelProvider: p.modelProvider ?? "openai" });
+      if (process.env.FAKE_ENGINE_STATE) fs.writeFileSync(process.env.FAKE_ENGINE_STATE, JSON.stringify([...threads]));
+      reply({ thread, model: thread.model, modelProvider: p.modelProvider ?? "openai", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite" } });
       return notify("thread/started", { thread });
     }
     case "thread/name/set": threads.get(p.threadId).name = p.name; return reply({});
@@ -145,6 +150,7 @@ function handle(msg, socket) {
     case "thread/resume":
     case "thread/read": return threads.has(p.threadId) ? reply({ thread: threads.get(p.threadId) }) : error("thread not found");
     case "thread/turns/list": return reply({ data: threads.get(p.threadId).turns, nextCursor: null });
+    case "thread/items/list": return reply({ data: [], nextCursor: null });
     case "thread/unsubscribe": return reply({});
     case "turn/steer": {
       const turn = turns.get(p.expectedTurnId);

@@ -1,0 +1,202 @@
+// Real provider bridge -> installed native engine -> DesktopClient. Only inference is scripted.
+// A124: follow-ups, late steering replies and reconnects must retain answers and completion.
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { test } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as pause } from "node:timers/promises";
+const { DesktopClient } = await import(process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mjs", import.meta.url));
+
+const source = fileURLToPath(new URL("../", import.meta.url));
+const lines = file => fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(JSON.parse) : [];
+async function until(check, label, ms = 5000) {
+  for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = await check(); if (value) return value; }
+  assert.fail(label);
+}
+
+async function fixture(t, extra = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "a124-"));
+  const socketPath = path.join(root, "bridge.sock");
+  const storeFile = path.join(root, "sessions.json"), agentLog = path.join(root, "agent.jsonl");
+  const release = path.join(root, "release"), toolRelease = path.join(root, "tools");
+  const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: path.join(root, "elpis"), CODEX_HOME: path.join(root, "elpis"), CODEX_AUTH_HOME: root,
+    XDG_RUNTIME_DIR: root, XDG_CONFIG_HOME: root, TMPDIR: root, ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: socketPath,
+    ELPIS_ENGINE_BIN: process.env.A124_ENGINE ?? "/home/masih/.local/lib/elpis-next/versions/claude-accounts-20261020-fea460113/elpis-next", ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
+    ACP_BRIDGE_STORE: storeFile, ACP_BRIDGE_LOG: path.join(root, "bridge.log"), ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
+    FAKE_ENGINE_STATE: path.join(root, "native.json"),
+    FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release, FAKE_ACP_TOOL_RELEASE: toolRelease, ...extra };
+  const bridges = [];
+  let errors = "";
+  const launch = () => {
+    const child = spawn(process.execPath, [process.env.A124_BRIDGE ?? path.join(source, "acp-bridge.mjs")], { env, cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+    child.stderr.on("data", data => { errors += data; });
+    bridges.push(child); return child;
+  };
+  const bridge = launch();
+  const clients = [];
+  t.after(async () => {
+    clients.forEach(client => client.close());
+    for (const child of bridges) if (child.exitCode === null && child.signalCode === null) { const ended = once(child, "exit"); child.kill("SIGTERM"); await ended; }
+    fs.writeFileSync(path.join(root, "stderr.log"), errors);
+    // Evidence is retained in this owned throwaway home; never inspect or alter a real home.
+    t.diagnostic(`A124 evidence: ${root}`);
+  });
+  await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, `bridge starts: ${errors}`);
+  const connect = async () => {
+    const client = await DesktopClient.connect({ socketPath, timeoutMs: 5000, rewindHome: path.join(root, "rewind"), archiveDirectory: path.join(root, "archive") });
+    clients.push(client);
+    const events = [];
+    client.on("event", event => { if (event.type === "message") events.push(event.data); });
+    return { client, events };
+  };
+  const desktop = await connect();
+  await desktop.client.models();
+  const created = await desktop.client.createThread({ model: "claude/sonnet", cwd: root });
+  const id = created.thread.id;
+  const restart = async () => {
+    clients.forEach(client => client.close());
+    const ended = once(bridge, "exit"); bridge.kill("SIGTERM"); await ended;
+    launch();
+    await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, "bridge restarts");
+    return connect();
+  };
+  return { ...desktop, id, root, connect, restart, bridge, env, agent: () => lines(agentLog), store: () => fs.existsSync(storeFile) ? JSON.parse(fs.readFileSync(storeFile, "utf8")) : {},
+    release: () => fs.writeFileSync(release, ""), releaseTools: () => fs.writeFileSync(toolRelease, ""),
+    ended: turnId => desktop.events.find(e => e.method === "turn/completed" && e.params.turn.id === turnId) };
+}
+
+for (const count of [0, 1, 2, 4]) test(`Claude delivers a final answer and turn end after ${count} in-flight messages, then hello`, { timeout: 20000 }, async t => {
+  const f = await fixture(t, { FAKE_ACP_STEER_DELAY: "120" });
+  const started = await f.client.send(f.id, { text: "[wait] original" });
+  const turnId = started.turn.id;
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "Claude starts the turn");
+  for (let n = 0; n < count; n++) await f.client.steer(f.id, { text: `message ${n + 1}`, expectedTurnId: turnId });
+  await until(() => f.agent().filter(e => e.method === "_session/steering").length === count, "all in-flight messages reach Claude");
+  f.release();
+  await until(() => f.ended(turnId), "Claude ended but the desktop is still Working");
+  const first = f.store()[f.id].turns.find(turn => turn.id === turnId);
+  assert.equal(first.status, "completed");
+  const users = first.items.filter(item => item.type === "userMessage").map(item => item.content[0].text);
+  assert.deepEqual(users, ["[wait] original", ...Array.from({ length: count }, (_, n) => `message ${n + 1}`)], "all accepted messages are recorded before turn completion, in send order");
+  const answer = first.items.filter(item => item.type === "agentMessage").at(-1)?.text;
+  assert.ok(answer?.includes("answered:"), "the final answer is recorded");
+  for (let n = 0; n < count; n++) assert.ok(answer.includes(`message ${n + 1}`));
+  const end = f.events.indexOf(f.ended(turnId));
+  assert.ok(f.events.slice(0, end).some(e => e.method === "item/completed" && e.params.item.text === answer), "the desktop receives the answer before its turn end");
+  assert.equal((await f.client.readThread(f.id)).thread.status.type, "idle");
+  const hello = await f.client.steer(f.id, { text: "hello?", expectedTurnId: turnId });
+  await until(() => f.ended(hello.turn.id), "a message to a stale Working chat is answered and ends");
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered: hello?")));
+  const reread = await f.client.readThread(f.id);
+  assert.deepEqual([...reread.data].reverse().filter(entry => entry.item.type === "userMessage").map(entry => entry.item.content[0].text), [...users, "hello?"], "a catch-up read keeps fast consecutive turns and their messages in order");
+});
+
+test("a tool in flight retains several waiting messages until it finishes", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [tool-flight] original" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "tool starts");
+  for (const text of ["first while tool runs", "second while tool runs"]) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  assert.equal(f.agent().filter(e => e.method === "_session/steering").length, 0, "a steer cannot interrupt the running tool");
+  f.releaseTools();
+  await until(() => f.agent().filter(e => e.method === "_session/steering").length === 2, "waiting inputs are delivered after the tool");
+  f.release();
+  await until(() => f.ended(turn.id), "the turn ends");
+  assert.deepEqual(f.store()[f.id].turns[0].items.filter(i => i.type === "userMessage").map(i => i.content[0].text), ["[wait] [tool-flight] original", "first while tool runs", "second while tool runs"]);
+});
+
+test("a turn ending just after accepted waiting messages runs those messages in order", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [tool-flight] original" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "tool starts");
+  for (const text of ["first at the boundary", "second at the boundary"]) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  f.release(); f.releaseTools();
+  await until(() => f.store()[f.id]?.turns?.flatMap(t => t.items).filter(i => i.type === "userMessage").length === 3, "every accepted message is retained");
+  const turns = f.store()[f.id].turns;
+  assert.deepEqual(turns.flatMap(t => t.items).filter(i => i.type === "userMessage").map(i => i.content[0].text), ["[wait] [tool-flight] original", "first at the boundary", "second at the boundary"]);
+  assert.ok(turns.every(t => t.status === "completed" && t.items.some(i => i.type === "agentMessage" && i.text.includes("answered:"))));
+  assert.equal((await f.client.readThread(f.id)).thread.status.type, "idle");
+});
+
+test("reloading the desktop client mid-turn keeps the answer and completion subscription", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] reload the app" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "turn starts");
+  f.client.close();
+  const reloaded = await f.connect();
+  assert.equal((await reloaded.client.resume(f.id, {})).activeTurnId, turn.id);
+  f.release();
+  await until(() => reloaded.events.some(e => e.method === "turn/completed" && e.params.turn.id === turn.id), "a fresh client receives the end");
+  assert.ok(reloaded.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered:")), "a fresh client receives the answer");
+  assert.equal((await reloaded.client.readThread(f.id)).thread.status.type, "idle");
+});
+
+test("a bridge restart recovers a final answer recorded before its live end was delivered", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [record-only] restart the bridge" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "turn starts");
+  f.release();
+  await until(() => f.agent().some(e => e.ended), "native Claude answer is saved");
+  const restarted = await f.restart();
+  const read = await restarted.client.readThread(f.id);
+  assert.equal(read.thread.status.type, "idle");
+  assert.ok(read.data.some(e => e.turnId === turn.id && e.item.text?.includes("answered:")), "the saved answer survives the restart");
+});
+
+test("a missed renderer completion is corrected by the next history read", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] missed event" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "turn starts");
+  f.release(); await until(() => f.ended(turn.id), "bridge ends the turn");
+  const since = f.events.length;
+  const read = await f.client.readThread(f.id);
+  assert.ok(read.data.some(e => e.item.text?.includes("answered:")));
+  assert.ok(f.events.slice(since).some(e => e.method === "thread/status/changed" && e.params.status.type === "idle"), "the history read also clears a stale renderer Working state");
+});
+
+test("a native recorded end releases Working even when every live terminal event is lost", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [record-only] no manual refresh" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "turn starts");
+  f.release();
+  await until(() => f.ended(turn.id), "the app must receive the saved answer and end without another message or a manual refresh");
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered:")));
+});
+
+test("a stalled native history mirror cannot hold Claude's answer or completion", { timeout: 20000 }, async t => {
+  const f = await fixture(t, { FAKE_ENGINE_HOLD_INJECT: "1" });
+  const { turn } = await f.client.send(f.id, { text: "answer before the mirror acknowledges" });
+  await until(() => f.ended(turn.id), "a finished Claude turn cannot keep Working while its native history copy waits", 2000);
+  assert.equal(f.store()[f.id].turns[0].status, "completed");
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered:")));
+});
+
+test("GPT chat turns still use the native engine and never Claude", { timeout: 20000, skip: !process.env.A124_ENGINE?.endsWith("/test/fake-app-server.mjs") && "scripted native inference only; use the real-app GPT check" }, async t => {
+  const f = await fixture(t);
+  const created = await f.client.createThread({ model: "luna-test", cwd: f.root });
+  const before = f.agent().filter(e => e.method === "session/prompt").length;
+  const { turn } = await f.client.send(created.thread.id, { text: "GPT native message" });
+  await until(() => f.events.some(e => e.method === "turn/completed" && e.params.turn.id === turn.id), "native GPT turn ends");
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("Answer from luna-test: GPT native message")));
+  assert.equal(f.agent().filter(e => e.method === "session/prompt").length, before);
+});
+
+test("a read recovers the recorded final answer and end when Claude's live events are missing (A124)", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[wait] [record-only] original" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "Claude starts");
+  for (const text of ["a folder path", "maybe you don't even need to login"]) await f.client.steer(f.id, { text, expectedTurnId: turn.id });
+  await until(() => f.agent().filter(e => e.method === "_session/steering").length === 2, "two messages delivered");
+  f.release();
+  await until(() => f.agent().some(e => e.ended), "Claude recorded its final answer and end_turn");
+  const recovered = await f.client.readThread(f.id);
+  assert.equal(recovered.thread.status.type, "idle", "Claude's record ended the turn; the app must stop Working on its next read");
+  assert.ok(recovered.data.some(e => e.item.text?.includes("answered:")), "the missing final answer catches up from the record");
+  await until(() => f.ended(turn.id), "the desktop receives the recovered turn end");
+  const hello = await f.client.steer(f.id, { text: "hello?", expectedTurnId: turn.id });
+  await until(() => f.ended(hello.turn.id), "hello is answered in a fresh turn");
+  assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered: hello?")));
+});
