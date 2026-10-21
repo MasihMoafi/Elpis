@@ -87,7 +87,8 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: Turn
   return <section className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for">
-      <summary><span>{workedFor(turn.entries)}</span></summary>
+      {/* Without recorded times, ChatGPT's "41 previous messages" says what the fold holds. */}
+      <summary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : `${folded.length} previous ${folded.length === 1 ? "message" : "messages"}`}</span></summary>
       <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} /></div>
     </details>}
     <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} live={active} />
