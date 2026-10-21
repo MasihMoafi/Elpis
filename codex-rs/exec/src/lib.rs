@@ -104,6 +104,7 @@ use codex_protocol::protocol::ReviewTarget;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::shell_environment::CODEX_THREAD_ID_ENV_VAR;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
@@ -286,6 +287,20 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     if parent.is_some() && command.is_some() {
         anyhow::bail!("--parent is only supported when starting a new `elpis exec` chat");
     }
+    // Shell tools supply their current chat's id. Resume/fork/review keep their
+    // own ancestry, and ephemeral runs have no saved helper to nest.
+    let parent = if parent.is_none() && command.is_none() && !ephemeral {
+        std::env::var(CODEX_THREAD_ID_ENV_VAR)
+            .ok()
+            .filter(|id| !id.is_empty())
+            .map(|id| {
+                ThreadId::from_string(&id)
+                    .map_err(|err| anyhow::anyhow!("Invalid CODEX_THREAD_ID: {err}"))
+            })
+            .transpose()?
+    } else {
+        parent
+    };
     if cyber_access_program.is_some() {
         match command.as_ref() {
             Some(ExecCommand::Review(_)) => {

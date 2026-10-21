@@ -29,6 +29,7 @@ pub struct Cli {
     pub thread_source: Option<ThreadSource>,
 
     /// Start a worker chat nested under this existing, unarchived parent thread.
+    /// New saved chats inherit CODEX_THREAD_ID from the calling chat when omitted.
     #[arg(long, value_name = "THREAD_ID", value_parser = codex_protocol::ThreadId::from_string, conflicts_with = "ephemeral")]
     pub parent: Option<codex_protocol::ThreadId>,
 
