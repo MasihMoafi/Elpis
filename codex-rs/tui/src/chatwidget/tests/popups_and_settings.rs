@@ -3414,11 +3414,15 @@ async fn model_picker_queued_all_models_uses_refreshed_catalog() {
     auto.id = auto.model.clone();
     chat.model_catalog = Arc::new(ModelCatalog::new(vec![auto, preset]));
     chat.open_model_popup();
+    // Opening the picker discovers shared accounts as well as refreshing models.
+    assert_matches!(rx.try_recv(), Ok(AppEvent::FetchClaudeAccounts { .. }));
     assert_matches!(rx.try_recv(), Ok(AppEvent::FetchModels { .. }));
+    assert!(rx.try_recv().is_err());
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
     assert_eq!(chat.bottom_pane.active_view_id(), None);
     // Apply the model/list reply before the queued All models intent is handled.
     apply_model_list_response(&mut chat, refreshed);
+    assert_eq!(chat.bottom_pane.active_view_id(), None);
     assert_matches!(rx.try_recv(), Ok(AppEvent::OpenAllModelsPopup));
     chat.open_all_models_popup();
     assert_chatwidget_snapshot!(
@@ -3516,7 +3520,10 @@ async fn model_picker_refresh_preserves_dismissal_and_reasoning_submenu() {
         let refreshed = chat.model_catalog.try_list_models().unwrap();
         chat.model_catalog = Arc::new(ModelCatalog::new(vec![preset.clone()]));
         chat.open_model_popup();
+        // Account discovery must not be mistaken for the model catalog request.
+        assert_matches!(rx.try_recv(), Ok(AppEvent::FetchClaudeAccounts { .. }));
         assert_matches!(rx.try_recv(), Ok(AppEvent::FetchModels { .. }));
+        assert!(rx.try_recv().is_err());
         if explicit_all_models {
             chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
             chat.open_all_models_popup();
@@ -3535,6 +3542,7 @@ async fn model_picker_refresh_preserves_dismissal_and_reasoning_submenu() {
 
         assert_eq!(chat.model_catalog.try_list_models().unwrap(), refreshed);
         assert_eq!(render_bottom_popup(&chat, /*width*/ 80), before);
+        assert!(rx.try_recv().is_err());
         if !dismiss {
             chat.handle_key_event(KeyEvent::from(if accept_reasoning {
                 KeyCode::Enter

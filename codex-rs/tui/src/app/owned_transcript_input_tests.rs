@@ -1,6 +1,7 @@
 //! Composer input resumes after transcript selection without changing search or keymap ownership.
 
 use super::tests::attach_thread;
+use super::tests::user_cell;
 use super::*;
 use crate::app::tests::make_test_app_with_channels;
 use crate::app_command::AppCommand as Op;
@@ -595,14 +596,19 @@ async fn submitting_a_draft_from_history_queues_once_and_follows_immediately() -
 
 #[tokio::test]
 async fn enter_preserves_search_backtrack_and_modal_ownership_while_scrolled() -> Result<()> {
-    let mut app = crate::app::test_support::make_test_app().await;
+    let (mut app, mut events, _operations) = make_test_app_with_channels().await;
+    let thread_id = ThreadId::new();
+    attach_thread(&mut app, thread_id);
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     tui.set_owned_screen(/*owned*/ true)?;
     let size = Size::new(/*width*/ 80, /*height*/ 12);
-    app.transcript_cells = vec![Arc::new(PlainHistoryCell::new(
-        (0..30).map(|row| format!("row {row}").into()).collect(),
-    ))];
+    app.transcript_cells = vec![
+        user_cell("rewind this prompt"),
+        Arc::new(PlainHistoryCell::new(
+            (0..30).map(|row| format!("row {row}").into()).collect(),
+        )),
+    ];
     app.render_owned_transcript(&mut tui, size)?;
     app.transcript_view
         .scroll(&app.transcript_cells, /*rows*/ -10);
@@ -633,11 +639,45 @@ async fn enter_preserves_search_backtrack_and_modal_ownership_while_scrolled() -
     )?;
 
     app.backtrack.primed = true;
+    // Priming alone still leaves Enter to the main backtrack/composer input path.
     assert!(!app.handle_owned_transcript_event(&mut tui, &mut server, &enter)?);
     app.backtrack.primed = false;
     app.backtrack.overlay_preview_active = true;
-    assert!(!app.handle_owned_transcript_event(&mut tui, &mut server, &enter)?);
-    app.backtrack.overlay_preview_active = false;
+    // A preview owns Enter even without an anchor: explain the refusal, never submit.
+    assert!(app.handle_owned_transcript_event(&mut tui, &mut server, &enter)?);
+    let preview_events: Vec<_> = std::iter::from_fn(|| events.try_recv().ok()).collect();
+    assert!(preview_events.iter().any(|event| match event {
+        AppEvent::InsertHistoryCell(cell) => cell.display_lines(/*width*/ 120).iter().any(|line| {
+            line.to_string()
+                .contains(crate::app_backtrack::MISSING_SELECTION_REWIND_MESSAGE)
+        }),
+        _ => false,
+    }));
+    assert!(
+        preview_events
+            .iter()
+            .all(|event| !matches!(event, AppEvent::RevertSessionForPromptEdit { .. }))
+    );
+    assert!(app.backtrack.overlay_preview_active);
+    assert!(!app.transcript_view.is_following());
+    assert!(app.chat_widget.composer_is_empty());
+
+    // Once the preview has a valid anchor, Enter must reach the real rewind path.
+    app.backtrack.primed = true;
+    app.backtrack.base_id = Some(thread_id);
+    app.backtrack.nth_user_message = 0;
+    assert!(app.handle_owned_transcript_event(&mut tui, &mut server, &enter)?);
+    let rewinds: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::RevertSessionForPromptEdit {
+                thread_id, prompt, ..
+            } => Some((thread_id, prompt.text)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rewinds, vec![(thread_id, "rewind this prompt".to_string())]);
+    assert!(!app.backtrack.overlay_preview_active);
+    assert!(app.chat_widget.composer_is_empty());
 
     app.chat_widget
         .set_remote_image_urls(vec!["https://example.com/image.png".into()]);
