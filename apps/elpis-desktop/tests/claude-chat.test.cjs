@@ -5,6 +5,9 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, TURNS } = require('./parity-fixture.cjs');
 const { oranges } = require('./controls.cjs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { dragMessageText } = require('./message-copy.cjs');
 
 async function using(options, run) {
   const f = await fixture(options);
@@ -77,6 +80,79 @@ test('Copy as Markdown copies the source and Copy text the words a reader sees',
   await page.locator('.message.user', { hasText: 'Run them.' }).click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Copy as Markdown' }).click();
   assert.equal(await f.copied(), 'Run them.');
 }));
+
+// A112: exercise the browser clipboard, not the fixture's writeText recorder.
+const COPY_PROMPTS = [
+  'First message: copy exactly these words.',
+  '  این چند کلمه فارسی را انتخاب کن.\nخط دوم با نیم‌فاصله و  دو فاصله\n\n```js\nconst متن = "سلام";\n  console.log(متن);\n```\n  ',
+  `Long message: ${'متن بلند با فارسی و English. '.repeat(50)}\nLast line.`,
+  '',
+];
+for (const colorScheme of ['light', 'dark']) {
+  const copyOptions = {
+    nativeClipboard: true, colorScheme, width: 1280, height: 1000,
+    chat: COPY_PROMPTS.map((prompt, index) => [`copy-${index}`, prompt, `Copy control reply ${index}.`]),
+  };
+  const shot = async (page, name) => {
+    if (!process.env.ELPIS_A112_SHOTS) return;
+    await fs.mkdir(process.env.ELPIS_A112_SHOTS, { recursive: true });
+    await page.screenshot({ path: path.join(process.env.ELPIS_A112_SHOTS, `${name}-${colorScheme}.png`) });
+  };
+  test(`own-message mouse selection copies and pastes exact text · ${colorScheme}`, () => using(copyOptions, async f => {
+    const { page, composer } = f;
+    await f.open('chat-a');
+    for (const [index, fragment] of ['exactly these words', 'چند کلمه فارسی', 'Long message'].entries()) {
+      const turn = page.locator('.user-turn').nth(index), message = turn.locator('.message.user');
+      await dragMessageText(page, message, fragment);
+      if (index === 1) await shot(page, 'farsi-selection');
+      await page.keyboard.press('Control+c');
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), fragment, 'Ctrl+C copies just the mouse selection');
+      await composer.fill(''); await composer.press('Control+v');
+      assert.equal(await composer.inputValue(), fragment, 'selected words paste elsewhere');
+    }
+    await shot(page, 'selection');
+  }));
+  test(`own-message visible Copy preserves exact source and feedback · ${colorScheme}`, () => using(copyOptions, async f => {
+    const { page, composer } = f;
+    await f.open('chat-a');
+    for (const index of COPY_PROMPTS.keys()) {
+      const turn = page.locator('.user-turn').nth(index);
+      const copy = turn.getByRole('button', { name: 'Copy message', exact: true });
+      await copy.scrollIntoViewIfNeeded();
+      await page.mouse.move(4, 4); await composer.focus();
+      await page.waitForTimeout(160); // Let the existing hover fade finish.
+      await shot(page, 'copy-at-rest');
+      assert.equal(await copy.evaluate(element => getComputedStyle(element.closest('.message-actions')).opacity), '1', 'Copy message is visible without discovering a hover-only action row');
+      await copy.click();
+      await turn.getByRole('status').filter({ hasText: /^Copied$/ }).waitFor();
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), COPY_PROMPTS[index], 'Copy preserves source, spaces, newlines, Farsi and code fences');
+      if (index === 1) await shot(page, 'farsi-copied');
+      await composer.fill(''); await composer.press('Control+v');
+      assert.equal(await composer.inputValue(), COPY_PROMPTS[index], 'the whole message pastes exactly');
+    }
+    await page.reload(); await f.open('chat-a');
+    const turn = page.locator('.user-turn').nth(1);
+    await turn.getByRole('button', { name: 'Copy message', exact: true }).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), COPY_PROMPTS[1], 'copy still works after reload');
+  }));
+
+  test(`reply Copy keeps its source, feedback and hover behavior · ${colorScheme}`, () => using({
+    nativeClipboard: true, colorScheme, width: 1280, height: 1000,
+    chat: [['copy-control', 'Question for the negative control.', '**Original reply**\n\nمتن فارسی\n\n```js\n  const x = 1;\n```\n']],
+  }, async f => {
+    const { page } = f;
+    await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    const reply = page.locator('.message.agent'), copy = reply.getByRole('button', { name: 'Copy reply', exact: true });
+    await copy.waitFor();
+    await page.mouse.move(4, 4);
+    assert.equal(await copy.evaluate(element => getComputedStyle(element.closest('.message-actions')).opacity), '0', 'reply hover behavior stays unchanged');
+    await reply.hover(); await copy.click();
+    await reply.getByRole('status').filter({ hasText: /^Copied$/ }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '**Original reply**\n\nمتن فارسی\n\n```js\n  const x = 1;\n```\n');
+    assert.equal(await reply.getByRole('button', { name: 'Copy message', exact: true }).count(), 0);
+    await eventually(async () => assert.equal(await reply.locator('.message-actions .copy-status').innerText(), '', 'the same success feedback resets'));
+  }));
+}
 
 test('Rewind to here asks first, then drops that turn and every later one and puts the prompt back in the box', () => using({}, async f => {
   const { page, composer } = f;
