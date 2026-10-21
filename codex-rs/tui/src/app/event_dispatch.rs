@@ -3217,6 +3217,23 @@ impl App {
             AppEvent::ConfigPanelShortcut(command) => {
                 self.chat_widget.open_config_shortcut(command);
             }
+            AppEvent::OpenConfigFile(path) => {
+                match crate::external_editor::resolve_config_editor_command() {
+                    Ok(command) => {
+                        let result = tui.with_restored(crate::tui::TerminalHandoff::KeepScreen, || async {
+                            tokio::process::Command::new(&command[0]).args(&command[1..]).arg(path)
+                                .stdin(std::process::Stdio::inherit()).stdout(std::process::Stdio::inherit())
+                                .stderr(std::process::Stdio::inherit()).status().await
+                        }).await;
+                        match result {
+                            Ok(status) if status.success() => self.chat_widget.add_info_message("Config editor closed. New chats read saved defaults; reopen /config to inspect effective values.".to_string(), None),
+                            _ => self.chat_widget.add_error_message("Config editor could not finish. Check $VISUAL or $EDITOR and file permissions.".to_string()),
+                        }
+                    }
+                    Err(_) => self.chat_widget.add_error_message("Set $VISUAL or $EDITOR before starting Elpis to open the config file.".to_string()),
+                }
+                tui.frame_requester().schedule_frame();
+            }
             AppEvent::OpenReviewBranchPicker(cwd) => {
                 self.chat_widget.show_review_branch_picker(&cwd).await;
             }

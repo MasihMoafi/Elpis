@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { FileRefLink } from "@/components/file-ref";
 import { api } from "@/lib/api";
-import { editable, reloadSettings, saveOptions, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
+import { editable, reloadSettings, saveOptions, saveSettings, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
 import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
 
 const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; values: { value: string; label: string }[] }[] = [
+  { name: "reasoningEffort", title: "Default reasoning effort", description: "Reasoning effort for new chats in the app and terminal, on models that support it. The model menu changes the current chat separately.", values: [
+    { value: "none", label: "None" }, { value: "minimal", label: "Minimal" }, { value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }, { value: "xhigh", label: "Extra high" }, { value: "max", label: "Max" }, { value: "ultra", label: "Ultra" }, { value: "persistent", label: "Persistent" }] },
   { name: "approvalPolicy", title: "Default approval policy", description: "When new chats ask for approval before running commands. The composer’s permissions menu changes it per chat.", values: [
     { value: "untrusted", label: "Ask unless a rule allows it" }, { value: "on-request", label: "Ask when needed" }, { value: "never", label: "Never ask" }] },
   { name: "sandboxMode", title: "Default sandbox", description: "How much new chats can do when running commands. The composer’s permissions menu changes it per chat.", values: [
@@ -36,8 +40,24 @@ function ConfigOptionsGroup({ settings }: { settings: ElpisSettings }) {
   const writable = editable(settings);
   return <SettingsGroup title="Defaults for new chats" description={writable ? "Saved in the Elpis config. Changes apply to new conversations." : settings.write.reason}>
     {OPTIONS.map(option => <ConfigChoice key={option.name} settings={settings} {...option} disabled={!writable || saver.pending !== null}
-      allowed={option.name === "approvalPolicy" ? settings.managed?.allowedApprovalPolicies : option.name === "sandboxMode" ? settings.managed?.allowedSandboxModes : null}
+      allowed={option.name === "approvalPolicy" ? settings.managed?.allowedApprovalPolicies : option.name === "sandboxMode" ? settings.managed?.allowedSandboxModes : option.name === "webSearch" ? settings.managed?.allowedWebSearchModes : null}
       onSave={patch => void saver.run(option.name, () => saveOptions(settings, patch), `${option.title} saved. Applies to new conversations.`)} />)}
+    {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
+  </SettingsGroup>;
+}
+
+function FeatureDefaults({ settings }: { settings: ElpisSettings }) {
+  const [query, setQuery] = useState("");
+  const saver = useSaver();
+  const features = settings.features;
+  if (!features) return null;
+  return <SettingsGroup title="Features" description={features.available ? "Defaults shared with the terminal. Changes apply to new chats." : features.reason}>
+    {features.available && <SettingRow title="Search features"><Input aria-label="Search features" value={query} onChange={event => setQuery(event.target.value)} /></SettingRow>}
+    {features.data.filter(feature => `${feature.key} ${feature.title}`.toLowerCase().includes(query.toLowerCase())).map(feature => <SettingRow key={feature.key} title={feature.title} description={feature.reason ?? feature.description} scope="new chats">
+      <Switch aria-label={feature.title} checked={feature.enabled} disabled={!editable(settings) || !!feature.reason || saver.pending !== null}
+        onCheckedChange={enabled => void saver.run(feature.key, () => saveSettings("/settings", { version: settings.version, features: { [feature.key]: enabled } }), "Feature default saved. Applies to new conversations.")} />
+    </SettingRow>)}
+    {features.available && !features.data.some(feature => `${feature.key} ${feature.title}`.toLowerCase().includes(query.toLowerCase())) && <SettingRow title="No matching features" />}
     {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
   </SettingsGroup>;
 }
@@ -52,6 +72,10 @@ export function ConfigurationSettings() {
       <CatalogNotice error={error} />
       <ModelSettings value={settings} models={models} />
       <PrunerSettings value={settings} models={models} />
+      <FeatureDefaults settings={settings} />
+      {settings.sources && <SettingsGroup title="Sources" description="Effective sources reported by Elpis. Project, session and managed values can override saved defaults.">
+        {Object.entries(settings.sources).map(([key, source]) => <SettingRow key={key} title={key} scope="new chats"><span>{source}</span></SettingRow>)}
+      </SettingsGroup>}
     </>}</SettingsLoader>
   </div>;
 }

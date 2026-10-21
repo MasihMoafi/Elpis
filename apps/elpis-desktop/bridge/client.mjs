@@ -88,7 +88,7 @@ const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileCh
 const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/updated']);
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
-const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
+const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval and
  * sandbox settings. Bypass is the engine's built-in `:bypass-permissions` profile: Full access plus no
@@ -622,18 +622,39 @@ export class DesktopClient extends EventEmitter {
     return this.#catalog;
   }
   async settings() {
-    const [read, requirements, pruner] = await Promise.all([
+    const [read, requirements, pruner, featureList] = await Promise.all([
       this.#rpc('config/read', { includeLayers: true }),
       this.#rpc('configRequirements/read', {}).catch(() => null),
       this.#rpc('pruner/read', {}).catch(error => { if ([-32601, -32600].includes(error.code)) return null; throw error; }),
+      this.#configFeatures().catch(() => null),
     ]);
-    return settingsSnapshot(read, requirements, pruner, savedProviderKeyIds(configHome(read)));
+    const features = featureList === null ? { available: false, reason: 'The running engine could not list features. Reopen Settings or update Elpis.', data: [] }
+      : { available: true, data: featureList.filter(feature => !['removed', 'deprecated'].includes(feature.stage)).map(feature => ({
+        key: feature.name, title: feature.displayName ?? feature.name, description: feature.description ?? 'Native feature default for new chats.', enabled: feature.enabled,
+        reason: Object.hasOwn(requirements?.requirements?.featureRequirements ?? {}, feature.name) ? 'Managed policy controls this feature.' : null,
+      })) };
+    return { ...settingsSnapshot(read, requirements, pruner, savedProviderKeyIds(configHome(read))), features };
+  }
+  async #configFeatures() {
+    const data = [], cursors = new Set(); let cursor;
+    for (let page = 0; page < 10; page++) {
+      const result = await this.#rpc('experimentalFeature/list', { limit: 100, ...(cursor ? { cursor } : {}) });
+      if (!Array.isArray(result?.data)) return null;
+      data.push(...result.data);
+      cursor = result.nextCursor;
+      if (!cursor) return data;
+      if (cursors.has(cursor)) throw new BridgeError('Feature pagination repeated a cursor');
+      cursors.add(cursor);
+    }
+    throw new BridgeError('Feature list is too long');
   }
   async saveSettings(input) {
-    object(input, ['version', 'main', 'background', 'memory', 'options']);
+    object(input, ['version', 'main', 'background', 'memory', 'options', 'features']);
     text(input.version, 'settings version', 200);
     const current = await this.settings();
-    if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+    if (!current.write.available) throw new BridgeError(current.write.reason, 403);
+    if (current.version !== input.version) throw new BridgeError('Settings changed in another client. Reload settings before saving again.', 409);
+    if (!current.managed.available) throw new BridgeError('Managed requirements could not be loaded. Reload settings before saving.', 409);
     const edits = [];
     const nullableModel = value => value === null ? null : text(value, 'model ID', 200).trim();
     // The main model (what new chats start with, in this app and the TUI) and the background model, each a model and
@@ -666,6 +687,16 @@ export class DesktopClient extends EventEmitter {
     if (input.options !== undefined) {
       try { edits.push(...optionEdits(input.options, current.managed, current.permissionProfiles)); }
       catch (error) { throw new BridgeError(error.message, /managed/.test(error.message) ? 403 : 400); }
+    }
+    if (input.features !== undefined) {
+      object(input.features, current.features.data.map(feature => feature.key));
+      for (const [key, value] of Object.entries(input.features)) {
+        const feature = current.features.data.find(feature => feature.key === key);
+        if (!current.features.available || !feature) throw new BridgeError('The engine did not advertise this feature');
+        if (feature.reason) throw new BridgeError(feature.reason, 403);
+        if (typeof value !== 'boolean') throw new BridgeError('Choose on or off for a feature');
+        edits.push({ keyPath: `features.${JSON.stringify(key)}`, value, mergeStrategy: 'replace' });
+      }
     }
     if (!edits.length) throw new BridgeError('No settings were changed');
     await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false });

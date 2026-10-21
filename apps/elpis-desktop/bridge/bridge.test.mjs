@@ -18,6 +18,59 @@ const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
+
+test('A32 default effort uses the shared versioned writer and rejects invalid values', async () => {
+  const { client, socket } = fixture(); await client.initialize();
+  try {
+    await client.saveSettings({ version: 'user-version', options: { reasoningEffort: 'high' } });
+    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params, {
+      expectedVersion: 'user-version', reloadUserConfig: false,
+      edits: [{ keyPath: 'model_reasoning_effort', value: 'high', mergeStrategy: 'replace' }],
+    });
+    const before = socket.sent.filter(row => row.method === 'config/batchWrite').length;
+    await assert.rejects(client.saveSettings({ version: 'user-version', options: { reasoningEffort: 'banana' } }), /listed values/);
+    assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, before);
+  } finally { client.close(); }
+});
+
+test('A32 feature defaults use native advertised keys and refuse managed or forged changes', async () => {
+  const { client, socket, requirementsRead } = fixture(); await client.initialize();
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'experimentalFeature/list') return send(raw);
+    socket.sent.push(request);
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: {
+      data: [{ name: 'shell_tool', displayName: 'Shell', enabled: true, stage: 'stable' }], nextCursor: null,
+    } })));
+  };
+  try {
+    const settings = await client.settings();
+    assert.equal(settings.features.data[0].enabled, true);
+    await client.saveSettings({ version: 'user-version', features: { shell_tool: false } });
+    assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits,
+      [{ keyPath: 'features."shell_tool"', value: false, mergeStrategy: 'replace' }]);
+    const writes = () => socket.sent.filter(row => row.method === 'config/batchWrite').length;
+    const before = writes();
+    await assert.rejects(client.saveSettings({ version: 'user-version', features: { shell_tool: 'no' } }), /on or off/);
+    await assert.rejects(client.saveSettings({ version: 'user-version', features: { forged: true } }), /Unsupported/);
+    requirementsRead.requirements = { featureRequirements: { shell_tool: true } };
+    await assert.rejects(client.saveSettings({ version: 'user-version', features: { shell_tool: false } }), /Managed policy/);
+    assert.equal(writes(), before);
+  } finally { client.close(); }
+});
+
+test('A32 missing or disabled writable config layers explain why and write nothing', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  try {
+    configRead.layers[0].disabledReason = 'Read-only policy';
+    assert.equal((await client.settings()).write.available, false);
+    await assert.rejects(client.saveSettings({ version: 'user-version', options: { webSearch: 'cached' } }), /no writable config/);
+    configRead.layers = [];
+    await assert.rejects(client.saveSettings({ version: 'user-version', options: { webSearch: 'cached' } }), /no writable config/);
+    assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
+  } finally { client.close(); }
+});
 function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, sessionManagerConfig, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`) } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
@@ -1504,7 +1557,7 @@ test('settings pages read and write only listed native options, respecting manag
   Object.assign(configRead.config, { approval_policy: { granular: { sandbox_approval: true } }, sandbox_mode: 'workspace-write', service_tier: 'priority', developer_instructions: 'Be brief.', project_root_markers: ['.git', '.hg'], desktop: { 'git-worktree-root': '/work/trees' } });
   configRead.config.features.memories = true; configRead.config.memories.disable_on_external_context = true;
   const settings = await client.settings();
-  assert.deepEqual(settings.options, { approvalPolicy: 'granular', sandboxMode: 'workspace-write', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: 'fast', developerInstructions: 'Be brief.', projectRootMarkers: ['.git', '.hg'], worktreeRoot: '/work/trees' });
+  assert.deepEqual(settings.options, { reasoningEffort: null, approvalPolicy: 'granular', sandboxMode: 'workspace-write', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: 'fast', developerInstructions: 'Be brief.', projectRootMarkers: ['.git', '.hg'], worktreeRoot: '/work/trees' });
   assert.equal(settings.memory.enabled, true); assert.equal(settings.memory.skipExternalContext, true);
   await client.saveSettings({ version: 'user-version', options: { approvalPolicy: 'never', webSearch: null, developerInstructions: '  ', projectRootMarkers: [' .git ', 'package.json'], worktreeRoot: '/tmp/trees' }, memory: { enabled: false, skipExternalContext: false } });
   assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params, { expectedVersion: 'user-version', reloadUserConfig: false, edits: [

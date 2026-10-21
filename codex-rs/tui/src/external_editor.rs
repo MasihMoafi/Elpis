@@ -57,6 +57,16 @@ pub(crate) fn resolve_editor_command() -> std::result::Result<Vec<String>, Edito
     Ok(parts)
 }
 
+/// Config documents use the configured editor, then the user's Rust Notes editor.
+pub(crate) fn resolve_config_editor_command() -> std::result::Result<Vec<String>, EditorError> {
+    match resolve_editor_command() {
+        Err(EditorError::MissingEditor) => which::which("rust-note-editor")
+            .map(|path| vec![path.to_string_lossy().into_owned()])
+            .map_err(|_| EditorError::MissingEditor),
+        result => result,
+    }
+}
+
 pub(super) fn editor_directory(
     candidate_homes: &[&Path],
     file_system_policy: &FileSystemSandboxPolicy,

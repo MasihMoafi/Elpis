@@ -1562,6 +1562,7 @@ pub(crate) enum AppEvent {
     /// Open the searchable settings catalog or hand a selected row to its existing control.
     OpenConfigPanel(Option<String>),
     ConfigPanelShortcut(crate::slash_command::SlashCommand),
+    OpenConfigFile(std::path::PathBuf),
 
     /// Open the branch picker option from the review popup.
     OpenReviewBranchPicker(PathBuf),

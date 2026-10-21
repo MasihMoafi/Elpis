@@ -60,10 +60,12 @@ type Props = {
   accountRefresh: number; onProvidersChanged?: () => Promise<void> | void;
   theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void;
   onUnarchived: (thread: Thread) => void; onDeleteThread: (thread: Thread) => Promise<void>; onBack?: () => void;
-  onChatPermissions?: () => void; currentModel?: string | null; currentPermission?: string | null;
+  onCustomize?: () => void;
+  onChatContext?: () => void;
+  onChatPermissions?: () => void; onChatModel?: () => void; modelChangeReason?: string; currentModel?: string | null; currentPermission?: string | null;
 };
 
-export function SettingsView({ initialTab = "providers", navigationKey = 0, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onDeleteThread, onBack, onChatPermissions, currentModel, currentPermission, threadId }: Props) {
+export function SettingsView({ initialTab = "providers", navigationKey = 0, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onDeleteThread, onBack, onCustomize, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
   const preferences = usePreferences();
   const [orderError, setOrderError] = useState("");
   const groups = arrange(SECTIONS, preferences.settingsSectionOrder.split(","));
@@ -78,15 +80,17 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
   const visibleGroups = groups.filter(group => !terms.length || terms.every(term => `${group.label} ${group.description}`.toLowerCase().includes(term)) || shown.some(item => item.group === group.id));
   const [tab, setTab] = useState<SettingsDestination>(initialTab);
   const [visited, setVisited] = useState<Tab[]>(TABS.some(item => item.id === initialTab) ? [initialTab as Tab] : []);
-  const selectTab = (next: Tab) => {
-    setVisited(previous => previous.includes(next) ? previous : [...previous, next]); setTab(next);
-    if (settingsLoaded() && CONFIG_PAGES.includes(next)) reloadSettings().catch(() => {});
+  const selectTab = (next: SettingsDestination) => {
+    const page = TABS.find(page => page.id === next);
+    if (page) setVisited(previous => previous.includes(page.id) ? previous : [...previous, page.id]);
+    setTab(next);
+    if (settingsLoaded() && (!page || CONFIG_PAGES.includes(page.id))) reloadSettings().catch(() => {});
   };
-  useEffect(() => { setQuery(""); if (TABS.some(item => item.id === initialTab)) selectTab(initialTab as Tab); else setTab(initialTab); }, [initialTab, navigationKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setQuery(""); selectTab(initialTab); }, [initialTab, navigationKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const selectedSection = SECTIONS.find(section => section.id === tab);
   const sectionList = (sections: typeof SECTIONS[number][]) => <SettingsGroup>
     {sections.map(section => <SettingRow key={section.id} title={<h3 data-config-section={section.id}>{section.label}</h3>} description={section.description}>
-      <ReorderButton variant="outline" itemId={section.id} order={groups.map(item => item.id)} dragType="text/x-elpis-settings-section" onReorder={ids => reorder("settingsSectionOrder", ids)} title={section.label} onClick={() => setTab(section.id)}>Open {section.label}</ReorderButton>
+      <ReorderButton variant="outline" itemId={section.id} order={groups.map(item => item.id)} dragType="text/x-elpis-settings-section" onReorder={ids => reorder("settingsSectionOrder", ids)} title={section.label} onClick={() => selectTab(section.id)}>Open {section.label}</ReorderButton>
     </SettingRow>)}
   </SettingsGroup>;
   const sectionPage = selectedSection && <>
@@ -96,7 +100,9 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
         <Button variant="outline" onClick={() => selectTab(item.id)}>Open {item.label}</Button>
       </SettingRow>; })}
       {selectedSection.id === "models" && <SettingsLoader>{settings => <SettingRow title="Default model" scope="new chats"><span>{settings.main.model ?? "Elpis default"}</span></SettingRow>}</SettingsLoader>}
-      {selectedSection.id === "models" && threadId && <SettingRow title="Current chat model" scope="this chat"><span>{currentModel ?? "Not reported"}</span></SettingRow>}
+      {selectedSection.id === "connections" && onCustomize && <SettingRow title="Plugins & skills" description="Open the existing plugins and skills controls." scope="new chats"><Button variant="outline" onClick={onCustomize}>Open</Button></SettingRow>}
+      {selectedSection.id === "context" && threadId && <SettingRow title="Context Ledger" description="Choose what this chat admits into context. Saved defaults do not change its admission choices." scope="this chat"><Button variant="outline" onClick={onChatContext}>Open Context Ledger</Button></SettingRow>}
+      {selectedSection.id === "models" && threadId && <SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow>}
       {selectedSection.id === "permissions" && threadId && <SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow>}
     </SettingsGroup>
   </>;
@@ -125,7 +131,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />
       <div role="tablist" aria-label="Settings sections" aria-orientation="vertical">
         {visibleGroups.map(group => { const items = shown.filter(item => item.group === group.id);
-          return <div key={group.id} className="settings-nav-group"><ReorderButton data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} itemId={group.id} order={groups.map(item => item.id)} dragType="text/x-elpis-settings-section" onReorder={ids => reorder("settingsSectionOrder", ids)} title={group.label} onClick={() => setTab(group.id)}>{group.label}</ReorderButton>
+          return <div key={group.id} className="settings-nav-group"><ReorderButton data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} itemId={group.id} order={groups.map(item => item.id)} dragType="text/x-elpis-settings-section" onReorder={ids => reorder("settingsSectionOrder", ids)} title={group.label} onClick={() => selectTab(group.id)}>{group.label}</ReorderButton>
             {items.map(item => <ReorderButton data-slot="nav-row" key={item.id} variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} itemId={item.id} order={pages.filter(page => page.group === group.id).map(page => page.id)} dragType={`text/x-elpis-settings-${group.id}`} title={item.label} onReorder={ids => {
               let index = 0;
               reorder("settingsPageOrder", pages.map(page => page.group === group.id ? ids[index++] : page.id));

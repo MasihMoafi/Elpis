@@ -8,6 +8,7 @@ import { api, unreadable } from "@/lib/api";
 export type Background = { model: string | null; provider: string | null };
 export type Memory = { enabled?: boolean | null; generate: boolean | null; use: boolean | null; skipExternalContext?: boolean | null; extractionModel: string | null; consolidationModel: string | null };
 export type ConfigOptions = {
+  reasoningEffort?: string | null;
   approvalPolicy: string | null; sandboxMode: string | null; webSearch: string | null; verbosity: string | null;
   reasoningSummary: string | null; serviceTier: string | null; developerInstructions: string | null;
   projectRootMarkers: string[] | null; worktreeRoot: string | null;
@@ -22,7 +23,9 @@ export type ElpisSettings = {
   options?: ConfigOptions;
   /** How many agents a work graph may use: in all, and at once (bridge/elpis-features.mjs `agentLimits`). */
   agents?: { graph: number; atOnce: number; source: string };
-  managed?: { modelProvider?: string | null; allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null };
+  sources?: Record<string, string>;
+  features?: { available: boolean; reason?: string; data: { key: string; title: string; description: string; enabled: boolean; reason?: string | null }[] };
+  managed?: { modelProvider?: string | null; allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null; allowedWebSearchModes?: string[] | null };
   write: { available?: boolean; reason: string };
 };
 type State = { data: ElpisSettings | null; error: string; loading: boolean };

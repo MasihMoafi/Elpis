@@ -21,7 +21,8 @@ export function ConfigChoice({ settings, name, title, description, values, allow
   const value = typeof current === "string" ? current : "";
   const options = [{ value: "", label: "Elpis default" }, ...values.map(item => ({ ...item, disabled: Array.isArray(allowed) && !allowed.includes(item.value) }))];
   if (value && !values.some(item => item.value === value)) options.push({ value, label: value === "granular" || value === "custom" ? "Custom (set in the config file)" : value, disabled: true });
-  return <SettingRow title={title} description={description} scope={scope}>
+  const restriction = Array.isArray(allowed) ? ` Managed policy permits: ${allowed.join(", ") || "no choices"}.` : "";
+  return <SettingRow title={title} description={`${description}${restriction}`} scope={scope}>
     <Choice label={title} value={value} options={options} disabled={disabled} onChange={next => { if (next !== value) onSave({ [name]: next || null }); }} />
   </SettingRow>;
 }

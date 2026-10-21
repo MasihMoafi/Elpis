@@ -14,6 +14,7 @@ const numericFields = (value, keys) => value && typeof value === 'object'
 // Config fields the Settings pages edit, by their native key. Values are the
 // native serde spellings; null removes the key so Elpis uses its own default.
 export const CONFIG_OPTIONS = {
+  reasoningEffort: { keyPath: 'model_reasoning_effort', values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'persistent'] },
   approvalPolicy: { keyPath: 'approval_policy', values: ['untrusted', 'on-request', 'never'] },
   sandboxMode: { keyPath: 'sandbox_mode', values: ['read-only', 'workspace-write', 'danger-full-access'] },
   webSearch: { keyPath: 'web_search', values: ['disabled', 'cached', 'indexed', 'live'] },
@@ -41,6 +42,7 @@ function optionSnapshot(config, profiles) {
   const tier = string(config.service_tier);
   const profile = string(config.default_permissions);
   return {
+    reasoningEffort: string(config.model_reasoning_effort),
     approvalPolicy: typeof approval === 'string' ? approval : approval && typeof approval === 'object' ? 'granular' : null,
     sandboxMode: !profiles ? string(config.sandbox_mode) : profile && (Object.keys(PROFILES).find(mode => PROFILES[mode] === profile) ?? 'custom'), webSearch: string(config.web_search),
     verbosity: string(config.model_verbosity), reasoningSummary: string(config.model_reasoning_summary),
@@ -59,7 +61,7 @@ export function optionEdits(input, managed = {}, profiles = false) {
     if (value !== null) {
       if (option.values) {
         if (!option.values.includes(value)) throw new Error('Choose one of the listed values');
-        const allowed = name === 'approvalPolicy' ? managed.allowedApprovalPolicies : name === 'sandboxMode' ? managed.allowedSandboxModes : null;
+        const allowed = name === 'approvalPolicy' ? managed.allowedApprovalPolicies : name === 'sandboxMode' ? managed.allowedSandboxModes : name === 'webSearch' ? managed.allowedWebSearchModes : null;
         if (Array.isArray(allowed) && !allowed.includes(value)) throw new Error('This choice is restricted by managed settings');
       } else if (option.text) {
         if (typeof value !== 'string' || value.length > option.text) throw new Error('Instructions are too long');
@@ -104,7 +106,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
     providerIds.add(provider.id);
     definitions[provider.id] = { name: string(provider.displayName) ?? provider.id };
   }
-  const userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile);
+  const userLayer = read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile && !layer.disabledReason);
   const permissionProfiles = usesPermissionProfiles(read);
   return {
     main: { model: string(config.model), provider: string(config.model_provider) },
@@ -123,12 +125,14 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
     },
     options: optionSnapshot(config, permissionProfiles), permissionProfiles,
     providers: [...providerIds].sort().map(id => ({ id, displayName: string(definitions[id]?.name) ?? id, ...(needsKey(config.model_providers?.[id] ?? BUILT_IN_KEY_PROVIDERS[id], saved, id, env) ? { needsKey: true } : {}) })),
+    sources: Object.fromEntries(Object.values(CONFIG_OPTIONS).map(({ keyPath }) => [keyPath, read?.origins?.[keyPath]?.name?.type ?? 'default'])),
     agents: agentLimits(config),
     managed: {
       available: requirementsRead !== null,
       modelProvider: string(requirements?.modelProvider),
       allowedApprovalPolicies: strings(requirements?.allowedApprovalPolicies),
       allowedSandboxModes: strings(requirements?.allowedSandboxModes),
+      allowedWebSearchModes: strings(requirements?.allowedWebSearchModes),
     },
     version: string(userLayer?.version),
     write: { available: typeof userLayer?.version === 'string', reason: typeof userLayer?.version === 'string' ? null : 'Elpis reported no writable config.toml, so this cannot be saved here. Edit the file or restart Elpis.' },
