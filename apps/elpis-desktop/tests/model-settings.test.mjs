@@ -95,6 +95,78 @@ function button(tree,label) {
 }
 function values(control) { return elements(control.props.children).filter(element=>element.type==='option').map(element=>element.props.value); }
 
+test('pruner effort reads shared Max, limits choices to the model and clears incompatible changes', () => {
+  const catalog = [
+    { ...models[0], supportedReasoningEfforts: ['low', 'max'].map(reasoningEffort => ({ reasoningEffort })) },
+    { id: 'limited', model: 'limited', displayName: 'Limited', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] },
+    { id: 'unknown', model: 'unknown', displayName: 'Unknown' },
+  ];
+  const value = { ...settings, smartPrune: { ...settings.smartPrune, explicitOverride: { ...settings.smartPrune.explicitOverride, reasoningEffort: 'max' } } };
+  const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: catalog });
+  let tree = view.render();
+  assert.equal(control(tree, 'Pruning effort').props.value, 'max');
+  assert.deepEqual(values(control(tree, 'Pruning effort')), ['', 'low', 'max']);
+  assert.equal(button(tree, 'Save pruning model').props.disabled, true);
+  control(tree, 'Pruning model').props.onChange({ target: { value: 'limited' } });
+  tree = view.render();
+  assert.equal(control(tree, 'Pruning effort').props.value, '');
+  assert.deepEqual(values(control(tree, 'Pruning effort')), ['', 'medium']);
+  control(tree, 'Pruning model').props.onChange({ target: { value: 'unknown' } });
+  tree = view.render();
+  assert.deepEqual(values(control(tree, 'Pruning effort')), ['']);
+  assert.match(renderToStaticMarkup(tree), /Default \(Low\)/);
+  const unavailable = fixture(MAINTENANCE, 'PrunerSettings', { value, models: [] }).render();
+  assert.deepEqual(values(control(unavailable, 'Pruning effort')), ['']);
+  assert.equal(control(unavailable, 'Pruning effort').props.value, 'max', 'loading a catalog never silently clears the saved choice');
+});
+
+test('pruner effort-only save round trips Max and Default without changing the model or provider', async () => {
+  const original = globalThis.fetch, posts = [];
+  let value = structuredClone(settings);
+  const catalog = [{ ...models[0], supportedReasoningEfforts: [{ reasoningEffort: 'max' }] }];
+  globalThis.fetch = async (path, init) => {
+    const body = JSON.parse(init.body); posts.push({ path, body });
+    value = { ...value, smartPrune: { ...value.smartPrune, explicitOverride: { available: true, ...body, version: 'p2' } } };
+    return { ok: true, json: async () => value };
+  };
+  try {
+    for (const effort of ['max', '']) {
+      const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: catalog });
+      let tree = view.render();
+      const version = value.smartPrune.explicitOverride.version;
+      control(tree, 'Pruning effort').props.onChange({ target: { value: effort } });
+      tree = view.render(); assert.equal(button(tree, 'Save pruning model').props.disabled, false);
+      button(tree, 'Save pruning model').props.onClick(); await new Promise(setImmediate);
+      assert.deepEqual(posts.at(-1), { path: '/api/pruner', body: { version, model: 'gpt-6-sol', provider: 'openai', reasoningEffort: effort || null } });
+      tree = fixture(MAINTENANCE, 'PrunerSettings', { value, models: catalog }).render();
+      assert.equal(control(tree, 'Pruning effort').props.value, effort);
+      assert.equal(button(tree, 'Save pruning model').props.disabled, true);
+      assert.equal(value.main.model, settings.main.model);
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+test('pruner effort waits for its provider catalog and keeps the draft when saving is rejected', async () => {
+  const original = globalThis.fetch;
+  let release;
+  globalThis.fetch = async (path, init) => init ? { ok: false, status: 409, json: async () => ({ error: 'Settings changed elsewhere' }) }
+    : new Promise(resolve => { release = () => resolve({ ok: true, json: async () => ({ data: [{ ...models[0], supportedReasoningEfforts: ['medium', 'max'].map(reasoningEffort => ({ reasoningEffort })) }] }) }); });
+  const value = { ...settings, smartPrune: { ...settings.smartPrune, explicitOverride: { ...settings.smartPrune.explicitOverride, provider: 'home', reasoningEffort: 'max' } } };
+  const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: [{ ...models[0], supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }] });
+  try {
+    let tree = view.render(); view.effects();
+    assert.deepEqual(values(control(tree, 'Pruning effort')), ['']);
+    await new Promise(setImmediate);
+    release(); await new Promise(setImmediate);
+    tree = view.render(); view.effects();
+    assert.deepEqual(values(control(tree, 'Pruning effort')), ['', 'medium', 'max']);
+    control(tree, 'Pruning effort').props.onChange({ target: { value: 'medium' } });
+    tree = view.render(); button(tree, 'Save pruning model').props.onClick(); await new Promise(setImmediate);
+    tree = view.render(); assert.equal(control(tree, 'Pruning effort').props.value, 'medium');
+    assert.match(renderToStaticMarkup(tree), /Settings changed elsewhere/);
+  } finally { view.dispose(); globalThis.fetch = original; }
+});
+
 test('model options stay within their provider and retain unknown current values',()=>{
   const current={...settings,background:{model:'legacy-model',provider:'openai'}};
   assert.deepEqual(values(control(fixture(MAINTENANCE,'BackgroundSettings',{value:current,models}).render(),'Background model')),['','legacy-model','gpt-6-sol']);

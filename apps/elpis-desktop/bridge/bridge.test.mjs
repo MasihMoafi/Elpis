@@ -52,7 +52,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       case 'config/read': result = configRead; break;
       case 'configRequirements/read': result = requirementsRead; break;
       case 'pruner/read': if (prunerSupported) {result=pruner;break;} queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: {code: -32601, message: 'Unknown method'} }))); return;
-      case 'pruner/write': pruner={...pruner,model:request.params.model,provider:request.params.provider,version:'pruner-v2'};result=pruner;break;
+      case 'pruner/write': pruner={...pruner,model:request.params.model,provider:request.params.provider,reasoningEffort:request.params.reasoningEffort ?? null,version:'pruner-v2'};result=pruner;break;
       case 'config/batchWrite': result = {status:'ok'}; break;
       case 'hooks/list': result = hooksList; break;
       case 'memory/reset': result = {}; break;
@@ -1644,6 +1644,38 @@ test('pruning override edits preserve separation and reject stale or incomplete 
   assert.equal(configRead.config.model,MODEL);assert.equal(configRead.config.background_model,'cheap-model');
   assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'),false);
   client.close();
+});
+
+test('pruning effort round trips through the shared pruner RPC and Default clears it', async t => {
+  const { client, socket, configRead } = fixture({ prunerSupported: true });
+  t.after(() => client.close());
+  await client.initialize();
+  const choice = { model: 'gpt-6-luna', provider: 'openai' };
+  const saved = await client.savePruner({ version: 'pruner-v1', ...choice, reasoningEffort: 'max' });
+  assert.deepEqual(socket.sent.find(row => row.method === 'pruner/write').params,
+    { expectedVersion: 'pruner-v1', ...choice, reasoningEffort: 'max' });
+  assert.equal(saved.smartPrune.explicitOverride.reasoningEffort, 'max');
+  assert.equal((await client.settings()).smartPrune.explicitOverride.reasoningEffort, 'max');
+  const cleared = await client.savePruner({ version: 'pruner-v2', ...choice, reasoningEffort: null });
+  assert.equal(cleared.smartPrune.explicitOverride.reasoningEffort, null);
+  assert.equal(socket.sent.filter(row => row.method === 'pruner/write').at(-1).params.reasoningEffort, null);
+  assert.equal(configRead.config.model, MODEL);
+  assert.equal(socket.sent.some(row => row.method === 'config/batchWrite'), false);
+});
+
+test('pruning effort stays unset when omitted and rejects malformed efforts before writing', async t => {
+  const { client, socket } = fixture({ prunerSupported: true });
+  t.after(() => client.close());
+  await client.initialize();
+  const choice = { version: 'pruner-v1', model: 'gpt-6-luna', provider: 'openai' };
+  assert.equal((await client.settings()).smartPrune.explicitOverride.reasoningEffort, null);
+  for (const reasoningEffort of ['', 'Max', 'high effort', 'a'.repeat(17), 7, {}, false]) {
+    await assert.rejects(client.savePruner({ ...choice, reasoningEffort }), /reasoning effort/);
+  }
+  assert.equal(socket.sent.some(row => row.method === 'pruner/write'), false);
+  const saved = await client.savePruner(choice);
+  assert.equal(saved.smartPrune.explicitOverride.reasoningEffort, null);
+  assert.equal(Object.hasOwn(socket.sent.find(row => row.method === 'pruner/write').params, 'reasoningEffort'), false);
 });
 
 test('desktop server closes even when a local request body never finishes', async () => {

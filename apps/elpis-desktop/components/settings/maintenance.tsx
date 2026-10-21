@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
+import { api, effortsOf, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -119,16 +119,24 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
   </>;
 }
 
-/** Smart Prune: whether it is on, and which model prunes. */
+/** Smart Prune: whether it is on, and which model and effort prune. */
 export function PrunerSettings({ value, models }: { value: ElpisSettings; models: Model[] }) {
   const override = value.smartPrune.explicitOverride;
-  const saved = { mode: override.model ? "explicit" as const : "background" as const, model: override.model ?? "", provider: override.provider ?? "" };
+  const saved = { mode: override.model ? "explicit" as const : "background" as const, model: override.model ?? "", provider: override.provider ?? "", reasoningEffort: override.reasoningEffort ?? "" };
   const [draft, setDraft] = useState<typeof saved | null>(null);
   const saver = useSaver();
   const current = draft ?? saved;
-  const catalogs = useProviderCatalogs(value, models, [current.mode === "explicit" ? current.provider : null]);
-  const changed = current.mode !== saved.mode || (current.mode === "explicit" && (current.model.trim() !== saved.model || current.provider !== saved.provider));
-  const update = (patch: Partial<typeof saved>) => { setDraft({ ...current, ...patch }); saver.clear(); };
+  const providerFor = (choice: typeof saved) => choice.mode === "explicit" ? choice.provider : value.background.provider ?? value.main.provider;
+  const catalogs = useProviderCatalogs(value, models, [providerFor(current)]);
+  const effortsFor = (choice: typeof saved) => effortsOf(choice.mode === "explicit" ? choice.model : value.background.model ?? value.main.model, catalogs.forProvider(providerFor(choice)));
+  const efforts = effortsFor(current);
+  const validEffort = !current.reasoningEffort || efforts.includes(current.reasoningEffort);
+  const changed = current.reasoningEffort !== saved.reasoningEffort || current.mode !== saved.mode || (current.mode === "explicit" && (current.model.trim() !== saved.model || current.provider !== saved.provider));
+  const update = (patch: Partial<typeof saved>) => {
+    const next = { ...current, ...patch };
+    if ((next.mode !== current.mode || next.model !== current.model || next.provider !== current.provider) && !effortsFor(next).includes(next.reasoningEffort)) next.reasoningEffort = "";
+    setDraft(next); saver.clear();
+  };
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft(null); }, reloaded.text);
   const editableOverride = override.available === true && typeof override.version === "string";
   return <SettingsGroup title="Smart Prune" description="Optimizes fresh tool results before the main model reads them.">
@@ -145,8 +153,14 @@ export function PrunerSettings({ value, models }: { value: ElpisSettings; models
         <SettingRow title="Pruning provider" scope="this device"><OptionSelect aria-label="Pruning provider" className="settings-choice" value={current.provider} onChange={event => update({ provider: event.target.value })} disabled={saver.pending !== null}><option value="" disabled>Select provider</option>{providerOptions(current.provider, value.providers)}</OptionSelect></SettingRow>
         <SettingRow title="Pruning model" scope="this device" description="Choose a model supported by the selected provider."><ModelChoice label="Pruning model" value={current.model || null} models={catalogs.forProvider(current.provider || null)} provider={catalogs.connectionLabel(current.provider || null)} catalogStatus={catalogs.catalogStatus(current.provider || null)} disabled={saver.pending !== null} inheritLabel="Choose a pruning model" onChange={model => update({ model: model ?? "" })} /></SettingRow>
       </>}
+      <SettingRow title="Pruning effort" scope="this device" description={validEffort ? "Default uses Low. Applies to the next pruning attempt." : "The saved effort is unavailable for this model. Choose Default or a supported effort."}>
+        <OptionSelect aria-label="Pruning effort" className="settings-choice" value={current.reasoningEffort} onChange={event => update({ reasoningEffort: event.target.value })} disabled={saver.pending !== null}>
+          <option value="">Default (Low)</option>
+          {efforts.map(effort => <option key={effort} value={effort}>{effort.charAt(0).toUpperCase() + effort.slice(1)}</option>)}
+        </OptionSelect>
+      </SettingRow>
       <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
-        <Button disabled={saver.pending !== null || !changed || (current.mode === "explicit" && (!current.model.trim() || !current.provider))} onClick={() => void saver.run("save", async () => { await saveSettings("/pruner", { version: override.version, model: current.mode === "explicit" ? current.model.trim() : null, provider: current.mode === "explicit" ? current.provider : null }); setDraft(null); }, "Pruning model saved. Applies to the next pruning attempt.")}>{saver.pending === "save" ? "Saving…" : "Save pruning model"}</Button>
+        <Button disabled={saver.pending !== null || !changed || !validEffort || (current.mode === "explicit" && (!current.model.trim() || !current.provider))} onClick={() => void saver.run("save", async () => { await saveSettings("/pruner", { version: override.version, model: current.mode === "explicit" ? current.model.trim() : null, provider: current.mode === "explicit" ? current.provider : null, reasoningEffort: current.reasoningEffort || null }); setDraft(null); }, "Pruning model saved. Applies to the next pruning attempt.")}>{saver.pending === "save" ? "Saving…" : "Save pruning model"}</Button>
       </SettingsActions>
     </> : <SettingRow title="Pruning model" description={override.reason ?? "Pruning model settings are unavailable."} />}
   </SettingsGroup>;

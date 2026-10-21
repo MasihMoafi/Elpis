@@ -17,7 +17,7 @@ export type ElpisSettings = {
   main: Background;
   background: Background;
   providers?: { id: string; displayName: string }[];
-  smartPrune: { enabled: boolean | null; explicitOverride: { available?: boolean; model?: string | null; provider?: string | null; version?: string; reason?: string } };
+  smartPrune: { enabled: boolean | null; explicitOverride: { available?: boolean; model?: string | null; provider?: string | null; reasoningEffort?: string | null; version?: string; reason?: string } };
   memory: Memory;
   options?: ConfigOptions;
   /** How many agents a work graph may use: in all, and at once (bridge/elpis-features.mjs `agentLimits`). */

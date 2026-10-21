@@ -673,8 +673,9 @@ export class DesktopClient extends EventEmitter {
     return this.settings();
   }
   async savePruner(input) {
-    object(input, ['version', 'model', 'provider']);
+    object(input, ['version', 'model', 'provider', 'reasoningEffort']);
     text(input.version, 'pruning settings version', 200);
+    const reasoningEffort = input.reasoningEffort === null ? null : this.#effort(input.reasoningEffort);
     const current = await this.settings();
     const override = current.smartPrune.explicitOverride;
     if (!override.available) throw new BridgeError(override.reason, 409);
@@ -683,7 +684,7 @@ export class DesktopClient extends EventEmitter {
       text(input.model, 'pruning model ID', 200); text(input.provider, 'pruning provider ID', 200);
       if (!current.providers.some(item => item.id === input.provider)) throw new BridgeError('Choose a configured provider');
     }
-    await this.#rpc('pruner/write', { expectedVersion: input.version, model: input.model, provider: input.provider });
+    await this.#rpc('pruner/write', { expectedVersion: input.version, model: input.model, provider: input.provider, ...(reasoningEffort !== undefined ? { reasoningEffort } : {}) });
     return this.settings();
   }
   async providers() {

@@ -111,7 +111,7 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
     background: { model: string(config.background_model), provider: string(config.background_provider), purpose: 'smartPruneFallback' },
     smartPrune: {
       enabled: boolean(config.features?.automatic_context_pruning),
-      explicitOverride: prunerRead ? { available: true, model: string(prunerRead.model), provider: string(prunerRead.provider), version: string(prunerRead.version) }
+      explicitOverride: prunerRead ? { available: true, model: string(prunerRead.model), provider: string(prunerRead.provider), reasoningEffort: string(prunerRead.reasoningEffort), version: string(prunerRead.version) }
         : { available: false, reason: 'The running Elpis version does not expose the separate pruning override. Update and restart Elpis to edit it here.' },
     },
     memory: {

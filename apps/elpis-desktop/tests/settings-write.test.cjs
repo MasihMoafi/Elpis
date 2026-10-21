@@ -25,8 +25,8 @@ test('maintenance saves only edited fields, applies switches at once and preserv
  await chooseOption(page.getByLabel('Memory extraction model',{exact:true}), 'cheap-model');await page.getByRole('button',{name:'Save memory models'}).click();await page.getByRole('alert').filter({hasText:'Settings changed elsewhere'}).waitFor();assert.equal(await controlValue(page.getByLabel('Memory extraction model',{exact:true})),'cheap-model');assert.deepEqual(calls[2].data,{version:'v2',memory:{extractionModel:'cheap-model'}});
  reject=false;await page.getByRole('tabpanel',{name:'Personalization'}).getByRole('button',{name:'Reload settings',exact:true}).click();await page.getByRole('status').filter({hasText:'Settings reloaded'}).waitFor();assert.equal(await controlValue(page.getByLabel('Memory extraction model',{exact:true})),'');assert.equal(await page.getByRole('button',{name:'Save memory models'}).isDisabled(),true);
  await page.getByRole('tab',{name:'Configuration',exact:true}).click();
- await chooseOption(page.getByLabel('Pruning model selection',{exact:true}), 'explicit');assert.equal(await page.getByRole('button',{name:'Save pruning model'}).isDisabled(),true);await chooseOption(page.getByLabel('Pruning provider',{exact:true}), 'openai');await chooseOption(page.getByLabel('Pruning model',{exact:true}), 'gpt-6-luna');await page.getByRole('button',{name:'Save pruning model'}).click();await page.getByRole('status').filter({hasText:'Pruning model saved'}).waitFor();assert.deepEqual(calls[3],{path:'/api/pruner',data:{version:'p1',model:'gpt-6-luna',provider:'openai'}});
- await chooseOption(page.getByLabel('Pruning model selection',{exact:true}), 'background');await page.getByRole('button',{name:'Save pruning model'}).click();await page.getByRole('status').filter({hasText:'Pruning model saved'}).waitFor();assert.deepEqual(calls[4],{path:'/api/pruner',data:{version:'p2',model:null,provider:null}});
+ await chooseOption(page.getByLabel('Pruning model selection',{exact:true}), 'explicit');assert.equal(await page.getByRole('button',{name:'Save pruning model'}).isDisabled(),true);await chooseOption(page.getByLabel('Pruning provider',{exact:true}), 'openai');await chooseOption(page.getByLabel('Pruning model',{exact:true}), 'gpt-6-luna');await page.getByRole('button',{name:'Save pruning model'}).click();await page.getByRole('status').filter({hasText:'Pruning model saved'}).waitFor();assert.deepEqual(calls[3],{path:'/api/pruner',data:{version:'p1',model:'gpt-6-luna',provider:'openai',reasoningEffort:null}});
+ await chooseOption(page.getByLabel('Pruning model selection',{exact:true}), 'background');await page.getByRole('button',{name:'Save pruning model'}).click();await page.getByRole('status').filter({hasText:'Pruning model saved'}).waitFor();assert.deepEqual(calls[4],{path:'/api/pruner',data:{version:'p2',model:null,provider:null,reasoningEffort:null}});
  assert.equal(settings.main.model,'main-model');
  // The main model is chosen here too, saved where the TUI reads it; it can't be cleared, so there is no empty choice.
  assert.equal(await page.getByRole('button',{name:'Save main model'}).isDisabled(),true);
@@ -34,4 +34,84 @@ test('maintenance saves only edited fields, applies switches at once and preserv
  await chooseOption(page.getByLabel('Main model',{exact:true}), 'gpt-6-luna');await page.getByRole('button',{name:'Save main model'}).click();await page.getByRole('status').filter({hasText:'Main model saved'}).waitFor();
  assert.deepEqual(calls.at(-1).data.main,{model:'gpt-6-luna'});assert.equal(settings.main.model,'gpt-6-luna');const background=page.getByRole('region',{name:'Models',exact:true});await background.scrollIntoViewIfNeeded();await page.screenshot({path:'/tmp/elpis-maintenance-1280.png'});await page.setViewportSize({width:390,height:844});await background.screenshot({path:'/tmp/elpis-maintenance-390.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  }finally{await browser.close();for(const client of clients)client.end();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test('Smart Prune effort uses the selected model catalog, saves Max, reopens and clears to Default', async () => {
+ const { fixture } = require('./parity-fixture.cjs');
+ let settings = { version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, background: { model: 'cheap-model', provider: 'openai' },
+  providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'local', displayName: 'Local' }],
+  smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: 'gpt-6-luna', provider: 'openai' } }, memory: {}, write: { available: true } };
+ const writes = []; let reject = false;
+ const app = await fixture({ routes: {
+  '/api/settings': () => settings,
+  '/api/pruner': body => {
+   writes.push(body);
+   if (reject) return { __http: 409, error: 'Settings changed elsewhere. Reload settings.' };
+   settings = { ...settings, smartPrune: { ...settings.smartPrune, explicitOverride: { available: true, ...body, version: `p${writes.length + 1}` } } };
+   return settings;
+  },
+ } });
+ const { page } = app;
+ const catalog = (model, displayName, efforts) => ({ id: model, model, displayName, supportedReasoningEfforts: efforts.map(reasoningEffort => ({ reasoningEffort })) });
+ let releaseLocal;
+ const localReady = new Promise(resolve => { releaseLocal = resolve; });
+ await page.route('**/api/models*', async route => {
+  const local = new URL(route.request().url()).searchParams.get('provider') === 'local';
+  if (local) await localReady;
+  await route.fulfill({ json: { data: local ? [catalog('gpt-6-luna', 'Local Luna', ['medium'])]
+   : [catalog('gpt-6-luna', 'Luna', ['low', 'medium', 'high', 'max']), catalog('cheap-model', 'Cheap model', ['low', 'high']), catalog('no-efforts', 'No reasoning', [])] } });
+ });
+ const effort = page.getByLabel('Pruning effort', { exact: true });
+ const save = page.getByRole('button', { name: 'Save pruning model', exact: true });
+ const configuration = async () => { await openSettings(page); await page.getByRole('tab', { name: 'Configuration', exact: true }).click(); };
+ const options = async values => {
+  await effort.click();
+  assert.deepEqual(await page.getByRole('option').evaluateAll(items => items.map(item => item.getAttribute('data-value'))), values);
+  assert.equal(await page.getByRole('option', { name: 'Default (Low)', exact: true }).count(), 1);
+  await page.keyboard.press('Escape');
+ };
+ const saved = async () => { await save.click(); await page.getByRole('status').filter({ hasText: 'Pruning model saved' }).waitFor(); };
+ try {
+  await page.reload(); await configuration();
+  await effort.waitFor(); // Fails on the installed renderer: there is no effort control.
+  assert.equal(await controlValue(effort), ''); assert.equal(await save.isDisabled(), true);
+  await options(['', 'low', 'medium', 'high', 'max']);
+  // First, middle and last supported choices all save independently of the model.
+  for (const reasoningEffort of ['low', 'high', 'max']) {
+   const version = settings.smartPrune.explicitOverride.version;
+   await chooseOption(effort, reasoningEffort); await saved();
+   assert.deepEqual(writes.at(-1), { version, model: 'gpt-6-luna', provider: 'openai', reasoningEffort });
+   assert.equal(await controlValue(effort), reasoningEffort); assert.equal(await save.isDisabled(), true);
+  }
+  await configuration(); assert.equal(await controlValue(effort), 'max');
+  await page.reload(); await configuration(); assert.equal(await controlValue(effort), 'max');
+  await chooseOption(effort, ''); await saved();
+  assert.equal(writes.at(-1).reasoningEffort, null);
+  await page.reload(); await configuration(); assert.equal(await controlValue(effort), '');
+  await chooseOption(effort, 'max'); await saved();
+  await chooseOption(page.getByLabel('Pruning model', { exact: true }), 'cheap-model');
+  assert.equal(await controlValue(effort), ''); await options(['', 'low', 'high']);
+  await saved(); assert.equal(writes.at(-1).reasoningEffort, null);
+  await chooseOption(effort, 'high'); reject = true; await save.click();
+  await page.getByRole('alert').filter({ hasText: 'Settings changed elsewhere' }).waitFor();
+  assert.equal(await controlValue(effort), 'high');
+  reject = false; await page.getByRole('region', { name: 'Smart Prune', exact: true }).getByRole('button', { name: 'Reload settings', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Settings reloaded' }).waitFor();
+  assert.equal(await controlValue(effort), '');
+  await chooseOption(page.getByLabel('Pruning provider', { exact: true }), 'local');
+  await page.getByText('Loading model choices…', { exact: true }).waitFor();
+  await options(['']); releaseLocal();
+  await page.getByText('Loading model choices…', { exact: true }).waitFor({ state: 'hidden' });
+  await chooseOption(page.getByLabel('Pruning model', { exact: true }), 'gpt-6-luna');
+  await options(['', 'medium']); await chooseOption(effort, 'medium'); await saved();
+  assert.equal(writes.at(-1).provider, 'local'); assert.equal(writes.at(-1).reasoningEffort, 'medium');
+  await chooseOption(page.getByLabel('Pruning model selection', { exact: true }), 'background');
+  assert.equal(await controlValue(effort), ''); await options(['', 'low', 'high']);
+  const version = settings.smartPrune.explicitOverride.version; await saved();
+  assert.deepEqual(writes.at(-1), { version, model: null, provider: null, reasoningEffort: null });
+  await chooseOption(page.getByLabel('Pruning model selection', { exact: true }), 'explicit');
+  await chooseOption(page.getByLabel('Pruning provider', { exact: true }), 'openai');
+  await chooseOption(page.getByLabel('Pruning model', { exact: true }), 'no-efforts'); await options(['']);
+  assert.deepEqual(app.errors, []);
+ } finally { await app.close(); }
 });
