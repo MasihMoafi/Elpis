@@ -41,6 +41,6 @@
 .sources h2 { font-size:16px; font-weight:600; }
 .sources h3 { font-size:13px; font-weight:600; }
 .sources article { padding:12px 0; border-top:1px solid var(--hairline); }
-.sources a { color:var(--primary); text-decoration:underline; text-underline-offset:3px; }
+.sources a { color:var(--accent-text); text-decoration:underline; text-decoration-color:var(--primary); text-underline-offset:3px; }
 .sources .muted { font-size:12px; }
 @media (max-width:720px) { .fields, .noCount { grid-template-columns:minmax(0,1fr); } .count { max-width:140px; } .history button { flex-wrap:wrap; } }

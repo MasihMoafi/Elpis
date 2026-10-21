@@ -6,28 +6,38 @@ const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
+const { contrastFailures } = require('./hud-contrast.cjs');
 const ACCENTS = ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange'];
+const UNCHANGED_ACCENTS = {
+  Light: { blue: '#2458b8', teal: '#146b67', green: '#29683f', violet: '#6b44ac', rose: '#a73459' },
+  Dark: { amber: '#ff9b28', blue: '#8bb7ff', teal: '#68d4c7', green: '#8bd49f', violet: '#c1a0fa', rose: '#f39cbb', orange: '#ff8f00' },
+};
 function isOrange([r, g, b]) {
-  return r > 150 && g / r >= .35 && g / r <= .62 && b / r < .18;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), chroma = max - min;
+  const hue = chroma && max === r ? 60 * (g - b) / chroma : -1;
+  return max >= 230 && chroma / max >= .7 && hue >= 32 && hue <= 36;
 }
 
-test('default and orange accents use saturated orange instead of brown in both themes', async t => {
+test('default and orange accents use saturated orange in light and preserve the dark palette', async t => {
   assert.equal(isOrange([143, 91, 0]), false, 'the old brown must be rejected');
+  assert.equal(isOrange([179, 71, 0]), false, '#b34700 is too red');
+  assert.equal(isOrange([255, 138, 0]), true, 'the send button orange is accepted');
+  assert.equal(isOrange([232, 157, 52]), true, 'the logo amber is accepted');
   const f = await fixture({ width: 1280, height: 900 }), { page } = f; t.after(f.close);
   await f.open('chat-a');
-  const css = await fs.readFile(path.join(__dirname, '../app/globals.css'), 'utf8');
-  await page.addStyleTag({ content: css.replace(/^@import[^\n]*\n/gm, '') });
-  for (const mode of ['light', 'dark']) for (const accent of ['amber', 'orange']) {
+  for (const mode of ['light', 'dark']) for (const accent of [null, 'amber', 'orange']) {
     const colours = await page.evaluate(({ mode, accent }) => {
       document.documentElement.classList.toggle('dark', mode === 'dark');
-      document.documentElement.dataset.accent = accent;
+      if (accent) document.documentElement.dataset.accent = accent;
+      else delete document.documentElement.dataset.accent;
       const probe = document.createElement('span');
       probe.style.color = 'var(--primary)'; document.body.append(probe);
       const primary = getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number);
       probe.remove();
       return { primary, action: getComputedStyle(document.documentElement).getPropertyValue('--primary-action').trim() };
     }, { mode, accent });
-    assert.ok(isOrange(colours.primary), `${mode} ${accent} must look orange: ${colours.primary}`);
+    if (mode === 'light') assert.ok(isOrange(colours.primary), `${mode} ${accent || 'default'} must match send/logo hue: ${colours.primary}`);
+    else assert.deepEqual(colours.primary, accent === 'orange' ? [255, 143, 0] : [255, 155, 40], `dark ${accent || 'default'} stays unchanged`);
     assert.equal(colours.action, '#ff8a00');
   }
 });
@@ -87,12 +97,16 @@ test('all seven accents change shared tokens and meet text contrast in both them
         const read = name => root.getPropertyValue(name).trim();
         const luminance = value => rgb(value).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
         const ratio = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+        const probe = document.createElement('a');
+        probe.className = 'text-primary'; probe.textContent = 'Accent link'; document.body.append(probe);
+        const text = getComputedStyle(probe).color; probe.remove();
         const primary = read('--primary'), surfaces = ['--background', '--card', '--sidebar', '--recessed', '--composer'];
-        return { primary, ring: read('--ring'), gold: read('--gold'), ratios: Object.fromEntries(surfaces.map(name => [name, ratio(primary, read(name))])), button: ratio(primary, read('--primary-foreground')) };
+        return { primary, text, ring: read('--ring'), gold: read('--gold'), ratios: Object.fromEntries(surfaces.map(name => [name, ratio(text, read(name))])), button: ratio(primary, read('--primary-foreground')) };
       });
       primaries.add(result.primary);
       for (const [surface, ratio] of Object.entries(result.ratios)) assert.ok(ratio >= 4.5, `${mode} ${accent} on ${surface}: ${ratio}`);
       assert.ok(result.button >= 4.5, `${mode} ${accent} button: ${result.button}`);
+      if (UNCHANGED_ACCENTS[mode][accent]) assert.equal(result.primary, UNCHANGED_ACCENTS[mode][accent], `${mode} ${accent} stays unchanged`);
       assert.equal(result.ring, result.primary); assert.equal(result.gold, result.primary);
       measurements.push({ mode, accent, ...result });
     }
@@ -100,6 +114,59 @@ test('all seven accents change shared tokens and meet text contrast in both them
   }
   await fs.mkdir(SHOTS, { recursive: true });
   await fs.writeFile(path.join(SHOTS, 'contrast.json'), JSON.stringify(measurements, null, 2));
+  assert.deepEqual(f.errors, []);
+});
+
+test('light orange accents keep real chat and Settings text readable, with orange markers and dark fill labels', async t => {
+  const f = await fixture({ width: 1280, height: 900, chat: [
+    ['t1', 'How does the parser work?', 'The parser runs in **two passes**.\n\n1. Scan the source into tokens.\n2. Build a syntax tree.\n\nSee [the guide](https://example.invalid/guide) for examples.', [], null],
+    ['t2', 'What should I test first?', 'Start with an empty input, then try one valid expression.', [], null],
+  ] }), { page } = f; t.after(f.close);
+  await fs.mkdir(SHOTS, { recursive: true });
+  await f.open('chat-a');
+  await page.getByRole('button', { name: 'New chat tab', exact: true }).click();
+  await f.open('chat-b');
+  await page.getByRole('tab', { name: 'Fix the parser', exact: true }).click();
+  for (const mode of ['Light', 'Dark']) for (const accent of ['amber', 'orange']) {
+    await appearance(page); await theme(page, mode);
+    await chooseOption(page.getByLabel('Accent colour', { exact: true }), accent);
+    await page.getByRole('listbox').waitFor({ state: 'hidden' });
+    await page.mouse.move(1260, 880);
+    assert.deepEqual(await page.evaluate(contrastFailures), [], `${mode} ${accent} Settings text contrast`);
+    if (accent === 'amber') await page.screenshot({ path: path.join(SHOTS, `${mode.toLowerCase()}-amber-settings.png`), animations: 'disabled' });
+    await leaveSettings(page);
+    await f.composer.fill('Test empty input, then one valid expression.');
+    await f.composer.focus();
+    assert.deepEqual(await page.evaluate(contrastFailures), [], `${mode} ${accent} chat text contrast`);
+    const marks = await page.evaluate(() => {
+      const css = (element, pseudo) => getComputedStyle(element, pseudo);
+      const link = css(document.querySelector('.message.agent a'));
+      const send = css(document.querySelector('.send-button'));
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--primary)'; document.body.append(probe);
+      const primary = css(probe).color; probe.remove();
+      return { primary, link: link.color, underline: link.textDecorationColor, line: link.textDecorationLine,
+        tab: css(document.querySelector('.task-tab.active'), '::after').backgroundColor,
+        icon: css(document.querySelector('.task-tab.active > button svg')).color,
+        sidebar: css(document.querySelector('.thread-row.active'), '::before').backgroundColor,
+        fill: send.backgroundColor, label: send.color };
+    });
+    assert.equal(marks.line, 'underline');
+    for (const role of ['tab', 'icon', 'sidebar']) assert.equal(marks[role], marks.primary, `${mode} ${accent} ${role} uses the shared visual accent`);
+    assert.equal(marks.fill, 'rgb(255, 138, 0)', 'the send fill stays orange');
+    if (mode === 'Light') {
+      assert.notEqual(marks.link, marks.underline, 'ink link text keeps its orange underline');
+      assert.equal(marks.label, 'rgb(37, 37, 36)', 'orange send fill keeps dark ink');
+    }
+    await page.getByRole('button', { name: 'Add files and more', exact: true }).click();
+    await page.getByRole('menuitem', { name: /Plan mode/ }).click();
+    assert.deepEqual(await page.evaluate(contrastFailures), [], `${mode} ${accent} Plan text contrast`);
+    assert.equal(await page.locator('.plan-pill > svg').evaluate(element => getComputedStyle(element).color), marks.primary, 'Plan icon keeps the visual accent beside ink text');
+    await page.getByRole('button', { name: 'Turn plan mode off', exact: true }).click();
+    await f.composer.focus();
+    await page.mouse.move(1260, 880);
+    if (accent === 'amber') await page.screenshot({ path: path.join(SHOTS, `${mode.toLowerCase()}-amber-chat.png`), animations: 'disabled' });
+  }
   assert.deepEqual(f.errors, []);
 });
 
