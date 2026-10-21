@@ -1,5 +1,6 @@
 {
   "fast": [
+    "tests/install-forward.test.mjs",
     "tests/account-events.test.cjs",
     "tests/config-sections.test.mjs",
     "tests/agents-iso.test.mjs",
