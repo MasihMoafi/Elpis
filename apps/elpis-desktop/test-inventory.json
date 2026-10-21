@@ -164,6 +164,7 @@
     "tests/composer-files.test.cjs",
     "tests/composer-keys.test.cjs",
     "tests/composer-modes.test.cjs",
+    "tests/gray-shadows.test.cjs",
     "tests/context-files.test.cjs",
     "tests/context-ledger.test.cjs",
     "tests/context-menu.test.cjs",

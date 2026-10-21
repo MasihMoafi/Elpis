@@ -226,6 +226,9 @@ button:disabled { cursor:not-allowed; }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:12px; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 14px; }
 .composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); }
+/* Light Stop stays plain; keyboard focus uses an outline instead of the button's shadow ring. */
+:root:not(.dark) .stop-button { background:transparent; box-shadow:none; }
+:root:not(.dark) .stop-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
@@ -769,6 +772,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Group labels in the sidebar and in Settings' navigation. */
 .section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
 .thread-row { position:relative; }
+/* The first button is the agents chevron; its row owns the highlight, even when expanded. */
+.thread-row > button[aria-expanded]:first-child { background:transparent; box-shadow:none; }
+.thread-row > button[aria-expanded]:first-child:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .thread-row.active { background:var(--selected); }
 .thread-row.active::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
