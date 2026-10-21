@@ -8,18 +8,18 @@ expression: "screen(&view, 160, 22)"
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
       Tasks                             Model                       Status         Updated  │ ● Current task
   Pinned  7                                                                                 │ Unknown · OpenAI · asked by you
-  › ● Current task                      Unknown                     ! Needs you        now  │ ────────────────────────────────────────────────────────────────
-    ├─● A longer task title that uses…  Unknown                     ◇ Ready         5m ago  │ you → Unknown  ask
-    │ └─● Child                 voice   Unknown                     ◇ Ready         2m ago  │ Current task
-    ├─● Needs an answer                 Unknown                     ! Needs you     2h ago  │
-    ├─● Unloaded task                   Unknown                     ○ Inactive      2d ago  │ ▎ Unknown  ! needs you
-    ├─● Working task                    Unknown                     ◐ Working       1d ago  │
-    └─● Failed task                     Unknown                     ! Error         1h ago  │ Agent: Needs an answer
+  › ● Current task                      Unknown                     ! Needs you        now  │ Started by you
+    ├─● A longer task title that uses…  Unknown                     ◇ Ready         5m ago  │ Children: A longer task title that uses the available column,
+    │ └─● Child                 voice   Unknown                     ◇ Ready         2m ago  │ Needs an answer, Unloaded task, Working task, Failed task · 1
+    ├─● Needs an answer                 Unknown                     ! Needs you     2h ago  │ running
+    ├─● Unloaded task                   Unknown                     ○ Inactive      2d ago  │ you → Unknown  ask
+    ├─● Working task                    Unknown                     ◐ Working       1d ago  │ Current task
+    └─● Failed task                     Unknown                     ! Error         1h ago  │
+                                                                                            │ ▎ Unknown  ! needs you
+                                                                                            │
+                                                                                            │ Agent: Needs an answer
                                                                                             │ Open task to review.
                                                                                             │ Waiting for your response.
-                                                                                            │
-                                                                                            │
-                                                                                            │
                                                                                             │
                                                                                             │
                                                                                             │

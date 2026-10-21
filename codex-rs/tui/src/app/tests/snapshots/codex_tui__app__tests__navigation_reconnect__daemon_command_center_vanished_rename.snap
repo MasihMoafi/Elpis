@@ -8,7 +8,7 @@ expression: "render_bottom_popup(&app.chat_widget, 100)"
   ────────────────────────────────────────────────────────────────────────────────────────────────
       Tasks                     Model                     │ ● Selected task
   /tmp/project  2                                         │ Unknown · test-provider · asked by you
-    ● New task                  Unknown                   │ ──────────────────────────────────────
+    ● New task                  Unknown                   │ Started by you
   › ● Selected task             Unknown                   │ you → Unknown  ask
                                                           │ Selected task
                                                           │

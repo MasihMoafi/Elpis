@@ -26,7 +26,11 @@ impl AgentsOverviewView {
         let parent = self
             .parent_index(self.selected)
             .map(|index| &self.rows[index]);
-        let asked_by = parent.map_or("you", AgentsOverviewRow::model_display_name);
+        let has_parent = row.thread.parent_thread_id.is_some();
+        let asked_by = parent.map_or(
+            if has_parent { "unloaded parent" } else { "you" },
+            AgentsOverviewRow::model_display_name,
+        );
         let mut lines = vec![
             Line::from(vec![
                 Span::styled("● ", own_style),
@@ -36,7 +40,6 @@ impl AgentsOverviewView {
                 Span::styled(row.model_label(), own_style),
                 format!(" · {} · asked by {asked_by}", Self::provider_label(row)).dim(),
             ]),
-            Line::from("─".repeat(width).dim()),
         ];
         // Metadata stays compact so long model IDs cannot consume the conversation.
         let mut rendered = Vec::new();
@@ -45,6 +48,42 @@ impl AgentsOverviewView {
                 crate::line_truncation::truncate_line_with_ellipsis_if_overflow(header, width),
             ));
         }
+        let parent_label = if let Some(parent) = parent {
+            format!("Parent: {}", display_title(&parent.thread))
+        } else if let Some(parent_id) = &row.thread.parent_thread_id {
+            format!("Parent: {parent_id} (not loaded)")
+        } else {
+            "Started by you".to_string()
+        };
+        let children = self
+            .rows
+            .iter()
+            .filter(|child| {
+                child.thread.parent_thread_id.as_deref() == Some(row.thread.id.as_str())
+            })
+            .collect::<Vec<_>>();
+        let mut relationships = vec![Line::from(parent_label.dim())];
+        if !children.is_empty() {
+            let names = children
+                .iter()
+                .map(|child| display_title(&child.thread))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let running = children
+                .iter()
+                .filter(|child| {
+                    AgentsOverviewGroup::for_thread(&child.thread) == AgentsOverviewGroup::Working
+                })
+                .count();
+            relationships.push(Line::from(
+                format!("Children: {names} · {running} running").dim(),
+            ));
+        }
+        // Wrap relationships so every name remains visible even in the narrow details pane.
+        rendered.extend(plain_hyperlink_lines(crate::wrapping::word_wrap_lines(
+            relationships,
+            width,
+        )));
         let mut conversation = Vec::new();
         let has_user = row
             .thread
@@ -68,7 +107,7 @@ impl AgentsOverviewView {
                 format!(
                     "{asked_by} → {}  {}",
                     row.model_display_name(),
-                    if parent.is_some() { "delegate" } else { "ask" }
+                    if has_parent { "delegate" } else { "ask" }
                 )
                 .into(),
             ));
@@ -113,16 +152,10 @@ impl AgentsOverviewView {
                                 super::super::super::agents_overview::HUMAN_STEER_ID_PREFIX,
                             )
                         });
-                        let from = if human_steer {
-                            "you"
-                        } else if first_input {
-                            asked_by
-                        } else {
-                            parent.map_or("you", AgentsOverviewRow::model_display_name)
-                        };
+                        let from = if human_steer { "you" } else { asked_by };
                         let action = if human_steer {
                             "steer"
-                        } else if first_input && parent.is_some() {
+                        } else if first_input && has_parent {
                             "delegate"
                         } else if first_input {
                             "ask"

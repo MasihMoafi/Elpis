@@ -727,6 +727,83 @@ async fn live_center_rows_show_each_model_at_wide_and_narrow_widths() {
 }
 
 #[tokio::test]
+async fn agent_details_name_parent_and_direct_children() {
+    let app = make_test_app().await;
+    let root = ThreadId::from_u128(101);
+    let child = ThreadId::from_u128(102);
+    let sibling = ThreadId::from_u128(103);
+    let grandchild = ThreadId::from_u128(104);
+    let threads = vec![
+        overview_thread(root, None, "Ada", ThreadStatus::Idle),
+        overview_thread(
+            child,
+            Some(root),
+            "Bohr",
+            ThreadStatus::Active {
+                active_flags: Vec::new(),
+            },
+        ),
+        overview_thread(sibling, Some(root), "Curie", ThreadStatus::Idle),
+        overview_thread(grandchild, Some(child), "Dirac", ThreadStatus::Idle),
+    ];
+    let child_view = app.agents_overview_view(threads.clone(), Some(child));
+    let rendered = screen(&child_view, 190, 30);
+    // Old details only identify the requester's model, so this assertion fails.
+    assert!(rendered.contains("Parent: Ada"), "{rendered}");
+    assert!(
+        rendered.contains("Children: Dirac · 0 running"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("Started by you"), "{rendered}");
+
+    let parent_view = app.agents_overview_view(threads, Some(root));
+    let rendered = screen(&parent_view, 190, 30);
+    // Old details have no children line, so this assertion also fails.
+    assert!(
+        rendered.contains("Children: Bohr, Curie · 1 running"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("Children: Bohr, Curie, Dirac"));
+    assert!(rendered.contains("Started by you"), "{rendered}");
+}
+
+#[tokio::test]
+async fn top_level_agent_details_show_you_without_children() {
+    let app = make_test_app().await;
+    let view = app.agents_overview_view(
+        vec![overview_thread(
+            ThreadId::new(),
+            None,
+            "Ada",
+            ThreadStatus::Idle,
+        )],
+        None,
+    );
+    let rendered = screen(&view, 160, 24);
+    // Old code fails Started by you; the absence assertions are negative controls.
+    assert!(rendered.contains("Started by you"), "{rendered}");
+    assert!(!rendered.contains("Parent:"));
+    assert!(!rendered.contains("Children:"));
+}
+
+#[tokio::test]
+async fn agent_details_do_not_attribute_an_unloaded_parent_to_you() {
+    let app = make_test_app().await;
+    let parent = ThreadId::from_u128(101);
+    let child = overview_thread(ThreadId::new(), None, "Bohr", ThreadStatus::Idle);
+    let mut view = app.agents_overview_view(vec![child], None);
+    view.rows[0].thread.parent_thread_id = Some(parent.to_string());
+    let rendered = screen(&view, 190, 24);
+    assert!(
+        rendered.contains(&format!("Parent: {parent} (not loaded)")),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("Started by you"));
+    assert!(!rendered.contains("asked by you"));
+    assert!(!rendered.contains("Children:"));
+}
+
+#[tokio::test]
 async fn child_rows_stay_with_root_across_groupings_and_open_their_own_chat() {
     let mut app = make_test_app().await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

@@ -8,7 +8,7 @@ expression: "render_bottom_popup(&app.chat_widget,\n100).replace(&test_path_disp
   ────────────────────────────────────────────────────────────────────────────────────────────────
       Tasks                     Model                     │ ● Legacy task
   Unknown  1                                              │ Unknown · OpenAI · asked by you
-  › ● Legacy task               Unknown                   │ ──────────────────────────────────────
+  › ● Legacy task               Unknown                   │ Started by you
                                                           │ you → Unknown  ask
   model-a  2                                              │ Legacy task
     ● Recent task               model-a                   │

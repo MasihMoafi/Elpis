@@ -8,7 +8,7 @@ expression: normalize_agent_center_snapshot(&cached)
 "  ────────────────────────────────────────────────────────────────────────────────────────────  "
 "      Tasks                   Model                   │ ● Review parser                         "
 "  /tmp/project  1                                     │ Unknown · OpenAI · asked by you         "
-"  › ● Review parser           Unknown                 │ ──────────────────────────────────────  "
+"  › ● Review parser           Unknown                 │ Started by you                          "
 "                                                      │ you → Unknown  ask                      "
 "                                                      │ Review parser and token handling.       "
 "                                                      │                                         "
