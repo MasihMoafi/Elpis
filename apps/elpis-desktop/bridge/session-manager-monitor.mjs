@@ -19,7 +19,7 @@ export function reviewReason(threads, { isManager, now, threshold = REVIEW_THRES
 
 /** Watches engine messages and calls `review(reason)` once per new set; a review asked for while one runs waits. */
 export function createSessionManagerMonitor({ list, isManager, review, now = Date.now, debounceMs = 1500, log = () => {}, setTimer = setTimeout, clearTimer = clearTimeout }) {
-  let timer = null, lastKey = '', running = false, waiting = null, closed = false;
+  let timer = null, lastKey = '', running = false, waiting = null, closed = false, triggerId;
   async function run(reason) {
     if (running) { waiting = reason; return; }
     running = true;
@@ -39,6 +39,13 @@ export function createSessionManagerMonitor({ list, isManager, review, now = Dat
     catch (error) { log(`Session Manager could not read the chats: ${error instanceof Error ? error.message : String(error)}`); return; }
     const reason = reviewReason(threads, { isManager, now: now() });
     if (!reason || reason.key === lastKey) return;
+    // The event chooses the project; an ambiguous startup check cannot authorize a cross-project cleanup.
+    const cwd = threads.find(thread => thread.id === triggerId)?.cwd
+      ?? (new Set(threads.filter(thread => !isManager(thread.id)).map(thread => thread.cwd)).size === 1 ? threads.find(thread => !isManager(thread.id))?.cwd : null);
+    if (!cwd) return;
+    reason.cwd = cwd;
+    reason.key += `:${cwd}`;
+    if (reason.key === lastKey) return;
     lastKey = reason.key;
     await run(reason);
   }
@@ -47,6 +54,7 @@ export function createSessionManagerMonitor({ list, isManager, review, now = Dat
       if (closed || !TRIGGERS.has(message?.method)) return;
       if (message.method === 'thread/status/changed' && message.params?.status?.type !== 'active') return;
       if (isManager(message.params?.threadId ?? message.params?.thread?.id)) return;
+      triggerId = message.params?.threadId ?? message.params?.thread?.id;
       if (timer) clearTimer(timer);
       timer = setTimer(() => { void check(); }, debounceMs);
     },
@@ -55,5 +63,39 @@ export function createSessionManagerMonitor({ list, isManager, review, now = Dat
   };
 }
 
-/** What the manager is asked when the monitor wakes it; the manager's own instructions keep the approval rules. */
-export const reviewPrompt = reason => `Automatic review: ${reason.text}. Use session_list. Propose short task names for unnamed or unclear chats, group related chats, and list chats that look finished and safe to archive, each with its reason. Rename or archive only through your tools' approvals.`;
+/** Keep project authority for the whole turn, including tool calls after turn/start returns. */
+export async function runSessionManagerReview(client, id, body, begin = () => () => {}) {
+  let finish, rejectTurn, end, failure;
+  const finished = new Set();
+  let waiting;
+  const observe = event => {
+    if (event.type === 'connection' && event.data?.connected === false) {
+      failure = Error('Session Manager disconnected; review delivery is unknown.');
+      rejectTurn?.(failure);
+    }
+    const message = event.type === 'message' ? event.data : null;
+    if (message?.params?.threadId === id && ['turn/completed', 'turn/aborted'].includes(message.method)) {
+      const turnId = message.params.turn?.id ?? message.params.turnId;
+      finished.add(turnId);
+      if (turnId === waiting) finish?.();
+    }
+  };
+  client.on('event', observe);
+  const wait = async turnId => {
+    if (failure) throw failure;
+    if (!turnId) throw Error('The Session Manager turn identity is missing.');
+    waiting = turnId;
+    if (!finished.has(turnId)) await new Promise((resolve, reject) => { finish = resolve; rejectTurn = reject; });
+  };
+  try {
+    const resumed = await client.resume(id, {});
+    if (resumed.activeTurnId) await wait(resumed.activeTurnId);
+    await client.prepareSessionManager(id);
+    if (failure) throw failure;
+    end = begin();
+    const started = await client.send(id, body);
+    await wait(started.turn?.id);
+  } finally { end?.(); client.off('event', observe); }
+}
+
+export const reviewPrompt = reason => `Automatic review: ${reason.text}. Review project ${JSON.stringify(reason.cwd)} only. Use session_list and its eligibility fields. First archive canArchive sessions (unset or placeholder name AND more than 7 days without activity), then rename remaining canRename sessions with short task names. Call your scoped tools directly under Masih's standing rule; record and report each tool-confirmed action and reason. Never change named, running, unknown-status, or other-project chats. Do not call session_organize during automatic reviews; grouping requires an explicit request and approval.`;

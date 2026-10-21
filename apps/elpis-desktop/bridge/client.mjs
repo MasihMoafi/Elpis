@@ -177,12 +177,14 @@ export class DesktopClient extends EventEmitter {
   #settingsConfirmMs;
   #browserConfig;
   #sessionManagerConfig;
+  #archiveHistory;
   #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
     this.#sessionManagerConfig = sessionManagerConfig;
+    this.#archiveHistory = new ArchiveHistory(archiveDirectory);
     this.#githubConnector = githubConnector;
     this.#skillTrash = new SkillTrash(skillTrashOptions);
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
@@ -230,7 +232,7 @@ export class DesktopClient extends EventEmitter {
     const browser = !managerThread && this.#browserConfig ? (this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig) : {};
     const manager = managerThread ? this.#sessionManagerConfig.forSession(id) : {};
     const config = { ...browser, ...manager };
-    return Object.keys(config).length ? { config } : {};
+    return Object.keys(config).length ? { config, ...(managerThread ? { developerInstructions: SESSION_MANAGER_INSTRUCTIONS } : {}) } : {};
   }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {
@@ -480,6 +482,9 @@ export class DesktopClient extends EventEmitter {
     if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !this.#owned.has(thread.id)) void this.#attach(thread.id).catch(() => {});
     return { ...result, data };
   }
+  async listArchivedThreads(options = {}) {
+    return this.#archiveHistory.page(options, page => this.listThreads(page));
+  }
   /** Rejoins without model, policy, history or workspace changes. Desktop MCP follows cold resumes;
    * the engine preserves the configuration of threads still loaded by another client. */
   #attach(id) {
@@ -505,13 +510,19 @@ export class DesktopClient extends EventEmitter {
       this.emit('event', { type: 'approvalResolved', data: { id: key } });
     }
   }
-  async readThread(id, options = {}) {
-    threadId(id); object(options, ['cursor', 'limit']);
+  /** Read current native metadata without resuming a chat or loading its conversation. */
+  async readThreadMetadata(id) {
+    threadId(id);
     const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
-    if (thread.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+    if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     await this.#loadWorkflowTitles([thread]);
+    return this.#decorate(thread);
+  }
+  async readThread(id, options = {}) {
+    object(options, ['cursor', 'limit']);
+    const thread = await this.readThreadMetadata(id);
     const items = await this.#itemsPage({ threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
-    return { thread: this.#decorate(thread), ...items };
+    return { thread, ...items };
   }
   async readPrompts(id) {
     threadId(id);
@@ -1338,20 +1349,29 @@ export class DesktopClient extends EventEmitter {
       return this.#forkChat(thread, undefined, 'continued');
     });
   }
-  async renameThread(id, body) {
+  async renameThread(id, body, guard) {
     object(body, ['name']); const name = text(body.name, 'name', 120).trim();
     if (!name) throw new BridgeError('Enter a name');
     return this.#mutate(id, async () => {
+      await this.#guardSession(id, guard);
       await this.#rpc('thread/name/set', { threadId: threadId(id), name });
       return { thread: { ...(await this.#current(id)), name } };
     });
   }
+  async sessionHasChildren(id) {
+    // Keep guardian and other hidden descendants: native archive can cascade to them too.
+    const result = await this.#rpc('thread/list', { ancestorThreadId: threadId(id), limit: 1, archived: false, modelProviders: [], sourceKinds: SOURCE_KINDS });
+    if (!Array.isArray(result.data)) throw new BridgeError('Could not check spawned chats', 502);
+    return result.data.length > 0 || !!result.nextCursor;
+  }
   /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. */
-  async archiveThread(id, body) {
+  async archiveThread(id, body, guard, metadata) {
     object(body, []);
     return this.#mutate(id, async () => {
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
-      await this.#rpc('thread/archive', { threadId: id });
+      await this.#archiveHistory.record(id, metadata?.reason ?? 'Archived by you.');
+      try { await this.#guardSession(id, guard); await this.#rpc('thread/archive', { threadId: id }); }
+      catch (error) { await this.#archiveHistory.forget(id); throw error; }
       await this.#rewindHistory.hide(id, true);
       this.#forget(id);
       const worktree = await this.#releaseWorktree(cwd);
@@ -1363,6 +1383,7 @@ export class DesktopClient extends EventEmitter {
     return this.#mutate(id, async () => {
       const result = await this.#rpc('thread/unarchive', { threadId: threadId(id) });
       if (result.thread?.id !== id) throw new BridgeError('Elpis restored another thread', 502);
+      await this.#archiveHistory.forget(id);
       await this.#rewindHistory.hide(id, false);
       const worktree = isChatWorktreePath(result.thread.cwd) ? await restoreChatWorktree(result.thread.cwd) : null;
       return { thread: this.#decorate(result.thread), ...(worktree ? { worktree } : {}) };
@@ -1444,6 +1465,16 @@ export class DesktopClient extends EventEmitter {
     return result;
   }
   /** Opens a chat live in this app: subscribes it and reports the turn it is running, if any. */
+  async prepareSessionManager(id) {
+    if (!this.#sessionManagerConfig?.isManager?.(id)) throw new BridgeError('This is not the Session Manager', 403);
+    const { thread } = await this.#rpc('thread/read', { threadId: threadId(id), includeTurns: false });
+    if (thread?.status?.type === 'active') throw new BridgeError('Wait for the Session Manager to finish', 409);
+    // A loaded thread keeps its old MCP configuration. Drop only our manager subscription so an idle
+    // cache entry can cold-resume with this installation’s tools, capability and standing instructions.
+    await this.#rpc('thread/unsubscribe', { threadId: id });
+    this.#forgetSubscription(id);
+    return this.resume(id, {});
+  }
   async resume(id, body) {
     object(body, []);
     const result = await this.#attach(id);
@@ -1696,6 +1727,10 @@ export class DesktopClient extends EventEmitter {
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     return thread.cwd;
   }
+  async #guardSession(id, guard) {
+    if (!guard) return;
+    await guard(await this.readThreadMetadata(id));
+  }
   async #mutate(id, run) {
     threadId(id);
     if (this.#mutating.has(id)) throw new BridgeError('Another operation on this conversation is pending', 409);
@@ -1763,5 +1798,55 @@ export class DesktopClient extends EventEmitter {
     if (offered && !offered.includes('decline')) throw new BridgeError('Decision is not offered for this request');
     await this.steer(pending.params.threadId, { text: instruction, expectedTurnId: pending.params.turnId }, { fallback: false });
     return this.answerApproval(id, { decision: 'decline' });
+  }
+}
+
+const archiveOrder = (a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || b.id.localeCompare(a.id);
+
+/** Archive events are independent of a conversation's creation and last activity. */
+class ArchiveHistory {
+  constructor(directory) { this.directory = directory; }
+  file(id) {
+    if (!/^[a-f0-9-]{36}$/i.test(id)) throw Error('Invalid archived conversation ID');
+    return path.join(this.directory, `${id}.json`);
+  }
+  async read(id) {
+    try {
+      const info = JSON.parse(await fs.promises.readFile(this.file(id), 'utf8'));
+      if (!Number.isFinite(info.archivedAt) || typeof info.archiveReason !== 'string') throw Error('Could not read the saved archive date and reason.');
+      return info;
+    } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }
+  async record(id, archiveReason) {
+    const info = { archivedAt: Date.now(), archiveReason };
+    await fs.promises.mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const file = this.file(id), temporary = `${file}.${randomUUID()}.pending`;
+    await fs.promises.writeFile(temporary, JSON.stringify(info), { mode: 0o600 });
+    await fs.promises.rename(temporary, file);
+  }
+  async forget(id) { await fs.promises.unlink(this.file(id)).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
+  async page(options, list) {
+    const limit = options.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw Error('Choose an archive page size from 1 to 100.');
+    let boundary;
+    if (options.cursor) {
+      try {
+        boundary = JSON.parse(Buffer.from(options.cursor, 'base64url').toString());
+        if (!Number.isFinite(boundary.archivedAt) || typeof boundary.id !== 'string') throw Error();
+      } catch { throw Error('Invalid archive page cursor.'); }
+    }
+    const rows = new Map(), seen = new Set(); let cursor;
+    do {
+      const result = await list({ ...options, archived: true, limit: 100, cursor });
+      for (const row of result.data) rows.set(row.id, row);
+      cursor = result.nextCursor;
+      if (cursor && seen.has(cursor)) throw Error('Could not load every archived conversation.');
+      seen.add(cursor);
+    } while (cursor);
+    const data = (await Promise.all([...rows.values()].map(async row => ({ ...row, ...(await this.read(row.id) ?? {
+      archivedAt: row.archivedAt ?? null, archiveReason: row.archiveReason ?? 'Reason unavailable for this older archive.',
+    }) })))).sort(archiveOrder).filter(row => !boundary || archiveOrder(row, boundary) > 0);
+    const page = data.slice(0, limit), last = page.at(-1);
+    return { data: page, nextCursor: data.length > limit ? Buffer.from(JSON.stringify({ archivedAt: last.archivedAt ?? 0, id: last.id })).toString('base64url') : null };
   }
 }

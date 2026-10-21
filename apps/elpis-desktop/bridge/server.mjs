@@ -305,7 +305,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/trash/undo' && method === 'POST') { object(await body(request), []); return json(response, 200, await trash.undo()); }
         if (url.pathname === '/api/threads') {
           if (method === 'GET') {
-            const query = pageQuery(url, true), listed = await client.listThreads(query);
+            const query = pageQuery(url, true), listed = await (query.archived && client.listArchivedThreads ? client.listArchivedThreads(query) : client.listThreads(query));
             // A chat waiting to be deleted is archived, but it is not an archived chat.
             return json(response, 200, query.archived ? { ...listed, data: listed.data.filter(thread => !trash.has(thread.id)) } : listed);
           }

@@ -90,6 +90,10 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
         <div className="settings-row-text">
           <div className="settings-row-title truncate">{title(thread)}</div>
           {thread.agentNickname && <div className="settings-row-description">{thread.agentNickname}</div>}
+          <div className="settings-row-description">
+            {thread.archivedAt ? <time dateTime={new Date(thread.archivedAt).toISOString()}>Archived {new Date(thread.archivedAt).toLocaleString()}</time> : "Archive date unavailable"}
+          </div>
+          <div className="settings-row-description">{thread.archiveReason || "Reason unavailable for this older archive."}</div>
         </div>
         <div className="settings-row-control">
           <Button variant="outline" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>

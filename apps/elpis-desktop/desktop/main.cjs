@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, sc
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
-const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY } = require('./session-manager-agent.cjs');
+const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, listActive } = require('./session-manager-agent.cjs');
 const { closeNeedsConfirmation, closesToTray, quickEntryShortcut } = require('./preferences.cjs');
 const { createStateStore } = require('./state.cjs');
 const { openThreadArgument } = require('./open-thread.cjs');
@@ -69,14 +69,16 @@ async function prepareWindows() {
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
     const { sessionManagerMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-mcp.mjs')).href);
-    const { createSessionManagerMonitor, reviewPrompt } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-monitor.mjs')).href);
+    const { createSessionManagerMonitor, reviewPrompt, runSessionManagerReview } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-monitor.mjs')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
       let client;
       sessionManagerAgent = await startSessionManagerAgent({ store, client: {
         listThreads: (...args) => client.listThreads(...args),
+        readThreadMetadata: (...args) => client.readThreadMetadata(...args),
         renameThread: (...args) => client.renameThread(...args),
         archiveThread: (...args) => client.archiveThread(...args),
+        sessionHasChildren: (...args) => client.sessionHasChildren(...args),
       } });
       client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, sessionManagerConfig: {
         isManager: id => store.read()[SESSION_MANAGER_ID_KEY] === id,
@@ -91,13 +93,14 @@ async function prepareWindows() {
       // The Session Manager reviews the chats by itself when three run at once or three start within twenty minutes
       // (Masih, 20–21 October); its chat is made on the background model the first time it is needed.
       sessionManagerMonitor = createSessionManagerMonitor({
-        list: () => client.listThreads({ limit: 100, includeAgentRuns: false }),
+        list: () => listActive(client),
         isManager: id => !!id && store.read()[SESSION_MANAGER_ID_KEY] === id,
         review: async reason => {
           let id = store.read()[SESSION_MANAGER_ID_KEY];
           if (!id) { id = (await client.createThread({ sessionManager: true, permissions: 'ask' })).thread.id; await store.set(SESSION_MANAGER_ID_KEY, id); }
           const { background } = await client.settings();
-          await client.send(id, { text: reviewPrompt(reason), ...(background.model ? { model: background.model } : {}) });
+          await runSessionManagerReview(client, id, { text: reviewPrompt(reason), ...(background.model ? { model: background.model } : {}) },
+            () => sessionManagerAgent.beginReview(id, reason.cwd));
         },
         log: line => console.warn(line),
       });

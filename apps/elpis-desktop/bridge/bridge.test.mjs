@@ -18,7 +18,7 @@ const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, sessionManagerConfig } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, sessionManagerConfig, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`) } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -114,7 +114,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
-  const client = new DesktopClient(socket, { browserConfig, sessionManagerConfig, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
+  const client = new DesktopClient(socket, { browserConfig, sessionManagerConfig, archiveDirectory, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -1990,12 +1990,17 @@ test('Session Manager is a dedicated least-access chat with its own approved too
     const resumed = cold.socket.sent.find(row => row.method === 'thread/resume').params;
     assert.ok(resumed.config['mcp_servers.elpis_session_manager'], 'cold resume restores the manager tools');
     assert.equal(resumed.config['mcp_servers.elpis_browser'], undefined);
-    assert.equal(requested.length, 2);
+    await cold.client.prepareSessionManager(managerId);
+    assert.ok(cold.socket.sent.some(row => row.method === 'thread/unsubscribe' && row.params.threadId === managerId));
+    const refreshed = cold.socket.sent.findLast(row => row.method === 'thread/resume').params;
+    assert.equal(refreshed.config['mcp_servers.elpis_session_manager'].tools.session_archive.approval_mode, 'auto');
+    assert.equal(refreshed.developerInstructions, SESSION_MANAGER_INSTRUCTIONS);
+    assert.equal(requested.length, 3);
     await cold.client.createThread({});
     const ordinary = cold.socket.sent.find(row => row.method === 'thread/start').params;
     assert.equal(ordinary.config['mcp_servers.elpis_session_manager'], undefined, 'ordinary chats do not receive session controls');
     assert.ok(ordinary.config['mcp_servers.elpis_browser'], 'ordinary chats retain their browser tools');
-    assert.equal(requested.length, 2);
+    assert.equal(requested.length, 3);
     await assert.rejects(client.createThread({ sessionManager: true, instructions: 'replace manager policy' }), /managed by Elpis/);
     assert.equal(cold.socket.sent.filter(row => row.method === 'thread/start').length, 1);
     assert.doesNotMatch(SESSION_MANAGER_INSTRUCTIONS, /delete sessions? with a tool/i);
@@ -2007,7 +2012,7 @@ test('Session Manager is a dedicated least-access chat with its own approved too
 test('Session Manager tools list, rename, group, and archive one active session; reject self, bulk, and forged calls', async t => {
   const { startSessionManagerAgent, SESSION_GROUPS_KEY: SESSION_MANAGER_GROUPS_KEY, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
   const active = [
-    { id: 'chat-a', name: 'Parser cleanup', cwd: '/work/parser', updatedAt: '2026-10-19T10:00:00Z', status: { type: 'idle' } },
+    { id: 'chat-a', name: null, cwd: '/work/parser', updatedAt: '2026-10-01T10:00:00Z', status: { type: 'idle' } },
     { id: 'manager', name: 'Session Manager', status: { type: 'idle' } },
   ];
   const values = {
@@ -2018,28 +2023,32 @@ test('Session Manager tools list, rename, group, and archive one active session;
   const store = { read: () => ({ ...values }), async set(key, value) { values[key] = value; } };
   const client = {
     async listThreads() { return { data: [...active], nextCursor: null }; },
+    async readThreadMetadata(id) { return { ...active.find(thread => thread.id === id) }; },
     async renameThread(id, body) { renamed.push([id, body.name]); active.find(thread => thread.id === id).name = body.name; return {}; },
     async archiveThread(id) { archived.push(id); return { archived: true }; },
   };
   const agent = await startSessionManagerAgent({ client, store });
   t.after(() => agent.close());
   const capability = agent.scope('manager');
+  agent.beginReview('manager', '/work/parser');
   const call = (name, args, token = capability, managerThreadId = 'manager') => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, _meta: { threadId: managerThreadId } } }, { socketPath: agent.path, capability: token });
   const list = await call('session_list', {});
   const listText = list.result.content[0].text;
-  assert.match(listText, /Parser cleanup/);
+  assert.match(listText, /Untitled session/);
   assert.doesNotMatch(listText, /Session Manager/);
   assert.match(listText, /parser/);
   assert.deepEqual(await call('session_rename', { sessionId: 'chat-a', name: 'Parser tests' }).then(result => result.result.isError), undefined);
   assert.deepEqual(renamed, [['chat-a', 'Parser tests']]);
+  active[0].name = null;
   await call('session_organize', { sessionId: 'chat-a', groupName: 'Review later' });
   const groups = JSON.parse(values[SESSION_MANAGER_GROUPS_KEY]);
   assert.equal(groups.groupBy, 'custom');
   assert.equal(groups.groups[0].name, 'Review later');
   assert.equal(groups.members['chat-a'], groups.groups[0].id);
+  active[0].name = null;
   const archive = await call('session_archive', { sessionId: 'chat-a' });
   assert.match(SESSION_MANAGER_TOOLS.find(tool => tool.name === 'session_archive').description, /spawned agent chats/);
-  assert.match(archive.result.content[0].text, /"spawnedAgentsArchived":true/);
+  assert.match(archive.result.content[0].text, /7 days/);
   assert.deepEqual(archived, ['chat-a']);
 
   const self = await call('session_archive', { sessionId: 'manager' });
@@ -2056,4 +2065,201 @@ test('Session Manager tools list, rename, group, and archive one active session;
   assert.equal(configured.default_tools_approval_mode, 'approve');
   assert.equal(configured.tools.session_list.approval_mode, 'auto');
   assert.equal('session_delete' in Object.fromEntries(SESSION_MANAGER_TOOLS.map(tool => [tool.name, true])), false);
+});
+
+
+test('A101 automatic policy is limited to manager rename/archive, never group or unrelated tools', () => {
+  const config = sessionManagerMcpConfig('/tmp/manager.sock', 'node', 'cap')['mcp_servers.elpis_session_manager'];
+  assert.equal(config.default_tools_approval_mode, 'approve');
+  assert.equal(config.tools.session_rename.approval_mode, 'auto');
+  assert.equal(config.tools.session_archive.approval_mode, 'auto');
+  assert.equal(config.tools.session_organize?.approval_mode ?? 'approve', 'approve');
+});
+
+test('A101 uses current native metadata when a listed project is stale, and refuses a session moved away', async t => {
+  const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
+  const { client, socket, threads } = fixture(); await client.initialize();
+  t.after(() => client.close());
+  const cwd = '/tmp/a101-current-project', old = Math.floor(Date.now() / 1000) - 9 * 86400;
+  threads.clear();
+  threads.set(ROOT, { id: ROOT, cwd, name: null, createdAt: old, updatedAt: old, source: 'cli', status: { type: 'notLoaded' } });
+  threads.set(FORK, { ...threads.get(ROOT), id: FORK, cwd: '/tmp/a101-other-project' });
+  const values = { [SESSION_MANAGER_ID_KEY]: CREATED };
+  const hostClient = {
+    listThreads: async options => {
+      const result = await client.listThreads(options);
+      return { ...result, data: result.data.map(row => ({ ...row, cwd: row.id === ROOT ? '/tmp/a101-stale-project' : cwd })) };
+    },
+    readThreadMetadata: (...args) => client.readThreadMetadata(...args),
+    renameThread: (...args) => client.renameThread(...args),
+    archiveThread: (...args) => client.archiveThread(...args),
+    sessionHasChildren: (...args) => client.sessionHasChildren(...args),
+  };
+  const agent = await startSessionManagerAgent({ client: hostClient, store: { read: () => ({ ...values }), async set(key, value) { values[key] = value; } } });
+  t.after(() => agent.close());
+  const capability = agent.scope(CREATED); agent.beginReview(CREATED, cwd);
+  const call = (name, id, extra = {}) => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { sessionId: id, ...extra }, _meta: { threadId: CREATED } } }, { socketPath: agent.path, capability });
+  const list = await call('session_list');
+  const sessions = JSON.parse(list.result.content[0].text.split('\n').slice(1).join('\n')).sessions;
+  assert.equal(sessions.find(row => row.sessionId === ROOT).canArchive, true);
+  assert.equal(sessions.find(row => row.sessionId === FORK).canRename, false);
+  assert.equal((await call('session_archive', FORK)).result.isError, true);
+  assert.equal((await call('session_rename', FORK, { name: 'Leave alone' })).result.isError, true);
+  const result = await call('session_archive', ROOT);
+  assert.notEqual(result.result.isError, true, JSON.stringify(result));
+  assert.equal(threads.get(ROOT).archived, true);
+  assert.equal(threads.get(FORK).archived, undefined);
+  assert.equal(socket.sent.some(row => row.method === 'thread/resume'), false, 'metadata checks never resume another chat');
+});
+
+test('A101 host refuses named, recent archive, running, unknown, another project, child trees, and missing scope', async t => {
+  const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, SESSION_MANAGER_ACTIONS_KEY } = sessionManagerAgent;
+  const now = Date.now(), old = Math.floor(now / 1000) - 8 * 86400;
+  const base = { cwd: '/tmp/project-a', name: null, updatedAt: old, createdAt: old, status: { type: 'idle' } };
+  const rows = [
+    { ...base, id: 'old' }, { ...base, id: 'recent', updatedAt: Math.floor(now / 1000) },
+    { ...base, id: 'named', name: 'Parser cleanup' }, { ...base, id: 'running', status: { type: 'active' } },
+    { ...base, id: 'unknown', status: { type: 'unknown' } }, { ...base, id: 'other', cwd: '/tmp/project-b' },
+    { ...base, id: 'tree' }, { ...base, id: 'child', parentThreadId: 'tree' },
+    { ...base, id: 'placeholder', name: 'Untitled conversation' },
+  ];
+  const values = { [SESSION_MANAGER_ID_KEY]: 'manager' }, changed = [];
+  const store = { read: () => ({ ...values }), async set(key, value) { values[key] = value; } };
+  const client = {
+    async listThreads() { return { data: rows.map(row => ({ ...row })), nextCursor: null }; },
+    async readThreadMetadata(id) { return { ...rows.find(row => row.id === id) }; },
+    async renameThread(id, body, guard) { const row = rows.find(row => row.id === id); await guard(row); row.name = body.name; changed.push(['rename', id]); },
+    async archiveThread(id, body, guard) { await guard(rows.find(row => row.id === id)); changed.push(['archive', id]); },
+  };
+  const agent = await startSessionManagerAgent({ client, store }); t.after(() => agent.close());
+  const capability = agent.scope('manager');
+  const call = (name, id, extra = {}, token = capability, thread = 'manager') => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { sessionId: id, ...extra }, _meta: { threadId: thread } } }, { socketPath: agent.path, capability: token });
+  assert.equal((await call('session_archive', 'old')).result.isError, true, 'no project scope');
+  const end = agent.beginReview('manager', '/tmp/project-a');
+  for (const id of ['named', 'recent', 'running', 'unknown', 'other', 'tree', 'missing', 'manager']) {
+    assert.equal((await call('session_archive', id)).result.isError, true, id);
+  }
+  for (const id of ['named', 'running', 'unknown', 'other']) assert.equal((await call('session_rename', id, { name: 'Task' })).result.isError, true, id);
+  assert.equal((await call('session_archive', 'old', {}, 'forged')).result.isError, true);
+  const unsigned = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_archive', arguments: { sessionId: 'old' }, _meta: { threadId: 'manager' } } }, { socketPath: agent.path });
+  assert.equal(unsigned.result.isError, true);
+  assert.equal((await call('session_archive', 'old', {}, capability, 'ordinary')).result.isError, true);
+  assert.equal((await call('session_archive', 'old', { sessionIds: ['old'] })).result.isError, true);
+  assert.equal((await call('session_archive', 'old')).result.isError, undefined);
+  assert.equal((await call('session_rename', 'recent', { name: 'Parser tests' })).result.isError, undefined);
+  assert.equal((await call('session_archive', 'recent')).result.isError, true, 'rename does not grant archive');
+  assert.equal((await call('session_archive', 'placeholder')).result.isError, undefined);
+  end();
+  assert.equal((await call('session_archive', 'placeholder')).result.isError, true, 'expired review');
+  assert.deepEqual(changed, [['archive', 'old'], ['rename', 'recent'], ['archive', 'placeholder']]);
+  const actions = JSON.parse(values[SESSION_MANAGER_ACTIONS_KEY]);
+  assert.equal(actions.old[0].action, 'archive');
+  assert.equal(actions.old[0].status, 'done');
+  assert.match(actions.old[0].reason, /7 days/);
+  assert.equal(actions.recent[0].action, 'rename');
+  assert.ok(actions.recent[0].reason);
+});
+
+
+test('A101 age boundary, meaningful workflow titles, and malformed dates fail closed', () => {
+  const { eligibility } = sessionManagerAgent, now = Date.now();
+  const base = { cwd: '/tmp/a101-project', status: { type: 'notLoaded' }, createdAt: (now - 8 * 86400000) / 1000 };
+  assert.equal(eligibility(base, base.cwd, now).canArchive, true);
+  assert.equal(eligibility({ ...base, updatedAt: (now - 7 * 86400000) / 1000 }, base.cwd, now).canArchive, false);
+  assert.equal(eligibility({ ...base, updatedAt: 'bad date' }, base.cwd, now).canArchive, false);
+  assert.equal(eligibility({ ...base, recencyAt: now / 1000 }, base.cwd, now).canArchive, false);
+  assert.equal(eligibility({ ...base, name: ' ', workflowTaskTitle: 'Parser' }, base.cwd, now).canRename, false);
+  assert.equal(eligibility({ ...base, name: 'Untitled', workflowTitle: 'Parser' }, base.cwd, now).canRename, false);
+  assert.equal(eligibility({ ...base, name: 'New chat' }, base.cwd, now).canRename, true);
+  assert.equal(eligibility({ ...base, path: '/tmp/elpis/archived_sessions/rollout.jsonl' }, base.cwd, now).canRename, false);
+});
+
+test('A101 project comparison resolves real directory aliases without including a neighbour', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'a101-project-path-'));
+  const cwd = path.join(root, 'project'); await fs.mkdir(cwd);
+  const alias = path.join(root, 'alias'); await fs.symlink(cwd, alias);
+  const values = { [sessionManagerAgent.SESSION_MANAGER_ID_KEY]: CREATED };
+  const agent = await sessionManagerAgent.startSessionManagerAgent({ client: {}, store: { read: () => values } });
+  t.after(() => agent.close()); agent.scope(CREATED);
+  const end = agent.beginReview(CREATED, `${alias}/`);
+  const base = { cwd: `${alias}/../alias/`, status: { type: 'idle' } };
+  assert.equal(sessionManagerAgent.eligibility(base, cwd).canRename, true);
+  assert.equal(sessionManagerAgent.eligibility({ ...base, cwd: path.join(root, 'project-other') }, cwd).canRename, false);
+  end();
+});
+
+test('A101 a failed reason write prevents the native action', async () => {
+  const { handleTool, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
+  const row = { id: ROOT, cwd: '/tmp/a101-journal-project', name: null, status: { type: 'idle' } };
+  let changed = false;
+  const client = { listThreads: async () => ({ data: [row] }), readThreadMetadata: async () => row,
+    renameThread: async () => { changed = true; } };
+  const store = { read: () => ({ [SESSION_MANAGER_ID_KEY]: CREATED }), set: async () => { throw Error('journal unavailable'); } };
+  await assert.rejects(handleTool('session_rename', { sessionId: ROOT, name: 'Parser' }, { client, store, managerThreadId: CREATED, project: () => row.cwd }), /journal unavailable/);
+  assert.equal(changed, false);
+});
+
+test('A101 expiry during descendant lookup prevents archive and journal writes', async () => {
+  const { handleTool, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
+  const row = { id: ROOT, cwd: '/tmp/a101-expiry-project', name: null, status: { type: 'idle' }, updatedAt: Math.floor(Date.now() / 1000) - 9 * 86400 };
+  let project = row.cwd;
+  const client = { listThreads: async () => ({ data: [row] }), readThreadMetadata: async () => row,
+    sessionHasChildren: async () => { project = undefined; return false; },
+    archiveThread: async () => assert.fail('expired review must not archive') };
+  const store = { read: () => ({ [SESSION_MANAGER_ID_KEY]: CREATED }), set: async () => assert.fail('expired review must not journal an action') };
+  await assert.rejects(handleTool('session_archive', { sessionId: ROOT }, { client, store, managerThreadId: CREATED, project: () => project }), /review ended/);
+});
+
+test('A101 guard rechecks runtime state immediately before a native mutation', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize();
+  let checked = 0;
+  try {
+    threads.get(ROOT).status = { type: 'active' };
+    const guard = async row => { checked++; assert.equal(row.status.type, 'active'); throw Error('running'); };
+    await assert.rejects(client.renameThread(ROOT, { name: 'Task' }, guard), /running/);
+    await assert.rejects(client.archiveThread(ROOT, {}, guard), /running/);
+    assert.equal(checked, 2);
+    assert.equal(socket.sent.some(row => ['thread/name/set', 'thread/archive'].includes(row.method)), false);
+  } finally { client.close(); }
+});
+
+
+test('A101 archived view sorts all pages by actual archive date and retains reasons', async t => {
+  const { client, threads } = fixture();
+  threads.set(FORK, { id: FORK, source: 'cli', cwd: os.tmpdir(), name: 'Other task', status: { type: 'idle' } }); await client.initialize();
+  t.after(() => client.close());
+  await client.archiveThread(ROOT, {}, undefined, { reason: 'Old unnamed session; inactive more than 7 days' });
+  await client.archiveThread(FORK, {});
+  const result = await client.listArchivedThreads({ limit: 1 });
+  assert.equal(result.data[0].id, FORK);
+  assert.equal(result.data[0].archiveReason, 'Archived by you.');
+  assert.ok(result.data[0].archivedAt > 0);
+  const second = await client.listArchivedThreads({ limit: 1, cursor: result.nextCursor });
+  assert.equal(second.data[0].id, ROOT);
+  assert.match(second.data[0].archiveReason, /7 days/);
+});
+
+
+test('A101 archive order spans native pages, survives restart, and keeps pagination stable after restore', async t => {
+  const archiveDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'a101-archive-pages-'));
+  const h = fixture({ archiveDirectory, threadListPaging: true }); await h.client.initialize();
+  t.after(() => h.client.close());
+  h.threads.clear();
+  for (let i = 0; i < 105; i++) {
+    const id = `00000000-0000-0000-0000-${(i + 100).toString(16).padStart(12, '0')}`;
+    h.threads.set(id, { id, name: `Task ${i}`, archived: true, source: 'cli', status: { type: 'notLoaded' } });
+    await fs.writeFile(path.join(archiveDirectory, `${id}.json`), JSON.stringify({ archivedAt: 1000 + i, archiveReason: `Reason ${i}` }));
+  }
+  const first = await h.client.listArchivedThreads({ limit: 100 });
+  assert.equal(first.data[0].name, 'Task 104'); assert.equal(first.data.at(-1).name, 'Task 5');
+  await h.client.unarchiveThread(first.data.at(-1).id, {});
+  const last = await h.client.listArchivedThreads({ limit: 100, cursor: first.nextCursor });
+  assert.deepEqual(last.data.map(row => row.name), ['Task 4', 'Task 3', 'Task 2', 'Task 1', 'Task 0']);
+  assert.equal(last.nextCursor, null);
+  const cold = fixture({ archiveDirectory, threadListPaging: true }); await cold.client.initialize(); t.after(() => cold.client.close());
+  cold.threads.clear(); for (const [id, row] of h.threads) cold.threads.set(id, structuredClone(row));
+  const reloaded = await cold.client.listArchivedThreads({ limit: 1 });
+  assert.equal(reloaded.data[0].archiveReason, 'Reason 104');
+  await assert.rejects(cold.client.listArchivedThreads({ cursor: 'broken' }), /Invalid archive page cursor/);
+  cold.threads.clear(); assert.deepEqual(await cold.client.listArchivedThreads({}), { data: [], nextCursor: null });
 });

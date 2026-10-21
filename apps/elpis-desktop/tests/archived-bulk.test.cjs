@@ -10,7 +10,7 @@ const { leaveSettings, openSettings } = require('./controls.cjs');
 const root = path.resolve(__dirname, '../out');
 
 test('archived chats: select all across pages, delete all after one confirmation, unarchive a selection', async () => {
-  const threads = Array.from({ length: 130 }, (_, index) => ({ id: `old-${index + 1}`, name: `Old chat ${index + 1}`, preview: '', cwd: '/tmp/elpis-archive-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } }));
+  const threads = Array.from({ length: 130 }, (_, index) => ({ id: `old-${index + 1}`, name: `Old chat ${index + 1}`, preview: '', cwd: '/tmp/elpis-archive-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' }, archivedAt: Date.UTC(2026, 9, 21, 12) - index * 60000, archiveReason: 'Name unset or irrelevant; no activity for more than 7 days; idle in this review’s project.' }));
   const archived = new Set(threads.map(thread => thread.id)), deleted = [], restored = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost'); for await (const _ of req) { /* drain */ }
@@ -43,6 +43,9 @@ test('archived chats: select all across pages, delete all after one confirmation
     await page.getByRole('tab', { name: 'Archived chats', exact: true }).click();
     const list = page.getByLabel('Archived conversations'), dialog = page.getByRole('alertdialog');
     await list.getByText('Old chat 1', { exact: true }).waitFor();
+
+    await list.getByText(threads[0].archiveReason, { exact: true }).first().waitFor();
+    assert.ok(await list.locator('time[datetime]').count());
 
     // Right-click keeps the "…" actions and appends Improve Elpis's required "Change this…" action.
     const row = list.locator('.archived-row').filter({ hasText: 'Old chat 3' });

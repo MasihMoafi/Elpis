@@ -282,6 +282,7 @@ test('saved project memberships and Session Manager survive a full workspace rou
     'elpis-projects-v1': '[{"id":"p","path":"/tmp/elpis-project"}]',
     'elpis-project-chats-v1': '{"h2":"p"}', 'elpis-pinned-chats-v1': '["h2"]',
     'elpis-terminal-height': '240', 'elpis-last-chat': 'h2', 'elpis-session-manager-v1': 'manager-thread',
+    'elpis-session-manager-actions-v1': '{"h2":[{"action":"rename","status":"done","reason":"Name unset or irrelevant"}]}',
     'elpis-workflow-draft-v1': '{}', 'elpis-editor-v1': '{}', 'elpis-chat-attention-v1': '{}',
     'elpis-chat-groups-v1': '{"groups":[]}', 'elpis-draft-v1:h2': 'Unsent draft',
   };
@@ -291,7 +292,9 @@ test('saved project memberships and Session Manager survive a full workspace rou
   assert.equal(fs.readFileSync(file, 'utf8'), original, 'reading must preserve the original file');
   await store.set('elpis-project-chats-v1', '{"h2":"p","chat-2":"p"}');
   await store.set('elpis-session-manager-v1', 'manager-thread-2');
-  const expected = { ...saved, 'elpis-project-chats-v1': '{"h2":"p","chat-2":"p"}', 'elpis-session-manager-v1': 'manager-thread-2' };
+  const actions = '{"h2":[{"action":"archive","status":"done","reason":"No activity for more than 7 days"}]}';
+  await store.set('elpis-session-manager-actions-v1', actions);
+  const expected = { ...saved, 'elpis-project-chats-v1': '{"h2":"p","chat-2":"p"}', 'elpis-session-manager-v1': 'manager-thread-2', 'elpis-session-manager-actions-v1': actions };
   assert.deepEqual(createStateStore(file).read(), expected, 'reopen must retain every saved key and draft');
   const persisted = fs.readFileSync(file, 'utf8');
   await assert.rejects(store.set('elpis-project-chats-v2', '{}'), /Unsupported/);
