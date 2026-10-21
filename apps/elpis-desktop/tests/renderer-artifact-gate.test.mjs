@@ -24,7 +24,7 @@ async function fixture(t, code) {
   const repo = await fs.mkdtemp(path.join(base, 'renderer-gate-test-'));
   t.after(() => execFileSync('gio', ['trash', repo]));
   const root = path.join(repo, 'apps/elpis-desktop');
-  const identity = { name: 'fixture-desktop', productName: 'Fixture Elpis', desktopName: 'fixture.desktop', version: '0.1.0', main: 'desktop/main.cjs', private: true };
+  const identity = { name: 'elpis-desktop', productName: 'Fixture Elpis', desktopName: 'fixture.desktop', version: '0.1.0', main: 'desktop/main.cjs', private: true };
   const git = args => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
   const inventory = { fast: [], bridge: [], desktop: ['desktop/state.test.cjs'], ui: ['tests/kept.test.cjs'], 'opt-in': [] };
   await fs.mkdir(path.join(root, 'tests'), { recursive: true });
@@ -190,6 +190,8 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   for (const file of ['install-desktop.mjs', 'renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
+  await fs.mkdir(path.join(f.root, 'bridge'));
+  await fs.copyFile(fileURLToPath(new URL('../bridge/improve-source.mjs', import.meta.url)), path.join(f.root, 'bridge/improve-source.mjs'));
   // The installer reads the approved looks next to its folder (A109).
   await fs.copyFile(fileURLToPath(new URL('../approved-looks.json', import.meta.url)), path.join(f.root, 'approved-looks.json'));
   // The isolated repository has its own immutable checkpoint; production keeps the deployed checkpoint.

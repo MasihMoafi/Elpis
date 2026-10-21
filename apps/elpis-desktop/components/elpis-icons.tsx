@@ -1,7 +1,7 @@
 "use client";
 
 import type { SVGProps } from "react";
-import { AGENTS_ARTWORK } from "./agents-artwork";
+import { AGENTS_ARTWORK } from "@/components/agents-artwork";
 
 /** Elpis's own icons: drawn with ImageGen as one sheet (16 October 2026), traced with SVG Studio.
  * Icons default to the text colour; `size` sets width and height in pixels. */
