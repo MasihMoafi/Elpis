@@ -166,12 +166,15 @@ export default function Home() {
   const [cwd, setCwd] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  // Workflows and Love Spot run in the last project chosen, while new chats start in none (TASKS.md: unscoped new chats).
+  const [workflowProjectId, setWorkflowProjectId] = useState<string | null>(null);
   const [projectChats, setProjectChats] = useState<Record<string, string>>({});
   const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
   const [projectMove, setProjectMove] = useState<Thread | null>(null);
   const [projectDrop, setProjectDrop] = useState<string | null>(null);
   const [projectChanging, setProjectChanging] = useState(false);
   const project = projects.find(item => item.id === projectId) ?? null;
+  const workflowProject = project ?? projects.find(item => item.id === workflowProjectId) ?? null, workflowFolder = newChatFolder(cwd || workflowProject?.cwd || "") || undefined;
   const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
@@ -534,7 +537,7 @@ export default function Home() {
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
   useEffect(() => {
     let saved: string | null = null;
-    try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
+    try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setWorkflowProjectId(stored.selectedId); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not restore workspace preferences."); }
     try {
       const store = window.elpisDesktop?.storage, restored = store && readTabs(store);
@@ -949,13 +952,13 @@ export default function Home() {
     setProjectChanging(true);
     try {
       if (next && window.elpisDesktop?.resolveFolder) await window.elpisDesktop.resolveFolder(next.cwd);
-      await saveProjects(projects, next?.id ?? null); setProjectId(next?.id ?? null); setCwd(next?.cwd ?? ""); openNewChat(next ? `new-${next.id}` : "new");
+      await saveProjects(projects, next?.id ?? null); setProjectId(next?.id ?? null); setWorkflowProjectId(next?.id ?? null); setCwd(next?.cwd ?? ""); openNewChat(next ? `new-${next.id}` : "new");
     } finally { setProjectChanging(false); }
   }
   async function saveProject(next: Project) {
     const known = projects.some(item => item.id === next.id), updated = known ? projects.map(item => item.id === next.id ? next : item) : [...projects, next];
     if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
-    await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
+    await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setWorkflowProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
   }
   /** "Add new project" in the sidebar and the project menu: one click opens the native folder chooser, as in the ChatGPT app.
    * A browser has no chooser, so it asks for the path instead. */
@@ -1915,9 +1918,9 @@ export default function Home() {
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
-      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={newChatFolder(cwd) || undefined} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
-        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
-      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={newChatFolder(cwd) || undefined} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
+      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
+      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={workflowFolder} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
