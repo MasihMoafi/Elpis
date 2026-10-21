@@ -155,6 +155,17 @@ impl ChatWidget {
                     || self.input_queue.has_queued_follow_up_messages()))
     }
 
+    fn queue_blocked_slash_command_draft(&mut self, cmd: SlashCommand) -> bool {
+        if parse_slash_name(&self.bottom_pane.composer_text())
+            .is_none_or(|(name, _, _)| name != cmd.command())
+        {
+            return false;
+        }
+        let result = self.bottom_pane.prepare_queued_submission();
+        self.handle_composer_input_result(result, /*had_modal_or_popup*/ false);
+        true
+    }
+
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
         self.dispatch_command_from_source(cmd, SlashCommandDispatchSource::Live);
     }
@@ -174,6 +185,11 @@ impl ChatWidget {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd, source) {
+            if source == SlashCommandDispatchSource::Live
+                && self.queue_blocked_slash_command_draft(cmd)
+            {
+                return;
+            }
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
                 cmd.command()
@@ -703,6 +719,9 @@ impl ChatWidget {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd, SlashCommandDispatchSource::Live) {
+            if self.queue_blocked_slash_command_draft(cmd) {
+                return;
+            }
             let message = format!(
                 "'/{}' is disabled while a task is in progress.",
                 cmd.command()

@@ -261,6 +261,79 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
 }
 
 #[tokio::test]
+async fn enter_queues_slash_compact_until_active_turn_completes() {
+    for dismiss_popup in [false, true] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.thread_id = Some(ThreadId::new());
+        handle_turn_started(&mut chat, "turn-1");
+        chat.bottom_pane
+            .set_composer_text("/compact".to_string(), Vec::new(), Vec::new());
+        if dismiss_popup {
+            chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        }
+
+        chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        // Old Enter rejects /compact, so the queued-message count is zero.
+        assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
+        let queued = chat.input_queue.queued_user_messages.front().unwrap();
+        assert_eq!(queued.text, "/compact");
+        assert_eq!(queued.action, QueuedInputAction::ParseSlash);
+        assert!(render_bottom_popup(&chat, 80).contains("/compact"));
+        assert!(chat.bottom_pane.composer_text().is_empty());
+        let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+        assert!(!events.iter().any(|event| matches!(
+            event,
+            AppEvent::CodexOp(Op::Compact) | AppEvent::InsertHistoryCell(_)
+        )));
+
+        complete_turn_with_message(&mut chat, "turn-1", Some("done"));
+
+        let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact)))
+        );
+        assert!(chat.input_queue.queued_user_messages.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn enter_runs_slash_compact_immediately_when_idle() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane
+        .set_composer_text("/compact".to_string(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // Negative control: old code already passes both assertions.
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::CodexOp(Op::Compact)))
+    );
+}
+
+#[tokio::test]
+async fn enter_runs_available_slash_command_immediately_during_active_turn() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    handle_turn_started(&mut chat, "turn-1");
+    chat.bottom_pane
+        .set_composer_text("/raw".to_string(), Vec::new(), Vec::new());
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    // Negative control: old code already passes these assertions.
+    assert!(chat.input_queue.queued_user_messages.is_empty());
+    assert!(chat.raw_output_mode());
+    assert!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::RawOutputModeChanged { enabled: true }))
+    );
+}
+
+#[tokio::test]
 async fn queued_slash_review_with_args_dispatches_after_active_turn() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
@@ -1573,7 +1646,7 @@ async fn unrecognized_slash_command_is_not_added_to_local_recall() {
 }
 
 #[tokio::test]
-async fn unavailable_slash_command_is_available_from_local_recall() {
+async fn queued_unavailable_slash_command_is_available_from_local_recall() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.bottom_pane.set_task_running(/*running*/ true);
 
@@ -1585,10 +1658,8 @@ async fn unavailable_slash_command_is_available_from_local_recall() {
         .map(|cell| lines_to_single_string(cell))
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(
-        rendered.contains("'/review' is disabled while a task is in progress."),
-        "expected disabled-command message, got: {rendered:?}"
-    );
+    assert!(!rendered.contains("disabled while a task is in progress"));
+    assert_eq!(chat.input_queue.queued_user_messages.len(), 1);
     assert_eq!(recall_latest_after_clearing(&mut chat), "/review");
 }
 

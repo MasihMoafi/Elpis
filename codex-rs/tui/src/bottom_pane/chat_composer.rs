@@ -94,6 +94,8 @@
 //! Slash commands are staged for local history instead of being recorded immediately. Command
 //! recall is a two-phase handoff: stage the submitted slash text here, then record it after
 //! `ChatWidget` dispatches the command.
+//! While a task runs, Enter queues unavailable slash commands through the same preparation and
+//! deferred dispatch as the queue key. Commands available during a task still run immediately.
 //!
 //! # Question Draft Recovery
 //!
@@ -3093,6 +3095,12 @@ impl ChatComposer {
         result
     }
 
+    /// Queue a draft retained for app-level slash-command validation.
+    pub(super) fn prepare_queued_submission(&mut self) -> InputResult {
+        self.pending_slash_command_history = None;
+        self.handle_submission(/*should_queue*/ true).0
+    }
+
     /// Prepare a startup-confirmed draft through the normal queue parser, independent of keymaps.
     pub(super) fn prepare_startup_submission(&mut self) -> InputResult {
         // Startup's plain-text editor cannot show shell mode; require confirmation here.
@@ -3281,10 +3289,11 @@ impl ChatComposer {
         let command = self
             .slash_input()
             .bare_command(self.draft.textarea.text())?;
-        if self.reject_slash_command_if_unavailable(&command) {
-            self.stage_slash_command_history(&command);
-            self.record_pending_slash_command_history();
-            return Some(InputResult::None);
+        if self.is_task_running
+            && !command.available_during_task()
+            && !matches!(command, SlashCommandItem::Builtin(cmd) if cmd.requires_dispatch_validation())
+        {
+            return Some(self.handle_submission(/*should_queue*/ true).0);
         }
         self.stage_slash_command_history(&command);
         if !matches!(command, SlashCommandItem::Builtin(cmd) if cmd.requires_dispatch_validation())
@@ -3304,10 +3313,11 @@ impl ChatComposer {
         let text = self.draft.textarea.text().to_string();
         let inline_command = self.slash_input().inline_command(&text)?;
         let command = inline_command.command;
-        if self.reject_slash_command_if_unavailable(&command) {
-            self.stage_slash_command_history(&command);
-            self.record_pending_slash_command_history();
-            return Some(InputResult::None);
+        if self.is_task_running
+            && !command.available_during_task()
+            && !matches!(command, SlashCommandItem::Builtin(cmd) if cmd.requires_dispatch_validation())
+        {
+            return Some(self.handle_submission(/*should_queue*/ true).0);
         }
 
         self.stage_slash_command_history(&command);
@@ -3351,23 +3361,6 @@ impl ChatComposer {
         args_elements = Self::trim_text_elements(prepared_rest, trimmed_rest, args_elements);
         self.draft.textarea.enter_vim_insert_mode();
         Some((trimmed_rest.to_string(), args_elements))
-    }
-
-    fn reject_slash_command_if_unavailable(&self, command: &SlashCommandItem) -> bool {
-        if !self.is_task_running
-            || command.available_during_task()
-            || matches!(command, SlashCommandItem::Builtin(cmd) if cmd.requires_dispatch_validation())
-        {
-            return false;
-        }
-        let message = format!(
-            "'/{}' is disabled while a task is in progress.",
-            command.command()
-        );
-        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            history_cell::new_error_event(message),
-        )));
-        true
     }
 
     /// Stage the current slash-command text for later local recall.
@@ -9527,7 +9520,7 @@ mod tests {
     }
 
     #[test]
-    fn slash_command_disabled_while_task_running_keeps_text() {
+    fn slash_command_unavailable_while_task_running_queues_on_enter() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
         use crossterm::event::KeyModifiers;
@@ -9550,24 +9543,21 @@ mod tests {
         let (result, _needs_redraw) =
             composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-        assert_eq!(InputResult::None, result);
-        assert_eq!("/compact", composer.draft.textarea.text());
-
-        let mut found_error = false;
-        while let Ok(event) = rx.try_recv() {
-            if let AppEvent::InsertHistoryCell(cell) = event {
-                let message = cell
-                    .display_lines(/*width*/ 80)
-                    .into_iter()
-                    .map(|line| line.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                assert!(message.contains("disabled while a task is in progress"));
-                found_error = true;
-                break;
+        // Old code returns None and emits an error instead of this queued input.
+        assert_eq!(
+            result,
+            InputResult::Queued {
+                text: "/compact".to_string(),
+                text_elements: Vec::new(),
+                action: QueuedInputAction::ParseSlash,
+                pending_pastes: Vec::new(),
             }
-        }
-        assert!(found_error, "expected error history cell to be sent");
+        );
+        assert!(composer.draft.textarea.text().is_empty());
+        assert!(
+            !std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|event| matches!(event, AppEvent::InsertHistoryCell(_)))
+        );
     }
 
     #[test]

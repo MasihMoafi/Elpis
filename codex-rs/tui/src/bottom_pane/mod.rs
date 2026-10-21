@@ -2207,6 +2207,10 @@ impl BottomPane {
         self.composer.prepare_inline_args_submission(record_history)
     }
 
+    pub(crate) fn prepare_queued_submission(&mut self) -> InputResult {
+        self.composer.prepare_queued_submission()
+    }
+
     fn as_renderable(&'_ self) -> RenderableItem<'_> {
         self.as_renderable_with_options(ComposerRenderOptions::default())
     }

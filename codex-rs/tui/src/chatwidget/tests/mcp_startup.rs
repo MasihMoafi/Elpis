@@ -269,7 +269,7 @@ async fn inline_review_submits_during_mcp_startup() {
 }
 
 #[tokio::test]
-async fn review_during_mcp_startup_preserves_draft_when_foreground_work_is_pending() {
+async fn review_during_mcp_startup_queues_when_foreground_work_is_pending() {
     for activity in ["turn", "review", "pending", "queued", "images"] {
         for draft in ["/review", "/review check regressions"] {
             let (mut chat, mut rx, mut op_rx) =
@@ -298,19 +298,20 @@ async fn review_during_mcp_startup_preserves_draft_when_foreground_work_is_pendi
 
             chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-            assert_eq!(chat.bottom_pane.composer_text(), draft);
+            assert!(chat.bottom_pane.composer_text().is_empty());
+            assert!(chat.bottom_pane.remote_image_urls().is_empty());
+            let queued = chat.input_queue.queued_user_messages.back().unwrap();
+            assert_eq!(queued.text, draft);
+            assert_eq!(queued.action, QueuedInputAction::ParseSlash);
             assert_eq!(
-                chat.bottom_pane.remote_image_urls(),
+                queued.remote_image_urls,
                 vec!["https://example.com/image.png".to_string()]
             );
             let errors = drain_insert_history(&mut rx)
                 .iter()
                 .map(|cell| lines_to_single_string(cell))
                 .collect::<Vec<_>>();
-            assert_eq!(
-                errors,
-                vec!["■ '/review' is disabled while a task is in progress.\n".to_string()]
-            );
+            assert!(errors.is_empty());
             assert!(
                 !std::iter::from_fn(|| op_rx.try_recv().ok())
                     .any(|op| matches!(op, Op::Review { .. } | Op::UserTurn { .. }))

@@ -387,6 +387,21 @@ impl ChatComposer {
                             return (InputResult::ParentOwnedInputBlocked, true);
                         }
                     }
+                    if self.is_task_running
+                        && matches!(&sel, CommandItem::Builtin(cmd) if !cmd.available_during_task() && !cmd.requires_dispatch_validation())
+                    {
+                        if !self
+                            .complete_selected_slash_command_preserving_existing_draft_tail_as_inline_args(
+                                &sel,
+                            )
+                        {
+                            self.draft
+                                .textarea
+                                .set_text_clearing_elements(&format!("/{}", sel.command()));
+                            self.draft.is_bash_mode = false;
+                        }
+                        return self.handle_submission(/*should_queue*/ true);
+                    }
                     if self
                         .complete_selected_slash_command_preserving_existing_draft_tail_as_inline_args(
                             &sel,
