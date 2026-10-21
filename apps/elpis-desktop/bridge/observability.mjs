@@ -236,7 +236,7 @@ export function createObservability({ home = elpisHome(), chatOf, listChats, tur
       const selected = agents.find(row => row.id === agentId);
       selected.model ??= found.thread.model ?? [...measured.values()].findLast(turn => turn.model)?.model ?? null;
       const data = page.data.map(turn => {
-        const prunes = own.filter(attempt => attempt.turnId === turn.id);
+        const prunes = own.filter(attempt => attempt.turnId === turn.id).sort((a, b) => time(a.at) - time(b.at) || a.id.localeCompare(b.id));
         return { turnId: turn.id, status: turn.status, error: turn.error ?? null, items: turn.items, at: number(turn.startedAt) !== null ? new Date(turn.startedAt * 1000).toISOString() : null,
           contextTokens: null, window: null, outputTokens: null, requests: 0, ledger: null, ...measured.get(turn.id),
           saved: prunes.reduce((sum, attempt) => sum + attempt.saved, 0), prunes: prunes.map(attempt => detail(attempt, admissions)) };

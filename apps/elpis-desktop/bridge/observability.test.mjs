@@ -76,6 +76,18 @@ async function records(t) {
   return { home, dir, rollout, write };
 }
 
+/** Force the folder listing and read completions into reverse filename order. */
+function reverseAttempts(t, dir) {
+  const attemptsDir = path.join(dir, 'attempts'), readdir = fs.readdir, readFile = fs.readFile;
+  t.mock.method(fs, 'readdir', async (file, ...args) => {
+    const entries = await readdir(file, ...args);
+    return file === attemptsDir ? entries.sort().reverse() : entries;
+  });
+  let reading = Promise.resolve();
+  t.mock.method(fs, 'readFile', (file, ...args) => typeof file === 'string' && file.startsWith(`${attemptsDir}${path.sep}`)
+    ? reading = reading.then(() => readFile(file, ...args)) : readFile(file, ...args));
+}
+
 /** Every file under `dir`, with its size, time and content hash: the routes must leave all of it as it was. */
 async function tree(dir) {
   const result = {};
@@ -120,6 +132,7 @@ test('HTTP overview excludes missing chats and their totals; reading the audit n
 
 test('HTTP chat carries Ledger metrics and exact Prune decisions with the readable record', async t => {
   const { home, rollout } = await records(t), before = await tree(home), { get } = await serve(t, home, rollout);
+  reverseAttempts(t, path.join(home, 'logs', 'smart-prune'));
   const { status, body } = await get(`/api/observability/chats/${S1}`);
   assert.equal(status, 200);
   assert.equal(body.record, path.join(home, 'logs', 'smart-prune', '2026-10-16 Fix the parser.md'));
@@ -143,6 +156,18 @@ test('HTTP chat carries Ledger metrics and exact Prune decisions with the readab
   assert.equal((await get(`/api/observability/chats/${S2}`)).status, 404);
   for (const bad of ['/api/observability/chats/not-a-chat', `/api/observability/chats/${S1}?cursor=../x`, `/api/observability/chats/${S1}?agent=bogus`]) assert.equal((await get(bad)).status, 400, bad);
   assert.deepEqual(await tree(home), before);
+});
+
+test('HTTP turn prunes sort by time then id, including older records found after a cached read', async t => {
+  const { home, dir, rollout, write } = await records(t);
+  reverseAttempts(t, dir);
+  await write(`attempts/${A[5]}.json`, attempt(A[5], S1, T2, 'unchanged', { at: '2026-10-16T09:10:00Z', candidates: [] }));
+  const { get } = await serve(t, home, rollout);
+  const prunes = async () => (await get(`/api/observability/chats/${S1}`)).body.turns.data.map(turn => turn.prunes.map(run => run.id));
+  assert.deepEqual(await prunes(), [[A[0]], [A[1], A[5], A[2]], []]);
+  const older = id(7);
+  await write(`attempts/${older}.json`, attempt(older, S1, T2, 'unchanged', { at: '2026-10-16T10:09:00+01:00', candidates: [] }));
+  assert.deepEqual(await prunes(), [[A[0]], [older, A[1], A[5], A[2]], []]);
 });
 
 test('new records show on next read; missing metrics do not hide native turns', async t => {
