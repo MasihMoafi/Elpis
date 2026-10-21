@@ -1,0 +1,14 @@
+[
+  {
+    "id": "startup-splash",
+    "approval": {
+      "date": "2026-10-21",
+      "quote": "restored as Masih asked, 843aaa202"
+    },
+    "files": [
+      "apps/elpis-desktop/components/startup-splash.tsx",
+      "apps/elpis-desktop/components/startup-splash.css",
+      "apps/elpis-desktop/tests/startup-splash.test.cjs"
+    ]
+  }
+]
