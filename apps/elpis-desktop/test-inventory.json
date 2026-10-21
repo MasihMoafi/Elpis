@@ -264,7 +264,10 @@
     "tests/side-empty.test.cjs",
     "tests/chat-local-images.test.cjs",
     "tests/waiting-hex.test.cjs",
-    "tests/workflow-characters.test.cjs"
+    "tests/workflow-characters.test.cjs",
+    "tests/previous-messages.test.cjs",
+    "tests/scroll-to-bottom.test.cjs",
+    "tests/turn-time.test.cjs"
   ],
   "opt-in": [
     "tests/app-update-native.test.cjs",

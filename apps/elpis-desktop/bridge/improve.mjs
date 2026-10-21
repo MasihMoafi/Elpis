@@ -45,7 +45,13 @@ export async function createImprovements({ client, sourceRoot, stateDir = proces
   for (const name of await fs.readdir(stateDir)) {
     if (!name.endsWith('.json')) continue;
     const row = await fs.readFile(path.join(stateDir, name), 'utf8').then(JSON.parse).catch(() => null);
-    if (row?.id === name.slice(0, -5) && row.cwd && row.branch) { if (row.status === 'checking') row.status = 'needs-check'; records.set(row.id, row); }
+    if (row?.id === name.slice(0, -5) && row.cwd && row.branch) {
+      if (row.status === 'checking') {
+        row.status = 'needs-check'; row.checks = null; row.error = 'The previous check was interrupted. Run build and tests again.';
+        await save(row);
+      }
+      records.set(row.id, row);
+    }
   }
   async function map() {
     return sourceMap ?? JSON.parse(await fs.readFile(new URL('../out/elpis-source-map.json', import.meta.url), 'utf8').catch(() => fs.readFile(new URL('../public/elpis-source-map.json', import.meta.url), 'utf8')));
@@ -53,6 +59,27 @@ export async function createImprovements({ client, sourceRoot, stateDir = proces
   async function save(row) {
     const file = path.join(stateDir, `${row.id}.json`), temp = `${file}.tmp`;
     await fs.writeFile(temp, JSON.stringify(row), { mode: 0o600 }); await fs.rename(temp, file); return row;
+  }
+  async function linkDependencies(root, cwd) {
+    // Older worktrees retain their original checkout in this link, even if the selected source moved.
+    const bin = await fs.realpath(path.join(cwd, 'apps/elpis-desktop/node_modules/.bin')).catch(() => null);
+    const original = bin && path.resolve(bin, '../../../..');
+    const identity = original && await fs.readFile(path.join(original, 'apps/elpis-desktop/package.json'), 'utf8').then(JSON.parse).catch(() => null);
+    const roots = [...new Set([identity?.name === 'elpis-desktop' ? original : null, root].filter(Boolean))];
+    // Share existing packages, keeping generated outputs and caches in the candidate worktree.
+    for (const project of ['apps/elpis-desktop', 'tools/elpis-claude']) {
+      let deps;
+      for (const candidate of roots) {
+        const directory = path.join(candidate, project, 'node_modules');
+        if (await fs.stat(directory).then(() => true, () => false)) { deps = directory; break; }
+      }
+      if (!deps) continue;
+      const local = path.join(cwd, project, 'node_modules'), packages = await fs.realpath(deps);
+      await fs.mkdir(local, { recursive: true });
+      for (const name of await fs.readdir(deps)) {
+        await fs.symlink(path.join(packages, name), path.join(local, name)).catch(error => { if (error.code !== 'EEXIST') throw error; });
+      }
+    }
   }
   const find = id => { const row = records.get(id); if (!row) throw new BridgeError('Unknown Elpis change', 404); return row; };
   async function review(row) {
@@ -79,12 +106,7 @@ export async function createImprovements({ client, sourceRoot, stateDir = proces
     await git(root, 'worktree', 'add', '-b', branch, cwd, base);
     const row = { id, cwd, branch, base, request, target: selected, status: 'starting', thread: null, checks: null };
     records.set(id, row); await save(row);
-    // The existing dependency tree is read-only by instruction; every build output belongs to the new worktree.
-    const deps = path.join(root, 'apps/elpis-desktop/node_modules');
-    if (await fs.stat(deps).then(() => true, () => false)) {
-      const local = path.join(cwd, 'apps/elpis-desktop/node_modules'); await fs.mkdir(local, { recursive: true });
-      for (const name of await fs.readdir(deps)) await fs.symlink(path.join(await fs.realpath(deps), name), path.join(local, name));
-    }
+    await linkDependencies(root, cwd);
     try {
       const { thread } = await client.createThread({ cwd, model: 'gpt-6-luna', name: `Improve Elpis · ${request.slice(0, 90)}`, instructions: IMPROVE_INSTRUCTIONS, permissions: 'full' });
       row.thread = thread; row.status = 'working'; await save(row);
@@ -101,6 +123,7 @@ export async function createImprovements({ client, sourceRoot, stateDir = proces
       if (before.dirty || before.head === row.base) throw new BridgeError('Commit the change and leave the worktree clean before running checks', 409);
       row.status = 'checking'; row.checks = null; delete row.error; await save(row);
       try {
+        await linkDependencies((await source()).path, row.cwd);
         const result = await verify(path.join(row.cwd, 'apps/elpis-desktop'));
         const after = await review(row);
         row.checks = { ...result, head: before.head, passed: result.passed && before.head === after.head && !after.dirty, at: new Date().toISOString() };

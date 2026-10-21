@@ -8,6 +8,7 @@ import { execFile as exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { EventEmitter } from 'node:events';
 import { createImprovements } from './improve.mjs';
+import { verifyImprovement } from './improve-check.mjs';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 const execFile = promisify(exec);
@@ -27,7 +28,7 @@ async function setup(t, checks = true) {
   client.createThread = async body => { created = body; return { thread: { id: 'fake-thread', cwd: body.cwd, status: { type: 'idle' } } }; };
   client.send = async (id, body) => { sent = { id, body }; return { turn: { id: 'turn' } }; };
   const store = path.join(root, 'state');
-  const manager = await createImprovements({ client, sourceRoot, stateDir: store, sourceMap: map, verify: async () => ({ passed: checks, commands: [{ command: 'fixture tests', code: checks ? 0 : 1, output: 'fixture result' }] }) });
+  const manager = await createImprovements({ client, sourceRoot, stateDir: store, sourceMap: map, verify: typeof checks === 'function' ? checks : async () => ({ passed: checks, commands: [{ command: 'fixture tests', code: checks ? 0 : 1, output: 'fixture result' }] }) });
   t.after(() => manager.close());
   return { manager, client, git, sourceRoot, store, created: () => created, sent: () => sent };
 }
@@ -64,6 +65,102 @@ test('failed checks, missing source IDs and absent captures cannot be kept or si
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n'); await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
   assert.equal((await f.manager.check(row.id)).checks.passed, false);
   await assert.rejects(f.manager.keep(row.id), /checks/i);
+  await assert.rejects(f.manager.verified(row.id), /checks/i);
+});
+
+async function checkFixture(t, scenario = {}) {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'improve-check-'));
+  t.after(() => removeTestTempDir(root));
+  const bin = path.join(root, 'bin'); await fs.mkdir(bin);
+  const script = `#!/usr/bin/env node
+const fs = require('node:fs'), path = require('node:path');
+process.chdir(process.env.IMPROVE_CHECK_FIXTURE);
+const step = path.basename(process.argv[1]) === 'npx' ? 'typecheck' : process.argv.at(-1);
+const scenario = JSON.parse(fs.readFileSync('scenario.json'));
+fs.appendFileSync('ran.txt', step + '\\n');
+console.log('running ' + step);
+if (step === scenario.fail) { console.error('planted assertion failed'); process.exit(7); }
+if (step === scenario.hang) {
+  const { spawn } = require('node:child_process');
+  const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 1600)'], { stdio: ['ignore', 'inherit', 'inherit'] });
+  fs.writeFileSync('child.pid', String(child.pid));
+  process.exit(0);
+}
+`;
+  for (const name of ['npx', 'npm']) await fs.writeFile(path.join(bin, name), script, { mode: 0o755 });
+  await fs.writeFile(path.join(root, 'scenario.json'), JSON.stringify(scenario));
+  return { root, env: { ...process.env, IMPROVE_CHECK_FIXTURE: root, PATH: `${bin}:${process.env.PATH}` } };
+}
+test('independent checks finish within the budget and preserve every required gate', async t => {
+  const f = await checkFixture(t), started = performance.now();
+  const result = await verifyImprovement(f.root, { timeoutMs: 5000, env: f.env });
+  assert.equal(result.passed, true);
+  assert.deepEqual((await fs.readFile(path.join(f.root, 'ran.txt'), 'utf8')).trim().split('\n'), ['typecheck', 'build', 'test:bridge', 'test:desktop']);
+  assert.equal(result.commands.length, 4);
+  assert.ok(result.commands.every(command => command.code === 0));
+  assert.ok(performance.now() - started < 5000);
+});
+test('independent checks stop at a failure and retain its exit code and reason', async t => {
+  const f = await checkFixture(t, { fail: 'test:bridge' });
+  const result = await verifyImprovement(f.root, { timeoutMs: 5000, env: f.env });
+  assert.equal(result.passed, false);
+  assert.equal(result.commands.at(-1).command, 'npm run -s test:bridge');
+  assert.equal(result.commands.at(-1).code, 7);
+  assert.match(result.commands.at(-1).output, /planted assertion failed/);
+  assert.doesNotMatch(await fs.readFile(path.join(f.root, 'ran.txt'), 'utf8'), /test:desktop/);
+});
+test('a child holding output open cannot outlive the verification budget or leave the change checking', async t => {
+  const f = await checkFixture(t, { hang: 'test:bridge' });
+  const change = await setup(t, cwd => verifyImprovement(cwd, { timeoutMs: 500, env: f.env }));
+  const row = await change.manager.start({ request: 'Rename', target });
+  await fs.mkdir(path.join(row.cwd, 'apps/elpis-desktop'), { recursive: true });
+  await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n');
+  await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
+  const started = performance.now();
+  const review = await change.manager.check(row.id);
+  assert.equal(review.status, 'checks-failed');
+  assert.equal(review.checks.passed, false);
+  assert.match(review.checks.commands.at(-1).output, /Timed out.*500/);
+  assert.equal(review.checks.commands.at(-1).command, 'npm run -s test:bridge');
+  assert.ok(performance.now() - started < 1200);
+  await assert.rejects(change.manager.verified(row.id), /checks/i);
+});
+
+test('Improve links the existing ACP test dependencies into its isolated worktree', async t => {
+  const f = await setup(t), deps = path.join(f.sourceRoot, 'tools/elpis-claude/node_modules');
+  await fs.mkdir(path.join(deps, '@agentclientprotocol/sdk'), { recursive: true });
+  await fs.writeFile(path.join(deps, '@agentclientprotocol/sdk/fixture'), 'existing dependency');
+  await fs.writeFile(path.join(f.sourceRoot, 'tools/elpis-claude/.gitignore'), 'node_modules/\n');
+  await fs.mkdir(path.join(f.sourceRoot, 'apps/elpis-desktop/node_modules/.bin'), { recursive: true });
+  await fs.writeFile(path.join(f.sourceRoot, 'apps/elpis-desktop/.gitignore'), 'node_modules/\n');
+  await fs.writeFile(path.join(f.sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
+  await f.git('add', 'tools/elpis-claude/.gitignore', 'apps/elpis-desktop/.gitignore', 'apps/elpis-desktop/package.json'); await f.git('commit', '-qm', 'ACP dependency boundary');
+  const row = await f.manager.start({ request: 'Rename', target });
+  const linked = path.join(row.cwd, 'tools/elpis-claude/node_modules/@agentclientprotocol');
+  assert.equal(await fs.realpath(linked), path.join(deps, '@agentclientprotocol'));
+  assert.equal(await fs.readFile(path.join(linked, 'sdk/fixture'), 'utf8'), 'existing dependency');
+  assert.equal((await f.manager.get(row.id)).dirty, false);
+  // An old Improve worktree may have been created before ACP packages were linked.
+  await fs.rename(path.join(row.cwd, 'tools/elpis-claude/node_modules'), path.join(f.store, 'old-deps'));
+  const moved = await setup(t);
+  await fs.mkdir(path.join(moved.sourceRoot, 'apps/elpis-desktop'), { recursive: true });
+  await fs.writeFile(path.join(moved.sourceRoot, 'apps/elpis-desktop/package.json'), JSON.stringify({ name: 'elpis-desktop' }));
+  await f.manager.setSource({ path: moved.sourceRoot });
+  await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n');
+  await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
+  assert.equal((await f.manager.check(row.id)).checks.passed, true);
+  assert.equal(await fs.realpath(linked), path.join(deps, '@agentclientprotocol'));
+});
+
+test('restart explains an interrupted check and persists a retryable state', async t => {
+  const f = await setup(t), row = await f.manager.start({ request: 'Rename', target });
+  await fs.writeFile(path.join(f.store, `${row.id}.json`), JSON.stringify({ ...row, status: 'checking' }));
+  const manager = await createImprovements({ client: f.client, sourceRoot: f.sourceRoot, stateDir: f.store, sourceMap: map });
+  t.after(() => manager.close());
+  const restored = await manager.get(row.id);
+  assert.equal(restored.status, 'needs-check');
+  assert.match(restored.error, /interrupted.*run.*again/i);
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.store, `${row.id}.json`), 'utf8')).status, 'needs-check');
 });
 test('authenticated HTTP flow reaches the fake engine with Luna, isolated cwd, instructions and native image input', async t => {
   const f = await setup(t), requests = [], threads = new Map();

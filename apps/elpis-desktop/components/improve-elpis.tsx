@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type Thread } from "@/lib/api";
 import "@/lib/desktop";
@@ -97,7 +97,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     return () => { disposed = true; clearInterval(timer); clearInterval(slow); };
   }, [threadId]);
   useEffect(() => {
-    if (!change || !["review", "checks-failed"].includes(change.status)) return;
+    if (!change || !["review", "checks-failed", "needs-check"].includes(change.status)) return;
     const version = `${change.id}/${change.status}/${change.checks?.head ?? ""}`;
     if (shownReview.current !== version) { shownReview.current = version; setReviewOpen(true); }
   }, [change]);
@@ -116,7 +116,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     setBusy(true); setError(""); setNotice("");
     try {
       if (kind === "try") {
-        if (!window.elpisDesktop?.improve) throw Error("Open the desktop app to try this change.");
+        if (!window.elpisDesktop?.improve?.try) throw Error("Open the desktop app to try this change.");
         await window.elpisDesktop.improve.try(change.id); setNotice("Preview opened in a separate window.");
       } else {
         const next = await api<Change>(`/improvements/${change.id}/${kind}`, {}); setChange(next);
@@ -124,7 +124,18 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
-  const canKeep = !!change?.checks?.passed && !change.dirty && change.checks.head === change.head;
+  const reasonId = useId(), previewReasonId = useId();
+  const failedCheck = change?.checks?.commands.find(command => command.code !== 0);
+  const blockedReason = !change ? "Loading change…"
+    : change.status === "checking" ? "Checking build and tests…"
+    : busy ? "Wait for the current action to finish."
+    : change.dirty ? "Commit this change, then run build and tests before trying or keeping it."
+    : !change.checks ? "Run build and tests on this commit before trying or keeping it."
+    : !change.checks.passed ? failedCheck ? `Check failed: ${failedCheck.command} (exit ${failedCheck.code}). See the output below.` : change.error || "Build or test checks failed. Run build and tests again."
+    : !change.head || change.checks.head !== change.head ? "The commit changed after checks passed. Run build and tests again before trying or keeping it."
+    : "";
+  const canKeep = !blockedReason;
+  const previewReason = blockedReason || (typeof window === "undefined" || typeof window.elpisDesktop?.improve?.try !== "function" ? "Open the desktop app to try this change." : "");
   const changeItem = <button data-slot="change-menuitem" type="button" role="menuitem" className="elpis-change-menuitem" onClick={() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); void begin(pointed.current); }}>Change this…</button>;
   return <>
     {menu?.isConnected && createPortal(changeItem, menu)}
@@ -146,14 +157,15 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     <AlertDialog open={reviewOpen} onOpenChange={value => { if (!busy) setReviewOpen(value); }}>
       <AlertDialogContent role="dialog" className="elpis-improve-dialog elpis-improve-review">
         <AlertDialogHeader><AlertDialogTitle>Review Elpis change</AlertDialogTitle><AlertDialogDescription>{change?.branch ?? "Loading change…"}</AlertDialogDescription></AlertDialogHeader>
-        <p role="status" className="text-sm">{change?.status === "ready" ? "Ready for coordinator review. Your note has been written." : change?.status === "checking" ? "Checking build and tests…" : change?.dirty ? "Commit this change, then run build and tests before trying or keeping it." : change?.checks?.passed && change.checks.head !== change.head ? "The commit changed after checks passed. Run build and tests again before trying or keeping it." : canKeep ? "Build and tests passed" : change?.checks ? "Build or test checks failed" : "Run build and tests on this commit before trying or keeping it."}</p>
+        <p id={reasonId} role="status" className="text-sm">{blockedReason || (change?.status === "ready" ? "Ready for coordinator review. Your note has been written." : "Build and tests passed")}</p>
+        {!blockedReason && previewReason && <p id={previewReasonId} className="text-sm text-muted-foreground">{previewReason}</p>}
         {change?.dirty && <p className="text-sm">There are uncommitted changes. Commit and check them before continuing.</p>}
         {change?.diff && <div className="diff-body elpis-improve-diff">{change.diff.split(/(?=^diff --git )/m).filter(Boolean).map((file, index) => <section key={index}><p className="px-2 py-1 text-xs font-mono">{file.split("\n")[0]}</p>{/^@@ /m.test(file) ? <DiffLines lines={parseDiff(file)} /> : <pre className="elpis-improve-log">{file}</pre>}</section>)}</div>}
         {change?.truncated && <p className="text-sm">The diff is truncated. Review the full diff in the worktree before keeping.</p>}
-        {change?.checks?.commands.map((command, index) => <details key={index} className="text-sm"><summary>{command.command} · exit {command.code}</summary><pre className="elpis-improve-log">{command.output}</pre></details>)}
+        {change?.checks?.commands.map((command, index) => <details key={index} open={command.code !== 0} className="text-sm"><summary>{command.command} · exit {command.code}</summary><pre className="elpis-improve-log">{command.output || (command.code !== 0 ? `Check exited with code ${command.code} without output.` : "")}</pre></details>)}
         {(error || change?.error) && <p role="alert" className="text-sm text-destructive">{error || change?.error}</p>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
-        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} onClick={() => void action("check")}>Check build &amp; tests</Button></AlertDialogFooter>
+        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} title={change?.status === "checking" ? "Checking build and tests…" : busy ? "Wait for the current action to finish." : undefined} onClick={() => void action("check")}>Check build &amp; tests</Button><Button variant="outline" disabled={!!previewReason} title={previewReason || undefined} aria-describedby={blockedReason ? reasonId : previewReason ? previewReasonId : undefined} onClick={() => void action("try")}>Try it</Button><Button disabled={!canKeep} title={blockedReason || undefined} aria-describedby={blockedReason ? reasonId : undefined} onClick={() => void action("keep")}>Keep</Button></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>;

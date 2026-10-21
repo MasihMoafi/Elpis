@@ -49,7 +49,13 @@ test('Love Spot agent routes authenticate, run the saved drawing over ACP and an
   await assert.rejects(fs.access(log), 'no agent started for a refused request');
   const running = f.request('/agents/run', { id: 'agent' });
   const card = async () => (await f.load()).scene.elements[0].customData.loveAgent;
-  while ((await card()).status !== 'waiting') await new Promise(resolve => setTimeout(resolve, 20));
+  const deadline = Date.now() + 5000;
+  while ((await card()).status !== 'waiting' && Date.now() < deadline) {
+    const state = await card();
+    assert.notEqual(state.status, 'failed', state.error);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal((await card()).status, 'waiting', 'the ACP fixture must request permission within five seconds');
   assert.equal((await card()).permission.title, 'Write notes.txt');
   assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'made-up' })).status, 400);
   assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'allow_once' })).status, 200);
