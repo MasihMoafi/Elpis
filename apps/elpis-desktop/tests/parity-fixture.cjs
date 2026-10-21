@@ -32,8 +32,9 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set();
   const threads = THREADS.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
-  const entries = () => turns.flatMap(([id, prompt, reply, work], index) => {
-    const at = Date.now() - (turns.length - index) * 120_000;
+  // A turn may give its start time (ms) fifth; otherwise turns are two minutes apart, ending now.
+  const entries = () => turns.flatMap(([id, prompt, reply, work, startedAt], index) => {
+    const at = startedAt ?? Date.now() - (turns.length - index) * 120_000;
     return [{ turnId: id, item: { id: `u-${id}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] }, startedAtMs: at, completedAtMs: at },
       ...(work ?? []).map(item => ({ turnId: id, item, startedAtMs: at + 1000, completedAtMs: at + 2000 })),
       { turnId: id, item: { id: `a-${id}`, type: 'agentMessage', text: reply }, startedAtMs: at + 5000, completedAtMs: at + 5000 }];

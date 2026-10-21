@@ -19,9 +19,28 @@ import { turnEdits } from "@/lib/diff";
 type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined };
 export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
   const turns = turnsOf(entries);
-  return <>{turns.map(turn => <Turn key={turn.clientKey ?? turn.id} turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...draw} />)}
+  return <>{turns.map((turn, index) => {
+    const start = turn.entries[0]?.startedAtMs, before = turns[index - 1]?.entries.at(-1), end = before?.completedAtMs ?? before?.startedAtMs;
+    const pause = typeof start === "number" && typeof end === "number" && (start - end >= HOUR || new Date(start).toDateString() !== new Date(end).toDateString());
+    return <Fragment key={turn.clientKey ?? turn.id}>
+      {pause && <div className="turn-time"><time dateTime={new Date(start).toISOString()}>{turnTime(start)}</time></div>}
+      <Turn turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...draw} />
+    </Fragment>;
+  })}
     {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <div className="turn-working" role="status"><LiveStep key={activeTurnId} label="Working" /></div>}
   </>;
+}
+
+const HOUR = 3_600_000;
+/** ChatGPT's time line ("Yesterday 8:41 PM") above a turn that starts an hour or more after the one before, or on another day. */
+export function turnTime(at: number, now = new Date()): string {
+  const date = new Date(at), time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const midnight = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+  const days = Math.round((midnight(now) - midnight(date)) / 86_400_000);
+  if (days === 0) return `Today ${time}`;
+  if (days === 1) return `Yesterday ${time}`;
+  if (days > 1 && days < 7) return `${date.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
+  return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }) })}, ${time}`;
 }
 
 type TurnEntries = { id: string; clientKey?: string; entries: Entry[] };

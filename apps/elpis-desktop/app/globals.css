@@ -558,6 +558,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Long chats: a turn off screen skips style, layout and paint until it nears the view (the browser's own
  * virtualisation, so find, selection and scroll position keep working); the size it last had holds its place. */
 .turn { margin-bottom:14px; content-visibility:auto; contain-intrinsic-size:auto 320px; }
+.turn-time { text-align:center; color:var(--muted-foreground); font-size:var(--text-small, 13px); margin:28px 0 20px; }
 .turn .user-turn { margin-bottom:24px; }
 .message.user { background:var(--card); border:1px solid var(--hairline); border-right:2px solid color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent); padding:9px 14px; }
 .message.agent { position:relative; margin-bottom:18px; }
