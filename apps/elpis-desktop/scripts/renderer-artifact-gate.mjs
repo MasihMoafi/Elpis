@@ -13,7 +13,8 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 // 21 Oct (A121): moved from 21343157b, whose copies of 35 UI tests never passed (undefined helpers, stale fixtures),
 // to the commit that repairs them case for case. Masih: "You don't need to ask me that; I'm result-oriented."
 // Round 2 (f96171ccb): the merged repairs (gatefix) keep every case; the earlier baseline still had the pre-merge copies.
-export const baselineCommit = 'f96171ccb616c6c4c8fd4bf4599d219da7e71a02';
+// Round 3 (988aad0e7): combofix scoped the dropdown helper (c23e326c8) and wf1b aimed three Workflows tests at the current UI; every case kept.
+export const baselineCommit = '988aad0e78bd264c00e435be07598e79f08941e8';
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
 const appPrefix = 'apps/elpis-desktop/';
