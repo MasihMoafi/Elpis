@@ -84,8 +84,9 @@ test('the complete sidebar wordmark fits its SVG viewport and toggle at desktop 
           const svg = host.querySelector('svg');
           for (const node of svg.querySelectorAll('*')) node.style.animation = 'none';
           const box = svg.querySelector('g[id$="shape"]').getBBox(), view = svg.viewBox.baseVal;
-          const bounds = image.getBoundingClientRect(), parent = image.parentElement.getBoundingClientRect();
-          const toggle = image.previousElementSibling.getBoundingClientRect();
+          // The wordmark is the logo's home button (6556d5e50): measure it against the brand row and its toggle.
+          const bounds = image.getBoundingClientRect(), parent = image.closest('.brand').getBoundingClientRect();
+          const toggle = image.closest('.brand').querySelector('.sidebar-toggle').getBoundingClientRect();
           const result = { svgClipped: box.x < view.x || box.x + box.width > view.x + view.width,
             layoutClipped: bounds.right > parent.right || bounds.left < toggle.right };
           host.remove(); return result;

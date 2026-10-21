@@ -49,6 +49,9 @@ const branchChip = page => page.getByRole('button', { name: `Branch ${BRANCH}` }
 for (const colorScheme of ['light', 'dark']) test(`a new chat can start in its own worktree: Worktree in the Local menu, then the first message (${colorScheme})`, () => using({ colorScheme }, async f => {
   const { page, composer } = f;
   await page.getByRole('button', { name: 'New chat', exact: true }).first().click();
+  // New chats start in no project (TASKS.md:111), so choose the repository's project first.
+  await page.getByRole('button', { name: 'Choose project', exact: true }).click();
+  await page.getByRole('menuitem', { name: /parity-fixture/ }).click();
   await where(page).click();
   const worktree = page.getByRole('menuitem', { name: /^Worktree/ });
   await worktree.waitFor(); await shoot(page, `worktree-menu-${colorScheme}`);
@@ -133,8 +136,9 @@ for (const colorScheme of ['light', 'dark']) test(`archiving or deleting a chat 
   assert.equal(await notice.count(), 0, 'a clean worktree goes without a word');
 }));
 
-test('a chat working in a worktree of a project is listed under that project', () => using({ extra: [chat('chat-in-wt', 'Feature in a worktree', KEPT)] }, async f => {
+// Membership is explicit (TASKS.md:111): a chat's folder, even a worktree of a project, does not put it in that project.
+test('a chat working in a worktree of a project stays out of that project until it is moved there', () => using({ extra: [chat('chat-in-wt', 'Feature in a worktree', KEPT)] }, async f => {
+  await f.page.locator('.thread-row[data-thread-id="chat-in-wt"]').waitFor();
   const group = f.page.locator('.project-group').filter({ hasText: 'parity-fixture' });
-  await group.locator('.thread-row[data-thread-id="chat-in-wt"]').waitFor();
-  assert.equal(await group.locator('.thread-row[data-thread-id="chat-a"]').count(), 1, 'beside the chats in the project folder itself');
+  assert.equal(await group.locator('.thread-row[data-thread-id="chat-in-wt"]').count(), 0, 'no folder-based project membership');
 }));

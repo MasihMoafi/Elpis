@@ -84,7 +84,7 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
     await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
-  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '12s', 'reduced motion slows the rotation');
+  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
 }));
 
 for (const value of [

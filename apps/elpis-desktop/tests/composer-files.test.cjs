@@ -224,7 +224,7 @@ test('failed parent-owned follow-up moves exact attachments into acknowledged fo
   const view = await fixture(t); await openChat(view, 'Chat FORK');
   await view.page.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'fork-draft.txt', mimeType: 'text/plain', buffer: Buffer.from('Existing fork draft') }); await visibleFile(view, 'fork-draft.txt');
   await openChat(view, 'Chat A'); await view.page.getByRole('button', { name: 'Observability', exact: true }).click();
-  await view.page.getByRole('button', { name: /Parent-owned agent/ }).first().click();
+  await view.page.getByRole('button', { name: 'Parent-owned agent', exact: true }).first().click();
   await eventually(async () => assert.match(await view.input.getAttribute('placeholder'), /Parent-owned agent/));
   await transfer(view, 'paste', { file: 'image' }); await visibleFile(view, 'pasted-image.png'); view.control.partialFork = true;
   await view.page.getByRole('button', { name: 'Send message', exact: true }).click();
