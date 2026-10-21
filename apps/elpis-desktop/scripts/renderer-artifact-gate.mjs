@@ -117,9 +117,10 @@ export function passingCounts(text) {
 
 /** Keep baseline fixtures beside their tests, but resolve production imports and out/ to the candidate. */
 export async function prepareBaseline(root = appRoot, baseline = baselineCommit) {
-  const base = path.join(os.homedir(), '.cache/elpis-tests');
+  // Keep screenshot sockets short, on a filesystem that supports the Trash cleanup.
+  const base = path.join(os.homedir(), '.cache');
   await fs.mkdir(base, { recursive: true });
-  const scratch = await fs.mkdtemp(path.join(base, 'renderer-gate-'));
+  const scratch = await fs.mkdtemp(path.join(base, 'eu-'));
   try {
     const repository = git(root, ['rev-parse', '--show-toplevel']).trim();
     const archive = git(repository, ['archive', baseline, `${appPrefix}tests`, `${appPrefix}${stateTest}`], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
@@ -139,7 +140,7 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit)
 export async function runUiFile(file, root, evidence, home, env = process.env) {
   const childEnv = { ...env, HOME: home, ELPIS_HOME: path.join(home, 'elpis'), CODEX_HOME: path.join(home, 'codex'),
     ELPIS_CONFIG_DIR: path.join(home, 'elpis'), XDG_CONFIG_HOME: path.join(home, '.config'), XDG_CACHE_HOME: path.join(home, '.cache'),
-    XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'), TMPDIR: path.join(home, 'tmp'),
+    XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'), TMPDIR: path.dirname(home),
     EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') };
   await fs.mkdir(childEnv.TMPDIR, { recursive: true });
   delete childEnv.NODE_TEST_CONTEXT;

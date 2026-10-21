@@ -114,6 +114,13 @@ test('a candidate cannot drop the saved-workspace test and reinstate a reader th
   await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
 });
 
+test('private screenshot peers retain discoverable Unix socket names', async t => {
+  const f = await fixture(t, `const{test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const os=require('node:os');const path=require('node:path');const net=require('node:net');const{randomUUID}=require('node:crypto');
+test('screenshot peer discovery and connection',async()=>{const directory=path.join(os.tmpdir(),'elpis-shots-'+process.getuid()+'-0123456789abcdef');await fs.mkdir(directory,{recursive:true});const socket=path.join(directory,randomUUID()+'.sock');const server=net.createServer(client=>client.end('shared'));
+try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(socket,resolve)});assert.ok((await fs.readdir(directory)).includes(path.basename(socket)),'Unix socket filename was truncated');assert.equal(await new Promise((resolve,reject)=>{let data='';const client=net.createConnection(socket);client.on('data',chunk=>data+=chunk);client.on('end',()=>resolve(data));client.on('error',reject)}),'shared');}finally{await new Promise(resolve=>server.close(resolve));}});`);
+  await runGate(f);
+});
+
 test('drawing and screenshot writes stay inside the private test home', async t => {
   const f = await fixture(t, `const{test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
 test('private drawing paths',()=>{for(const[key,dir]of[['EXCALIDRAW_LOCAL_DIR','love-spot'],['EXCALIDRAW_SCREENSHOTS_DIR','Screenshots']]){
