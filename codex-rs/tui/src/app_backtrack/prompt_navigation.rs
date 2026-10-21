@@ -33,10 +33,18 @@ impl App {
             ("←→/hl".to_string(), "prompts"),
         ];
         full_hints.extend(details.clone());
-        full_hints.extend([("↵".to_string(), rewind), ("esc".to_string(), "back")]);
+        full_hints.extend([
+            ("c".to_string(), "copy"),
+            ("↵".to_string(), rewind),
+            ("esc".to_string(), "back"),
+        ]);
         let mut compact_hints = vec![("↑↓/jk ←→/hl".to_string(), "")];
         compact_hints.extend(details);
-        compact_hints.extend([("↵".to_string(), rewind), ("esc".to_string(), "back")]);
+        compact_hints.extend([
+            ("c".to_string(), "copy"),
+            ("↵".to_string(), rewind),
+            ("esc".to_string(), "back"),
+        ]);
         let line = first_fitting_line(
             [
                 ("Browsing transcript", full_hints.clone()),
@@ -46,13 +54,22 @@ impl App {
                     "Browsing",
                     vec![
                         ("↑↓/jk ←→/hl".to_string(), ""),
+                        ("c".to_string(), "copy"),
                         ("↵".to_string(), rewind),
                         ("esc".to_string(), ""),
                     ],
                 ),
                 (
                     "Browsing",
-                    vec![("↵".to_string(), rewind), ("esc".to_string(), "back")],
+                    vec![
+                        ("c".to_string(), "copy"),
+                        ("↵".to_string(), rewind),
+                        ("esc".to_string(), "back"),
+                    ],
+                ),
+                (
+                    "Browsing",
+                    vec![("c".to_string(), "copy"), ("esc".to_string(), "back")],
                 ),
                 ("Browsing", vec![("esc".to_string(), "back")]),
                 ("Browsing", vec![("esc".to_string(), "")]),

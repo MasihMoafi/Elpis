@@ -9,6 +9,12 @@ use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
 use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 
+pub(crate) async fn make_test_app_with_thread() -> App {
+    let mut app = make_test_app().await;
+    super::owned_transcript::tests::attach_thread(&mut app, ThreadId::new());
+    app
+}
+
 pub(crate) async fn make_test_app() -> App {
     let (mut chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
     let test_codex_home = chat_widget.test_codex_home.take();

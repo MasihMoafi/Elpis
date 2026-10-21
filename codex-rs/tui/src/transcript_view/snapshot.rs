@@ -47,7 +47,12 @@ impl TranscriptView {
         pinned.extend(
             self.visible
                 .iter()
-                .map(|visible| (visible.key, Arc::clone(&visible.layout))),
+                .map(|visible| (visible.key, Arc::clone(&visible.layout)))
+                .chain(
+                    self.pinned_prompt
+                        .iter()
+                        .map(|prompt| (prompt.key, Arc::clone(&prompt.layout))),
+                ),
         );
         activities.extend(
             self.visible

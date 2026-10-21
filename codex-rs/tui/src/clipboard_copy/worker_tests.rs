@@ -13,6 +13,108 @@ use pretty_assertions::assert_eq;
 use std::time::Duration;
 
 #[tokio::test]
+async fn rewind_copy_key_copies_first_middle_last_user_message_exactly() {
+    let messages = [
+        "first\nسلام دنیا\n  spaces   and **literal markup**\n\n".to_owned(),
+        format!(
+            "middle\n{}\nپایان",
+            "a long message with wrapping   ".repeat(500)
+        ),
+        "last\nپیام خودم\n".to_owned(),
+    ];
+    for owned in [false, true] {
+        let mut app = crate::app::test_support::make_test_app_with_thread().await;
+        app.transcript_cells = messages
+            .iter()
+            .map(|message| {
+                Arc::new(crate::history_cell::new_user_prompt(
+                    message.clone(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )) as Arc<dyn crate::history_cell::HistoryCell>
+            })
+            .collect();
+        let mut app_server = crate::start_embedded_app_server_for_picker(&app.config)
+            .await
+            .unwrap();
+        let mut tui = crate::tui::test_support::make_test_tui().unwrap();
+        tui.set_owned_screen(owned).unwrap();
+        let (copied, copies) = mpsc::channel();
+        tui.clipboard
+            .start(
+                tui.frame_requester(),
+                move |text, format, setup| {
+                    setup.begin_delivery().unwrap();
+                    copied.send((text.to_owned(), format)).unwrap();
+                    (Ok(CopyOutcome::Copied(None)), None)
+                },
+                |_| unreachable!("copy-only backend"),
+            )
+            .unwrap();
+        for key in [KeyCode::Esc, KeyCode::Esc] {
+            app.handle_tui_event(&mut tui, &mut app_server, TuiEvent::Key(key.into()))
+                .await
+                .unwrap();
+        }
+        for (navigation, selected) in [
+            (None, 2),
+            (Some(KeyCode::Left), 1),
+            (Some(KeyCode::Left), 0),
+            (Some(KeyCode::Right), 1),
+            (Some(KeyCode::Right), 2),
+        ] {
+            if let Some(key) = navigation {
+                app.handle_tui_event(&mut tui, &mut app_server, TuiEvent::Key(key.into()))
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(app.backtrack.nth_user_message, selected);
+            app.handle_tui_event(
+                &mut tui,
+                &mut app_server,
+                TuiEvent::Key(KeyCode::Char('c').into()),
+            )
+            .await
+            .unwrap();
+            // The old code never submits this copy; recv_timeout fails before this assertion.
+            assert_eq!(
+                copies.recv_timeout(Duration::from_secs(5)).unwrap(),
+                (messages[selected].clone(), CopyFormat::PlainText)
+            );
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    tui.clipboard.poll();
+                    if !tui.clipboard.is_busy() {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(app.backtrack.overlay_preview_active);
+            assert!(app.chat_widget.composer_is_empty());
+        }
+        // A lazy-history preview with no selected message must leave the clipboard alone.
+        app.transcript_cells.clear();
+        app.backtrack.nth_user_message = usize::MAX;
+        app.handle_tui_event(
+            &mut tui,
+            &mut app_server,
+            TuiEvent::Key(KeyCode::Char('c').into()),
+        )
+        .await
+        .unwrap();
+        assert!(!tui.clipboard.is_busy());
+        assert!(matches!(copies.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        assert!(app.chat_widget.composer_is_empty());
+        app_server.shutdown().await.unwrap();
+        tui.set_owned_screen(false).unwrap();
+    }
+}
+
+#[tokio::test]
 async fn blocked_copy_allows_overlay_exit_rejects_backlog_and_wakes_completion() {
     let mut tui = crate::tui::test_support::make_test_tui().unwrap();
     let (draws, mut draw_rx) = tokio::sync::broadcast::channel(/*capacity*/ 1);

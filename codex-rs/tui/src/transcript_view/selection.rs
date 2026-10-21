@@ -581,6 +581,9 @@ impl TranscriptView {
         } else {
             (selection.end, selection.start)
         };
+        if let Some(prompt) = &self.pinned_prompt {
+            prompt.highlight(start, end, buf);
+        }
         for (y, visible) in self.visible.iter().enumerate() {
             if visible.index < start.index || visible.index > end.index {
                 continue;
@@ -634,6 +637,11 @@ impl TranscriptView {
     }
 
     pub(super) fn hit_test(&self, column: u16, row: u16) -> Option<(Anchor, Arc<TextLayout>)> {
+        if let Some(prompt) = &self.pinned_prompt
+            && row == prompt.area.y
+        {
+            return Some(prompt.hit_test(column));
+        }
         let row = row.saturating_sub(self.area.y) as usize;
         let visible = self
             .visible

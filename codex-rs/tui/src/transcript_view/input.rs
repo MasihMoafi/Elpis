@@ -295,7 +295,12 @@ impl TranscriptView {
         }
         let inside = self
             .area
-            .contains(ScreenPosition::new(event.column, event.row));
+            .contains(ScreenPosition::new(event.column, event.row))
+            || self.pinned_prompt.as_ref().is_some_and(|prompt| {
+                prompt
+                    .area
+                    .contains(ScreenPosition::new(event.column, event.row))
+            });
         let dragging = self
             .selection
             .as_ref()
@@ -481,9 +486,26 @@ impl TranscriptView {
             return Some(ViewAction::Changed);
         }
         self.disclosure.focused = None;
-        let visible = self
-            .visible
-            .get(usize::from(event.row.checked_sub(self.area.y)?))?;
+        let (position, end) = if let Some(prompt) = self
+            .pinned_prompt
+            .as_ref()
+            .filter(|prompt| prompt.area.y == event.row)
+        {
+            (
+                prompt.hit_test(event.column).0.offset,
+                prompt.hit_test(u16::MAX).0.offset,
+            )
+        } else {
+            let visible = self
+                .visible
+                .get(usize::from(event.row.checked_sub(self.area.y)?))?;
+            (
+                visible
+                    .layout
+                    .position_at(visible.row, event.column.saturating_sub(self.area.x)),
+                visible.layout.position_at(visible.row, u16::MAX),
+            )
+        };
         if mode == MouseMode::Interactive
             && event
                 .modifiers
@@ -504,12 +526,7 @@ impl TranscriptView {
         }
         let clicks =
             crate::text_selection::click_count(&mut self.last_click, event.column, event.row);
-        if clicks >= 2
-            && visible
-                .layout
-                .position_at(visible.row, event.column.saturating_sub(self.area.x))
-                == visible.layout.position_at(visible.row, u16::MAX)
-        {
+        if clicks >= 2 && position == end {
             return None;
         }
         let link = (mode == MouseMode::Interactive && clicks == 1 && event.modifiers.is_empty())

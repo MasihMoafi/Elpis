@@ -10,7 +10,7 @@ expression: "snapshots.join(\"\\n\\n\")"
 
 › second prompt
 
-Browsing · ↑↓/jk scroll · ←→/hl prompts · ⌃t details · ↵ rewind · esc back
+Browsing · ↑↓/jk ←→/hl · ⌃t details · c copy · ↵ rewind · esc back
 
 32 columns
 / T R A N S C R I P T / / / / /
@@ -20,4 +20,4 @@ Browsing · ↑↓/jk scroll · ←→/hl prompts · ⌃t details · ↵ rewind 
 
 › second prompt
 
-Browsing · ↵ rewind · esc back
+Browsing · c copy · esc back

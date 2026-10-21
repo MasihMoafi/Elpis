@@ -25,6 +25,168 @@ fn user(message: &str) -> Arc<dyn HistoryCell> {
 }
 
 #[test]
+fn pinned_user_prompt_mouse_copy_preserves_original_spaces_newlines_and_farsi() {
+    for message in [
+        "copy   these words\nسلام دنیا، پیام خودم",
+        "سلام دنیا،\n  پیام   خودم",
+        "› literal marker and e\u{301} 界界\nsecond line",
+    ] {
+        for width in [28, 80] {
+            let cells = vec![user(message), cell("answer\n".repeat(20))];
+            let mut view = TranscriptView {
+                copy_on_select: true,
+                ..Default::default()
+            };
+            let before = render(&mut view, &cells, width, /*height*/ 5);
+            assert_eq!(view.area.y, 1);
+            let header = text(&before).lines().next().unwrap().to_owned();
+            let end_column = crate::width::display_width(header.trim_end_matches('…')) as u16;
+            for (kind, column) in [
+                (MouseEventKind::Down(MouseButton::Left), 2),
+                (MouseEventKind::Drag(MouseButton::Left), end_column),
+            ] {
+                assert!(matches!(
+                    view.handle_mouse(
+                        MouseEvent {
+                            kind,
+                            column,
+                            row: 0,
+                            modifiers: KeyModifiers::NONE
+                        },
+                        &cells
+                    ),
+                    Some(ViewAction::Changed)
+                ));
+            }
+            let selected = view
+                .selected_text(&cells)
+                .expect("pinned user text must be selectable");
+            // The old code returns None here: the pinned prompt is above view.area.
+            assert!(message.starts_with(&selected), "{selected:?}");
+            if width == 80 {
+                assert_eq!(selected, message);
+            }
+            let painted = render(&mut view, &cells, width, /*height*/ 5);
+            assert!(painted[(2, 0)].modifier.contains(Modifier::REVERSED));
+            let Some(ViewAction::CopyOnSelect(copied)) = view.handle_mouse(
+                MouseEvent {
+                    kind: MouseEventKind::Up(MouseButton::Left),
+                    column: end_column,
+                    row: 0,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &cells,
+            ) else {
+                panic!("release must copy the pinned prompt")
+            };
+            assert_eq!(copied, selected);
+            view.copy_selected_text_with(
+                &cells,
+                &copied,
+                /*clear_selection*/ false,
+                |text, format| {
+                    assert_eq!(text, selected);
+                    assert_eq!(format, crate::clipboard_copy::CopyFormat::PlainText);
+                    Ok(crate::clipboard_copy::CopyStatus::Confirmed)
+                },
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn pinned_user_prompt_copies_only_selected_words_with_copy_on_select_enabled_or_disabled() {
+    let cells = vec![
+        user("prefix copy   these words\nسلام دنیا\nsuffix"),
+        cell("answer\n".repeat(20)),
+    ];
+    for automatic in [false, true] {
+        for backwards in [false, true] {
+            let mut view = TranscriptView {
+                copy_on_select: automatic,
+                ..Default::default()
+            };
+            render(&mut view, &cells, /*width*/ 80, /*height*/ 5);
+            let (from, to) = if backwards { (25, 9) } else { (9, 25) };
+            for (kind, column) in [
+                (MouseEventKind::Down(MouseButton::Left), from),
+                (MouseEventKind::Drag(MouseButton::Left), to),
+            ] {
+                view.handle_mouse(
+                    MouseEvent {
+                        kind,
+                        column,
+                        row: 0,
+                        modifiers: KeyModifiers::NONE,
+                    },
+                    &cells,
+                );
+            }
+            let action = view.handle_mouse(
+                MouseEvent {
+                    kind: MouseEventKind::Up(MouseButton::Left),
+                    column: to,
+                    row: 0,
+                    modifiers: KeyModifiers::NONE,
+                },
+                &cells,
+            );
+            match (automatic, action) {
+                (true, Some(ViewAction::CopyOnSelect(copied))) => {
+                    assert_eq!(copied, "copy   these words")
+                }
+                (false, Some(ViewAction::Changed)) => {}
+                _ => panic!("release must honor copy_on_select"),
+            }
+            let Some(ViewAction::Copy(copied)) = view.handle_key(
+                KeyEvent::new(KeyCode::Insert, KeyModifiers::CONTROL),
+                &cells,
+            ) else {
+                panic!("explicit copy must still work")
+            };
+            assert_eq!(copied, "copy   these words");
+        }
+    }
+}
+
+#[test]
+fn pinned_prompt_mouse_copy_keeps_reply_selection_unchanged() {
+    let cells = vec![user("my own prompt"), cell("alpha beta gamma\n".repeat(20))];
+    let mut view = TranscriptView {
+        copy_on_select: true,
+        ..Default::default()
+    };
+    render(&mut view, &cells, /*width*/ 30, /*height*/ 5);
+    for (kind, column) in [
+        (MouseEventKind::Down(MouseButton::Left), 0),
+        (MouseEventKind::Drag(MouseButton::Left), 5),
+    ] {
+        view.handle_mouse(
+            MouseEvent {
+                kind,
+                column,
+                row: 1,
+                modifiers: KeyModifiers::NONE,
+            },
+            &cells,
+        );
+    }
+    let Some(ViewAction::CopyOnSelect(copied)) = view.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 5,
+            row: 1,
+            modifiers: KeyModifiers::NONE,
+        },
+        &cells,
+    ) else {
+        panic!("reply selection must still copy")
+    };
+    assert_eq!(copied, "alpha");
+}
+
+#[test]
 fn prompt_header_tracks_reading_and_yields_to_visible_prompts_and_short_screens() {
     let mut cells = vec![
         user("First question"),

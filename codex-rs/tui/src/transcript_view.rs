@@ -109,6 +109,7 @@ pub(crate) struct TranscriptView {
     live_key: Option<(u16, ActiveCellTranscriptKey)>,
     live_continuation: bool,
     area: Rect,
+    pinned_prompt: Option<prompt_header::PinnedPrompt>,
     suppressed_prompt_header: Option<prompt_header::SuppressedHeader>,
     visible: Vec<VisibleRow>,
     selection: Option<Selection>,
@@ -149,6 +150,7 @@ impl Default for TranscriptView {
             live_key: None,
             live_continuation: false,
             area: Rect::default(),
+            pinned_prompt: None,
             suppressed_prompt_header: None,
             visible: Vec::new(),
             selection: None,
@@ -195,6 +197,7 @@ impl TranscriptView {
             self.reveal_copy_context(cells);
         }
         self.visible.clear();
+        self.pinned_prompt = None;
         if area.is_empty() {
             self.tail_visible = false;
             return;
@@ -224,7 +227,19 @@ impl TranscriptView {
             // Following may advance into the next turn after reserving the header row.
             start = self.start(cells);
             if let Some(header) = prompt_header::line(cells, start.0, area.width) {
-                header.render(Rect::new(area.x, area.y, area.width, /*height*/ 1), buf);
+                let header_area = Rect::new(area.x, area.y, area.width, /*height*/ 1);
+                if let Some(index) = prompt_header::index(cells, start.0, area.width)
+                    && let Some(layout) = self.layout(cells, index)
+                {
+                    self.pinned_prompt = Some(prompt_header::PinnedPrompt::new(
+                        header_area,
+                        index,
+                        self.entry_key(cells, index),
+                        layout,
+                        &header,
+                    ));
+                }
+                header.render(header_area, buf);
             } else {
                 body = area;
                 self.area = area;

@@ -18,4 +18,4 @@ expression: "normalize_snapshot_paths(buffer_text(crate::custom_terminal::test_s
 › Ask Elpis to do anything
 
   gpt-test default · /tmp/project
-  Browsing · ↑↓/jk scroll · ←→/hl prompts · ⌃t details · ↵ rewind · esc back
+  Browsing · ↑↓/jk ←→/hl · ⌃t details · c copy · ↵ rewind · esc back

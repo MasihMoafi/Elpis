@@ -203,6 +203,16 @@ impl App {
             return false;
         }
         match (key.code, key.kind) {
+            (KeyCode::Char('c'), KeyEventKind::Press) => {
+                if let Some(selection) = self.backtrack_selection(self.backtrack.nth_user_message) {
+                    let result = tui.copy_transcript_selection(
+                        &selection.prompt.text,
+                        crate::clipboard_copy::CopyFormat::PlainText,
+                    );
+                    self.chat_widget.show_selection_copy_result(result);
+                }
+                tui.frame_requester().schedule_frame();
+            }
             (KeyCode::Enter, KeyEventKind::Press) => {
                 if self.is_offline() {
                     self.chat_widget
