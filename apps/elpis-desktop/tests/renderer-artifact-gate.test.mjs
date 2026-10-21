@@ -342,8 +342,6 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   for (const file of ['install-desktop.mjs', 'renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
-  await fs.mkdir(path.join(f.root, 'bridge'));
-  await fs.copyFile(fileURLToPath(new URL('../bridge/improve-source.mjs', import.meta.url)), path.join(f.root, 'bridge/improve-source.mjs'));
   // The installer reads the approved looks next to its folder (A109).
   await fs.copyFile(fileURLToPath(new URL('../approved-looks.json', import.meta.url)), path.join(f.root, 'approved-looks.json'));
   // The isolated repository has its own immutable checkpoint; production keeps the deployed checkpoint.
