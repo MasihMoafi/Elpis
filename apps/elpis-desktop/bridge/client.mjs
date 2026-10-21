@@ -1146,6 +1146,16 @@ export class DesktopClient extends EventEmitter {
     const name = sessionManager ? SESSION_MANAGER_NAME : body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
     const ownInstructions = sessionManager ? SESSION_MANAGER_INSTRUCTIONS : body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
     if (body.cwd !== undefined && !path.isAbsolute(text(body.cwd, 'working directory', 4096))) throw new BridgeError('Working directory must be absolute');
+    // Masih (21 October): the Session Manager answers on the background model, unless a model is asked for. A
+    // background model this Elpis cannot start leaves the default model, so the manager still opens.
+    if (sessionManager && body.model === undefined && body.provider === undefined) {
+      const { background, main } = await this.settings();
+      const provider = background.provider && background.provider !== main.provider ? background.provider : undefined;
+      if (background.model) {
+        try { if (!this.#models.size) await this.models(); await this.#providerModel(background.model, provider); body = { ...body, model: background.model, ...(provider ? { provider } : {}) }; }
+        catch (error) { console.warn(`Session Manager uses the default model: ${error instanceof Error ? error.message : String(error)}`); }
+      }
+    }
     let differentProvider = false;
     if (body.provider !== undefined) {
       text(body.provider, 'provider', 200);

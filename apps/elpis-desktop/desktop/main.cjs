@@ -19,6 +19,7 @@ const fs = require('node:fs');
 let server;
 let browserAgentSocket;
 let sessionManagerAgent;
+let sessionManagerMonitor;
 let window;
 let closing = false;
 let opening;
@@ -68,6 +69,7 @@ async function prepareWindows() {
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
     const { sessionManagerMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-mcp.mjs')).href);
+    const { createSessionManagerMonitor, reviewPrompt } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-monitor.mjs')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
       let client;
@@ -86,12 +88,26 @@ async function prepareWindows() {
         bind: (from, to) => browserAgentSocket.rebind(from, to),
         close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
       } });
+      // The Session Manager reviews the chats by itself when three run at once or three start within twenty minutes
+      // (Masih, 20–21 October); its chat is made on the background model the first time it is needed.
+      sessionManagerMonitor = createSessionManagerMonitor({
+        list: () => client.listThreads({ limit: 100, includeAgentRuns: false }),
+        isManager: id => !!id && store.read()[SESSION_MANAGER_ID_KEY] === id,
+        review: async reason => {
+          let id = store.read()[SESSION_MANAGER_ID_KEY];
+          if (!id) { id = (await client.createThread({ sessionManager: true, permissions: 'ask' })).thread.id; await store.set(SESSION_MANAGER_ID_KEY, id); }
+          const { background } = await client.settings();
+          await client.send(id, { text: reviewPrompt(reason), ...(background.model ? { model: background.model } : {}) });
+        },
+        log: line => console.warn(line),
+      });
+      client.on('event', event => { if (event.type === 'message') sessionManagerMonitor.observe(event.data); });
       // A connected terminal may keep the previous bridge and engine alive after an install.
       try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {}
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
       try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }
-    } catch (error) { await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
+    } catch (error) { sessionManagerMonitor?.close(); sessionManagerMonitor = undefined; await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   if (!sessionWindows) {
     sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, improvements: server.improvements, updates,
@@ -134,6 +150,7 @@ async function quitApp(restartTarget) {
       if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('A chat or agent started while preparing the update. Wait for it to finish before restarting.');
       if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
       closing = true;
+      sessionManagerMonitor?.close();
       await Promise.all([server?.close(), browserAgentSocket?.close(), sessionManagerAgent?.close()]);
       quickEntry?.dispose?.(); tray?.destroy();
       // All editable text is saved. A page's beforeunload must not veto explicit Quit afterward.

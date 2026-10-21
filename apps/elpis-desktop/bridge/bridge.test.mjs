@@ -1933,6 +1933,18 @@ test('Voice can return the fallback engine to Automatic, which is no explicit ba
   } finally { client.close(); }
 });
 
+test('Session Manager answers on the background model (Masih, 21 October)', async () => {
+  const managerConfig = { isManager: () => false, forSession: () => sessionManagerMcpConfig('/tmp/elpis-session-manager-test.sock', 'node', 'private-capability'), bind() {}, close() {} };
+  const { client, socket, configRead } = fixture({ sessionManagerConfig: managerConfig });
+  try {
+    configRead.config.background_model = 'claude/opus'; configRead.config.background_provider = 'openai';
+    await client.createThread({ sessionManager: true });
+    assert.equal(socket.sent.find(row => row.method === 'thread/start').params.model, 'claude/opus');
+    await client.createThread({});
+    assert.notEqual(socket.sent.filter(row => row.method === 'thread/start')[1].params.model, 'claude/opus', 'ordinary chats keep the main model');
+  } finally { client.close(); }
+});
+
 test('Session Manager is a dedicated least-access chat with its own approved tools', async () => {
   const requested = [], bound = [], closed = [];
   let managerId = '';
@@ -1948,6 +1960,7 @@ test('Session Manager is a dedicated least-access chat with its own approved too
   try {
     const manager = await client.createThread({ sessionManager: true, permissions: 'full' });
     const started = socket.sent.find(row => row.method === 'thread/start').params;
+    assert.equal(started.model, undefined, 'a background model the catalogue lacks leaves the default model');
     assert.equal(manager.thread.name, 'Session Manager');
     assert.match(started.developerInstructions, /dedicated Session Manager chat/);
     assert.equal(started.config['mcp_servers.elpis_session_manager'].default_tools_approval_mode, 'approve');
