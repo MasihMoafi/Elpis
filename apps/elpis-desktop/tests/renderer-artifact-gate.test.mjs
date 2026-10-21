@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { baselineCommit, passingCounts, planSuite, prepareBaseline, receiptName, rendererHash, runGate, verifyPackagedSources, verifyRendererReceipt } from '../scripts/renderer-artifact-gate.mjs';
+import * as gate from '../scripts/renderer-artifact-gate.mjs';
 
 const tap = ({ tests = 1, pass = 1, fail = 0, cancelled = 0, skipped = 0, todo = 0 } = {}) =>
   Object.entries({ tests, pass, fail, cancelled, skipped, todo }).map(([key, value]) => `# ${key} ${value}`).join('\n');
@@ -58,6 +60,151 @@ test('retained behavior executes the candidate implementation and renderer',()=>
   await commit();
   return { root, repo, baseline, identity, inventory, commitSource: commit, out: path.join(root, 'out'), evidence: path.join(repo, 'evidence') };
 }
+
+const hashPlan = plan => createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+async function shardManifest(f, shardCount = 3) {
+  const plan = await planSuite(f.root, f.baseline);
+  return { schemaVersion: 1, commit: (await fs.readFile(path.join(f.out, '.commit'), 'utf8')).trim(),
+    baseline: f.baseline, rendererHash: await rendererHash(f.out), planHash: hashPlan(plan), shardCount, plan };
+}
+const passedFile = file => ({ ...file, tests: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0, cases: ['retained behavior'] });
+const shardResults = manifest => Array.from({ length: manifest.shardCount }, (_, shardIndex) => {
+  const { plan, ...identity } = manifest;
+  return { ...identity, shardIndex, errors: [], files: plan.files.filter((_, i) => i % manifest.shardCount === shardIndex).map(passedFile) };
+});
+
+test('stable slices are disjoint and cover every planned baseline and candidate file', () => {
+  const plan = { files: Array.from({ length: 305 }, (_, i) => ({ source: i % 2 ? 'baseline' : 'candidate', name: `tests/${i}.test.cjs`, blob: String(i) })) };
+  for (const count of [1, 2, 6, 310]) {
+    const slices = Array.from({ length: count }, (_, i) => gate.slicePlan(plan, i, count));
+    assert.equal(new Set(slices.flat()).size, plan.files.length);
+    assert.deepEqual(slices.flat().sort((a, b) => Number(a.blob) - Number(b.blob)), plan.files);
+    slices.forEach((slice, i) => assert.deepEqual(slice, plan.files.filter((_, at) => at % count === i)));
+    assert.deepEqual(gate.slicePlan({ files: [] }, 0, count), []);
+  }
+  for (const [index, count] of [[0, 0], [-1, 6], [6, 6], [0.5, 6], [0, 1.5], [NaN, 6]]) {
+    assert.throws(() => gate.slicePlan(plan, index, count), /shard/i);
+  }
+});
+
+test('prepare writes the renderer and plan identity once without a receipt', async t => {
+  const f = await fixture(t);
+  const manifest = await gate.prepareGate({ ...f, shardCount: 6 });
+  assert.deepEqual(manifest, await shardManifest(f, 6));
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.evidence, 'plan.json'), 'utf8')), manifest);
+  await assert.rejects(gate.prepareGate({ ...f, shardCount: 6 }), /empty/);
+  await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
+});
+
+test('shards execute only their slice, including an empty slice; the merged receipt passes the installer verifier', async t => {
+  const f = await fixture(t), manifest = await shardManifest(f);
+  const shards = [];
+  for (let shardIndex = 0; shardIndex < manifest.shardCount; shardIndex++) {
+    const evidence = path.join(f.evidence, String(shardIndex));
+    const result = await runGate({ ...f, evidence, manifest, shardIndex });
+    assert.deepEqual(result.files.map(({ source, name, blob }) => ({ source, name, blob })), manifest.plan.files.filter((_, i) => i % manifest.shardCount === shardIndex));
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(evidence, `shard-${shardIndex}.json`), 'utf8')), result);
+    await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
+    shards.push(result);
+  }
+  const receipt = await gate.mergeGate({ ...f, manifest, shards: shards.toReversed() });
+  assert.deepEqual(receipt.files.map(({ source, name, blob }) => ({ source, name, blob })), manifest.plan.files);
+  assert.deepEqual(await verifyRendererReceipt(f), receipt);
+  assert.deepEqual(Object.keys(receipt).sort(), ['baseline', 'commit', 'files', 'planHash', 'rendererHash', 'schemaVersion']);
+});
+
+test('the prepare, shard and merge CLI commands preserve the downloaded renderer and per-file evidence', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.root, 'scripts'));
+  for (const name of ['renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
+    const source = await fs.readFile(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
+    await fs.writeFile(path.join(f.root, 'scripts', name), source.replace(baselineCommit, f.baseline));
+  }
+  await f.commitSource();
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const cli = args => spawnSync(process.execPath, ['scripts/renderer-artifact-gate.mjs', ...args], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
+  const prepared = path.join(f.repo, 'prepared'), results = path.join(f.repo, 'results');
+  await fs.mkdir(results);
+  let run = cli(['--prepare', prepared, '3']);
+  assert.equal(run.status, 0, run.stderr);
+  const manifest = JSON.parse(await fs.readFile(path.join(prepared, 'plan.json'), 'utf8'));
+  for (let index = 0; index < manifest.shardCount; index++) {
+    const evidence = path.join(f.evidence, String(index));
+    run = cli(['--shard', path.join(prepared, 'plan.json'), String(index), evidence]);
+    assert.equal(run.status, 0, run.stderr);
+    await fs.cp(evidence, results, { recursive: true });
+  }
+  run = cli(['--merge', path.join(prepared, 'plan.json'), results]);
+  assert.equal(run.status, 0, run.stderr);
+  const receipt = await verifyRendererReceipt(f);
+  assert.equal(receipt.rendererHash, manifest.rendererHash);
+  for (const file of receipt.files) await fs.access(path.join(results, `${file.source}-${file.name.replaceAll('/', '-')}.tap`));
+});
+
+for (const [name, mutate, error] of [
+  ['a missing shard', shards => shards.pop(), /Missing UI shard/],
+  ['a duplicate shard', shards => shards.push(structuredClone(shards[0])), /Duplicate UI shard/],
+  ['a duplicate file', shards => shards[1].files.push(structuredClone(shards[0].files[0])), /Duplicate UI regression/],
+  ['a missing file', shards => shards[0].files.pop(), /omits regression files/],
+  ['a different renderer hash', shards => { shards[0].rendererHash = 'other'; }, /different renderer hash/],
+  ['a different plan hash', shards => { shards[0].planHash = 'other'; }, /different plan hash/],
+  ['a different commit', shards => { shards[0].commit = 'other'; }, /different source commit/],
+  ['a different shard count', shards => { shards[0].shardCount++; }, /different shard count/],
+  ['a failing file', shards => { shards[0].files[0].fail = 1; shards[0].files[0].pass = 0; }, /positive passes|UI tests failed/],
+  ['a skipped file', shards => { shards[0].files[0].skipped = 1; }, /UI tests failed/],
+  ['a shard integrity error', shards => { shards[0].errors.push('Tracked source changed during UI verification'); }, /Tracked source changed/],
+]) test(`merge rejects ${name} without writing a receipt`, async t => {
+  const f = await fixture(t), manifest = await shardManifest(f), shards = shardResults(manifest);
+  mutate(shards);
+  await assert.rejects(gate.mergeGate({ ...f, manifest, shards }), error);
+  await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
+});
+
+test('a failed shard saves every file TAP and result and the merge lists all failures', async t => {
+  const f = await fixture(t, "const{test}=require('node:test');test('first regression',()=>{throw Error('first regression failed')});");
+  await fs.writeFile(path.join(f.root, 'tests/later.test.cjs'), "const{test}=require('node:test');test('later regression',()=>{throw Error('later regression failed')});");
+  await fs.writeFile(path.join(f.root, 'tests/last.test.cjs'), "const{test}=require('node:test');test('last regression still runs',()=>{});");
+  f.inventory.ui.push('tests/later.test.cjs', 'tests/last.test.cjs');
+  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
+  await f.commitSource();
+  const manifest = await shardManifest(f, 1);
+  const allFailures = error => /first regression failed/.test(error.message) && /later regression failed/.test(error.message);
+  await assert.rejects(runGate({ ...f, manifest, shardIndex: 0 }), allFailures);
+  const shard = JSON.parse(await fs.readFile(path.join(f.evidence, 'shard-0.json'), 'utf8'));
+  assert.equal(shard.files.length, manifest.plan.files.length);
+  assert.equal(shard.files.filter(file => file.error).length, 2);
+  for (const file of manifest.plan.files) await fs.access(path.join(f.evidence, `${file.source}-${file.name.replaceAll('/', '-')}.tap`));
+  assert.match(await fs.readFile(path.join(f.evidence, 'candidate-tests-last.test.cjs.tap'), 'utf8'), /ok 1 - last regression still runs/);
+  await assert.rejects(gate.mergeGate({ ...f, manifest, shards: [shard] }), allFailures);
+  await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
+});
+
+for (const [name, body, error] of [
+  ['renderer bytes', "require('node:fs').writeFileSync(require('node:path').join(root,'out/index.html'),'changed')", /changed the renderer/],
+  ['tracked source', "require('node:fs').writeFileSync(require('node:path').join(root,'implementation.cjs'),'changed')", /Tracked source changed/],
+  ['source HEAD', "require('node:child_process').execFileSync('git',['-c','core.hooksPath=/dev/null','commit','--allow-empty','-m','changed'],{cwd:root})", /Source commit changed/],
+  ['test support bytes', "require('node:fs').writeFileSync(require('node:path').join(root,'tests/untracked-helper.cjs'),'changed')", /UI test sources changed/],
+]) test(`shards reject changed ${name} during the run and preserve their diagnostics`, async t => {
+  const f = await fixture(t, `const{test}=require('node:test');test('mutation',()=>{const root=require('node:path').dirname(require.resolve('../implementation.cjs'));${body}});`);
+  const manifest = await shardManifest(f, 1);
+  await assert.rejects(runGate({ ...f, manifest, shardIndex: 0 }), error);
+  const shard = JSON.parse(await fs.readFile(path.join(f.evidence, 'shard-0.json'), 'utf8'));
+  assert(shard.errors.some(message => error.test(message)));
+  await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
+});
+
+test('shards and the merger reject renderer or plan changes since preparation and dirty source', async t => {
+  const f = await fixture(t), manifest = await shardManifest(f), shards = shardResults(manifest);
+  for (const [key, value, error] of [['rendererHash', 'other', /renderer/], ['planHash', 'other', /plan/]]) {
+    const changed = { ...manifest, [key]: value };
+    await assert.rejects(runGate({ ...f, evidence: path.join(f.evidence, key), manifest: changed, shardIndex: 0 }), error);
+    await assert.rejects(gate.mergeGate({ ...f, manifest: changed, shards }), error);
+  }
+  await fs.writeFile(path.join(f.root, 'implementation.cjs'), 'changed');
+  await assert.rejects(runGate({ ...f, evidence: path.join(f.evidence, 'dirty'), manifest, shardIndex: 0 }), /source changes|Tracked source changed/);
+  await assert.rejects(gate.mergeGate({ ...f, manifest, shards }), /source changes|Tracked source changed/);
+});
 
 test('the real gate retains dropped tests, uses candidate imports, and binds the resulting renderer receipt', async t => {
   const f = await fixture(t);
@@ -186,6 +333,11 @@ for (const [name, body] of [
 
 for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-head', 'package-source', 'transient-source', 'transient-identity', 'valid']) test(`the actual --actions installer checks ${mode} artifacts before selecting`, async t => {
   const f = await fixture(t);
+  // The real installer records a durable Elpis checkout through this source module.
+  await fs.mkdir(path.join(f.root, 'bridge'));
+  await fs.copyFile(new URL('../bridge/improve-source.mjs', import.meta.url), path.join(f.root, 'bridge/improve-source.mjs'));
+  const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
+  await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));
   for (const file of ['install-desktop.mjs', 'renderer-artifact-gate.mjs', 'test-gate.mjs', 'gate-guards.mjs']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));

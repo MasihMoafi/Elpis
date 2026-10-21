@@ -15,9 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  renderer:
+  renderer-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
     defaults:
       run:
         working-directory: apps/elpis-desktop
@@ -44,6 +46,67 @@ jobs:
           printf '%s\n' "$GITHUB_SHA" > out/.commit
       - name: Verify the artifact gate and inventory guards
         run: node --test --test-reporter=tap tests/renderer-artifact-gate.test.mjs tests/test-inventory.test.mjs
+      - name: Prepare the retained UI checkpoint
+        run: |
+          baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
+          git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
+      - name: Bind the renderer and complete regression plan to six shards
+        id: plan
+        run: |
+          node scripts/renderer-artifact-gate.mjs --prepare "$RUNNER_TEMP/elpis-ui-plan" 6
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const { shardCount } = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            console.log(`shards=${JSON.stringify(Array.from({ length: shardCount }, (_, index) => index))}`);
+          ' "$RUNNER_TEMP/elpis-ui-plan/plan.json" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: renderer-ui-plan
+          path: ${{ runner.temp }}/elpis-ui-plan
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve the exact renderer for the shards and for diagnosis
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: renderer-unverified
+          path: apps/elpis-desktop/out
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  renderer-ui:
+    needs: renderer-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.renderer-build.outputs.shards) }}
+    defaults:
+      run:
+        working-directory: apps/elpis-desktop
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: Install the locked dependencies and test resources
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node bridge/build-resources.mjs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: renderer-unverified
+          path: apps/elpis-desktop/out
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: renderer-ui-plan
+          path: ${{ runner.temp }}/elpis-ui-plan
       - name: Prepare the retained UI checkpoint and browser prerequisite
         run: |
           baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
@@ -54,15 +117,51 @@ jobs:
         env:
           ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/elpis-ui/node_modules/playwright-core
           ELPIS_CHROMIUM: /usr/bin/google-chrome
-        run: node scripts/renderer-artifact-gate.mjs "$RUNNER_TEMP/elpis-ui-evidence"
+        run: node scripts/renderer-artifact-gate.mjs --shard "$RUNNER_TEMP/elpis-ui-plan/plan.json" "${{ matrix.shard }}" "$RUNNER_TEMP/elpis-ui-evidence"
       - name: Preserve UI gate diagnostics
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: renderer-ui-evidence
+          name: renderer-ui-evidence-${{ matrix.shard }}
           path: ${{ runner.temp }}/elpis-ui-evidence
           if-no-files-found: warn
           retention-days: 14
+
+  renderer:
+    needs: [renderer-build, renderer-ui]
+    # Merge failed shards too, so every recorded failure and missing shard is reported.
+    if: ${{ !cancelled() && needs.renderer-build.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/elpis-desktop
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: renderer-unverified
+          path: apps/elpis-desktop/out
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: renderer-ui-plan
+          path: ${{ runner.temp }}/elpis-ui-plan
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: renderer-ui-evidence-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/elpis-ui-evidence
+      - name: Prepare the retained UI checkpoint
+        run: |
+          baseline=$(node --input-type=module -e 'import { baselineCommit } from "./scripts/renderer-artifact-gate.mjs"; console.log(baselineCommit)')
+          git cat-file -e "$baseline^{commit}" || git fetch --no-tags --depth=1 origin "$baseline"
+      - name: Merge every shard and write the installer receipt
+        run: node scripts/renderer-artifact-gate.mjs --merge "$RUNNER_TEMP/elpis-ui-plan/plan.json" "$RUNNER_TEMP/elpis-ui-evidence"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: renderer
@@ -70,17 +169,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
-      - name: Preserve a failed renderer for diagnosis only
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: renderer-unverified
-          path: apps/elpis-desktop/out
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 14
 
-  # The non-UI tiers run here; the renderer job above runs every UI test against the exact built renderer (A46b, 20 October).
+  # The non-UI tiers run here; the shards above run every UI test against the exact built renderer (A46b, 20 October).
   tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 120

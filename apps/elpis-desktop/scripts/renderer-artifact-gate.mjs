@@ -186,38 +186,149 @@ export async function verifyRendererReceipt({ root = appRoot, out = path.join(ro
   return receipt;
 }
 
-export async function runGate({ root = appRoot, evidence, baseline = baselineCommit, env = process.env } = {}) {
+/** Preserve the plan's order and membership; only its execution is partitioned. */
+export function slicePlan(plan, shardIndex, shardCount) {
+  assert(Number.isSafeInteger(shardCount) && shardCount > 0, 'Invalid UI shard count');
+  assert(Number.isSafeInteger(shardIndex) && shardIndex >= 0 && shardIndex < shardCount, 'Invalid UI shard index');
+  return plan.files.filter((_, index) => index % shardCount === shardIndex);
+}
+
+async function emptyEvidence(evidence) {
   assert(evidence && path.isAbsolute(evidence), 'An absolute evidence directory is required');
   await fs.mkdir(evidence, { recursive: true });
   assert.equal((await fs.readdir(evidence)).length, 0, 'Evidence directory must be empty');
+}
+
+async function gateSnapshot(root, baseline) {
   const out = path.join(root, 'out');
   const commit = git(root, ['rev-parse', 'HEAD']).trim();
   assert.equal(git(root, ['status', '--porcelain', '--untracked-files=no']).trim(), '', 'Commit source changes before UI verification');
   assert.equal((await fs.readFile(path.join(out, '.commit'), 'utf8')).trim(), commit, 'Renderer commit does not match source');
   const plan = await planSuite(root, baseline);
-  const before = await rendererHash(out);
+  return { schemaVersion: 1, commit, baseline, planHash: digest(JSON.stringify(plan)), rendererHash: await rendererHash(out), plan };
+}
+
+function checkManifest(snapshot, manifest) {
+  assert.equal(manifest.schemaVersion, 1, 'Unsupported UI shard plan');
+  slicePlan(snapshot.plan, 0, manifest.shardCount);
+  for (const key of ['commit', 'baseline', 'planHash', 'rendererHash']) {
+    assert.equal(snapshot[key], manifest[key], `Prepared UI ${key} differs from source or renderer`);
+  }
+  assert.deepEqual(snapshot.plan, manifest.plan, 'Prepared UI plan differs from source');
+}
+
+export async function prepareGate({ root = appRoot, evidence, baseline = baselineCommit, shardCount = 6 } = {}) {
+  await emptyEvidence(evidence);
+  const manifest = { ...await gateSnapshot(root, baseline), shardCount };
+  checkManifest(await gateSnapshot(root, baseline), manifest);
+  await fs.writeFile(path.join(evidence, 'plan.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+  return manifest;
+}
+
+export async function runGate({ root = appRoot, evidence, baseline = baselineCommit, env = process.env, manifest, shardIndex } = {}) {
+  await emptyEvidence(evidence);
+  const snapshot = await gateSnapshot(root, baseline);
+  const { plan, ...identity } = snapshot;
+  if (manifest) checkManifest(snapshot, manifest);
+  else assert.equal(shardIndex, undefined, 'A UI shard requires its prepared plan');
+  const selected = manifest ? slicePlan(plan, shardIndex, manifest.shardCount) : plan.files;
   const retained = await prepareBaseline(root, baseline);
   try {
     const home = path.join(retained.scratch, 'home');
     await fs.mkdir(home);
-    const files = [], failures = [];
-    for (const file of plan.files) {
+    const files = [], failures = [], errors = [];
+    for (const file of selected) {
       try { files.push(await runUiFile(file, file.source === 'baseline' ? retained.root : root, evidence, home, env)); }
-      catch (error) { failures.push(error); console.error(`FAIL ${file.source}: ${file.name}`); }
+      catch (error) {
+        files.push({ ...file, error: error.message });
+        failures.push(error);
+        console.error(`FAIL ${file.source}: ${file.name}`);
+      }
+    }
+    // Run every integrity check even after a file fails, and retain those diagnostics too.
+    for (const check of [
+      async () => assert.equal(await rendererHash(path.join(root, 'out')), identity.rendererHash, 'UI tests changed the renderer bytes'),
+      () => assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), identity.commit, 'Source commit changed during UI verification'),
+      () => assert.equal(git(root, ['status', '--porcelain', '--untracked-files=no']).trim(), '', 'Tracked source changed during UI verification'),
+      async () => assert.equal(digest(JSON.stringify(await planSuite(root, baseline))), identity.planHash, 'UI test sources changed during verification'),
+    ]) {
+      try { await check(); }
+      catch (error) { errors.push(error.message); failures.push(error); }
+    }
+    if (manifest) {
+      const result = { ...identity, shardIndex, shardCount: manifest.shardCount, files, errors };
+      await fs.writeFile(path.join(evidence, `shard-${shardIndex}.json`), JSON.stringify(result, null, 2) + '\n', { flag: 'wx' });
+      if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('\n\n'));
+      checkResults({ files: selected }, files);
+      console.log(`Verified shard ${shardIndex + 1}/${manifest.shardCount}: ${files.length} regression files against renderer ${identity.rendererHash}.`);
+      return result;
     }
     if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('\n\n'));
     checkResults(plan, files);
-    assert.equal(await rendererHash(out), before, 'UI tests changed the renderer bytes');
-    assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), commit, 'Source commit changed during UI verification');
-    assert.equal(git(root, ['status', '--porcelain', '--untracked-files=no']).trim(), '', 'Tracked source changed during UI verification');
-    assert.equal(digest(JSON.stringify(await planSuite(root, baseline))), digest(JSON.stringify(plan)), 'UI test sources changed during verification');
-    const receipt = { schemaVersion: 1, commit, baseline, planHash: digest(JSON.stringify(plan)), rendererHash: before, files };
-    await fs.writeFile(path.join(out, receiptName), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
-    console.log(`Verified ${files.length} regression files against renderer ${before}.`);
+    const receipt = { ...identity, files };
+    await fs.writeFile(path.join(root, 'out', receiptName), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
+    console.log(`Verified ${files.length} regression files against renderer ${identity.rendererHash}.`);
     return receipt;
   } finally { execFileSync('gio', ['trash', retained.scratch]); }
 }
 
+/** Only a complete set of passing shards can produce the existing installer receipt. */
+export async function mergeGate({ root = appRoot, baseline = baselineCommit, manifest, shards } = {}) {
+  const snapshot = await gateSnapshot(root, baseline);
+  checkManifest(snapshot, manifest);
+  const errors = [], seen = new Set(), byFile = new Map();
+  const check = fn => { try { fn(); } catch (error) { errors.push(error); } };
+  assert(Array.isArray(shards), 'UI shard results must be an array');
+  for (const shard of shards) {
+    check(() => assert(shard && typeof shard === 'object', 'Invalid UI shard result'));
+    if (!shard || typeof shard !== 'object') continue;
+    const label = `UI shard ${shard.shardIndex}`;
+    check(() => assert(!seen.has(shard.shardIndex), `Duplicate UI shard ${shard.shardIndex}`));
+    seen.add(shard.shardIndex);
+    check(() => assert.equal(shard.schemaVersion, 1, `${label} has an unsupported schema`));
+    for (const [key, description] of [['commit', 'source commit'], ['baseline', 'baseline'], ['planHash', 'plan hash'], ['rendererHash', 'renderer hash'], ['shardCount', 'shard count']]) {
+      check(() => assert.equal(shard[key], manifest[key], `${label} tested a different ${description}`));
+    }
+    check(() => assert(Array.isArray(shard.errors), `${label} omits integrity results`));
+    for (const message of Array.isArray(shard.errors) ? shard.errors : []) errors.push(new Error(`${label}: ${message}`));
+    check(() => assert(Array.isArray(shard.files), `${label} omits regression results`));
+    for (const file of Array.isArray(shard.files) ? shard.files : []) {
+      check(() => assert(file && typeof file === 'object', `${label} has an invalid regression result`));
+      if (!file || typeof file !== 'object') continue;
+      const key = JSON.stringify([file.source, file.name]);
+      check(() => assert(!byFile.has(key), `Duplicate UI regression ${file.source}/${file.name}`));
+      byFile.set(key, file);
+      if (file.error) errors.push(new Error(`${label}: ${file.source}/${file.name}: ${file.error}`));
+    }
+    check(() => checkResults({ files: slicePlan(manifest.plan, shard.shardIndex, manifest.shardCount) }, shard.files));
+  }
+  for (let index = 0; index < manifest.shardCount; index++) {
+    check(() => assert(seen.has(index), `Missing UI shard ${index}`));
+  }
+  if (errors.length) throw new AggregateError(errors, errors.map(error => error.message).join('\n\n'));
+  const { plan, ...identity } = snapshot;
+  const files = plan.files.map(file => byFile.get(JSON.stringify([file.source, file.name])));
+  checkResults(plan, files);
+  checkManifest(await gateSnapshot(root, baseline), manifest);
+  const receipt = { ...identity, files };
+  await fs.writeFile(path.join(root, 'out', receiptName), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
+  console.log(`Merged ${manifest.shardCount} shards: verified ${files.length} regression files against renderer ${identity.rendererHash}.`);
+  return receipt;
+}
+
+async function main([mode, ...args]) {
+  if (mode === '--prepare') return prepareGate({ evidence: args[0], shardCount: Number(args[1]) });
+  if (mode === '--shard' || mode === '--merge') {
+    const manifest = JSON.parse(await fs.readFile(args[0], 'utf8'));
+    if (mode === '--shard') return runGate({ manifest, shardIndex: Number(args[1]), evidence: args[2] });
+    const shards = await Promise.all((await fs.readdir(args[1])).filter(name => /^shard-\d+\.json$/.test(name))
+      .sort().map(async name => JSON.parse(await fs.readFile(path.join(args[1], name), 'utf8'))));
+    return mergeGate({ manifest, shards });
+  }
+  assert(mode && !mode.startsWith('--') && args.length === 0, 'Use <evidence> or --prepare <evidence> <count>, --shard <plan.json> <index> <evidence>, --merge <plan.json> <results>');
+  return runGate({ evidence: mode });
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  runGate({ evidence: process.argv[2] }).catch(error => { console.error(error.message); process.exitCode = 1; });
+  main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
