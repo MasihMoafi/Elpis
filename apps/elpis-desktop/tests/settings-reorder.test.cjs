@@ -45,6 +45,25 @@ test('A70: a pending reorder never takes focus back from the next control', asyn
   } finally { await f.close(); }
 });
 
+test('A70: a boundary key cannot steal focus from the next section or reorder it', async () => {
+  const f = await fixture({ height: 1080 });
+  try {
+    await openSettings(f.page);
+    const sections = f.page.locator('.settings-nav [data-slot="section-link"]'), original = await sections.allTextContents();
+    // Both actions happen before the next animation frame, as they can under CI load.
+    await sections.evaluateAll(rows => {
+      rows[0].focus();
+      rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, bubbles: true }));
+      rows.at(-1).focus();
+    });
+    await f.page.evaluate(() => new Promise(requestAnimationFrame));
+    assert.equal(await sections.last().evaluate(element => element === document.activeElement), true, 'boundary no-op keeps later focus');
+    await f.page.keyboard.press('Alt+ArrowDown');
+    assert.deepEqual(await sections.allTextContents(), original, 'both boundary moves leave the full order intact');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('A13/A70: the shared sidebar navigation still reorders by keyboard and drag', async () => {
   const f = await fixture({ height: 1080 });
   try {

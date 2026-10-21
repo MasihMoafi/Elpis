@@ -16,7 +16,7 @@ async function eventually(check) {
     }
   }
 }
-async function drag(page, source, target, after = false, cancel = false) {
+async function drag(page, source, target, after = false, cancel = false, during) {
   await source.scrollIntoViewIfNeeded();
   const start = await source.boundingBox();
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
@@ -25,6 +25,7 @@ async function drag(page, source, target, after = false, cancel = false) {
   await target.scrollIntoViewIfNeeded();
   const end = await target.boundingBox();
   await page.mouse.move(end.x + end.width / 2, end.y + end.height * (after ? 0.8 : 0.2), { steps: 15 });
+  if (during) await during();
   if (cancel) await page.keyboard.press('Escape');
   await page.mouse.up();
 }
@@ -38,7 +39,7 @@ async function check(page, { shots, theme = 'light' } = {}) {
   if (!await nav(page).isVisible()) await openSettings(page);
   await sections(page).first().waitFor();
   const original = await names(page);
-  assert.equal(original.length, 6);
+  assert.deepEqual([...original].sort(), ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal', 'Advanced'].sort());
   await shot(page, shots, `before-${theme}`);
   const row = label => sections(page).filter({ hasText: label });
   const expectOrder = order => eventually(async () => assert.deepEqual(await names(page), order));

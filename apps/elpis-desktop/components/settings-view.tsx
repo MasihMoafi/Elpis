@@ -18,7 +18,7 @@ import { VoiceSettings } from "@/components/settings/voice-settings";
 import { ArrowLeft } from "lucide-react";
 import { ModelsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
-import { ReorderButton } from "@/components/reorder-button";
+import { ReorderItem, useReorder } from "@/components/reorder";
 import { SearchField } from "@/components/ui/search-field";
 import { ViewBoundary } from "@/components/view-boundary";
 import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice, SettingsScope } from "@/components/settings/rows";
@@ -26,7 +26,7 @@ import { SettingsLoader } from "@/components/settings/config-choice";
 import { SECTIONS, type ConfigSectionId } from "@/lib/config-sections";
 import type { Thread } from "@/lib/api";
 import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
-import { arrange } from "@/lib/nav-order";
+import { arrange, move } from "@/lib/nav-order";
 import { savePreferences, usePreferences } from "@/lib/preferences";
 
 /** Existing control pages stay mounted so each control has one owner and unsaved drafts survive navigation. */
@@ -74,6 +74,19 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
     try { savePreferences({ [key]: ids.join(",") }); setOrderError(""); }
     catch (cause) { setOrderError(cause instanceof Error ? cause.message : String(cause)); }
   };
+  const sectionOrder: string[] = groups.map(item => item.id);
+  const sectionsReorder = useReorder({ dragType: "text/x-elpis-settings-section", order: () => sectionOrder,
+    canDrop: (id, target) => sectionOrder.includes(id) && sectionOrder.includes(target),
+    onMove: (id, place) => reorder("settingsSectionOrder", move(sectionOrder, id, place)) });
+  const pageGroup = (id: string) => pages.find(page => page.id === id)?.group;
+  const pagesReorder = useReorder({ dragType: "text/x-elpis-settings-page",
+    order: id => pages.filter(page => page.group === pageGroup(id)).map(page => page.id),
+    canDrop: (id, target) => !!pageGroup(id) && pageGroup(id) === pageGroup(target),
+    onMove: (id, place) => {
+      const group = pageGroup(id), ids = move(pages.filter(page => page.group === group).map(page => page.id), id, place);
+      let index = 0;
+      reorder("settingsPageOrder", pages.map(page => page.group === group ? ids[index++] : page.id));
+    } });
   const [query, setQuery] = useState("");
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const shown = pages.filter(item => terms.every(term => `${item.label} ${item.words}`.toLowerCase().includes(term)));
@@ -90,7 +103,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
   const selectedSection = SECTIONS.find(section => section.id === tab);
   const sectionList = (sections: typeof SECTIONS[number][]) => <SettingsGroup>
     {sections.map(section => <SettingRow key={section.id} title={<h3 data-config-section={section.id}>{section.label}</h3>} description={section.description}>
-      <ReorderButton variant="outline" itemId={section.id} order={groups.map(item => item.id)} dragType="text/x-elpis-settings-section" onReorder={ids => reorder("settingsSectionOrder", ids)} title={section.label} onClick={() => selectTab(section.id)}>Open {section.label}</ReorderButton>
+      <ReorderItem reorder={sectionsReorder} itemId={section.id} render={<Button variant="outline" title={`${section.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(section.id)}>Open {section.label}</Button>} />
     </SettingRow>)}
   </SettingsGroup>;
   const sectionPage = selectedSection && <>
@@ -131,11 +144,8 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />
       <div role="tablist" aria-label="Settings sections" aria-orientation="vertical">
         {visibleGroups.map(group => { const items = shown.filter(item => item.group === group.id);
-          return <div key={group.id} className="settings-nav-group"><ReorderButton data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} itemId={group.id} order={groups.map(item => item.id)} dragType="text/x-elpis-settings-section" onReorder={ids => reorder("settingsSectionOrder", ids)} title={group.label} onClick={() => selectTab(group.id)}>{group.label}</ReorderButton>
-            {items.map(item => <ReorderButton data-slot="nav-row" key={item.id} variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} itemId={item.id} order={pages.filter(page => page.group === group.id).map(page => page.id)} dragType={`text/x-elpis-settings-${group.id}`} title={item.label} onReorder={ids => {
-              let index = 0;
-              reorder("settingsPageOrder", pages.map(page => page.group === group.id ? ids[index++] : page.id));
-            }} onClick={() => selectTab(item.id)}><item.Icon size={15} aria-hidden="true" />{item.label}</ReorderButton>)}
+          return <div key={group.id} className="settings-nav-group"><ReorderItem reorder={sectionsReorder} itemId={group.id} render={<Button data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} title={`${group.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(group.id)}>{group.label}</Button>} />
+            {items.map(item => <ReorderItem key={item.id} reorder={pagesReorder} itemId={item.id} render={<Button data-slot="nav-row" variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} title={`${item.label} (drag, or Alt+Up/Down, to reorder)`} onClick={() => selectTab(item.id)}><item.Icon size={15} aria-hidden="true" />{item.label}</Button>} />)}
           </div>; })}
         {!visibleGroups.length && <p className="settings-nav-empty">No setting matches.</p>}
       </div>

@@ -218,6 +218,7 @@
     "tests/rewind-parity.test.cjs",
     "tests/settings-pages.test.cjs",
     "tests/settings-reorder.test.cjs",
+    "tests/shared-reorder.test.cjs",
     "tests/settings-rows.test.cjs",
     "tests/settings-style.test.cjs",
     "tests/settings-write.test.cjs",

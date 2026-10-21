@@ -789,6 +789,12 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row > span[aria-hidden="true"]:first-child { display:none; }
 .thread-row > button[aria-expanded]:first-child:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .thread-row.active { background:var(--selected); }
+/* Native reorder feedback is shared by chats, projects and arranged navigation. */
+[data-reorder] { transition:none; }
+[data-reorder][data-drop="before"] { box-shadow:inset 0 2px 0 0 var(--primary); }
+[data-reorder][data-drop="after"] { box-shadow:inset 0 -2px 0 0 var(--primary); }
+[data-reorder][data-drop="into"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--primary); }
+[data-reorder][data-dragging] { opacity:.5; }
 .thread-row.active::before { content:""; position:absolute; left:0; top:6px; bottom:6px; width:2px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }

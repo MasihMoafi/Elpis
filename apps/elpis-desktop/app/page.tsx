@@ -2,11 +2,11 @@
 
 import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
-import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Activity, Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ReorderButton } from "@/components/reorder-button";
+import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { ApprovalCard, type QuestionAnswers } from "@/components/approval-card";
@@ -172,7 +172,6 @@ export default function Home() {
   const [projectChats, setProjectChats] = useState<Record<string, string>>({});
   const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
   const [projectMove, setProjectMove] = useState<Thread | null>(null);
-  const [projectDrop, setProjectDrop] = useState<string | null>(null);
   const [projectChanging, setProjectChanging] = useState(false);
   const project = projects.find(item => item.id === projectId) ?? null;
   const workflowProject = project ?? projects.find(item => item.id === workflowProjectId) ?? null, workflowFolder = newChatFolder(cwd || workflowProject?.cwd || "") || undefined;
@@ -199,10 +198,10 @@ export default function Home() {
     return () => { unsubscribe?.(); window.removeEventListener("storage", changed); };
   }, []);
   function updateGroups(change: (state: ChatGroups) => ChatGroups) {
-    chatListOrder.release();
     const next = change(chatGroupsRef.current);
+    if (!writeGroups(next, appStorage())) { setError("Could not save chat groups on this device."); return; }
+    chatListOrder.release();
     chatGroupsRef.current = next; setChatGroups(next);
-    if (!writeGroups(next, appStorage())) setError("Could not save chat groups on this device.");
   }
   const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
   const [attentionLoaded, setAttentionLoaded] = useState(false);
@@ -965,25 +964,6 @@ export default function Home() {
     });
     projectChatSave.current = saved; return saved;
   }
-  function projectDropProps(destination: string | null) {
-    const key = destination ? `project:${destination}` : "recents";
-    return {
-      "data-drop-target": projectDrop === key || undefined,
-      onDragOver: (event: DragEvent<HTMLElement>) => {
-        if (!event.dataTransfer.types.includes(CHAT_DRAG_TYPE) || (!destination && (!dragging.current || !projectChatsRef.current[dragging.current]))) return;
-        event.preventDefault(); event.dataTransfer.dropEffect = "move"; setProjectDrop(key);
-      },
-      onDragLeave: (event: DragEvent<HTMLElement>) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setProjectDrop(null); },
-      onDrop: (event: DragEvent<HTMLElement>) => {
-        setProjectDrop(null);
-        if (!event.dataTransfer.types.includes(CHAT_DRAG_TYPE)) return;
-        event.preventDefault(); event.stopPropagation(); dragging.current = null; setDrop(null);
-        const id = event.dataTransfer.getData(CHAT_DRAG_TYPE);
-        if (!threads.some(thread => thread.id === id && !isAgent(thread)) || (destination && !projects.some(project => project.id === destination))) return;
-        void assignProject(id, destination).catch(cause => setError(String(cause)));
-      },
-    };
-  }
   async function selectProject(next: Project | null) {
     setProjectChanging(true);
     try {
@@ -1703,10 +1683,7 @@ export default function Home() {
   function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
     const target = event.target as HTMLElement, id = rowOf(target);
     if (!id || !event.currentTarget.contains(target) || event.ctrlKey || event.metaKey) return;
-    if (event.altKey) {
-      if (event.shiftKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown") || target.closest(".thread-row.child")) return;
-      event.preventDefault(); reorderBy(id, event.key === "ArrowUp" ? -1 : 1); return;
-    }
+    if (event.altKey) return;
     if (event.key === "Escape" && marked.length) setMarked([]);
     else if (letterKey(event) === "u") attentionFor(id).planReady ? attentionFor(id).onComplete() : attentionFor(id).onToggleRead();
     else if (letterKey(event) === "d") deleteChats(marked.length ? marked : [id], rowLinks().findIndex(link => link.parentElement === target.closest(".thread-row")));
@@ -1734,44 +1711,29 @@ export default function Home() {
   }
   // Manual order: drag a chat onto another (or onto a group's heading, or Recents') or press Alt+Up/Down on it. Pinned chats
   // stay pinned and others stay unpinned; a drop in another section moves the chat there. The first move makes Sort by Manual.
-  const dragging = useRef<string | null>(null);
-  const [drop, setDrop] = useState<{ id: string; mark: "before" | "after" | "into" } | null>(null);
-  const sectionOf = (id: string) => pins.includes(id) ? "pinned" : chatGroups.groupBy === "custom" && chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? `group:${chatGroups.members[id]}` : "recents";
-  const sectionChats = (section: string) => section === "pinned" ? pinnedChats : section === "recents" ? recentChats : grouped?.groups.find(item => `group:${item.group.id}` === section)?.chats ?? [];
-  const canDrop = (section: string) => !!dragging.current && !searchTerm && (section === "pinned") === (sectionOf(dragging.current) === "pinned");
+  const sectionOf = (id: string) => pins.includes(id) ? "pinned" : projectChats[id] ? `project:${projectChats[id]}` : chatGroups.groupBy === "custom" && chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? `group:${chatGroups.members[id]}` : "recents";
+  const sectionChats = (section: string) => section === "pinned" ? pinnedChats : section === "recents" ? recentChats : section.startsWith("project:") ? ordinaryThreads.filter(thread => !isAgent(thread) && !pins.includes(thread.id) && projectChats[thread.id] === section.slice(8)) : grouped?.groups.find(item => `group:${item.group.id}` === section)?.chats ?? [];
   function placeDragged(id: string, section: string, place?: { target: string; after: boolean }) {
-    if (section === "recents" && projectChatsRef.current[id]) void assignProject(id, null).catch(cause => setError(String(cause)));
-    const ids = listedRoots.map(thread => thread.id);
-    updateGroups(state => placeChat(state, place && place.target !== id ? move(ids, id, place) : ids, id, section === "pinned" ? undefined : section === "recents" ? null : section.slice(6)));
+    const destination = section.startsWith("project:") ? section.slice(8) : null;
+    if (section !== "pinned" && (projectChatsRef.current[id] ?? null) !== destination) void assignProject(id, destination).catch(cause => setError(String(cause)));
+    const ids = ordinaryThreads.filter(thread => !isAgent(thread)).map(thread => thread.id);
+    updateGroups(state => placeChat(state, place && place.target !== id ? move(ids, id, place) : ids, id, section === "pinned" || destination ? undefined : section === "recents" ? null : section.slice(6)));
   }
-  function reorderBy(id: string, by: -1 | 1) {
-    const section = sectionOf(id), list = sectionChats(section), neighbour = list[list.findIndex(thread => thread.id === id) + by];
-    if (!neighbour || searchTerm) return;
-    placeDragged(id, section, { target: neighbour.id, after: by > 0 });
-    requestAnimationFrame(() => threadList.current?.querySelector<HTMLElement>(`.thread-row[data-thread-id="${CSS.escape(id)}"] .thread-link`)?.focus());
-  }
-  /** Where a drag may end on `key` (a chat id, or a section): the heading of a group or of Recents takes the chat at its end or its start. */
-  const dropTarget = (section: string, key: string, onHeading?: boolean) => {
-    if (section.startsWith("project:")) return projectDropProps(section.slice(8));
-    const over = (event: React.DragEvent<HTMLElement>) => {
-      if (!canDrop(section) || dragging.current === key) return;
-      event.preventDefault(); event.dataTransfer.dropEffect = "move";
-      const box = event.currentTarget.getBoundingClientRect(), mark = onHeading ? "into" : event.clientY > box.top + box.height / 2 ? "after" : "before";
-      setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
-    };
-    return { onDragEnter: over, onDragOver: over,
-    onDragLeave: (event: React.DragEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDrop(previous => previous?.id === key ? null : previous); },
-    onDrop: (event: React.DragEvent<HTMLElement>) => {
-      const id = dragging.current, mark = drop?.id === key ? drop.mark : null, allowed = canDrop(section); dragging.current = null; setDrop(null);
-      if (!id || !allowed || id === key) return;
-      event.preventDefault();
-      if (!onHeading) { placeDragged(id, section, { target: key, after: mark === "after" }); return; }
+  const chatReorder = useReorder({ dragType: CHAT_DRAG_TYPE,
+    order: id => sectionChats(sectionOf(id)).map(thread => thread.id),
+    canDrop: (id, target) => {
+      const section = ordinaryThreads.some(thread => thread.id === target) ? sectionOf(target) : target;
+      return !searchTerm && ordinaryThreads.some(thread => thread.id === id && !isAgent(thread)) &&
+        (section === "pinned") === pins.includes(id) &&
+        (section === "pinned" || section === "recents" || section.startsWith("group:") && chatGroups.groups.some(group => `group:${group.id}` === section) || section.startsWith("project:") && projects.some(project => `project:${project.id}` === section));
+    },
+    onMove: (id, place) => {
+      const section = place.into ? place.target : sectionOf(place.target);
+      if (!place.into) { placeDragged(id, section, place); return; }
       const others = sectionChats(section).filter(thread => thread.id !== id);
       placeDragged(id, section, section === "recents" && others[0] ? { target: others[0].id, after: false } : others.at(-1) ? { target: others.at(-1)!.id, after: true } : undefined);
-    },
-    };
-  };
-  function threadRow(thread: Thread, depth = 0, section?: string) {
+    } });
+  function threadRow(thread: Thread, depth = 0) {
     const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
@@ -1787,10 +1749,8 @@ export default function Home() {
         catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
         setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
       } } : undefined}
-      area={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""} data-[drop=before]:shadow-[inset_0_2px_0_0_var(--primary)] data-[drop=after]:shadow-[inset_0_-2px_0_0_var(--primary)] data-[dragging]:opacity-50`} data-thread-id={thread.id} data-drop={drop?.id === thread.id ? drop.mark : undefined} data-dragging={dragging.current === thread.id && drop ? "" : undefined}
-        {...(!depth && !isAgent(thread) && !searchTerm ? { draggable: true, ...dropTarget(section ?? sectionOf(thread.id), thread.id),
-          onDragStart: (event: React.DragEvent<HTMLElement>) => { dragging.current = thread.id; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/x-elpis-chat", thread.id); },
-          onDragEnd: () => { dragging.current = null; setDrop(null); setProjectDrop(null); } } : {})} style={depth ? { paddingLeft: `${depth * 14}px` } : undefined} />}>
+      area={<ReorderItem reorder={chatReorder} itemId={thread.id} enabled={!depth && !isAgent(thread) && !searchTerm}
+        render={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${depth * 14}px` } : undefined} />} />}>
       {menu => <>
       {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} aria-expanded={!!expanded[thread.id]} title={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} onClick={() => {
         if (expanded[thread.id]) setExpanded(previous => ({ ...previous, [thread.id]: false }));
@@ -1825,10 +1785,10 @@ export default function Home() {
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return (searchTerm ? filtered : searchedThreads).filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, undefined, next));
+    return (searchTerm ? filtered : searchedThreads).filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, next));
   }
-  function threadBranch(thread: Thread, depth = 0, section?: string, seen = new Set<string>()) {
-    return <div key={thread.id}>{threadRow(thread, depth, section)}{expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
+  function threadBranch(thread: Thread, depth = 0, seen = new Set<string>()) {
+    return <div key={thread.id}>{threadRow(thread, depth)}{expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
   }
   function runDescendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
@@ -1836,16 +1796,16 @@ export default function Home() {
   }
   useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Ledger — Elpis" : "Elpis"; }, [view]);
   /** A listed chat and, when shown, its agents under it. */
-  const chatRows = (section: string) => (thread: Thread) => threadBranch(thread, 0, section);
+  const chatRows = (thread: Thread) => threadBranch(thread);
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
    * closed group holding a chat that needs you says so, as Claude's does. */
   function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
     const open = !chatGroups.collapsed.includes(group.id), waiting = !open && chats.some(needsYou), note = "A chat in this group is waiting on you";
     return <SidebarGroup key={group.id} kind="chat" name={group.name} icon={<Layers size={14} aria-hidden="true" />} open={open} onToggle={() => updateGroups(state => toggleCollapsed(state, group.id))}
       note={waiting ? <span className="thread-dot" data-state="waiting" role="img" aria-label={note} title={note} /> : undefined}
-      wrap={(area, content) => <GroupActions group={group} state={chatGroups} area={cloneElement(area, { className: `${(area.props as { className?: string }).className} data-[drop=into]:bg-[var(--selected)] data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]`, "data-drop": drop?.id === `group:${group.id}` ? "into" : undefined, ...dropTarget(`group:${group.id}`, `group:${group.id}`, true) } as object)} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length}
+      wrap={(area, content) => <GroupActions group={group} state={chatGroups} area={cloneElement(area, chatReorder.targetProps(`group:${group.id}`, true) as object)} count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length}
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
-      empty={!chats.length}>{chats.map(chatRows(`group:${group.id}`))}</SidebarGroup>;
+      empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
   }
   const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
@@ -1859,6 +1819,15 @@ export default function Home() {
   // The sidebar's pages in the person's order (drag and drop, or Alt+Up/Down), saved with the preferences.
   const arrangedPages = arrange(NAV_PAGES, preferences.navOrder.split(",").filter(Boolean));
   const reorderPages = (ids: string[]) => { try { savePreferences({ navOrder: ids.join(",") }); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } };
+  const pageReorder = useReorder({ dragType: "text/x-elpis-page", order: () => arrangedPages.map(page => page.id),
+    canDrop: (id, target) => arrangedPages.some(page => page.id === id) && arrangedPages.some(page => page.id === target),
+    onMove: (id, place) => reorderPages(move(arrangedPages.map(page => page.id), id, place)) });
+  const projectReorder = useReorder({ dragType: "text/x-elpis-project", order: () => projects.map(project => project.id),
+    canDrop: (id, target) => projects.some(project => project.id === id) && projects.some(project => project.id === target),
+    onMove: (id, place) => {
+      const next = arrange(projects, move(projects.map(project => project.id), id, place));
+      return saveProjects(next, projectId).then(() => setProjects(next)).catch(cause => setError(String(cause)));
+    } });
   for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
@@ -1876,29 +1845,28 @@ export default function Home() {
       <div className="brand"><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title="Close sidebar (Ctrl+B)" onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><img src={brandMark} alt="" width={73} height={36} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        {arrangedPages.map(page => <ReorderButton data-slot="nav-row" key={page.id} variant="ghost" data-nav-page={page.id} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)}
-          aria-label={page.name} title={page.name} itemId={page.id} order={arrangedPages.map(item => item.id)} dragType="text/x-elpis-page" onReorder={reorderPages}>
-          <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</ReorderButton>)}
+        {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} aria-label={page.name} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
+          <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <SessionManagerRow id={sessionManagerId} active={!!sessionManagerId && selected?.id === sessionManagerId && view === "chat"} disabled={!ready || !connected || openingSessionManager} onOpen={() => void openSessionManager()} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><div className="section-label">Projects</div><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));
-            return <SidebarGroup key={item.id} kind="project" dropProps={projectDropProps(item.id)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
-              wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={area}>{content}</ProjectActions>}
+            return <SidebarGroup key={item.id} kind="project" dropProps={chatReorder.targetProps(`project:${item.id}`, true)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
+              wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<ReorderItem reorder={projectReorder} itemId={item.id} render={area as React.ReactElement<React.HTMLAttributes<HTMLElement>>} />}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
-              empty={!chats.length}>{chats.map(t => threadBranch(t, 0, `project:${item.id}`))}</SidebarGroup>; })}
+              empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>; })}
         </section>}
-        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows("pinned"))}</section>}
+        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
         {(loveChats.length > 0 || workflowChats.length > 0) && <div className="section-label">Agent chats</div>}
         {loveChats.length > 0 && <SidebarGroup kind="chat" name="Love Spot" icon={<LoveSpotIcon size={14} />} open={originOpen.love} onToggle={() => setOriginOpen(value => ({ ...value, love: !value.love }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{loveChats.map(thread => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
         {workflowChats.length > 0 && <SidebarGroup kind="chat" name="Workflows" icon={<WorkflowsIcon size={14} />} open={originOpen.workflows} onToggle={() => setOriginOpen(value => ({ ...value, workflows: !value.workflows }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{workflowChats.map(thread => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
-        {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? projectDropProps(null) : {})}><div className="section-label-row data-[drop=into]:shadow-[inset_0_0_0_1px_var(--primary)]" data-drop={drop?.id === "recents" ? "into" : undefined} {...(grouped ? dropTarget("recents", "recents", true) : {})}><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
+        {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
-          {recentChats.map(chatRows("recents"))}
+          {recentChats.map(chatRows)}
         </section>}
         {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadBranch(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
