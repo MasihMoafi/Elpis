@@ -8,11 +8,17 @@ const { fakeDesktop } = require('./fake-desktop.cjs');
 const { guardDesktopStore } = require('./controls.cjs');
 
 // Love Spot cards run as ACP agent processes; here each is the scripted SDK agent, which logs what reaches it.
-const FAKE_ACP_AGENT = path.resolve(__dirname, '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
+// Retained tests live in a scratch checkout whose bridge links to the candidate.
+const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/server.mjs')), '../../../tools/elpis-claude/test/fake-acp-agent.mjs');
 
 async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
+  // The renderer gate installs only desktop dependencies. Run the shared SDK
+  // agent beside those dependencies instead of the tools package's node_modules.
+  const fakeAgent = path.join(root, 'fake-acp-agent.mjs');
+  await fs.copyFile(FAKE_ACP_AGENT, fakeAgent);
+  await fs.symlink(path.resolve(__dirname, '../node_modules'), path.join(root, 'node_modules'));
   const directory = path.join(root, 'drawing'), screenshots = path.join(root, 'Screenshots');
   await fs.mkdir(screenshots);
   if (prepareScreenshots) await prepareScreenshots(screenshots);
@@ -50,7 +56,7 @@ async function loveSpotFixture({ colorScheme = 'light', reply = 'I am here with 
   configureClient?.(emitter);
   const client = new Proxy(emitter, { get(target, key) { return key in target ? Reflect.get(target, key) : async () => ({}); } });
   const acpLog = path.join(root, 'acp.jsonl');
-  const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE_ACP_AGENT], env: { FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: node.name,
+  const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [fakeAgent], env: { FAKE_ACP_LOG: acpLog, FAKE_ACP_NAME: node.name,
     ...(node.prompt.includes('LOVE_INTERVIEW') ? { FAKE_ACP_ANSWER: JSON.stringify({ question: 'What should I help you with?' }) } : {}), ...agentEnv?.(node) }, instructions: node.prompt });
   const acp = async () => { try { return (await fs.readFile(acpLog, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } };
   const server = await startDesktopServer({ client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec } });

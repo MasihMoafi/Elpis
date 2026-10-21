@@ -37,6 +37,10 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot red reads clearly a
     await page.evaluate(cwd => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'a60', name: 'Palette project', cwd }], selectedId: 'a60' })), cwd);
     await page.reload();
     await page.locator('.project-group .project-toggle svg:not(.sidebar-group-chevron)').waitFor();
+    // Restoring the project list does not select a project for a new chat.
+    await page.getByRole('button', { name: 'Choose project', exact: true }).click();
+    await page.getByRole('menuitem', { name: /Palette project/ }).click();
+    await page.locator('.project-row.active').waitFor();
     await page.locator('.thread-row[data-thread-id="review"] .thread-dot[data-state="working"]').first().waitFor();
     await f.open(page);
     assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), colorScheme === 'dark');

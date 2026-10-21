@@ -17,6 +17,8 @@ await new Promise((resolve, reject) => webpack({
   plugins: [new webpack.DefinePlugin({ 'process.env.IS_PREACT': JSON.stringify('false') })],
   optimization: { minimize: false },
   module: { rules: [
+    // Excalidraw's ESM bundle imports extensionless roughjs subpaths.
+    { test: /\.m?js$/, resolve: { fullySpecified: false } },
     { test: /\.[jt]sx?$/, exclude: /node_modules/, use: path.resolve('transpile.cjs') },
     { test: /\.css$/, use: require.resolve('next/dist/compiled/ignore-loader') },
     { test: /\.(woff2|png|svg)$/, type: 'asset/resource' },

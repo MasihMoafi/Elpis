@@ -105,8 +105,7 @@ test('navigation and window close flush the final keystroke', async () => {
   const f = await loveSpotFixture();
   try {
     await f.open(f.page); await startText(f.page, 'Before navigation');
-    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'New page', exact: true }).click();
+    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 2', 'page did not switch');
     const old = JSON.parse(await fs.readFile(path.join(f.directory, 'pages/Current page.excalidraw'), 'utf8'));
     assert.ok(old.elements.some(e => e.text === 'Before navigation' && !e.isDeleted));
@@ -121,8 +120,7 @@ test('a remote page switch defers until the edit ends and flushes to the origina
   try {
     await f.open(f.page); const other = await f.newPage(); await f.open(other);
     await startText(f.page, 'Keep this page verdict');
-    await other.getByRole('button', { name: 'Pages', exact: true }).click();
-    await other.getByRole('menuitem', { name: 'New page', exact: true }).click();
+    await other.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 2', 'other window did not switch pages');
     await f.page.waitForTimeout(250);
     assert.equal(await f.page.locator('textarea.excalidraw-wysiwyg').inputValue(), 'Keep this page verdict');
@@ -143,8 +141,7 @@ test('a failed page-change save keeps the current board and its text', async () 
     await f.page.route('**/api/love-spot', route => route.request().method() === 'POST'
       ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test save refused' }) }) : route.continue());
     await startText(f.page, 'Do not leave my verdict');
-    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'New page', exact: true }).click();
+    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
     await f.page.getByRole('alert').filter({ hasText: 'Test save refused' }).waitFor();
     assert.notEqual((await f.scene()).page?.name, 'Page 2');
     await f.page.unroute('**/api/love-spot'); await f.page.getByRole('button', { name: 'Retry', exact: true }).click();

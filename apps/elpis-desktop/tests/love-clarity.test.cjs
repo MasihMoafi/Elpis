@@ -40,9 +40,9 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
     await page.locator('[data-nav-page="loveSpot"]').click();
     await page.locator('.excalidraw canvas').first().waitFor();
     assert.equal(await page.locator('.love-unread').count(), 0, 'Visiting acknowledges the reply');
-    const primary = await page.locator('.love-spot').evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim());
-    assert.equal(primary, colorScheme === 'dark' ? '#ec575e' : '#8B1017');
-    const canvasPrimary = await page.locator('.excalidraw').first().evaluate(el => getComputedStyle(el).getPropertyValue('--color-primary').trim());
+    const primary = await page.locator('.love-spot').evaluate(el => getComputedStyle(el).getPropertyValue('--primary').trim().toLowerCase());
+    assert.equal(primary, colorScheme === 'dark' ? '#ec575e' : '#8b1017');
+    const canvasPrimary = await page.locator('.excalidraw').first().evaluate(el => getComputedStyle(el).getPropertyValue('--color-primary').trim().toLowerCase());
     assert.equal(canvasPrimary, primary, 'Canvas tools follow the Love Spot deck palette');
     const tool = await page.locator('.excalidraw input.ToolIcon_type_radio:checked + .ToolIcon__icon').first().evaluate(el => {
       const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });

@@ -44,8 +44,7 @@ test('screenshots taken between Love Spot visits follow the current page and com
     await f.open(f.page); await f.draw(f.page);
     await f.waitFor(s => s.elements.length === 1, 'seed page must save');
     const original = (await f.scene()).page;
-    await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
-    await f.page.getByRole('menuitem', { name: 'New page', exact: true }).click();
+    await f.page.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.session !== original.session, 'new board page must open');
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.page.locator('.excalidraw').waitFor({ state: 'detached' });
