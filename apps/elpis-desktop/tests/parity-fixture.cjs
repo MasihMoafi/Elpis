@@ -58,6 +58,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
       return json(reply);
     }
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: ['low', 'medium', 'high'].map(reasoningEffort => ({ reasoningEffort })) }], nextCursor: null });
+    if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/files') return json({ data: FILES });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : threads.map(item => item.id === 'chat-a' && running ? { ...item, status: { type: 'active' } } : item), nextCursor: null });
     if (chat && url.pathname.endsWith('/resume')) return json({ thread: chat, activeTurnId: running && chat.id === 'chat-a' ? 't4' : null });

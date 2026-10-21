@@ -111,6 +111,8 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigati
   await page.keyboard.press('ArrowDown');
   assert.equal(await nav.getByLabel('Search conversations').evaluate(node => node === document.activeElement), true);
   await page.keyboard.press('ArrowDown');
+  assert.equal(await nav.getByRole('button', { name: 'Open Session Manager', exact: true }).evaluate(node => node === document.activeElement), true);
+  await page.keyboard.press('ArrowDown');
   assert.match(await page.evaluate(() => document.activeElement.textContent), /Parser project/);
   await page.keyboard.press('ArrowDown');
   assert.equal(await page.evaluate(() => document.activeElement.closest('.thread-row')?.dataset.threadId), 'chat-a');
@@ -160,19 +162,21 @@ for (const colorScheme of ['light', 'dark']) test(`Agent runs hide persistently 
   await page.getByRole('button', { name: 'Agent runs (2)', exact: true }).waitFor();
 });
 
-test('light-theme colour guard permits the approved primary fill and still rejects orange text and unrelated fills', async t => {
+test('light-theme colour guard permits A87 accent paint and still rejects orange text and unrelated fills', async t => {
   const f = await fixture();
   t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   await f.page.evaluate(() => {
     const other = document.createElement('span'); other.id = 'unexpected-fill'; other.textContent = 'Other fill'; other.style.backgroundColor = '#f2a93b';
     const primary = document.createElement('button'); primary.id = 'primary-probe'; primary.className = 'primary-cut'; primary.dataset.slot = 'button'; primary.textContent = 'Unreadable text'; primary.style.color = '#f2a93b';
-    document.body.append(other, primary);
+    const accent = document.createElement('span'); accent.id = 'accent-text-probe'; accent.textContent = 'Amber text'; accent.style.color = '#e89d34';
+    document.body.append(other, primary, accent);
   });
   const hits = await oranges(f.page);
   assert.ok(hits.some(hit => hit.includes('span#unexpected-fill') && hit.includes('background-color')));
   assert.ok(hits.some(hit => hit.includes('button#primary-probe') && hit.includes(': color')));
+  assert.ok(hits.some(hit => hit.includes('span#accent-text-probe') && hit.includes(': color')), 'approved accent paint does not permit unreadable text');
   assert.equal(hits.some(hit => hit.includes('button#primary-probe') && hit.includes('background-color')), false, 'only the approved primary fill is exempt');
-  await f.page.evaluate(() => { document.querySelector('#unexpected-fill').remove(); document.querySelector('#primary-probe').remove(); });
+  await f.page.evaluate(() => { document.querySelector('#unexpected-fill').remove(); document.querySelector('#primary-probe').remove(); document.querySelector('#accent-text-probe').remove(); });
   assert.deepEqual(await oranges(f.page), []);
 });
 

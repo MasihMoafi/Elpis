@@ -127,7 +127,9 @@ test('a group collapses and expands by click and by key, stays so after a reload
     await toggle.click();
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     assert.equal(await row(page, 'chat-b').count(), 0, 'a collapsed group hides its chats');
+    const reconnected = page.waitForResponse(response => new URL(response.url()).pathname === '/api/events');
     await page.reload();
+    await reconnected;
     await row(page, 'chat-a').waitFor();
     assert.equal(await groupToggle(page, 'Work').getAttribute('aria-expanded'), 'false', 'collapsed after a reload');
     assert.equal(await waiting.count(), 0);

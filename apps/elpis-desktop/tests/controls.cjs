@@ -47,7 +47,7 @@ async function guardDesktopStore(target) {
   }, STORE_KEYS.source);
 }
 /** Unapproved oranges in the light theme (hue 15–50°, saturated, mid lightness), as `selector: property value`.
- * Masih's shared amber primary button fill is allowed, and so is the working mark drawn in that same colour; its text, edges and all other surfaces stay checked.
+ * A87 approves logo amber/send orange for accents, including their shared composer edge. Text still uses ink.
  * Colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
 const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate(({ exclude, approvedAccents }) => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
@@ -78,6 +78,7 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
     return hue >= 15 && hue <= 50 && saturation >= 0.5 && light >= 0.25 && light <= 0.85;
   };
   const colours = text => text.match(/(?:rgba?|color|oklab|oklch|lab|lch|hsla?)\([^()]*\)|#[0-9a-f]{3,8}\b/gi) ?? [];
+  const samePaint = (a, b) => rgba(a).every((channel, index) => channel === rgba(b)[index]);
   const name = element => `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${[...element.classList].slice(0, 2).map(c => `.${c}`).join('')}`;
   const hits = new Set();
   for (const element of document.querySelectorAll('body *')) {
@@ -96,7 +97,11 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
       // A67 restored an outlined hexagon; its stroke uses A87's approved Send orange.
       if (property === 'stroke' && element.matches('.elpis-working-rotor') &&
         String(rgba(value)) === String(rgba(style.getPropertyValue('--primary-action')))) continue;
-      for (const colour of colours(value ?? '')) if (orange(colour) && !approved(element, property, colour)) hits.add(`${name(element)}: ${property} ${colour}`);
+      for (const colour of colours(value ?? '')) if (orange(colour) && !approved(element, property, colour)) {
+        const accent = property !== 'color' && ['#e89d34', '#ff8a00'].some(hex => samePaint(colour, hex));
+        const composerEdge = property.startsWith('border-') && element.matches('.composer, .composer-tray') && samePaint(colour, style.getPropertyValue('--edge'));
+        if (!accent && !composerEdge) hits.add(`${name(element)}: ${property} ${colour}`);
+      }
     }
   }
   return [...hits];

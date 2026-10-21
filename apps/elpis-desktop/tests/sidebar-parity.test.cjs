@@ -36,6 +36,8 @@ async function fixture(run, { width = 1130, height = 660, colorScheme = 'light',
     if (url.pathname === '/api/health') return json({ connected: true, cwd: '/work/home' });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
     if (url.pathname === '/api/providers') return json(state.providers);
+    if (url.pathname === '/api/providers/settings') return json({ version: 'p1', providers: [], managed: {}, write: { available: false } });
+    if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.get('ancestorThreadId') ? [] : threads, nextCursor: null });
     const id = url.pathname.split('/')[3], thread = threads.find(item => item.id === id);
     if (thread && url.pathname.endsWith('/resume')) return json({ thread, activeTurnId: null });

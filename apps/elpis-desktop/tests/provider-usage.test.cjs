@@ -36,6 +36,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'luna', displayName: 'Luna' }], nextCursor: null });
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/providers/settings') return json(providerSettings);
+    if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/providers') {
       requests++; active++; busiest = Math.max(busiest, active);
       const body = providers();

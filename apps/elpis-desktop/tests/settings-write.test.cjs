@@ -66,9 +66,13 @@ test('Smart Prune effort uses the selected model catalog, saves Max, reopens and
  const configuration = async () => { await openSettings(page); await page.getByRole('tab', { name: 'Configuration', exact: true }).click(); };
  const options = async values => {
   await effort.click();
-  assert.deepEqual(await page.getByRole('option').evaluateAll(items => items.map(item => item.getAttribute('data-value'))), values);
-  assert.equal(await page.getByRole('option', { name: 'Default (Low)', exact: true }).count(), 1);
+  const list = page.getByRole('listbox');
+  await list.waitFor();
+  await list.getByRole('option').first().waitFor();
+  assert.deepEqual(await list.getByRole('option').evaluateAll(items => items.map(item => item.getAttribute('data-value'))), values);
+  assert.equal(await list.getByRole('option', { name: 'Default (Low)', exact: true }).count(), 1);
   await page.keyboard.press('Escape');
+  await list.waitFor({ state: 'hidden' });
  };
  const saved = async () => { await save.click(); await page.getByRole('status').filter({ hasText: 'Pruning model saved' }).waitFor(); };
  try {

@@ -14,6 +14,8 @@ const description = 'Check the shared components and their rendered layout, then
 function routes() {
   const settings = { version: 's1', main: { model: 'sol', provider: 'openai' }, background: {}, providers: [{ id: 'openai', displayName: 'OpenAI' }], agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' },
     smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: null, provider: null } }, memory: { enabled: true, generate: true, use: true }, options: {}, managed: {}, write: { available: true, reason: 'Applies to new conversations.' } };
+  const totals = { attempts: 1, compacted: 1, unchanged: 0, failed: 0, saved: 1500, unlinked: 0 };
+  const trace = { id: 'chat-a', found: true, chat: { id: 'chat-a', name: 'Fix the parser' }, totals };
   let scene = { elements: [], appState: {}, files: {}, page: { name: 'Current page', session: 'fixture' } };
   return {
     ...contextRoutes(),

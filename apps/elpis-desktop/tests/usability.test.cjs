@@ -29,6 +29,7 @@ async function fixture(run, { desktop = false } = {}) {
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/models') return json({ data: url.searchParams.get('provider') === 'home' ? [] : url.searchParams.get('provider') === 'lab' ? [{ id: 'openai/gpt-oss-120b', model: 'openai/gpt-oss-120b', displayName: 'GPT-OSS 120B' }] : [{ id: 'sol', model: 'sol', displayName: 'Sol', description: 'Everyday coding', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] }], nextCursor: null });
     if (url.pathname === '/api/settings') return json(settings);
+    if (url.pathname === '/api/providers/claude-accounts') return json({ activeId: '', accounts: [] });
     if (url.pathname === '/api/providers/settings') return json({ version: 'providers-v1', write: { available: true }, managed: {}, providers: apiProviders });
     if (url.pathname === '/api/providers') return json({ openai: { auth: { state: 'signedIn', method: 'ChatGPT', email: 'demo@example.invalid' }, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: apiProviders });
     if (url.pathname === '/api/mcp') return json({ version: 'mcp-v1', write: { available: true }, servers: [] });

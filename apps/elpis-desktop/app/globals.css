@@ -1288,11 +1288,12 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
   .followup-send-icon { display:block; }
 }
 @container composer (max-width:640px) {
-  .composer-right .context-ring { display:none; }
+  /* The hidden ring still anchors the Ledger opened from the feature row. */
+  .composer-right .context-ring { position:absolute; inset-inline-end:0; bottom:0; visibility:hidden; pointer-events:none; }
   .effort-long { display:none; } .effort-short { display:inline; }
   .composer-controls { gap:8px; }
   .composer-right { gap:2px; }
-  .composer-pill, .composer .model-select { padding-inline:6px; gap:4px; }
+  .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
   .composer .model-picker-trigger { min-width:56px; max-width:130px; flex:0 1 auto; }
 }
 @container composer (max-width:380px) {
@@ -1302,10 +1303,10 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
   .composer .model-select { min-width:52px; flex-shrink:1; }
 }
 @container workspace (min-width:421px) and (max-width:520px) {
-  .composer-right .context-ring { display:none; }
+  .composer-right .context-ring { position:absolute; inset-inline-end:0; bottom:0; visibility:hidden; pointer-events:none; }
   .composer .effort-long { display:none; } .composer .effort-short { display:inline; }
   .composer-controls { gap:8px; } .composer .model-controls { gap:4px; } .composer-right { gap:2px; }
-  .composer-pill, .composer .model-select { padding-inline:6px; gap:4px; }
+  .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
 }
 /* The @ picker names the file or chat, and says which it is at the right edge. */
 .option-list-kind .slash-description { margin-left:auto; flex-shrink:0; }

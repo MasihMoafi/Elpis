@@ -45,7 +45,7 @@ for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav m
     if (theme === 'dark') await chooseTheme(f.page, theme);
     const loveSpot = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true });
     const lab = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Lab', exact: true });
-    const expected = theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(228, 98, 104)';
+    const expected = theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)';
     const iconColor = () => loveSpot.locator('svg').evaluate(icon => getComputedStyle(icon).color);
 
     await lab.click();
@@ -58,13 +58,12 @@ for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav m
   } finally { await f.close(); }
 });
 
-for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav mark in ${theme} theme`, async () => {
-  const f = await fixture({ viewport: { width: 1280, height: 800 } });
+for (const theme of ['light', 'dark']) test(`Love Spot keeps its blood-red nav mark on initial ${theme} load`, async () => {
+  const f = await fixture({ width: 1280, height: 800, colorScheme: theme });
   try {
-    await chooseTheme(f.page, theme);
     const loveSpot = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Love Spot', exact: true });
     const lab = f.page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Lab', exact: true });
-    const expected = theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(232, 59, 67)';
+    const expected = theme === 'light' ? 'rgb(139, 16, 23)' : 'rgb(236, 87, 94)';
     const iconColor = () => loveSpot.locator('svg').evaluate(icon => getComputedStyle(icon).color);
 
     await lab.click();
