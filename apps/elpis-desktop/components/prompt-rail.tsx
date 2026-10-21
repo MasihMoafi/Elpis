@@ -161,7 +161,9 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
       loadingEarlier.current = false;
       setLoadRevision(revision => revision + 1);
     });
-  }, [threadId, target, entries, loadRevision, onLoadEarlier]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Parent scroll renders recreate onLoadEarlier. Restarting here would forget
+  // positionedTop and let the old jump take ownership of a newer user scroll.
+  }, [threadId, target, entries, loadRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const root = scroller.current; if (!root) return;
     const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(place); };

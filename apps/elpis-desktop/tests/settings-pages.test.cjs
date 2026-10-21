@@ -20,6 +20,7 @@ test('settings pages appear in order and each control writes only its own backin
     if (req.method === 'POST' && url.pathname.startsWith('/api/') && url.pathname !== '/api/session') posts.push({ path: url.pathname, body });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); clients.add(res); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
+    if (url.pathname === '/api/about') return json({ version: '0.1.0', commit: 'ac82360bd', releaseNotes: 'https://example.invalid/releases' });
     if (url.pathname === '/api/models') return json({ data: [{ id: 'main-model', model: 'main-model', displayName: 'Main model' }] });
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/settings') { if (req.method === 'POST') { Object.assign(options, body.options); version++; } return json(settings()); }
@@ -47,6 +48,13 @@ test('settings pages appear in order and each control writes only its own backin
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await openSettings(page);
     assert.deepEqual(await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab').allInnerTexts(), PAGES);
+
+    const writesBeforeAbout = posts.length;
+    const about = await open('About');
+    await about.getByText('ac82360bd', { exact: true }).waitFor();
+    assert.equal(await about.getByText('0.1.0', { exact: true }).count(), 1);
+    assert.equal(await about.getByRole('link', { name: 'Release notes', exact: true }).getAttribute('href'), 'https://example.invalid/releases');
+    assert.equal(posts.length, writesBeforeAbout, 'reading About never writes settings');
 
     // General: device preferences persist across reloads; Speed writes service_tier.
     let panel = await open('General');

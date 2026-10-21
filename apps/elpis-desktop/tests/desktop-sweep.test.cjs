@@ -8,7 +8,7 @@ const { openSettings } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contextRoutes } = require('./context-files-fixture.cjs');
 
-const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats'];
+const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats', 'About'];
 const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
 const description = 'Check the shared components and their rendered layout, then explain which parts need attention before changing the interface. '.repeat(3);
 function routes() {
@@ -17,6 +17,7 @@ function routes() {
   let scene = { elements: [], appState: {}, files: {}, page: { name: 'Current page', session: 'fixture' } };
   return {
     ...contextRoutes(),
+    '/api/about': () => ({ version: '0.1.0', commit: 'ac82360bd', releaseNotes: 'https://example.invalid/releases' }),
     '/api/settings': body => { if (body?.options) Object.assign(settings.options, body.options); return settings; },
     '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [] }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] }),
     '/api/providers/settings': () => ({ version: 'p1', providers: [], managed: {}, write: { available: true } }),

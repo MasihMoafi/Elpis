@@ -15,7 +15,7 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 // Round 2 (f96171ccb): the merged repairs (gatefix) keep every case; the earlier baseline still had the pre-merge copies.
 // Round 3 (988aad0e7): combofix scoped the dropdown helper (c23e326c8) and wf1b aimed three Workflows tests at the current UI; every case kept.
 export const baselineCommit = '988aad0e78bd264c00e435be07598e79f08941e8';
-// GATE10/GATE11: only these audited copies need updated expectations or fixtures. Each pin names
+// GATE10/GATE11/GATE12: only these audited copies need updated expectations or fixtures. Each pin names
 // the request and exact replacement bytes; all other retained tests keep their original bytes.
 // Blob pins also cover the small fixture repairs in this change, without advancing the checkpoint.
 const pageRemovalApproval = {
@@ -74,8 +74,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/desktop-sweep.test.cjs": {
-      "blob": "a65f1c18d51f9eb2ae084a131973bce25e640703",
-      ...pageRemovalApproval
+      "blob": "d58e3ba4cc69d493c73810be57269eb0f0b71c38",
+      "approval": "ac82360bda390fea91268f3a263cd9375b2af175",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks."
     },
     "tests/love-spot-pages.test.cjs": {
       "blob": "e3d0115cac2c58f459fe7e69b4eff4b5706d06c0",
@@ -84,6 +85,16 @@ export const retainedUpdates = {
     "tests/navigation-drafts.test.cjs": {
       "blob": "ad6820b974ced60ccec52acf2fdf60f3481f42d3",
       ...pageRemovalApproval
+    },
+    "tests/settings-pages.test.cjs": {
+      "blob": "e875da6914fd4862a82c28168c762f4b323f8df2",
+      "approval": "ac82360bda390fea91268f3a263cd9375b2af175",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion."
+    },
+    "tests/context-menu.test.cjs": {
+      "blob": "06e37a08fecc7fee315d92b3a2f23832c288a0f0",
+      "approval": "ff010db233ed8c4aea32cdb295b58afbad1c30b0",
+      "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion."
     },
     "tests/preferences.test.cjs": {
       "blob": "10c003d4109c279081988255f12fb2b02ad05065",

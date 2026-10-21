@@ -134,7 +134,12 @@ test('F2 renames the focused chat row, shows F2 in the Rename item, and leaves t
   await link('bravo').focus();
   for (const combo of ['Control+F2', 'Shift+F2', 'Alt+F2']) { await page.keyboard.press(combo); await page.waitForTimeout(80); assert.equal(await dialog.count(), 0, combo); }
   // The open menu's F2 picks Rename for the row whose menu it is.
-  await row('bravo').click({ button: 'right' }); await menu().waitFor(); await page.keyboard.press('F2');
+  await row('bravo').click({ button: 'right' }); await menu().waitFor();
+  // A visible popup can still be handing focus off from the row. F2 must go
+  // to the menu; otherwise the row opens Rename underneath the still-open menu.
+  await eventually(async () => assert.equal(await menu().evaluate(element => element.contains(document.activeElement)), true));
+  await page.keyboard.press('F2');
+  await menu().waitFor({ state: 'detached' });
   await field.waitFor(); assert.equal(await field.inputValue(), 'Bravo');
   await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
 }));
