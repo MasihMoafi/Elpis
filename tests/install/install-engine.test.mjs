@@ -79,6 +79,15 @@ test('the live launcher is kept, with only its engine and bridge paths moved to 
   assert.ok(!installed.includes(`${f.old}/`), installed);
 });
 
+test('a code-mode host built with the engine is preferred over the previous bundle\'s', (t) => {
+  const f = fixture(t);
+  writeFileSync(`${f.source}/codex-rs/target/release/codex-code-mode-host`, '#!/bin/sh\necho built-with-engine\n');
+  chmodSync(`${f.source}/codex-rs/target/release/codex-code-mode-host`, 0o755);
+  const result = f.run('host');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(`${f.bundle()}/package/bin/codex-code-mode-host`, 'utf8'), '#!/bin/sh\necho built-with-engine\n');
+});
+
 test('incomplete prerequisites fail before activation', (t) => {
   const f = fixture(t);
   execFileSync('gio', ['trash', `${f.old}/codex-resources/bwrap`]);
