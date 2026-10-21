@@ -407,6 +407,13 @@ impl CodexThread {
             .await
     }
 
+    /// Make the rollout and its live metadata durable without starting inference.
+    pub async fn persist_rollout(&self) -> std::io::Result<()> {
+        self.session
+            .try_ensure_rollout_materialized(PersistContext::Standard)
+            .await
+    }
+
     #[doc(hidden)]
     pub async fn ensure_rollout_materialized(&self) {
         self.session

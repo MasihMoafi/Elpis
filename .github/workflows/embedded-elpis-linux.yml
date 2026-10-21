@@ -367,7 +367,8 @@ jobs:
             deferred_executor_promotes_primary_environment_when_startup_completes \
             deferred_executor_stays_pending_after_materialization 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
           cargo test --profile dev-small --locked -p codex-app-server --test all -- \
-            elpis_instructions_read 2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
+            elpis_instructions_read thread_read_paginated_carrier_persists_before_first_turn \
+            2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
       - name: Preserve UI and integration check diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

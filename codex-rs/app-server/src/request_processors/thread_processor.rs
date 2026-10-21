@@ -3061,10 +3061,13 @@ impl ThreadRequestProcessor {
                 thread.history_mode,
                 codex_app_server_protocol::ThreadHistoryMode::Paginated
             ) {
-                self.thread_store
-                    .persist_thread(thread_id, PersistContext::Standard)
-                    .await
-                    .map_err(|err| thread_read_history_load_error(thread_id, err))?;
+                // The live thread also commits its pending metadata. Persisting
+                // only the raw rollout leaves a new carrier absent from the index.
+                loaded_thread.persist_rollout().await.map_err(|err| {
+                    ThreadReadViewError::Internal(format!(
+                        "failed to persist thread {thread_id}: {err}"
+                    ))
+                })?;
                 thread.turns = self
                     .paginated_thread_full_turns(thread_id)
                     .await

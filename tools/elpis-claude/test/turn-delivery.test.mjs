@@ -10,6 +10,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
+import mockProvider from "../../../scripts/lib/mock-provider.js";
 const { DesktopClient } = await import(process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mjs", import.meta.url));
 
 const source = fileURLToPath(new URL("../", import.meta.url));
@@ -22,6 +23,17 @@ async function until(check, label, ms = 5000) {
 
 async function fixture(t, extra = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a124-"));
+  const carrier = new mockProvider.Provider();
+  await carrier.start();
+  t.after(() => {
+    carrier.close();
+    assert.equal(carrier.requests.length + carrier.titleRequests.length, 0, "the native carrier must not perform inference for a provider turn");
+  });
+  const home = path.join(root, "elpis");
+  fs.mkdirSync(home);
+  // The real carrier can prewarm its model at thread/start. Keep every native
+  // request local and fail on inference; Claude is the only inference owner.
+  fs.writeFileSync(path.join(home, "config.toml"), `model="gpt-5.5"\nmodel_provider="carrier"\nmodel_catalog_json=${JSON.stringify(path.resolve(source, "../../codex-rs/models-manager/models.json"))}\n[features]\ncode_mode=false\n[model_providers.carrier]\nname="offline carrier"\nbase_url=${JSON.stringify(carrier.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
   const socketPath = path.join(root, "bridge.sock");
   const storeFile = path.join(root, "sessions.json"), agentLog = path.join(root, "agent.jsonl");
   const release = path.join(root, "release"), toolRelease = path.join(root, "tools");

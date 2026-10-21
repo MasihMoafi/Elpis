@@ -1438,6 +1438,68 @@ async fn thread_read_loaded_thread_returns_precomputed_path_before_materializati
 }
 
 #[tokio::test]
+async fn thread_read_paginated_carrier_persists_before_first_turn() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized()
+        .await?;
+    let start_id = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            history_mode: Some(ThreadHistoryMode::Paginated),
+            ..Default::default()
+        })
+        .await?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
+    let thread_path = thread.path.clone().expect("carrier rollout path");
+    assert!(!thread_path.exists());
+
+    let read_id = mcp
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: thread.id.clone(),
+            include_turns: true,
+        })
+        .await?;
+    let ThreadReadResponse { thread: saved } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(read_id)).await??;
+    assert_eq!(saved.id, thread.id);
+    assert_eq!(saved.history_mode, ThreadHistoryMode::Paginated);
+    assert!(saved.turns.is_empty());
+    assert!(
+        thread_path.exists(),
+        "the carrier must be durable before inference"
+    );
+
+    mcp.shutdown_gracefully().await?;
+    let mut restarted = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized()
+        .await?;
+    let resume_id = restarted
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread.id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let ThreadResumeResponse {
+        thread: resumed, ..
+    } = timeout(DEFAULT_READ_TIMEOUT, restarted.read_response(resume_id)).await??;
+    assert_eq!(resumed.id, thread.id);
+    assert_eq!(resumed.history_mode, ThreadHistoryMode::Paginated);
+    assert!(resumed.turns.is_empty());
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "persisting a carrier must not run inference"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn paginated_thread_name_set_is_reflected_in_read_list_and_metadata_resume() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
