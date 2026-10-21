@@ -52,8 +52,8 @@ test('elapsed work keeps lowercase time units', () => using({ chat: [['t1', 'Exp
 test('non-chat views get the whole workspace while the panel stays hidden', () => using({ width: 820 }, async ({ page }) => {
   await panel(page);
   await page.getByRole('button', { name: 'Open sidebar', exact: true }).first().click();
-  await page.getByRole('button', { name: 'Observability', exact: true }).click();
-  await page.getByRole('heading', { name: 'Observability', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Lab', exact: true }).click();
+  await page.getByRole('heading', { name: 'Lab', exact: true }).first().waitFor();
   assert.equal(await page.locator('.side-panel').isVisible(), false);
   await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   assert.equal(await page.locator('.side-panel').isVisible(), false);

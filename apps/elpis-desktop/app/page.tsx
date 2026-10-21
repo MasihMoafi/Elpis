@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Activity, Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
+import { Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -100,14 +100,12 @@ import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
-import { ObservabilityView } from "@/components/observability-view";
-
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 const SESSION_MANAGER_ID_KEY = "elpis-session-manager-v1";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
-type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "observability" | "settings";
+type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "settings";
 type NextTurn = { model?: string; effort?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
@@ -124,7 +122,6 @@ const NAV_PAGES = [
   { id: "canvas", name: "Workflows", Icon: WorkflowsIcon },
   { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
   { id: "customize", name: "Ledger", Icon: Blocks },
-  { id: "observability", name: "Observability", Icon: Activity },
 ] as const;
 
 export default function Home() {
@@ -1800,7 +1797,7 @@ export default function Home() {
         onRename={name => updateGroups(state => renameGroup(state, group.id, name))} onDelete={() => updateGroups(state => deleteGroup(state, group.id))}>{content}</GroupActions>}
       empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>;
   }
-  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Ledger", observability: "Observability", settings: "Settings" }[view];
+  const heading = view === "chat" ? (selected ? title(selected) : "") : { agentsGuide: "Guide to managing agents", canvas: "Workflows", experimentLab: "Lab", loveSpot: "Love Spot", customize: "Ledger", settings: "Settings" }[view];
   const chatName = selected ? title(selected) : "New chat";
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [agentName(selected), selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
@@ -1821,7 +1818,7 @@ export default function Home() {
       const next = arrange(projects, move(projects.map(project => project.id), id, place));
       return saveProjects(next, projectId).then(() => setProjects(next)).catch(cause => setError(String(cause)));
     } });
-  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["observability", "Observability"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
+  for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["customize", "Ledger"]] as const) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /><AppUpdate /></div>}
@@ -1938,7 +1935,6 @@ export default function Home() {
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
-      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} dark={dark} /></ViewBoundary>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; setAwayFromBottom(!stickToBottom.current); }}><div className="chat-content">
           {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}

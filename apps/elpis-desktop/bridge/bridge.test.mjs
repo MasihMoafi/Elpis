@@ -808,12 +808,9 @@ test('HTTP requires capability/cookie, strict origin/host, allowlisted routes an
   const settings = await (await get('/api/settings')).json(); assert.equal(settings.smartPrune.enabled, true);
   assert.doesNotMatch(JSON.stringify(settings), /PRIVATE CONFIG SECRET|private\/config/);
   const context = await (await get(`/api/threads/${ROOT}/context`)).json(); assert.equal(context.tokenUsage, null);
-  // A132 (189f5bd0d): Observability now serves the authenticated TUI dashboard.
   for (const route of ['/api/dashboard', '/api/dashboard/', '/api/dashboard/agents.json']) {
-    assert.equal((await fetch(origin + route)).status, 401, `${route} requires a session`);
-    assert.equal((await get(route)).status, 200, `${route} is available after authentication`);
+    assert.equal((await get(route)).status, 404, 'OBSRM: the retired page transport is no longer served');
   }
-  for (const route of ['/api/observability', `/api/observability/chats/${ROOT}`]) assert.equal((await get(route)).status, 404, 'the retired desktop API is not exposed');
   assert.equal((await post('/api/settings', { background_model: 'changed' }, { Cookie: cookie })).status, 400);
   assert.equal((await post(`/api/threads/${ROOT}/context`, {}, { Cookie: cookie })).status, 405);
   assert.equal((await get('/api/threads?archived=yes')).status, 400);

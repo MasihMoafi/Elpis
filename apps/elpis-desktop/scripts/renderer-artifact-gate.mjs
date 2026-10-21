@@ -16,8 +16,12 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 // Round 3 (988aad0e7): combofix scoped the dropdown helper (c23e326c8) and wf1b aimed three Workflows tests at the current UI; every case kept.
 export const baselineCommit = '988aad0e78bd264c00e435be07598e79f08941e8';
 // GATE10: only these audited copies need updated expectations or fixtures. Each pin names
-// the commit implementing the approved behavior; all other retained tests keep their original bytes.
+// the request and exact replacement bytes; all other retained tests keep their original bytes.
 // Blob pins also cover the small fixture repairs in this change, without advancing the checkpoint.
+const pageRemovalApproval = {
+  "approval": "da53b1661b8a8fd5de09925b7ec86fd4ce0bb747",
+  "reason": "OBSRM, Masih 21 Oct 22:45: \"remove it; remove the observability page - keep its logo icon as it looks good. the rest, remove.\" Preserve the remaining navigation checks."
+};
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
     "tests/controls.cjs": {
@@ -30,37 +34,86 @@ export const retainedUpdates = {
       "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
       "reason": "A87/R28: feature controls keep their one-click checks with the approved logo accent"
     },
-    "tests/dashboard-fixture.cjs": {
-      "blob": "0ddd1f09d25d8af2603dd3666789543b5a04fc28",
-      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
-      "reason": "A132/R30: shared TUI assets and dashboard routes replace the removed desktop API"
-    },
-    "tests/observability.test.cjs": {
-      "blob": "7a248fd62f85f7d14ac5f1d317e0f0b214e20672",
-      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
-      "reason": "A132/R30: retain deletion/totals and complete tool/prompt disclosure against the TUI dashboard"
-    },
     "tests/page-column.test.cjs": {
-      "blob": "96349c75cfd27647dc4c72ec33826e7ce9f5645c",
-      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
-      "reason": "A132/R30: Observability uses a frame; retain overflow checks for every remaining shared shell"
+      "blob": "4a45579c8292e33530b15e6c793a6825e7a89b99",
+      ...pageRemovalApproval
     },
     "tests/page-column.cjs": {
       "blob": "0b7fed1852f2513490a63ad2d28f3699bfbd54f5",
       "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
-      "reason": "A132/R30: shared column measurements exclude the independently scrolling dashboard frame"
+      "reason": "A126: shared column measurements cover the centred page shells"
     },
     "tests/view-boundaries.test.cjs": {
-      "blob": "eba78f5bd8e2715d70018e4562253ae41704be2f",
-      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
-      "reason": "A121/A70: navigation buttons have labels; inject the Ledger failure into its view, not its navigation button"
+      "blob": "b77da2a3d0cb0a6ba70aa2a7fd7f4d66ba6afb1e",
+      ...pageRemovalApproval
     },
     "tests/provider-usage.test.cjs": {
       "blob": "f7224436280cca61f9856afdde3b606d8687e5a5",
       "approval": "988aad0e78bd264c00e435be07598e79f08941e8",
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action"
+    },
+    "tests/claude-chat.test.cjs": {
+      "blob": "d65e12944423579b214e7b1795371ea88b7b9e19",
+      ...pageRemovalApproval
+    },
+    "tests/command-menu.test.cjs": {
+      "blob": "335dcdab0114fafb0e45c3af362501bc7c8f13d2",
+      ...pageRemovalApproval
+    },
+    "tests/composer-files.test.cjs": {
+      "blob": "f1f0bcca23d00215aab2efe36267ba750cbfb7e2",
+      ...pageRemovalApproval
+    },
+    "tests/desktop-polish.test.cjs": {
+      "blob": "0ec66f04a4a7dba9158e6add376ff28761c6f871",
+      ...pageRemovalApproval
+    },
+    "tests/desktop-small-fixes.test.cjs": {
+      "blob": "23e9bd072622ea3c7af03f53a00eb0d100b095e8",
+      ...pageRemovalApproval
+    },
+    "tests/desktop-sweep.test.cjs": {
+      "blob": "a65f1c18d51f9eb2ae084a131973bce25e640703",
+      ...pageRemovalApproval
+    },
+    "tests/love-spot-pages.test.cjs": {
+      "blob": "e3d0115cac2c58f459fe7e69b4eff4b5706d06c0",
+      ...pageRemovalApproval
+    },
+    "tests/navigation-drafts.test.cjs": {
+      "blob": "ad6820b974ced60ccec52acf2fdf60f3481f42d3",
+      ...pageRemovalApproval
+    },
+    "tests/preferences.test.cjs": {
+      "blob": "7af31c73c275a0006357fbc3b82a67845ab1cfcf",
+      ...pageRemovalApproval
+    },
+    "tests/renderer.test.cjs": {
+      "blob": "58cfcc2abc3d705b01819ca73ffa862004881c83",
+      ...pageRemovalApproval
+    },
+    "tests/sidebar-attention.test.cjs": {
+      "blob": "c889f4da05279b38c5308c0ab1f0dd03037b0809",
+      ...pageRemovalApproval
+    },
+    "tests/sidebar-nav-icons.test.cjs": {
+      "blob": "f80177d99236af40b5204bd71c0f6ec83ade884b",
+      ...pageRemovalApproval
+    },
+    "tests/usability.test.cjs": {
+      "blob": "b77cf05b7701f8977f0ec9da29bc3b7c60ade0df",
+      ...pageRemovalApproval
+    },
+    "tests/workflow-approvals.test.cjs": {
+      "blob": "1f182af9780ec77af10a8eedfe40813dddc889a9",
+      ...pageRemovalApproval
     }
   }
+};
+// OBSRM: the pageRemovalApproval request also retires these page-only checks.
+// These page-only regressions and their fixture are retired; all other baseline tests remain mandatory.
+export const retiredPaths = {
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/dashboard-fixture.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
@@ -145,6 +198,7 @@ export async function planSuite(root = appRoot, baseline = baselineCommit, updat
   checkInventory(inventory, await discoverTests(root));
   const oldFiles = trackedFiles(root, baseline, [`${appPrefix}tests/`, `${appPrefix}${stateTest}`]);
   for (const [name, pin] of Object.entries(updates)) oldFiles.set(name, blob(await retainedUpdate(root, name, pin)));
+  for (const name of retiredPaths[baseline] ?? []) oldFiles.delete(name);
   const currentFiles = new Map(await Promise.all((await treeFiles(path.join(root, 'tests'))).map(async name => [`tests/${name}`, blob(await fs.readFile(path.join(root, 'tests', name)))])));
   try { currentFiles.set(stateTest, blob(await fs.readFile(path.join(root, stateTest)))); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -158,7 +212,7 @@ export async function planSuite(root = appRoot, baseline = baselineCommit, updat
   };
   assert(retained.ui.length > 0 && inventory.ui.length > 0, 'The UI inventory must not be empty');
   assert(retained.desktop.includes(stateTest), 'The checkpoint must retain the saved-workspace regression');
-  const retainedNames = [stateTest, ...retained.ui];
+  const retainedNames = [stateTest, ...retained.ui].filter(name => !(retiredPaths[baseline] ?? []).includes(name));
   const files = retainedNames.map(name => item('baseline', name, oldFiles));
   for (const name of [...(inventory.desktop.includes(stateTest) ? [stateTest] : []), ...inventory.ui]) {
     if (support.baseline !== support.candidate || !retainedNames.includes(name) || currentFiles.get(name) !== oldFiles.get(name)) files.push(item('candidate', name, currentFiles));
@@ -195,6 +249,7 @@ export async function prepareBaseline(root = appRoot, baseline = baselineCommit,
       await fs.mkdir(path.dirname(path.join(retainedRoot, name)), { recursive: true });
       await fs.writeFile(path.join(retainedRoot, name), bytes);
     }
+    for (const name of retiredPaths[baseline] ?? []) execFileSync('gio', ['trash', path.join(retainedRoot, name)]);
     // /init and /personal compare the renderer with the candidate terminal's canonical resources.
     await fs.symlink(path.join(repository, 'codex-rs'), path.join(scratch, 'codex-rs'));
     for (const entry of await fs.readdir(root)) {

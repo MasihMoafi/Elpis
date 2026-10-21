@@ -268,6 +268,31 @@ test('retained UI tests can read the candidate terminal prompts and personal ski
   } finally { execFileSync('gio', ['trash', retained.scratch]); }
 });
 
+test('OBSRM: approved page retirement excludes only its tests and fixture from the baseline', async t => {
+  const f = await fixture(t);
+  const retired = ['tests/retired.test.cjs', 'tests/retired-fixture.cjs'];
+  for (const name of retired) await fs.writeFile(path.join(f.root, name), '// retired page\n');
+  f.inventory.ui.push(retired[0]);
+  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
+  const baseline = await f.commitSource();
+  f.inventory.ui.pop();
+  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
+  for (const name of retired) execFileSync('gio', ['trash', path.join(f.root, name)]);
+  gate.retiredPaths[baseline] = retired;
+  t.after(() => { delete gate.retiredPaths[baseline]; });
+  const plan = await planSuite(f.root, baseline);
+  assert.deepEqual(plan.files.map(file => file.name), ['desktop/state.test.cjs', 'tests/kept.test.cjs']);
+  const retained = await prepareBaseline(f.root, baseline);
+  try {
+    for (const name of retired) await assert.rejects(fs.access(path.join(retained.root, name)), { code: 'ENOENT' });
+    await fs.access(path.join(retained.root, 'tests/kept.test.cjs'));
+    await fs.access(path.join(retained.root, 'tests/helper.cjs'));
+  } finally { execFileSync('gio', ['trash', retained.scratch]); }
+  delete gate.retiredPaths[baseline];
+  assert.equal((await planSuite(f.root, baseline)).files.some(file => file.name === retired[0]), true,
+    'without explicit approval, removing a candidate test cannot retire its baseline check');
+});
+
 test('a candidate cannot drop the saved-workspace test and reinstate a reader that rejects project memberships', async t => {
   const f = await fixture(t);
   await fs.rename(path.join(f.root, 'desktop/state.test.cjs'), path.join(f.repo, 'dropped-state.test.cjs'));

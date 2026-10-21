@@ -86,7 +86,7 @@ test('Agents is absent from workspace navigation and commands; Workflows and sid
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     const nav = page.locator('.nav-list');
     assert.equal(await nav.getByRole('button', { name: /^Agents\b/ }).count(), 0);
-    for (const name of ['Workflows', 'Love Spot', 'Observability']) assert.equal(await nav.getByRole('button', { name, exact: true }).count(), 1);
+    for (const name of ['Workflows', 'Love Spot']) assert.equal(await nav.getByRole('button', { name, exact: true }).count(), 1);
     await page.getByRole('button', { name: 'Agent runs (1)', exact: true }).click();
     await page.getByRole('region', { name: 'Agent runs', exact: true }).getByText('Retained agent run', { exact: true }).waitFor();
     await page.keyboard.press('Control+k');

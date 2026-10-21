@@ -78,10 +78,10 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.getByLabel('Open sidebar').click();await chooseTheme(page, 'light');await page.waitForTimeout(250);await page.getByLabel('Close sidebar').click();await page.screenshot({path:path.join(output,'elpis-app-chat-light-390.png')});
     await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).first().click();await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
-    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Observability',exact:true}).click();await page.getByRole('heading',{name:'Observability',exact:true}).waitFor();
+    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Lab',exact:true}).click();await page.getByRole('heading',{name:'Lab',exact:true}).first().waitFor();
     await page.getByLabel('Open sidebar').click();
     await page.getByRole('button',{name:'Elpis home',exact:true}).click();await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
-    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Observability',exact:true}).click();await page.getByRole('heading',{name:'Observability',exact:true}).waitFor();
+    await page.getByLabel('Open sidebar').click();await page.getByRole('button',{name:'Lab',exact:true}).click();await page.getByRole('heading',{name:'Lab',exact:true}).first().waitFor();
     await page.getByLabel('Open sidebar').click();
     await page.getByRole('button',{name:'Elpis home',exact:true}).press('Enter');await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
     assert.deepEqual(errors,[]);

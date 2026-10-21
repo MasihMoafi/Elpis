@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { dashboardRoutes } = require('./dashboard-fixture.cjs');
 const { edges, sameEdges, ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cjs');
 
 const shots = process.env.A126_SHOTS_DIR || path.resolve(__dirname, '../test-results/page-column');
@@ -81,7 +80,6 @@ for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 200
 // Covers every other centred shell, including Settings' inner scroll owner and Lab's direct workspace surface.
 for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 2000]) test(`page column: shared shells (${colorScheme}, ${width}px)`, async t => {
   const f = await fixture({ width, height: 800, colorScheme, showScrollbars: true, routes: {
-    ...dashboardRoutes(),
     '/api/settings': () => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
       smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: { enabled: false, generate: false, use: false, extractionModel: null, consolidationModel: null },
       options: {}, write: { available: true, reason: '' } }),
@@ -90,20 +88,6 @@ for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 200
   const { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    // A132 (189f5bd0d): the shared TUI dashboard owns its scrolling inside a frame.
-    await page.getByRole('button', { name: 'Observability', exact: true }).click();
-    const dashboard = page.locator('iframe[title="Elpis dashboard"]');
-    await page.frameLocator('iframe[title="Elpis dashboard"]').getByRole('tab', { name: 'Conversations & agents', exact: true }).waitFor();
-    const frameEdges = await edges(dashboard);
-    sameEdges(frameEdges, await edges(page.locator('.observability')), 'dashboard fits its host');
-    for (const height of [400, 5000]) {
-      await page.setViewportSize({ width, height });
-      sameEdges(await edges(dashboard), frameEdges, 'dashboard frame after height change');
-      assert.ok(frameEdges.left >= 0 && frameEdges.right <= width, 'dashboard stays inside the window');
-    }
-    await page.setViewportSize({ width, height: 800 });
-    await fs.mkdir(shots, { recursive: true });
-    await page.screenshot({ path: path.join(shots, `dashboard-${colorScheme}-${width}.png`) });
     await sharedColumns(page, width, value => t.diagnostic(JSON.stringify(value)));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

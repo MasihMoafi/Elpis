@@ -43,7 +43,8 @@ test('git holds every picture the renderer loads and every file the package ship
   if (await run('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root }).then(() => false, () => true)) return t.skip('not a git checkout (a copy made with git archive)');
   const tracked = new Set((await run('git', ['ls-files', '-z'], { cwd: root })).stdout.split('\0'));
   const missing = production.filter(file => !file.startsWith('bridge/resources/') && !tracked.has(file));
-  const sources = (await run('git', ['ls-files', '-z', 'app', 'components', 'lib'], { cwd: root })).stdout.split('\0').filter(file => /\.tsx?$/.test(file));
+  const deleted = new Set((await run('git', ['ls-files', '-z', '--deleted', 'app', 'components', 'lib'], { cwd: root })).stdout.split('\0'));
+  const sources = (await run('git', ['ls-files', '-z', 'app', 'components', 'lib'], { cwd: root })).stdout.split('\0').filter(file => /\.tsx?$/.test(file) && !deleted.has(file));
   for (const file of sources) {
     for (const [, url] of (await fs.readFile(path.join(root, file), 'utf8')).matchAll(/["'`](\/[\w./-]+\.(?:svg|png|jpe?g|webp|ico))["'`]/g)) {
       if (!tracked.has(`public${url}`)) missing.push(`public${url} (${file})`);
@@ -67,7 +68,6 @@ async function fixture() {
   const ptyReal = path.join(root, 'terminal-deps', 'node-pty');
   const ptyDirectory = path.join(source, 'node_modules', 'node-pty');
   for (const name of production) await put(path.join(source, name), `fixture ${name}\n`);
-  for (const name of ['index.html', 'dashboard.css', 'dashboard.js', 'dashboard_workflows.js']) await put(path.resolve(source, '../../codex-rs/tui/src/dashboard_assets', name), `fixture ${name}\n`);
   await put(path.join(source, 'out', 'index.html'), '<p>Built renderer</p>');
   await put(path.join(source, 'out', '_next', 'static', 'app.js'), 'renderer();');
   await put(path.join(source, 'package.json'), JSON.stringify({ name: 'elpis-desktop', desktopName: 'elpis-desktop.desktop',

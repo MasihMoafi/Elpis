@@ -150,7 +150,7 @@ test('API setup omits internal IDs and keeps unsaved values across sections and 
   await page.getByRole('tab', { name: 'MCP servers', exact: true }).click();
   await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('Provider display name', { exact: true }).inputValue(), 'My research server');
-  await (await sidebar(page)).getByRole('button', { name: 'Observability', exact: true }).click();
+  await (await sidebar(page)).getByRole('button', { name: 'Lab', exact: true }).click();
   await openSettings(page);
   await page.getByRole('tab', { name: 'Models & accounts', exact: true }).click();
   assert.equal(await form.getByLabel('API endpoint', { exact: true }).inputValue(), 'http://127.0.0.1:1234/v1');

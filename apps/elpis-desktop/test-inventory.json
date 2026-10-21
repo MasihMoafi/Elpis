@@ -42,8 +42,6 @@
     "tests/agent-label.test.mjs"
   ],
   "bridge": [
-    "bridge/observability-turns.test.mjs",
-    "bridge/observability.test.mjs",
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",
     "bridge/acp-nodes.test.mjs",
@@ -203,7 +201,6 @@
     "tests/menus.test.cjs",
     "tests/mode-cycle.test.cjs",
     "tests/navigation-drafts.test.cjs",
-    "tests/observability.test.cjs",
     "tests/plan-mode.test.cjs",
     "tests/preferences.test.cjs",
     "tests/provider-key.test.cjs",
@@ -283,7 +280,8 @@
     "tests/workflow-characters.test.cjs",
     "tests/previous-messages.test.cjs",
     "tests/scroll-to-bottom.test.cjs",
-    "tests/turn-time.test.cjs"
+    "tests/turn-time.test.cjs",
+    "tests/sidebar-pages.test.cjs"
   ],
   "opt-in": [
     "tests/changes-installed.runtime.cjs",

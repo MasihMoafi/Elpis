@@ -7,7 +7,6 @@ const { fixture } = require('./parity-fixture.cjs');
 const { openSettings } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contextRoutes } = require('./context-files-fixture.cjs');
-const { dashboardRoutes } = require('./dashboard-fixture.cjs');
 
 const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats'];
 const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
@@ -18,7 +17,6 @@ function routes() {
   let scene = { elements: [], appState: {}, files: {}, page: { name: 'Current page', session: 'fixture' } };
   return {
     ...contextRoutes(),
-    ...dashboardRoutes(),
     '/api/settings': body => { if (body?.options) Object.assign(settings.options, body.options); return settings; },
     '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [] }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] }),
     '/api/providers/settings': () => ({ version: 'p1', providers: [], managed: {}, write: { available: true } }),
@@ -142,9 +140,6 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.keyboard.press('Escape');
       await check('Canvas 3D', () => page.getByRole('radio', { name: 'Isometric', exact: true }).click());
       await check('Love Spot', async () => { await page.getByRole('button', { name: 'Love Spot', exact: true }).click(); await page.locator('.excalidraw canvas').first().waitFor(); });
-      const dashboard = page.frameLocator('iframe[title="Elpis dashboard"]');
-      await check('Observability dashboard', async () => { await page.getByRole('button', { name: 'Observability', exact: true }).click(); await dashboard.getByRole('tab', { name: 'Conversations & agents', exact: true }).waitFor(); });
-      for (const name of ['Activity', 'Context', 'Tokens']) await check(`Observability ${name}`, async () => { await dashboard.getByRole('tab', { name, exact: true }).click(); });
       await f.open('chat-a');
       await check('side panel empty', () => page.getByRole('button', { name: 'Show side panel', exact: true }).click());
       await check('side panel Browser', async () => { await page.getByRole('button', { name: 'New side panel tab', exact: true }).click(); await page.getByRole('menuitem', { name: 'Browser tab', exact: true }).click(); });

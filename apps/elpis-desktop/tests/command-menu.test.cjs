@@ -124,7 +124,7 @@ test('mouse clicks run navigation actions; projects match folders; sidebar hint 
     await page.evaluate(() => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'proj', name: 'Compiler', cwd: '/tmp/compiler-project' }], selectedId: null })));
     await page.reload(); await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();
     assert.equal(await page.locator('aside.sidebar .search-field .kbd-hint').textContent(), 'Ctrl Shift K');
-    for (const name of ['Workflows', 'Love Spot', 'Observability', 'Settings']) {
+    for (const name of ['Workflows', 'Love Spot', 'Settings']) {
       await page.keyboard.press('Control+k'); await input(page).fill(name);
       await menu(page).getByRole('option', { name: new RegExp('^' + name) }).click();
       await menu(page).waitFor({ state: 'detached' });

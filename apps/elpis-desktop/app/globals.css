@@ -542,8 +542,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .customize-state[data-on] { color:var(--foreground); }
 .customize-errors { margin-top:10px; font-size:13px; color:var(--muted-foreground); }
 .customize-errors summary { cursor:pointer; }
-.observability { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
-.observability > iframe { flex:1; width:100%; min-height:0; border:0; }
 /* Segmented choices: Settings' side-by-side options. */
 .segmented { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; padding:2px; border-radius:calc(var(--cut) + 1px) 0; corner-shape:bevel; background:var(--muted); }
 .segmented > button { height:26px; padding:0 10px; font-size:12.5px; font-weight:500; color:var(--muted-foreground); }

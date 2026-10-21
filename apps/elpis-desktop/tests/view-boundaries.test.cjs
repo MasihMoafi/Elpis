@@ -31,7 +31,6 @@ for (const view of [
   { name: 'Ledger', selector: '.customize[aria-label="Ledger"]' },
   { name: 'Settings', selector: '.settings-layout' },
   { name: 'Chat', selector: '.elpis-features' },
-  { name: 'Observability', selector: '[data-view="observability"]' },
 ]) test(`${view.name} catches a deliberate render failure, reloads, and leaves navigation usable`, async () => {
   const f = await fixture({ width: 1280, height: 800, desktop: false });
   const { page } = f;

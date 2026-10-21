@@ -3,15 +3,13 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { DASHBOARD_ASSETS } from '../bridge/dashboard-assets.mjs';
 
 /** Every file the packaged app loads besides the renderer; package.test.mjs checks it against their imports. */
 export const productionFiles = [
   'bridge/love-interview.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
   'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs',
-  'bridge/dashboard-assets.mjs',
-  'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mjs', 'bridge/client.mjs', 'bridge/customize.mjs', 'bridge/skill-trash.mjs', 'bridge/github-connector.mjs', 'bridge/elpis-features.mjs', 'bridge/dashboard.mjs', 'bridge/smart-prune.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/recorded-changes.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
+  'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mjs', 'bridge/client.mjs', 'bridge/customize.mjs', 'bridge/skill-trash.mjs', 'bridge/github-connector.mjs', 'bridge/elpis-features.mjs', 'bridge/smart-prune.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/recorded-changes.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
   'bridge/rag-command.mjs', 'bridge/rewind-history.mjs', 'bridge/rewind-snapshots.mjs', 'bridge/server.mjs', 'bridge/dev-servers.mjs', 'bridge/tools.mjs', 'bridge/runtime-paths.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs', 'bridge/trash.mjs',
   'bridge/resources/rag.md', 'bridge/resources/personal.md', 'bridge/personal.mjs', 'bridge/session-manager-mcp.mjs', 'bridge/session-manager-monitor.mjs', 'desktop/session-manager-agent.cjs', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-sessions.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
   'desktop/main.cjs', 'desktop/app-updates.cjs', 'desktop/wayland-ime.cjs', 'desktop/session-windows.cjs', 'desktop/window-ipc.cjs', 'desktop/media-policy.cjs', 'desktop/preferences.cjs', 'desktop/preload.cjs', 'desktop/files.cjs', 'desktop/editors.cjs',
@@ -141,7 +139,6 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
   }
   const files = [
     ...productionFiles.map(name => inputFile(path.join(source, name), `app/${name}`)),
-    ...DASHBOARD_ASSETS.map(name => inputFile(path.resolve(source, '../../codex-rs/tui/src/dashboard_assets', name), `app/bridge/resources/dashboard/${name}`)),
     ...inputTree(out, 'app/out'),
     ...inputTree(electron, 'runtime/electron'),
     ...inputTree(ws, 'app/node_modules/ws'),

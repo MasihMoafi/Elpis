@@ -77,7 +77,7 @@ test('a selected chat is unread on another page; a new turn clears a plan waitin
   const f = await fixture(), { page } = f;
   try {
     await f.open('chat-a');
-    await page.getByRole('button', { name: 'Observability', exact: true }).click();
+    await page.getByRole('button', { name: 'Lab', exact: true }).click();
     finish(f, 'chat-a', 'background');
     await eventually(async () => assert.equal(await dot(page, 'chat-a').getAttribute('data-state'), 'unread'));
     await f.open('chat-a');

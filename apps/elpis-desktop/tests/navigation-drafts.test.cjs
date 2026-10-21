@@ -98,7 +98,7 @@ test('unsent inline edits survive navigation, failures and chat switches; cancel
   await open('a'); await page.getByRole('button', { name: 'Edit message', exact: true }).click(); await edit.fill('Revision A');
   await settingsPage(); await open('a'); await expect(edit).toHaveValue('Revision A');
   await open('b'); await expect(edit).toHaveCount(0); await page.getByRole('button', { name: 'Edit message', exact: true }).click(); await expect(edit).toHaveValue('Original B'); await edit.fill('Revision B');
-  await page.getByRole('button', { name: 'Observability', exact: true }).click(); await open('a'); await expect(edit).toHaveValue('Revision A');
+  await page.getByRole('button', { name: 'Lab', exact: true }).click(); await open('a'); await expect(edit).toHaveValue('Revision A');
   await form.getByRole('button', { name: 'Cancel', exact: true }).click(); await settingsPage(); await open('a'); await expect(edit).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit message', exact: true }).click(); await expect(edit).toHaveValue('Original A'); await edit.fill('Failed revision A');
   await form.getByRole('button', { name: 'Send', exact: true }).click(); await expect(form.getByRole('alert')).toContainText('Fixture edit failed');
@@ -124,7 +124,7 @@ test('question answers survive chat and Needs-input navigation, retain failures 
   const pending = page.locator('#pending-input-panel .approval'); await expect(pending.locator('input').nth(0)).toHaveValue('Answer A'); await expect(pending.locator('input').nth(1)).toHaveValue('synthetic-secret-a');
   await page.getByRole('button', { name: 'Close pending input', exact: true }).click(); await open('b'); emit('approval', approval('approval-b', 'b'));
   await expect(inputs.nth(0)).toHaveValue(''); await expect(inputs.nth(1)).toHaveValue(''); await inputs.nth(0).fill('Answer B'); await inputs.nth(1).fill('synthetic-secret-b');
-  await page.getByRole('button', { name: 'Observability', exact: true }).click(); await open('a'); await expect(inputs.nth(0)).toHaveValue('Answer A'); await expect(inputs.nth(1)).toHaveValue('synthetic-secret-a');
+  await page.getByRole('button', { name: 'Lab', exact: true }).click(); await open('a'); await expect(inputs.nth(0)).toHaveValue('Answer A'); await expect(inputs.nth(1)).toHaveValue('synthetic-secret-a');
   await card.getByRole('button', { name: 'Submit', exact: true }).click(); await expect(card.getByRole('alert')).toContainText('Fixture answer failed');
   await settingsPage(); await open('a'); await expect(inputs.nth(0)).toHaveValue('Answer A'); await expect(inputs.nth(1)).toHaveValue('synthetic-secret-a');
   control.failAnswers = false; control.holdAnswer = true; await card.getByRole('button', { name: 'Submit', exact: true }).click();

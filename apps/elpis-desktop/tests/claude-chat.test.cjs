@@ -34,8 +34,8 @@ test('Back and Forward walk the chats and pages visited: the buttons, Alt+Left a
   await keys('ArrowRight'); await eventually(async () => assert.equal(await f.shown(), 'chat-b'));
   await forward.click(); await eventually(async () => assert.equal(await f.shown(), 'chat-c'));
   assert.equal(await forward.isDisabled(), true);
-  await page.getByRole('button', { name: 'Observability', exact: true }).click();
-  await page.getByRole('heading', { name: 'Observability', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Lab', exact: true }).click();
+  await page.getByRole('heading', { name: 'Lab', exact: true }).first().waitFor();
   await back.click(); await eventually(async () => assert.equal(await f.shown(), 'chat-c'));
   assert.equal(await forward.isDisabled(), false, 'the page left is still ahead');
   await back.click(); await eventually(async () => assert.equal(await f.shown(), 'chat-b'));

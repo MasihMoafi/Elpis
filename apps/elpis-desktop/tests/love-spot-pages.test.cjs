@@ -208,7 +208,7 @@ test('an unreadable page list is reported in Love Spot, and the rest of the app 
     await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     await f.page.getByRole('menuitem', { name: /could not read \(Love Spot pages\)/ }).waitFor();
     await f.page.keyboard.press('Escape');
-    await f.page.getByRole('button', { name: 'Observability', exact: true }).waitFor();
+    await f.page.getByRole('button', { name: 'Lab', exact: true }).waitFor();
     assert.deepEqual(crashes, [], 'one malformed reply must not take the whole app down');
   } finally { await f.close(); }
 });

@@ -38,6 +38,46 @@ function browser({ focused = true } = {}) {
   return { values, shown, posts, setFocus: value => { focused = value; }, respond: next => { fetchResult = next; } };
 }
 
+test('OBSRM: stale saved page and view preserve other preferences and the remaining page order', () => {
+  const env = browser(), use = loader();
+  const saved = { navOrder: 'customize,observability,loveSpot,canvas,experimentLab', view: 'observability', softWrap: false, defaultFolder: '/work' };
+  env.values.set('elpis-preferences-v1', JSON.stringify(saved));
+  const loaded = use('lib/preferences.ts').readPreferences();
+  const { arrange } = use('lib/nav-order.ts');
+  const pages = ['experimentLab', 'canvas', 'loveSpot', 'customize'].map(id => ({ id }));
+  const order = () => arrange(pages, loaded.navOrder.split(',')).map(page => page.id);
+  assert.deepEqual(order(), ['customize', 'loveSpot', 'canvas', 'experimentLab']);
+  assert.equal(loaded.softWrap, false); assert.equal(loaded.defaultFolder, '/work');
+  assert.equal(Object.hasOwn(loaded, 'view'), false, 'a retired view cannot be restored from preferences');
+  // Negative control: the same saved data must expose a loader which dereferences an unknown page.
+  const unsafe = () => loaded.navOrder.split(',').map(id => pages.find(page => page.id === id).id);
+  assert.throws(unsafe, TypeError, 'this fixture detects an unknown-id loading regression');
+  assert.equal(env.values.get('elpis-preferences-v1'), JSON.stringify(saved), 'loading does not rewrite saved data');
+});
+
+test('OBSRM: empty, partial, repeated and long legacy orders load through the real preference parser', () => {
+  const defaults = ['experimentLab', 'canvas', 'loveSpot', 'customize'];
+  const cases = [
+    ['', defaults],
+    ['observability', defaults],
+    ...[0, 2, 4].map(position => {
+      const order = ['customize', 'loveSpot', 'canvas', 'experimentLab'];
+      const saved = [...order]; saved.splice(position, 0, 'observability'); return [saved.join(','), order];
+    }),
+    ['loveSpot,observability,loveSpot', ['loveSpot', 'experimentLab', 'canvas', 'customize']],
+    [`${'unknown-'.repeat(1000)},customize,${'observability,'.repeat(200)}`, ['customize', 'experimentLab', 'canvas', 'loveSpot']],
+    [false, defaults],
+  ];
+  for (const [navOrder, expected] of cases) {
+    const env = browser(), use = loader();
+    env.values.set('elpis-preferences-v1', JSON.stringify({ navOrder, view: 'observability' }));
+    const loaded = use('lib/preferences.ts').readPreferences();
+    const { arrange } = use('lib/nav-order.ts');
+    assert.deepEqual(arrange(defaults.map(id => ({ id })), loaded.navOrder.split(',')).map(page => page.id), expected);
+    assert.deepEqual(loader()('lib/preferences.ts').readPreferences(), loaded, 'a fresh module after restart reads the same preferences');
+  }
+});
+
 test('preferences keep valid choices on this device, and the desktop reads the same close setting', () => {
   const env = browser(), use = loader();
   const { readPreferences, savePreferences, DEFAULT_PREFERENCES, PREFERENCES_KEY } = use('lib/preferences.ts');
