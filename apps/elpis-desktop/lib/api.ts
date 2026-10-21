@@ -67,12 +67,18 @@ export function taskFromPath(path: unknown) {
 export function agentName(thread?: Thread | null): string {
   return thread?.name?.match(/^Love Spot · (.+)$/u)?.[1]?.trim() || thread?.agentNickname?.trim() || "";
 }
-/** Use recorded task metadata before an agent's instruction preamble. */
+/** How the terminal names a helper, "Plato [worker]" (tui/src/multi_agents.rs), so the app shows the same agent. */
+export function agentLabel(thread: Thread): string {
+  const nickname = thread.agentNickname?.trim(), role = thread.agentRole?.trim();
+  return nickname && role ? `${nickname} [${role}]` : nickname || (role ? `[${role}]` : "");
+}
+/** Use recorded task metadata before an agent's instruction preamble; an unnamed helper leads with its agent label. */
 export function title(thread: Thread) {
   if (thread.name?.trim()) return thread.name.trim();
   if (thread.workflowTaskTitle?.trim()) return thread.workflowTaskTitle.trim();
-  const task = taskOf(thread);
-  if (task) return task;
+  const task = taskOf(thread), label = isAgent(thread) ? agentLabel(thread) : "";
+  if (task) return label ? `${label} · ${task}` : task;
+  if (label) return label;
   const preview = thread.preview?.trim().split(/\r?\n/)[0].slice(0, 80);
   if (preview && (!isAgent(thread) || !/^you are\b/i.test(preview))) return preview;
   return isAgent(thread) ? `Untitled agent · ${thread.id.slice(-8)}` : "Untitled conversation";

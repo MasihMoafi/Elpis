@@ -37,7 +37,8 @@
     "tests/workflow-sources.test.cjs",
     "tests/canvas-delete-flow.test.mjs",
     "tests/love-activity.test.mjs",
-    "tests/love-spot-events.test.mjs"
+    "tests/love-spot-events.test.mjs",
+    "tests/agent-label.test.mjs"
   ],
   "bridge": [
     "bridge/observability-turns.test.mjs",
