@@ -4,17 +4,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
+const { LOGO_ACCENT, openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contrastFailures } = require('./hud-contrast.cjs');
 const { colours, evidence, assertColours } = require('./primary-action-colours.cjs');
 const ACCENTS = ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange'];
 const UNCHANGED_ACCENTS = {
   Light: { blue: '#2458b8', teal: '#146b67', green: '#29683f', violet: '#6b44ac', rose: '#a73459' },
-  Dark: { amber: '#ff9b28', blue: '#8bb7ff', teal: '#68d4c7', green: '#8bd49f', violet: '#c1a0fa', rose: '#f39cbb', orange: '#ff8f00' },
+  Dark: { blue: '#8bb7ff', teal: '#68d4c7', green: '#8bd49f', violet: '#c1a0fa', rose: '#f39cbb' },
 };
 
-test('A87 Send stays Elpis orange at rest, hover, pressed, keyboard focus and disabled in both themes', async () => {
+test('A87 Send follows the logo at rest, hover, pressed, keyboard focus and disabled in both themes', async () => {
   const directory = process.env.ELPIS_A87_SHOTS;
   const measurements = [];
   for (const colorScheme of ['light', 'dark']) {
@@ -33,17 +33,8 @@ test('A87 Send stays Elpis orange at rest, hover, pressed, keyboard focus and di
   await evidence(directory, measurements);
   assertColours(measurements);
 });
-function isOrange([r, g, b]) {
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), chroma = max - min;
-  const hue = chroma && max === r ? 60 * (g - b) / chroma : -1;
-  return max >= 230 && chroma / max >= .7 && hue >= 32 && hue <= 36;
-}
-
-test('default and orange accents use saturated orange in light and preserve the dark palette', async t => {
-  assert.equal(isOrange([143, 91, 0]), false, 'the old brown must be rejected');
-  assert.equal(isOrange([179, 71, 0]), false, '#b34700 is too red');
-  assert.equal(isOrange([255, 138, 0]), true, 'the send button orange is accepted');
-  assert.equal(isOrange([232, 157, 52]), true, 'the logo amber is accepted');
+test('default and orange accents use the exact main logo colour in both themes', async t => {
+  const expected = LOGO_ACCENT.slice(1).match(/../g).map(value => parseInt(value, 16));
   const f = await fixture({ width: 1280, height: 900 }), { page } = f; t.after(f.close);
   await f.open('chat-a');
   for (const mode of ['light', 'dark']) for (const accent of [null, 'amber', 'orange']) {
@@ -55,11 +46,13 @@ test('default and orange accents use saturated orange in light and preserve the 
       probe.style.color = 'var(--primary)'; document.body.append(probe);
       const primary = getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number);
       probe.remove();
-      return { primary, action: getComputedStyle(document.documentElement).getPropertyValue('--primary-action').trim() };
+      probe.style.color = 'var(--primary-action)'; document.body.append(probe);
+      const action = getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number);
+      probe.remove();
+      return { primary, action };
     }, { mode, accent });
-    if (mode === 'light') assert.ok(isOrange(colours.primary), `${mode} ${accent || 'default'} must match send/logo hue: ${colours.primary}`);
-    else assert.deepEqual(colours.primary, accent === 'orange' ? [255, 143, 0] : [255, 155, 40], `dark ${accent || 'default'} stays unchanged`);
-    assert.equal(colours.action, '#ff8a00');
+    assert.deepEqual(colours.primary, expected, `${mode} ${accent || 'default'} matches the logo`);
+    assert.deepEqual(colours.action, expected, 'Send shares the primary token');
   }
 });
 const SHOTS = process.env.ELPIS_THEMES_SHOTS || path.join(process.env.HOME, '.cache/elpis-tests/night-themes');
@@ -131,7 +124,7 @@ test('all seven accents change shared tokens and meet text contrast in both them
       assert.equal(result.ring, result.primary); assert.equal(result.gold, result.primary);
       measurements.push({ mode, accent, ...result });
     }
-    assert.equal(primaries.size, 7, 'each accent has its own token');
+    assert.equal(primaries.size, 6, 'amber and orange share the approved logo token');
   }
   await fs.mkdir(SHOTS, { recursive: true });
   await fs.writeFile(path.join(SHOTS, 'contrast.json'), JSON.stringify(measurements, null, 2));
@@ -174,7 +167,7 @@ test('light orange accents keep real chat and Settings text readable, with orang
     });
     assert.equal(marks.line, 'underline');
     for (const role of ['tab', 'icon', 'sidebar']) assert.equal(marks[role], marks.primary, `${mode} ${accent} ${role} uses the shared visual accent`);
-    assert.equal(marks.fill, 'rgb(255, 138, 0)', 'the send fill stays orange');
+    assert.equal(marks.fill, marks.primary, 'Send shares the main logo colour');
     if (mode === 'Light') {
       assert.notEqual(marks.link, marks.underline, 'ink link text keeps its orange underline');
       assert.equal(marks.label, 'rgb(37, 37, 36)', 'orange send fill keeps dark ink');

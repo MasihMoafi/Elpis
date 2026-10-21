@@ -1,5 +1,8 @@
 // Exercise the visible shadcn controls, including their portals, rather than
 // mutating hidden inputs or retaining native-select-only test operations.
+// A87's approved main colour comes from the new-chat logo, never from the token under test.
+const LOGO_ACCENT = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/branding/elpis-wordmark-amber-light-loop.svg'), 'utf8')
+  .match(/<linearGradient\b[^>]*id="elpis-word-light-gold"[^>]*>\s*<stop\b[^>]*stop-color="(#[\da-f]+)"/i)[1];
 async function openList(locator) {
   const page = locator.page();
   await locator.click();
@@ -59,9 +62,9 @@ async function guardDesktopStore(target) {
   }, STORE_KEYS.source);
 }
 /** Unapproved oranges in the light theme (hue 15–50°, saturated, mid lightness), as `selector: property value`.
- * A87 approves logo amber/send orange for accents, including their shared composer edge. Text still uses ink.
+ * A87 approves one logo colour and its exact interaction mixes. Light text still uses ink.
  * Colours are read back from a canvas pixel, so color-mix(), oklch() and gradients count as what is drawn. */
-const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate(({ exclude, approvedAccents }) => {
+const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate(({ exclude, approvedAccents, accent }) => {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   const rgba = value => { context.clearRect(0, 0, 1, 1); context.fillStyle = '#000'; context.fillStyle = value; context.fillRect(0, 0, 1, 1); return context.getImageData(0, 0, 1, 1).data; };
@@ -71,15 +74,18 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
     const probe = document.createElement('span'); probe.style.color = value; document.body.append(probe);
     const pixel = [...rgba(getComputedStyle(probe).color)]; probe.remove(); return pixel;
   };
-  const accents = ['#e89d34', '#ff8a00'].map(resolve);
-  const focus = resolve('color-mix(in oklch, #e89d34 80%, var(--hud-edge))');
-  const message = approvedAccents ? resolve('color-mix(in oklch, #e89d34 70%, transparent)') : [];
+  const main = resolve(accent);
+  const focus = resolve(`color-mix(in srgb, ${accent} 80%, var(--hud-edge))`);
+  const message = approvedAccents ? resolve(`color-mix(in oklch, ${accent} 70%, transparent)`) : [];
+  const hover = resolve(`color-mix(in srgb, ${accent}, white 8%)`);
+  const pressed = resolve(`color-mix(in srgb, ${accent}, white 16%)`);
   const approved = (element, property, colour) => {
     const pixel = rgba(colour), same = expected => expected.length === pixel.length && expected.every((value, at) => value === pixel[at]);
-    // A67's outlined working hexagon uses Send orange, even when logo amber is allowed elsewhere.
-    if (property === 'stroke' && element.matches('.elpis-working-rotor')) return same(accents[1]);
+    if (property === 'stroke' && element.matches('.elpis-working-rotor')) return same(main);
     if (property === 'color' && !approvedAccents) return false;
-    return accents.some(same)
+    return same(main)
+      || (property === 'background-color' && element.matches('.primary-cut:active:not(:disabled)') && same(pressed))
+      || (property === 'background-color' && element.matches('.primary-cut:hover:not(:disabled)') && same(hover))
       || (/^border-.*-color$/.test(property) && element.matches('.composer, .composer-tray') && same(focus))
       || (property === 'border-right-color' && element.matches('.message.user') && same(message));
   };
@@ -111,8 +117,8 @@ const oranges = (page, exclude = '', approvedAccents = false) => page.evaluate((
     }
   }
   return [...hits];
-}, { exclude, approvedAccents });
-/** A87: light accents use logo amber and send orange; other oranges (including the former brown) still fail. */
+}, { exclude, approvedAccents, accent: LOGO_ACCENT });
+/** A87: one logo colour; other oranges (including the former Send colour and brown) still fail. */
 const unapprovedOranges = (page, exclude = '') => oranges(page, exclude, true);
 /** Opens a select and lists every option whose text is cut off: clipped by the menu or the option, or running under
  * the check mark. Measures the glyphs themselves (a Range), so ellipsis and overflow:hidden both count as cut. */
@@ -157,4 +163,4 @@ async function assertDialogActionsExplained(dialog, expected) {
     if (expected) assert.match(reasons.join(' '), expected);
   }
 }
-module.exports = { assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar };
+module.exports = { LOGO_ACCENT, assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar };

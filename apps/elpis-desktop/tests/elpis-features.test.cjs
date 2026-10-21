@@ -1,30 +1,32 @@
 // Elpis's own features in view on the main chat (no hover needed), as the TUI's ledger sits beside its composer, and
-// a light theme with the approved amber/orange accents. Local fixture of the bridge; no runtime or model calls.
+// a light theme with the approved logo accent. Local fixture of the bridge; no runtime or model calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { unapprovedOranges } = require('./controls.cjs');
+const { LOGO_ACCENT, unapprovedOranges } = require('./controls.cjs');
 
-test('the A87 accent check accepts only the approved colours and mixes, and rejects the old brown', async () => {
+test('the A87 accent check accepts only the approved logo colour and mixes, and rejects the old brown', async () => {
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   try {
     const page = await browser.newPage();
-    await page.setContent('<style>:root { --hud-edge: #ddd; } .composer { border: 1px solid color-mix(in oklch, #e89d34 80%, var(--hud-edge)); } .message.user { border-right: 2px solid color-mix(in oklch, #e89d34 70%, transparent); }</style><button style="background:#ff8a00">Send</button><svg width="16" height="16" fill="#e89d34"><path d="M0 0H16V16H0Z" /></svg><form class="composer">Message</form><div class="message user">Prompt</div>');
+    await page.setContent(`<style>:root { --hud-edge: #ddd; } .composer { border: 1px solid color-mix(in srgb, ${LOGO_ACCENT} 80%, var(--hud-edge)); } .message.user { border-right: 2px solid color-mix(in oklch, ${LOGO_ACCENT} 70%, transparent); }</style><button style="background:${LOGO_ACCENT}">Send</button><svg width="16" height="16" fill="${LOGO_ACCENT}"><path d="M0 0H16V16H0Z" /></svg><form class="composer">Message</form><div class="message user">Prompt</div>`);
     assert.deepEqual(await unapprovedOranges(page), []);
-    for (const colour of ['#b34700', '#e89d35']) {
+    for (const colour of ['#b34700', '#e89d34', '#ff8a00', '#ff9b28', '#f2a93c']) {
       await page.locator('button').evaluate((button, colour) => { button.style.backgroundColor = colour; }, colour);
       assert.equal((await unapprovedOranges(page)).length, 1, `${colour} is not approved`);
     }
-    await page.locator('button').evaluate(button => { button.style.backgroundColor = '#ff8a00'; });
+    await page.locator('button').evaluate((button, accent) => { button.style.backgroundColor = accent; }, LOGO_ACCENT);
+    await page.locator('.composer').evaluate((form, accent) => { form.style.borderColor = `color-mix(in oklch, ${accent} 80%, var(--hud-edge))`; }, LOGO_ACCENT);
+    assert.equal((await unapprovedOranges(page)).length, 4, 'the stale OKLCH focus mix is not the approved sRGB edge');
     await page.locator('.composer').evaluate(form => { form.style.borderColor = '#b34700'; });
     assert.equal((await unapprovedOranges(page)).length, 4, 'unapproved borders stay checked');
   } finally { await browser.close(); }
 });
 
-test('the main chat shows Elpis features under the message box, one click each, and light mode has only approved amber/orange accents', async () => {
+test('the main chat shows Elpis features under the message box, one click each, and light mode has only approved logo accent', async () => {
   const thread = { id: 'ledger', name: 'Ledger chat', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
   const switches = { version: 'v1', write: { available: true }, smartPrune: true, subagents: true, rag: false }, saved = [];
   // As the bridge does: every /api request is refused until the page trades its #token for a session.
@@ -65,11 +67,11 @@ test('the main chat shows Elpis features under the message box, one click each, 
     assert.deepEqual(await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement);
       return ['--primary', '--primary-action'].map(key => style.getPropertyValue(key).trim());
-    }), ['#e89d34', '#ff8a00'], 'A87: logo amber and send orange are the actual theme accents');
+    }), [LOGO_ACCENT, LOGO_ACCENT], 'A87: primary and Send use the exact main logo colour');
     assert.deepEqual(await Promise.all(['Smart Prune', 'Subagents', 'RAG'].map(label => chip(label).getAttribute('aria-pressed'))), ['true', 'true', 'false']);
     const [composer, strip] = [await page.locator('.composer').boundingBox(), await features.boundingBox()];
     assert.ok(strip.y >= composer.y + composer.height - 1 && strip.y - (composer.y + composer.height) < 40, `the features sit right under the message box (${JSON.stringify([composer, strip])})`);
-    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, new chat: only approved amber/orange accents');
+    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, new chat: only approved logo accent');
 
     // A new chat has its context ring too; clicking it (as in Claude) shows the context window alone: the switches are the chips above.
     const ring = page.getByRole('button', { name: 'Context window: not measured yet', exact: true });
@@ -77,7 +79,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
     const ledgerPopup = page.getByRole('dialog', { name: 'Context window usage', exact: true }); await ledgerPopup.waitFor();
     assert.equal(await ledgerPopup.getByRole('switch').count(), 0);
     assert.equal((await ledgerPopup.innerText()).replace(/\s+/g, ' ').trim(), 'Context window Send a message to see context usage.');
-    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, new chat ledger: only approved amber/orange accents');
+    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, new chat ledger: only approved logo accent');
     await page.keyboard.press('Escape'); await ledgerPopup.waitFor({ state: 'hidden' });
 
     // One click flips a switch, writes only its key, and the ledger shows the same state.
@@ -93,7 +95,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
     const popup = page.getByRole('dialog', { name: 'Context window usage', exact: true });
     await popup.waitFor();
     assert.equal(await popup.getByRole('switch').count(), 0);
-    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, open chat with its Context Ledger: only approved amber/orange accents');
+    assert.deepEqual(await unapprovedOranges(page), [], 'light theme, open chat with its Context Ledger: only approved logo accent');
     await chip('Smart Prune').click();
     await page.waitForFunction(() => [...document.querySelectorAll('[aria-label="Elpis features"] button')].find(b => b.textContent.includes('Smart Prune'))?.getAttribute('aria-pressed') === 'false');
 

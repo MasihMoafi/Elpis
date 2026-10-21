@@ -2,6 +2,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { LOGO_ACCENT } = require('./controls.cjs');
+const LOGO_RGB = LOGO_ACCENT.slice(1).match(/../g).map(value => parseInt(value, 16));
 
 function hue([r, g, b]) {
   const delta = Math.max(r, g, b) - Math.min(r, g, b);
@@ -41,14 +43,14 @@ async function colours(page, theme, directory, accent = 'amber') {
       for (const [index, paint] of [...style.boxShadow.matchAll(/(?:rgba?|color|oklab|oklch)\([^()]*\)/g)].entries()) {
         paints[`Send shadow ${index}`] = pixel(paint[0]);
       }
-      return { background: style.backgroundColor, rgba: pixel(style.backgroundColor), foreground: style.color,
+      return { background: style.backgroundColor, rgba: pixel(style.backgroundColor), foreground: style.color, foregroundRgba: pixel(style.color),
         border: style.borderColor, shadow: style.boxShadow, opacity: style.opacity, disabled: element.disabled,
         hover: element.matches(':hover'), pressed: element.matches(':active'), focus: element.matches(':focus-visible'), tokens, paints };
     });
     measurements.push({ theme, accent, state, ...result });
     if (directory) await page.screenshot({ path: path.join(directory, `${theme}-${accent}-${state}.png`) });
   }
-  await composer.fill('A87 orange state check');
+  await composer.fill('A87 logo colour check');
   await composer.focus(); await page.mouse.move(0, 0);
   await page.waitForFunction(() => !document.querySelector('.send-button')?.disabled);
   assert.equal(await send.isEnabled(), true);
@@ -78,6 +80,7 @@ async function evidence(directory, measurements) {
 
 function assertColours(measurements) {
   assert.equal(hue([179, 71, 0]) >= 32, false, '#b34700 must fail');
+  assert.ok(Math.abs(hue([255, 138, 0]) - hue(LOGO_RGB)) > .7, 'the former #ff8a00 Send colour must fail');
   for (const theme of ['light', 'dark']) for (const accent of ['amber', 'orange']) {
     assert.deepEqual(measurements.filter(row => row.theme === theme && row.accent === accent).map(row => row.state), ['rest', 'hover', 'pressed', 'focus', 'disabled'], `${theme} ${accent}: every state was measured`);
   }
@@ -89,16 +92,24 @@ function assertColours(measurements) {
       // Neutral surfaces may remain neutral; any visible accent must retain the approved hue.
       if (name !== 'Send' && (chroma < 8 || alpha < 12)) continue;
       const value = hue(rgba);
-      if (value === null || value < 32 || value > 36) failures.push(`${label} ${name}: ${rgba.map(Math.round)} hue=${value}`);
+      if (value === null || Math.abs(value - hue(LOGO_RGB)) > 0.7) failures.push(`${label} ${name}: ${rgba.map(Math.round)} hue=${value}`);
     }
-    if (row.state === 'rest' && row.rgba.map(Math.round).join(',') !== '255,138,0,255') failures.push(`${label}: expected #ff8a00`);
+    const tint = row.state === 'hover' ? .08 : row.state === 'pressed' ? .16 : 0;
+    const expected = [...LOGO_RGB.map(value => Math.round(value + (255 - value) * tint)), 255];
+    if (row.rgba.some((value, index) => Math.abs(value - expected[index]) > 0.6)) failures.push(`${label}: expected logo ${LOGO_ACCENT} with ${tint * 100}% white, got ${row.rgba}`);
+    for (const name of ['--primary', '--gold', '--accent-mark', '--ring', '--primary-action']) {
+      if (row.tokens[name].some((value, index) => Math.abs(value - [...LOGO_RGB, 255][index]) > 0.2)) failures.push(`${label} ${name}: must match the logo ${LOGO_ACCENT}`);
+    }
+    const luminance = rgb => rgb.slice(0, 3).map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+    const [lighter, darker] = [luminance(row.rgba), luminance(row.foregroundRgba)].sort((a, b) => b - a);
+    if (!row.disabled && (lighter + .05) / (darker + .05) < 4.5) failures.push(`${label}: Send text contrast is below 4.5:1`);
     if (row.state === 'hover' && !row.hover) failures.push(`${label}: pointer did not enter Send`);
     if (row.state === 'pressed' && !row.pressed) failures.push(`${label}: mouse was not held down`);
     if (row.state === 'focus' && !row.focus) failures.push(`${label}: keyboard focus was not visible`);
     if (row.state === 'focus' && row.shadow === 'none') failures.push(`${label}: no keyboard focus ring`);
     if (row.state === 'disabled' && !row.disabled) failures.push(`${label}: empty Send was not disabled`);
   }
-  assert.deepEqual(failures, [], 'primary action and shared accents must keep the approved orange hue');
+  assert.deepEqual(failures, [], `primary action and shared accents must use the logo's ${LOGO_ACCENT}`);
 }
 
 module.exports = { colours, evidence, assertColours };

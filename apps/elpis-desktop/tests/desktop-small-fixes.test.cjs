@@ -166,9 +166,9 @@ test('light-theme colour guard permits A87 accent paint and still rejects orange
   const f = await fixture();
   t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   await f.page.evaluate(() => {
-    const other = document.createElement('span'); other.id = 'unexpected-fill'; other.textContent = 'Other fill'; other.style.backgroundColor = '#f2a93b';
+    const other = document.createElement('span'); other.id = 'unexpected-fill'; other.textContent = 'Other fill'; other.style.backgroundColor = '#ff8a00';
     const primary = document.createElement('button'); primary.id = 'primary-probe'; primary.className = 'primary-cut'; primary.dataset.slot = 'button'; primary.textContent = 'Unreadable text'; primary.style.color = '#f2a93b';
-    const accent = document.createElement('span'); accent.id = 'accent-text-probe'; accent.textContent = 'Amber text'; accent.style.color = '#e89d34';
+    const accent = document.createElement('span'); accent.id = 'accent-text-probe'; accent.textContent = 'Amber text'; accent.style.color = '#f2a93b';
     document.body.append(other, primary, accent);
   });
   const hits = await oranges(f.page);
