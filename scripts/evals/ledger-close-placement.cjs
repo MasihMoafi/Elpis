@@ -191,7 +191,13 @@ async function check({ binary, output, phase, smoke }, width, light) {
       for (const height of [...(smoke ? [10] : Array.from({ length: 31 }, (_, i) => i + 10)), 8, 7, 6, 40]) {
         tm('resize-window', '-t', 'check', '-x', String(width), '-y', String(height));
         await pause(200);
-        const closed = save(`closed-${height}`);
+        // A resize repaints the whole screen; a capture taken mid-repaint is blank (21 Oct, 120 columns).
+        // Recapture for up to two seconds; a draft that really disappeared still fails below.
+        let closed = save(`closed-${height}`);
+        for (const settle = Date.now() + 2000; Date.now() < settle && !closed.includes('› placement probe');) {
+          await pause(100);
+          closed = save(`closed-${height}`);
+        }
         const rows = closed.trimEnd().split('\n');
         const composerY = rows.findIndex(row => row.includes('› placement probe'));
         assert(composerY >= 0, `${height} rows: draft disappeared`);
