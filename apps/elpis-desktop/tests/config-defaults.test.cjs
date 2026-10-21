@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { chooseOption, controlValue } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -51,11 +51,14 @@ test('reopening /config models re-reads a default saved by another client', asyn
   const f = await fixture({ routes: { '/api/settings': () => saved } });
   try {
     await f.composer.fill('/config models'); await f.composer.press('Enter');
-    await f.page.locator('[data-slot="settings-row"]').filter({ hasText: 'Default model' }).getByText('Elpis default', { exact: true }).waitFor();
+    const model = f.page.getByRole('combobox', { name: 'Default model', exact: true });
+    await model.waitFor();
+    assert.equal(await controlValue(model), '', 'an unset default stays unset in the inline editor');
     await f.page.getByRole('button', { name: 'Back to app' }).click();
     saved.main.model = 'sol'; saved.version = 'v2';
     await f.composer.fill('/config models'); await f.composer.press('Enter');
-    await f.page.locator('[data-slot="settings-row"]').filter({ hasText: 'Default model' }).getByText('sol', { exact: true }).waitFor({ timeout: 5000 });
+    await f.page.waitForFunction(() => document.querySelector('[aria-label="Default model"][role="combobox"]')?.getAttribute('data-value') === 'sol');
+    assert.equal(await controlValue(model), 'sol', 'reopening reads the default saved by another client');
     assert.deepEqual(f.posts.filter(post => post.path === '/api/settings'), []);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

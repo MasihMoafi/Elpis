@@ -8,11 +8,13 @@ const { fixture } = require('./parity-fixture.cjs');
 const skill = (name, scope, enabled, extra = {}) => ({ id: name, name, description: `Does ${name}`, path: `/home/u/.elpis-next/skills/${name}/SKILL.md`, scope, enabled, plugin: null, ...extra });
 function state() {
   const skills = [skill('pdf', 'system', true), skill('web-dev', 'user', true)];
+  const plugins = [{ id: 'docs@local', name: 'Docs', description: 'Writes docs', marketplace: 'My plugins', enabled: true }];
+  const connectors = [{ name: 'rag', enabled: true, transport: 'stdio' }, { name: 'web', enabled: false, transport: 'http' }];
   return {
-    skills, writes: [],
+    skills, plugins, connectors, writes: [],
     reply: () => ({ skills: { data: skills.map(item => ({ ...item })), errors: [{ path: '/home/u/.elpis-next/skills/bad/SKILL.md', message: 'missing name' }] },
-      plugins: { version: 'user-v1', write: { available: true }, data: [{ id: 'docs@local', name: 'Docs', description: 'Writes docs', marketplace: 'My plugins', enabled: true }] },
-      connectors: { version: 'user-v1', write: { available: true }, data: [{ name: 'rag', enabled: true, transport: 'stdio' }, { name: 'web', enabled: false, transport: 'http' }] } }),
+      plugins: { version: 'user-v1', write: { available: true }, data: plugins.map(item => ({ ...item })) },
+      connectors: { version: 'user-v1', write: { available: true }, data: connectors.map(item => ({ ...item })) } }),
   };
 }
 
@@ -21,6 +23,8 @@ test('Ledger lists skills, plugins and connectors; a skill switches off; Create 
   const f = await fixture({ routes: {
     '/api/customize': () => s.reply(),
     '/api/customize/skill': body => { s.writes.push(body); s.skills.find(item => item.path === body.path).enabled = body.enabled; return s.reply(); },
+    '/api/customize/plugin': body => { s.plugins.find(item => item.id === body.id).enabled = body.enabled; return s.reply(); },
+    '/api/mcp': body => { if (body) s.connectors.find(item => item.name === body.name).enabled = body.enabled; return {}; },
   } });
   try {
     const { page } = f;
@@ -43,11 +47,28 @@ test('Ledger lists skills, plugins and connectors; a skill switches off; Create 
     await sections.getByRole('radio', { name: 'Plugins', exact: true }).click();
     const plugins = page.getByRole('region', { name: 'Your plugins', exact: true });
     assert.deepEqual(await plugins.locator('.customize-name').allInnerTexts(), ['Docs']);
-    assert.equal(await plugins.getByRole('switch', { name: 'Use Docs', exact: true }).getAttribute('aria-checked'), 'true');
+    assert.deepEqual(await plugins.locator('.customize-description').allInnerTexts(), ['Writes docs']);
+    assert.deepEqual(await plugins.locator('.customize-badge').allInnerTexts(), ['My plugins']);
+    const plugin = plugins.getByRole('switch', { name: 'Use Docs', exact: true });
+    assert.equal(await plugin.getAttribute('aria-checked'), 'true');
+    for (const enabled of [false, true]) {
+      await plugin.click();
+      await page.waitForFunction(value => document.querySelector('[aria-label="Use Docs"]')?.getAttribute('aria-checked') === String(value), enabled);
+      assert.equal(s.plugins[0].enabled, enabled);
+    }
+    assert.deepEqual(f.posts.filter(post => post.path === '/api/customize/plugin').map(post => post.body), [false, true].map(enabled => ({ action: 'enable', id: 'docs@local', enabled, version: 'user-v1' })));
     await sections.getByRole('radio', { name: 'Connectors', exact: true }).click();
     const connectors = page.getByRole('region', { name: 'Your connectors', exact: true });
     assert.deepEqual(await connectors.locator('.customize-name').allInnerTexts(), ['rag', 'web']);
     assert.deepEqual(await connectors.getByRole('switch').evaluateAll(items => items.map(item => item.getAttribute('aria-checked'))), ['true', 'false']);
+    const rag = connectors.getByRole('switch', { name: 'Use rag', exact: true });
+    for (const enabled of [false, true]) {
+      await rag.click();
+      await page.waitForFunction(value => document.querySelector('[aria-label="Use rag"]')?.getAttribute('aria-checked') === String(value), enabled);
+      assert.equal(s.connectors[0].enabled, enabled);
+      assert.equal(await connectors.getByRole('switch', { name: 'Use web', exact: true }).getAttribute('aria-checked'), 'false');
+    }
+    assert.deepEqual(f.posts.filter(post => post.path === '/api/mcp').map(post => post.body), [false, true].map(enabled => ({ action: 'enable', name: 'rag', enabled, version: 'user-v1' })));
     await connectors.getByRole('button', { name: 'Manage connectors', exact: true }).click();
     await page.getByRole('heading', { name: 'MCP servers' }).first().waitFor();
     assert.equal(await page.getByText('This page could not be shown', { exact: false }).count(), 0, 'the MCP page reads a reply without servers as none');

@@ -122,7 +122,7 @@ test('Changes tab: the working-tree file list with status and +/- counts, and th
     // The shared gold primary background is intentional. Other orange surfaces and primary text remain detectable.
     await page.evaluate(() => {
       const probe = document.createElement('div'); probe.id = 'orange-guard-probe';
-      probe.innerHTML = '<span style="background:rgb(242,169,59)">surface</span><button class="primary-cut" style="color:rgb(242,169,59)">text</button>';
+      probe.innerHTML = '<span style="background:rgb(255,138,0)">surface</span><button class="primary-cut" style="color:rgb(255,138,0)">text</button>';
       document.body.append(probe);
     });
     try {

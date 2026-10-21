@@ -126,16 +126,20 @@ test('maintenance settings read the real catalog response and keep model lists w
   await openSettings(page);
   await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
   const section = page.getByRole('region', { name: 'Models', exact: true });
-  await chooseOption(section.getByLabel('Background model', { exact: true }), { label: 'Sol' });
+  await chooseOption(section.getByRole('combobox', { name: 'Background model', exact: true }), { label: 'Sol' });
   await chooseOption(section.getByLabel('Background provider', { exact: true }), 'lab');
-  await section.getByLabel('Background model', { exact: true }).click();
+  await section.getByRole('combobox', { name: 'Background model', exact: true }).click();
   await page.getByRole('option', { name: 'GPT-OSS 120B', exact: true }).waitFor();
   assert.equal(await page.getByRole('option', { name: 'Sol', exact: true }).count(), 0, 'OpenAI models are not offered under the lab server');
   await page.getByRole('option', { name: 'GPT-OSS 120B', exact: true }).click();
   await shot('07-model-settings-light');
   await chooseOption(section.getByLabel('Background provider', { exact: true }), 'home');
-  await section.getByText('Advanced: custom model', { exact: true }).click();
-  await section.getByText('No model catalog is available for Home server.', { exact: true }).waitFor();
+  const background = section.getByRole('group', { name: 'Background model choices', exact: true });
+  await background.getByText('Advanced: custom model', { exact: true }).click();
+  await background.getByText('No model catalog is available for Home server.', { exact: true }).waitFor();
+  assert.equal(await section.getByRole('group', { name: 'Main model choices', exact: true }).locator('details').getAttribute('open'), null, 'editing the background model leaves the main editor closed');
+  await background.getByRole('textbox', { name: 'Background model', exact: true }).fill('home-local-model');
+  assert.equal(await background.getByRole('textbox', { name: 'Background model', exact: true }).inputValue(), 'home-local-model');
 }));
 
 test('API setup omits internal IDs and keeps unsaved values across sections and pages', () => fixture(async ({ page, shot }) => {

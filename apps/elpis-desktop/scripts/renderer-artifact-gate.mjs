@@ -15,7 +15,7 @@ import { checkInventory, discoverTests } from './test-gate.mjs';
 // Round 2 (f96171ccb): the merged repairs (gatefix) keep every case; the earlier baseline still had the pre-merge copies.
 // Round 3 (988aad0e7): combofix scoped the dropdown helper (c23e326c8) and wf1b aimed three Workflows tests at the current UI; every case kept.
 export const baselineCommit = '988aad0e78bd264c00e435be07598e79f08941e8';
-// GATE10: only these audited copies need updated expectations or fixtures. Each pin names
+// GATE10/GATE11: only these audited copies need updated expectations or fixtures. Each pin names
 // the request and exact replacement bytes; all other retained tests keep their original bytes.
 // Blob pins also cover the small fixture repairs in this change, without advancing the checkpoint.
 const pageRemovalApproval = {
@@ -25,9 +25,9 @@ const pageRemovalApproval = {
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
     "tests/controls.cjs": {
-      "blob": "612e8501e5739e60cb4baa508b899543eea99f50",
-      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
-      "reason": "A87/R28: one exact logo accent replaces the former amber and Send orange"
+      "blob": "20fa1f28bc021504e00de6a9aa405270de734ce1",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards."
     },
     "tests/elpis-features.test.cjs": {
       "blob": "4ea61facc7acc9044ebaf5bce4ad52f900b8a98d",
@@ -53,8 +53,9 @@ export const retainedUpdates = {
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action"
     },
     "tests/claude-chat.test.cjs": {
-      "blob": "d65e12944423579b214e7b1795371ea88b7b9e19",
-      ...pageRemovalApproval
+      "blob": "0808f78884331931a6ce04a1e4ab0f47a9af62aa",
+      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
+      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update."
     },
     "tests/command-menu.test.cjs": {
       "blob": "335dcdab0114fafb0e45c3af362501bc7c8f13d2",
@@ -102,12 +103,58 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/usability.test.cjs": {
-      "blob": "b77cf05b7701f8977f0ec9da29bc3b7c60ade0df",
-      ...pageRemovalApproval
+      "blob": "84bfb13ee065c938ca9006268d585efa9f18580a",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Both models now have custom editors: target Background choices, verify the Main editor stays closed and enter an exact custom draft; preserve the approved OBSRM navigation checks."
     },
     "tests/workflow-approvals.test.cjs": {
       "blob": "1f182af9780ec77af10a8eedfe40813dddc889a9",
       ...pageRemovalApproval
+    },
+    "tests/changes-panel.test.cjs": {
+      "blob": "93f85266a3af15a37194b1bedfbb04e737587ba4",
+      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
+      "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The negative colour probe must use the former, now unapproved Send orange; every diff assertion stays."
+    },
+    "tests/config-defaults.test.cjs": {
+      "blob": "3fde4827aa6a0ecc7e8512bbe41fa8eeca8c54a1",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes."
+    },
+    "tests/customize.test.cjs": {
+      "blob": "f5fd374f832bb88d2c97a72763d9793aaf38a61d",
+      "approval": "ef1a6199498a80ddafb94d14afcee3eccdc4412e",
+      "reason": "LEDGER, Masih's approved request in GATE11: \"MCP and plugin switches, Add plugins\". Supply writable versions and check both switch states, metadata and exact save requests; keep skill and navigation checks."
+    },
+    "tests/night-themes.test.cjs": {
+      "blob": "5deae3213e50c3df45df91e9fe810f5bbac84c53",
+      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
+      "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" Use the already updated exact-logo, interaction-state and contrast checks; retain all seven accent choices and font checks."
+    },
+    "tests/primary-action-colours.cjs": {
+      "blob": "98e82896dd34117d785364f8456f26d3c92baa14",
+      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
+      "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The retained theme check needs its matching exact-logo state helper, including token equality, old-orange rejection and text contrast."
+    },
+    "tests/settings-row-audit.cjs": {
+      "blob": "4fc98f7572c39b48d53e1034004a5c9797daddec",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks."
+    },
+    "tests/settings-rows.test.cjs": {
+      "blob": "cb68c8db5ff63c8bbb6dd9d18d94221937ac8797",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations."
+    },
+    "tests/sidebar-indent.test.cjs": {
+      "blob": "5bb88e37e24230393592abe93c2e3d46ef669805",
+      "approval": "ef56904fcd8b39725632b4c24ca574cf8ab63d1e",
+      "reason": "V1, Masih's approved request in GATE11: \"every chat row uses the project-chat layout, all chevrons in one column\". Retain exact circle/title coordinates, hover, expansion, selection and reload checks in both themes."
+    },
+    "tests/view-errors.test.cjs": {
+      "blob": "5dec1ecf6fa40788b16f9aced96f48e962347755",
+      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
+      "reason": "A121/GATE11, Masih: \"never weaken or delete an assertion that still describes wanted behaviour\". dd2ca3576 gave navigation rows accessible names: scope every bad-reply assertion to the Ledger page instead of its same-named shortcut; all error and survival checks remain."
     }
   }
 };
@@ -237,7 +284,7 @@ export function passingCounts(text) {
 /** Keep baseline fixtures beside their tests, but resolve production imports and out/ to the candidate. */
 export async function prepareBaseline(root = appRoot, baseline = baselineCommit, updates = retainedUpdates[baseline] ?? {}) {
   // Keep screenshot sockets short, on a filesystem that supports the Trash cleanup.
-  const base = path.join(os.homedir(), '.cache');
+  const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
   await fs.mkdir(base, { recursive: true });
   const scratch = await fs.mkdtemp(path.join(base, 'eu-'));
   try {

@@ -206,8 +206,16 @@ test('a newer scroll to the end wins over a prompt jump still settling', () => u
   await rail.locator('[data-slot="prompt-mark"]').nth(2).click();
   await page.clock.runFor(16);
   await page.locator('.chat-scroll').evaluate(node => node.scrollTo({ top: node.scrollHeight, behavior: 'instant' }));
-  await page.clock.runFor(128);
-  assert.equal(await rail.locator('[aria-current="true"]').getAttribute('aria-label'), 'Jump to user message 4');
+  // Chromium delivers native scroll events outside the mocked animation clock.
+  // Advance frames while awaiting that event and React's resulting render.
+  const atEnd = async () => {
+    await page.clock.runFor(32);
+    assert.equal(await rail.locator('[aria-current="true"]').getAttribute('aria-label'), 'Jump to user message 4');
+    assert.ok(await page.locator('.chat-scroll').evaluate(node => node.scrollHeight - node.scrollTop - node.clientHeight < 4), 'the old jump never pulls the transcript back');
+  };
+  await eventually(atEnd);
+  await page.clock.runFor(512);
+  await atEnd();
 }));
 
 for (const colorScheme of ['light', 'dark']) {

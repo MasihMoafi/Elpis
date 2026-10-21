@@ -63,3 +63,30 @@ test('row audit rejects a hand-written row and independently catches title, desc
     }
   } finally { await app.close(); }
 });
+
+test('model disclosures audit only painted fields and catch compound alignment, size and clipping drift', async () => {
+  const app = await settingsFixture();
+  try {
+    await visit(app.page, 'Configuration');
+    const choices = app.page.getByRole('group', { name: 'Main model choices', exact: true });
+    const measure = () => app.page.evaluate(measureRows);
+    const closed = await measure();
+    assert.equal(closed.rows.find(row => row.title === 'Main model').controls.length, 1, 'the hidden custom input is excluded');
+    assert.deepEqual(violations([{ name: 'closed', measurement: closed }]), []);
+    await choices.locator('summary').click();
+    const expanded = await measure();
+    assert.equal(expanded.rows.find(row => row.title === 'Main model').controls.length, 2, 'the opened custom input is audited');
+    assert.deepEqual(violations([{ name: 'closed', measurement: closed }, { name: 'expanded', measurement: expanded }]), []);
+    for (const [selector, property, value, expected] of [
+      [choices, 'transform', 'translateY(7px)', 'off centre'],
+      [choices.locator('[data-slot="select-trigger"]'), 'height', '44px', 'height'],
+      [choices.getByRole('textbox'), 'fontSize', '19px', 'fontSize'],
+      [choices.getByRole('textbox'), 'transform', 'translateY(200px)', 'clipped control'],
+    ]) {
+      await selector.evaluate((el, { property, value }) => { el.style[property] = value; }, { property, value });
+      assert.ok(violations([{ name: 'reference', measurement: closed }, { name: 'injected', measurement: await measure() }]).some(text => text.includes(expected)), `${property} drift was not caught`);
+      await selector.evaluate((el, property) => { el.style[property] = ''; }, property);
+    }
+    assert.deepEqual(app.errors, []);
+  } finally { await app.close(); }
+});

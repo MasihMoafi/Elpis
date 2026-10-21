@@ -25,8 +25,13 @@ async function chooseOption(locator, value) {
   await list.waitFor({ state: 'detached' });
 }
 async function controlValue(locator) {
-  if (await locator.getAttribute('data-value') !== null) return locator.getAttribute('data-value');
-  return locator.inputValue();
+  // The catalog can replace a fallback input with a select between two awaits.
+  return locator.evaluate(element => {
+    const selected = element.getAttribute('data-value');
+    if (selected !== null) return selected;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return element.value;
+    throw new Error('Expected a select trigger or a native value control');
+  });
 }
 // Settings replaces the sidebar, as in the ChatGPT app: leave it the way a user does before using the sidebar.
 async function leaveSettings(page) {

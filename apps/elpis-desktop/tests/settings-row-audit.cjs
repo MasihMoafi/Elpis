@@ -53,7 +53,8 @@ async function captureSettings(page, directory, name) {
 // Read rendered geometry and computed styles, including elements below the scroll fold.
 function measureRows() {
   const pane = document.querySelector('.settings-page');
-  const visible = element => element.getClientRects().length > 0;
+  // Inputs inside a closed <details> can have rectangles without being painted.
+  const visible = element => element.checkVisibility();
   const shared = element => /^components\/settings\/rows\.tsx#(?:SettingRow|SettingsActions|RowFrame)$/.test(element?.dataset.elpisSource ?? '');
   const box = element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
   const type = element => { const s = getComputedStyle(element); return { fontSize: s.fontSize, fontWeight: s.fontWeight, lineHeight: s.lineHeight, color: s.color }; };
@@ -62,7 +63,10 @@ function measureRows() {
     const title = row.querySelector('.settings-row-title'), description = row.querySelector('.settings-row-description'), scope = row.querySelector('.settings-scope');
     const control = row.querySelector('.settings-row-control'), style = getComputedStyle(row), rect = box(row);
     const controls = [...(control?.querySelectorAll('[data-slot="button"], [data-slot="select-trigger"], [data-slot="input"], [data-slot="switch"], [data-slot="segment"]') ?? [])].filter(visible).map(element => ({ slot: element.dataset.slot, size: element.dataset.size, text: element.textContent.trim(), ...type(element), ...box(element), centreOffset: box(element).y + box(element).height / 2 - (rect.y + rect.height / 2) }));
-    return { title: title?.textContent, shared: shared(row), actions: row.classList.contains('settings-actions'), stacked: row.classList.contains('stacked'), ...rect,
+    const disclosure = control?.querySelector('details');
+    const controlBox = control && box(disclosure?.closest('[role="group"]') ?? control);
+    const multilineControl = Boolean(disclosure);
+    return { title: title?.textContent, shared: shared(row), actions: row.classList.contains('settings-actions'), stacked: row.classList.contains('stacked'), controlBox, multilineControl, ...rect,
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft], titleStyle: title && type(title), titleBox: title && box(title), descriptionStyle: description && type(description), descriptionBox: description && box(description), scopeStyle: scope && type(scope), baselineOffset: scope && title ? baseline(scope) - baseline(title) : null, controls };
   });
   return { pane: box(pane), rows, headers: [...pane.querySelectorAll('.settings-group-heading h3')].filter(visible).map(el => ({ text: el.textContent, ...type(el), ...box(el) })),
@@ -90,12 +94,19 @@ function violations(pages) {
       if (row.titleStyle && row.descriptionStyle && parseFloat(row.titleStyle.fontSize) <= parseFloat(row.descriptionStyle.fontSize)) problems.push(`${where}: title/description hierarchy`);
       if (row.baselineOffset !== null && Math.abs(row.baselineOffset) > 0.5) problems.push(`${where}: scope baseline ${row.baselineOffset}`);
       compare(titles, 'row padding', row.padding.join(' '), where);
-      if (!row.stacked && row.titleBox && (!row.descriptionBox || row.descriptionBox.height < 20) && row.titleBox.height < 22) compare(titles, 'single-line row height', row.height, where);
+      if (!row.stacked && !row.multilineControl && row.titleBox && (!row.descriptionBox || row.descriptionBox.height < 20) && row.titleBox.height < 22) compare(titles, 'single-line row height', row.height, where);
+      if (row.controlBox) {
+        const group = row.controlBox;
+        if (!row.stacked && Math.abs(group.y + group.height / 2 - row.y - row.height / 2) > 0.6) problems.push(`${where}: control group off centre`);
+        if (group.y < row.y - 1 || group.bottom > row.bottom + 1) problems.push(`${where}: clipped control group`);
+        if (row.multilineControl && row.controls.length && Math.abs(row.controls[0].y - group.y) > 0.6) problems.push(`${where}: leading control off top`);
+      }
       for (const control of row.controls) {
         // Switches and icon actions retain their semantic shape; labelled buttons, selects and fields share a size.
         const kind = control.slot === 'switch' || control.slot === 'segment' || control.size?.startsWith('icon') ? `${control.slot}/${control.size}` : 'labelled control';
         for (const key of ['fontSize', 'height']) compare(controls, `${kind} ${key}`, control[key], where);
-        if (!row.stacked && Math.abs(control.centreOffset) > 0.6) problems.push(`${where}: ${control.text || control.slot} off centre ${control.centreOffset}`);
+        if (!row.stacked && !row.multilineControl && Math.abs(control.centreOffset) > 0.6) problems.push(`${where}: ${control.text || control.slot} off centre ${control.centreOffset}`);
+        if (control.y < row.y - 1 || control.bottom > row.bottom + 1) problems.push(`${where}: vertically clipped control`);
         if (control.right > Math.min(row.right, m.pane.right) + 1 || control.x < row.x - 1) problems.push(`${where}: clipped control`);
       }
     }

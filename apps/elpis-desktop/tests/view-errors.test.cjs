@@ -45,7 +45,7 @@ for (const [name, reply] of Object.entries(REPLIES)) {
   test(`${name}: Ledger, Canvas and every Settings page stay up`, () => using(reply, async f => {
     const { page } = f;
     await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
-    await says(reply, page.getByLabel('Ledger', { exact: true }).first());
+    await says(reply, page.locator('.customize[aria-label="Ledger"]'));
     await stands(f, 'Ledger');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await stands(f, 'Workflows');
