@@ -300,6 +300,9 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/customize/skill/delete' && method === 'POST') return json(response, 200, await client.deleteSkill(await body(request)));
         if (url.pathname === '/api/customize/skill/undo' && method === 'POST') return json(response, 200, await client.undoSkillDelete(await body(request)));
         if (url.pathname === '/api/customize/github' && method === 'POST') return json(response, 200, await client.setGithubConnector(await body(request)));
+        if (url.pathname === '/api/customize/plugins' && method === 'GET') return json(response, 200, await client.pluginCatalog(Object.fromEntries(['cwd', 'search', 'cursor'].filter(key => url.searchParams.has(key)).map(key => [key, url.searchParams.get(key)]))));
+        if (url.pathname === '/api/customize/plugin' && method === 'POST') return json(response, 200, await client.changePlugin(await body(request)));
+        if (url.pathname === '/api/customize/marketplace' && method === 'POST') return json(response, 200, await client.changeMarketplace(await body(request)));
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));

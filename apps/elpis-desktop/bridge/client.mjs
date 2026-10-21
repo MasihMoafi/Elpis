@@ -13,7 +13,7 @@ import { settingsSnapshot, tokenUsageSnapshot, contextLedger, restoredTokenUsage
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
-import { pluginsSnapshot, skillsSnapshot } from './customize.mjs';
+import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mjs';
 import { SkillTrash, skillRoots } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
 import { SESSION_MANAGER_INSTRUCTIONS, SESSION_MANAGER_NAME } from './session-manager-mcp.mjs';
@@ -151,7 +151,7 @@ function modeOf(result) {
 }
 /** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
 const WHOLE_TURNS = 'whole-turns:';
-const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset']);
+const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
 /** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
 const SUBAGENT_POLICY = {
@@ -836,11 +836,51 @@ export class DesktopClient extends EventEmitter {
     const [skills, plugins, connectors, github] = await Promise.all([
       this.#rpc('skills/list', { cwds, forceReload: true }).then(skillsSnapshot, why),
       this.#rpc('plugin/installed', cwd ? { cwds } : {}).then(pluginsSnapshot, why),
-      this.mcp().then(snapshot => ({ data: snapshot.servers.map(({ name, enabled, transport }) => ({ name, enabled, transport })) }), why),
+      this.mcp().then(snapshot => ({ data: snapshot.servers.map(({ name, enabled, transport }) => ({ name, enabled, transport })), version: snapshot.version, write: snapshot.write }), why),
       this.#githubConnector.snapshot().then(data => ({ data }), why),
     ]);
-    return { skills, plugins, connectors: { data: [...(github.data ? [github.data] : []), ...(connectors.data ?? [])],
+    return { skills, plugins: { ...plugins, version: connectors.version ?? null, write: connectors.write ?? { available: false } }, connectors: { version: connectors.version ?? null, write: connectors.write ?? { available: false }, data: [...(github.data ? [github.data] : []), ...(connectors.data ?? [])],
       ...((connectors.error || github.error) ? { error: [github.error, connectors.error].filter(Boolean).join(' ') } : {}) } };
+  }
+  async pluginCatalog(input = {}) {
+    object(input, ['cwd', 'search', 'cursor']);
+    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
+    if (input.search != null) text(input.search, 'plugin search', 1000);
+    if (input.cursor != null) text(input.cursor, 'plugin search cursor', 4096);
+    const scope = input.cwd ? { cwds: [input.cwd] } : {};
+    const catalog = await this.#rpc('plugin/list', scope);
+    const search = input.search?.trim() ? await this.#rpc('plugin/search', { ...scope, searchTerm: input.search.trim(), ...(input.cursor ? { cursor: input.cursor } : {}), limit: 50 }) : null;
+    return pluginCatalogSnapshot(catalog, search);
+  }
+  async changePlugin(input) {
+    object(input, ['action', 'id', 'enabled', 'version', 'cwd']); text(input.id, 'plugin', 512);
+    if (!['install', 'uninstall', 'enable'].includes(input.action)) throw new BridgeError('Choose a plugin action');
+    let install = null;
+    if (input.action === 'install') {
+      const plugin = (await this.pluginCatalog(input.cwd ? { cwd: input.cwd } : {})).plugins.find(plugin => plugin.id === input.id);
+      if (!plugin) throw new BridgeError('That plugin is not listed. Refresh the catalog.', 404);
+      if (!plugin.installable) throw new BridgeError(plugin.reason);
+      install = await this.#rpc('plugin/install', { pluginName: plugin.pluginName, ...(plugin.marketplacePath ? { marketplacePath: plugin.marketplacePath } : { remoteMarketplaceName: plugin.marketplaceName }) });
+    } else {
+      const snapshot = await this.customize(input.cwd);
+      if (!snapshot.plugins.data?.some(plugin => plugin.id === input.id)) throw new BridgeError(snapshot.plugins.error || 'That plugin is not installed', 404);
+      if (input.action === 'uninstall') await this.#rpc('plugin/uninstall', { pluginId: input.id });
+      else {
+        if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
+        text(input.version, 'plugin settings version', 200);
+        if (!snapshot.plugins.write.available || snapshot.plugins.version !== input.version) throw new BridgeError('Settings changed in another client. Reload before saving again.', 409);
+        await this.#rpc('config/batchWrite', { edits: [{ keyPath: `plugins.${JSON.stringify(input.id)}.enabled`, value: input.enabled, mergeStrategy: 'replace' }], expectedVersion: input.version, reloadUserConfig: true });
+      }
+    }
+    return { ...await this.customize(input.cwd), appsNeedingAuth: install?.appsNeedingAuth?.map(app => ({ name: app.name })) ?? [] };
+  }
+  async changeMarketplace(input) {
+    object(input, ['action', 'source', 'name', 'cwd']);
+    // Validate the project folder before any engine mutation.
+    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
+    if (input.action === 'add') return this.#rpc('marketplace/add', { source: text(input.source, 'marketplace source', 4096).trim() });
+    if (input.action === 'remove') return this.#rpc('marketplace/remove', { marketplaceName: text(input.name, 'marketplace', 256) });
+    throw new BridgeError('Choose a marketplace action');
   }
   async setGithubConnector(input) {
     object(input, ['enabled', 'cwd']);

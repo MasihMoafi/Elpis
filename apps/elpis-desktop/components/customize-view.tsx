@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { MoreMenu } from "@/components/action-menu";
+import { Description, LedgerRow } from "@/components/ledger-row";
+import { LedgerPlugins, type ConfigWrite, type Plugin, type PluginChange } from "@/components/ledger-plugins";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { api, unreadable } from "@/lib/api";
@@ -17,9 +19,8 @@ import { api, unreadable } from "@/lib/api";
 
 type Part<T> = { data?: T[]; error?: string };
 type Skill = { id: string; name: string; description: string; path: string; scope: "user" | "repo" | "system" | "admin"; enabled: boolean; plugin: string | null; deletable: boolean };
-type Plugin = { id: string; name: string; description: string; marketplace: string; enabled: boolean };
 type Connector = { name: string; enabled: boolean; transport: "stdio" | "http" | "gh"; login?: string | null };
-type Customize = { skills: Part<Skill> & { errors?: { path: string; message: string }[] }; plugins: Part<Plugin>; connectors: Part<Connector> };
+type Customize = { skills: Part<Skill> & { errors?: { path: string; message: string }[] }; plugins: Part<Plugin> & ConfigWrite; connectors: Part<Connector> & ConfigWrite };
 type Section = "skills" | "plugins" | "connectors";
 
 function readCustomize(data: Customize): Customize {
@@ -35,14 +36,12 @@ const folderOf = (path: string) => path.split("/").slice(0, -1).join("/") || "/"
 const skillOrigin = (skill: Skill) => skill.plugin ? `From plugin ${skill.plugin.split("@")[0]}` : skill.scope === "system" ? "Built in with Elpis" : skill.scope === "admin" ? "Managed by your system administrator" : "Protected skill";
 const skillProtection = (skill: Skill) => `${folderOf(skill.path)}. This skill can be turned off instead.`;
 
-function Description({ text }: { text: string }) {
-  return <span className="customize-description" title={text}>{text}</span>;
-}
-
 export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGithub }: { cwd: string | null; onCreateSkill: () => void; onOpenSettings: () => void; onConnectGithub?: () => void }) {
   const [section, setSection] = useState<Section>("skills");
   const [data, setData] = useState<Customize | null>(null), [error, setError] = useState("");
   const [savingGithub, setSavingGithub] = useState(false);
+  const [savingMcp, setSavingMcp] = useState<string | null>(null), [connectorErrors, setConnectorErrors] = useState<Record<string, string>>({});
+  const mcpLock = useRef(false);
   const [deleting, setDeleting] = useState<Skill | null>(null), [deletingError, setDeletingError] = useState("");
   const [deleted, setDeleted] = useState<{ name: string; token: string } | null>(null), [savingSkill, setSavingSkill] = useState(false);
   const skillList = useRef<HTMLUListElement>(null), returnFocus = useRef<HTMLElement | null>(null);
@@ -74,6 +73,20 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
   const setSkill = async (skill: Skill, enabled: boolean) => {
     try { setError(""); setData(readCustomize(await api<Customize>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) }))); }
     catch (cause) { setError(message(cause)); }
+  };
+  const setMcp = async (connector: Connector, enabled: boolean) => {
+    if (mcpLock.current) return;
+    mcpLock.current = true; setSavingMcp(connector.name); setConnectorErrors(previous => ({ ...previous, [connector.name]: "" }));
+    try {
+      await api("/mcp", { action: "enable", name: connector.name, enabled, version: data?.connectors.version });
+      await load();
+    } catch (cause) { setConnectorErrors(previous => ({ ...previous, [connector.name]: message(cause) })); await load(); }
+    finally { mcpLock.current = false; setSavingMcp(null); }
+  };
+  const changePlugin = async (change: PluginChange) => {
+    const result = await api<Customize & { appsNeedingAuth: { name: string }[] }>("/customize/plugin", { ...change, ...(cwd ? { cwd } : {}) });
+    setData(readCustomize(result));
+    return result.appsNeedingAuth?.map(app => app.name) ?? [];
   };
   const requestDelete = (skill: Skill) => {
     if (!skill.deletable) return;
@@ -132,28 +145,23 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         <ul>{data.skills.errors!.map(item => <li key={item.path}><FileRefLink target={{ path: item.path }}><code>{item.path}</code></FileRefLink> {item.message}</li>)}</ul></details>}
     </section>}
     {data && section === "plugins" && <section aria-label="Your plugins">
-      <div className="customize-title"><h2>Your plugins</h2></div>
-      <p className="customize-note">Plugins bundle skills, tools and connectors. These are the ones installed for Elpis.</p>
       {data.plugins.error && <SettingsNotice tone="alert">{data.plugins.error}</SettingsNotice>}
-      {!data.plugins.error && !plugins.length && <SettingsEmpty title="No plugins installed" />}
-      <ul className="customize-list">{plugins.map(plugin => <li key={plugin.id} className="customize-item" title={plugin.id}>
-        <span className="customize-text"><span className="customize-name">{plugin.name}</span>{plugin.description && <Description text={plugin.description} />}</span>
-        <span className="customize-badge">{plugin.marketplace || "Local"}</span>
-        <span className="customize-state" data-on={plugin.enabled || undefined}>{plugin.enabled ? "On" : "Off"}</span>
-      </li>)}</ul>
+      <LedgerPlugins cwd={cwd} plugins={plugins} loaded={Array.isArray(data.plugins.data)} config={data.plugins} onChange={changePlugin} onReload={load} />
     </section>}
     {data && section === "connectors" && <section aria-label="Your connectors">
       <div className="customize-title"><h2>Your connectors</h2><span className="customize-actions"><Button size="icon-sm" variant="ghost" aria-label="Refresh connectors" onClick={() => void load()}><RefreshCw /></Button><Button size="sm" variant="outline" onClick={onOpenSettings}><Settings2 />Manage connectors</Button></span></div>
       <p className="customize-note">Connectors give Elpis access to other apps and services.</p>
       {data.connectors.error && <SettingsNotice tone="alert">{data.connectors.error}</SettingsNotice>}
       {!data.connectors.error && !connectors.length && <SettingsEmpty title="No connectors yet">Add an MCP server under Manage connectors.</SettingsEmpty>}
-      <ul className="customize-list">{connectors.map(connector => <li key={`${connector.transport}:${connector.name}`} className="customize-item">
-        <span className="customize-text"><span className="customize-name">{connector.name}</span><Description text={connector.transport === "gh" ? (connector.login ? `Connected as ${connector.login}` : "Not connected") : connector.transport === "http" ? "Remote server" : "Local server"} /></span>
+      {savingMcp && <SettingsNotice>Saving connector changes…</SettingsNotice>}
+      <ul className="customize-list">{connectors.map(connector => <LedgerRow key={`${connector.transport}:${connector.name}`} name={connector.name}
+        description={connector.transport === "gh" ? (connector.login ? `Connected as ${connector.login}` : "Not connected") : connector.transport === "http" ? "Remote server" : "Local server"}
+        error={connectorErrors[connector.name]} notice={connector.transport !== "gh" && (!data.connectors.version || !data.connectors.write?.available) ? "Reload Ledger to read writable MCP settings." : undefined}>
         {connector.transport === "gh" ? <>
           {!connector.login && <Button size="sm" disabled={savingGithub} onClick={() => void setGithub(true, true)}>Connect</Button>}
           <Switch aria-label="Use GitHub" checked={connector.enabled} disabled={savingGithub} onCheckedChange={enabled => void setGithub(enabled)} />
-        </> : <span className="customize-state" data-on={connector.enabled || undefined}>{connector.enabled ? "On" : "Off"}</span>}
-      </li>)}</ul>
+        </> : <Switch aria-label={`Use ${connector.name}`} checked={connector.enabled} disabled={savingMcp !== null || !data.connectors.version || !data.connectors.write?.available} onCheckedChange={enabled => void setMcp(connector, enabled)} />}
+      </LedgerRow>)}</ul>
     </section>}
     <AlertDialog open={!!deleting} onOpenChange={value => { if (!value && !savingSkill) setDeleting(null); }}>
       <AlertDialogContent finalFocus={() => returnFocus.current?.isConnected ? returnFocus.current : skillList.current?.querySelector<HTMLElement>(".customize-item")}>

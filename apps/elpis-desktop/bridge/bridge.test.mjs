@@ -172,6 +172,64 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
+test('LEDGER uses native marketplace/catalog/plugin methods and versioned plugin config; rejects forged or stale changes', async () => {
+  const f = fixture();
+  const plugin = { id: 'docs@ledger', name: 'docs', installed: false, enabled: false, installPolicy: 'AVAILABLE' };
+  const marketplace = { name: 'ledger', path: '/catalog/.claude-plugin/marketplace.json', plugins: [plugin] };
+  const send = f.socket.send;
+  let rejectInstall = false;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw);
+    let result;
+    if (request.method === 'skills/list') result = { data: [] };
+    else if (request.method === 'plugin/list') result = { marketplaces: [marketplace] };
+    else if (request.method === 'plugin/installed') result = { marketplaces: [{ ...marketplace, plugins: plugin.installed ? [plugin] : [] }] };
+    else if (request.method === 'plugin/search') result = { data: [{ plugin, marketplaceName: 'ledger', marketplacePath: marketplace.path }], nextCursor: 'next' };
+    else if (request.method === 'plugin/install') { if (!rejectInstall) { plugin.installed = true; plugin.enabled = true; } result = { appsNeedingAuth: [{ name: 'Calendar', secret: 'private' }] }; }
+    else if (request.method === 'plugin/uninstall') { plugin.installed = false; result = {}; }
+    else if (request.method === 'marketplace/add' || request.method === 'marketplace/remove') result = {};
+    else return send(raw);
+    f.socket.sent.push(request);
+    queueMicrotask(() => f.socket.emit('message', JSON.stringify(rejectInstall && request.method === 'plugin/install'
+      ? { id: request.id, error: { code: -32602, message: 'Plugin blocked by policy' } } : { id: request.id, result })));
+  };
+  f.client.close();
+  // Give customize the same isolated GitHub connector used by production, without invoking a command.
+  f.socket.closed = false;
+  const client = new DesktopClient(f.socket, { githubConnector: { snapshot: async () => ({ name: 'GitHub', transport: 'gh', enabled: false }) } });
+  await client.initialize();
+  try {
+    const last = method => f.socket.sent.findLast(row => row.method === method)?.params;
+    for (const source of ['owner/repo', 'https://example.org/catalog.git', '/catalog']) await client.changeMarketplace({ action: 'add', source });
+    assert.deepEqual(last('marketplace/add'), { source: '/catalog' });
+    const found = await client.pluginCatalog({ cwd: '/workspace', search: 'docs', cursor: 'old-page' });
+    assert.equal(found.nextCursor, 'next');
+    assert.deepEqual(last('plugin/search'), { cwds: ['/workspace'], searchTerm: 'docs', cursor: 'old-page', limit: 50 });
+    const result = await client.changePlugin({ action: 'install', id: plugin.id });
+    assert.deepEqual(last('plugin/install'), { pluginName: 'docs', marketplacePath: marketplace.path });
+    assert.deepEqual(result.appsNeedingAuth, [{ name: 'Calendar' }]);
+    assert.equal(result.plugins.version, 'user-version');
+    await client.changePlugin({ action: 'enable', id: plugin.id, enabled: false, version: 'user-version' });
+    assert.deepEqual(last('config/batchWrite'), { expectedVersion: 'user-version', reloadUserConfig: true, edits: [{ keyPath: 'plugins."docs@ledger".enabled', value: false, mergeStrategy: 'replace' }] });
+    const writes = () => f.socket.sent.filter(row => ['plugin/install', 'plugin/uninstall', 'config/batchWrite', 'marketplace/add'].includes(row.method)).length;
+    const before = writes();
+    await assert.rejects(client.changePlugin({ action: 'enable', id: plugin.id, enabled: false, version: 'stale' }), /changed in another client/);
+    await assert.rejects(client.changePlugin({ action: 'enable', id: 'forged@market', enabled: false, version: 'user-version' }), /not installed/);
+    await assert.rejects(client.changePlugin({ action: 'enable', id: plugin.id, enabled: 'false', version: 'user-version' }), /on or off/);
+    await assert.rejects(client.changeMarketplace({ action: 'add', source: '/catalog', cwd: 'relative' }), /project folder/);
+    await assert.rejects(client.changePlugin({ action: 'install', id: 'forged@market' }), /not listed/);
+    assert.equal(writes(), before);
+    await client.changePlugin({ action: 'uninstall', id: plugin.id });
+    assert.deepEqual(last('plugin/uninstall'), { pluginId: plugin.id });
+    plugin.installPolicy = 'NOT_AVAILABLE';
+    await assert.rejects(client.changePlugin({ action: 'install', id: plugin.id }), /Installation unavailable/);
+    plugin.installPolicy = 'AVAILABLE'; rejectInstall = true;
+    await assert.rejects(client.changePlugin({ action: 'install', id: plugin.id }), /Plugin blocked by policy/);
+    await client.changeMarketplace({ action: 'remove', name: 'ledger' });
+    assert.deepEqual(last('marketplace/remove'), { marketplaceName: 'ledger' });
+  } finally { client.close(); }
+});
+
 test('conversation pages keep a full page of chats when recent agent runs outnumber them', async () => {
   const f = fixture({ threadListPaging: true });
   f.threads.clear();

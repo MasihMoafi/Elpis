@@ -33,5 +33,28 @@ export function pluginsSnapshot(response) {
     data.push({ id: plugin.id, name: words(plugin.interface?.displayName) || words(plugin.name) || plugin.id, description: words(plugin.interface?.shortDescription),
       marketplace: words(market.interface?.displayName) || words(market.name), enabled: plugin.enabled !== false });
   }
-  return { data: data.sort((a, b) => a.name.localeCompare(b.name)) };
+  const errors = marketplaceErrors(response);
+  return { data: data.sort((a, b) => a.name.localeCompare(b.name)), ...(errors.length ? { error: errors.join(' ') } : {}) };
+}
+
+const marketplaceErrors = response => list(response?.marketplaceLoadErrors).map(error => `${words(error.marketplacePath) || 'Marketplace'}: ${words(error.message)}`);
+function catalogPlugin(plugin, market) {
+  const installable = plugin.installPolicy === 'AVAILABLE' && (!plugin.availability || plugin.availability === 'AVAILABLE');
+  return {
+    id: plugin.id, pluginName: plugin.name, name: words(plugin.interface?.displayName) || plugin.name,
+    description: words(plugin.interface?.shortDescription), marketplace: words(market.interface?.displayName) || market.name,
+    marketplaceName: market.name, marketplacePath: market.path ?? null,
+    installed: plugin.installed === true, enabled: plugin.enabled === true, installable,
+    reason: installable ? null : `Installation unavailable: ${words(plugin.disabledReason) || words(plugin.availability) || words(plugin.installPolicy) || 'marketplace policy'}`,
+  };
+}
+/** Only the engine's catalog fields needed by Ledger; source URLs and arbitrary manifest data stay in the engine. */
+export function pluginCatalogSnapshot(response, search) {
+  const markets = list(response?.marketplaces);
+  const marketplaces = markets.map(market => ({ name: market.name, displayName: words(market.interface?.displayName) || market.name, path: market.path ?? null }));
+  const plugins = search ? list(search.data).flatMap(item => {
+    const market = markets.find(market => market.name === item.marketplaceName);
+    return market ? [catalogPlugin(item.plugin, { ...market, path: item.marketplacePath })] : [];
+  }) : markets.flatMap(market => list(market.plugins).map(plugin => catalogPlugin(plugin, market)));
+  return { marketplaces, plugins, errors: marketplaceErrors(response), nextCursor: search?.nextCursor ?? null };
 }

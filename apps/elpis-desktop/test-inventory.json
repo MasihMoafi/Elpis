@@ -175,6 +175,7 @@
     "tests/customize-description-fit.test.cjs",
     "tests/page-column.test.cjs",
     "tests/customize.test.cjs",
+    "tests/ledger.test.cjs",
     "tests/decision-cards.test.cjs",
     "tests/desktop-polish-visual.test.cjs",
     "tests/desktop-polish.test.cjs",
@@ -284,6 +285,8 @@
     "tests/sidebar-pages.test.cjs"
   ],
   "opt-in": [
+    "tests/ledger-app.runtime.cjs",
+    "tests/ledger-engine.runtime.mjs",
     "tests/changes-installed.runtime.cjs",
     "tests/app-update-native.test.cjs",
     "tests/love-spot-performance.test.cjs",

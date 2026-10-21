@@ -11,8 +11,8 @@ function state() {
   return {
     skills, writes: [],
     reply: () => ({ skills: { data: skills.map(item => ({ ...item })), errors: [{ path: '/home/u/.elpis-next/skills/bad/SKILL.md', message: 'missing name' }] },
-      plugins: { data: [{ id: 'docs@local', name: 'Docs', description: 'Writes docs', marketplace: 'My plugins', enabled: true }] },
-      connectors: { data: [{ name: 'rag', enabled: true, transport: 'stdio' }, { name: 'web', enabled: false, transport: 'http' }] } }),
+      plugins: { version: 'user-v1', write: { available: true }, data: [{ id: 'docs@local', name: 'Docs', description: 'Writes docs', marketplace: 'My plugins', enabled: true }] },
+      connectors: { version: 'user-v1', write: { available: true }, data: [{ name: 'rag', enabled: true, transport: 'stdio' }, { name: 'web', enabled: false, transport: 'http' }] } }),
   };
 }
 
@@ -42,11 +42,12 @@ test('Ledger lists skills, plugins and connectors; a skill switches off; Create 
     // Plugins and connectors.
     await sections.getByRole('radio', { name: 'Plugins', exact: true }).click();
     const plugins = page.getByRole('region', { name: 'Your plugins', exact: true });
-    assert.deepEqual(await plugins.locator('.customize-item').allInnerTexts(), ['Docs\nWrites docs\nMy plugins\nOn']);
+    assert.deepEqual(await plugins.locator('.customize-name').allInnerTexts(), ['Docs']);
+    assert.equal(await plugins.getByRole('switch', { name: 'Use Docs', exact: true }).getAttribute('aria-checked'), 'true');
     await sections.getByRole('radio', { name: 'Connectors', exact: true }).click();
     const connectors = page.getByRole('region', { name: 'Your connectors', exact: true });
     assert.deepEqual(await connectors.locator('.customize-name').allInnerTexts(), ['rag', 'web']);
-    assert.deepEqual(await connectors.locator('.customize-state').allInnerTexts(), ['On', 'Off']);
+    assert.deepEqual(await connectors.getByRole('switch').evaluateAll(items => items.map(item => item.getAttribute('aria-checked'))), ['true', 'false']);
     await connectors.getByRole('button', { name: 'Manage connectors', exact: true }).click();
     await page.getByRole('heading', { name: 'MCP servers' }).first().waitFor();
     assert.equal(await page.getByText('This page could not be shown', { exact: false }).count(), 0, 'the MCP page reads a reply without servers as none');
