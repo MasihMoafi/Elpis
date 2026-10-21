@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, screen, dialog, powerSaveBlocker } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
@@ -14,6 +14,8 @@ const { createSessionWindows, sessionWindowMenu } = require('./session-windows.c
 const { enableWaylandIme } = require('./wayland-ime.cjs');
 const { createAppUpdates, executableLauncher } = require('./app-updates.cjs');
 const fs = require('node:fs');
+const { createSleepBlocker } = require('./sleep-blocker.cjs');
+let sleepBlocker;
 
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
@@ -105,16 +107,17 @@ async function prepareWindows() {
         log: line => console.warn(line),
       });
       client.on('event', event => { if (event.type === 'message') sessionManagerMonitor.observe(event.data); });
+      sleepBlocker = createSleepBlocker({ powerSaveBlocker, client, store });
       // A connected terminal may keep the previous bridge and engine alive after an install.
       try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {}
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
       try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }
-    } catch (error) { sessionManagerMonitor?.close(); sessionManagerMonitor = undefined; await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
+    } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; sessionManagerMonitor?.close(); sessionManagerMonitor = undefined; await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   if (!sessionWindows) {
     sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, improvements: server.improvements, updates,
-      mayClose, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
+      mayClose, quitting: () => closing, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
       onFocused: (host, openers) => { if (!openers?.loveSpot) { window = host; primaryOpeners = openers; } } });
   }
 }
@@ -143,6 +146,8 @@ async function quitApp(restartTarget) {
       await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('document.documentElement.inert = true; true')));
       const dirtyFiles = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisHasUnsavedFiles" in window) ? window.__elpisHasUnsavedFiles : false')));
       if (dirtyFiles.some(dirty => dirty !== false)) throw Error('Save or revert file edits in every window before quitting or restarting.');
+      const settingsSaved = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('window.__elpisFlushSettings?.() ?? true')));
+      if (settingsSaved.some(saved => saved !== true)) throw Error('Personalization drafts could not be saved. Keep this window open and copy your edits before quitting.');
       const workflowsSaved = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisFlushWorkflow" in window) ? window.__elpisFlushWorkflow() : true')));
       if (workflowsSaved.some(saved => saved !== true)) throw Error('Workflow could not be saved. Keep this window open and retry.');
       await quickEntry?.flush?.();
@@ -153,6 +158,7 @@ async function quitApp(restartTarget) {
       if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('A chat or agent started while preparing the update. Wait for it to finish before restarting.');
       if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
       closing = true;
+      sleepBlocker?.dispose(); sleepBlocker = undefined;
       sessionManagerMonitor?.close();
       await Promise.all([server?.close(), browserAgentSocket?.close(), sessionManagerAgent?.close()]);
       quickEntry?.dispose?.(); tray?.destroy();

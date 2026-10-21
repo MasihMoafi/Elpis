@@ -62,6 +62,9 @@ export function GeneralSettings() {
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     <SettingsGroup>
       <DefaultFolder folder={preferences.defaultFolder} onSave={defaultFolder => save({ defaultFolder })} />
+      <SettingRow title="Prevent sleep while Elpis is working" description="Keep this computer awake during running turns. Sleep resumes when all turns finish.">
+        <Switch aria-label="Prevent sleep while Elpis is working" checked={preferences.preventSleep} onCheckedChange={preventSleep => save({ preventSleep })} />
+      </SettingRow>
       <SettingRow title="Confirm before closing the window" description="Ask before Elpis closes. Running chats continue either way.">
         <Switch aria-label="Confirm before closing the window" checked={preferences.confirmClose} onCheckedChange={confirmClose => save({ confirmClose })} />
       </SettingRow>

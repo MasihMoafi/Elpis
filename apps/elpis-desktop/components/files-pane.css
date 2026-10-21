@@ -60,21 +60,21 @@
 
 /* The editor: line numbers and a layer for the marks, behind a textarea that draws the text. All three share one font, one
    line height and one padding, so a number, a mark and a line sit on the same row. */
-.fe { --fe-line:20px; --fe-pad:8px; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.fe { --fe-line:calc(var(--code-size, 12.5px) * 1.6); --fe-pad:8px; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
 .fe-find { display:flex; align-items:center; gap:4px; flex-shrink:0; padding:6px 8px; border-bottom:1px solid var(--hairline); background:var(--recessed); }
 .fe-find-field { flex:1; min-width:0; height:30px; }
 .fe-find-count { flex-shrink:0; min-width:9ch; font-size:12.5px; color:var(--muted-foreground); text-align:center; }
 .fe-body { position:relative; display:flex; flex:1; min-height:0; min-width:0; background:var(--card); }
-.fe-gutter { flex:none; overflow:hidden; padding-block:var(--fe-pad); background:var(--recessed); border-inline-end:1px solid var(--hairline); font:13px/var(--fe-line) var(--mono); color:var(--muted-foreground); text-align:end; user-select:none; }
+.fe-gutter { flex:none; overflow:hidden; padding-block:var(--fe-pad); background:var(--recessed); border-inline-end:1px solid var(--hairline); font:var(--code-size, 13px)/var(--fe-line) var(--mono); color:var(--muted-foreground); text-align:end; user-select:none; }
 .fe-gutter-line { height:var(--fe-line); padding-inline:10px 12px; }
 .fe-stage { position:relative; flex:1; min-width:0; }
-.fe-layer { position:absolute; inset:0; overflow:hidden; padding-block:var(--fe-pad); pointer-events:none; font:13px/var(--fe-line) var(--mono); tab-size:4; color:transparent; }
+.fe-layer { position:absolute; inset:0; overflow:hidden; padding-block:var(--fe-pad); pointer-events:none; font:var(--code-size, 13px)/var(--fe-line) var(--mono); tab-size:4; color:transparent; }
 .fe-layer > div { width:max-content; min-width:100%; }
 .fe-line { height:var(--fe-line); padding-inline:12px; white-space:pre; }
 .fe-line.hit { background:color-mix(in oklab, var(--primary) 13%, transparent); box-shadow:inset 2px 0 0 var(--primary); }
 .fe-find-hit { color:transparent; background:color-mix(in oklab, var(--context) 38%, transparent); border-radius:2px; }
 .fe-find-hit.current { background:color-mix(in oklab, var(--context) 70%, transparent); outline:1px solid var(--context); }
-.fe-text { position:absolute; inset:0; width:100%; height:100%; margin:0; padding:var(--fe-pad) 12px; resize:none; border:0; border-radius:0; outline:none; background:transparent; color:var(--foreground); caret-color:var(--foreground); font:13px/var(--fe-line) var(--mono); tab-size:4; white-space:pre; overflow:auto; }
+.fe-text { position:absolute; inset:0; width:100%; height:100%; margin:0; padding:var(--fe-pad) 12px; resize:none; border:0; border-radius:0; outline:none; background:transparent; color:var(--foreground); caret-color:var(--foreground); font:var(--code-size, 13px)/var(--fe-line) var(--mono); tab-size:4; white-space:pre; overflow:auto; }
 .fe-text:focus-visible { box-shadow:none; }
 
 /* A continuation always stays in the text stage, beyond the fixed number column. */

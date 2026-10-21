@@ -72,6 +72,15 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
       <SettingRow title="Transcript text size" description="Size of the conversation transcript text.">
         <Segmented label="Transcript text size" value={preferences.transcriptSize} options={SIZES} onChange={transcriptSize => save({ transcriptSize })} />
       </SettingRow>
+      <SettingRow title="Interface size" description="Size of text across menus, sidebars, and panels.">
+        <Segmented label="Interface size" value={preferences.interfaceSize} options={SIZES} onChange={interfaceSize => save({ interfaceSize })} />
+      </SettingRow>
+      <SettingRow title="Code size" description="Text size in code blocks, file editors, diffs, and terminals.">
+        <Segmented label="Code size" value={preferences.codeSize} options={SIZES} onChange={codeSize => save({ codeSize })} />
+      </SettingRow>
+      <SettingRow title="Corner style" description="Corners of controls and panels across the app.">
+        <Segmented label="Corner style" value={preferences.cornerStyle} options={[{ value: "cut", label: "Cut" }, { value: "sharp", label: "Sharp" }, { value: "rounded", label: "Rounded" }]} onChange={cornerStyle => save({ cornerStyle })} />
+      </SettingRow>
       <SettingRow title="Transcript width" description="Maximum width of the transcript and composer columns.">
         <Segmented label="Transcript width" value={preferences.transcriptWidth} options={WIDTHS} onChange={transcriptWidth => save({ transcriptWidth })} />
       </SettingRow>

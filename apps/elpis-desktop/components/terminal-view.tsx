@@ -98,7 +98,7 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
       if (disposed) return;
       let view = views.get(termKey);
       if (!view) {
-        const term = new Terminal({ fontFamily: getComputedStyle(target).getPropertyValue("--mono").trim() || "monospace", fontSize: 13, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, allowProposedApi: false, minimumContrastRatio: 4.5, theme: theme(target) });
+        const term = new Terminal({ fontFamily: getComputedStyle(target).getPropertyValue("--mono").trim() || "monospace", fontSize: parseFloat(getComputedStyle(target).getPropertyValue("--code-size")) || 13, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, allowProposedApi: false, minimumContrastRatio: 4.5, theme: theme(target) });
         const fit = new FitAddon(), element = document.createElement("div");
         element.className = "terminal-view";
         term.loadAddon(fit); term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank")));
@@ -126,15 +126,16 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
   }, []);
   useEffect(() => { const frame = requestAnimationFrame(() => { if (panel.current) for (const view of views.values()) view.term.options.theme = theme(panel.current); }); return () => cancelAnimationFrame(frame); }, [dark]);
   // Settings → Appearance → Code font: open shells take it too, once the page has set --mono (a frame later).
-  const { codeFont } = usePreferences();
+  const { codeFont, codeSize } = usePreferences();
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       if (!panel.current) return;
       const font = getComputedStyle(panel.current).getPropertyValue("--mono").trim() || "monospace";
-      for (const view of views.values()) if (view.term.options.fontFamily !== font) { view.term.options.fontFamily = font; view.fit.fit(); }
+      const size = parseFloat(getComputedStyle(panel.current).getPropertyValue("--code-size")) || 13;
+      for (const view of views.values()) { view.term.options.fontFamily = font; view.term.options.fontSize = size; view.fit.fit(); }
     });
     return () => cancelAnimationFrame(frame);
-  }, [codeFont]);
+  }, [codeFont, codeSize]);
 
   // Once the shell is attached, run the requested TUI resume or gh's own interactive web sign-in.
   useEffect(() => {

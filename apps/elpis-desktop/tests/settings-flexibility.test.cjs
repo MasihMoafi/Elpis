@@ -32,8 +32,8 @@ for (const [name, settingsPageGroups] of [
     const actual = await layout(f.page), ids = actual.flatMap(item => item.pages);
     assert.equal(actual[0].name, 'Context & maintenance');
     assert.equal(actual.length, 6);
-    assert.equal(ids.length, 14);
-    assert.equal(new Set(ids).size, 14);
+    assert.equal(ids.length, 15);
+    assert.equal(new Set(ids).size, 15);
     assert.ok(!(ids.some(id => id.includes('obsolete'))));
     const destination = group(f.page, valid ? 'Context & maintenance' : 'App & terminal');
     assert.ok((await destination.getByRole('tab').allTextContents()).includes('General'), 'known page membership loads; invalid data falls back');
@@ -105,8 +105,8 @@ test('SETTINGS: keyboard movement crosses groups, keeps focus and survives reloa
     await firstAppPage.focus(); await f.page.keyboard.press('Alt+ArrowUp');
     assert.deepEqual((await group(f.page, 'Connections & coding').getByRole('tab').allTextContents()).slice(-2), ['General', 'Hooks']);
     await f.page.waitForFunction(() => document.activeElement?.id === 'settings-tab-general');
-    await pageRow(f.page, 'Archived chats').focus(); await f.page.keyboard.press('Alt+ArrowDown');
-    assert.deepEqual(await group(f.page, 'Advanced').getByRole('tab').allTextContents(), ['Archived chats'], 'keyboard movement also reaches an empty group');
+    await pageRow(f.page, 'About').focus(); await f.page.keyboard.press('Alt+ArrowDown');
+    assert.deepEqual(await group(f.page, 'Advanced').getByRole('tab').allTextContents(), ['About'], 'keyboard movement also reaches an empty group');
     const expected = await layout(f.page);
     await f.page.reload(); await openSettings(f.page);
     assert.deepEqual(await layout(f.page), expected);

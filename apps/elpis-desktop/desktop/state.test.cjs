@@ -73,6 +73,16 @@ function windows(t) {
   return { store, file, open, delay: value => { delay = value; }, deliver: () => { for (const send of broadcasts.splice(0)) send(); }, settle: async () => { await Promise.allSettled(pending.splice(0)); await new Promise(resolve => setImmediate(resolve)); } };
 }
 
+test('SETTINGS2 sizing, corners and sleep preference persist through native IPC and reopening', async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  a.preferences.savePreferences({ interfaceSize: 'l', codeSize: 's', cornerStyle: 'rounded', preventSleep: true }); await f.settle();
+  b.preferences.savePreferences({ codeSize: 'l' }); await f.settle();
+  const saved = JSON.parse(createStateStore(f.file).read()['elpis-preferences-v1']);
+  assert.equal(saved.interfaceSize, 'l'); assert.equal(saved.codeSize, 'l'); assert.equal(saved.cornerStyle, 'rounded'); assert.equal(saved.preventSleep, true);
+  const fresh = f.open(3).preferences.readPreferences();
+  assert.equal(fresh.interfaceSize, 'l'); assert.equal(fresh.codeSize, 'l'); assert.equal(fresh.cornerStyle, 'rounded'); assert.equal(fresh.preventSleep, true);
+});
+
 test('appearance choices persist through real desktop IPC, rebase across windows, and reject unknown values', async t => {
   const f = windows(t), a = f.open(1), b = f.open(2);
   a.preferences.savePreferences({ accent: 'teal' }); await f.settle();

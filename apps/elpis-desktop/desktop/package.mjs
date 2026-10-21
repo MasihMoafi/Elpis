@@ -3,9 +3,11 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { execFileSync } from 'node:child_process';
 
 /** Every file the packaged app loads besides the renderer; package.test.mjs checks it against their imports. */
 export const productionFiles = [
+  'bridge/settings-files.mjs', 'bridge/app-identity.mjs', 'desktop/sleep-blocker.cjs',
   'bridge/love-interview.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
   'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs',
@@ -146,7 +148,9 @@ export function stageDesktop({ source = fileURLToPath(new URL('../', import.meta
     ...['package.json', 'LICENSE', 'build/Release/pty.node'].map(name => inputFile(path.join(pty, name), `app/node_modules/node-pty/${name}`)),
     ...inputTree(path.join(pty, 'lib'), 'app/node_modules/node-pty/lib', name => !/\.test\.js$|\.map$/.test(name)),
   ];
-  const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', desktopName: identity.desktopName, version: identity.version,
+  let commit = identity.commit || null;
+  try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* Repackaging preserves the installed identity. */ }
+  const packageIdentity = { name: identity.name, productName: identity.productName || 'Elpis', desktopName: identity.desktopName, version: identity.version, commit,
     private: true, type: 'module', main: 'desktop/main.cjs', dependencies: { ws: wsIdentity.version, 'node-pty': ptyIdentity.version } };
   const generated = [
     { path: 'app/package.json', data: `${JSON.stringify(packageIdentity, null, 2)}\n`, mode: 0o644 },

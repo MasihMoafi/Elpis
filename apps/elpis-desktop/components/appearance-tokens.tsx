@@ -8,6 +8,7 @@ import { parseCustomThemes, THEME_COLORS } from "@/lib/theme-palettes";
 /** Shared by every renderer route, including standalone windows. */
 export function AppearanceTokens() {
   const preferences = usePreferences();
+  useEffect(() => { document.documentElement.dataset.corners = preferences.cornerStyle; }, [preferences.cornerStyle]);
   useEffect(() => { document.documentElement.dataset.accent = preferences.accent; }, [preferences.accent]);
   useEffect(() => {
     const root = document.documentElement, style = root.style;

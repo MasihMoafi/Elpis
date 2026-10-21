@@ -17,7 +17,7 @@ const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
-function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, improvements, updates, mayClose, onDark, onClosed, onFocused }) {
+function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, improvements, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }) {
   const { BrowserWindow, WebContentsView, session, ipcMain: globalIpc, Menu, clipboard, shell, dialog, nativeTheme } = electron;
   const windows = new Set();
   const savedText = new WeakSet();
@@ -78,6 +78,12 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     window.webContents.session.setPermissionCheckHandler((contents, permission, _requestingOrigin, details) => permits(contents, permission, details));
     registerCopyKeys(window.webContents);
     window.webContents.on('will-attach-webview', event => event.preventDefault());
+    window.webContents.on('will-prevent-unload', event => {
+      if (quitting()) { event.preventDefault(); return; }
+      const choice = dialog.showMessageBoxSync(window, { type: 'question', buttons: ['Continue', 'Keep editing'], defaultId: 1, cancelId: 1,
+        title: 'Unsaved changes', message: 'Leave with unsaved changes?', detail: 'Save or copy unsaved text before continuing. Personalization drafts are recovered from this device when available.' });
+      if (choice === 0) event.preventDefault();
+    });
     window.webContents.on('will-navigate', (event, target) => {
       if (new URL(target).origin !== origin) event.preventDefault();
     });

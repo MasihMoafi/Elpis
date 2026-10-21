@@ -3,14 +3,15 @@
 import { useState } from "react";
 import { SearchField } from "@/components/ui/search-field";
 import { Button } from "@/components/ui/button";
-import { SHORTCUTS, configuredShortcuts, canCustomizeShortcut, shortcutBindings, shortcutConflict, type Shortcut } from "@/lib/shortcuts";
+import { SHORTCUTS, configuredShortcuts, canCustomizeShortcut, keyCombination, shortcutBindings, shortcutConflict, type Shortcut } from "@/lib/shortcuts";
 import { savePreferences, usePreferences } from "@/lib/preferences";
 import { ShortcutRecorder } from "@/components/settings/system-settings";
 import { SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 
 const matches = (shortcut: Shortcut, query: string) => {
   const text = [shortcut.group, shortcut.label, shortcut.keys.join("+"), ...shortcut.keys].join(" ").toLowerCase();
-  return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => text.includes(word));
+  const compact = text.replace(/\s+/g, "");
+  return query.toLowerCase().replace(/command|super|cmd/g, "ctrl").split(/\s+/).filter(Boolean).every(word => text.includes(word) || compact.includes(word));
 };
 
 /** Every shortcut in SHORTCUTS, grouped and searchable by action, key or group. */
@@ -33,7 +34,12 @@ export function ShortcutSettings() {
   return <div aria-label="Keyboard shortcuts">
     <SettingsHeader title="Keyboard shortcuts" description="Focus an app shortcut and press its new keys. On macOS, use Cmd where Ctrl is shown. Other rows document native window controls and gestures in the focused view." />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
-    <SearchField aria-label="Search keyboard shortcuts" placeholder="Search keyboard shortcuts" value={query} onChange={event => setQuery(event.target.value)} />
+    <SearchField aria-label="Search keyboard shortcuts" placeholder="Search actions or press a key combination" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => {
+      if (!(event.ctrlKey || event.metaKey || event.altKey) || event.key === "Tab" || (!event.shiftKey && !event.altKey && /^[acvxz]$/i.test(event.key))) return;
+      const combination = keyCombination(event);
+      if (!combination) return;
+      event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); setQuery(combination);
+    }} />
     {groups.map(group => <SettingsGroup key={group} title={group}>
       {found.filter(item => item.group === group).map(item => <SettingRow key={item.id} title={item.label}>
         {canCustomizeShortcut(item.id) ? <>

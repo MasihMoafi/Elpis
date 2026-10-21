@@ -64,7 +64,7 @@ test('SETTINGS source: first, middle and last insertions, section reorder and st
   f.options().onMove('voice', { target: 'notifications', after: true, into: false });
   after = f.render();
   assert.equal(after.app[after.app.indexOf('notifications') + 1], 'voice');
-  f.options().onMove('git', { target: 'archived', after: true, into: false });
+  f.options().onMove('git', { target: 'about', after: true, into: false });
   after = f.render(); assert.equal(after.app.at(-1), 'git');
   f.options().onMove('advanced', { target: 'models', after: false, into: false });
   after = f.render(); assert.equal(Object.keys(after)[0], 'advanced');
@@ -78,7 +78,7 @@ test('SETTINGS source: obsolete, missing, repeated and malformed layout entries 
     const f = view({ settingsSectionOrder: 'gone,context,context', settingsPageOrder: 'gone,general,general', settingsPageGroups });
     const groups = f.render(), ids = Object.values(groups).flat();
     assert.equal(Object.keys(groups)[0], 'context');
-    assert.equal(ids.length, 14); assert.equal(new Set(ids).size, 14);
+    assert.equal(ids.length, 15); assert.equal(new Set(ids).size, 15);
     assert.ok(groups[settingsPageGroups.includes('obsolete') ? 'context' : 'app'].includes('general'));
     assert.ok(groups.connections.includes('voice'));
     assert.equal(f.options().canDrop('obsolete', 'app'), false);

@@ -5,7 +5,7 @@
 export type ReadingStep = "s" | "m" | "l";
 export type InterfaceFont = "sans" | "serif";
 export type ChatFont = "default" | "sans" | "serif" | "mono" | "system";
-export type Reading = { transcriptSize: ReadingStep; transcriptWidth: ReadingStep; interfaceFont: InterfaceFont; codeFont: string; chatFont: ChatFont };
+export type Reading = { transcriptSize: ReadingStep; transcriptWidth: ReadingStep; interfaceFont: InterfaceFont; codeFont: string; chatFont: ChatFont; interfaceSize: ReadingStep; codeSize: ReadingStep };
 
 export const SANS = 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 export const SERIF = 'ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, "DejaVu Serif", serif';
@@ -35,6 +35,8 @@ const step = (value: unknown, fallback: ReadingStep): ReadingStep => value === "
 export function readingStyle(choices: { [K in keyof Reading]?: unknown }): Record<string, string> {
   const code = typeof choices.codeFont === "string" && !codeFontProblem(choices.codeFont) ? choices.codeFont.trim() : "";
   return {
+    "--interface-size": ({ s: "14px", m: "16px", l: "18px" })[step(choices.interfaceSize, "m")],
+    "--code-size": ({ s: "11px", m: "12.5px", l: "16px" })[step(choices.codeSize, "m")],
     "--transcript-size": SIZES[step(choices.transcriptSize, "m")],
     "--transcript-width": WIDTHS[step(choices.transcriptWidth, "s")],
     "--ui-font": FONTS[choices.interfaceFont === "serif" ? "serif" : "sans"],

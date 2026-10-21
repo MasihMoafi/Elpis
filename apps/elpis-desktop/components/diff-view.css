@@ -2,7 +2,7 @@
    come from the app's own success and destructive tokens, so both themes follow. */
 .change-counts .add { color:var(--success); } .change-counts .del { color:var(--destructive); }
 .change-counts { flex-shrink:0; font:12px/1 var(--mono); color:var(--muted-foreground); white-space:nowrap; }
-.diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:12px/20px var(--mono); }
+.diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:var(--code-size, 12px)/1.6 var(--mono); }
 .diff-lines { width:max-content; min-width:100%; }  /* every line as wide as the longest, so the colours end together */
 .diff-line { display:grid; grid-template-columns:44px 44px 16px 1fr; }
 .diff-lines.plain .diff-line { grid-template-columns:16px 1fr; padding-inline-start:8px; }

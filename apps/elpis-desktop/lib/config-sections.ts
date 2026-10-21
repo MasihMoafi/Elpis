@@ -13,7 +13,7 @@ export const SECTIONS = [
   { id: "app", label: "App & terminal", description: "Desktop preferences, notifications, appearance, shortcuts, usage, and archives.", pages: [
     { tab: "general", title: "General", scope: "this device" }, { tab: "notifications", title: "Notifications", scope: "this device" },
     { tab: "appearance", title: "Appearance", scope: "this device" }, { tab: "shortcuts", title: "Keyboard shortcuts", scope: "this device" },
-    { tab: "usage", title: "Usage & limits", scope: "this device" }, { tab: "archived", title: "Archived chats", scope: "this device" }] },
+    { tab: "usage", title: "Usage & limits", scope: "this device" }, { tab: "archived", title: "Archived chats", scope: "this device" }, { tab: "about", title: "About", scope: "this device" }] },
   { id: "advanced", label: "Advanced", description: "Effective config and settings outside the guided controls.", pages: [
     { tab: "configuration", title: "Open config file", scope: "this device" }] },
 ] as const;

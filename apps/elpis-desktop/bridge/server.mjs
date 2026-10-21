@@ -20,6 +20,8 @@ import { createLoveAgents } from './love-agents.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
 import { dismissPersonalTip, openPersonal, personalStatus } from './personal.mjs';
+import { createSettingsFiles } from './settings-files.mjs';
+import { appIdentity } from './app-identity.mjs';
 
 const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -106,6 +108,7 @@ export async function startDesktopServer(options = {}) {
   const improvements = () => improvementStore ??= createImprovements({ client, ...options.improvements });
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
+  const settingsFiles = createSettingsFiles(options.elpisHome ?? elpisHome());
   // Provider continuations include consumed native item IDs and can exceed the HTTP
   // query limit. Keep that engine state here; the renderer gets a short, chat-bound
   // continuation. The prompt index uses the engine directly and cannot evict these.
@@ -285,6 +288,9 @@ export async function startDesktopServer(options = {}) {
           if (input?.action === 'stop') { object(input, ['action']); return json(response, 200, { record: await experimentLab.stop(), entries: await experimentLab.list() }); }
           return json(response, 200, { record: await experimentLab.start(input), entries: await experimentLab.list() });
         }
+        if (url.pathname === '/api/about' && method === 'GET') return json(response, 200, await appIdentity());
+        const settingsFile = url.pathname.match(/^\/api\/settings\/files\/(instructions|memory)$/);
+        if (settingsFile) return json(response, 200, method === 'GET' ? await settingsFiles.read(settingsFile[1]) : await settingsFiles.save(settingsFile[1], await body(request, MAX_BRIDGE_MESSAGE_BYTES)));
         if (url.pathname === '/api/settings' && method === 'GET') return json(response, 200, await client.settings());
         if (url.pathname === '/api/settings' && method === 'POST') return json(response, 200, await client.saveSettings(await body(request)));
         if (url.pathname === '/api/pruner' && method === 'POST') return json(response, 200, await client.savePruner(await body(request)));

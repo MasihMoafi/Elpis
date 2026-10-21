@@ -19,6 +19,7 @@ export type Preferences = {
   showContextUsage: boolean;
   showAgentRuns: boolean;
   confirmClose: boolean;
+  preventSleep: boolean;
   /** Closing the window keeps Elpis in the system tray. Off by default: nothing runs after the window closes unless chosen. */
   closeToTray: boolean;
   /** The global shortcut that opens Quick Entry, as an Electron accelerator; empty when turned off. Claude's Linux default. */
@@ -33,6 +34,9 @@ export type Preferences = {
   transcriptWidth: ReadingStep;
   interfaceFont: InterfaceFont;
   codeFont: string;
+  interfaceSize: ReadingStep;
+  codeSize: ReadingStep;
+  cornerStyle: "cut" | "sharp" | "rounded";
   chatFont: ChatFont;
   accent: Accent;
   /** JSON encoded user-authored palettes; stored as text so Electron's preference patch stays atomic. */
@@ -52,12 +56,13 @@ export type Preferences = {
 export const DEFAULT_PREFERENCES: Preferences = {
   softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
-  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
+  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";
 const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = {
   sendShortcut: ["enter", "modEnter"], followUp: ["steer", "queue"], turnNotifications: ["never", "unfocused", "always"],
   transcriptSize: ["s", "m", "l"], transcriptWidth: ["s", "m", "l"], interfaceFont: ["sans", "serif"],
+  interfaceSize: ["s", "m", "l"], codeSize: ["s", "m", "l"], cornerStyle: ["cut", "sharp", "rounded"],
   chatFont: ["default", "sans", "serif", "mono", "system"], accent: ["amber", "blue", "teal", "green", "violet", "rose", "orange"],
 };
 

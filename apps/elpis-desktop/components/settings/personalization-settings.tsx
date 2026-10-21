@@ -8,6 +8,7 @@ import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsHeade
 import { useSaver } from "@/components/settings/use-saver";
 import { SettingsLoader } from "@/components/settings/config-choice";
 import { CatalogNotice, MemorySettings, useModelCatalog } from "@/components/settings/maintenance";
+import { FileSettings } from "@/components/settings/file-settings";
 
 /** `developer_instructions`: added to every new conversation. */
 function CustomInstructions({ settings }: { settings: ElpisSettings }) {
@@ -30,6 +31,8 @@ export function PersonalizationSettings() {
   const { models, error } = useModelCatalog();
   return <div aria-label="Personalization">
     <SettingsHeader title="Personalization" description="Instructions and memories Elpis uses in every new chat." />
+    <FileSettings kind="instructions" label="Global instructions" />
+    <FileSettings kind="memory" label="Memory file" />
     <SettingsLoader>{settings => <>
       <CustomInstructions settings={settings} />
       <CatalogNotice error={error} />

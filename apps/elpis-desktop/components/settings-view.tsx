@@ -8,6 +8,7 @@ import { McpSettings } from "@/components/mcp-settings";
 import { ProvidersSettings } from "@/components/providers-settings";
 import { ConfigurationSettings } from "@/components/settings/configuration-settings";
 import { GeneralSettings } from "@/components/settings/general-settings";
+import { AboutSettings } from "@/components/settings/about-settings";
 import { GitSettings, WorktreeSettings } from "@/components/settings/git-settings";
 import { HooksSettings } from "@/components/settings/hooks-settings";
 import { NotificationSettings } from "@/components/settings/notification-settings";
@@ -46,6 +47,7 @@ const TABS = [
   { id: "shortcuts", label: "Keyboard shortcuts", group: "app", scope: "this device", Icon: KeyboardIcon, words: "keys hotkeys" },
   { id: "usage", label: "Usage & limits", group: "app", scope: "this device", Icon: ContextIcon, words: "limits plan quota" },
   { id: "archived", label: "Archived chats", group: "app", scope: "this device", Icon: ArchiveIcon, words: "archive restore delete" },
+  { id: "about", label: "About", group: "app", scope: "this device", Icon: ContextIcon, words: "version commit update restart releases notes community" },
 ] as const;
 export type Tab = (typeof TABS)[number]["id"];
 export type SettingsDestination = Tab | ConfigSectionId | "sections";
@@ -138,6 +140,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
   const page = (section: Tab) => {
     switch (section) {
       case "general": return <GeneralSettings />;
+      case "about": return <AboutSettings />;
       case "notifications": return <NotificationSettings />;
       case "appearance": return <AppearanceSettings theme={theme} onTheme={onTheme} />;
       case "shortcuts": return <ShortcutSettings />;

@@ -137,9 +137,9 @@ export const retainedUpdates = {
       "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The retained theme check needs its matching exact-logo state helper, including token equality, old-orange rejection and text contrast."
     },
     "tests/settings-row-audit.cjs": {
-      "blob": "4fc98f7572c39b48d53e1034004a5c9797daddec",
-      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks."
+      "blob": "d7d595ebcb1f61fbd05f65a577ac30f9d9608069",
+      "approval": "38ecd3dc0cd1d53c1b34b82897beb3f201a5869e",
+      "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks."
     },
     "tests/settings-rows.test.cjs": {
       "blob": "cb68c8db5ff63c8bbb6dd9d18d94221937ac8797",

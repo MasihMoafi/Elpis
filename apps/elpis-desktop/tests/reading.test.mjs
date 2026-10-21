@@ -4,8 +4,14 @@ import { MONO, SANS, SERIF, codeFontProblem, readingStyle } from '../lib/reading
 
 const defaults = { transcriptSize: 'm', transcriptWidth: 's', interfaceFont: 'sans', codeFont: '' };
 
+test('SETTINGS2 interface and code sizes have independent steps and reject obsolete choices', () => {
+  assert.deepEqual(['s', 'm', 'l'].map(interfaceSize => readingStyle({ interfaceSize })['--interface-size']), ['14px', '16px', '18px']);
+  assert.deepEqual(['s', 'm', 'l'].map(codeSize => readingStyle({ codeSize })['--code-size']), ['11px', '12.5px', '16px']);
+  assert.equal(readingStyle({ interfaceSize: 'giant', codeSize: false })['--interface-size'], '16px');
+});
+
 test('the defaults are today’s look: 14.5px transcript, 740px columns, the sans stack, the mono stack', () => {
-  assert.deepEqual(readingStyle(defaults), { '--transcript-size': '14.5px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': 'var(--ui-font)', '--mono': MONO });
+  assert.deepEqual(readingStyle(defaults), { '--interface-size': '16px', '--code-size': '12.5px', '--transcript-size': '14.5px', '--transcript-width': '740px', '--ui-font': SANS, '--chat-font': 'var(--ui-font)', '--mono': MONO });
   assert.match(SANS, /^Inter, system-ui/);
   assert.match(SERIF, /serif$/);
   assert.match(MONO, /^"JetBrains Mono".*monospace$/);

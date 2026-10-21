@@ -40,7 +40,8 @@
     "tests/canvas-delete-flow.test.mjs",
     "tests/love-activity.test.mjs",
     "tests/love-spot-events.test.mjs",
-    "tests/agent-label.test.mjs"
+    "tests/agent-label.test.mjs",
+    "tests/personalization-drafts.test.cjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",
@@ -88,7 +89,8 @@
     "bridge/personal.test.mjs",
     "bridge/smart-prune.test.mjs",
     "bridge/workflow-acp.test.mjs",
-    "bridge/session-manager-monitor.test.mjs"
+    "bridge/session-manager-monitor.test.mjs",
+    "bridge/settings-files.test.mjs"
   ],
   "desktop": [
     "desktop/app-updates.test.cjs",
@@ -114,7 +116,8 @@
     "desktop/copy-keys.test.cjs",
     "desktop/tray.test.cjs",
     "desktop/wayland-ime.test.cjs",
-    "desktop/love-spot.test.cjs"
+    "desktop/love-spot.test.cjs",
+    "desktop/sleep-blocker.test.cjs"
   ],
   "ui": [
     "tests/approved-working-mark.test.cjs",
@@ -284,7 +287,8 @@
     "tests/previous-messages.test.cjs",
     "tests/scroll-to-bottom.test.cjs",
     "tests/turn-time.test.cjs",
-    "tests/sidebar-pages.test.cjs"
+    "tests/sidebar-pages.test.cjs",
+    "tests/settings2.test.cjs"
   ],
   "opt-in": [
     "tests/ledger-app.runtime.cjs",
@@ -310,6 +314,7 @@
     "tests/runtime.mjs",
     "tests/session-windows-electron.test.cjs",
     "bridge/mcp.runtime.mjs",
-    "tests/love-dock.test.cjs"
+    "tests/love-dock.test.cjs",
+    "tests/settings2.runtime.cjs"
   ]
 }
