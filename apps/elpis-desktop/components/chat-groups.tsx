@@ -31,10 +31,10 @@ export function useChatListOrder<T extends { id: string }>(chats: T[]) {
     window.addEventListener("pointerdown", start, true);
     window.addEventListener("pointerup", end, true);
     window.addEventListener("pointercancel", cancel);
-    window.addEventListener("dragstart", drag);
+    window.addEventListener("dragstart", drag, true);
     window.addEventListener("dragend", end);
     window.addEventListener("blur", blur);
-    return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); };
+    return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag, true); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); };
   }, []);
   return { chats: holdChatOrder(chats, held), release, pointer: {
     onPointerEnter: () => { inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },

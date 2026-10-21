@@ -81,6 +81,7 @@ export function ReorderItem({ reorder, itemId, enabled = true, render, ...props 
   const bindings = enabled ? reorder.itemProps(itemId) : undefined;
   return cloneElement(render, {
     ...props, ...bindings,
+    style: { ...render.props.style, ...props.style },
     className: [render.props.className, props.className].filter(Boolean).join(" "),
     onKeyDown: event => {
       bindings?.onKeyDown(event);
