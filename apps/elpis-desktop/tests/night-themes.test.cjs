@@ -7,11 +7,32 @@ const { fixture } = require('./parity-fixture.cjs');
 const { openSettings, leaveSettings, chooseOption, controlValue } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contrastFailures } = require('./hud-contrast.cjs');
+const { colours, evidence, assertColours } = require('./primary-action-colours.cjs');
 const ACCENTS = ['amber', 'blue', 'teal', 'green', 'violet', 'rose', 'orange'];
 const UNCHANGED_ACCENTS = {
   Light: { blue: '#2458b8', teal: '#146b67', green: '#29683f', violet: '#6b44ac', rose: '#a73459' },
   Dark: { amber: '#ff9b28', blue: '#8bb7ff', teal: '#68d4c7', green: '#8bd49f', violet: '#c1a0fa', rose: '#f39cbb', orange: '#ff8f00' },
 };
+
+test('A87 Send stays Elpis orange at rest, hover, pressed, keyboard focus and disabled in both themes', async () => {
+  const directory = process.env.ELPIS_A87_SHOTS;
+  const measurements = [];
+  for (const colorScheme of ['light', 'dark']) {
+    const f = await fixture({ width: 1280, height: 900, colorScheme });
+    try {
+      await f.open('chat-a');
+      for (const accent of ['amber', 'orange']) {
+        await appearance(f.page);
+        await chooseOption(f.page.getByLabel('Accent colour', { exact: true }), accent);
+        await leaveSettings(f.page);
+        measurements.push(...await colours(f.page, colorScheme, directory, accent));
+      }
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  }
+  await evidence(directory, measurements);
+  assertColours(measurements);
+});
 function isOrange([r, g, b]) {
   const max = Math.max(r, g, b), min = Math.min(r, g, b), chroma = max - min;
   const hue = chroma && max === r ? 60 * (g - b) / chroma : -1;
