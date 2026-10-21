@@ -127,7 +127,7 @@ button:disabled { cursor:not-allowed; }
 /* Keys: a keycap in shortcut lists, a quiet hint beside a field or menu item. */
 .kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
 .kbd-hint { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
-.thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:88px; margin:0 -4px; padding:0 4px; }
+.thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:88px; margin:0 -4px 0 -8px; padding:0 4px 0 8px; }
 .thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:13px; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
@@ -778,7 +778,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
 .thread-row { position:relative; }
 /* Keep the agents chevron in the left gutter at every depth; only the row's padding indents agents. */
-.thread-row > button[aria-expanded]:first-child { position:absolute; margin-left:-4px; width:12px; background:transparent; box-shadow:none; }
+.thread-row > button[aria-expanded]:first-child { position:absolute; margin-left:-8px; width:12px; background:transparent; box-shadow:none; }
 .thread-row > button[aria-expanded]:first-child svg { width:12px; height:12px; }
 .thread-row > span[aria-hidden="true"]:first-child { display:none; }
 .thread-row > button[aria-expanded]:first-child:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
