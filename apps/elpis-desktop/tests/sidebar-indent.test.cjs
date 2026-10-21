@@ -137,11 +137,11 @@ for (const colorScheme of ['light', 'dark']) {
     } finally { await f.close(); }
   });
 
-  test(`plain chat keeps its original coordinates through sibling expansion and selection (${colorScheme})`, async () => {
+  test(`plain chat keeps its reserved chevron column through sibling expansion and selection (${colorScheme})`, async () => {
     const f = await setup(colorScheme), { page, row, toggle } = f;
     try {
       const original = await coordinates(row(plain.id)), left = await row(plain.id).evaluate(element => element.getBoundingClientRect().x);
-      assert.deepEqual(original, { circle: left + 8, title: left + 29 }, 'the plain row retains its original gutter and text padding');
+      assert.deepEqual(original, { circle: left + 26, title: left + 47 }, 'the plain row reserves the same chevron column as project chats');
       assert.equal(await row(plain.id).getByRole('button', { name: /agents in/ }).count(), 0, 'no chevron is added to plain chats');
       await row(plain.id).hover();
       assert.deepEqual(await coordinates(row(plain.id)), original, 'plain hover');

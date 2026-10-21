@@ -765,8 +765,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Group labels in the sidebar and in Settings' navigation. */
 .section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
 .thread-row { position:relative; }
-/* Keep the agents chevron in the left gutter at every depth; only the row's padding indents agents. */
-.thread-row > button[aria-expanded]:first-child { position:absolute; margin-left:var(--thread-chevron-offset, -10px); width:12px; background:transparent; box-shadow:none; }
+/* Match the group chevron's center (6px inset + half its 13px icon); only circles and names indent for agents. */
+.thread-row > button[aria-expanded]:first-child { position:absolute; left:6.5px; width:12px; background:transparent; box-shadow:none; }
 /* The cropped viewBox keeps the same drawn caret inside an 8px box, clear of the active rail. */
 .thread-row > button[aria-expanded]:first-child svg { width:8px; height:8px; }
 .thread-row > span[aria-hidden="true"]:first-child { display:none; }
@@ -786,8 +786,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
 .row-hover-actions button { color:var(--muted-foreground); }
 .row-hover-actions button:hover { color:var(--primary); }
+/* Every chat reserves the same chevron column, including chats without agents. */
 /* A chat's status dot, before its title: a still amber ring while it runs, filled amber when it finished unseen, red on error. */
-.thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 8px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
+.thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 26px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
 .thread-dot[data-state="working"] { border-color:var(--primary); background:transparent; }
 .thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }
 .thread-dot[data-state="unread"] { border-color:var(--primary); background:var(--primary); padding:0; cursor:pointer; }
@@ -809,8 +810,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .sidebar-group-chevron { transition:transform .15s; }
 .sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron { transform:rotate(90deg); }
 .sidebar-group-row.active .sidebar-group-toggle svg:not(.sidebar-group-chevron) { color:var(--primary); }
-.sidebar-group-items { --thread-chevron-offset:-11.5px; padding-left:18px; }
-.sidebar-group-empty { margin:0; padding:3px 8px 6px; font-size:12px; color:var(--subtle-foreground); }
+.sidebar-group-items { padding-left:0; }
+.sidebar-group-empty { margin:0; padding:3px 8px 6px 26px; font-size:12px; color:var(--subtle-foreground); }
 /* A closed group holding a chat that needs you: the chat's waiting dot, after the group's name. */
 .sidebar-group-toggle .thread-dot { margin:0 0 0 2px; }
 /* The "Group and sort" button is marked while the list is grouped or sorted away from the defaults. */
