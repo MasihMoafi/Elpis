@@ -114,7 +114,7 @@ export const retainedUpdates = {
 // OBSRM: the pageRemovalApproval request also retires these page-only checks.
 // These page-only regressions and their fixture are retired; all other baseline tests remain mandatory.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/dashboard-fixture.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
