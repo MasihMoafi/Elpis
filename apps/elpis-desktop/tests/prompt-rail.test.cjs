@@ -5,6 +5,89 @@ const { fixture } = require('./parity-fixture.cjs');
 const indexOf = chat => ({ data: chat.map(([turnId, text, reply]) => ({ turnId, text, reply })) });
 const marksOf = page => page.getByRole('navigation', { name: 'User messages' }).locator('[data-slot="prompt-mark"]');
 
+async function railGeometry(page) {
+  return page.locator('.prompt-rail').evaluate(rail => {
+    const column = document.querySelector('.chat-content').getBoundingClientRect();
+    const boxes = [rail, ...rail.querySelectorAll('.prompt-tick, .prompt-tick i')].map(node => node.getBoundingClientRect());
+    return {
+      gap: column.left - Math.max(...boxes.map(box => box.right)),
+      highlighted: rail.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width ?? 0,
+    };
+  });
+}
+function assertRailGap(geometry) {
+  assert.ok(geometry.gap >= 16, `rail leaves at least 16px before message text: ${JSON.stringify(geometry)}`);
+}
+
+test('rail including the highlighted dash leaves 16px before text at desktop widths', async () => {
+  const f = await fixture({ width: 900, height: 800 });
+  try {
+    await f.open('chat-a');
+    for (const width of [900, 1130, 1440, 1920]) {
+      await f.page.setViewportSize({ width, height: 800 });
+      assert.equal(await f.page.locator('.prompt-rail').isVisible(), true, `${width}px keeps the rail available`);
+      for (const index of [0, 1, 3]) {
+        await marksOf(f.page).nth(index).hover();
+        await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 37.9);
+        const geometry = await railGeometry(f.page);
+        assert.ok(geometry.highlighted >= 37.9, 'measure the widest hover state');
+        assertRailGap(geometry);
+        const preview = await f.page.locator('.prompt-preview').boundingBox();
+        const mark = await marksOf(f.page).nth(index).boundingBox();
+        assert.ok(preview.x >= mark.x + mark.width + 12, 'preview stays clear of the pointer on the rail');
+        assert.ok(preview.x + preview.width <= width, 'preview fits the viewport');
+      }
+    }
+    // A resized sidebar can leave a fractional pane width between 640 and 641px.
+    await f.page.setViewportSize({ width: 900, height: 800 });
+    await f.page.locator('.app-shell').evaluate(node => node.style.setProperty('--sidebar-width', '259.5px'));
+    assert.equal(await f.page.locator('.prompt-rail').isVisible(), true);
+    assertRailGap(await railGeometry(f.page));
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('rail gap check rejects a deliberately narrow rendered gutter', async () => {
+  const f = await fixture({ width: 900, height: 800 });
+  try {
+    await f.open('chat-a');
+    await marksOf(f.page).nth(1).hover();
+    await f.page.waitForFunction(() => document.querySelector('[data-distance="0"] i')?.getBoundingClientRect().width >= 37.9);
+    assertRailGap(await railGeometry(f.page));
+    await f.page.locator('.chat-content').evaluate(column => {
+      const right = document.querySelector('.prompt-rail').getBoundingClientRect().right;
+      column.style.transform = `translateX(${right + 8 - column.getBoundingClientRect().left}px)`;
+    });
+    const geometry = await railGeometry(f.page);
+    assert.ok(Math.abs(geometry.gap - 8) < 0.1, JSON.stringify(geometry));
+    assert.throws(() => assertRailGap(geometry), /rail leaves at least 16px/);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a hidden rail releases its gutter in narrow windows and panes', async () => {
+  const f = await fixture({ width: 1130, height: 800 });
+  try {
+    await f.open('chat-a');
+    for (const [width, padding] of [[760, 16], [896, 22]]) {
+      await f.page.setViewportSize({ width, height: 800 });
+      assert.equal(await f.page.locator('.prompt-rail').isVisible(), false);
+      assert.equal(await f.page.locator('.chat-scroll').evaluate(node => parseFloat(getComputedStyle(node).paddingLeft)), padding);
+    }
+    await f.page.setViewportSize({ width: 1130, height: 800 });
+    assert.equal(await f.page.locator('.prompt-rail').isVisible(), true);
+    assertRailGap(await railGeometry(f.page));
+    await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
+    assert.equal(await f.page.locator('.prompt-rail').isVisible(), false);
+    assert.equal(await f.page.locator('.chat-scroll').evaluate(node => parseFloat(getComputedStyle(node).paddingLeft)), 22);
+    await f.page.getByRole('button', { name: 'Close side panel', exact: true }).click();
+    await f.open('chat-b');
+    assert.equal(await f.page.locator('.prompt-rail').count(), 0);
+    assert.equal(await f.page.locator('.chat-scroll').evaluate(node => parseFloat(getComputedStyle(node).paddingLeft)), 32);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('bookmarks restore from the desktop store when the loopback origin changes', async () => {
   const f = await fixture();
   try {
