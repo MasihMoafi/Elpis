@@ -71,7 +71,8 @@ test('Escape clears conversation search and returns to the draft',()=>fixture(as
 
 test('keyboard shortcuts return to the field that opened them, and edit Cancel returns to the composer',()=>fixture(async({page,composer,open,focused})=>{
  // Prime a popup trigger: its historical focus must not win over the actual keyboard origin.
- await page.getByRole('button',{name:'Add files and more',exact:true}).click();await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Add files and more',exact:true}).click();
+ const menu=page.getByRole('menu');await menu.waitFor();await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});
  const search=page.getByLabel('Search conversations');await search.focus();await page.keyboard.press('Control+/');const dialog=page.getByRole('alertdialog');await dialog.waitFor();
  await page.getByLabel('Search keyboard shortcuts').fill('no-match');await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});await page.waitForFunction(element=>element===document.activeElement && !element.closest('[inert]'),await search.elementHandle());
  assert.equal(await search.evaluate(e=>e===document.activeElement),true,'restore the actual keyboard origin');

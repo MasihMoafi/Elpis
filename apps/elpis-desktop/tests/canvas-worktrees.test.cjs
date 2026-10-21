@@ -90,7 +90,7 @@ test('an ordinary task failure shows its reason without a merge notice or merge 
   try {
     await run(canvas);
     await canvas.getByText(/Finished/).first().waitFor({ timeout: 8000 });
-    assert.equal(await canvas.locator('.canvas-notice').innerText(), 'Veyra · Part 2: the model stopped');
+    assert.equal(await canvas.locator('.canvas-notice').innerText(), "Veyra · Part 2: the model stopped Review this message and the agents' Info, then try Run graph again.");
     assert.doesNotMatch(await canvas.locator('.canvas-notice').innerText(), /Merge stopped/);
     assert.equal(await status(node('Veyra · Part 2')), 'failed');
     assert.doesNotMatch(await node('Veyra · Part 2').locator('.agent-node-meta').innerText(), /clash/);

@@ -61,6 +61,8 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     // Every agent, and the Mother, is a button named for it and its state, with its title upright above it.
     const titles = ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts'];
     const agent = title => board.getByRole('button', { name: new RegExp(`^${title}:`) });
+    // At small zoom the ports cover the pedestal; its upright title badge remains the hover target.
+    const hoverLabel = async title => board.locator(`.iso-label[data-for="${await agent(title).getAttribute('data-id')}"]`).hover();
     for (const title of titles) assert.equal(await agent(title).count(), 1, `${title} is a button`);
     assert.equal(await agent('Quillon · Part 1').getAttribute('aria-label'), 'Quillon · Part 1: wave 1, not run, checked after it runs');
     assert.equal(await agent('Nuvani · Join the parts').getAttribute('aria-label'), 'Nuvani · Join the parts: wave 2, not run, checked after it runs');
@@ -175,11 +177,11 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
 
     // The light interface keeps its theme palette; agent identities have their own colors.
     await page.setViewportSize({ width: 1130, height: 660 }); await page.waitForTimeout(300);
-    await agent('Veyra · Part 2').hover();
+    await hoverLabel('Veyra · Part 2');
     assert.deepEqual(await unapprovedOranges(page, '.iso-node[data-kind="agent"], .iso-port[data-kind="agent"]'), [], 'light theme controls: only approved amber/orange accents');
     await shoot('iso-light-1130');
     await chooseTheme(page, 'dark'); await page.waitForTimeout(300);
-    await agent('Veyra · Part 2').hover();
+    await hoverLabel('Veyra · Part 2');
     await shoot('iso-dark-1130');
     await chooseTheme(page, 'light');
 
@@ -196,7 +198,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await shoot('iso-light-hierarchical-1130');
     if (short.length) {
       const id = short[0], title = (await board.locator(`.iso-node[data-id="${id}"]`).getAttribute('aria-label')).replace(/: wave \d+, .*$/, '');
-      await board.locator(`.iso-node[data-id="${id}"]`).hover();
+      await board.locator(`.iso-label[data-for="${id}"]`).hover();
       assert.match(await board.locator(`.iso-label[data-for="${id}"]`).innerText(), new RegExp(`\\n${title}$`), 'pointed at, a badge shows its full title');
       await shoot('iso-light-hierarchical-hover-1130');
     }
