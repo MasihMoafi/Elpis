@@ -173,6 +173,7 @@
     "tests/context-ledger.test.cjs",
     "tests/context-menu.test.cjs",
     "tests/customize-description-fit.test.cjs",
+    "tests/page-column.test.cjs",
     "tests/customize.test.cjs",
     "tests/decision-cards.test.cjs",
     "tests/desktop-polish-visual.test.cjs",

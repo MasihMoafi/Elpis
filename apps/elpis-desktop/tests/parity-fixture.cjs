@@ -28,8 +28,9 @@ const TURNS = [
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
  * `threads` replaces the chat list; `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. `nativeClipboard` uses Chromium's clipboard
- * with read/write permissions instead of the default writeText recorder. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, nativeClipboard = false } = {}) {
+ * with read/write permissions instead of the default writeText recorder. `showScrollbars` keeps native scrollbar
+ * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. */
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, nativeClipboard = false, showScrollbars = false } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set();
   const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
@@ -83,7 +84,8 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     } catch { res.statusCode = 404; res.end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED });
+  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED,
+    ignoreDefaultArgs: showScrollbars ? ['--hide-scrollbars'] : undefined });
   const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);

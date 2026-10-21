@@ -247,6 +247,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer-chip > svg:first-child, .model-select > svg:first-child { width:16px; height:16px; }
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .page-scroll { flex:1; min-height:0; overflow:auto; padding:24px 28px 40px; }
+/* Page surfaces reserve scrollbar space; Settings owns its scroll inside the layout. */
+.workspace-body.no-browser > .workspace-content > :not(:has(> .settings-layout)), .settings-page { scrollbar-gutter:stable; }
 .status-line { display:flex; gap:7px; align-items:center; } .status-dot { width:6px; height:6px; border-radius:50%; background:var(--muted-foreground); } .status-dot.connected { background:var(--success); }
 @media(max-width:760px) { .app-shell { grid-template-columns:1fr; } .sidebar { display:none; } .sidebar.open { display:flex; position:fixed; inset:0 auto 0 0; width:280px; z-index:30; box-shadow:0 0 0 100vmax #0008; } .mobile-menu { display:inline-flex; } .workspace-header { padding:0 12px; } .chat-scroll { --chat-top-inset:20px; padding:var(--chat-top-inset) 16px; } .page-scroll { padding:18px; } .empty-state h2 { font-size:24px; } .composer-hint { display:none; } }
 
