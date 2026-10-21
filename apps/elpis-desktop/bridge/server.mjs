@@ -14,7 +14,7 @@ import { createTranscription } from './transcription.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
 import { smartPruneDetail } from './smart-prune.mjs';
-import { createObservability } from './observability.mjs';
+import { createDashboard } from './dashboard.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createLoveAgents } from './love-agents.mjs';
@@ -126,9 +126,7 @@ export async function startDesktopServer(options = {}) {
     historyCursors.delete(cursor); historyCursors.set(cursor, saved);
     return saved.cursor;
   };
-  // The Observability page reads the records of the Elpis home this runtime uses (`elpisHome` sets another).
-  const observability = createObservability({ home: options.elpisHome, chatOf: id => client.chatSummary(id),
-    listChats: params => client.observabilityChats(params), turnsOf: (id, params) => client.observabilityTurns(id, params), graphsOf: id => client.workflows(id) });
+  const dashboard = createDashboard({ client, home: options.elpisHome });
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
@@ -155,7 +153,7 @@ export async function startDesktopServer(options = {}) {
       if (ERROR_AREAS.has(requestedArea)) area = requestedArea;
       if (url.origin !== origin) throw new BridgeError('Local application origin required', 403);
       // Only the split document permits embedding by the app itself.
-      if (url.pathname === '/' && url.searchParams.get('pane') === '1') {
+      if ((url.pathname === '/' && url.searchParams.get('pane') === '1') || url.pathname === '/api/dashboard/' || url.pathname === '/api/dashboard/index.html') {
         response.setHeader('X-Frame-Options', 'SAMEORIGIN');
         response.setHeader('Content-Security-Policy', response.getHeader('Content-Security-Policy').replace("frame-ancestors 'none'", "frame-ancestors 'self'"));
       }
@@ -170,6 +168,8 @@ export async function startDesktopServer(options = {}) {
         const cookies = (request.headers.cookie ?? '').split(';').map(value => value.trim());
         if (!cookies.some(value => same(value, `${COOKIE}=${session}`))) throw new BridgeError('Open the application using its private launch URL', 401);
         const method = request.method;
+        if (url.pathname === '/api/dashboard' && method === 'GET') return json(response, 200, await dashboard.open(url));
+        if (url.pathname.startsWith('/api/dashboard/')) return await dashboard.route(request, response, url, json, body);
         if (url.pathname === '/api/dev-servers' || url.pathname.startsWith('/api/dev-servers/')) return json(response, 200, await devServerRequest(devServers, method, url, method === 'POST' ? await body(request) : undefined));
         if (url.pathname === '/api/love-spot') {
           const value = method === 'GET' ? await loveSpot.read() : await loveSpot.save(await body(request, 64 * 1024 * 1024));
@@ -225,9 +225,6 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
-        if (url.pathname === '/api/observability' && method === 'GET') return json(response, 200, await observability.overview(url.searchParams));
-        const observed = url.pathname.match(/^\/api\/observability\/chats\/([^/]+)$/);
-        if (observed && method === 'GET') return json(response, 200, await observability.chat(decodeURIComponent(observed[1]), url.searchParams));
         if (url.pathname === '/api/improvements/source') {
           const store = await improvements();
           if (method === 'GET') return json(response, 200, await store.source());
@@ -418,6 +415,7 @@ export async function startDesktopServer(options = {}) {
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
+      await dashboard.close();
       await experimentLab.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();

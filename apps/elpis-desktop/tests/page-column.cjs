@@ -28,7 +28,7 @@ function sameLedger(actual, expected, label) {
   for (const part of ['column', 'tabs', 'content']) sameEdges(actual[part], expected[part], `${label} ${part}`);
 }
 
-async function sharedColumns(page, width, record = () => {}, { requireObservabilityOverflow = false } = {}) {
+async function sharedColumns(page, width, record = () => {}) {
   async function geometry(locator) {
     return locator.evaluate(element => {
       const { left, right } = element.getBoundingClientRect();
@@ -51,8 +51,6 @@ async function sharedColumns(page, width, record = () => {}, { requireObservabil
     return short.scrolling;
   }
   const nav = page.locator('.nav-list');
-  await nav.getByRole('button', { name: 'Observability', exact: true }).click();
-  await check(page.locator('.observability'), 'Observability', requireObservabilityOverflow);
   await nav.getByRole('button', { name: 'Lab', exact: true }).click();
   await check(page.getByRole('region', { name: 'Lab', exact: true }).locator('form'), 'Lab', true);
   await nav.getByRole('button', { name: 'Workflows', exact: true }).click();

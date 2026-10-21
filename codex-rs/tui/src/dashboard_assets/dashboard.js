@@ -1,6 +1,11 @@
 'use strict';
 
 const POLL_INTERVAL_MS = 2_000;
+// The same page is served at / by the TUI and /api/dashboard/ by desktop.
+function dashboardPath(resource) {
+  const url = new URL(resource.replace(/^\//, ''), new URL('.', location.href));
+  return url.pathname + url.search;
+}
 const FRESHNESS_LIMIT_MS = 10_000;
 const COMPOSITION_CELL_COUNT = 100;
 const CATEGORY_COLORS = Object.freeze({
@@ -518,8 +523,8 @@ async function refreshEvidence() {
   const token = sessionToken();
   if (!container || !token) return;
   try {
-    const prefix = '/evidence/' + token + '/';
-    const response = await fetch(prefix + 'index.json', { cache: 'no-store' });
+    const prefix = dashboardPath('/evidence/' + token + '/');
+    const response = await fetch(prefix + 'index.json' + location.search, { cache: 'no-store' });
     if (!response.ok) throw new Error('Evidence unavailable');
     const rows = await response.json();
     if (!Array.isArray(rows)) throw new Error('Invalid evidence list');
@@ -545,7 +550,7 @@ async function refreshEvidence() {
 let defaultPrunerPrompt = null;
 function prunerSettingsUrl() {
   const token = sessionToken();
-  return token ? `/pruner-settings/${token}` : null;
+  return token ? dashboardPath(`/pruner-settings/${token}`) : null;
 }
 
 async function loadPrunerSettings() {
@@ -603,7 +608,7 @@ const KEY_SOURCES = Object.freeze({
 
 function providerKeysUrl() {
   const token = sessionToken();
-  return token ? `/provider-keys/${token}` : null;
+  return token ? dashboardPath(`/provider-keys/${token}`) : null;
 }
 
 function text(value) {
@@ -691,7 +696,7 @@ const touchedRoles = new Set();
 function modelsUrl(provider) {
   const token = sessionToken();
   if (!token) return null;
-  return `/models/${token}` + (provider ? '/' + encodeURIComponent(provider) : '');
+  return dashboardPath(`/models/${token}` + (provider ? '/' + encodeURIComponent(provider) : '')) + location.search;
 }
 
 function providerName(id) {
@@ -826,6 +831,11 @@ async function saveModel(role) {
     if (!response.ok) throw new Error(await response.text());
     const payload = await response.json();
     touchedRoles.delete(role);
+    if (isObject(payload) && typeof payload.threadId === 'string') {
+      const address = new URL(location.href);
+      address.searchParams.set('thread', payload.threadId);
+      history.replaceState(null, '', address.pathname + address.search + address.hash);
+    }
     setText('models-feedback', ROLE_NAMES[role] + ': ' + (isObject(payload) && typeof payload.message === 'string' ? payload.message : 'saved.'));
   } catch (error) {
     setText('models-feedback', `${ROLE_NAMES[role]} not changed: ${error.message}`);
@@ -869,7 +879,7 @@ async function refreshAgents() {
   if (Date.now() - lastAgentsFetch < 3_000) return;
   lastAgentsFetch = Date.now();
   try {
-    const response = await fetch('/agents.json', { cache: 'no-store' });
+    const response = await fetch(dashboardPath('/agents.json'), { cache: 'no-store' });
     if (!response.ok) throw new Error('Unavailable');
     const summary = await response.json();
     if (!Array.isArray(summary.agents)) throw new Error('Invalid data');
@@ -1059,7 +1069,7 @@ async function openAgentChat(agent, earlier = false) {
   try {
     const query = new URLSearchParams({ limit: '20' });
     if (earlier && chatNextCursor) query.set('cursor', chatNextCursor);
-    const response = await fetch(`/threads/${token}/${encodeURIComponent(agent.id)}?${query}`, { cache: 'no-store' });
+    const response = await fetch(dashboardPath(`/threads/${token}/${encodeURIComponent(agent.id)}?${query}`), { cache: 'no-store' });
     if (!response.ok) throw new Error(await response.text());
     const result = await response.json();
     if (request !== chatRequest) return;
@@ -1089,7 +1099,7 @@ async function poll(force = false) {
     setTransport(paused ? 'Refreshing once' : 'Refreshing', paused ? 'paused' : 'neutral');
   }
   try {
-    const response = await fetch('/data.json', { cache: 'no-store' });
+    const response = await fetch(dashboardPath('/data.json') + location.search, { cache: 'no-store' });
     if (!response.ok) {
       setTransport('Elpis is not answering', 'unavailable');
       return;
@@ -1097,6 +1107,11 @@ async function poll(force = false) {
     const envelope = await response.json();
     const nextState = isObject(envelope) ? envelope.state : null;
     const nextHeartbeat = isObject(envelope) ? envelope.heartbeat_at : null;
+    if (nextState === null && isValidTimestamp(nextHeartbeat)) {
+      await refreshAgents();
+      setTransport('Open a conversation for session data', 'neutral');
+      return;
+    }
     if (!isValidState(nextState) || !isValidTimestamp(nextHeartbeat)) {
       setTransport('Elpis sent something this page cannot read', 'unavailable');
       return;
@@ -1195,8 +1210,15 @@ function setTheme(theme) {
   setText('theme-toggle', light ? 'Dark' : 'Light');
   byId('theme-toggle').setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
 }
+// A desktop appearance change updates this document without discarding an edited prompt.
+window.addEventListener('message', event => {
+  if (event.source === parent && event.origin === location.origin && event.data?.type === 'elpis-dashboard-theme'
+    && ['light', 'elpis-dashboard'].includes(event.data.theme)) setTheme(event.data.theme);
+});
 let preferredTheme;
 try { preferredTheme = localStorage.getItem('elpis-dashboard-theme'); } catch (_error) {}
+const hostTheme = new URLSearchParams(location.search).get('theme');
+if (hostTheme === 'light' || hostTheme === 'elpis-dashboard') preferredTheme = hostTheme;
 setTheme(['light', 'elpis-dashboard'].includes(preferredTheme) ? preferredTheme : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'elpis-dashboard');
 byId('theme-toggle').addEventListener('click', () => {
   const theme = document.documentElement.dataset.theme === 'light' ? 'elpis-dashboard' : 'light';

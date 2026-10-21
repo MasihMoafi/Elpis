@@ -291,6 +291,8 @@ async fn bare_pruner_model_opens_the_pruner_picker() {
             reasoning_effort: None,
             version: "fixture".into(),
             providers: Vec::new(),
+            system_prompt: None,
+            default_system_prompt: String::new(),
         }),
     );
 

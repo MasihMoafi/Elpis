@@ -881,13 +881,6 @@ export default function Home() {
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
-  async function openObservedChat(id: string) {
-    try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`);
-      upsertThread(result.thread);
-      await loadThread(result.thread);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-  }
   async function openSessionManager() {
     if (openingSessionManagerRef.current) return;
     openingSessionManagerRef.current = true; setOpeningSessionManager(true);
@@ -1948,7 +1941,7 @@ export default function Home() {
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Ledger"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
-      {view === "observability" && <div className="page-scroll"><ViewBoundary label="Observability"><ObservabilityView onOpenChat={id => void openObservedChat(id)} hiddenChats={hidden.current} /></ViewBoundary></div>}
+      {view === "observability" && <ViewBoundary label="Observability"><ObservabilityView threadId={selected?.id} dark={dark} /></ViewBoundary>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; setAwayFromBottom(!stickToBottom.current); }}><div className="chat-content">
           {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}

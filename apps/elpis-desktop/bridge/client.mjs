@@ -1,5 +1,6 @@
 import { fastServiceTier } from '../lib/service-tier.mjs';
 import { legacyInterview, interviewTurns } from './love-interview.mjs';
+import { DASHBOARD_SUBSCRIPTIONS } from './dashboard-assets.mjs';
 import { EventEmitter } from 'node:events';
 import { agentParentId, isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -81,6 +82,7 @@ const NOTIFICATIONS = new Set([
   'thread/started', 'thread/status/changed', 'thread/name/updated', 'thread/settings/updated',
   'thread/closed', 'thread/archived', 'thread/deleted', 'turn/started', 'turn/completed',
   'turn/aborted', 'turn/diff/updated', 'turn/plan/updated', 'item/started', 'item/completed',
+  'turn/activityUpdated', 'turn/costUpdated',
   'item/agentMessage/delta', 'item/reasoning/summaryTextDelta', 'item/commandExecution/outputDelta',
   'item/fileChange/outputDelta', 'error', 'serverRequest/resolved',
 ]);
@@ -168,6 +170,7 @@ export class DesktopClient extends EventEmitter {
   #claudeAccountsKey;
   #approvals = new Map(); #mutating = new Set(); #closed = false; #ready = false; #attaching = new Map();
   #context = new Map(); #restored = new Map(); #shares = new Map(); #side = new Set();
+  #dashboardPrune = new Map();
   #sideChats = new Map();
   #interviewThreads = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
@@ -372,6 +375,7 @@ export class DesktopClient extends EventEmitter {
     if (NOTIFICATIONS.has(message.method) && tracked) {
       if (message.method === 'thread/tokenUsage/updated' || message.method === 'thread/smartPrune/updated') {
         const key = message.method === 'thread/tokenUsage/updated' ? 'tokenUsage' : 'smartPrune';
+        if (key === 'smartPrune') this.#dashboardPrune.set(id, message.params?.smartPrune);
         const value = key === 'tokenUsage' ? tokenUsageSnapshot(message.params?.[key]) : smartPruneSnapshot(message.params?.[key]);
         // As in the TUI, an update without category shares (a replay after resume) keeps the last known ones.
         const shares = this.#context.get(id)?.tokenUsage?.contextAttribution;
@@ -459,7 +463,7 @@ export class DesktopClient extends EventEmitter {
     return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
       canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
-  #forget(id) { this.#browserConfig?.close?.(id); this.#sessionManagerConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); this.#turnRevisions.delete(id); }
+  #forget(id) { this.#browserConfig?.close?.(id); this.#sessionManagerConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#dashboardPrune.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); this.#turnRevisions.delete(id); }
   async listThreads(options = {}) {
     object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
     if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
@@ -1006,6 +1010,73 @@ export class DesktopClient extends EventEmitter {
     threadId(id);
     return this.#rpc('thread/contextFiles/list', { threadId: id });
   }
+  /** Dashboard transport reads the same native usage, sources and settings as the TUI. */
+  async dashboardInputs(id) {
+    threadId(id); this.#known.add(id);
+    const [summary, context, sources] = await Promise.all([this.chatSummary(id), this.context(id), this.contextFiles(id).catch(error => {
+      // Saved chats remain inspectable without resuming them or starting their tool servers.
+      if (/^thread not (loaded|found)\b/.test(error.engineMessage ?? '')) return { files: null };
+      throw error;
+    })]);
+    if (!summary) throw new BridgeError('Conversation is no longer available', 404);
+    return { thread: summary.thread, rolloutPath: summary.path, context, sources: sources.files, smartPrune: this.#dashboardPrune.get(id) ?? null };
+  }
+  async dashboardPruner(edit) {
+    const current = await this.#rpc('pruner/read', {});
+    if (edit === undefined) return current;
+    object(edit, ['system_prompt']);
+    if (edit.system_prompt !== null && (typeof edit.system_prompt !== 'string' || !edit.system_prompt.trim() || Buffer.byteLength(edit.system_prompt) > 128000)) throw new BridgeError('Provide instructions or null to restore the default');
+    return this.#rpc('pruner/write', { expectedVersion: current.version, model: current.model, provider: current.provider,
+      reasoningEffort: current.reasoningEffort, promptEdit: { systemPrompt: edit.system_prompt } });
+  }
+  async dashboardModel(id, edit) {
+    object(edit, ['role', 'provider', 'model']);
+    if (!['chat', 'background', 'pruner'].includes(edit.role)) throw new BridgeError('Choose a model role');
+    if (edit.model !== null || edit.provider !== null) {
+      text(edit.model, 'model ID', 200); text(edit.provider, 'provider ID', 200);
+      const listed = await this.dashboardModels(edit.provider);
+      if (!listed.some(row => row.model === edit.model || row.id === edit.model)) throw new BridgeError('Choose a model listed by this provider');
+    } else if (edit.role === 'chat') throw new BridgeError('Choose a chat model');
+    if (edit.role === 'chat') {
+      if (!id) throw new BridgeError('Open a chat before changing its model', 409);
+      return this.#mutate(id, async () => {
+        const thread = await this.#current(id);
+        if (thread.status?.type === 'active') throw new BridgeError('Wait for this turn to finish before changing its model', 409);
+        if (!thread.desktopAccess.writable) throw new BridgeError("Only this agent's parent can change its model", 409);
+        const subscription = DASHBOARD_SUBSCRIPTIONS.find(row => row.id === edit.provider);
+        if (edit.provider !== thread.modelProvider && !subscription) {
+          const fork = await this.#forkChat(thread, undefined, 'continued', { model: edit.model, modelProvider: edit.provider });
+          return { message: 'Continued this conversation on the selected provider.', threadId: fork.thread.id };
+        }
+        const model = subscription && !edit.model.startsWith(subscription.prefix) ? subscription.prefix + edit.model : edit.model;
+        await this.#attach(id);
+        await this.#rpc('thread/settings/update', { threadId: id, model });
+        return { message: 'Saved. The next request uses this model.' };
+      });
+    } else if (edit.role === 'background') {
+      const settings = await this.settings();
+      await this.saveSettings({ version: settings.version, background: { model: edit.model, provider: edit.provider } });
+    } else {
+      const settings = await this.settings();
+      await this.savePruner({ version: settings.smartPrune.explicitOverride.version, model: edit.model, provider: edit.provider });
+    }
+    return { message: 'Saved. The next request uses this model.' };
+  }
+  async dashboardModels(provider) {
+    const subscription = DASHBOARD_SUBSCRIPTIONS.find(row => row.id === provider);
+    const rows = []; let cursor;
+    do {
+      const page = await this.models({ ...(!subscription ? { provider } : {}), limit: 100, ...(cursor ? { cursor } : {}) });
+      rows.push(...page.data); cursor = page.nextCursor;
+    } while (cursor);
+    return subscription ? rows.filter(row => row.model.startsWith(subscription.prefix)) : rows.filter(row => !DASHBOARD_SUBSCRIPTIONS.some(sub => row.model.startsWith(sub.prefix)));
+  }
+  async dashboardProviders() {
+    const [settings, catalog] = await Promise.all([this.settings(), this.models()]);
+    const providers = settings.providers.map(row => ({ id: row.id, name: row.displayName }));
+    for (const { id, name, prefix } of DASHBOARD_SUBSCRIPTIONS) if (catalog.data.some(row => row.model.startsWith(prefix)) && !providers.some(row => row.id === id)) providers.push({ id, name, chat_only: true });
+    return providers;
+  }
   async setContextFile(id, input) {
     threadId(id); object(input, ['path', 'included']);
     text(input.path, 'context file path');
@@ -1381,9 +1452,9 @@ export class DesktopClient extends EventEmitter {
       throw new BridgeError('That message no longer has a saved fork point. Refresh this conversation and fork from the saved reply.', 409);
     }
   }
-  async #forkChat(thread, lastTurnId, suffix = 'fork') {
+  async #forkChat(thread, lastTurnId, suffix = 'fork', model = {}) {
     const browserSession = `pending-${randomUUID()}`;
-    const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...this.#browserOptions(browserSession) }).catch(error => { this.#browserConfig?.close?.(browserSession); throw error; });
+    const fork = await this.#rpc('thread/fork', { threadId: thread.id, ...(lastTurnId ? { lastTurnId } : {}), ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}), ...model, ...this.#browserOptions(browserSession) }).catch(error => { this.#browserConfig?.close?.(browserSession); throw error; });
     threadId(fork.thread?.id); this.#browserConfig?.bind?.(browserSession, fork.thread.id); this.#owned.add(fork.thread.id);
     const name = `${(thread.name?.trim() || String(thread.preview ?? '').split('\n')[0].trim() || 'Chat').slice(0, 110)} (${suffix})`;
     try { await this.#rpc('thread/name/set', { threadId: fork.thread.id, name }); fork.thread.name = name; } catch { /* The fork stands; it keeps its default title. */ }

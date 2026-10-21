@@ -84,16 +84,11 @@ for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 200
       smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: { enabled: false, generate: false, use: false, extractionModel: null, consolidationModel: null },
       options: {}, write: { available: true, reason: '' } }),
     '/api/experiment-lab': () => ({ record: null, entries: [] }),
-    '/api/observability': () => ({ available: true, totals: { attempts: 0, saved: 0 }, skipped: {}, chats: { data: Array.from({ length: 30 }, (_, index) => ({
-      id: `observed-${index}`, chat: { id: `observed-${index}`, name: `Observed chat ${index + 1}` }, totals: { attempts: 0, saved: 0 },
-    })), nextCursor: null } }),
   } });
   const { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
-    await page.getByRole('button', { name: 'Observed chat 30', exact: true }).waitFor();
-    await sharedColumns(page, width, value => t.diagnostic(JSON.stringify(value)), { requireObservabilityOverflow: true });
+    await sharedColumns(page, width, value => t.diagnostic(JSON.stringify(value)));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

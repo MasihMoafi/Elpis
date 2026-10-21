@@ -871,8 +871,8 @@ fn dashboard_asset_opens_agents_keeps_model_lists_and_tucks_the_details_away() {
 fn dashboard_asset_uses_local_daisyui_and_explains_the_latest_optimizer_attempt() {
     for required in [
         "data-theme=\"elpis-dashboard\"",
-        "href=\"/dashboard.css\"",
-        "src=\"/dashboard.js\"",
+        "href=\"dashboard.css\"",
+        "src=\"dashboard.js\"",
         "class=\"navbar",
         "class=\"menu dashboard-tabs\"",
         "class=\"card",

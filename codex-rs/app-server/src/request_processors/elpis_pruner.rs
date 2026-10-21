@@ -7,6 +7,7 @@ use codex_app_server_protocol::PrunerProviderChoice;
 use codex_app_server_protocol::PrunerReadResponse;
 use codex_app_server_protocol::PrunerWriteParams;
 use codex_core::config::Config;
+use codex_core::pruner_settings::DEFAULT_SYSTEM_PROMPT;
 use codex_core::pruner_settings::PrunerSettings;
 use sha2::Digest;
 use sha2::Sha256;
@@ -37,6 +38,8 @@ fn response(
         reasoning_effort: settings.reasoning_effort,
         version,
         providers,
+        system_prompt: settings.system_prompt,
+        default_system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
     })
 }
 
@@ -74,14 +77,15 @@ impl ConfigRequestProcessor {
         if version(&settings)? != params.expected_version {
             return Err(stale_version());
         }
-        // Keep the custom prompt intact. The shared core store checks the snapshot again
-        // under its file lock, including writers from the terminal picker.
+        // The dashboard and model picker share the core's version check and file lock.
         let updated = PrunerSettings {
             backend: settings.backend,
             model: params.model,
             provider: params.provider,
             reasoning_effort: params.reasoning_effort,
-            system_prompt: settings.system_prompt.clone(),
+            system_prompt: params
+                .prompt_edit
+                .map_or_else(|| settings.system_prompt.clone(), |edit| edit.system_prompt),
         };
         updated
             .validate()

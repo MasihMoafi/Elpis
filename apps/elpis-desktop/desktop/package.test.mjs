@@ -59,7 +59,7 @@ async function put(file, data, mode) {
 
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-package-'));
-  const source = path.join(root, 'source');
+  const source = path.join(root, 'source', 'apps', 'elpis-desktop');
   const electronDist = path.join(root, 'electron-dist');
   const node = path.join(root, 'canonical-node', 'node');
   const wsReal = path.join(root, 'old-install', 'ws');
@@ -67,6 +67,7 @@ async function fixture() {
   const ptyReal = path.join(root, 'terminal-deps', 'node-pty');
   const ptyDirectory = path.join(source, 'node_modules', 'node-pty');
   for (const name of production) await put(path.join(source, name), `fixture ${name}\n`);
+  for (const name of ['index.html', 'dashboard.css', 'dashboard.js', 'dashboard_workflows.js']) await put(path.resolve(source, '../../codex-rs/tui/src/dashboard_assets', name), `fixture ${name}\n`);
   await put(path.join(source, 'out', 'index.html'), '<p>Built renderer</p>');
   await put(path.join(source, 'out', '_next', 'static', 'app.js'), 'renderer();');
   await put(path.join(source, 'package.json'), JSON.stringify({ name: 'elpis-desktop', desktopName: 'elpis-desktop.desktop',

@@ -414,6 +414,8 @@ async fn a108_missing_catalog_unoffered_max_and_cancelled_or_failed_reads_never_
             reasoning_effort: None,
             version: "test-version".into(),
             providers: Vec::new(),
+            system_prompt: None,
+            default_system_prompt: String::new(),
         };
         chat.open_pruner_model_popup();
         let request = chat.context_ledger.pruner_request.get().unwrap();

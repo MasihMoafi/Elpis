@@ -257,6 +257,7 @@ impl ChatWidget {
                     provider: model.as_ref().map(|_| provider.clone()),
                     model,
                     reasoning_effort: effort,
+                    prompt_edit: None,
                 };
                 SelectionItem {
                     name,

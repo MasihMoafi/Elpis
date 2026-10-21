@@ -7,6 +7,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const { openSettings } = require('./controls.cjs');
 const { uiFit } = require('./ui-fit.cjs');
 const { contextRoutes } = require('./context-files-fixture.cjs');
+const { dashboardRoutes } = require('./dashboard-fixture.cjs');
 
 const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats'];
 const TOPICS = ['One agent or many', 'Mother and Father', 'Writers and checks', 'Choose a pattern', 'Read a run'];
@@ -14,11 +15,10 @@ const description = 'Check the shared components and their rendered layout, then
 function routes() {
   const settings = { version: 's1', main: { model: 'sol', provider: 'openai' }, background: {}, providers: [{ id: 'openai', displayName: 'OpenAI' }], agents: { graph: 256, atOnce: 4, source: 'agents.max_threads' },
     smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: null, provider: null } }, memory: { enabled: true, generate: true, use: true }, options: {}, managed: {}, write: { available: true, reason: 'Applies to new conversations.' } };
-  const totals = { attempts: 1, compacted: 1, unchanged: 0, failed: 0, saved: 1500, unlinked: 0 };
-  const trace = { id: 'chat-a', found: true, chat: { id: 'chat-a', name: 'Fix the parser' }, totals };
   let scene = { elements: [], appState: {}, files: {}, page: { name: 'Current page', session: 'fixture' } };
   return {
     ...contextRoutes(),
+    ...dashboardRoutes(),
     '/api/settings': body => { if (body?.options) Object.assign(settings.options, body.options); return settings; },
     '/api/providers': () => ({ openai: { auth: { state: 'signedOut' }, usage: [] }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] }),
     '/api/providers/settings': () => ({ version: 'p1', providers: [], managed: {}, write: { available: true } }),
@@ -27,12 +27,6 @@ function routes() {
     '/api/tools/transcription': () => ({ available: true, backend: 'local', label: 'Local WhisperType' }),
     '/api/tools/rag': () => ({ stages: [], keys: { openrouter: false } }),
     '/api/customize': () => ({ skills: { data: [{ id: 'web-dev', name: 'web-dev', description, path: '/tmp/fixture/skills/web-dev/SKILL.md', scope: 'user', enabled: true }], errors: [] }, plugins: { data: [{ id: 'docs', name: 'Docs', description, marketplace: 'Local', enabled: true }] }, connectors: { data: [{ name: 'rag', enabled: true, transport: 'stdio' }, { name: 'GitHub', transport: 'gh', enabled: true, login: null }] } }),
-    '/api/observability': () => ({ available: true, records: '/tmp/fixture/records', totals, skipped: { unreadable: 0, unlinkedAdmissions: 0 }, chats: { data: [trace], nextCursor: null } }),
-    '/api/observability/chats/chat-a': () => ({ ...trace, record: '/tmp/fixture/records/parser.md', agentId: 'chat-a', agents: [{ id: 'chat-a', name: 'Mother', model: 'gpt-6-luna', role: null }], turns: { available: true, nextCursor: null, data: [{ turnId: 't1', status: 'completed', error: null, contextTokens: 2000, window: 100000, outputTokens: 100, requests: 1, saved: 1500, items: [
-      { id: 'u1', type: 'userMessage', content: [{ type: 'text', text: 'Fix the parser.' }] },
-      { id: 'c1', type: 'commandExecution', command: 'npm test', status: 'completed', exitCode: 0, aggregatedOutput: 'Tests passed.' },
-      { id: 'a1', type: 'agentMessage', text: '## Parser fixed\n\nValidation tests passed.' },
-    ], ledger: { used: 2000, window: 100000, basis: 'transcript', categories: [{ id: 'toolResults', label: 'Tool results', tokens: 2000 }] }, prunes: [{ id: 'r1', outcome: 'compacted', status: 'admitted', error: null, saved: 1500, shortened: 1, candidates: 1 }] }] } }),
     '/api/folders': () => ({ data: ['src', 'tests', 'docs'] }),
     '/api/repository': () => ({ repository: true }),
     '/api/files/dir': () => ({ data: [{ name: 'README.md', path: 'README.md', type: 'file' }] }),
@@ -148,10 +142,9 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.keyboard.press('Escape');
       await check('Canvas 3D', () => page.getByRole('radio', { name: 'Isometric', exact: true }).click());
       await check('Love Spot', async () => { await page.getByRole('button', { name: 'Love Spot', exact: true }).click(); await page.locator('.excalidraw canvas').first().waitFor(); });
-      await check('Observability list', async () => { await page.getByRole('button', { name: 'Observability', exact: true }).click(); await page.locator('.observed-chat-row').waitFor(); });
-      await check('Observability turn', async () => { await page.getByRole('region', { name: 'Chats', exact: true }).getByRole('button', { name: 'Fix the parser', exact: true }).click(); await page.locator('.observed-turn').getByText('Fix the parser.', { exact: true }).waitFor(); });
-      await check('Observability work', async () => { await page.locator('.observed-turn details.step > summary').click(); await page.getByText('Tests passed.', { exact: true }).waitFor(); });
-      await check('Observability Ledger', async () => { await page.locator('.observed-metrics > summary').click(); await page.getByText(/^Smart Prune: compacted/).waitFor(); });
+      const dashboard = page.frameLocator('iframe[title="Elpis dashboard"]');
+      await check('Observability dashboard', async () => { await page.getByRole('button', { name: 'Observability', exact: true }).click(); await dashboard.getByRole('tab', { name: 'Conversations & agents', exact: true }).waitFor(); });
+      for (const name of ['Activity', 'Context', 'Tokens']) await check(`Observability ${name}`, async () => { await dashboard.getByRole('tab', { name, exact: true }).click(); });
       await f.open('chat-a');
       await check('side panel empty', () => page.getByRole('button', { name: 'Show side panel', exact: true }).click());
       await check('side panel Browser', async () => { await page.getByRole('button', { name: 'New side panel tab', exact: true }).click(); await page.getByRole('menuitem', { name: 'Browser tab', exact: true }).click(); });
