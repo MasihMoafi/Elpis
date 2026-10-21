@@ -85,8 +85,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/preferences.test.cjs": {
-      "blob": "7af31c73c275a0006357fbc3b82a67845ab1cfcf",
-      ...pageRemovalApproval
+      "blob": "10c003d4109c279081988255f12fb2b02ad05065",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "OBSRM page removal (see pageRemovalApproval) plus SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Two shortcut tests added; no existing assertion removed."
     },
     "tests/renderer.test.cjs": {
       "blob": "58cfcc2abc3d705b01819ca73ffa862004881c83",
