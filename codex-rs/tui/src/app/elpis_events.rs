@@ -19,6 +19,58 @@ impl App {
                     .await;
             }
             ElpisAppEvent::SaveBackgroundModel(choice) => self.save_background_model(choice).await,
+            ElpisAppEvent::LoadPrunerSettings {
+                request_id,
+                show_picker,
+            } => {
+                let handle = app_server.request_handle();
+                let tx = self.app_event_tx.clone();
+                tokio::spawn(async move {
+                    let result = handle
+                        .request_typed(codex_app_server_protocol::ClientRequest::PrunerRead {
+                            request_id: codex_app_server_protocol::RequestId::String(
+                                request_id.to_string(),
+                            ),
+                            params: codex_app_server_protocol::PrunerReadParams {},
+                        })
+                        .await
+                        .map_err(|error| error.to_string());
+                    tx.send(AppEvent::Elpis(ElpisAppEvent::PrunerSettingsLoaded {
+                        request_id,
+                        show_picker,
+                        result,
+                    }));
+                });
+            }
+            ElpisAppEvent::PrunerSettingsLoaded {
+                request_id,
+                show_picker,
+                result,
+            } => {
+                self.chat_widget
+                    .finish_pruner_settings(request_id, show_picker, result);
+                tui.frame_requester().schedule_frame();
+            }
+            ElpisAppEvent::SavePrunerModel(params) => {
+                let handle = app_server.request_handle();
+                let tx = self.app_event_tx.clone();
+                tokio::spawn(async move {
+                    let result = handle
+                        .request_typed(codex_app_server_protocol::ClientRequest::PrunerWrite {
+                            request_id: codex_app_server_protocol::RequestId::String(
+                                uuid::Uuid::new_v4().to_string(),
+                            ),
+                            params,
+                        })
+                        .await
+                        .map_err(|error| error.to_string());
+                    tx.send(AppEvent::Elpis(ElpisAppEvent::PrunerModelSaved(result)));
+                });
+            }
+            ElpisAppEvent::PrunerModelSaved(result) => {
+                self.chat_widget.finish_pruner_model_save(result);
+                tui.frame_requester().schedule_frame();
+            }
             ElpisAppEvent::WorkGraphLoaded(result) => self.add_loaded_work_graph(result),
             ElpisAppEvent::OpenDashboard => {
                 self.open_dashboard(tui, app_server);

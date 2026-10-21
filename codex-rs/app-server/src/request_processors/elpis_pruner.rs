@@ -34,6 +34,7 @@ fn response(
     Ok(PrunerReadResponse {
         model: settings.model,
         provider: settings.provider,
+        reasoning_effort: settings.reasoning_effort,
         version,
         providers,
     })
@@ -79,6 +80,7 @@ impl ConfigRequestProcessor {
             backend: settings.backend,
             model: params.model,
             provider: params.provider,
+            reasoning_effort: params.reasoning_effort,
             system_prompt: settings.system_prompt.clone(),
         };
         updated

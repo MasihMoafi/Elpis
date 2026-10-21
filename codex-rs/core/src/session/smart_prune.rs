@@ -54,8 +54,9 @@ use super::smart_prune_audit;
 use super::step_context::StepContext;
 use super::turn_context::TurnContext;
 
-/// Keep optimizer latency bounded independently of the chat model's effort.
-/// Matched Low-effort evaluations are recorded in docs/evals/rq3.
+/// Default to bounded optimizer latency independently of the chat model's effort.
+/// An explicit pruner effort overrides this default; historical Low-effort evaluations
+/// remain scoped to that default (docs/evals/rq3).
 const SMART_PRUNE_REASONING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -76,6 +77,7 @@ struct ModelAdmission {
     audit_response: Option<String>,
     usage: Option<TokenUsage>,
     model_slug: String,
+    reasoning_effort: ReasoningEffort,
     input: String,
     latency: Duration,
 }
@@ -176,6 +178,7 @@ struct AttemptOutcome<'a> {
     attempt_id: &'a str,
     turn_id: &'a str,
     model_slug: &'a str,
+    reasoning_effort: &'a ReasoningEffort,
     input: &'a str,
     status: smart_prune_audit::AttemptStatus,
     raw_response: Option<&'a str>,
@@ -284,6 +287,7 @@ pub(crate) async fn optimize_pending_outputs(
                 instructions: &admission.instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug: &admission.model_slug,
+                reasoning_effort: &admission.reasoning_effort,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::MalformedResponse,
                 raw_response: Some(
@@ -329,6 +333,7 @@ pub(crate) async fn optimize_pending_outputs(
                         instructions: &admission.instructions,
                         turn_id: &turn_context.sub_id,
                         model_slug: &admission.model_slug,
+                        reasoning_effort: &admission.reasoning_effort,
                         input: &input,
                         status: smart_prune_audit::AttemptStatus::SourceError,
                         raw_response: Some(
@@ -381,6 +386,7 @@ pub(crate) async fn optimize_pending_outputs(
                 instructions: &admission.instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug: &admission.model_slug,
+                reasoning_effort: &admission.reasoning_effort,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::Unchanged,
                 raw_response: Some(
@@ -448,6 +454,7 @@ pub(crate) async fn optimize_pending_outputs(
                 instructions: &admission.instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug: &admission.model_slug,
+                reasoning_effort: &admission.reasoning_effort,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::AuditError,
                 raw_response: Some(
@@ -496,6 +503,7 @@ pub(crate) async fn optimize_pending_outputs(
             instructions: &admission.instructions,
             turn_id: &turn_context.sub_id,
             model_slug: &admission.model_slug,
+            reasoning_effort: &admission.reasoning_effort,
             input: &input,
             status: if cancelled {
                 smart_prune_audit::AttemptStatus::Cancelled
@@ -554,6 +562,7 @@ async fn run_optimizer_attempt(
                         instructions: SMART_PRUNE_INSTRUCTIONS,
                         turn_id: &turn_context.sub_id,
                         model_slug: selected_model_slug(step_context),
+                        reasoning_effort: &SMART_PRUNE_REASONING_EFFORT,
                         input,
                         status: smart_prune_audit::AttemptStatus::ModelError,
                         raw_response: None,
@@ -571,6 +580,14 @@ async fn run_optimizer_attempt(
             }
         };
     let is_jev = settings.backend == crate::pruner_settings::PrunerBackend::Jev;
+    let reasoning_effort = if is_jev {
+        SMART_PRUNE_REASONING_EFFORT
+    } else {
+        settings
+            .reasoning_effort
+            .clone()
+            .unwrap_or(SMART_PRUNE_REASONING_EFFORT)
+    };
     let instructions = if is_jev {
         crate::jev_prune::INSTRUCTIONS
     } else {
@@ -608,13 +625,14 @@ async fn run_optimizer_attempt(
                     audit_response: Some(reply.audit_response),
                     usage: reply.usage,
                     model_slug: model_slug.to_string(),
+                    reasoning_effort: reasoning_effort.clone(),
                     input: reply.request,
                     latency: Duration::ZERO,
                 })
             } else {
                 run_model_admission(
                     sess, step_context, input.to_string(), model_slug,
-                    settings.provider.as_deref(), instructions, inactivity_timeout, &mut progress,
+                    settings.provider.as_deref(), &reasoning_effort, instructions, inactivity_timeout, &mut progress,
                 ).await
             }
         } => Some(result),
@@ -636,6 +654,7 @@ async fn run_optimizer_attempt(
                 instructions,
                 turn_id: &turn_context.sub_id,
                 model_slug,
+                reasoning_effort: &reasoning_effort,
                 input,
                 status: smart_prune_audit::AttemptStatus::Cancelled,
                 raw_response: raw_response.as_deref(),
@@ -670,6 +689,7 @@ async fn run_optimizer_attempt(
                     instructions,
                     turn_id: &turn_context.sub_id,
                     model_slug,
+                    reasoning_effort: &reasoning_effort,
                     input,
                     status: smart_prune_audit::AttemptStatus::TimedOut,
                     raw_response: raw_response.as_deref(),
@@ -699,6 +719,7 @@ async fn run_optimizer_attempt(
                     instructions,
                     turn_id: &turn_context.sub_id,
                     model_slug,
+                    reasoning_effort: &reasoning_effort,
                     input,
                     status: smart_prune_audit::AttemptStatus::ModelError,
                     raw_response: raw_response.as_deref(),
@@ -869,7 +890,7 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
             turn_number,
             status: outcome.status,
             model_slug: outcome.model_slug,
-            reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str(),
+            reasoning_effort: outcome.reasoning_effort.as_str(),
             instructions: outcome.instructions,
             input: outcome.input,
             raw_response: outcome.raw_response,
@@ -940,7 +961,7 @@ async fn record_attempt(sess: &Session, outcome: AttemptOutcome<'_>) {
         status: outcome.status.as_str().to_string(),
         failure_reason: safe_failure_reason(outcome.status, outcome.error).map(str::to_string),
         model_slug: outcome.model_slug.to_string(),
-        reasoning_effort: SMART_PRUNE_REASONING_EFFORT.as_str().to_string(),
+        reasoning_effort: outcome.reasoning_effort.as_str().to_string(),
         candidate_outputs: outcome.candidate_outputs as u64,
         admitted_outputs: outcome.admitted_outputs as u64,
         approx_saved_tokens: outcome.saved_tokens as u64,
@@ -1214,6 +1235,7 @@ async fn run_model_admission(
     input: String,
     primary_model: &str,
     primary_provider: Option<&str>,
+    primary_reasoning_effort: &ReasoningEffort,
     instructions: &str,
     inactivity_timeout: Duration,
     progress: &mut OptimizerProgress,
@@ -1253,7 +1275,7 @@ async fn run_model_admission(
             &prompt,
             &model_info,
             &step_context.session_telemetry,
-            Some(SMART_PRUNE_REASONING_EFFORT),
+            Some(primary_reasoning_effort.clone()),
             step_context.settings.reasoning_summary,
             step_context.settings.service_tier.clone(),
             &metadata,
@@ -1272,6 +1294,7 @@ async fn run_model_admission(
         audit_response: None,
         usage: progress.usage.clone(),
         model_slug,
+        reasoning_effort: primary_reasoning_effort.clone(),
         input,
         latency: Duration::ZERO,
     })
@@ -1416,7 +1439,12 @@ impl StandaloneOptimizer {
                 &prompt,
                 &model_info,
                 &telemetry,
-                Some(SMART_PRUNE_REASONING_EFFORT),
+                Some(
+                    settings
+                        .reasoning_effort
+                        .clone()
+                        .unwrap_or(SMART_PRUNE_REASONING_EFFORT),
+                ),
                 config
                     .model_reasoning_summary
                     .unwrap_or(model_info.default_reasoning_summary),
@@ -1524,6 +1552,41 @@ mod tests {
             output: FunctionCallOutputPayload::from_text(text),
             internal_chat_message_metadata_passthrough: None,
         })
+    }
+
+    #[tokio::test]
+    async fn attempt_evidence_retains_the_chosen_effort_instead_of_always_saying_low() {
+        for effort in [ReasoningEffort::Max, ReasoningEffort::Low] {
+            let (session, turn, _rx) =
+                crate::session::tests::make_session_and_context_with_rx().await;
+            record_attempt(
+                &session,
+                AttemptOutcome {
+                    instructions: "fixture",
+                    attempt_id: "effort-fixture",
+                    turn_id: &turn.sub_id,
+                    model_slug: "gpt-6-luna",
+                    reasoning_effort: &effort,
+                    input: "{}",
+                    status: smart_prune_audit::AttemptStatus::ModelError,
+                    raw_response: None,
+                    error: Some("fixture failure"),
+                    candidate_outputs: 1,
+                    admitted_outputs: 0,
+                    saved_tokens: 0,
+                    latency: Duration::ZERO,
+                    usage: None,
+                    admission_id: None,
+                },
+            )
+            .await;
+            let attempt = session
+                .smart_prune_snapshot()
+                .await
+                .latest_attempt
+                .expect("attempt");
+            assert_eq!(attempt.reasoning_effort, effort.as_str());
+        }
     }
 
     #[test]
@@ -1734,6 +1797,7 @@ mod tests {
                 attempt_id: "inline-admitted",
                 turn_id: &turn.sub_id,
                 model_slug: "fixture",
+                reasoning_effort: &SMART_PRUNE_REASONING_EFFORT,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::Admitted,
                 raw_response: Some(response),
@@ -1786,6 +1850,7 @@ mod tests {
                     },
                     turn_id: &turn.sub_id,
                     model_slug: "fixture",
+                    reasoning_effort: &SMART_PRUNE_REASONING_EFFORT,
                     input: &input,
                     status,
                     raw_response: None,
@@ -1830,6 +1895,7 @@ mod tests {
                 attempt_id: "inline-broken",
                 turn_id: &turn.sub_id,
                 model_slug: "fixture",
+                reasoning_effort: &SMART_PRUNE_REASONING_EFFORT,
                 input: &input,
                 status: smart_prune_audit::AttemptStatus::AuditError,
                 raw_response: None,
@@ -1881,6 +1947,7 @@ mod tests {
                     attempt_id: "safe-error-regression",
                     turn_id: "turn-1",
                     model_slug: "fixture-pruner",
+                    reasoning_effort: &SMART_PRUNE_REASONING_EFFORT,
                     input: "PRIVATE_TOOL_TEXT",
                     status,
                     raw_response: None,

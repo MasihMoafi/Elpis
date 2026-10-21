@@ -16,6 +16,388 @@ use tempfile::tempdir;
 const WIDTH: u16 = 150;
 const LEDGER_THREAD: &str = "019a0c4e-7b1e-7a41-9b4e-2f0d8c1a5e10";
 
+const LEDGER_SCREENS: [(u16, u16); 3] = [(80, 24), (120, 40), (200, 60)];
+
+fn ledger_screen(chat: &ChatWidget, width: u16, height: u16) -> Buffer {
+    chat.last_rendered_width.set(Some(width));
+    let screen = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(screen);
+    let ledger_width = chat.context_ledger_width(width);
+    chat.render_context_ledger_column(
+        Rect::new(width - ledger_width, 0, ledger_width, height),
+        &mut buffer,
+    );
+    chat.render_context_ledger_tab(screen, &mut buffer);
+    buffer
+}
+
+fn ledger_mouse(
+    kind: crossterm::event::MouseEventKind,
+    x: u16,
+    y: u16,
+) -> crossterm::event::MouseEvent {
+    crossterm::event::MouseEvent {
+        kind,
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
+#[tokio::test]
+async fn a105_header_toggle_closes_and_half_hexagon_tab_reopens_at_each_size() {
+    use crossterm::event::MouseButton::Left;
+    use crossterm::event::MouseEventKind::Down;
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    for (width, height) in LEDGER_SCREENS {
+        show_context_ledger(&mut chat);
+        let buffer = ledger_screen(&chat, width, height);
+        let lines = rows(&buffer, 0..width);
+        let title = lines
+            .iter()
+            .position(|line| line.contains("CONTEXT LEDGER"))
+            .unwrap();
+        assert!(lines[title].contains("[━━━●] ON"), "{lines:#?}");
+        assert!(!lines.join("\n").contains(['×', '╳', '✕']));
+        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), 0, title as u16)));
+        assert!(chat.handle_context_ledger_mouse(ledger_mouse(
+            Down(Left),
+            width - 3,
+            title as u16
+        )));
+        let closed = ledger_screen(&chat, width, height);
+        let text = rows(&closed, 0..width).join("\n");
+        assert!(!text.contains("CONTEXT LEDGER"));
+        assert!(
+            text.contains("[●━━━] OFF") && text.contains('╱') && text.contains('╲'),
+            "{text}"
+        );
+        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 1, 0)));
+        assert!(chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 2, height / 2)));
+        assert!(rows(&ledger_screen(&chat, width, height), 0..width)[title].contains("[━━━●] ON"));
+    }
+}
+
+#[tokio::test]
+async fn a106_wheel_and_keys_reach_the_last_line_without_consuming_outside_wheels()
+-> anyhow::Result<()> {
+    use crossterm::event::MouseEventKind::{ScrollDown, ScrollUp};
+    let root = tempdir()?;
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    let template = chat.manual_memory_cache.sources.last().unwrap().clone();
+    for index in 0..70 {
+        let mut source = template.clone();
+        source.name = format!("tail-{index:02}.md");
+        source.category = crate::legacy_core::elpis_context::ContinuitySourceCategory::Instructions;
+        source.origin = "fixture".into();
+        chat.manual_memory_cache.sources.push(source);
+    }
+    for (width, height) in LEDGER_SCREENS {
+        show_context_ledger(&mut chat);
+        let initial = ledger_screen(&chat, width, height);
+        assert!(!rows(&initial, 0..width).join("\n").contains("tail-69.md"));
+        assert!(rows(&initial, 0..width).join("\n").contains('↓'));
+        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(ScrollDown, 0, 3)));
+        for _ in 0..300 {
+            assert!(chat.handle_context_ledger_mouse(ledger_mouse(ScrollDown, width - 4, 3)));
+        }
+        let end = rows(&ledger_screen(&chat, width, height), 0..width).join("\n");
+        assert!(end.contains("tail-69.md") && end.contains('↑'), "{end}");
+        assert!(!end.contains('↓'), "at the end there is nothing below");
+        assert!(
+            end.lines().last().unwrap().contains("INCLUDED")
+                || end.lines().last().unwrap().contains("EXCLUDED"),
+            "the final metadata line is reachable: {end}"
+        );
+        for _ in 0..300 {
+            assert!(chat.handle_context_ledger_mouse(ledger_mouse(ScrollUp, width - 4, 3)));
+        }
+        assert!(
+            !rows(&ledger_screen(&chat, width, height), 0..width)
+                .join("\n")
+                .contains('↑')
+        );
+        chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+        for _ in 0..100 {
+            assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::PageDown)));
+        }
+        assert!(
+            rows(&ledger_screen(&chat, width, height), 0..width)
+                .join("\n")
+                .contains("tail-69.md")
+        );
+        let end_offset = chat.context_ledger_scroll_offset();
+        assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Up)));
+        assert_eq!(chat.context_ledger_scroll_offset(), end_offset - 1);
+        assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Down)));
+        assert_eq!(chat.context_ledger_scroll_offset(), end_offset);
+        assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Home)));
+        assert!(
+            !rows(&ledger_screen(&chat, width, height), 0..width)
+                .join("\n")
+                .contains('↑')
+        );
+        chat.unfocus_context_ledger();
+        assert!(!chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::PageDown)));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a107_details_follow_the_width_and_wrapped_height_budget() -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    configure_ledger_sources(&mut chat, root.path())?;
+    token_usage_update(&mut chat, Some(planted_attribution()));
+    let audit = chat
+        .config
+        .codex_home
+        .join("logs/smart-prune/attempts/layout.json");
+    std::fs::create_dir_all(audit.parent().unwrap())?;
+    std::fs::write(&audit, "{}")?;
+    chat.smart_prune_synced = true;
+    chat.smart_prune.latest_attempt =
+        Some(codex_app_server_protocol::ThreadSmartPruneAttemptSnapshot {
+            attempt_id: "layout-fixture".into(),
+            audit_path: Some("smart-prune/attempts/layout.json".into()),
+            status: "unchanged".into(),
+            failure_reason: None,
+            model_slug: "gpt-6-luna".into(),
+            reasoning_effort: "low".into(),
+            candidate_outputs: 1,
+            admitted_outputs: 0,
+            approx_saved_tokens: 0,
+            latency_ms: 100,
+            usage: None,
+        });
+    for (width, height) in LEDGER_SCREENS {
+        show_context_ledger(&mut chat);
+        let text = rows(&ledger_screen(&chat, width, height), 0..width).join("\n");
+        assert!(
+            text.contains("SMART PRUNE")
+                && text.contains("SUBAGENTS")
+                && text.contains("CONTEXT WINDOW"),
+            "{text}"
+        );
+        assert_eq!(text.contains("Estimated segments"), width == 200, "{text}");
+        assert_eq!(text.contains("User messages"), width == 200, "{text}");
+        assert_eq!(text.contains("Last attempt"), width == 200, "{text}");
+        assert_eq!(
+            text.contains("Read attempt evidence"),
+            width == 200,
+            "{text}"
+        );
+    }
+    // Height pressure also compacts a wide terminal; growing it restores details.
+    let short = rows(&ledger_screen(&chat, 200, 12), 0..200).join("\n");
+    assert!(!short.contains("Estimated segments") && !short.contains("User messages"));
+    let tall = rows(&ledger_screen(&chat, 200, 60), 0..200).join("\n");
+    assert!(tall.contains("Estimated segments") && tall.contains("User messages"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a106_empty_and_loading_panels_handle_arrows_and_clamp_without_a_source_cursor() {
+    for (width, height) in LEDGER_SCREENS {
+        let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
+        show_context_ledger(&mut chat);
+        chat.manual_memory_cache.sources.clear();
+        ledger_screen(&chat, width, height);
+        chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+        for key in [
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::PageDown,
+            KeyCode::End,
+            KeyCode::PageUp,
+            KeyCode::Home,
+        ] {
+            assert!(chat.handle_context_ledger_key_event(KeyEvent::from(key)));
+        }
+        assert_eq!(chat.context_ledger_scroll_offset(), 0);
+        let screen = rows(&ledger_screen(&chat, width, height), 0..width).join("\n");
+        assert!(
+            screen.contains("No portable context")
+                && !screen.contains('↑')
+                && !screen.contains('↓'),
+            "{screen}"
+        );
+    }
+}
+
+fn luna_catalog(chat: &mut ChatWidget, max: bool) {
+    let mut model = crate::test_support::TEST_MODEL_PRESETS
+        .iter()
+        .find(|model| model.model == "gpt-5.5")
+        .expect("fixture model")
+        .clone();
+    model.id = "gpt-6-luna".into();
+    model.model = "gpt-6-luna".into();
+    model.display_name = "GPT-6-Luna".into();
+    model.show_in_picker = true;
+    model.supported_reasoning_efforts = [ReasoningEffortConfig::Low, ReasoningEffortConfig::Max]
+        .into_iter()
+        .filter(|effort| max || *effort != ReasoningEffortConfig::Max)
+        .map(
+            |effort| codex_protocol::openai_models::ReasoningEffortPreset {
+                effort,
+                description: String::new(),
+            },
+        )
+        .collect();
+    Arc::make_mut(&mut chat.model_catalog).models = vec![model];
+}
+
+#[tokio::test]
+async fn a108_model_click_lists_catalog_efforts_and_saves_max_through_the_real_server()
+-> anyhow::Result<()> {
+    use codex_app_server_protocol::{
+        ClientRequest, PrunerReadParams, PrunerReadResponse, RequestId,
+    };
+    for (width, height) in LEDGER_SCREENS {
+        let root = tempdir()?;
+        let (mut chat, mut rx, mut ops) = make_chatwidget_manual(None).await;
+        configure_ledger_sources(&mut chat, root.path())?;
+        luna_catalog(&mut chat, true);
+        let chat_model = chat.config.model.clone();
+        let home = chat.config.codex_home.to_path_buf();
+        let server = Box::pin(crate::start_embedded_app_server_for_picker(&chat.config))
+            .await
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let handle = server.request_handle();
+        let settings: PrunerReadResponse = handle
+            .request_typed(ClientRequest::PrunerRead {
+                request_id: RequestId::String(uuid::Uuid::new_v4().to_string()),
+                params: PrunerReadParams {},
+            })
+            .await?;
+        show_context_ledger(&mut chat);
+        let screen = ledger_screen(&chat, width, height);
+        let model_y = rows(&screen, 0..width)
+            .iter()
+            .position(|line| line.contains("Choose model"))
+            .unwrap();
+        assert!(chat.handle_context_ledger_mouse(ledger_mouse(
+            crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            width - chat.context_ledger_width(width) + 3,
+            model_y as u16,
+        )));
+        let request = chat.context_ledger.pruner_request.get().unwrap();
+        chat.finish_pruner_settings(request, true, Ok(settings));
+        let mut picker = Buffer::empty(Rect::new(0, 0, width, height));
+        chat.render(picker.area, &mut picker);
+        let text = rows(&picker, 0..width).join("\n");
+        assert!(
+            text.contains("gpt-6-luna · low effort") && text.contains("gpt-6-luna · max effort"),
+            "{text}"
+        );
+        // Search must retain the last effort too (the old searchable picker lost every row).
+        for ch in "gpt-6-luna max".chars() {
+            chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+        }
+        assert!(render_bottom_popup(&chat, width).contains("gpt-6-luna · max effort"));
+        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+        let params = std::iter::from_fn(|| rx.try_recv().ok())
+            .find_map(|event| match event {
+                AppEvent::Elpis(ElpisAppEvent::SavePrunerModel(params)) => Some(params),
+                AppEvent::UpdateModel(_) | AppEvent::UpdateReasoningEffort(_) => {
+                    panic!("the chat model changed")
+                }
+                _ => None,
+            })
+            .expect("selecting Max sends an app-server write");
+        assert_eq!(params.model.as_deref(), Some("gpt-6-luna"));
+        assert_eq!(params.reasoning_effort, Some(ReasoningEffortConfig::Max));
+        let saved: PrunerReadResponse = handle
+            .request_typed(ClientRequest::PrunerWrite {
+                request_id: RequestId::String(uuid::Uuid::new_v4().to_string()),
+                params: params.clone(),
+            })
+            .await?;
+        chat.finish_pruner_model_save(Ok(saved.clone()));
+        assert_eq!(
+            crate::legacy_core::pruner_settings::PrunerSettings::load(&home)?.reasoning_effort,
+            Some(ReasoningEffortConfig::Max)
+        );
+        assert_eq!(chat.config.model, chat_model);
+        assert!(ops.try_recv().is_err());
+        let reread: PrunerReadResponse = handle
+            .request_typed(ClientRequest::PrunerRead {
+                request_id: RequestId::String(uuid::Uuid::new_v4().to_string()),
+                params: PrunerReadParams {},
+            })
+            .await?;
+        assert_eq!(reread, saved, "the next client sees the saved effort");
+        // A stale picker cannot overwrite a newer setting, and its error is visible.
+        let stale = handle
+            .request_typed::<PrunerReadResponse>(ClientRequest::PrunerWrite {
+                request_id: RequestId::String(uuid::Uuid::new_v4().to_string()),
+                params,
+            })
+            .await
+            .expect_err("the old version is rejected");
+        chat.finish_pruner_model_save(Err(stale.to_string()));
+        let errors = drain_insert_history(&mut rx)
+            .iter()
+            .map(|lines| lines_to_single_string(lines))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(errors.contains("Pruner model was not changed"), "{errors}");
+        assert_eq!(
+            crate::legacy_core::pruner_settings::PrunerSettings::load(&home)?.reasoning_effort,
+            Some(ReasoningEffortConfig::Max)
+        );
+        server.shutdown().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a108_missing_catalog_unoffered_max_and_cancelled_or_failed_reads_never_invent_choices() {
+    for (width, height) in LEDGER_SCREENS {
+        let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
+        show_context_ledger(&mut chat);
+        Arc::make_mut(&mut chat.model_catalog).models.clear();
+        ledger_screen(&chat, width, height);
+        chat.open_pruner_model_popup();
+        assert!(chat.bottom_pane.no_modal_or_popup_active());
+        assert!(
+            !std::iter::from_fn(|| rx.try_recv().ok())
+                .any(|event| matches!(event, AppEvent::Elpis(ElpisAppEvent::SavePrunerModel(_))))
+        );
+        luna_catalog(&mut chat, false);
+        let settings = codex_app_server_protocol::PrunerReadResponse {
+            model: None,
+            provider: None,
+            reasoning_effort: None,
+            version: "test-version".into(),
+            providers: Vec::new(),
+        };
+        chat.open_pruner_model_popup();
+        let request = chat.context_ledger.pruner_request.get().unwrap();
+        chat.finish_pruner_settings(request, true, Ok(settings.clone()));
+        let popup = render_bottom_popup(&chat, width);
+        assert!(
+            popup.contains("gpt-6-luna · low effort") && !popup.contains("max effort"),
+            "{popup}"
+        );
+        chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+        chat.open_pruner_model_popup();
+        let request = chat.context_ledger.pruner_request.get().unwrap();
+        chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+        chat.finish_pruner_settings(request, true, Ok(settings));
+        assert!(
+            chat.bottom_pane.no_modal_or_popup_active(),
+            "a cancelled read must not reopen the picker"
+        );
+        chat.open_pruner_model_popup();
+        let request = chat.context_ledger.pruner_request.get().unwrap();
+        chat.finish_pruner_settings(request, true, Err("fixture read rejected".into()));
+        assert!(chat.bottom_pane.no_modal_or_popup_active());
+    }
+}
+
 /// Point the widget at a temporary Elpis home and project holding every kind of ledger source,
 /// then load the rows the way the App's loader does.
 fn configure_ledger_sources(
@@ -227,9 +609,12 @@ async fn owned_ledger_title_stays_at_top_with_active_subagents() {
         let mut buffer = ratatui::buffer::Buffer::empty(area);
         chat.render_context_ledger_column(area, &mut buffer);
         let lines = rows(&buffer, 0..area.width);
-        assert!(lines[0].contains('╳'), "Close stays at the top");
         assert!(
-            lines[1].contains("CONTEXT LEDGER"),
+            lines[0].contains("[━━━●] ON"),
+            "the shared toggle stays at the top"
+        );
+        assert!(
+            lines[0].contains("CONTEXT LEDGER"),
             "child activity must not displace the Ledger title"
         );
         let toggle = lines
@@ -262,8 +647,8 @@ async fn owned_ledger_without_subagents_omits_the_child_summary() {
     let mut buffer = ratatui::buffer::Buffer::empty(area);
     chat.render_context_ledger_column(area, &mut buffer);
     let lines = rows(&buffer, 0..area.width);
-    assert!(lines[0].contains('╳'));
-    assert!(lines[1].contains("CONTEXT LEDGER"));
+    assert!(lines[0].contains("[━━━●] ON"));
+    assert!(lines[0].contains("CONTEXT LEDGER"));
     assert!(!lines.iter().any(|line| line.contains("SUBAGENT LEDGER")));
 }
 
@@ -411,6 +796,8 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
     assert_eq!(selected.name, "ES.md");
     let path = selected.path.clone();
     let admitted = selected.admitted;
+    chat.handle_key_event(KeyEvent::from(KeyCode::Up));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     let destination = url::Url::from_file_path(&path)
         .expect("source file URL")
         .to_string();
@@ -420,16 +807,16 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
     chat.render_context_ledger_column(area, &mut buffer);
     let text = rows(&buffer, 0..area.width).join("\n");
     assert!(
-        !text.contains("CONTEXT LEDGER"),
-        "the selected source really scrolled: {text}"
+        text.contains("CONTEXT LEDGER"),
+        "the title stays pinned while the sources scroll: {text}"
     );
     assert!(
         text.contains("ES.md"),
-        "the selected source fits below Close: {text}"
+        "the selected source fits below the header: {text}"
     );
     let close_x = (0..area.width)
-        .find(|&x| buffer[(x, 0)].symbol() == "╳")
-        .expect("pinned Close");
+        .find(|&x| buffer[(x, 0)].symbol() == "[")
+        .expect("pinned ON toggle");
     assert!(
         (0..area.width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
         "the Close row has no source file links after scrolling"
@@ -442,7 +829,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
     assert_eq!(
         last.y,
         area.bottom() - 1,
-        "selection scrolling uses the body height, excluding Close"
+        "selection scrolling uses the body height, excluding the header"
     );
     assert!(
         chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
@@ -483,53 +870,29 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
 }
 
 #[tokio::test]
-async fn owned_ledger_tiny_areas_keep_close_and_body_separate() {
+async fn owned_ledger_tiny_areas_do_not_expose_a_clipped_toggle() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.last_rendered_width.set(Some(WIDTH));
     for width in [0, 1, 2, 3, 5, 6, 28] {
         for height in 0..=2 {
             show_context_ledger(&mut chat);
             let area = Rect::new(7, 5, width, height);
-            let mut buffer = ratatui::buffer::Buffer::empty(area);
+            let mut buffer = Buffer::empty(area);
             chat.render_context_ledger_column(area, &mut buffer);
-            let close = area
+            let text = area
                 .positions()
-                .find(|&position| buffer[position].symbol() == "╳");
-            if width >= 6 && height > 0 {
-                let close = close.expect("a full Close button fits");
-                assert_eq!(close.y, area.y);
-                assert!(
-                    chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
-                        kind: crossterm::event::MouseEventKind::Down(
-                            crossterm::event::MouseButton::Left
-                        ),
-                        column: close.x,
-                        row: close.y,
-                        modifiers: KeyModifiers::NONE,
-                    })
-                );
-                assert_eq!(chat.context_ledger_width(WIDTH), 0);
+                .map(|pos| buffer[pos].symbol())
+                .collect::<String>();
+            assert!(!text.contains(['×', '╳']));
+            if width == 28 && height > 0 {
+                assert!(text.contains("[━━━●] ON"));
+                assert!(chat.handle_context_ledger_mouse(ledger_mouse(
+                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+                    area.right() - 3,
+                    area.y,
+                )));
             } else {
-                assert!(close.is_none(), "a clipped button is never painted");
-                assert!(
-                    !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
-                        kind: crossterm::event::MouseEventKind::Down(
-                            crossterm::event::MouseButton::Left
-                        ),
-                        column: area.x,
-                        row: area.y,
-                        modifiers: KeyModifiers::NONE,
-                    })
-                );
-            }
-            if width == 28 && height == 2 {
-                let body = (area.x..area.right())
-                    .map(|x| buffer[(x, area.y + 1)].symbol())
-                    .collect::<String>();
-                assert!(
-                    body.contains("CONTEXT LEDGER"),
-                    "the only body row is the title: {body}"
-                );
+                assert!(!text.contains("[━━━●] ON"));
             }
         }
     }

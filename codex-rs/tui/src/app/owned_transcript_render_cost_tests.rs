@@ -83,8 +83,8 @@ async fn full_screen_ledger_starts_at_the_top_beside_the_composer() -> Result<()
         "the cwd row must follow the title\n{screen_text}"
     );
     let close_row = (0..screen.height)
-        .find(|&y| row(y, rule_x + 1..screen.width).contains("╳"))
-        .unwrap_or_else(|| panic!("the Ledger Close button is missing\n{screen_text}"));
+        .find(|&y| row(y, rule_x + 1..screen.width).contains("[━━━●] ON"))
+        .unwrap_or_else(|| panic!("the Ledger toggle is missing\n{screen_text}"));
     let ledger_title = (0..screen.height)
         .find(|&y| row(y, rule_x + 1..screen.width).contains("CONTEXT LEDGER"))
         .unwrap_or_else(|| panic!("the Ledger title is missing\n{screen_text}"));
@@ -93,12 +93,11 @@ async fn full_screen_ledger_starts_at_the_top_beside_the_composer() -> Result<()
         .unwrap_or_else(|| panic!("the transcript must stay beside the Ledger\n{screen_text}"));
     assert_eq!(
         close_row, 0,
-        "the Ledger Close row starts at the top\n{screen_text}"
+        "the Ledger header starts at the top\n{screen_text}"
     );
     assert_eq!(
-        ledger_title,
-        close_row + 1,
-        "the Ledger title follows its Close row\n{screen_text}"
+        ledger_title, close_row,
+        "the Ledger title shares its toggle row\n{screen_text}"
     );
     assert!(
         first_line > ledger_title,
@@ -108,8 +107,8 @@ async fn full_screen_ledger_starts_at_the_top_beside_the_composer() -> Result<()
         assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}\n{screen_text}");
     }
     let close_x = (rule_x + 1..screen.width)
-        .find(|&x| buffer[(x, close_row)].symbol() == "╳")
-        .expect("the Close glyph has a screen position");
+        .find(|&x| buffer[(x, close_row)].symbol() == "[")
+        .expect("the toggle has a screen position");
     assert!(
         app.chat_widget
             .handle_context_ledger_mouse(crossterm::event::MouseEvent {

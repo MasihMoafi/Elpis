@@ -697,6 +697,10 @@ impl App {
             ElpisAppEvent::EnableYolo
             | ElpisAppEvent::Provider(_)
             | ElpisAppEvent::SaveBackgroundModel(_)
+            | ElpisAppEvent::LoadPrunerSettings { .. }
+            | ElpisAppEvent::PrunerSettingsLoaded { .. }
+            | ElpisAppEvent::SavePrunerModel(_)
+            | ElpisAppEvent::PrunerModelSaved(_)
             | ElpisAppEvent::OpenDashboard
             | ElpisAppEvent::WorkGraphLoaded(_)
             | ElpisAppEvent::RefreshDashboard

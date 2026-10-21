@@ -63,13 +63,10 @@ fn owned_startup_shows_the_ledger_column_beside_the_composer() {
     let header_row = (0..area.height)
         .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
         .expect("the header stays");
+    assert_eq!(title_row, 0, "the Ledger title starts its header row");
     assert_eq!(
-        title_row, 1,
-        "the Ledger title follows its reserved top Close row"
-    );
-    assert_eq!(
-        header_row, title_row,
-        "the titles share the first content row"
+        header_row, 1,
+        "the conversation header keeps its own margin"
     );
     for y in 0..area.height {
         assert_eq!(buffer[(rule_x, y)].symbol(), "│", "row {y}");
@@ -84,28 +81,19 @@ fn owned_startup_shows_the_ledger_column_beside_the_composer() {
 }
 
 #[test]
-fn owned_startup_reserves_ledger_close_row() {
+fn owned_startup_ledger_title_and_toggle_share_one_row_at_each_size() {
     let pump = crate::startup_draft::tests::quiet_startup_test_pump();
     let layout = OwnedStartupLayout::new(&pump);
-    let area = Rect::new(0, 0, 120, 30);
-    let buffer = rendered(&layout, area);
-    let rule_x = area.width - crate::chatwidget::ledger_column_width(area.width);
-    let title_y = (0..area.height)
-        .find(|&y| row(&buffer, y, rule_x + 1..area.width).contains("CONTEXT LEDGER"))
-        .expect("Ledger loading title");
-    let header_y = (0..area.height)
-        .find(|&y| row(&buffer, y, 0..rule_x).contains(">_ Elpis"))
-        .expect("startup header");
-    assert_eq!(
-        title_y, 1,
-        "startup reserves the live top Close row above its heading"
-    );
-    assert_eq!(header_y, title_y, "the titles share the first content row");
-    assert_eq!(buffer[(rule_x, title_y - 1)].symbol(), "│");
-    assert!(
-        !row(&buffer, title_y - 1, rule_x + 1..area.width).contains("╳"),
-        "startup paints no dead button"
-    );
+    for (width, height) in [(80, 24), (120, 40), (200, 60)] {
+        let buffer = rendered(&layout, Rect::new(0, 0, width, height));
+        let rule_x = width - crate::chatwidget::ledger_column_width(width);
+        let title = row(&buffer, 0, rule_x + 1..width);
+        assert!(
+            title.contains("CONTEXT LEDGER") && title.contains("[━━━●] ON"),
+            "{title}"
+        );
+        assert!((0..height).all(|y| !row(&buffer, y, rule_x..width).contains(['×', '╳'])));
+    }
 }
 
 #[test]

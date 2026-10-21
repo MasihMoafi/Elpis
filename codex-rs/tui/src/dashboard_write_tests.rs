@@ -695,6 +695,7 @@ fn the_prompt_page_keeps_the_chosen_model() {
         backend: Default::default(),
         model: Some("chosen-model".to_string()),
         provider: Some("openrouter".to_string()),
+        reasoning_effort: None,
         system_prompt: None,
     };
     chosen.save(harness.home.path()).expect("save");

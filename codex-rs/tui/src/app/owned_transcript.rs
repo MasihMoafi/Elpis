@@ -256,6 +256,10 @@ impl App {
             }
             bottom.render(bottom_area, frame.buffer);
             chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
+            chat_widget.render_context_ledger_tab(
+                Rect::new(0, 0, screen_size.width, screen_size.height),
+                frame.buffer,
+            );
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
                 tip.render(area, frame.buffer);
             }
@@ -437,6 +441,14 @@ impl App {
             || matches!(event, TuiEvent::Mouse(mouse) if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(_)))
         {
             self.chat_widget.end_composer_drag();
+        }
+        // Focused ledger navigation belongs to ChatWidget before transcript paging.
+        if matches!(event, TuiEvent::Key(_))
+            && self.chat_widget.context_ledger_has_focus()
+            && self.chat_widget.no_modal_or_popup_active()
+            && !self.transcript_view.has_active_interaction()
+        {
+            return Ok(false);
         }
         // Read-only Escape belongs to session navigation, even when the transcript is scrolled.
         // Search and selection still consume Escape first to dismiss their interaction.

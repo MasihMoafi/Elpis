@@ -15,12 +15,16 @@ use crate::app_event::AppEvent;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
+use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_background_model::BackgroundModelChoice;
-use crate::history_cell;
 use crate::legacy_core::pruner_settings::PrunerSettings;
 use crate::slash_command::SlashCommand;
+use codex_app_server_protocol::PrunerReadResponse;
+use codex_app_server_protocol::PrunerWriteParams;
+use codex_protocol::openai_models::ReasoningEffort;
 
 const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off|log]";
+const PRUNER_MODEL_LOADING_VIEW_ID: &str = "pruner-model-loading";
 const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
 /// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads. The
@@ -36,6 +40,7 @@ pub(crate) fn save_pruner_choice(
         settings.provider = provider.clone();
     }
     settings.model = choice.model.clone();
+    settings.reasoning_effort = None;
     settings.save(home).map_err(|error| error.to_string())?;
     Ok(match &settings.model {
         None => "built-in default".to_string(),
@@ -61,6 +66,7 @@ pub(crate) fn apply_pruner_model_flag(
         _ => (None, model),
     };
     settings.model = (model != "default").then(|| model.to_string());
+    settings.reasoning_effort = None;
     settings.provider = settings.model.as_ref().and(provider);
     settings.save(config.codex_home.as_path())
 }
@@ -102,12 +108,12 @@ impl ChatWidget {
                     )
                 });
                 match result {
-                    Ok(chosen) => self.add_info_message(
-                        format!(
-                            "Smart Prune model saved: {chosen}. Applies to the next optimizer request; chat model unchanged."
-                        ),
-                        /*hint*/ None,
-                    ),
+                    Ok(chosen) => {
+                        self.request_pruner_settings(false);
+                        self.add_info_message(
+                            format!("Smart Prune model saved: {chosen}. Applies to the next optimizer request; chat model unchanged."), None,
+                        );
+                    }
                     Err(error) => {
                         self.add_error_message(format!("Pruner model was not changed: {error}"))
                     }
@@ -126,111 +132,199 @@ impl ChatWidget {
             .unwrap_or(&self.config.model_provider_id)
     }
 
-    /// Bare `/pruner-model`: the provider default, this provider's models, and a model set
-    /// by hand that the catalog does not list.
-    fn open_pruner_model_popup(&mut self) {
-        let settings = match PrunerSettings::load(self.config.codex_home.as_path()) {
+    pub(super) fn request_pruner_settings(&self, show_picker: bool) {
+        let request_id = uuid::Uuid::new_v4();
+        self.context_ledger.pruner_request.set(Some(request_id));
+        self.app_event_tx
+            .send(AppEvent::Elpis(ElpisAppEvent::LoadPrunerSettings {
+                request_id,
+                show_picker,
+            }));
+    }
+
+    /// The Ledger and `/pruner-model` share one picker. Every effort comes from the
+    /// current server catalog; a missing catalog cannot manufacture a model or a level.
+    pub(super) fn open_pruner_model_popup(&mut self) {
+        if !self
+            .model_catalog
+            .models
+            .iter()
+            .any(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
+        {
+            self.add_error_message(
+                "No model catalog available. Reopen /pruner-model after models load.".into(),
+            );
+            return;
+        }
+        self.show_selection_view(SelectionViewParams {
+            view_id: Some(PRUNER_MODEL_LOADING_VIEW_ID),
+            title: Some("Loading pruner settings…".into()),
+            footer_hint: Some(standard_popup_hint_line()),
+            ..SelectionViewParams::picker()
+        });
+        self.request_pruner_settings(true);
+    }
+
+    pub(crate) fn finish_pruner_settings(
+        &mut self,
+        request_id: uuid::Uuid,
+        show_picker: bool,
+        result: Result<PrunerReadResponse, String>,
+    ) {
+        if self.context_ledger.pruner_request.get() != Some(request_id) {
+            return;
+        }
+        self.context_ledger.pruner_request.set(None);
+        let settings = match result {
             Ok(settings) => settings,
             Err(error) => {
-                self.add_error_message(format!("Cannot read pruner settings: {error}"));
+                if show_picker {
+                    self.bottom_pane
+                        .dismiss_active_view_if_id(PRUNER_MODEL_LOADING_VIEW_ID);
+                    self.add_error_message(format!("Cannot read pruner settings: {error}"));
+                }
                 return;
             }
         };
-        // The catalog is the session provider's, so a listed model pins that provider.
-        let provider_id = self.config.model_provider_id.clone();
-        let mut choices: Vec<(Option<String>, Option<String>, String, String)> = vec![(
+        self.context_ledger.pruner_settings = Some(settings.clone());
+        if !show_picker {
+            return;
+        }
+        let params = self.pruner_model_picker(&settings);
+        if params.items.len() <= 1 {
+            self.bottom_pane
+                .dismiss_active_view_if_id(PRUNER_MODEL_LOADING_VIEW_ID);
+            self.add_error_message(
+                "No model catalog available. Reopen /pruner-model after models load.".into(),
+            );
+            return;
+        }
+        // Esc or a newer menu during the read cancels opening the picker.
+        self.bottom_pane
+            .replace_selection_view_if_active(PRUNER_MODEL_LOADING_VIEW_ID, params);
+        self.request_redraw();
+    }
+
+    fn pruner_model_picker(&self, settings: &PrunerReadResponse) -> SelectionViewParams {
+        let provider = self.config.model_provider_id.clone();
+        let mut choices = vec![(
             None,
             None,
             "Provider default".to_string(),
             "Restore automatic pruner model selection".to_string(),
         )];
-        choices.extend(
-            self.model_catalog()
-                .try_list_models()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
-                .map(|preset| {
-                    (
-                        Some(preset.model.clone()),
-                        Some(provider_id.clone()),
-                        preset.model,
-                        preset.description,
-                    )
-                }),
-        );
-        // A model set by hand may be absent from the catalog, so keep it selectable.
-        if let Some(model) = settings.model.clone()
-            && !choices
-                .iter()
-                .any(|(choice, _, _, _)| choice.as_ref() == Some(&model))
+        for preset in self
+            .model_catalog
+            .models
+            .iter()
+            .filter(|preset| preset.show_in_picker && !Self::is_auto_model(&preset.model))
         {
-            choices.push((
-                Some(model.clone()),
-                settings.provider.clone(),
-                model,
-                "Currently configured".to_string(),
-            ));
+            if preset.supported_reasoning_efforts.is_empty() {
+                choices.push((
+                    Some(preset.model.clone()),
+                    None,
+                    preset.model.clone(),
+                    preset.description.clone(),
+                ));
+            } else {
+                for level in &preset.supported_reasoning_efforts {
+                    choices.push((
+                        Some(preset.model.clone()),
+                        Some(level.effort.clone()),
+                        format!("{} · {} effort", preset.model, level.effort.as_str()),
+                        level.description.clone(),
+                    ));
+                }
+            }
         }
         let mut seen = std::collections::HashSet::new();
-        choices.retain(|(model, _, _, _)| seen.insert(model.clone()));
-        let footer_note = (choices.len() == 1)
-            .then(|| "No models available. Reopen /pruner-model to retry.".into());
         let items: Vec<SelectionItem> = choices
             .into_iter()
-            .map(|(model, provider, name, description)| {
-                let home = self.config.codex_home.clone();
-                let is_current = settings.model == model;
+            .filter(|(model, effort, _, _)| seen.insert((model.clone(), effort.clone())))
+            .map(|(model, effort, name, description)| {
+                let search_value = Some(format!(
+                    "{} {} {name} {description}",
+                    model.as_deref().unwrap_or("default"),
+                    effort.as_ref().map(ReasoningEffort::as_str).unwrap_or("")
+                ));
+                let is_current = settings.model == model
+                    && (settings.reasoning_effort == effort
+                        || (model.is_some()
+                            && settings.reasoning_effort.is_none()
+                            && effort == Some(ReasoningEffort::Low)));
+                let params = PrunerWriteParams {
+                    expected_version: settings.version.clone(),
+                    provider: model.as_ref().map(|_| provider.clone()),
+                    model,
+                    reasoning_effort: effort,
+                };
                 SelectionItem {
                     name,
+                    search_value,
                     description: Some(description),
                     is_current,
                     actions: vec![Box::new(move |tx| {
-                        let result =
-                            PrunerSettings::load(home.as_path()).and_then(|mut settings| {
-                                settings.model = model.clone();
-                                settings.provider = provider.clone();
-                                settings.save(home.as_path())
-                            });
-                        let cell = match result {
-                            Ok(()) => history_cell::new_info_event(
-                                format!(
-                                    "Smart Prune model saved: {}. Chat model unchanged.",
-                                    model.as_deref().unwrap_or("provider default")
-                                ),
-                                /*hint*/ None,
-                            ),
-                            Err(error) => history_cell::new_error_event(format!(
-                                "Cannot save pruner model: {error}"
-                            )),
-                        };
-                        tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
+                        tx.send(AppEvent::Elpis(ElpisAppEvent::SavePrunerModel(
+                            params.clone(),
+                        )))
                     })],
                     dismiss_on_select: true,
                     ..Default::default()
                 }
             })
             .collect();
-        let initial_selected_idx = items.iter().position(|item| item.is_current);
-        self.show_selection_view(SelectionViewParams {
+        SelectionViewParams {
             view_id: Some(PRUNER_MODEL_SELECTION_VIEW_ID),
-            initial_selected_idx,
+            initial_selected_idx: items.iter().position(|item| item.is_current),
             title: Some("Choose pruner model".into()),
             subtitle: Some(format!(
-                "Provider: {} · Current: {} · Chat model unchanged",
-                settings
-                    .provider
-                    .as_deref()
-                    .unwrap_or_else(|| self.pruner_role_provider()),
-                settings.model.as_deref().unwrap_or("provider default")
+                "Catalog: {provider} · Current: {}",
+                self.pruner_model_label()
             )),
             items,
             is_searchable: true,
-            search_placeholder: Some("Search models".into()),
-            footer_note,
+            search_placeholder: Some("Search models and effort".into()),
             footer_hint: Some(standard_popup_hint_line()),
             ..SelectionViewParams::picker()
-        });
+        }
+    }
+
+    pub(super) fn pruner_model_label(&self) -> String {
+        if let Some(settings) = &self.context_ledger.pruner_settings {
+            let model = settings
+                .model
+                .as_deref()
+                .or(self.config.background_model.as_deref())
+                .unwrap_or("provider default");
+            let effort = settings
+                .reasoning_effort
+                .as_ref()
+                .unwrap_or(&ReasoningEffort::Low)
+                .as_str();
+            format!("{model} · {effort} effort")
+        } else if let Some(attempt) = &self.smart_prune.latest_attempt {
+            format!(
+                "{} · {} effort",
+                attempt.model_slug, attempt.reasoning_effort
+            )
+        } else {
+            "Choose model…".to_string()
+        }
+    }
+
+    pub(crate) fn finish_pruner_model_save(&mut self, result: Result<PrunerReadResponse, String>) {
+        match result {
+            Ok(settings) => {
+                // A read started before this save must not overwrite its new value.
+                self.context_ledger.pruner_request.set(None);
+                self.context_ledger.pruner_settings = Some(settings);
+                self.add_info_message(
+                    format!("Smart Prune model saved: {}.", self.pruner_model_label()),
+                    None,
+                );
+            }
+            Err(error) => self.add_error_message(format!("Pruner model was not changed: {error}")),
+        }
         self.request_redraw();
     }
 }

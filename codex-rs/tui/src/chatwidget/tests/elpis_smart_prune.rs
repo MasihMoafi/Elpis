@@ -277,6 +277,23 @@ async fn bare_pruner_model_opens_the_pruner_picker() {
 
     chat.dispatch_command(SlashCommand::PrunerModel);
 
+    let request = chat
+        .context_ledger
+        .pruner_request
+        .get()
+        .expect("settings read");
+    chat.finish_pruner_settings(
+        request,
+        true,
+        Ok(codex_app_server_protocol::PrunerReadResponse {
+            model: None,
+            provider: None,
+            reasoning_effort: None,
+            version: "fixture".into(),
+            providers: Vec::new(),
+        }),
+    );
+
     let screen = render_bottom_popup(&chat, WIDTH);
     assert!(screen.contains("Choose pruner model"), "{screen}");
     assert!(screen.contains("Provider default"), "{screen}");

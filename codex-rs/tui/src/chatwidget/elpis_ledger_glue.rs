@@ -232,14 +232,14 @@ impl ChatWidget {
         buf: &mut ratatui::buffer::Buffer,
     ) {
         self.context_ledger.column.set(Some(area));
-        match self.context_ledger_lines_with_height(area.width, true) {
-            Some((_, ledger_lines)) => {
-                self.render_context_ledger_lines(area, buf, ledger_lines, &[]);
+        if let Some(ledger_lines) = self.ledger_column_lines(area) {
+            if !self.context_ledger.pruner_requested.replace(true) {
+                self.request_pruner_settings(false);
             }
-            None => {
-                self.context_ledger.column.set(None);
-                self.forget_context_ledger_clicks();
-            }
+            self.render_context_ledger_lines(area, buf, ledger_lines, &[]);
+        } else {
+            self.context_ledger.column.set(None);
+            self.forget_context_ledger_clicks();
         }
     }
 }

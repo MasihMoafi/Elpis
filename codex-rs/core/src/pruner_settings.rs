@@ -40,6 +40,9 @@ pub struct PrunerSettings {
     // as "unset" rather than fail and take Smart Prune down with it.
     #[serde(default)]
     pub provider: Option<String>,
+    /// Saved optimizer effort override; missing in older settings files.
+    #[serde(default)]
+    pub reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     pub system_prompt: Option<String>,
 }
 
@@ -169,6 +172,7 @@ mod tests {
             backend: PrunerBackend::Llm,
             model: Some("pruner-model".into()),
             provider: Some("openrouter".into()),
+            reasoning_effort: None,
             system_prompt: Some("Keep the planted fact.".into()),
         };
         settings.save(dir.path())?;
@@ -189,6 +193,7 @@ mod tests {
             backend: PrunerBackend::Llm,
             model: Some("original-model".into()),
             provider: Some("openai".into()),
+            reasoning_effort: None,
             system_prompt: Some("Original prompt".into()),
         };
         reviewed.save(dir.path())?;
@@ -259,6 +264,7 @@ mod tests {
             backend: PrunerBackend::Llm,
             model: Some("valid-model".into()),
             provider: Some("openai".into()),
+            reasoning_effort: None,
             system_prompt: None,
         };
         saved.save(dir.path())?;

@@ -42,7 +42,34 @@ const LEDGER_LEFT_COLS: u16 = 2;
 /// Codex keeps its last columns free: its footer hints stop `FOOTER_INDENT_COLS` before the
 /// edge. The native inline Ledger keeps the same margin.
 const LEDGER_RIGHT_MARGIN: u16 = crate::ui_consts::FOOTER_INDENT_COLS as u16;
-const LEDGER_CLOSE_BUTTON_LABEL: &str = " ╳ ";
+/// Details are expendable before the conversation becomes narrower than 60 columns.
+const LEDGER_DETAIL_MAIN_WIDTH: u16 = 60;
+
+fn ledger_toggle(enabled: Option<bool>) -> &'static str {
+    match enabled {
+        Some(true) => "[━━━●] ON",
+        Some(false) => "[●━━━] OFF",
+        None => "[···] SYNC",
+    }
+}
+
+fn ledger_muted_style() -> Style {
+    Style::default().fg(crate::style::adaptive_palette_color(
+        default_bg(),
+        (80, 81, 75),
+        (133, 134, 128),
+    ))
+}
+
+fn ledger_title(width: usize, title: Vec<Span<'static>>) -> Line<'static> {
+    let toggle = ledger_toggle(Some(true));
+    let label = Line::from(title);
+    let pad = width.saturating_sub(label.width() + toggle.width()).max(1);
+    let mut spans = label.spans;
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.push(Span::styled(toggle, crate::style::context_style()));
+    Line::from(spans)
+}
 
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
 /// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
@@ -69,8 +96,7 @@ pub(crate) fn ledger_column_width_for(terminal_width: u16, preferred: Option<u16
 }
 
 /// The Ledger column as the startup screen draws it, before a session exists: the rule and the
-/// title, where the live Ledger will be. Reserve the live Close row without showing an inactive
-/// button before startup completes. `column` is the whole column; `top_row` is its live top row.
+/// title, where the live Ledger will be. `column` is the whole column; `top_row` is its live top row.
 pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut Buffer) {
     let top = top_row.clamp(column.top(), column.bottom());
     let area = Rect {
@@ -81,24 +107,18 @@ pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut
     render_ledger_rule(area, &[], buf);
     let content_width =
         ledger_content_width(area.width, true).min(area.width.saturating_sub(LEDGER_LEFT_COLS));
-    if content_width == 0 || area.height <= 1 {
+    if content_width == 0 || area.height == 0 {
         return;
     }
-    let muted = Style::default().fg(crate::style::adaptive_palette_color(
-        default_bg(),
-        (80, 81, 75),
-        (133, 134, 128),
-    ));
-    let mut title = crate::status_indicator_widget::ledger_title_shimmer(
+    let title = crate::status_indicator_widget::ledger_title_shimmer(
         CONTEXT_LEDGER_TITLE,
         std::time::Duration::ZERO,
         crate::motion::MotionMode::Reduced,
     );
-    title.extend([Span::raw("  "), Span::styled("loading", muted)]);
-    Paragraph::new(Line::from(title)).render(
+    Paragraph::new(ledger_title(usize::from(content_width), title)).render(
         Rect::new(
             area.x + LEDGER_LEFT_COLS,
-            area.y + 1,
+            area.y,
             content_width,
             /*height*/ 1,
         ),
@@ -108,7 +128,7 @@ pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut
 
 /// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
 fn ledger_content_width(ledger_width: u16, owned_column: bool) -> u16 {
-    // Close has its own row in the owned column; source rows need only one edge cell.
+    // The owned column keeps one edge cell for scroll indicators.
     // Inline rendering keeps Codex's margin.
     let right_margin = if owned_column { 1 } else { LEDGER_RIGHT_MARGIN };
     ledger_width
@@ -171,6 +191,7 @@ pub(super) struct LedgerLines {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LedgerClickTarget {
     Close,
+    PrunerModel,
     SmartPrune,
     Subagents,
     Source(usize),
@@ -178,9 +199,10 @@ enum LedgerClickTarget {
 
 /// Where the last drawn Ledger sits on screen, so a click can be traced back to its row.
 struct LedgerClickMap {
-    close_button: Option<Rect>,
+    toggle: Option<Rect>,
     content: Rect,
     scroll_rows: u16,
+    max_scroll: u16,
     targets: Vec<(std::ops::Range<usize>, LedgerClickTarget)>,
 }
 
@@ -217,6 +239,10 @@ pub(super) struct ContextLedgerState {
     crowded: std::cell::Cell<bool>,
     /// Full screen only, where Elpis owns the mouse: written by each draw, read by a click.
     click_map: std::cell::RefCell<Option<LedgerClickMap>>,
+    tab: std::cell::Cell<Option<Rect>>,
+    scroll: std::cell::Cell<u16>,
+    scrolling: std::cell::Cell<bool>,
+    reveal_selection: std::cell::Cell<bool>,
     /// The width the user dragged the Ledger to; `None` keeps the default for the terminal.
     pub(super) preferred_width: Option<u16>,
     /// Full screen only: the column as last drawn, for hit-testing its rule.
@@ -229,6 +255,9 @@ pub(super) struct ContextLedgerState {
     pub(super) projection_baseline_turn_id: Option<String>,
     pub(super) pending_context_admissions:
         std::collections::BTreeMap<String, PendingContextAdmission>,
+    pub(super) pruner_settings: Option<codex_app_server_protocol::PrunerReadResponse>,
+    pub(super) pruner_request: std::cell::Cell<Option<uuid::Uuid>>,
+    pub(super) pruner_requested: std::cell::Cell<bool>,
 }
 
 impl Default for ContextLedgerState {
@@ -245,6 +274,10 @@ impl Default for ContextLedgerState {
             why_visible: false,
             crowded: std::cell::Cell::new(false),
             click_map: std::cell::RefCell::new(None),
+            tab: std::cell::Cell::new(None),
+            scroll: std::cell::Cell::new(0),
+            scrolling: std::cell::Cell::new(false),
+            reveal_selection: std::cell::Cell::new(false),
             preferred_width: None,
             column: std::cell::Cell::new(None),
             resize_anchor: None,
@@ -253,11 +286,19 @@ impl Default for ContextLedgerState {
             projected_token_delta: 0,
             projection_baseline_turn_id: None,
             pending_context_admissions: std::collections::BTreeMap::new(),
+            pruner_settings: None,
+            pruner_request: std::cell::Cell::new(None),
+            pruner_requested: std::cell::Cell::new(false),
         }
     }
 }
 
 impl ChatWidget {
+    #[cfg(test)]
+    pub(super) fn context_ledger_scroll_offset(&self) -> u16 {
+        self.context_ledger.scroll.get()
+    }
+
     pub(crate) fn context_ledger_has_focus(&self) -> bool {
         self.context_ledger.visible && self.context_ledger.focused
     }
@@ -413,10 +454,9 @@ impl ChatWidget {
         let ledger_lines = self.ledger_lines(
             usize::from(ledger_content_width(ledger_width, owned_column)),
             owned_column,
+            false,
         );
-        let height = u16::try_from(ledger_lines.rows.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(u16::from(owned_column));
+        let height = u16::try_from(ledger_lines.rows.len()).unwrap_or(u16::MAX);
         Some((height, ledger_lines))
     }
 
@@ -450,6 +490,9 @@ impl ChatWidget {
                 }
                 self.context_ledger.visible = true;
                 self.context_ledger.focused = true;
+                self.context_ledger.scroll.set(0);
+                self.context_ledger.scrolling.set(false);
+                self.context_ledger.reveal_selection.set(false);
                 // Start at the top row on screen rather than wherever the
                 // underlying source order happens to begin.
                 self.context_ledger.smart_prune_selected = false;
@@ -507,6 +550,62 @@ impl ChatWidget {
             self.toggle_subagents();
             return true;
         }
+        if matches!(key_event.code, KeyCode::Char('m')) {
+            self.open_pruner_model_popup();
+            return true;
+        }
+
+        // Viewport keys work even when the catalog of portable sources is empty or loading.
+        let page = self
+            .context_ledger
+            .click_map
+            .borrow()
+            .as_ref()
+            .map_or(1, |map| map.content.height.saturating_sub(1).max(1));
+        let scroll = match key_event.code {
+            KeyCode::PageUp => Some(-i32::from(page)),
+            KeyCode::PageDown => Some(i32::from(page)),
+            KeyCode::Home => Some(-i32::from(u16::MAX)),
+            KeyCode::End => Some(i32::from(u16::MAX)),
+            _ => None,
+        };
+        if let Some(delta) = scroll {
+            self.scroll_context_ledger(delta);
+            self.request_redraw();
+            return true;
+        }
+        if self.context_ledger.scrolling.get() {
+            if matches!(key_event.code, KeyCode::Up | KeyCode::Down) {
+                self.scroll_context_ledger(if key_event.code == KeyCode::Up { -1 } else { 1 });
+                self.request_redraw();
+                return true;
+            }
+            if matches!(key_event.code, KeyCode::Enter | KeyCode::Char(' ')) {
+                let target = if self.context_ledger.smart_prune_selected {
+                    LedgerClickTarget::SmartPrune
+                } else if self.context_ledger.subagents_selected {
+                    LedgerClickTarget::Subagents
+                } else {
+                    LedgerClickTarget::Source(self.context_ledger.selected)
+                };
+                let visible = self
+                    .context_ledger
+                    .click_map
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|map| {
+                        map.targets.iter().any(|(range, candidate)| {
+                            *candidate == target
+                                && range.end > usize::from(map.scroll_rows)
+                                && range.start
+                                    < usize::from(map.scroll_rows) + usize::from(map.content.height)
+                        })
+                    });
+                if !visible {
+                    return true;
+                }
+            }
+        }
 
         // The two switches are the first stops on the cursor, above the sources.
         if self.context_ledger.smart_prune_selected || self.context_ledger.subagents_selected {
@@ -544,6 +643,11 @@ impl ChatWidget {
         let sources = self.continuity_sources();
         let selectable = self.selectable_context_source_indexes();
         if selectable.is_empty() {
+            if matches!(key_event.code, KeyCode::Up | KeyCode::Down) {
+                self.scroll_context_ledger(if key_event.code == KeyCode::Up { -1 } else { 1 });
+                self.request_redraw();
+                return true;
+            }
             if matches!(key_event.code, KeyCode::Esc) {
                 self.close_context_ledger();
                 self.request_redraw();
@@ -654,7 +758,7 @@ impl ChatWidget {
     ///
     /// `content_width` is the width inside the left border. The owned column preserves full
     /// source names and places metadata below them when both cannot fit on one row.
-    fn ledger_lines(&self, content_width: usize, owned_column: bool) -> LedgerLines {
+    fn ledger_lines(&self, content_width: usize, owned_column: bool, compact: bool) -> LedgerLines {
         let mut source_links: Vec<(usize, String)> = Vec::new();
         let sources = self.continuity_sources();
         let accounting_sources = self.accounted_continuity_sources();
@@ -669,11 +773,7 @@ impl ChatWidget {
         let section = crate::style::section_style();
         let background = default_bg();
         let light = background.is_some_and(is_light);
-        let muted = Style::default().fg(crate::style::adaptive_palette_color(
-            background,
-            (80, 81, 75),
-            (133, 134, 128),
-        ));
+        let muted = ledger_muted_style();
         let detail = if light || background.is_none() {
             muted
         } else {
@@ -763,32 +863,34 @@ impl ChatWidget {
                 self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
             ),
         );
-        title.extend([Span::raw("  "), Span::styled(context_header, context)]);
-        let title = crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
-            Line::from(title),
+        let title = if owned_column {
+            ledger_title(content_width, title)
+        } else {
+            title.extend([
+                Span::raw("  "),
+                Span::styled(context_header.clone(), context),
+            ]);
+            crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
+                Line::from(title),
+                content_width.saturating_sub(1),
+            )
+        };
+        lines.extend(vec![title]);
+        if !compact {
             if owned_column {
-                content_width
-            } else {
-                content_width.saturating_sub(1)
-            },
-        );
-        lines.extend(vec![
-            title,
-            Line::from(Span::styled(interaction_hint, muted)),
-            Line::from(""),
-        ]);
+                lines.push(Line::from(Span::styled(context_header, context)));
+            }
+            lines.push(Line::from(Span::styled(interaction_hint, muted)));
+            lines.push(Line::from(""));
+        }
         // A pending request is shown immediately, then reconciled with the next
         // authoritative core snapshot after persistence.
         let pending_smart_prune_enabled = self.context_ledger.pending_smart_prune_enabled;
         let smart_prune_enabled = pending_smart_prune_enabled.unwrap_or(self.smart_prune.enabled);
-        let smart_prune_button =
-            if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
-                "[···] SYNC"
-            } else if smart_prune_enabled {
-                "[━━━●] ON"
-            } else {
-                "[●━━━] OFF"
-            };
+        let smart_prune_button = ledger_toggle(
+            (self.smart_prune_synced || pending_smart_prune_enabled.is_some())
+                .then_some(smart_prune_enabled),
+        );
         let smart_prune_label = "SMART PRUNE";
         // The cursor leads the row, as it does on every source below. Placed
         // after the label it sat against the switch and read as part of it,
@@ -808,7 +910,7 @@ impl ChatWidget {
         let switch_spans = if !self.smart_prune_synced && pending_smart_prune_enabled.is_none() {
             vec![Span::styled(smart_prune_button, section.bold())]
         } else if smart_prune_enabled {
-            vec![Span::styled("[━━━●] ON", context)]
+            vec![Span::styled(smart_prune_button, context)]
         } else {
             vec![Span::styled(smart_prune_button, muted)]
         };
@@ -818,158 +920,165 @@ impl ChatWidget {
         smart_prune_spans.extend(switch_spans);
         let smart_prune_line = lines.len();
         lines.push(Line::from(smart_prune_spans));
-        // Elpis: a Claude chat's requests go through the Claude bridge's Smart Prune proxy while
-        // the switch is on (`tools/elpis-claude`); an Antigravity chat's go to Google unseen.
-        let bridged = bridged_provider_of_model(self.current_model());
-        let smart_prune_detail = if bridged.is_some_and(|b| b.id != CLAUDE_SUBSCRIPTION_PROVIDER_ID)
-        {
-            "Does not apply to Antigravity chats".to_string()
-        } else if bridged.is_some() && smart_prune_enabled {
-            "Large tool results shrink through the Claude proxy".to_string()
-        } else if pending_smart_prune_enabled.is_some() {
-            "Saving setting · the active turn keeps its current policy".to_string()
-        } else if !self.smart_prune_synced {
-            "Reading current thread state".to_string()
-        } else if self.smart_prune.examined_outputs > 0 {
-            format!(
-                "{} of {} eligible outputs shortened · ≈{} tokens saved",
-                self.smart_prune.admitted_outputs,
-                self.smart_prune.examined_outputs,
-                format_tokens(self.smart_prune.approx_saved_tokens),
-            )
-        } else if smart_prune_enabled {
-            "Before first main-model send · sent history stays stable".to_string()
-        } else {
-            "Tool results pass through unchanged".to_string()
-        };
-        lines.push(Line::from(Span::styled(smart_prune_detail, muted)));
-        if self.smart_prune_synced && self.smart_prune.failed_batches > 0 {
-            let plural = if self.smart_prune.failed_batches == 1 {
-                "batch"
-            } else {
-                "batches"
-            };
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "{} optimizer {plural} failed · originals preserved",
-                    self.smart_prune.failed_batches
-                ),
-                warning,
-            )));
-        }
-        if self.smart_prune_synced && self.smart_prune.optimizer_requests > 0 {
-            let usage = if self.smart_prune.optimizer_usage_reports > 0 {
-                format!(
-                    "{} tokens reported",
-                    format_tokens(self.smart_prune.optimizer_usage.total_tokens.max(0) as u64)
-                )
-            } else {
-                "usage unreported".to_string()
-            };
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "{} request{} · {} total wait · {usage}",
-                    self.smart_prune.optimizer_requests,
-                    if self.smart_prune.optimizer_requests == 1 {
-                        ""
-                    } else {
-                        "s"
-                    },
-                    format_duration_ms(self.smart_prune.optimizer_latency_ms),
-                ),
-                muted,
-            )));
-        }
-        if self.smart_prune_synced
-            && let Some(attempt) = self.smart_prune.latest_attempt.as_ref()
-        {
-            let status = attempt.status.replace('_', " ");
-            let status_style = match attempt.status.as_str() {
-                "admitted" => crate::elpis_motion::accent_style(),
-                "unchanged" => muted,
-                _ => warning,
-            };
-            lines.push(Line::from(vec![
-                Span::styled("Last attempt: ", muted),
-                Span::styled(status, status_style),
-            ]));
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "{} candidate{} · {} admitted · {}",
-                    attempt.candidate_outputs,
-                    if attempt.candidate_outputs == 1 {
-                        ""
-                    } else {
-                        "s"
-                    },
-                    attempt.admitted_outputs,
-                    format_duration_ms(attempt.latency_ms),
-                ),
-                muted,
-            )));
-            let usage = attempt
-                .usage
-                .as_ref()
-                .map(|usage| {
+        let pruner_model_line = lines.len();
+        lines.push(Line::from(Span::styled(
+            self.pruner_model_label(),
+            muted.underlined(),
+        )));
+        if !compact {
+            // Elpis: a Claude chat's requests go through the Claude bridge's Smart Prune proxy while
+            // the switch is on (`tools/elpis-claude`); an Antigravity chat's go to Google unseen.
+            let bridged = bridged_provider_of_model(self.current_model());
+            let smart_prune_detail =
+                if bridged.is_some_and(|b| b.id != CLAUDE_SUBSCRIPTION_PROVIDER_ID) {
+                    "Does not apply to Antigravity chats".to_string()
+                } else if bridged.is_some() && smart_prune_enabled {
+                    "Large tool results shrink through the Claude proxy".to_string()
+                } else if pending_smart_prune_enabled.is_some() {
+                    "Saving setting · the active turn keeps its current policy".to_string()
+                } else if !self.smart_prune_synced {
+                    "Reading current thread state".to_string()
+                } else if self.smart_prune.examined_outputs > 0 {
                     format!(
-                        "{} tokens reported",
-                        format_tokens(usage.total_tokens.max(0) as u64)
+                        "{} of {} eligible outputs shortened · ≈{} tokens saved",
+                        self.smart_prune.admitted_outputs,
+                        self.smart_prune.examined_outputs,
+                        format_tokens(self.smart_prune.approx_saved_tokens),
                     )
-                })
-                .unwrap_or_else(|| "usage unreported".to_string());
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "{} · {} effort · {usage}",
-                    attempt.model_slug, attempt.reasoning_effort
-                ),
-                muted,
-            )));
-            // Elpis: the attempt's audit record opens as a readable report.
-            if let Some(path) = attempt.audit_path.as_deref().and_then(|path| {
-                super::elpis_dashboard::smart_prune_attempt_evidence_path(
-                    self.config.codex_home.as_path(),
-                    path,
-                )
-            }) && let Some(destination) = crate::dashboard_server::evidence_url(
-                self.config.codex_home.as_path(),
-                "Smart Prune attempt",
-                &path,
-            ) {
-                source_links.push((lines.len(), destination));
+                } else if smart_prune_enabled {
+                    "Before first main-model send · sent history stays stable".to_string()
+                } else {
+                    "Tool results pass through unchanged".to_string()
+                };
+            lines.push(Line::from(Span::styled(smart_prune_detail, muted)));
+            if self.smart_prune_synced && self.smart_prune.failed_batches > 0 {
+                let plural = if self.smart_prune.failed_batches == 1 {
+                    "batch"
+                } else {
+                    "batches"
+                };
                 lines.push(Line::from(Span::styled(
-                    "Read attempt evidence",
-                    crate::elpis_motion::accent_style().underlined(),
+                    format!(
+                        "{} optimizer {plural} failed · originals preserved",
+                        self.smart_prune.failed_batches
+                    ),
+                    warning,
                 )));
             }
-        }
-        if self.smart_prune_synced
-            && let Some(latest) = self.smart_prune.latest.as_ref()
-        {
-            let short_id = latest.admission_id.get(..8).unwrap_or(&latest.admission_id);
-            let status = if latest.response_linkage_verified {
-                "response linked"
-            } else if latest.request_linkage_verified {
-                "request linked"
-            } else if latest.request_sequence.is_some() {
-                "request evidence pending"
+            if self.smart_prune_synced && self.smart_prune.optimizer_requests > 0 {
+                let usage = if self.smart_prune.optimizer_usage_reports > 0 {
+                    format!(
+                        "{} tokens reported",
+                        format_tokens(self.smart_prune.optimizer_usage.total_tokens.max(0) as u64)
+                    )
+                } else {
+                    "usage unreported".to_string()
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} request{} · {} total wait · {usage}",
+                        self.smart_prune.optimizer_requests,
+                        if self.smart_prune.optimizer_requests == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
+                        format_duration_ms(self.smart_prune.optimizer_latency_ms),
+                    ),
+                    muted,
+                )));
+            }
+            if self.smart_prune_synced
+                && let Some(attempt) = self.smart_prune.latest_attempt.as_ref()
+            {
+                let status = attempt.status.replace('_', " ");
+                let status_style = match attempt.status.as_str() {
+                    "admitted" => crate::elpis_motion::accent_style(),
+                    "unchanged" => muted,
+                    _ => warning,
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("Last attempt: ", muted),
+                    Span::styled(status, status_style),
+                ]));
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} candidate{} · {} admitted · {}",
+                        attempt.candidate_outputs,
+                        if attempt.candidate_outputs == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
+                        attempt.admitted_outputs,
+                        format_duration_ms(attempt.latency_ms),
+                    ),
+                    muted,
+                )));
+                let usage = attempt
+                    .usage
+                    .as_ref()
+                    .map(|usage| {
+                        format!(
+                            "{} tokens reported",
+                            format_tokens(usage.total_tokens.max(0) as u64)
+                        )
+                    })
+                    .unwrap_or_else(|| "usage unreported".to_string());
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} · {} effort · {usage}",
+                        attempt.model_slug, attempt.reasoning_effort
+                    ),
+                    muted,
+                )));
+                // Elpis: the attempt's audit record opens as a readable report.
+                if let Some(path) = attempt.audit_path.as_deref().and_then(|path| {
+                    super::elpis_dashboard::smart_prune_attempt_evidence_path(
+                        self.config.codex_home.as_path(),
+                        path,
+                    )
+                }) && let Some(destination) = crate::dashboard_server::evidence_url(
+                    self.config.codex_home.as_path(),
+                    "Smart Prune attempt",
+                    &path,
+                ) {
+                    source_links.push((lines.len(), destination));
+                    lines.push(Line::from(Span::styled(
+                        "Read attempt evidence",
+                        crate::elpis_motion::accent_style().underlined(),
+                    )));
+                }
+            }
+            if self.smart_prune_synced
+                && let Some(latest) = self.smart_prune.latest.as_ref()
+            {
+                let short_id = latest.admission_id.get(..8).unwrap_or(&latest.admission_id);
+                let status = if latest.response_linkage_verified {
+                    "response linked"
+                } else if latest.request_linkage_verified {
+                    "request linked"
+                } else if latest.request_sequence.is_some() {
+                    "request evidence pending"
+                } else {
+                    "awaiting first main send"
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("Latest {short_id} · {status}"),
+                    muted,
+                )));
+            }
+            let smart_prune_hint = if pending_smart_prune_enabled.is_some() {
+                "Saving… · applies next turn; active turn unchanged"
+            } else if !self.smart_prune_synced {
+                "Syncing… · /smart-prune on|off sets an explicit state"
+            } else if self.is_user_turn_pending_or_running() {
+                "p toggle · applies next turn; active turn unchanged"
             } else {
-                "awaiting first main send"
+                "p toggle · /smart-prune on|off"
             };
-            lines.push(Line::from(Span::styled(
-                format!("Latest {short_id} · {status}"),
-                muted,
-            )));
+            lines.push(Line::from(Span::styled(smart_prune_hint, muted)));
         }
-        let smart_prune_hint = if pending_smart_prune_enabled.is_some() {
-            "Saving… · applies next turn; active turn unchanged"
-        } else if !self.smart_prune_synced {
-            "Syncing… · /smart-prune on|off sets an explicit state"
-        } else if self.is_user_turn_pending_or_running() {
-            "p toggle · applies next turn; active turn unchanged"
-        } else {
-            "p toggle · /smart-prune on|off"
-        };
-        lines.push(Line::from(Span::styled(smart_prune_hint, muted)));
         lines.push(Line::from(""));
 
         // Whether the model may hand work to other agents. Flipping it off keeps
@@ -978,11 +1087,7 @@ impl ChatWidget {
         let pending_subagents_enabled = self.context_ledger.pending_subagents_enabled;
         let subagents_enabled =
             pending_subagents_enabled.unwrap_or(self.config.features.enabled(Feature::Collab));
-        let subagents_button = if subagents_enabled {
-            "[━━━●] ON"
-        } else {
-            "[●━━━] OFF"
-        };
+        let subagents_button = ledger_toggle(Some(subagents_enabled));
         let subagents_label = "SUBAGENTS";
         let subagents_cursor =
             if self.context_ledger.focused && self.context_ledger.subagents_selected {
@@ -996,7 +1101,7 @@ impl ChatWidget {
             )
             .max(1);
         let subagents_switch_spans = if subagents_enabled {
-            vec![Span::styled("[━━━●] ON", context)]
+            vec![Span::styled(subagents_button, context)]
         } else {
             vec![Span::styled(subagents_button, muted)]
         };
@@ -1009,19 +1114,23 @@ impl ChatWidget {
         // One line, not a block: the ledger's own height is what the owner sees
         // of their sources, and this setting has nothing to report beyond its
         // state. The `s` key is already named in the header hint.
-        lines.push(Line::from(Span::styled(
-            if pending_subagents_enabled.is_some() {
-                "Saving… · applies next turn"
-            } else if subagents_enabled {
-                "May delegate to other agents"
-            } else {
-                "All work stays in this thread"
-            },
-            muted,
-        )));
+        if !compact {
+            lines.push(Line::from(Span::styled(
+                if pending_subagents_enabled.is_some() {
+                    "Saving… · applies next turn"
+                } else if subagents_enabled {
+                    "May delegate to other agents"
+                } else {
+                    "All work stays in this thread"
+                },
+                muted,
+            )));
+        }
         lines.push(Line::from(""));
 
-        lines.extend(self.agent_ledger_lines(content_width));
+        if !compact {
+            lines.extend(self.agent_ledger_lines(content_width));
+        }
         lines.push(Line::from(vec![
             Span::styled("CONTEXT WINDOW", context.bold()),
             Span::raw("  "),
@@ -1041,49 +1150,59 @@ impl ChatWidget {
                 context,
             ),
         ]));
-        if let (true, Some(window)) = (has_request_snapshot, context_window) {
-            lines.push(usage_bar_line(content_width, window, &attribution_segments));
+        if compact {
+            let headline = lines.pop().expect("context headline");
+            lines.push(
+                crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
+                    headline,
+                    content_width,
+                ),
+            );
         }
-        if attributed_tokens.is_some() {
-            lines.push(Line::from(Span::styled(
-                if context_window.is_some() {
-                    "MEASURED TOTAL · ESTIMATED CATEGORY SHARES"
-                } else {
-                    "MEASURED TOTAL · ESTIMATED CATEGORY TOKENS"
-                },
-                brand.bold(),
-            )));
-            lines.push(Line::from(Span::styled(
+        if !compact {
+            if let (true, Some(window)) = (has_request_snapshot, context_window) {
+                lines.push(usage_bar_line(content_width, window, &attribution_segments));
+            }
+            if attributed_tokens.is_some() {
+                lines.push(Line::from(Span::styled(
+                    if context_window.is_some() {
+                        "MEASURED TOTAL · ESTIMATED CATEGORY SHARES"
+                    } else {
+                        "MEASURED TOTAL · ESTIMATED CATEGORY TOKENS"
+                    },
+                    brand.bold(),
+                )));
+                lines.push(Line::from(Span::styled(
                 if context_window.is_some() { "Estimated segments reconcile to measured active context; all shares use the full window" } else { "Estimated categories reconcile to measured active context; capacity unknown" },
                 muted,
             )));
-            for category in &categories {
-                let right = match context_window {
-                    Some(window) => format!(
-                        "≈{} · {}",
-                        format_tokens(category.tokens),
-                        format_share(category.tokens, window)
-                    ),
-                    None => format!("≈{}", format_tokens(category.tokens)),
-                };
-                let marker = format!("{CONTEXT_CATEGORY_MARKER} ");
-                let pad = content_width
-                    .saturating_sub(2 + marker.width() + category.label.width() + right.width())
-                    .max(1);
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(
-                        marker,
-                        Style::default()
-                            .fg(super::context_usage::context_display_color(category.color)),
-                    ),
-                    Span::raw(category.label),
-                    Span::raw(" ".repeat(pad)),
-                    Span::styled(right, muted),
-                ]));
-            }
-        } else {
-            lines.push(Line::from(Span::styled(
+                for category in &categories {
+                    let right = match context_window {
+                        Some(window) => format!(
+                            "≈{} · {}",
+                            format_tokens(category.tokens),
+                            format_share(category.tokens, window)
+                        ),
+                        None => format!("≈{}", format_tokens(category.tokens)),
+                    };
+                    let marker = format!("{CONTEXT_CATEGORY_MARKER} ");
+                    let pad = content_width
+                        .saturating_sub(2 + marker.width() + category.label.width() + right.width())
+                        .max(1);
+                    lines.push(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(
+                            marker,
+                            Style::default()
+                                .fg(super::context_usage::context_display_color(category.color)),
+                        ),
+                        Span::raw(category.label),
+                        Span::raw(" ".repeat(pad)),
+                        Span::styled(right, muted),
+                    ]));
+                }
+            } else {
+                lines.push(Line::from(Span::styled(
                 if has_request_snapshot {
                     "Core measured total; category attribution unavailable until the next provider attempt"
                 } else {
@@ -1091,6 +1210,7 @@ impl ChatWidget {
                 },
                 muted,
             )));
+            }
         }
         lines.push(Line::from(""));
 
@@ -1116,15 +1236,18 @@ impl ChatWidget {
                 .map(|(_, source)| source.estimated_tokens)
                 .sum::<u64>();
             let cat_style = source_heading_style();
-            lines.push(Line::from(vec![
+            let mut heading = vec![
                 Span::styled(format!("{CONTEXT_CATEGORY_MARKER} "), cat_style),
                 Span::styled(group.display_name(), cat_style.bold()),
-                Span::raw("  "),
-                Span::styled(
+            ];
+            if !compact {
+                heading.push(Span::raw("  "));
+                heading.push(Span::styled(
                     format!("≈{} tokens admitted", format_tokens(admitted_tokens)),
                     muted,
-                ),
-            ]));
+                ));
+            }
+            lines.push(Line::from(heading));
             for (index, source) in category_sources {
                 let source_line_start = lines.len();
                 // A switch above can hold the cursor, and then no source does.
@@ -1226,7 +1349,7 @@ impl ChatWidget {
                 ]);
                 lines.push(Line::from(row));
 
-                if selected && self.context_ledger.why_visible {
+                if selected && self.context_ledger.why_visible && !compact {
                     let inclusion = if source.admitted {
                         "Included"
                     } else {
@@ -1281,6 +1404,10 @@ impl ChatWidget {
         let row_of = |line: usize| row_starts[line.min(lines.len())];
         let mut click_targets = vec![
             (
+                row_of(pruner_model_line)..row_of(pruner_model_line + 1),
+                LedgerClickTarget::PrunerModel,
+            ),
+            (
                 row_of(smart_prune_line)..row_of(smart_prune_line + 1),
                 LedgerClickTarget::SmartPrune,
             ),
@@ -1327,6 +1454,7 @@ impl ChatWidget {
         let ledger_lines = self.ledger_lines(
             usize::from(ledger_content_width(area.width, owned_column)),
             owned_column,
+            false,
         );
         self.render_context_ledger_lines(area, buf, ledger_lines, /*box_rules*/ &[]);
     }
@@ -1356,44 +1484,82 @@ impl ChatWidget {
         if content_width == 0 || area.height == 0 {
             return;
         }
+        let pinned = u16::from(owned_column);
         let content = Rect::new(
             area.x + LEDGER_LEFT_COLS,
-            area.y + u16::from(owned_column),
+            area.y + pinned,
             content_width,
-            area.height.saturating_sub(u16::from(owned_column)),
+            area.height.saturating_sub(pinned),
         );
-        let scroll_rows = if self.context_ledger.focused {
+        let max_scroll = u16::try_from(
+            rows.len()
+                .saturating_sub(usize::from(pinned + content.height)),
+        )
+        .unwrap_or(u16::MAX.saturating_sub(pinned));
+        let offset = if owned_column {
+            let mut offset = self.context_ledger.scroll.get().min(max_scroll);
+            if self.context_ledger.reveal_selection.replace(false) {
+                let selected = if self.context_ledger.smart_prune_selected {
+                    click_targets
+                        .iter()
+                        .find(|(_, target)| *target == LedgerClickTarget::SmartPrune)
+                        .map(|(range, _)| range)
+                } else if self.context_ledger.subagents_selected {
+                    click_targets
+                        .iter()
+                        .find(|(_, target)| *target == LedgerClickTarget::Subagents)
+                        .map(|(range, _)| range)
+                } else {
+                    source_row_ranges.get(self.context_ledger.selected)
+                };
+                if let Some(selected) = selected {
+                    let start = selected.start.saturating_sub(usize::from(pinned));
+                    let end = selected.end.saturating_sub(usize::from(pinned));
+                    if start < usize::from(offset)
+                        || end.saturating_sub(start) > usize::from(content.height)
+                    {
+                        offset = u16::try_from(start).unwrap_or(max_scroll);
+                    } else if end > usize::from(offset) + usize::from(content.height) {
+                        offset = u16::try_from(end.saturating_sub(usize::from(content.height)))
+                            .unwrap_or(max_scroll);
+                    }
+                }
+            }
+            offset = offset.min(max_scroll);
+            self.context_ledger.scroll.set(offset);
+            offset
+        } else if self.context_ledger.focused {
             source_row_ranges
                 .get(self.context_ledger.selected)
-                .map(|rows| selected_source_scroll_offset(rows.clone(), content.height))
+                .map(|range| selected_source_scroll_offset(range.clone(), content.height))
                 .unwrap_or(0)
         } else {
             0
         };
-        if let Some(delay) =
-            self.ledger_title_animation_delay(&title_rows, scroll_rows, content.height)
-        {
+        let scroll_rows = offset.saturating_add(pinned);
+        if let Some(delay) = self.ledger_title_animation_delay(
+            &title_rows,
+            if owned_column { 0 } else { scroll_rows },
+            area.height,
+        ) {
             self.frame_requester.schedule_frame_in(delay);
         }
         Paragraph::new(rows.clone())
             .scroll((scroll_rows, 0))
             .render(content, buf);
-        // Only the owned column handles mouse input. Keep the native inline Ledger unchanged.
-        let close_width = LEDGER_CLOSE_BUTTON_LABEL.width() as u16;
-        let close_button = (owned_column && area.width >= LEDGER_LEFT_COLS + close_width + 1)
-            .then(|| Rect::new(area.right() - close_width - 1, area.y, close_width, 1));
-        if let Some(button) = close_button {
-            buf.set_string(
-                button.x,
-                button.y,
-                LEDGER_CLOSE_BUTTON_LABEL,
-                crate::style::user_message_style().bold(),
-            );
+        if owned_column && let Some(title) = rows.first() {
+            Paragraph::new(title.clone())
+                .render(Rect::new(content.x, area.y, content.width, 1), buf);
         }
+        let toggle_width = ledger_toggle(Some(true)).width() as u16;
+        let toggle = (owned_column
+            && content_width >= CONTEXT_LEDGER_TITLE.width() as u16 + 1 + toggle_width)
+            .then(|| Rect::new(content.right() - toggle_width, area.y, toggle_width, 1));
         *self.context_ledger.click_map.borrow_mut() = Some(LedgerClickMap {
-            close_button,
+            toggle,
             content,
             scroll_rows,
+            max_scroll,
             targets: click_targets,
         });
 
@@ -1430,6 +1596,91 @@ impl ChatWidget {
                 usize::from(scroll_rows),
             );
         }
+        if owned_column && content.height > 0 {
+            if offset > 0 {
+                buf.set_string(
+                    area.right() - 1,
+                    content.y,
+                    "↑",
+                    crate::style::context_style(),
+                );
+            }
+            if offset < max_scroll {
+                buf.set_string(
+                    area.right() - 1,
+                    content.bottom() - 1,
+                    "↓",
+                    crate::style::context_style(),
+                );
+            }
+        }
+    }
+
+    pub(super) fn ledger_column_lines(&self, area: Rect) -> Option<LedgerLines> {
+        if !self.context_ledger.visible || area.width == 0 {
+            return None;
+        }
+        let width = usize::from(ledger_content_width(area.width, true));
+        let full = self.ledger_lines(width, true, false);
+        // Use the full wrapped height, not a fixed row-count estimate. This also restores
+        // details automatically after a resize, without a second user preference.
+        let main_width = if area.x > 0 {
+            area.x
+        } else {
+            self.last_rendered_width
+                .get()
+                .map(|width| width.saturating_sub(area.width))
+                .unwrap_or(LEDGER_DETAIL_MAIN_WIDTH)
+        };
+        if main_width < LEDGER_DETAIL_MAIN_WIDTH || full.rows.len() > usize::from(area.height) {
+            Some(self.ledger_lines(width, true, true))
+        } else {
+            Some(full)
+        }
+    }
+
+    /// A closed panel leaves a small cut-corner tab at the right edge of the owned screen.
+    pub(crate) fn render_context_ledger_tab(&self, screen: Rect, buf: &mut Buffer) {
+        self.context_ledger.tab.set(None);
+        if self.context_ledger.visible
+            || !self.no_modal_or_popup_active()
+            || screen.width < LEDGER_MIN_TERMINAL_WIDTH
+            || screen.height < 3
+        {
+            return;
+        }
+        let tab = Rect::new(screen.right() - 12, screen.y + screen.height / 2 - 1, 12, 3);
+        for (row, text) in [" ╱──────────", "│           ", " ╲──────────"]
+            .into_iter()
+            .enumerate()
+        {
+            buf.set_string(
+                tab.x,
+                tab.y + row as u16,
+                text,
+                crate::style::context_style(),
+            );
+        }
+        buf.set_string(
+            tab.x + 2,
+            tab.y + 1,
+            ledger_toggle(Some(false)),
+            ledger_muted_style(),
+        );
+        self.context_ledger.tab.set(Some(tab));
+    }
+
+    fn scroll_context_ledger(&self, delta: i32) {
+        let max = self
+            .context_ledger
+            .click_map
+            .borrow()
+            .as_ref()
+            .map_or(0, |map| map.max_scroll);
+        let next = (i32::from(self.context_ledger.scroll.get()) + delta).clamp(0, i32::from(max));
+        self.context_ledger.scroll.set(next as u16);
+        self.context_ledger.scrolling.set(true);
+        self.context_ledger.reveal_selection.set(false);
     }
 
     pub(super) fn forget_context_ledger_clicks(&self) {
@@ -1443,7 +1694,45 @@ impl ChatWidget {
         &mut self,
         mouse: crossterm::event::MouseEvent,
     ) -> bool {
-        if mouse.kind != crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+        use crossterm::event::MouseEventKind;
+        let position = ratatui::layout::Position::new(mouse.column, mouse.row);
+        if mouse.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left)
+            && mouse.modifiers.is_empty()
+            && self
+                .context_ledger
+                .tab
+                .get()
+                .is_some_and(|tab| tab.contains(position))
+            && self.no_modal_or_popup_active()
+        {
+            self.context_ledger.visible = true;
+            self.context_ledger.scroll.set(0);
+            self.context_ledger.scrolling.set(false);
+            self.context_ledger.reveal_selection.set(false);
+            self.context_ledger.title_started_at = Instant::now();
+            self.context_ledger.tab.set(None);
+            self.request_redraw();
+            return true;
+        }
+        if matches!(
+            mouse.kind,
+            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+        ) && self
+            .context_ledger
+            .column
+            .get()
+            .is_some_and(|area| area.contains(position))
+            && self.context_ledger.visible
+        {
+            self.scroll_context_ledger(if mouse.kind == MouseEventKind::ScrollUp {
+                -3
+            } else {
+                3
+            });
+            self.request_redraw();
+            return true;
+        }
+        if mouse.kind != MouseEventKind::Down(crossterm::event::MouseButton::Left)
             || !mouse.modifiers.is_empty()
             || !self
                 .last_rendered_width
@@ -1457,11 +1746,7 @@ impl ChatWidget {
             let Some(map) = map.as_ref() else {
                 return false;
             };
-            let position = ratatui::layout::Position::new(mouse.column, mouse.row);
-            if map
-                .close_button
-                .is_some_and(|button| button.contains(position))
-            {
+            if map.toggle.is_some_and(|button| button.contains(position)) {
                 Some(LedgerClickTarget::Close)
             } else if map.content.contains(position) {
                 let row = usize::from(mouse.row - map.content.y + map.scroll_rows);
@@ -1475,6 +1760,7 @@ impl ChatWidget {
         };
         match target {
             Some(LedgerClickTarget::Close) => self.close_context_ledger(),
+            Some(LedgerClickTarget::PrunerModel) => self.open_pruner_model_popup(),
             Some(LedgerClickTarget::SmartPrune) => {
                 self.toggle_smart_prune();
             }
@@ -1487,6 +1773,7 @@ impl ChatWidget {
                     return false;
                 };
                 self.context_ledger.selected = index;
+                self.context_ledger.scrolling.set(false);
                 self.set_context_source_admitted(source, !source.admitted);
             }
             None => return false,
@@ -1525,7 +1812,7 @@ impl ChatWidget {
     pub(super) fn selected_continuity_source(
         &self,
     ) -> Option<crate::legacy_core::elpis_context::ContinuitySource> {
-        if self.context_ledger.smart_prune_selected {
+        if self.context_ledger.smart_prune_selected || self.context_ledger.subagents_selected {
             return None;
         }
         self.continuity_sources()
@@ -1819,6 +2106,8 @@ impl ChatWidget {
         self.context_ledger.smart_prune_selected = false;
         self.context_ledger.subagents_selected = false;
         self.context_ledger.pending_g = false;
+        self.context_ledger.scrolling.set(false);
+        self.context_ledger.reveal_selection.set(false);
     }
 
     /// Position 0 is the Smart Prune switch; the selectable sources follow it.
@@ -1838,7 +2127,13 @@ impl ChatWidget {
                 .unwrap_or(0) as isize
                 + SWITCH_STOPS
         };
-        let next = (current + delta).rem_euclid(len);
+        let next = (current + delta).clamp(0, len - 1);
+        if next == current {
+            self.scroll_context_ledger(delta as i32);
+        } else {
+            self.context_ledger.scrolling.set(false);
+            self.context_ledger.reveal_selection.set(true);
+        }
         self.context_ledger.smart_prune_selected = next == 0;
         self.context_ledger.subagents_selected = next == 1;
         if next >= SWITCH_STOPS {

@@ -10,7 +10,48 @@ use crossterm::event::MouseEvent;
 use crossterm::event::MouseEventKind;
 
 const SIZE: Size = Size::new(/*width*/ 125, /*height*/ 40);
-const CLOSE_BUTTON_LABEL: &str = " ╳ ";
+const LEDGER_TOGGLE_LABEL: &str = "[━━━●] ON";
+
+#[tokio::test]
+async fn ledger_wheel_and_focused_paging_leave_the_real_transcript_viewport_in_place() -> Result<()>
+{
+    for size in [Size::new(80, 24), Size::new(120, 40), Size::new(200, 60)] {
+        let (mut app, _events, _ops) = make_test_app_with_channels().await;
+        crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
+        attach_thread(&mut app, ThreadId::new());
+        app.transcript_cells = vec![super::tests::user_cell(&"transcript line\n".repeat(200))];
+        let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+        let mut tui = crate::tui::test_support::make_test_tui_with_size(size)?;
+        tui.set_owned_screen(true)?;
+        app.render_owned_transcript(&mut tui, size)?;
+        app.handle_tui_event(
+            &mut tui,
+            &mut server,
+            TuiEvent::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT)),
+        )
+        .await?;
+        assert!(app.chat_widget.context_ledger_has_focus());
+        for event in [
+            TuiEvent::Key(KeyEvent::from(KeyCode::PageUp)),
+            mouse(MouseEventKind::ScrollUp, size.width - 5, 4),
+        ] {
+            app.handle_tui_event(&mut tui, &mut server, event).await?;
+            assert!(
+                app.transcript_view.is_following(),
+                "ledger input scrolled the conversation"
+            );
+        }
+        app.handle_tui_event(&mut tui, &mut server, mouse(MouseEventKind::ScrollUp, 2, 4))
+            .await?;
+        assert!(
+            !app.transcript_view.is_following(),
+            "a wheel over the conversation still scrolls it"
+        );
+        server.shutdown().await?;
+        tui.set_owned_screen(false)?;
+    }
+    Ok(())
+}
 
 fn mouse(kind: MouseEventKind, column: u16, row: u16) -> TuiEvent {
     TuiEvent::Mouse(MouseEvent {
@@ -221,9 +262,9 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
     let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
     let close = (0..SIZE.height)
         .flat_map(|y| (0..SIZE.width).map(move |x| (x, y)))
-        .find(|&(x, y)| buffer[(x, y)].symbol() == "╳")
-        .expect("Ledger has a visible close button");
-    let button_left = SIZE.width - CLOSE_BUTTON_LABEL.chars().count() as u16 - 1;
+        .find(|&(x, y)| buffer[(x, y)].symbol() == "[")
+        .expect("Ledger has a visible toggle");
+    let button_left = SIZE.width - LEDGER_TOGGLE_LABEL.chars().count() as u16 - 1;
     let mut modified = mouse(MouseEventKind::Down(MouseButton::Left), close.0, close.1);
     if let TuiEvent::Mouse(event) = &mut modified {
         event.modifiers = KeyModifiers::CONTROL;
@@ -265,7 +306,7 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
         app.render_owned_transcript(&mut tui, SIZE)?;
         assert_eq!(ledger_width_on_screen(&tui), original);
     }
-    assert_eq!(close.0, button_left + 1);
+    assert_eq!(close.0, button_left);
     server.shutdown().await?;
     tui.set_owned_screen(false)?;
     Ok(())
@@ -364,7 +405,7 @@ async fn ledger_saved_width_is_loaded_at_the_next_start() -> Result<()> {
 }
 
 /// Snapshot the actual owned-screen header after opening with the keyboard and, when
-/// requested, resizing with the mouse. Close has its own row above the title.
+/// requested, resizing with the mouse. The toggle shares the title row.
 async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> Result<String> {
     let (mut app, _events, _operations) = make_test_app_with_channels().await;
     attach_thread(&mut app, ThreadId::new());
@@ -406,12 +447,17 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
     let width = app.chat_widget.context_ledger_width(terminal_width);
     let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
     let y = (0..size.height)
-        .find(|&y| (0..terminal_width).any(|x| buffer[(x, y)].symbol() == "╳"))
-        .expect("Ledger close button");
+        .find(|&y| {
+            (0..terminal_width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .contains("CONTEXT LEDGER")
+        })
+        .expect("Ledger toggle");
     let close_x = (0..terminal_width)
-        .find(|&x| buffer[(x, y)].symbol() == "╳")
-        .expect("Ledger close glyph");
-    let header = [y, y + 1]
+        .find(|&x| buffer[(x, y)].symbol() == "[")
+        .expect("Ledger toggle");
+    let header = [y]
         .into_iter()
         .map(|row| {
             (terminal_width - width..terminal_width)
@@ -443,37 +489,28 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
 }
 
 #[tokio::test]
-async fn ledger_header_gap_narrowest() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, Some(28)).await?, @"│                        ╳\n│ CONTEXT LEDGER  context …");
+async fn ledger_header_and_toggle_share_one_row_at_all_supported_widths() -> Result<()> {
+    for (width, preferred) in [
+        (80, None),
+        (120, None),
+        (140, None),
+        (150, None),
+        (200, None),
+        (120, Some(28)),
+    ] {
+        let header = ledger_header_snapshot(width, preferred).await?;
+        assert!(
+            header.contains("CONTEXT LEDGER") && header.contains(LEDGER_TOGGLE_LABEL),
+            "{header}"
+        );
+        assert_eq!(header.lines().count(), 1);
+        assert!(!header.contains(['×', '╳']));
+    }
     Ok(())
 }
 
 #[tokio::test]
-async fn ledger_header_gap_default() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(150, None).await?, @"│                                                ╳\n│ CONTEXT LEDGER  context not measured · ≈0 source…");
-    Ok(())
-}
-
-#[tokio::test]
-async fn ledger_header_gap_80_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(80, None).await?, @"│                            ╳\n│ CONTEXT LEDGER  context not …");
-    Ok(())
-}
-
-#[tokio::test]
-async fn ledger_header_gap_120_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(120, None).await?, @"│                                            ╳\n│ CONTEXT LEDGER  context not measured · ≈0 so…");
-    Ok(())
-}
-
-#[tokio::test]
-async fn ledger_header_gap_140_columns() -> Result<()> {
-    insta::assert_snapshot!(ledger_header_snapshot(140, None).await?, @"│                                                ╳\n│ CONTEXT LEDGER  context not measured · ≈0 source…");
-    Ok(())
-}
-
-#[tokio::test]
-async fn ledger_close_button_has_a_bold_padded_fill_in_both_themes() -> Result<()> {
+async fn ledger_toggle_uses_the_shared_on_style_in_both_themes() -> Result<()> {
     let (mut app, _events, _operations) = make_test_app_with_channels().await;
     crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
     attach_thread(&mut app, ThreadId::new());
@@ -490,19 +527,22 @@ async fn ledger_close_button_has_a_bold_padded_fill_in_both_themes() -> Result<(
                 let buffer =
                     crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
                 let y = (0..SIZE.height)
-                    .find(|&y| (0..SIZE.width).any(|x| buffer[(x, y)].symbol() == "╳"))
-                    .expect("Ledger close glyph");
-                let button_left = SIZE.width - CLOSE_BUTTON_LABEL.chars().count() as u16 - 1;
-                for (offset, symbol) in CLOSE_BUTTON_LABEL.chars().enumerate() {
+                    .find(|&y| {
+                        (0..SIZE.width)
+                            .map(|x| buffer[(x, y)].symbol())
+                            .collect::<String>()
+                            .contains("CONTEXT LEDGER")
+                    })
+                    .expect("Ledger toggle");
+                let button_left = SIZE.width - LEDGER_TOGGLE_LABEL.chars().count() as u16 - 1;
+                for (offset, symbol) in LEDGER_TOGGLE_LABEL.chars().enumerate() {
                     let cell = &buffer[(button_left + offset as u16, y)];
                     assert_eq!(cell.symbol(), symbol.to_string());
-                    assert!(cell.modifier.contains(ratatui::style::Modifier::BOLD));
-                    assert_eq!(cell.bg, crate::style::user_message_bg(bg));
-                    assert_ne!(cell.bg, ratatui::style::Color::Rgb(bg.0, bg.1, bg.2));
+                    assert_eq!(cell.fg, crate::style::context_style().fg.unwrap());
                 }
                 assert_eq!(buffer[(button_left - 1, y)].symbol(), " ");
                 assert_eq!(buffer[(SIZE.width - 1, y)].symbol(), " ");
-                assert_ne!(buffer[(SIZE.width - 1, y)].bg, buffer[(button_left, y)].bg);
+                assert_eq!(buffer[(SIZE.width - 1, y)].symbol(), " ");
                 Ok(())
             },
         )?;
@@ -512,7 +552,7 @@ async fn ledger_close_button_has_a_bold_padded_fill_in_both_themes() -> Result<(
 }
 
 #[tokio::test]
-async fn ledger_close_row_above_title_owned_width_matrix() -> Result<()> {
+async fn ledger_toggle_hits_only_its_header_cells_owned_width_matrix() -> Result<()> {
     for (terminal_width, preferred) in [(80, None), (120, None), (150, None), (120, Some(28))] {
         let (mut app, _events, _operations) = make_test_app_with_channels().await;
         crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
@@ -553,38 +593,25 @@ async fn ledger_close_row_above_title_owned_width_matrix() -> Result<()> {
                 .map(|x| buffer[(x, y)].symbol())
                 .collect::<String>()
         };
-        let close_y = (0..size.height)
-            .find(|&y| row(y).contains("╳"))
-            .expect("visible Close");
         let title_y = (0..size.height)
             .find(|&y| row(y).contains("CONTEXT LEDGER"))
             .expect("visible title");
-        assert_eq!(close_y, 0, "the Ledger uses the available top row");
-        assert!(
-            !row(close_y).contains("Close"),
-            "the dismissal control is only a cross"
-        );
-        assert_eq!(
-            close_y + 1,
-            title_y,
-            "Close owns the row above the title at {terminal_width} columns, preferred {preferred:?}"
-        );
-        assert!(
-            !row(close_y).contains("CONTEXT"),
-            "the Close row contains no title or body"
-        );
+        let close_y = title_y;
+        assert_eq!(title_y, 0);
+        assert!(row(title_y).contains(LEDGER_TOGGLE_LABEL));
+        assert!(!row(title_y).contains(['×', '╳']));
         let close_x = (left..terminal_width)
-            .find(|&x| buffer[(x, close_y)].symbol() == "╳")
-            .expect("Close glyph");
+            .find(|&x| buffer[(x, close_y)].symbol() == "[")
+            .expect("toggle");
         app.handle_tui_event(
             &mut tui,
             &mut server,
-            mouse(MouseEventKind::Down(MouseButton::Left), close_x, title_y),
+            mouse(MouseEventKind::Down(MouseButton::Left), left + 3, title_y),
         )
         .await?;
         assert!(
             app.chat_widget.context_ledger_width(terminal_width) > 0,
-            "the title row is not the Close hitbox"
+            "the title label does not switch the panel off"
         );
         app.handle_tui_event(
             &mut tui,

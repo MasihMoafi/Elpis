@@ -18,6 +18,17 @@ pub(crate) enum ElpisAppEvent {
     Provider(crate::chatwidget::ElpisProviderEvent),
     /// `/memory-model`: save the background model and use it from now on.
     SaveBackgroundModel(crate::elpis_background_model::BackgroundModelChoice),
+    LoadPrunerSettings {
+        request_id: uuid::Uuid,
+        show_picker: bool,
+    },
+    PrunerSettingsLoaded {
+        request_id: uuid::Uuid,
+        show_picker: bool,
+        result: Result<codex_app_server_protocol::PrunerReadResponse, String>,
+    },
+    SavePrunerModel(codex_app_server_protocol::PrunerWriteParams),
+    PrunerModelSaved(Result<codex_app_server_protocol::PrunerReadResponse, String>),
     // The dashboard (app/elpis_events.rs).
     /// The root thread's latest work graph, fetched in the background when `/agent` opened.
     WorkGraphLoaded(Result<Option<codex_app_server_protocol::WorkGraphSummary>, String>),
