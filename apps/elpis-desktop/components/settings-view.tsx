@@ -16,7 +16,7 @@ import { ShortcutSettings } from "@/components/settings/shortcut-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { VoiceSettings } from "@/components/settings/voice-settings";
 import { ArrowLeft } from "lucide-react";
-import { ModelsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { AgentsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { ViewBoundary } from "@/components/view-boundary";
@@ -28,7 +28,7 @@ import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 
 /** Existing control pages stay mounted so each control has one owner and unsaved drafts survive navigation. */
 const TABS = [
-  { id: "providers", label: "Models & accounts", group: "models", scope: "this device", Icon: ModelsIcon, words: "providers api key sign in chatgpt anthropic openrouter gemini" },
+  { id: "providers", label: "Models & accounts", group: "models", scope: "this device", Icon: AgentsIcon, words: "providers api key sign in chatgpt anthropic openrouter gemini" },
   { id: "configuration", label: "Configuration", group: "permissions", scope: "new chats", Icon: FileEditIcon, words: "approval sandbox web search output reasoning background model smart prune pruning config file" },
   { id: "personalization", label: "Personalization", group: "context", scope: "new chats", Icon: PersonIcon, words: "instructions memories memory" },
   { id: "mcp", label: "MCP servers", group: "connections", scope: "new chats", Icon: ToolIcon, words: "tools servers rag" },
