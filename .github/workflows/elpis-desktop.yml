@@ -111,6 +111,10 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.62.1
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
           echo "ELPIS_PLAYWRIGHT_PACKAGE=$RUNNER_TEMP/pw/node_modules/playwright" >> "$GITHUB_ENV"
+      - name: Install PDF text and audio tools the attachment and transcription tests use
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils ffmpeg
       - name: Run the gate (${{ matrix.tiers }})
         run: node scripts/test-gate.mjs ${{ matrix.tiers }}
       - if: ${{ !cancelled() }}
