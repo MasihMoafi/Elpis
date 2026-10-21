@@ -116,6 +116,85 @@ fn rows(buf: &ratatui::buffer::Buffer, columns: std::ops::Range<u16>) -> Vec<Str
         .collect()
 }
 
+async fn status_during_ledger_load(has_agents: bool) -> anyhow::Result<()> {
+    let root = tempdir()?;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.codex_home = AbsolutePathBuf::from_absolute_path(root.path().join("home"))?;
+    chat.config.cwd = AbsolutePathBuf::from_absolute_path(root.path().join("project"))?;
+    std::fs::create_dir_all(&chat.config.cwd)?;
+    chat.instruction_source_paths.clear();
+    if has_agents {
+        let agents = chat.config.cwd.join("AGENTS.md");
+        std::fs::write(&agents, "Follow the admitted project instructions.")?;
+        chat.instruction_source_paths
+            .push(codex_utils_path_uri::PathUri::from_abs_path(&agents));
+        crate::legacy_core::elpis_context::set_continuity_source_admitted(
+            Some(&elpis_memory_dir(chat.config_ref())),
+            chat.config.cwd.as_path(),
+            "Project AGENTS.md",
+            true,
+        )?;
+    }
+    let target = seed_ledger_from_disk(&mut chat)?;
+    let status = chat
+        .manual_memory_cache
+        .status
+        .clone()
+        .expect("loaded status");
+    let sources = chat.manual_memory_cache.sources.clone();
+    assert_eq!(
+        sources.iter().any(|source| source.admitted
+            && source
+                .path
+                .file_name()
+                .is_some_and(|name| name == "AGENTS.md")),
+        has_agents,
+    );
+    chat.bind_manual_memory_loading(target.clone(), false, None);
+    let cell = chat.status_output_cell(false, None);
+    assert!(lines_to_single_string(&cell.display_lines(1_000)).contains("admitted: <none>"));
+    assert!(chat.apply_manual_memory_status_completion(
+        &target,
+        ManualMemoryStatusCompletion::Ready { status, sources },
+    ));
+    // Inspect the same card that was opened while its sources were still loading.
+    let rendered = lines_to_single_string(&cell.display_lines(1_000));
+    let agents = rendered
+        .lines()
+        .find(|line| line.contains("Agents.md"))
+        .unwrap();
+    if has_agents {
+        assert!(agents.contains("admitted: AGENTS.md"), "{agents}");
+        assert!(!agents.contains("<none>"), "{agents}");
+    } else {
+        assert!(agents.contains("admitted: <none>"), "{agents}");
+    }
+    let copied = chat
+        .transcript
+        .last_status_copy_targets
+        .as_ref()
+        .unwrap()
+        .handle
+        .copy_text();
+    let expected = if has_agents {
+        "admitted: AGENTS.md"
+    } else {
+        "admitted: <none>"
+    };
+    assert!(copied.contains(expected), "{copied}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_opened_before_ledger_load_updates_admitted_agents() -> anyhow::Result<()> {
+    status_during_ledger_load(true).await
+}
+
+#[tokio::test]
+async fn status_without_agents_still_reports_none_after_ledger_load() -> anyhow::Result<()> {
+    status_during_ledger_load(false).await
+}
+
 fn render_full(renderable: &dyn Renderable) -> ratatui::buffer::Buffer {
     let height = renderable.desired_height(WIDTH);
     let area = Rect::new(0, 0, WIDTH, height);

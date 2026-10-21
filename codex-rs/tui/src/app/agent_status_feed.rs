@@ -7,6 +7,9 @@ use crate::history_cell::plain_lines;
 use crate::style::accent_color;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::CollabAgentTool;
+use codex_app_server_protocol::CommandAction;
+use codex_app_server_protocol::CommandExecutionStatus;
+use codex_app_server_protocol::DynamicToolCallOutputContentItem;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
@@ -145,7 +148,31 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
     let summary = match item {
         ThreadItem::AgentMessage { text, .. } | ThreadItem::Plan { text, .. } => text,
         ThreadItem::Reasoning { summary, .. } => summary.last()?,
-        ThreadItem::CommandExecution { command, .. } => {
+        ThreadItem::CommandExecution {
+            command,
+            command_actions,
+            exit_code,
+            aggregated_output,
+            status,
+            ..
+        } => {
+            let exit_code = match status {
+                CommandExecutionStatus::InProgress => None,
+                CommandExecutionStatus::Completed => Some(exit_code.unwrap_or_default()),
+                CommandExecutionStatus::Failed | CommandExecutionStatus::Declined => {
+                    Some(exit_code.filter(|code| *code != 0).unwrap_or(1))
+                }
+            };
+            if let [CommandAction::Read { name, .. }] = command_actions.as_slice()
+                && let Some(summary) = crate::exec_cell::bridged_read_attempt_summary(
+                    command,
+                    name,
+                    exit_code,
+                    aggregated_output.as_deref(),
+                )
+            {
+                return bounded_summary(&summary);
+            }
             let command = truncate_text(
                 command,
                 AGENT_STATUS_PREVIEW_GRAPHEMES.saturating_sub("$ ".len()),
@@ -159,12 +186,29 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
             return bounded_summary(&format!("MCP {server}/{tool}"));
         }
         ThreadItem::DynamicToolCall {
-            namespace, tool, ..
+            namespace,
+            tool,
+            arguments,
+            status,
+            success,
+            content_items,
+            ..
         } => {
             let tool = namespace
                 .as_ref()
                 .map(|namespace| format!("{namespace}/{tool}"))
                 .unwrap_or_else(|| tool.clone());
+            let detail = content_items.as_ref().and_then(|items| {
+                items.iter().find_map(|item| match item {
+                    DynamicToolCallOutputContentItem::InputText { text } => Some(text.as_str()),
+                    _ => None,
+                })
+            });
+            if let Some(summary) = crate::history_cell::read_attempt_summary(
+                &tool, arguments, status, *success, detail,
+            ) {
+                return bounded_summary(&summary);
+            }
             return bounded_summary(&format!("Tool {tool}"));
         }
         ThreadItem::CollabAgentToolCall { tool, .. } => {

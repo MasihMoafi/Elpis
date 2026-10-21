@@ -82,6 +82,14 @@ pub(crate) struct StatusHistoryHandle {
 }
 
 impl StatusHistoryHandle {
+    pub(crate) fn set_instruction_sources_summary(&self, summary: String) {
+        *self
+            .card
+            .agents_summary
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = summary;
+    }
+
     pub(crate) fn copy_text(&self) -> String {
         self.card
             .content_lines(u16::MAX)

@@ -31,6 +31,46 @@ fn completed_read(name: &str, output: &str) -> ExecCell {
 }
 
 #[test]
+fn bridged_read_attempt_names_the_tool_and_outcome() {
+    for (code, output, outcome) in [(0, "Rules", "ok"), (1, "not found", "failed: not found")] {
+        let mut cell = completed_read("AGENTS.md", output);
+        cell.group.calls[0].command = vec!["Read".to_string(), "AGENTS.md".to_string()];
+        cell.group.calls[0].output = Some(CommandOutput::new(code, output.to_string()));
+        let text = cell
+            .display_lines(120)
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains(&format!("Read AGENTS.md · Read · {outcome}")),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn bridged_read_attempts_keep_separate_outcomes_in_a_group() {
+    let mut cell = completed_read("first.md", "Rules");
+    cell.group.calls[0].command = vec!["Read".to_string(), "first.md".to_string()];
+    let mut failed = completed_read("AGENTS.md", "not found");
+    failed.group.calls[0].command = vec!["Read".to_string(), "AGENTS.md".to_string()];
+    failed.group.calls[0].output = Some(CommandOutput::new(1, "not found".to_string()));
+    cell.append_completed(failed).expect("adjacent reads");
+    let text = cell
+        .display_lines(120)
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("Read first.md · Read · ok"), "{text}");
+    assert!(
+        text.contains("Read AGENTS.md · Read · failed: not found"),
+        "{text}"
+    );
+}
+
+#[test]
 fn raw_grouped_history_retains_terminal_input_and_omits_reasoning() {
     let mut group = completed_read("first.txt", "first output");
     group

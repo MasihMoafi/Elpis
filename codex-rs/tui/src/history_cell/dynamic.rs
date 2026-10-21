@@ -35,6 +35,40 @@ struct DynamicToolCallData {
     duration_ms: Option<i64>,
 }
 
+/// One read-attempt label shared by retained tool rows and the Ledger's activity preview.
+pub(crate) fn read_attempt_summary(
+    name: &str,
+    arguments: &Value,
+    status: &DynamicToolCallStatus,
+    success: Option<bool>,
+    detail: Option<&str>,
+) -> Option<String> {
+    if !matches!(name.rsplit(['.', '/']).next()?, "read_file" | "Read") {
+        return None;
+    }
+    let path = arguments
+        .get("path")
+        .or_else(|| arguments.get("file_path"))?
+        .as_str()
+        .filter(|path| !path.is_empty())?;
+    // Keep the tool and outcome visible in the Ledger; full paths remain in the arguments.
+    let name_in_path = path
+        .rsplit(['/', '\\'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(path);
+    let outcome = if success == Some(false) || *status == DynamicToolCallStatus::Failed {
+        match detail.and_then(|text| text.lines().map(str::trim).find(|line| !line.is_empty())) {
+            Some(reason) => format!("failed: {}", reason.chars().take(160).collect::<String>()),
+            None => "failed (detail unavailable)".to_string(),
+        }
+    } else if *status == DynamicToolCallStatus::Completed {
+        "ok".to_string()
+    } else {
+        "running".to_string()
+    };
+    Some(format!("Read {name_in_path} · {name} · {outcome}"))
+}
+
 impl DynamicToolCallCell {
     pub(crate) fn from_item(item: ThreadItem) -> Option<Self> {
         let (call_id, data) = DynamicToolCallData::from_item(item)?;
@@ -146,13 +180,26 @@ impl DynamicToolCallData {
                 DynamicToolCallStatus::Failed => ("•".red().bold(), "Failed"),
             }
         };
-        let mut line = Line::from(vec![
-            marker,
-            " ".into(),
-            verb.bold(),
-            " ".into(),
-            self.name.clone().fg(accent_color()),
-        ]);
+        let mut line = if let Some(summary) = read_attempt_summary(
+            &self.name,
+            &self.arguments,
+            &self.status,
+            None,
+            self.output
+                .as_ref()
+                .and_then(|output| output.first())
+                .map(String::as_str),
+        ) {
+            Line::from(vec![marker, " ".into(), summary.fg(accent_color())])
+        } else {
+            Line::from(vec![
+                marker,
+                " ".into(),
+                verb.bold(),
+                " ".into(),
+                self.name.clone().fg(accent_color()),
+            ])
+        };
         if let Some(duration_ms) = self.duration_ms.filter(|duration| *duration >= 0) {
             line.push_span(format!(" · {duration_ms}ms").dim());
         }

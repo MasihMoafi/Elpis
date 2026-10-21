@@ -5,6 +5,7 @@ use std::time::Instant;
 use super::model::CommandOutput;
 use super::model::ExecCall;
 use super::model::ExecCell;
+use crate::exec_command::split_command_string;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::history_cell::ActivityDisclosure;
 use crate::history_cell::HistoryCell;
@@ -43,6 +44,46 @@ use unicode_width::UnicodeWidthStr;
 pub(crate) const TOOL_CALL_MAX_LINES: usize = 5;
 const USER_SHELL_TOOL_CALL_MAX_LINES: usize = 50;
 const MAX_INTERACTION_PREVIEW_CHARS: usize = 80;
+
+/// The Claude bridge represents native Read calls as command executions with read actions.
+pub(crate) fn bridged_read_attempt_summary(
+    command: &str,
+    name: &str,
+    exit_code: Option<i32>,
+    detail: Option<&str>,
+) -> Option<String> {
+    let command = strip_bash_lc_and_escape(&split_command_string(command));
+    let words = split_command_string(&command);
+    let tool = words.first()?;
+    let status = match exit_code {
+        None => codex_app_server_protocol::DynamicToolCallStatus::InProgress,
+        Some(0) => codex_app_server_protocol::DynamicToolCallStatus::Completed,
+        Some(_) => codex_app_server_protocol::DynamicToolCallStatus::Failed,
+    };
+    crate::history_cell::read_attempt_summary(
+        tool,
+        &serde_json::json!({"path": name}),
+        &status,
+        None,
+        detail,
+    )
+}
+
+fn bridged_read_call_summary(call: &ExecCall) -> Option<String> {
+    let [ParsedCommand::Read { name, .. }] = call.parsed.as_slice() else {
+        return None;
+    };
+    let detail = call
+        .output
+        .as_ref()
+        .and_then(|output| output.lines().find(|line| !line.trim().is_empty()));
+    bridged_read_attempt_summary(
+        &strip_bash_lc_and_escape(&call.command),
+        name,
+        call.output.as_ref().map(|output| output.exit_code),
+        detail.as_deref(),
+    )
+}
 
 pub(crate) struct OutputLinesParams {
     pub(crate) line_limit: usize,
@@ -339,15 +380,18 @@ impl ExecCell {
         };
         while let Some((call, remaining)) = calls.split_first() {
             let exit_code = nonzero_exit(call);
+            let read_attempt = bridged_read_call_summary(call);
+            let named_read_attempt = read_attempt.is_some();
             let reads_only = call
                 .parsed
                 .iter()
                 .all(|parsed| matches!(parsed, ParsedCommand::Read { .. }));
-            let group_len = if reads_only && exit_code.is_none() {
+            let group_len = if reads_only && exit_code.is_none() && !named_read_attempt {
                 1 + remaining
                     .iter()
                     .take_while(|next| {
                         nonzero_exit(next).is_none()
+                            && bridged_read_call_summary(next).is_none()
                             && next
                                 .parsed
                                 .iter()
@@ -360,7 +404,18 @@ impl ExecCell {
             let (group, remaining) = calls.split_at(group_len);
             calls = remaining;
 
-            let call_lines: Vec<(&str, Vec<Span<'static>>)> = if reads_only {
+            let call_lines: Vec<(&str, Vec<Span<'static>>)> = if let Some(summary) = read_attempt {
+                vec![(
+                    "Read",
+                    vec![
+                        summary
+                            .strip_prefix("Read ")
+                            .unwrap_or(&summary)
+                            .to_string()
+                            .into(),
+                    ],
+                )]
+            } else if reads_only {
                 let names = group
                     .iter()
                     .flat_map(|call| &call.parsed)
@@ -405,6 +460,7 @@ impl ExecCell {
             for (index, (title, mut line)) in call_lines.into_iter().enumerate() {
                 if let Some(code) = exit_code
                     && index + 1 == line_count
+                    && !named_read_attempt
                 {
                     // A compound command has one exit code, not an outcome for each parsed action.
                     let status = if call.parsed.len() > 1 {

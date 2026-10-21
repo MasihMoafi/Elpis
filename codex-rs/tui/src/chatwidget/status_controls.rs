@@ -227,6 +227,14 @@ impl ChatWidget {
             .collect()
     }
 
+    pub(super) fn refresh_status_instruction_sources(&self) {
+        if let Some(status) = &self.transcript.last_status_copy_targets {
+            status
+                .handle
+                .set_instruction_sources_summary(self.status_instruction_sources_summary());
+        }
+    }
+
     fn status_instruction_sources_summary(&self) -> String {
         // Discovery retains withdrawn files. Report committed Ledger admission, without
         // presenting a staged next-turn toggle or a discovered path as loaded instructions.

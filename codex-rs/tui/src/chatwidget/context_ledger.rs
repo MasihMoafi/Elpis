@@ -1768,6 +1768,8 @@ impl ChatWidget {
         if let Some(delta) = memory_projection {
             self.adjust_context_projection(delta, self.turn_lifecycle.last_turn_id.clone());
         }
+        // A status card can open before this asynchronous source load completes.
+        self.refresh_status_instruction_sources();
         self.request_redraw();
         true
     }

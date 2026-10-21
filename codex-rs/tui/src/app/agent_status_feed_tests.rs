@@ -5,6 +5,45 @@ use codex_app_server_protocol::ItemCompletedNotification;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 #[test]
+fn ledger_read_attempt_evidence_names_tool_and_outcome() {
+    for (status, success, output, outcome, exit_code) in [
+        ("completed", true, "Rules", "ok", Some(0)),
+        ("failed", false, "not found", "failed: not found", Some(1)),
+        ("failed", false, "not found", "failed: not found", None),
+    ] {
+        let dynamic = serde_json::from_value(serde_json::json!({
+            "type": "dynamicToolCall", "id": "read-agents", "namespace": null,
+            "tool": "read_file", "arguments": {"path": "AGENTS.md"},
+            "status": status, "success": success,
+            "contentItems": [{"type": "inputText", "text": output}], "durationMs": null,
+        }))
+        .expect("read item");
+        let bridged = serde_json::from_value(serde_json::json!({
+            "type": "commandExecution", "id": "read-agents", "command": "Read AGENTS.md",
+            "cwd": "/workspace", "source": "agent", "status": status,
+            "commandActions": [{"type": "read", "command": "Read AGENTS.md", "name": "AGENTS.md", "path": "/workspace/AGENTS.md"}],
+            "aggregatedOutput": output, "exitCode": exit_code,
+        })).expect("bridged Read item");
+        for (item, tool) in [(dynamic, "read_file"), (bridged, "Read")] {
+            let mut store = ThreadEventStore::new(8);
+            store.push_notification(ServerNotification::ItemCompleted(
+                ItemCompletedNotification {
+                    item,
+                    thread_id: "child".to_string(),
+                    turn_id: "turn".to_string(),
+                    completed_at_ms: 1,
+                },
+            ));
+            let preview = AgentStatusThreadPreview::from_store("child".to_string(), &store);
+            assert_eq!(
+                preview.latest_activity(),
+                Some(format!("Read AGENTS.md · {tool} · {outcome}"))
+            );
+        }
+    }
+}
+
+#[test]
 fn agent_status_uses_bounded_buffered_activity() {
     let mut store = ThreadEventStore::new(/*capacity*/ 8);
     store.push_notification(ServerNotification::ItemCompleted(

@@ -127,6 +127,7 @@ pub(crate) use activity_preview::ActivityDisclosure;
 pub(crate) use approvals::*;
 pub(crate) use base::*;
 pub(crate) use dynamic::DynamicToolCallCell;
+pub(crate) use dynamic::read_attempt_summary;
 pub(crate) use exec::*;
 pub(crate) use hook_cell::HookCell;
 pub(crate) use hook_cell::new_active_hook_cell;

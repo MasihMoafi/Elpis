@@ -26,6 +26,82 @@ fn item(status: DynamicToolCallStatus, output: Option<&str>) -> ThreadItem {
 }
 
 #[test]
+fn read_attempt_evidence_names_the_tool_and_outcome() {
+    for (status, success, output, outcome) in [
+        (DynamicToolCallStatus::InProgress, None, None, "running"),
+        (
+            DynamicToolCallStatus::Completed,
+            Some(true),
+            Some("Rules"),
+            "ok",
+        ),
+        (
+            DynamicToolCallStatus::Failed,
+            Some(false),
+            Some("not found"),
+            "failed: not found",
+        ),
+        (
+            DynamicToolCallStatus::Completed,
+            Some(false),
+            Some("not found"),
+            "failed: not found",
+        ),
+        (
+            DynamicToolCallStatus::Failed,
+            Some(false),
+            None,
+            "failed (detail unavailable)",
+        ),
+    ] {
+        let call = ThreadItem::DynamicToolCall {
+            id: "read-agents".to_string(),
+            namespace: None,
+            tool: "read_file".to_string(),
+            arguments: json!({"path": "/workspace/AGENTS.md"}),
+            status,
+            content_items: output.map(|text| {
+                vec![DynamicToolCallOutputContentItem::InputText {
+                    text: text.to_string(),
+                }]
+            }),
+            success,
+            duration_ms: None,
+        };
+        let cells = thread_items_to_transcript_cells(
+            None,
+            &test_path_buf("/workspace").abs(),
+            [call],
+            RawReasoningVisibility::Hidden,
+            None,
+        );
+        let expected = format!("Read AGENTS.md · read_file · {outcome}");
+        for lines in [cells[0].display_lines(120), cells[0].raw_lines()] {
+            let text = lines
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains(&expected), "{text}");
+        }
+    }
+}
+
+#[test]
+fn non_read_tool_evidence_does_not_claim_a_file_read() {
+    let cell = DynamicToolCallCell::from_item(item(DynamicToolCallStatus::Completed, Some("done")))
+        .expect("dynamic tool");
+    let text = cell
+        .display_lines(120)
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("Called example.inspect"), "{text}");
+    assert!(!text.contains("Read src/main.rs"), "{text}");
+}
+
+#[test]
 fn dynamic_status_and_output_match_persisted_presentations() {
     let cwd = test_path_buf("/workspace").abs();
     let mut snapshots = Vec::new();
