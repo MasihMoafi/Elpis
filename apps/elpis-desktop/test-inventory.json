@@ -70,6 +70,7 @@
     "bridge/improve.test.mjs",
     "bridge/love-agents.test.mjs",
     "bridge/love-interview.test.mjs",
+    "bridge/love-interview-visibility.test.mjs",
     "bridge/love-spot-talk.test.mjs",
     "bridge/love-spot.test.mjs",
     "bridge/provider-models.test.mjs",
