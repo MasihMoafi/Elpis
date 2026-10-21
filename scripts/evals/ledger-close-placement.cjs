@@ -10,8 +10,11 @@ const path = require('node:path');
 const { Provider } = require('../lib/mock-provider.js');
 
 const repo = path.resolve(__dirname, '../..');
-const closeLabels = [' ╳ ', ' ✕ Close '];
-const ledgerOpen = text => text.includes('CONTEXT LEDGER') && closeLabels.some(label => text.includes(label.trim()));
+const onLabel = '[━━━●] ON';
+const offLabel = '[●━━━] OFF';
+// Retain the old controls only to demonstrate the baseline failure on an older binary.
+const legacyCloseLabels = [' ╳ ', ' ✕ Close '];
+const ledgerOpen = text => text.includes('CONTEXT LEDGER');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 let interrupted;
@@ -139,37 +142,75 @@ async function check({ binary, output, phase }, width, light) {
     await pause(200);
     const text = save('open');
     const lines = text.split('\n');
-    const closeLabel = closeLabels.find(label => lines.some(line => line.includes(label.trim())));
-    const closeY = lines.findIndex(line => line.includes(closeLabel.trim()));
     const titleY = lines.findIndex(line => line.includes('CONTEXT LEDGER'));
-    const left = width - [...closeLabel].length - 1;
-    result.geometry = { closeY, titleY, left, buttonWidth: [...closeLabel].length, glyphX: lines[closeY].indexOf(closeLabel.trim()) };
-    result.layoutPass = closeLabel === ' ╳ ' && result.geometry.buttonWidth === 3 && closeY === 0 && titleY === 1 && !lines[closeY].includes('CONTEXT');
-    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: Close ${JSON.stringify(closeLabel)} on row ${closeY}; title row ${titleY}; expected compact 3-cell Close row 0 and title row 1`;
+    const controlLabel = lines[titleY].includes(onLabel) ? onLabel
+      : legacyCloseLabels.find(label => lines.some(line => line.includes(label)));
+    assert(controlLabel, 'Ledger title must include its ON toggle');
+    const controlY = lines.findIndex(line => line.includes(controlLabel));
+    const left = lines[controlY].indexOf(controlLabel);
+    result.geometry = { controlY, titleY, left, buttonWidth: [...controlLabel].length };
+    result.layoutPass = controlLabel === onLabel && controlY === 0 && titleY === 0 && !/[╳×✕]/u.test(text);
+    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; expected title and ON toggle together on row 0, with no Close row`;
     const ledgerLeft = lines[titleY].indexOf('│');
     result.visibleFixtureSourceRows = lines.map(line => line.slice(Math.max(0, ledgerLeft))).filter(line => line.includes('AGENTS.md'));
     result.sourceFilenameWrappingChecked = false;
-    must(lines[closeY].slice(left) === closeLabel + ' ', 'Painted Close label or right margin differs');
+    must(lines[controlY].slice(left) === controlLabel + ' ', 'Painted toggle label or right margin differs');
     for (const x of [left - 1, width - 1]) {
-      click(x, closeY); await pause(120);
+      click(x, controlY); await pause(120);
       must(ledgerOpen(capture(false)), `Outside cell x=${x} closed Ledger`);
     }
     result.outsideMouseCells = 2;
-    if (closeY !== titleY) {
-      click(left + 1, titleY); await pause(120);
-      result.titleRowMiss = ledgerOpen(capture(false));
-      must(result.titleRowMiss, 'Title row acquired the Close hitbox');
-    }
+    click(ledgerLeft + 2, titleY); await pause(120);
+    result.titleLabelMiss = ledgerOpen(capture(false));
+    must(result.titleLabelMiss, 'The title label acquired the toggle hitbox');
     result.positiveMouseCells = 0;
     for (let x = left; x < width - 1; x++) {
-      click(x, closeY); await until(text => !ledgerOpen(text));
+      click(x, controlY); await until(text => !ledgerOpen(text));
       result.positiveMouseCells++;
       key('Tab'); await until(ledgerOpen);
     }
-    key('Escape'); await until(text => !ledgerOpen(text));
-    key('Tab'); await until(ledgerOpen);
-    key('Tab'); await until(text => !ledgerOpen(text));
-    result.keyboard = ['Escape', 'Tab'];
+    if (controlLabel === onLabel) {
+      key('Tab'); await until(text => !ledgerOpen(text));
+      literal('placement probe');
+      await until(text => text.includes('› placement probe'));
+      result.placements = [];
+      for (const height of [10, 11, 12, 13, 14, 8, 7, 6, 40]) {
+        tm('resize-window', '-t', 'check', '-x', String(width), '-y', String(height));
+        await pause(200);
+        const closed = save(`closed-${height}`);
+        const rows = closed.trimEnd().split('\n');
+        const composerY = rows.findIndex(row => row.includes('› placement probe'));
+        assert(composerY >= 0, `${height} rows: draft disappeared`);
+        // One padding row and the composer's gap precede the single-line input.
+        const transcriptHeight = Math.max(0, composerY - 2);
+        const tabRows = rows.flatMap((row, y) => /╱|╲/u.test(row) || row.includes(offLabel) ? [y] : []);
+        const expected = transcriptHeight >= 3 ? 3 : 0;
+        const centred = expected === 0 || tabRows[0] === Math.floor((transcriptHeight - 3) / 2);
+        const pass = tabRows.length === expected && centred && tabRows.every(y => y < transcriptHeight);
+        result.placements.push({ height, transcriptHeight, tabRows, pass });
+        must(pass, `${width}x${height}: tab must be centred in ${transcriptHeight} transcript rows, above the gap and bottom pane`);
+      }
+      result.placementPass = result.placements.every(item => item.pass);
+      const closed = capture(false).split('\n');
+      const tabY = closed.findIndex(row => row.includes(offLabel));
+      assert(tabY >= 0, 'Tall terminal must retain the OFF tab');
+      const tabX = closed[tabY].indexOf(offLabel) - 2;
+      click(tabX - 1, tabY); await pause(120);
+      must(!ledgerOpen(capture(false)), 'A click outside the tab reopened Ledger');
+      click(tabX + 2, tabY); await until(ledgerOpen);
+      result.tabClickReopens = true;
+      save('reopened');
+      key('M-c'); key('Escape'); await until(text => !ledgerOpen(text));
+      key('Tab'); await until(ledgerOpen);
+      key('Tab'); await until(text => !ledgerOpen(text));
+      result.keyboard = ['Alt+C', 'Escape', 'Tab'];
+    } else {
+      result.placementPass = false;
+      key('Escape'); await until(text => !ledgerOpen(text));
+      key('Tab'); await until(ledgerOpen);
+      key('Tab'); await until(text => !ledgerOpen(text));
+      result.keyboard = ['Escape', 'Tab'];
+    }
   } catch (error) {
     result.errors.push(error.stack);
     try { save('failure'); } catch {}
@@ -211,7 +252,9 @@ async function check({ binary, output, phase }, width, light) {
     layoutPasses: checks.filter(check => check.layoutPass === true).length,
     layoutFailures: checks.filter(check => check.layoutPass === false).length,
   };
-  result.pass = !interrupted && result.binaryUnchanged && result.allPositiveControlsPass && (config.phase === 'baseline' ? result.layoutFailures === 4 : result.layoutPasses === 4);
+  result.pass = !interrupted && result.binaryUnchanged && result.allPositiveControlsPass && (config.phase === 'baseline'
+    ? checks.every(check => !check.layoutPass || !check.placementPass)
+    : result.layoutPasses === 4 && checks.every(check => check.placementPass && check.tabClickReopens));
   fs.writeFileSync(path.join(config.output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
   if (!result.pass) process.exitCode = 1;
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

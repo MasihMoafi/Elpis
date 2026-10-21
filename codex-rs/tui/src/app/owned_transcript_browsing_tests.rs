@@ -151,12 +151,15 @@ async fn browsing_footer_adapts_to_width() -> Result<()> {
     tui.set_owned_screen(/*owned*/ true)?;
     app.handle_backtrack_esc_key(&mut tui);
     app.handle_backtrack_esc_key(&mut tui);
-    for width in [100, 80, 60, 40, 20, 8] {
+    for width in [100, 80, 60, 40, 32, 20, 8] {
         let footer = app
             .prompt_navigation_footer(width)
             .expect("browsing footer");
         assert_eq!(footer.text.lines.len(), 1);
         assert!(footer.text.width() <= usize::from(width));
+        if width >= 32 {
+            assert!(footer.text.lines[0].to_string().contains("↵ rewind"));
+        }
     }
     app.transcript_view.history = TranscriptHistoryState::Failed;
     app.render_owned_transcript(&mut tui, Size::new(/*width*/ 80, /*height*/ 12))?;

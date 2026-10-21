@@ -4,9 +4,9 @@ assertion_line: 162
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapshots.join(\"\\n\\n\"))"
 ---
 80 columns, 12 rows
-transcript row 37                                                              │
-transcript row 38                                                              │
-transcript row 39                                                              ┃
+transcript row 37                                                   ╱──────────│
+transcript row 38                                                  │ [●━━━] OFF│
+transcript row 39                                                   ╲──────────┃
 
 • Elpising (0s • esc to interrupt)
 

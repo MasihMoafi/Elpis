@@ -254,15 +254,18 @@ impl App {
                 );
                 footer_height_changed = false;
             }
-            bottom.render(bottom_area, frame.buffer);
-            chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
-            chat_widget.render_context_ledger_tab(
-                Rect::new(0, 0, screen_size.width, screen_size.height),
-                frame.buffer,
-            );
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
                 tip.render(area, frame.buffer);
             }
+            chat_widget.render_context_ledger_tab(
+                // The scrollbar stays visible and keeps its own mouse target. Paint before
+                // the bottom pane so a slash popup overlays the tab along with history.
+                Rect::new(0, 0, body_width, transcript_bottom),
+                screen_size.width,
+                frame.buffer,
+            );
+            bottom.render(bottom_area, frame.buffer);
+            chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
             // Elpis: the row above the composer stops at the Context Ledger, which starts there.
             let gap_width = transcript_width;
             let follow_area = if let Some(gap) = composer_gap.as_ref() {

@@ -25,8 +25,8 @@ startup:
                                                 │
                                                 │
 attached:
-                                                │ ● DURABLE MEMORY  ≈0 tokens
-› draft during startup                          │ admitted
-                                                │   [ ] MEMORY.md
-  GPT-6.1-Sol default · /tmp/project            │       ≈0 est. tokens EXCLUDED
+                                                │
+› draft during startup                          │
+                                                │
+  GPT-6.1-Sol default · /tmp/project            │
                                                 │

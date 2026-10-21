@@ -1639,17 +1639,30 @@ impl ChatWidget {
         }
     }
 
-    /// A closed panel leaves a small cut-corner tab at the right edge of the owned screen.
-    pub(crate) fn render_context_ledger_tab(&self, screen: Rect, buf: &mut Buffer) {
+    /// A closed panel leaves a small cut-corner tab inside the transcript body. Its caller
+    /// excludes the composer gap, bottom pane and scrollbar from this rectangle, and paints
+    /// composer popups over it. Popups keep mouse ownership in `handle_context_ledger_mouse`.
+    pub(crate) fn render_context_ledger_tab(
+        &self,
+        transcript: Rect,
+        terminal_width: u16,
+        buf: &mut Buffer,
+    ) {
         self.context_ledger.tab.set(None);
         if self.context_ledger.visible
-            || !self.no_modal_or_popup_active()
-            || screen.width < LEDGER_MIN_TERMINAL_WIDTH
-            || screen.height < 3
+            || self.has_active_view()
+            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
+            || transcript.width < 12
+            || transcript.height < 3
         {
             return;
         }
-        let tab = Rect::new(screen.right() - 12, screen.y + screen.height / 2 - 1, 12, 3);
+        let tab = Rect::new(
+            transcript.right() - 12,
+            transcript.y + (transcript.height - 3) / 2,
+            12,
+            3,
+        );
         for (row, text) in [" ╱──────────", "│           ", " ╲──────────"]
             .into_iter()
             .enumerate()

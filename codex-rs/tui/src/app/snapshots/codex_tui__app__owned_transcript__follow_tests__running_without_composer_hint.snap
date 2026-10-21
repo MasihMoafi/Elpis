@@ -3,9 +3,9 @@ source: tui/src/app/owned_transcript_follow_tests.rs
 assertion_line: 53
 expression: "crate::chatwidget::tests::helpers::normalize_snapshot_paths(super::tests::buffer_text(buffer))"
 ---
-transcript row 36                                                              │
-transcript row 37                                                              │
-transcript row 38                                                              │
+transcript row 36                                                   ╱──────────│
+transcript row 37                                                  │ [●━━━] OFF│
+transcript row 38                                                   ╲──────────│
 transcript row 39                                                              ┃
 
 • Elpising (0s • esc to interrupt)

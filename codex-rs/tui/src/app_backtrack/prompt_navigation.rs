@@ -69,6 +69,10 @@ impl App {
                 ),
                 (
                     "Browsing",
+                    vec![("↵".to_string(), rewind), ("esc".to_string(), "back")],
+                ),
+                (
+                    "Browsing",
                     vec![("c".to_string(), "copy"), ("esc".to_string(), "back")],
                 ),
                 ("Browsing", vec![("esc".to_string(), "back")]),

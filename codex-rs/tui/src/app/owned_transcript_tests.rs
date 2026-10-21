@@ -325,6 +325,85 @@ async fn recap_spacing_belongs_to_the_transcript_tail() -> Result<()> {
 }
 
 #[tokio::test]
+async fn closed_ledger_tab_stays_above_the_bottom_pane_and_reopens_when_clicked() -> Result<()> {
+    let mut app = crate::app::test_support::make_test_app().await;
+    attach_thread(&mut app, ThreadId::new());
+    app.local_settings.tui.animations = false;
+    app.chat_widget
+        .apply_external_edit("draft\nsecond line".into());
+    app.chat_widget
+        .on_rate_limit_snapshot(Some(serde_json::from_value(
+            serde_json::json!({"primary": {"usedPercent": 92, "windowDurationMins": 300}}),
+        )?));
+    app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(
+        (1..=80)
+            .map(|row| format!("History {row}").into())
+            .collect(),
+    ))];
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    // Resize from tall to short as well: a hidden tab must lose its old mouse target.
+    for height in [40, 14, 13, 12, 11, 10, 8, 7, 6] {
+        let size = Size::new(/*width*/ 80, height);
+        tui.terminal.resize(size)?;
+        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
+        app.render_owned_transcript(&mut tui, size)?;
+        let bottom = app.render_owned_transcript(&mut tui, size)?;
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let text = buffer_text(buffer);
+        let tab_rows = text
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| {
+                line.contains('╱') || line.contains("[●━━━] OFF") || line.contains('╲')
+            })
+            .map(|(row, _)| row as u16)
+            .collect::<Vec<_>>();
+        assert!(
+            tab_rows.iter().all(|row| *row < bottom.y),
+            "80x{height}: {text}"
+        );
+        if bottom.y < 3 {
+            assert!(tab_rows.is_empty(), "80x{height}: {text}");
+        } else {
+            assert_eq!(tab_rows.len(), 3, "80x{height}: {text}");
+            assert_eq!(tab_rows[0], (bottom.y - 3) / 2);
+            // The overflowing transcript keeps its last column for the scrollbar.
+            assert!(app.transcript_view.reserves_scrollbar());
+            assert!(tab_rows.iter().all(|row| {
+                let symbol = buffer[(79, *row)].symbol();
+                symbol == "│" || symbol == "┃"
+            }));
+            assert!(!app.chat_widget.handle_context_ledger_mouse(MouseEvent {
+                kind: Down(Left),
+                column: 79,
+                row: tab_rows[1],
+                modifiers: KeyModifiers::NONE,
+            }));
+            assert!(app.chat_widget.handle_context_ledger_mouse(MouseEvent {
+                kind: Down(Left),
+                column: 77,
+                row: tab_rows[1],
+                modifiers: KeyModifiers::NONE,
+            }));
+            app.render_owned_transcript(&mut tui, size)?;
+            assert!(
+                buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
+                    &tui.terminal,
+                ))
+                .contains("CONTEXT LEDGER")
+            );
+        }
+        assert_eq!(
+            app.chat_widget.composer_text_with_pending(),
+            "draft\nsecond line"
+        );
+    }
+    tui.set_owned_screen(/*owned*/ false)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn owned_transcript_reserves_a_row_above_the_composer() -> Result<()> {
     let mut app = crate::app::test_support::make_test_app().await;
     attach_thread(&mut app, ThreadId::new());

@@ -27,7 +27,7 @@ fn ledger_screen(chat: &ChatWidget, width: u16, height: u16) -> Buffer {
         Rect::new(width - ledger_width, 0, ledger_width, height),
         &mut buffer,
     );
-    chat.render_context_ledger_tab(screen, &mut buffer);
+    chat.render_context_ledger_tab(screen, width, &mut buffer);
     buffer
 }
 
@@ -75,6 +75,36 @@ async fn a105_header_toggle_closes_and_half_hexagon_tab_reopens_at_each_size() {
         assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 1, 0)));
         assert!(chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 2, height / 2)));
         assert!(rows(&ledger_screen(&chat, width, height), 0..width)[title].contains("[━━━●] ON"));
+    }
+}
+
+#[tokio::test]
+async fn a105_tab_clears_its_hitbox_when_the_transcript_has_fewer_than_three_rows() {
+    use crossterm::event::MouseButton::Left;
+    use crossterm::event::MouseEventKind::Down;
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.close_context_ledger();
+    let screen = Rect::new(0, 0, 80, 14);
+    let mut buffer = Buffer::empty(screen);
+    for height in [8, 2, 1, 0] {
+        let transcript = Rect::new(0, 0, 79, height);
+        buffer.content.iter_mut().for_each(|cell| {
+            cell.set_symbol(".");
+        });
+        chat.render_context_ledger_tab(transcript, 80, &mut buffer);
+        let text = rows(&buffer, 0..80);
+        assert!(
+            text.iter()
+                .skip(usize::from(height))
+                .all(|row| row == &".".repeat(80))
+        );
+        assert!(text.iter().all(|row| row.ends_with('.')));
+        if height >= 3 {
+            assert!(text.join("\n").contains("[●━━━] OFF"));
+        } else {
+            assert!(!text.join("\n").contains("[●━━━] OFF"));
+            assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), 77, 3)));
+        }
     }
 }
 
@@ -180,12 +210,15 @@ async fn a107_details_follow_the_width_and_wrapped_height_budget() -> anyhow::Re
                 && text.contains("CONTEXT WINDOW"),
             "{text}"
         );
-        assert_eq!(text.contains("Estimated segments"), width == 200, "{text}");
-        assert_eq!(text.contains("User messages"), width == 200, "{text}");
-        assert_eq!(text.contains("Last attempt"), width == 200, "{text}");
+        // At 120 columns the conversation retains 72 columns and the wrapped details fit
+        // in 40 rows. Only the 80-column fixture needs the compact Ledger.
+        let details_fit = width >= 120;
+        assert_eq!(text.contains("Estimated segments"), details_fit, "{text}");
+        assert_eq!(text.contains("User messages"), details_fit, "{text}");
+        assert_eq!(text.contains("Last attempt"), details_fit, "{text}");
         assert_eq!(
             text.contains("Read attempt evidence"),
-            width == 200,
+            details_fit,
             "{text}"
         );
     }

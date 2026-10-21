@@ -5,9 +5,9 @@ expression: "snapshots.join(\"\\n\\n\")"
 ---
 Latest
 Transcript row 35
-Transcript row 36
-Transcript row 37
-Transcript row 38
+Transcript row 36                                                    ╱──────────
+Transcript row 37                                                   │ [●━━━] OFF
+Transcript row 38                                                    ╲──────────
 Transcript row 39
 Transcript row 40
 
@@ -19,9 +19,9 @@ Transcript row 40
 
 Reading
 Transcript row 30                                                              │
-Transcript row 31                                                              │
-Transcript row 32                                                              │
-Transcript row 33                                                              │
+Transcript row 31                                                   ╱──────────│
+Transcript row 32                                                  │ [●━━━] OFF│
+Transcript row 33                                                   ╲──────────│
 Transcript row 34                                                              ┃
 Transcript row 35                                                              ┃
                              ↓ Back to bottom · esc
@@ -54,9 +54,9 @@ Tiny terminal
 
 Detailed
 • Viewed image assets/detail-image.png                                         ┃
-                                                                               ┃
-                                                                               ┃
-                                                                               ┃
+                                                                    ╱──────────┃
+                                                                   │ [●━━━] OFF┃
+                                                                    ╲──────────┃
                                                                                ┃
                                                                                ┃
 

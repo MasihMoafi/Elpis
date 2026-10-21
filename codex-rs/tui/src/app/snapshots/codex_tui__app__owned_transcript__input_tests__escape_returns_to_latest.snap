@@ -5,9 +5,9 @@ expression: "format!(\"before\\n{before}\\n\\nafter\\n{}\", screen(&tui))"
 ---
 before
 row 14                                                                         │
-row 15                                                                         │
-row 16                                                                         ┃
-row 17                                                                         ┃
+row 15                                                              ╱──────────│
+row 16                                                             │ [●━━━] OFF┃
+row 17                                                              ╲──────────┃
 row 18                                                                         │
 row 19                                                                         │
                      New activity · ↓ Back to bottom · esc
@@ -19,9 +19,9 @@ row 19                                                                         �
 
 after
 row 26                                                                         │
-row 27                                                                         │
-row 28                                                                         │
-row 29                                                                         │
+row 27                                                              ╱──────────│
+row 28                                                             │ [●━━━] OFF│
+row 29                                                              ╲──────────│
                                                                                ┃
 new output                                                                     ┃
 
