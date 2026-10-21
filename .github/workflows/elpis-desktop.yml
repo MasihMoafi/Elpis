@@ -70,3 +70,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+      - name: Preserve a failed renderer for diagnosis only
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: renderer-unverified
+          path: apps/elpis-desktop/out
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

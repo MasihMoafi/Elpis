@@ -199,8 +199,12 @@ export async function runGate({ root = appRoot, evidence, baseline = baselineCom
   try {
     const home = path.join(retained.scratch, 'home');
     await fs.mkdir(home);
-    const files = [];
-    for (const file of plan.files) files.push(await runUiFile(file, file.source === 'baseline' ? retained.root : root, evidence, home, env));
+    const files = [], failures = [];
+    for (const file of plan.files) {
+      try { files.push(await runUiFile(file, file.source === 'baseline' ? retained.root : root, evidence, home, env)); }
+      catch (error) { failures.push(error); console.error(`FAIL ${file.source}: ${file.name}`); }
+    }
+    if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('\n\n'));
     checkResults(plan, files);
     assert.equal(await rendererHash(out), before, 'UI tests changed the renderer bytes');
     assert.equal(git(root, ['rev-parse', 'HEAD']).trim(), commit, 'Source commit changed during UI verification');

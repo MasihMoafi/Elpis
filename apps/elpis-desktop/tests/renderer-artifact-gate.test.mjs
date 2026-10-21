@@ -114,6 +114,18 @@ test('a candidate cannot drop the saved-workspace test and reinstate a reader th
   await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
 });
 
+test('a failed regression still records later checks without accepting the renderer', async t => {
+  const f = await fixture(t, "const{test}=require('node:test');test('first regression',()=>{throw Error('first regression failed')});");
+  await fs.writeFile(path.join(f.root, 'tests/later.test.cjs'), "const{test}=require('node:test');test('later regression still runs',()=>{});");
+  f.inventory.ui.push('tests/later.test.cjs');
+  await fs.writeFile(path.join(f.root, 'test-inventory.json'), JSON.stringify(f.inventory));
+  await f.commitSource();
+  await assert.rejects(runGate(f), /first regression failed/);
+  const later = await fs.readFile(path.join(f.evidence, 'candidate-tests-later.test.cjs.tap'), 'utf8');
+  assert.match(later, /ok 1 - later regression still runs/);
+  await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
+});
+
 test('private screenshot peers retain discoverable Unix socket names', async t => {
   const f = await fixture(t, `const{test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const os=require('node:os');const path=require('node:path');const net=require('node:net');const{randomUUID}=require('node:crypto');
 test('screenshot peer discovery and connection',async()=>{const directory=path.join(os.tmpdir(),'elpis-shots-'+process.getuid()+'-0123456789abcdef');await fs.mkdir(directory,{recursive:true});const socket=path.join(directory,randomUUID()+'.sock');const server=net.createServer(client=>client.end('shared'));
