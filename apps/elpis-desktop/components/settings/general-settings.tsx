@@ -57,7 +57,9 @@ function Speed() {
 /** The name the sidebar shows; it saves when the field loses focus. */
 function Profile({ name, save }: { name: string; save: (patch: Partial<Preferences>) => void }) {
   const [draft, setDraft] = useState(name);
-  return <ProfileFields name={draft} onName={setDraft} onNameCommit={() => { if (draft.trim() !== name) save({ profileName: draft.trim() }); }} />;
+  return <SettingRow title="Name" description="Shown at the bottom of the sidebar.">
+    <ProfileFields name={draft} onName={setDraft} onNameCommit={() => { if (draft.trim() !== name) save({ profileName: draft.trim() }); }} />
+  </SettingRow>;
 }
 
 export function GeneralSettings() {
@@ -67,7 +69,7 @@ export function GeneralSettings() {
   return <div aria-label="General">
     <SettingsHeader title="General" description="Saved on this device, except Speed, which is saved in the Elpis config." />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
-    <SettingsGroup title="Profile" description="Shown at the bottom of the sidebar.">
+    <SettingsGroup title="Profile">
       <Profile name={preferences.profileName} save={save} />
     </SettingsGroup>
     <SettingsGroup>
