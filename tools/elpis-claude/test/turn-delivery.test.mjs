@@ -335,6 +335,27 @@ test("A37: a Claude chat gets the app's browser, which knows the chat", { timeou
   assert.deepEqual(created._meta.claudeCode.options.allowedTools, ["mcp__elpis_browser"]);
 });
 
+test("A143: rewinding a Claude chat forks its Claude session after the last kept reply", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const turns = [];
+  for (const text of ["first", "second"]) {
+    const { turn } = await f.client.send(f.id, { text });
+    await until(() => f.ended(turn.id), "turn completes");
+    turns.push(turn);
+  }
+  const { session, turns: saved } = f.store()[f.id];
+  await f.client.revert(f.id, { beforeTurnId: turns[1].id });
+  const fork = f.agent().find(e => e.method === "session/fork");
+  assert.ok(saved[0].claudeMessageId, "the first turn records Claude's reply id");
+  assert.deepEqual([fork.params.sessionId, fork.params._meta.jetbrains.air.fork.messageId], [session, saved[0].claudeMessageId]);
+  assert.equal(f.store()[f.id].session, `${session}-fork`);
+  const { turn } = await f.client.send(f.id, { text: "third" });
+  await until(() => f.ended(turn.id), "the next turn completes");
+  const trace = f.agent(), after = trace.slice(trace.findIndex(e => e.method === "session/fork"));
+  assert.ok(after.some(e => e.method === "session/load" && e.params.sessionId === `${session}-fork`), "the next turn continues the fork");
+  assert.ok(!after.some(e => e.method === "session/new" && e.params._meta), "no fresh Claude session is seeded");
+});
+
 test("a completed chat survives a graceful bridge restart with several turns in order", { timeout: 20000 }, async t => {
   const f = await fixture(t);
   for (const text of ["first", "middle", "last — پایان"]) {

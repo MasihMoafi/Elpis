@@ -39,6 +39,10 @@ const app = agent({ name: "fake-acp-agent" })
     const s = sessions.get(params.sessionId);
     return { ...(models.length ? { configOptions: [modelOption(s.model)] } : {}) };
   })
+  .onRequest("session/fork", ({ params }) => {
+    log({ method: "session/fork", params });
+    return { sessionId: `${params.sessionId}-fork` };
+  })
   .onRequest("session/set_mode", () => ({}))
   .onRequest("_session/steering", params => params, async ({ params }) => {
     log({ method: "_session/steering", params });
