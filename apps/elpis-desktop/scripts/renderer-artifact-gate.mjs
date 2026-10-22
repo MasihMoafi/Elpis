@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/startup-splash.test.cjs": {
+      "blob": "37f7147778dc05d333f2c8ffb7536be4693ee60d",
+      "approval": "b8c8d51e4058b7ac06c78aa5a02c922d44c0ed62",
+      "reason": "STARTUP, Masih 22 Oct: \"the third one without the hexagonal around it. The same background it is now.\" The start-up screen is option 3 of the 20 Oct motion study, the E turning in depth, with no hexagons."
+    },
     "tests/controls.cjs": {
       "blob": "88c707e2a62524bbd4e6b2ce37d650ed556cba36",
       "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
