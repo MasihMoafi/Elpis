@@ -99,6 +99,8 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const deadline = Date.now() + 6000;
   while (streams.size === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   if (streams.size === 0) throw new Error('The fixture did not connect to /api/events');
+  // The start-up screen holds at least a moment, and covers the page (and a drag's drop targets) until it goes.
+  if (desktop) await page.locator('.startup-splash').waitFor({ state: 'detached' });
   const open = async id => {
     await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click();
     await page.locator(`.thread-row.active[data-thread-id="${id}"]`).waitFor();
