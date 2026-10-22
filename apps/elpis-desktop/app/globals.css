@@ -147,7 +147,7 @@ button:disabled { cursor:not-allowed; }
 .sidebar-footer { display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
 /* The account row (components/account-row.tsx): avatar, name and plan; it only shows. */
 .account-row { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 8px; color:var(--foreground); font-size:0.8125rem; text-align:left; cursor:default; }
-.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:var(--selected); font:600 0.75rem/1 var(--serif); }
+.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; background:var(--selected); font:600 0.75rem/1 var(--serif); }
 img.account-avatar { border-radius:0; background:none; object-fit:contain; }
 .avatar-choice { display:inline-flex; padding:3px; border:1px solid var(--border); background:none; cursor:pointer; }
 .avatar-choice:hover { background:var(--hover); }

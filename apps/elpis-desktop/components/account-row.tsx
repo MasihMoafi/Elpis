@@ -25,7 +25,7 @@ export function AccountRow({ refreshKey }: { refreshKey: number }) {
   const { profileName, profileAvatar } = usePreferences(), shown = profileName || name;
   return <div data-slot="account-row" className="account-row" role="group" aria-label={profileName ? `${profileName}. ${label}` : label} title={label}>
     {AVATAR_IDS.includes(profileAvatar)
-      ? <img className="account-avatar" src={avatarSrc(profileAvatar)} alt="" width={28} height={28} decoding="async" />
+      ? <img className="account-avatar" src={avatarSrc(profileAvatar)} alt="" width={32} height={32} decoding="async" />
       : <span className="account-avatar" aria-hidden="true">{shown[0]?.toUpperCase()}</span>}
     <span className="account-name">{shown}</span>
     {plan && <span className="account-plan">{plan}</span>}
