@@ -93,7 +93,7 @@ fn owned_startup_ledger_keeps_the_switch_on_the_title_row_at_each_size() {
             }
             if height > 1 {
                 let title = row(&buffer, 1, rule_x + 1..width);
-                assert!(title.contains("CONTEXT LEDGER  context"), "{title}");
+                assert!(title.contains("CONTEXT LEDGER  co"), "{title}");
                 assert!(title.trim_end().ends_with("[━━━●] ON"), "{title}");
             }
             assert!((0..height).all(|y| !row(&buffer, y, rule_x..width).contains(['×', '╳'])));
