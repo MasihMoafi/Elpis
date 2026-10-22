@@ -117,7 +117,7 @@ async function prepareWindows() {
     } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; sessionManagerMonitor?.close(); sessionManagerMonitor = undefined; await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   if (!sessionWindows) {
-    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, improvements: server.improvements, updates,
+    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, updates,
       mayClose, quitting: () => closing, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
       onFocused: (host, openers) => { if (!openers?.loveSpot) { window = host; primaryOpeners = openers; } } });
   }

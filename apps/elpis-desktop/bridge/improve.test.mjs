@@ -45,7 +45,6 @@ test('pointed request starts an ordinary chat in a fresh improve branch with nat
   assert.match(f.sent().body.text, /Composer/); assert.match(f.sent().body.text, /button.txt/); assert.match(f.sent().body.text, /Rename Send to Go/);
   assert.equal(f.sent().body.attachments[0].dataUrl, PNG);
   assert.equal(await fs.readFile(path.join(f.sourceRoot, 'button.txt'), 'utf8'), 'open-tree edit\n');
-  await assert.rejects(f.manager.keep(row.id), /checks|commit/i);
 });
 
 test('source discovery uses the durable main checkout when installed from a throwaway worktree', async t => {
@@ -98,28 +97,21 @@ test('automatic discovery rejects an unrelated Git checkout as well as an invali
   await assert.rejects(manager.start({ request: 'Readable', target }), /source folder/);
   assert.equal(f.created(), undefined);
 });
-test('review measures committed diff; Keep writes a coordinator note, restart restores it, later edits invalidate checks', async t => {
+test('review measures the committed diff and leaves the source tree alone', async t => {
   const f = await setup(t), row = await f.manager.start({ request: 'Rename Send to Go', target });
   await execFile('git', ['-C', row.cwd, 'config', 'user.name', 'Test']); await execFile('git', ['-C', row.cwd, 'config', 'user.email', 'test@invalid']);
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n');
   await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'Rename button']);
   const review = await f.manager.check(row.id); assert.equal(review.checks.passed, true); assert.match(review.diff, /\+Go/); assert.match(review.diff, /-Send/);
-  const kept = await f.manager.keep(row.id); assert.equal(kept.status, 'ready'); assert.match(await fs.readFile(kept.note, 'utf8'), /coordinator/i);
   assert.equal(await fs.readFile(path.join(f.sourceRoot, 'button.txt'), 'utf8'), 'Send\n');
-  const restored = await createImprovements({ client: f.client, sourceRoot: f.sourceRoot, stateDir: f.store, sourceMap: map }); t.after(() => restored.close());
-  assert.equal((await restored.get(row.id)).status, 'ready');
-  await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Unexpected\n');
-  await assert.rejects(restored.keep(row.id), /changed|clean/i);
 });
-test('failed checks, missing source IDs and absent captures cannot be kept or silently sent', async t => {
+test('failed checks, missing source IDs and absent captures are reported, never silently sent', async t => {
   const f = await setup(t, false);
   await assert.rejects(f.manager.start({ request: 'x', target: { ...target, id: '../../secret' } }), /source|component/i);
   await assert.rejects(f.manager.start({ request: 'x', target: { ...target, image: null } }), /screenshot/i);
   const row = await f.manager.start({ request: 'Rename', target });
   await fs.writeFile(path.join(row.cwd, 'button.txt'), 'Go\n'); await execFile('git', ['-C', row.cwd, 'add', 'button.txt']); await execFile('git', ['-C', row.cwd, 'commit', '-qm', 'change']);
   assert.equal((await f.manager.check(row.id)).checks.passed, false);
-  await assert.rejects(f.manager.keep(row.id), /checks/i);
-  await assert.rejects(f.manager.verified(row.id), /checks/i);
 });
 
 async function checkFixture(t, scenario = {}) {
@@ -177,7 +169,6 @@ test('a child holding output open cannot outlive the verification budget or leav
   assert.match(review.checks.commands.at(-1).output, /Timed out.*500/);
   assert.equal(review.checks.commands.at(-1).command, 'npm run -s test:bridge');
   assert.ok(performance.now() - started < 1200);
-  await assert.rejects(change.manager.verified(row.id), /checks/i);
 });
 
 test('Improve links the existing ACP test dependencies into its isolated worktree', async t => {
@@ -250,8 +241,6 @@ test('authenticated HTTP flow reaches the fake engine with Luna, isolated cwd, i
   const start = requests.find(request => request.method === 'thread/start');
   assert.equal(start.params.cwd, row.cwd); assert.equal(start.params.model, 'gpt-6-luna'); assert.match(start.params.developerInstructions, /Tests first/);
   const turn = requests.find(request => request.method === 'turn/start'); assert.ok(turn.params.input.some(input => input.type === 'image' && input.url === PNG));
-  const denied = await fetch(`${url.origin}/api/improvements/${row.id}/keep`, { method: 'POST', headers: { Origin: url.origin, Cookie: cookie, 'Content-Type': 'application/json' }, body: '{}' });
-  assert.equal(denied.status, 409);
 });
 test('an uncertain send retains its chat and worktree without retrying; completed turns trigger independent checks', async t => {
   const f = await setup(t); let sends = 0;

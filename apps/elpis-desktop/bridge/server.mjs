@@ -233,7 +233,7 @@ export async function startDesktopServer(options = {}) {
           const store = await improvements();
           return json(response, method === 'POST' ? 201 : 200, method === 'POST' ? await store.start(await body(request, ATTACHMENT_BODY_LIMIT)) : { data: store.list() });
         }
-        const improvement = url.pathname.match(/^\/api\/improvements\/([a-f0-9-]+)(?:\/(check|keep))?$/);
+        const improvement = url.pathname.match(/^\/api\/improvements\/([a-f0-9-]+)(?:\/(check))?$/);
         if (improvement) {
           const store = await improvements();
           if (method === 'GET' && !improvement[2]) return json(response, 200, await store.get(improvement[1]));
@@ -402,7 +402,6 @@ export async function startDesktopServer(options = {}) {
   heartbeat.unref();
   return {
     url: `${origin}/#token=${capability}`,
-    improvements,
     async canRestart() {
       const busy = () => loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || client.hasLocalActivity?.();
       if (busy()) return false;

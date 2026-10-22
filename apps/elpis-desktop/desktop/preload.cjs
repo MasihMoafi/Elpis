@@ -50,7 +50,6 @@ function write(key, update) {
 contextBridge.exposeInMainWorld('elpisDesktop',{
   improve: {
     capture:bounds=>ipcRenderer.invoke('elpis:improve:capture',bounds).then(checked),
-    try:id=>ipcRenderer.invoke('elpis:improve:try',id).then(checked),
     onPoint:callback=>{const listener=(_event,point)=>callback(point);ipcRenderer.on('elpis:improve:point',listener);return()=>ipcRenderer.removeListener('elpis:improve:point',listener);},
   },
   storage: {

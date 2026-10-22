@@ -118,17 +118,11 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     } catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
-  async function action(kind: "check" | "keep" | "try") {
+  async function check() {
     if (!change) return;
     setBusy(true); setError(""); setNotice("");
-    try {
-      if (kind === "try") {
-        if (!window.elpisDesktop?.improve?.try) throw Error("Open the desktop app to try this change.");
-        await window.elpisDesktop.improve.try(change.id); setNotice("Preview opened in a separate window.");
-      } else {
-        const next = await api<Change>(`/improvements/${change.id}/${kind}`, {}); setChange(next);
-      }
-    } catch (cause) { setError(message(cause)); }
+    try { setChange(await api<Change>(`/improvements/${change.id}/check`, {})); }
+    catch (cause) { setError(message(cause)); }
     finally { setBusy(false); }
   }
   const startReason = busy ? "Wait for the current action to finish."
@@ -141,13 +135,11 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
   const blockedReason = !change ? "Loading change…"
     : change.status === "checking" ? "Checking build and tests…"
     : busy ? "Wait for the current action to finish."
-    : change.dirty ? "Commit this change, then run build and tests before trying or keeping it."
-    : !change.checks ? "Run build and tests on this commit before trying or keeping it."
+    : change.dirty ? "Commit this change, then run build and tests."
+    : !change.checks ? "Run build and tests on this commit."
     : !change.checks.passed ? failedCheck ? `Check failed: ${failedCheck.command} (exit ${failedCheck.code}). See the output below.` : change.error || "Build or test checks failed. Run build and tests again."
-    : !change.head || change.checks.head !== change.head ? "The commit changed after checks passed. Run build and tests again before trying or keeping it."
+    : !change.head || change.checks.head !== change.head ? "The commit changed after checks passed. Run build and tests again."
     : "";
-  const canKeep = !blockedReason;
-  const previewReason = blockedReason || (typeof window === "undefined" || typeof window.elpisDesktop?.improve?.try !== "function" ? "Open the desktop app to try this change." : "");
   const changeItem = <button data-slot="change-menuitem" type="button" role="menuitem" className="elpis-change-menuitem" onClick={() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); void begin(pointed.current); }}>Change this…</button>;
   return <>
     {menu?.isConnected && createPortal(changeItem, menu)}
@@ -169,14 +161,14 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
     <AlertDialog open={reviewOpen} onOpenChange={value => { if (!busy) setReviewOpen(value); }}>
       <AlertDialogContent role="dialog" className="elpis-improve-dialog elpis-improve-review">
         <AlertDialogHeader><AlertDialogTitle>Review Elpis change</AlertDialogTitle><AlertDialogDescription>{change?.branch ?? "Loading change…"}</AlertDialogDescription></AlertDialogHeader>
-        {!blockedReason && <p role="status" className="text-sm">{change?.status === "ready" ? "Ready for coordinator review. Your note has been written." : "Build and tests passed"}</p>}
+        <p role="status" className="text-sm">{blockedReason || "Build and tests passed"}</p>
         {change?.dirty && <p className="text-sm">There are uncommitted changes. Commit and check them before continuing.</p>}
         {change?.diff && <div className="diff-body elpis-improve-diff">{change.diff.split(/(?=^diff --git )/m).filter(Boolean).map((file, index) => <section key={index}><p className="px-2 py-1 text-xs font-mono">{file.split("\n")[0]}</p>{/^@@ /m.test(file) ? <DiffLines lines={parseDiff(file)} /> : <pre className="elpis-improve-log">{file}</pre>}</section>)}</div>}
-        {change?.truncated && <p className="text-sm">The diff is truncated. Review the full diff in the worktree before keeping.</p>}
+        {change?.truncated && <p className="text-sm">The diff is truncated. Review the full diff in the worktree.</p>}
         {change?.checks?.commands.map((command, index) => <details key={index} open={command.code !== 0} className="text-sm"><DisclosureSummary>{command.command} · exit {command.code}</DisclosureSummary><pre className="elpis-improve-log">{command.output || (command.code !== 0 ? `Check exited with code ${command.code} without output.` : "")}</pre></details>)}
         {(error || change?.error) && <p role="alert" className="text-sm text-destructive">{error || change?.error}</p>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
-        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} title={change?.status === "checking" ? "Checking build and tests…" : busy ? "Wait for the current action to finish." : undefined} onClick={() => void action("check")}>Check build &amp; tests</Button><Button variant="outline" disabled={!!previewReason} title={previewReason || undefined} onClick={() => void action("try")}>Try it</Button><Button disabled={!canKeep} disabledReason={blockedReason} title={blockedReason || undefined} onClick={() => void action("keep")}>Keep</Button></AlertDialogFooter>
+        <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} title={change?.status === "checking" ? "Checking build and tests…" : busy ? "Wait for the current action to finish." : undefined} onClick={() => void check()}>Check build &amp; tests</Button></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>;

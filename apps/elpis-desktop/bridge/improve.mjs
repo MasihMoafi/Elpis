@@ -18,7 +18,7 @@ Tests first: reproduce each requested behaviour with a focused test that fails b
 Make the smallest sound change, reuse the existing components and styles, then build and run the relevant tests. Report exact commands and results, and any unchecked behaviour.
 Dependencies may be linked from the source checkout; never edit them or install packages. Do not package, install, push, merge or launch the real Elpis app. Do not change the user's real profile.
 Delete with gio trash. Never use git add -A, git add ., reset --hard, clean or stash. Stage named files only, inspect git diff --cached --stat and commit your change. Keep unrelated files untouched.
-The app independently checks your committed result. Finish with a short result and trade-offs; the user can Try it or mark it ready for the coordinator.`;
+The app independently checks your committed result. Finish with a short result and trade-offs; the user reads the diff and the check results in the review dialog.`;
 
 export async function createImprovements({ client, sourceRoot, appRoot = defaultAppRoot, stateDir = process.env.ELPIS_IMPROVE_HOME || path.join(os.homedir(), '.cache/elpis-improve'), sourceMap, verify = verifyImprovement } = {}) {
   const records = new Map(), checking = new Map();
@@ -142,23 +142,11 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
     checking.set(id, job);
     try { return await job; } finally { checking.delete(id); }
   }
-  async function verified(id) {
-    const row = await review(find(id));
-    if (!row.checks?.passed) throw new BridgeError('Build and test checks must pass before trying or keeping this change', 409);
-    if (row.dirty || row.checks.head !== row.head) throw new BridgeError('The worktree changed since its checks; commit it and run checks again', 409);
-    return row;
-  }
-  async function keep(id) {
-    const checked = await verified(id), row = find(id);
-    const note = path.join(stateDir, `${id}.ready.md`);
-    await fs.writeFile(note, `# Ready for coordinator review\n\nRequest: ${row.request}\nBranch: ${row.branch}\nCommit: ${checked.head}\nBase: ${row.base}\nWorktree: ${row.cwd}\nChecks: passed at ${row.checks.at}\n\n${row.checks.commands.map(command => `- ${command.command}: exit ${command.code}`).join('\n')}\n\nUser selected Keep. Coordinator: review and merge this branch through the normal integration flow. Nothing was installed or merged.\n`, { mode: 0o600 });
-    row.status = 'ready'; row.note = note; await save(row); return review(row);
-  }
   const completed = event => {
     if (event.type !== 'message' || event.data?.method !== 'turn/completed') return;
     const row = [...records.values()].find(row => row.thread?.id === event.data.params?.threadId);
     if (row) void check(row.id).catch(async error => { row.status = 'needs-check'; row.error = error.message; await save(row); });
   };
   client.on('event', completed);
-  return { source, setSource, start, check, keep, verified, get: async id => review(find(id)), list: () => [...records.values()].map(({ id, thread, status }) => ({ id, threadId: thread?.id, status })), close: () => client.removeListener('event', completed) };
+  return { source, setSource, start, check, get: async id => review(find(id)), list: () => [...records.values()].map(({ id, thread, status }) => ({ id, threadId: thread?.id, status })), close: () => client.removeListener('event', completed) };
 }

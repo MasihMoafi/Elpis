@@ -17,7 +17,7 @@ const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
-function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, improvements, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }) {
+function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }) {
   const { BrowserWindow, WebContentsView, session, ipcMain: globalIpc, Menu, clipboard, shell, dialog, nativeTheme } = electron;
   const windows = new Set();
   const savedText = new WeakSet();
@@ -61,7 +61,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
     const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
     const disposeTerminal = registerTerminal({ host: window, origin, ipcMain, clipboard });
-    const disposeImprove = registerImprove({ host: window, origin, ipcMain, improvements });
+    const disposeImprove = registerImprove({ host: window, origin, ipcMain });
     const disposeThreads = threads.attach({ host: window, origin, ipcMain });
     const disposeNewChats = newChats.attach({ host: window, origin, ipcMain });
     const disposeQuickEntry = quickEntry?.attach({ host: window, origin, ipcMain }) ?? (() => {});
