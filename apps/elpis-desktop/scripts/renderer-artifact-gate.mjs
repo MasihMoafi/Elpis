@@ -25,9 +25,9 @@ const pageRemovalApproval = {
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
     "tests/controls.cjs": {
-      "blob": "4c2782d5e69bafcabab9d998530690728da22707",
-      "approval": "5004ae69409ce4a08e49f12e638b081e35fbff1a",
-      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. S8/S12/S18, Masih 22 Oct: \"remove lab for now\", \"hide workflows\", \"session manager ... hide it for now\": Lab, Workflows and the Session Manager are hidden by default, so the test page sees them unless a test sets hiddenPages or sessionManager itself."
+      "blob": "20fa1f28bc021504e00de6a9aa405270de734ce1",
+      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards."
     },
     "tests/input-hints.test.cjs": {
       "blob": "619257f53c6317aca0adf337df26282c99a7695c",

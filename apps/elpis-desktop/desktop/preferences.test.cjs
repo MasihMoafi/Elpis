@@ -8,12 +8,40 @@ test('closing asks only when the saved preference says so', () => {
   for (const value of [{}, { error: 'unreadable' }, { 'elpis-preferences-v1': '{"confirmClose":false}' }, { 'elpis-preferences-v1': 'not json' }, { 'elpis-preferences-v1': '{"confirmClose":"yes"}' }]) assert.equal(closeNeedsConfirmation(store(value)), false);
 });
 
-test('the Session Manager is off unless saved on', () => {
+test('the Session Manager is on unless saved off', () => {
   const { sessionManagerOn } = require('./preferences.cjs');
   const store = value => ({ read: () => value });
-  assert.equal(sessionManagerOn(store({ 'elpis-preferences-v1': JSON.stringify({ sessionManager: true }) })), true);
-  for (const value of [{}, { error: 'unreadable' }, { 'elpis-preferences-v1': '{"sessionManager":false}' }, { 'elpis-preferences-v1': '{"sessionManager":"yes"}' }, { 'elpis-preferences-v1': 'not json' }])
-    assert.equal(sessionManagerOn(store(value)), false);
+  for (const value of [{}, { error: 'unreadable' }, { 'elpis-preferences-v1': '{"sessionManager":true}' }, { 'elpis-preferences-v1': 'not json' }]) assert.equal(sessionManagerOn(store(value)), true);
+  assert.equal(sessionManagerOn(store({ 'elpis-preferences-v1': '{"sessionManager":false}' })), false);
+});
+
+test('the shell seeds what ships hidden once and never over a saved choice', async () => {
+  const { seedShippedDefaults, SHIPPED_DEFAULTS } = require('./preferences.cjs');
+  assert.deepEqual(SHIPPED_DEFAULTS, { hiddenPages: 'experimentLab,canvas', sessionManager: false });
+  const patches = [], store = value => ({ read: () => value, snapshot: () => ({ revision: 3 }), patch: async (input, writer) => { patches.push([input, writer]); } });
+  await seedShippedDefaults(store({}));
+  assert.deepEqual(patches, [[{ key: 'elpis-preferences-v1', changes: SHIPPED_DEFAULTS, baseRevision: 3 }, null]]);
+  patches.length = 0;
+  await seedShippedDefaults(store({ 'elpis-preferences-v1': JSON.stringify({ hiddenPages: '', sessionManager: true }) }));
+  assert.deepEqual(patches, [], 'a saved choice is never replaced');
+  await seedShippedDefaults(store({ 'elpis-preferences-v1': JSON.stringify({ hiddenPages: 'canvas' }) }));
+  assert.deepEqual(patches[0][0].changes, { sessionManager: false }, 'only what is missing is seeded');
+});
+
+test('the real store accepts the seed, keeps other preferences and seeds only once', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { createStateStore } = require('./state.cjs');
+  const { seedShippedDefaults, sessionManagerOn, PREFERENCES_KEY } = require('./preferences.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-seed-'));
+  const store = createStateStore(path.join(dir, 'workspace.json'));
+  await store.set(PREFERENCES_KEY, JSON.stringify({ navOrder: 'customize' }));
+  await seedShippedDefaults(store);
+  const saved = JSON.parse(store.read()[PREFERENCES_KEY]);
+  assert.deepEqual(saved, { navOrder: 'customize', hiddenPages: 'experimentLab,canvas', sessionManager: false });
+  assert.equal(sessionManagerOn(store), false);
+  const revision = store.snapshot().revision;
+  await seedShippedDefaults(store);
+  assert.equal(store.snapshot().revision, revision, 'a second start changes nothing');
 });
 
 test('Close to tray is off unless saved on; the Quick Entry shortcut is Ctrl+Alt+Space unless saved, and empty turns it off', () => {

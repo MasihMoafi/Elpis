@@ -5,7 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
 const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, listActive } = require('./session-manager-agent.cjs');
-const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, sessionManagerOn } = require('./preferences.cjs');
+const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, seedShippedDefaults, sessionManagerOn } = require('./preferences.cjs');
 const { createStateStore } = require('./state.cjs');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
@@ -66,6 +66,7 @@ async function openWindow(loveSpot = false) {
 async function prepareWindows() {
   if (!server) {
     store ??= createStateStore(path.join(app.getPath('userData'), 'workspace.json'));
+    await seedShippedDefaults(store);
     const { startDesktopServer } = await import(pathToFileURL(path.join(__dirname, '../bridge/server.mjs')).href);
     const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
