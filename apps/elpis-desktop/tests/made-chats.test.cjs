@@ -7,7 +7,12 @@ const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id
 
 test('chats made by a chat fold under it in the sidebar and open from there, still writable', async () => {
   const threads = [chat('maker', 'Rust notes'), chat('made-1', 'Rustidian — emoji', 'maker'), chat('made-2', 'Rustidian — launch copy', 'maker'), chat('loose', 'Hermes — setup')];
-  const f = await fixture({ routes: { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? threads.filter(thread => thread.parentThreadId === url.searchParams.get('ancestorThreadId')) : threads, nextCursor: null }) } });
+  const routes = { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? threads.filter(thread => thread.parentThreadId === url.searchParams.get('ancestorThreadId')) : threads, nextCursor: null }) };
+  for (const thread of threads) {
+    routes[`/api/threads/${thread.id}`] = () => ({ thread, data: [], nextCursor: null });
+    routes[`/api/threads/${thread.id}/resume`] = () => ({ thread, activeTurnId: null });
+  }
+  const f = await fixture({ routes });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
     assert.equal(await row(f.page, 'maker').count(), 1);
