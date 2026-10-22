@@ -1,9 +1,0 @@
-# A20 — stable context-panel opening
-
-Masih reports that the context-window panel opens unsmoothly. On matching baseline assets, delayed and immediate file reads grow the visible panel 147.77 → 392.34 px and move its top 494 → 250 px; app/composer bounds stay fixed. This is separate from unresolved P6 whole-window shaking.
-
-Keep the existing card, controls and positioning. Mount it to read fresh sources, but reveal it only after the initial ledger/files read succeeds or fails and its content is positioned. The trigger immediately shows a static loading indication and remains cancellable with Escape/outside press. No animation, GPU flag, fixed empty panel, stale cache, backend change or real-profile access.
-
-Acceptance: first visible bounds stay within 1 CSS px throughout delayed/immediate opening in light/dark and short viewports; app/composer geometry stays fixed. Slow reads abort within 10 seconds to an accessible error/Retry path; Retry must reach the server before the original stalled response is released. Timers clear on completion, and read cleanup aborts the underlying GET. The API gains only an optional AbortSignal; existing callers retain their behavior. Missing ledger never hides available source controls indefinitely. Toggling, refused writes, retries, latest per-chat reads and disabled sources retain existing behavior. Closing cancels display; late responses cannot reopen it or leak another chat’s files. Context-file polling runs only while open.
-
-Proof: deterministic held-response regression fails on old export; one candidate build, focused context suites/types, inspected light/dark/short-height captures. Private loopback fake backend/headless Chromium only. Parent integrates; user acceptance and P6 compositor diagnosis remain open. Rollback is reverting this focused commit.

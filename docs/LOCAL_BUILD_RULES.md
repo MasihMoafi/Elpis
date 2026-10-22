@@ -3,13 +3,15 @@
 Read this before running any `cargo` command on Masih's workstation. These are
 machine facts, not preferences — ignoring them has already cost a near-full disk.
 
-## Local builds are allowed — September 24, 2026
+## Builds use GitHub Actions — October 20–21, 2026
 
-Local Cargo builds and Rust tests are permitted. The limits are Masih's machine, not
-policy: never take the CPU past 80 °C and never freeze his desktop. Use
-`scripts/build-elpis-local <mode>`, which caps the job count and enforces the
-temperature ceiling, in preference to a bare cargo line. Hosted CI is still the better
-place for a full workspace suite.
+Masih: “use github actions for all builds from now on” (20 October), reaffirmed
+21 October after a local eight-worker browser matrix drove the fans. All builds
+and heavy test matrices, including parallel browser suites, use GitHub Actions.
+Only small focused checks remain local. This does not authorize a push or upload.
+Older local recipes below are historical; they do not authorize local compilation.
+The shared workstation disk guard covers new hooked shell commands and write tools;
+see `/home/masih/.local/lib/agent-resource-guard/README.md` for its checked scope.
 
 Measured on 2026-09-23 at two jobs, with no thermal pauses: a cold `dev-small` TUI
 build took 13m38s and peaked at 72 °C; the optimized `local-release` build took
