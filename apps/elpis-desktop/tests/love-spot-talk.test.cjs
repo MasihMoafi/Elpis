@@ -187,9 +187,9 @@ test('Talk fits in light and dark at 1280 and 1440', async () => {
 test('the tool bar slides by its grip so Talk never leaves tools out of reach, and the place is kept', async () => {
   const f = await loveSpotFixture({ colorScheme: 'dark' });
   try {
-    await f.page.setViewportSize({ width: 900, height: 760 });
+    await f.page.setViewportSize({ width: 1000, height: 760 });
     await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
-    const bar = f.page.locator('.love-spot-editor .shapes-section .App-toolbar'), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
+    const bar = f.page.locator('.love-spot-editor .App-toolbar'), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
     const spill = async () => { const [b, a] = await Promise.all([bar.boundingBox(), area.boundingBox()]); return { left: Math.round(b.x - a.x), right: Math.round(a.x + a.width - (b.x + b.width)) }; };
     await grip.waitFor();
     const middle = await spill(); assert.ok(middle.left < 0 || middle.right < 0, `with Talk open the bar spills past the board: ${JSON.stringify(middle)}`);

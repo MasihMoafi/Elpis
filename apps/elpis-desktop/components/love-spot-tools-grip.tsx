@@ -18,7 +18,8 @@ export function ToolsGrip({ board }: { board: RefObject<HTMLDivElement | null> }
   const current = useRef(offset); current.current = offset;
   const drag = useRef<{ x: number; start: number } | null>(null);
 
-  const bar = () => board.current?.querySelector<HTMLElement>(".shapes-section") ?? null;
+  /** The section around the tool bar: Excalidraw names it `shapes-section` on a wide board but not on a narrow one. */
+  const bar = () => board.current?.querySelector<HTMLElement>(".App-toolbar")?.closest("section") ?? null;
   /** The offsets that keep the bar's ends in the board; a bar wider than the board can slide until either end shows. */
   const range = useCallback(() => {
     const area = board.current?.getBoundingClientRect(), section = bar()?.getBoundingClientRect();
