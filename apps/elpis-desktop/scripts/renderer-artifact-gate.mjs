@@ -45,8 +45,8 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
     "tests/ledger-page.test.cjs": {
-      "blob": "f72f2dc56e31964bfed4aa0c07f90b466ee8b599",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "blob": "3f08e4309e6681b9b8b861bc234fa259486a97bb",
+      "approval": "e65e0f06f4235f85318c2cb3ce29ef844a720a65",
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
     "tests/page-column-app.cjs": {
