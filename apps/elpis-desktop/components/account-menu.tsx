@@ -4,6 +4,7 @@ import { ChevronDown, Moon, Sun } from "lucide-react";
 import { PersonIcon, SettingsIcon } from "@/components/elpis-icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useProviderUsage } from "@/components/provider-usage";
+import { shortcutHint } from "@/lib/shortcuts";
 
 /** Who Elpis works as, from the accounts Settings > Models & accounts shows: the ChatGPT account with its plan, else the
  * Claude subscription that Elpis uses, else nobody. The row shows the part of the email before the @ (as Claude shows a
@@ -31,7 +32,7 @@ export function AccountMenu({ refreshKey, dark, onTheme, onSettings, onAccounts 
       <ChevronDown size={14} className="account-chevron" aria-hidden="true" />
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" side="top" className="account-menu w-60">
-      <DropdownMenuItem onClick={onSettings}><SettingsIcon size={15} aria-hidden="true" />Settings</DropdownMenuItem>
+      <DropdownMenuItem onClick={onSettings}><SettingsIcon size={15} aria-hidden="true" />Settings{shortcutHint("settings") && <kbd className="kbd-hint" aria-hidden="true">{shortcutHint("settings")}</kbd>}</DropdownMenuItem>
       <DropdownMenuItem onClick={onAccounts}><PersonIcon size={15} aria-hidden="true" />Models & accounts</DropdownMenuItem>
       <DropdownMenuItem onClick={onTheme}>{dark ? <Sun size={15} aria-hidden="true" /> : <Moon size={15} aria-hidden="true" />}{dark ? "Use light theme" : "Use dark theme"}</DropdownMenuItem>
     </DropdownMenuContent>

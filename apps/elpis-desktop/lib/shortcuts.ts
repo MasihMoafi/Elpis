@@ -85,6 +85,10 @@ export function keyCombination(event: KeyPress): string | null {
 
 const normalized = (keys: string) => keys.replace(/Super|Command|Cmd/g, "Ctrl")
   .replace("←", "Left").replace("→", "Right").toLowerCase().split("+").sort().join("+");
+/** The key shown beside a command's name: the one chosen in Settings → Keyboard shortcuts, else the default; none when turned off. */
+export function shortcutHint(id: string, preferences: Pick<Preferences, "shortcutBindings"> = readPreferences()): string | undefined {
+  return configuredShortcuts(preferences).find(item => item.id === id)?.keys[0];
+}
 export function shortcutConflict(id: string, binding: string, preferences: Pick<Preferences, "shortcutBindings">): string | undefined {
   return configuredShortcuts(preferences).find(item => item.id !== id && item.keys.some(key => normalized(key) === normalized(binding)))?.label;
 }

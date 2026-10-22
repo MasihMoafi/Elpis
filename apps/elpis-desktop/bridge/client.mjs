@@ -24,6 +24,7 @@ import { elicitationResponse, grantedPermissions, permissionsResponse } from '..
 import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowRuns } from './workflow-acp.mjs';
 import { RewindHistory } from './rewind-history.mjs';
+import { SpawnLinks, createdThread } from './spawn-links.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
@@ -181,14 +182,15 @@ export class DesktopClient extends EventEmitter {
   #settingsConfirmMs;
   #browserConfig;
   #sessionManagerConfig;
-  #archiveHistory;
+  #archiveHistory; #spawnLinks;
   #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
     this.#sessionManagerConfig = sessionManagerConfig;
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
+    this.#spawnLinks = new SpawnLinks(spawnLinksFile);
     this.#githubConnector = githubConnector;
     this.#skillTrash = new SkillTrash(skillTrashOptions);
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
@@ -367,6 +369,7 @@ export class DesktopClient extends EventEmitter {
       // The app reads the applied permission mode from here rather than from what it asked for.
       message.params = { ...message.params, permissions: modeOf(message.params?.threadSettings) };
     }
+    if (message.method === 'item/completed' && id) void this.#learnSpawn(id, message.params.item);
     // Chat-level news (a chat started, renamed, or changed state) is listed anyway; item streams stay scoped.
     const tracked = this.#known.has(id) || this.#owned.has(id) || LISTED.has(message.method);
     if (message.method === 'thread/deleted' && tracked) this.#forget(id);
@@ -443,11 +446,18 @@ export class DesktopClient extends EventEmitter {
       }
     }));
   }
+  /** A chat made by another chat's create_thread call belongs under it; the window already lists it on its own, so tell it. */
+  async #learnSpawn(maker, item) {
+    const child = createdThread(item);
+    if (!child || !await this.#spawnLinks.record(child, maker).catch(() => false)) return;
+    const { thread } = await this.#rpc('thread/read', { threadId: child, includeTurns: false }).catch(() => ({}));
+    if (thread?.id === child) this.emit('event', { type: 'message', data: { method: 'thread/started', params: { thread: this.#decorate(thread) } } });
+  }
   #decorate(thread) {
     if (!thread || typeof thread.id !== 'string') throw new BridgeError('Elpis returned an invalid thread', 502);
     if (legacyInterview(thread)) this.#interviewThreads.add(thread.id);
     if (this.#interviewThreads.has(thread.id)) thread = { ...thread, preview: '', ...(Array.isArray(thread.turns) ? { turns: interviewTurns(thread.turns) } : {}) };
-    const parentThreadId = agentParentId(thread);
+    const parentThreadId = agentParentId(thread) ?? this.#spawnLinks.makerOf(thread.id);
     if (parentThreadId) thread = { ...thread, parentThreadId };
     this.#known.add(thread.id);
     const recorded = this.#workflowTitles.get(thread.id);
@@ -481,6 +491,12 @@ export class DesktopClient extends EventEmitter {
         if (options.searchTerm && !`${thread.name ?? ''} ${thread.preview ?? ''}`.toLowerCase().includes(options.searchTerm.trim().toLowerCase())) continue;
         result.data.unshift(thread);
       }
+    }
+    // The engine relates a chat only to the agents it spawned itself; add the chats made by create_thread.
+    if (options.ancestorThreadId && !options.cursor && !options.archived) for (const id of this.#spawnLinks.madeBy(options.ancestorThreadId)) {
+      if (result.data.some(thread => thread.id === id)) continue;
+      const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
+      if (thread?.id === id && !thread.path?.includes('/archived_sessions/')) result.data.push(thread);
     }
     await this.#loadWorkflowTitles(result.data);
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
@@ -1432,7 +1448,7 @@ export class DesktopClient extends EventEmitter {
   /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. */
   async archiveThread(id, body, guard, metadata) {
     object(body, []);
-    return this.#mutate(id, async () => {
+    const archived = await this.#mutate(id, async () => {
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
       await this.#archiveHistory.record(id, metadata?.reason ?? 'Archived by you.');
       try { await this.#guardSession(id, guard); await this.#rpc('thread/archive', { threadId: id }); }
@@ -1442,6 +1458,8 @@ export class DesktopClient extends EventEmitter {
       const worktree = await this.#releaseWorktree(cwd);
       return { archived: true, ...(worktree ? { worktree } : {}) };
     });
+    for (const child of this.#spawnLinks.madeBy(id)) await this.archiveThread(child, {}, undefined, metadata).catch(() => {});
+    return archived;
   }
   async unarchiveThread(id, body) {
     object(body, []);

@@ -138,7 +138,8 @@ button:disabled { cursor:not-allowed; }
 .sidebar > .search-field { margin:4px 0 2px; }
 /* Keys: a keycap in shortcut lists, a quiet hint beside a field or menu item. */
 .kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
-.kbd-hint { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
+.kbd-hint, [data-shortcut]::after { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
+[data-shortcut]::after { content:attr(data-shortcut); }
 .thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:88px; margin:0 -4px 0 -8px; padding:0 4px 0 8px; }
 .thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:0.8125rem; line-height:20px; }

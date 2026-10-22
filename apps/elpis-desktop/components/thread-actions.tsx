@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { readPreferences, savePreferences } from "@/lib/preferences";
+import { shortcutHint } from "@/lib/shortcuts";
 import { isAgent, title, type Thread } from "@/lib/api";
 import type { ChatGroup } from "@/lib/chat-groups";
 
@@ -81,7 +82,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
   };
   const many = selection && selection.length > 1 ? selection : null, suffix = many ? ` ${many.length} chats` : "";
   const remove: MenuAction | undefined = onRequestDelete || onDelete ? { id: "delete", label: `Delete${suffix}`, icon: <Trash2 size={14} />, hint: "D", destructive: true, run: () => onRequestDelete ? onRequestDelete(thread) : setDeleting([thread]) } : undefined;
-  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, run: () => { for (const chat of many ?? [thread]) void onArchive(chat); } } : undefined;
+  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, hint: shortcutHint("archive"), run: () => { for (const chat of many ?? [thread]) void onArchive(chat); } } : undefined;
   const move: MenuAction | undefined = group ? { id: "move", label: many ? `Move ${many.length} chats to group` : "Move to group", icon: <FolderInput size={14} />, run: () => {}, items: [
     ...group.groups.map(item => ({ id: `group:${item.id}`, label: item.name, checked: group.current === item.id, run: () => group.onMove(item.id) })),
     { id: "ungrouped", label: "Ungrouped", checked: group.current === null, run: () => group.onMove(null) },
@@ -89,7 +90,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
   ] } : undefined;
   const actions = (many ? [move, archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
-    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, run: () => onPin(thread) } : undefined,
+    onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     move,
     onMoveToProject ? { id: "project", label: "Move to project…", icon: <FolderInput size={14} />, run: () => onMoveToProject(thread) } : undefined,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
@@ -98,7 +99,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     onOpenInTui ? { id: "tui", label: "Open in Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
     onOpenSplit ? { id: "split", label: "Open session in split view", icon: <Columns2 size={14} />, hint: "Alt+click", run: () => onOpenSplit(thread) } : undefined,
     onOpenWindow ? { id: "window", label: "Open session in new window", icon: <SquareArrowOutUpRight size={14} />, run: () => onOpenWindow(thread) } : undefined,
-    onNewWindow ? { id: "new-window", label: "New Session in New Window", icon: <Plus size={14} />, run: onNewWindow } : undefined,
+    onNewWindow ? { id: "new-window", label: "New Session in New Window", icon: <Plus size={14} />, hint: shortcutHint("new-window"), run: onNewWindow } : undefined,
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>
