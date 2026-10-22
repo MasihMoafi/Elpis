@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { GripHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { appStorage } from "@/lib/projects";
 
 const KEY = "elpis-love-tools-offset";
 const MARGIN = 8, STEP = 24, GRIP_WIDTH = 28, GRIP_HEIGHT = 15;
 
-const saved = () => { try { return Number(localStorage.getItem(KEY)) || 0; } catch { return 0; } };
+const saved = () => { try { return Number(appStorage().getItem(KEY)) || 0; } catch { return 0; } };
 
 /** Excalidraw centres its tool bar in the board, so with Talk open or in a narrow window the bar spills past an edge and
  * its tools cannot be reached. This handle slides the bar sideways by mouse or arrow keys; the offset is kept, and the bar
@@ -55,7 +56,7 @@ export function ToolsGrip({ board }: { board: RefObject<HTMLDivElement | null> }
     return () => { cancelAnimationFrame(frame); resize.disconnect(); mutations.disconnect(); };
   }, [board, clamp, measure]);
 
-  const keep = (value: number) => { setOffset(value); try { localStorage.setItem(KEY, String(value)); } catch { /* The position is a convenience. */ } };
+  const keep = (value: number) => { setOffset(value); try { appStorage().setItem(KEY, String(value)); } catch { /* The position is a convenience. */ } };
   const down = (event: PointerEvent<HTMLButtonElement>) => { if (event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); drag.current = { x: event.clientX, start: current.current }; };
   const move = (event: PointerEvent<HTMLButtonElement>) => { if (drag.current) setOffset(clamp(drag.current.start + event.clientX - drag.current.x)); };
   const up = () => { if (drag.current) { drag.current = null; keep(current.current); } };
