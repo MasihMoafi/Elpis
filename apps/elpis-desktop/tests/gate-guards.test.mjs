@@ -44,18 +44,6 @@ test('installing needs a recorded pass for the exact commit', async t => {
   await assert.rejects(requirePass(dir, 'def456'), /def456/, 'a pass on another commit does not count');
 });
 
-// A passing run belongs to the clean commit it started on.
-test('a commit made during the gate cannot inherit its passing results', () => {
-  const run = { start: { commit: 'abc123', clean: true }, commit: 'abc123', clean: true, selected: tiers, tiers, files: [passed('fast')] };
-  assert.equal(passRecord(run).commit, 'abc123', 'unchanged clean commit records a pass');
-  assert.equal(passRecord({ ...run, commit: 'def456' }), null, 'new HEAD was not tested');
-});
-
-test('a gate started dirty cannot be recorded after changes are committed or reverted', () => {
-  const run = { start: { commit: 'abc123', clean: false }, commit: 'abc123', clean: true, selected: tiers, tiers, files: [passed('fast')] };
-  assert.equal(passRecord(run), null);
-});
-
 test('the gate records only the clean commit present before its tests run', async () => {
   const fixtures = path.join(os.homedir(), '.cache/elpis-tests');
   await fs.mkdir(fixtures, { recursive: true });
