@@ -86,3 +86,28 @@ test('Ledger lists skills, plugins and connectors; a skill switches off; Create 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('a skill switch flips as it is pressed while the engine still answers, and goes back with the reason when the change is refused', async () => {
+  const s = state(); let release; const held = new Promise(resolve => { release = resolve; }); let refuse = true;
+  const f = await fixture({ routes: {
+    '/api/customize': () => s.reply(),
+    '/api/customize/skill': async body => { await held; if (refuse) return { __http: 500, error: 'The engine refused the change' }; s.skills.find(item => item.path === body.path).enabled = body.enabled; return s.reply(); },
+  } });
+  try {
+    const { page } = f;
+    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+    const skills = page.getByRole('region', { name: 'Your skills', exact: true });
+    const pdf = skills.getByRole('switch', { name: 'Use pdf', exact: true });
+    await pdf.waitFor();
+    await pdf.click();
+    assert.equal(await pdf.getAttribute('aria-checked'), 'false', 'it flips at once, before the engine has answered');
+    release();
+    await page.getByText('The engine refused the change').waitFor();
+    assert.equal(await pdf.getAttribute('aria-checked'), 'true', 'a refused change puts the switch back');
+    refuse = false;
+    await pdf.click();
+    await page.waitForFunction(() => document.querySelector('[aria-label="Use pdf"]')?.getAttribute('aria-checked') === 'false');
+    assert.equal(s.skills[0].enabled, false);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

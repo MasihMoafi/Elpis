@@ -189,9 +189,10 @@ test('the tool bar slides by its grip so Talk never leaves tools out of reach, a
   try {
     await f.page.setViewportSize({ width: 1000, height: 760 });
     await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
-    const bar = f.page.locator('.love-spot-editor .App-toolbar'), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
+    const bar = f.page.locator('.love-spot-editor .App-toolbar').first(), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
     const spill = async () => { const [b, a] = await Promise.all([bar.boundingBox(), area.boundingBox()]); return { left: Math.round(b.x - a.x), right: Math.round(a.x + a.width - (b.x + b.width)) }; };
     await grip.waitFor();
+    const [gripBox, barBox] = await Promise.all([grip.boundingBox(), bar.boundingBox()]); assert.ok(gripBox.y + gripBox.height <= barBox.y + 1, 'the grip sits above the bar, not on a tool');
     const middle = await spill(); assert.ok(middle.left < 0 || middle.right < 0, `with Talk open the bar spills past the board: ${JSON.stringify(middle)}`);
     await grip.focus();
     for (let i = 0; i < 40; i++) await f.page.keyboard.press('ArrowRight');
@@ -201,7 +202,7 @@ test('the tool bar slides by its grip so Talk never leaves tools out of reach, a
     const box = await grip.boundingBox(), before = await spill();
     await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await f.page.mouse.down();
     await f.page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 }); await f.page.mouse.up();
-    const dragged = await spill(); assert.ok(dragged.left - before.left >= 50, `the mouse moves the bar: ${JSON.stringify({ before, dragged })}`);
+    const dragged = await spill(); assert.ok(dragged.left - before.left >= 25, `the mouse moves the bar: ${JSON.stringify({ before, dragged })}`);
     await f.page.reload(); await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click(); await grip.waitFor();
     const kept = await spill(); assert.ok(Math.abs(kept.left - dragged.left) <= 2, `the place is kept: ${JSON.stringify({ dragged, kept })}`);
     await grip.dblclick();

@@ -70,9 +70,13 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
     } catch (cause) { setError(message(cause)); }
     finally { setSavingGithub(false); }
   };
+  /** The switch flips as it is pressed and the engine catches up; a refused change puts it back and says why. */
+  const [flipped, setFlipped] = useState<Record<string, boolean>>({});
   const setSkill = async (skill: Skill, enabled: boolean) => {
+    setFlipped(previous => ({ ...previous, [skill.path]: enabled }));
     try { setError(""); setData(readCustomize(await api<Customize>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) }))); }
     catch (cause) { setError(message(cause)); }
+    finally { setFlipped(({ [skill.path]: _settled, ...rest }) => rest); }
   };
   const setMcp = async (connector: Connector, enabled: boolean) => {
     if (mcpLock.current) return;
@@ -138,7 +142,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         <span className="customize-text"><span className="customize-name"><FileRefLink target={{ path: skill.path }}>{skill.name}</FileRefLink></span>{skill.description && <Description text={skill.description} />}</span>
         {skill.deletable ? <span className="customize-badge">{SCOPE[skill.scope]}</span>
           : <Tooltip content={skillOrigin(skill)} detail={<span className="break-all">{skillProtection(skill)}</span>}><span className="customize-badge">{skill.plugin ? `From ${skill.plugin.split("@")[0]}` : SCOPE[skill.scope]}</span></Tooltip>}
-        <Switch aria-label={`Use ${skill.name}`} checked={skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
+        <Switch aria-label={`Use ${skill.name}`} checked={flipped[skill.path] ?? skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
         <span className="flex size-6 shrink-0 items-center justify-center">{skill.deletable && <Button variant="ghost" size="icon-xs" aria-label={`Delete ${skill.name}`} title="Delete (Delete key)" disabled={savingSkill} onClick={() => requestDelete(skill)}><Trash2 size={14} /></Button>}</span>
       </li>)}</ul>
       {(data.skills.errors?.length ?? 0) > 0 && <details className="customize-errors"><DisclosureSummary>{data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read</DisclosureSummary>

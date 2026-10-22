@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
-import { GripVertical } from "lucide-react";
+import { GripHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const KEY = "elpis-love-tools-offset";
-const MARGIN = 8, STEP = 24;
+const MARGIN = 8, STEP = 24, GRIP_WIDTH = 28, GRIP_HEIGHT = 15;
 
 const saved = () => { try { return Number(localStorage.getItem(KEY)) || 0; } catch { return 0; } };
 
@@ -30,10 +30,13 @@ export function ToolsGrip({ board }: { board: RefObject<HTMLDivElement | null> }
   }, [board]);
   const clamp = useCallback((value: number) => { const r = range(); return r ? Math.round(Math.min(r.max, Math.max(r.min, value))) : value; }, [range]);
 
+  /** The handle sits in the free strip above the bar, over the part of the bar that shows, so it never covers a tool. */
   const measure = useCallback(() => {
     const area = board.current?.getBoundingClientRect(), section = bar()?.getBoundingClientRect();
     if (!area || !section) return;
-    const left = Math.max(4, Math.min(area.width - 32, section.left - area.left - 26)), top = section.top - area.top + 10;
+    const shownLeft = Math.max(section.left, area.left), shownRight = Math.min(section.right, area.right);
+    const left = Math.round(Math.max(4, Math.min(area.width - GRIP_WIDTH - 4, (shownLeft + shownRight) / 2 - area.left - GRIP_WIDTH / 2)));
+    const top = Math.round(Math.max(0, section.top - area.top - GRIP_HEIGHT - 1));
     setSpot(previous => previous && previous.left === left && previous.top === top ? previous : { left, top });
   }, [board]);
 
@@ -63,8 +66,8 @@ export function ToolsGrip({ board }: { board: RefObject<HTMLDivElement | null> }
   };
 
   if (!spot) return null;
-  return <Button variant="ghost" size="icon-xs" className="love-tools-grip" aria-label="Move tools" title="Drag to move the tools (double-click to put them back)"
+  return <Button variant="ghost" size="icon-xs" className="love-tools-grip h-[15px] w-7 min-h-0 min-w-0 p-0" aria-label="Move tools" title="Drag to move the tools (double-click to put them back)"
     style={{ left: spot.left, top: spot.top }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onKeyDown={key} onDoubleClick={() => keep(clamp(0))}>
-    <GripVertical size={14} />
+    <GripHorizontal size={12} />
   </Button>;
 }
