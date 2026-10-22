@@ -153,24 +153,26 @@ async function check({ binary, output, phase, smoke }, width, light) {
     const lines = text.split('\n');
     const titleY = lines.findIndex(line => line.includes('CONTEXT LEDGER'));
     const controlLabel = legacyCloseLabels.find(label => lines.some(line => line.includes(label)))
-      || (lines[0].includes(onLabel) ? onLabel : undefined);
+      || (lines[1]?.includes(onLabel) ? onLabel : undefined);
     assert(controlLabel, 'Ledger must have a switch or the legacy close control');
     const controlY = lines.findIndex(line => line.includes(controlLabel));
     const left = lines[controlY].indexOf(controlLabel);
     result.geometry = { controlY, titleY, left, buttonWidth: [...controlLabel].length };
     const ledgerLeft = lines[titleY].indexOf('CONTEXT LEDGER') - 2;
-    result.controlRowAlone = lines[0].slice(ledgerLeft + 2).trim() === onLabel;
+    result.topRowBlank = lines[0].slice(ledgerLeft + 2).trim() === '';
+    result.switchEndsTitleRow = lines[titleY].trimEnd().endsWith(onLabel);
     result.titleHasStatus = /CONTEXT LEDGER  (?:≈|context)/u.test(lines[titleY]);
     const switchRows = lines.filter(row => /SMART PRUNE|SUBAGENTS/u.test(row));
     result.switchesAligned = switchRows.length === 2 && switchRows.every(row =>
       row.trimEnd().length === width - 1 && (row.trimEnd().endsWith(onLabel) || row.trimEnd().endsWith(offLabel)));
-    result.layoutPass = controlLabel === onLabel && controlY === 0 && titleY === 1
-      && result.controlRowAlone && result.titleHasStatus && result.switchesAligned && !/[╳×✕]/u.test(text);
-    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; title on row ${titleY}; expected ON alone on row 0 and title/status on row 1`;
+    result.layoutPass = controlLabel === onLabel && controlY === 1 && titleY === 1
+      && result.topRowBlank && result.switchEndsTitleRow && result.titleHasStatus && result.switchesAligned && !/[╳×✕]/u.test(text);
+    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; title on row ${titleY}; expected row 0 blank and title/status with ON on row 1`;
     const xExtent = text => Math.max(-1, ...text.split('\n').map(row =>
       row.includes('X'.repeat(8)) ? row.lastIndexOf('X') : -1));
     const openExtent = xExtent(text);
-    must(result.controlRowAlone, 'TUILEDGER: the switch must be alone on the first Ledger row');
+    must(result.topRowBlank, 'TUILEDGER: the first Ledger row must stay blank');
+    must(result.switchEndsTitleRow, 'TUILEDGER: the switch must end the title row');
     must(result.titleHasStatus, 'TUILEDGER: the title row omits context status');
     must(result.switchesAligned, 'TUILEDGER: Ledger switches no longer share their right edge');
     result.visibleFixtureSourceRows = lines.map(line => line.slice(Math.max(0, ledgerLeft))).filter(line => line.includes('AGENTS.md'));

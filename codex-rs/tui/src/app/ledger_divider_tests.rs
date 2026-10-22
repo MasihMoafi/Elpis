@@ -304,7 +304,7 @@ async fn ledger_close_button_hides_and_key_reopens_at_previous_width() -> Result
     let original = ledger_width_on_screen(&tui);
     let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
     let close = (0..SIZE.height)
-        .flat_map(|y| (0..SIZE.width).map(move |x| (x, y)))
+        .flat_map(|y| (SIZE.width - original..SIZE.width).map(move |x| (x, y)))
         .find(|&(x, y)| buffer[(x, y)].symbol() == "[")
         .expect("Ledger has a visible toggle");
     let button_left = SIZE.width - LEDGER_TOGGLE_LABEL.chars().count() as u16 - 1;
@@ -497,8 +497,8 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
                 .contains("CONTEXT LEDGER")
         })
         .expect("Ledger toggle");
-    let close_x = (0..terminal_width)
-        .find(|&x| buffer[(x, 0)].symbol() == "[")
+    let close_x = (terminal_width - width..terminal_width)
+        .find(|&x| buffer[(x, y)].symbol() == "[")
         .expect("Ledger toggle");
     assert_eq!(y, 1);
     let header = [0, y]
@@ -523,7 +523,7 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
     app.handle_tui_event(
         &mut tui,
         &mut server,
-        mouse(MouseEventKind::Down(MouseButton::Left), close_x, 0),
+        mouse(MouseEventKind::Down(MouseButton::Left), close_x, y),
     )
     .await?;
     assert_eq!(app.chat_widget.context_ledger_width(terminal_width), 0);
@@ -533,7 +533,7 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
 }
 
 #[tokio::test]
-async fn ledger_switch_stays_above_the_title_at_all_supported_widths() -> Result<()> {
+async fn ledger_switch_ends_the_title_row_at_all_supported_widths() -> Result<()> {
     for (width, preferred) in [
         (80, None),
         (120, None),
@@ -547,15 +547,12 @@ async fn ledger_switch_stays_above_the_title_at_all_supported_widths() -> Result
             header.contains("CONTEXT LEDGER") && header.contains(LEDGER_TOGGLE_LABEL),
             "{header}"
         );
-        assert_eq!(header.lines().count(), 2);
-        assert_eq!(
-            header
-                .lines()
-                .next()
-                .unwrap()
-                .trim_start_matches('│')
-                .trim(),
-            LEDGER_TOGGLE_LABEL
+        let mut lines = header.lines();
+        assert_eq!(lines.next().unwrap().trim_start_matches('│').trim(), "");
+        let title = lines.next().unwrap();
+        assert!(
+            title.contains("CONTEXT LEDGER") && title.ends_with(LEDGER_TOGGLE_LABEL),
+            "{header}"
         );
         assert!(!header.contains(['×', '╳']));
     }
@@ -649,13 +646,10 @@ async fn ledger_toggle_hits_only_its_header_cells_owned_width_matrix() -> Result
         let title_y = (0..size.height)
             .find(|&y| row(y).contains("CONTEXT LEDGER"))
             .expect("visible title");
-        let close_y = 0;
+        let close_y = title_y;
         assert_eq!(title_y, 1);
-        assert_eq!(
-            row(close_y).trim_start_matches('│').trim(),
-            LEDGER_TOGGLE_LABEL
-        );
-        assert!(!row(title_y).contains(LEDGER_TOGGLE_LABEL));
+        assert_eq!(row(0).trim_start_matches('│').trim(), "");
+        assert!(row(title_y).trim_end().ends_with(LEDGER_TOGGLE_LABEL));
         assert!(!row(title_y).contains(['×', '╳']));
         let close_x = (left..terminal_width)
             .find(|&x| buffer[(x, close_y)].symbol() == "[")

@@ -44,7 +44,7 @@ fn ledger_mouse(
 }
 
 #[tokio::test]
-async fn ledger_switch_has_its_own_row_and_closed_ledger_draws_nothing() {
+async fn ledger_switch_shares_the_title_row_and_closed_ledger_draws_nothing() {
     use crossterm::event::MouseButton::Left;
     use crossterm::event::MouseEventKind::Down;
     let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
@@ -53,12 +53,13 @@ async fn ledger_switch_has_its_own_row_and_closed_ledger_draws_nothing() {
         let buffer = ledger_screen(&chat, width, height);
         let ledger_left = width - chat.context_ledger_width(width);
         let lines = rows(&buffer, ledger_left + 1..width);
-        assert_eq!(lines[0].trim(), "[━━━●] ON");
+        assert_eq!(lines[0].trim(), "");
         assert!(lines[1].contains("CONTEXT LEDGER  context"), "{lines:#?}");
-        assert!(!lines[1].contains("[━━━●] ON"));
+        assert!(lines[1].trim_end().ends_with("[━━━●] ON"));
         assert!(!lines.join("\n").contains(['×', '╳', '✕']));
         assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), ledger_left + 3, 1)));
-        assert!(chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 3, 0)));
+        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 3, 0)));
+        assert!(chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 3, 1)));
         assert_eq!(chat.context_ledger_width(width), 0);
         for closed_height in [0, 1, 2, 6, height] {
             let closed = ledger_screen(&chat, width, closed_height);
@@ -66,9 +67,10 @@ async fn ledger_switch_has_its_own_row_and_closed_ledger_draws_nothing() {
         }
         assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 2, height / 2)));
         chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
-        assert_eq!(
-            rows(&ledger_screen(&chat, width, height), ledger_left + 1..width)[0].trim(),
-            "[━━━●] ON"
+        assert!(
+            rows(&ledger_screen(&chat, width, height), ledger_left + 1..width)[1]
+                .trim_end()
+                .ends_with("[━━━●] ON")
         );
     }
 }
@@ -88,11 +90,14 @@ async fn owned_ledger_header_rows_survive_compaction_and_tiny_viewports() {
                 chat.render_context_ledger_column(area, &mut buffer);
                 let lines = rows(&buffer, 1..width);
                 if height > 0 {
-                    assert_eq!(lines[0].trim(), "[━━━●] ON");
-                    assert_eq!(buffer[(width - 1, 0)].symbol(), " ");
+                    assert_eq!(lines[0].trim(), "");
                 }
                 if height > 1 {
-                    let expected = if measured {
+                    assert!(lines[1].trim_end().ends_with("[━━━●] ON"));
+                    assert_eq!(buffer[(width - 1, 1)].symbol(), " ");
+                    let expected = if width == 28 {
+                        "CONTEXT LEDGER"
+                    } else if measured {
                         "CONTEXT LEDGER  ≈1.0k"
                     } else {
                         "CONTEXT LEDGER  context"
@@ -101,9 +106,8 @@ async fn owned_ledger_header_rows_survive_compaction_and_tiny_viewports() {
                         lines[1].trim_start().starts_with(expected),
                         "{width}x{height}: {lines:#?}"
                     );
-                    assert!(!lines[1].contains("[━━━●] ON"));
                     if width == 28 {
-                        assert!(lines[1].trim_end().ends_with('…'));
+                        assert!(lines[1].contains("…"));
                     }
                     if width == 80 {
                         assert!(lines[1].contains(if measured {
@@ -661,8 +665,8 @@ async fn owned_ledger_title_stays_at_top_with_active_subagents() {
         chat.render_context_ledger_column(area, &mut buffer);
         let lines = rows(&buffer, 0..area.width);
         assert!(
-            lines[0].contains("[━━━●] ON"),
-            "the shared toggle stays at the top"
+            lines[1].contains("[━━━●] ON"),
+            "the shared toggle stays on the title row"
         );
         assert!(
             lines[1].contains("CONTEXT LEDGER"),
@@ -698,7 +702,7 @@ async fn owned_ledger_without_subagents_omits_the_child_summary() {
     let mut buffer = ratatui::buffer::Buffer::empty(area);
     chat.render_context_ledger_column(area, &mut buffer);
     let lines = rows(&buffer, 0..area.width);
-    assert!(lines[0].contains("[━━━●] ON"));
+    assert!(lines[1].contains("[━━━●] ON"));
     assert!(lines[1].contains("CONTEXT LEDGER"));
     assert!(!lines.iter().any(|line| line.contains("SUBAGENT LEDGER")));
 }
@@ -935,12 +939,12 @@ async fn owned_ledger_tiny_areas_do_not_expose_a_clipped_toggle() {
                 .map(|pos| buffer[pos].symbol())
                 .collect::<String>();
             assert!(!text.contains(['×', '╳']));
-            if width == 28 && height > 0 {
+            if width == 28 && height > 1 {
                 assert!(text.contains("[━━━●] ON"));
                 assert!(chat.handle_context_ledger_mouse(ledger_mouse(
                     crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
                     area.right() - 3,
-                    area.y,
+                    area.y + 1,
                 )));
             } else {
                 assert!(!text.contains("[━━━●] ON"));
