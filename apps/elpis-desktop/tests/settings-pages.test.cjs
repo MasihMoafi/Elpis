@@ -117,7 +117,6 @@ test('settings pages appear in order and each control writes only its own backin
     await panel.getByRole('switch', { name: 'Memories', exact: true }).click();
     await panel.getByRole('status').filter({ hasText: /^Saved\. Applies to new conversations\.$/ }).waitFor();
     assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v5', memory: { enabled: true } } });
-    assert.equal(await panel.getByRole('switch', { name: 'Use memories', exact: true }).count(), 1);
 
     panel = await open('Git');
     await panel.getByLabel('Project root markers', { exact: true }).fill('.git, .hg');

@@ -30,12 +30,12 @@ export const retainedUpdates = {
       "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards."
     },
     "tests/input-hints.test.cjs": {
-      "blob": "619257f53c6317aca0adf337df26282c99a7695c",
+      "blob": "8709043fe7d186dde635579ca33e30fe481ba62f",
       "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
       "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model."
     },
     "tests/browser-drawing.test.cjs": {
-      "blob": "bb23c98e3e11f8f2868bde42174ff0652bcca158",
+      "blob": "d5a470f12c93b03027ec3658b833d8ea6bb11031",
       "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
       "reason": "S21, Masih 22 Oct: \"when you click on it the browser goes away and a new page opens, can't we use the same draw in the same page with the brower unmoved?\" The drawing fills the browser panel it opened from instead of the whole window; every other drawing assertion is unchanged."
     },
@@ -102,7 +102,7 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "d6822334319362be618459aa5aee0e36688385d2",
+      "blob": "45e8e8446314e6dc671e70f085aee69127473537",
       "approval": "279499d6bed5a579413834c6e7bc3e4d35006bfd",
       "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on."
     },

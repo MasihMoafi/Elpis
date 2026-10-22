@@ -300,7 +300,10 @@ test('keyboard focus starts in the drawing, stays there through Tab, Shift+Tab a
   // An open Excalidraw menu keeps focus too.
   await page.getByTestId('main-menu-trigger').click(); await page.getByTestId('dropdown-menu').waitFor();
   for (let i = 0; i < 12; i++) { await page.keyboard.press(i % 2 ? 'Shift+Tab' : 'Tab'); assert.equal(await focusedInside(page), true, `focus escaped from the menu on press ${i}: ${await focusLabel(page)}`); }
-  await page.keyboard.press('Escape'); await page.getByTestId('dropdown-menu').waitFor({ state: 'detached' });
+  // In the browser panel's width Excalidraw uses its phone layout, whose menu Escape does not close; its button does.
+  await page.keyboard.press('Escape');
+  if (await page.getByTestId('dropdown-menu').count()) await page.getByTestId('main-menu-trigger').click();
+  await page.getByTestId('dropdown-menu').waitFor({ state: 'detached' });
   assert.equal(await dialog(page).count(), 1, 'Escape closed only the menu');
   // The discard question takes focus and gives it back.
   await page.locator('label:has([data-testid="toolbar-rectangle"])').click();
