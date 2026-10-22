@@ -21,7 +21,7 @@ async function until(check, label, ms = 5000) {
   assert.fail(label);
 }
 
-async function fixture(t, extra = {}, { model = "claude/sonnet", prepare } = {}) {
+async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connectOptions } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a124-"));
   const carrier = new mockProvider.Provider();
   await carrier.start();
@@ -68,7 +68,7 @@ async function fixture(t, extra = {}, { model = "claude/sonnet", prepare } = {})
   });
   await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, `bridge starts: ${errors}`);
   const connect = async () => {
-    const client = await DesktopClient.connect({ socketPath, timeoutMs: 5000, rewindHome: path.join(root, "rewind"), archiveDirectory: path.join(root, "archive") });
+    const client = await DesktopClient.connect({ socketPath, timeoutMs: 5000, rewindHome: path.join(root, "rewind"), archiveDirectory: path.join(root, "archive"), ...connectOptions });
     clients.push(client);
     const events = [];
     client.on("event", event => { if (event.type === "message") events.push(event.data); });
@@ -322,6 +322,17 @@ test("a bridge restart recovers a final answer recorded before its live end was 
   const hello = await restarted.client.send(f.id, { text: "hello after restart" });
   await until(() => restarted.events.some(e => e.method === "turn/completed" && e.params.turn.id === hello.turn.id), "the recovered chat can answer again");
   assert.ok(restarted.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered: hello after restart")));
+});
+
+test("A37: a Claude chat gets the app's browser, which knows the chat", { timeout: 20000 }, async t => {
+  const browserConfig = { "mcp_servers.elpis_browser": { command: process.execPath, args: ["browser-mcp.mjs"], env: { ELPIS_BROWSER_SOCKET: "browser.sock" } } };
+  const f = await fixture(t, {}, { connectOptions: { browserConfig } });
+  const { turn } = await f.client.send(f.id, { text: "open the docs" });
+  await until(() => f.ended(turn.id), "turn completes");
+  const created = f.agent().find(e => e.method === "session/new" && e.params._meta).params;
+  assert.deepEqual(created.mcpServers.find(s => s.name === "elpis_browser").env,
+    [{ name: "ELPIS_BROWSER_SOCKET", value: "browser.sock" }, { name: "ELPIS_THREAD_ID", value: f.id }]);
+  assert.deepEqual(created._meta.claudeCode.options.allowedTools, ["mcp__elpis_browser"]);
 });
 
 test("a completed chat survives a graceful bridge restart with several turns in order", { timeout: 20000 }, async t => {

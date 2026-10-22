@@ -55,9 +55,11 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
       try{if(Buffer.byteLength(line)>65536)throw Error('Request too large');request=JSON.parse(line);}
       catch{process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:null,error:{code:-32700,message:'Invalid JSON request'}})+'\n');return;}
       const response=await handleMcp(request,async(name,args,meta)=>{
-        if(typeof meta?.threadId!=='string')throw Error('The browser requires host-owned session metadata.');
+        // A Claude session's MCP calls carry no _meta; its host names the thread in the environment (A37).
+        const threadId=typeof meta?.threadId==='string'?meta.threadId:process.env.ELPIS_THREAD_ID;
+        if(typeof threadId!=='string')throw Error('The browser requires host-owned session metadata.');
         const socketPath=process.env.ELPIS_BROWSER_CONNECTION?JSON.parse(await fs.readFile(process.env.ELPIS_BROWSER_CONNECTION,'utf8')).socketPath:process.env.ELPIS_BROWSER_SOCKET;
-        return callBrowser(socketPath,name,args,process.env.ELPIS_BROWSER_CAPABILITY,meta.threadId);
+        return callBrowser(socketPath,name,args,process.env.ELPIS_BROWSER_CAPABILITY,threadId);
       });
       if(response)process.stdout.write(JSON.stringify(response)+'\n');
     })();
