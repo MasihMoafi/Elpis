@@ -1828,6 +1828,7 @@ wss.on("connection", (ws) => {
     let error = null;
     const agent = agentOf(claudeModel.get(threadId)) ?? AGENTS[0];
     const accountId = agent.key === "claude" ? claudeAccounts.activeId() : null;
+    let lastClaudeMessageId = null;
     try {
       await pendingMirrors.get(threadId);
       const carrier = threadSeen.get(threadId);
@@ -1926,7 +1927,11 @@ wss.on("connection", (ws) => {
         if (u.sessionUpdate === "subagent_state_update") { finishSubagent(subLanes.get(u.subagentSessionId), u.state); return; }
         const into = sid === sessionId ? lane : subLanes.get(sid);
         if (!into) { log(`update for unknown session ${sid}: ${u.sessionUpdate}`); return; }
-        if (into === lane && u.sessionUpdate === "agent_message_chunk") firstTokenAt ??= now();
+        if (into === lane && u.sessionUpdate === "agent_message_chunk") {
+          firstTokenAt ??= now();
+          // A143: Claude's id for its reply, where a rewind to the next turn forks its session.
+          if (typeof u.messageId === "string" && u.messageId) lastClaudeMessageId = u.messageId;
+        }
         into.update(u);
       };
       own.onUpdate = update => { if (turnState.bufferedUpdates) turnState.bufferedUpdates.push(update); else drawUpdate(update); };
@@ -2175,7 +2180,7 @@ wss.on("connection", (ws) => {
     turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
-      const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000 });
+      const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000, ...(lastClaudeMessageId && { claudeMessageId: lastClaudeMessageId }) });
       await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record].slice(-200) }; });
     }
     if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
@@ -2334,22 +2339,44 @@ wss.on("connection", (ws) => {
   // live in the bridge's store and Claude's own session, which the engine cannot see, so the
   // bridge drops them, gives Claude a fresh session seeded from the kept history, and has the
   // engine revert its own turns from the same point.
+  async function forkClaudeAfter(threadId, entry, messageId) {
+    const agent = agentOf(claudeModel.get(threadId));
+    const saved = entry?.session;
+    if (!messageId || !saved || agent?.key !== "claude" || (entry.agent ?? "claude") !== "claude"
+      || (entry.claudeAccountId ?? "default") !== claudeAccounts.activeId()) return null;
+    const acp = await ensureAcp(agent);
+    const fork = { version: 1, messageId };
+    const { sessionId } = await acp.call("session/fork", { sessionId: saved, cwd: threadCwd.get(threadId) ?? process.cwd(), mcpServers: [], _meta: { jetbrains: { air: { fork } } } });
+    log(`rewind of ${threadId} forked Claude session ${saved} after ${messageId} -> ${sessionId}`);
+    return sessionId ?? null;
+  }
   async function revertThread(msg) {
     const { threadId, beforeTurnId } = msg.params ?? {};
     await storeChain;
-    const stored = (await loadStoreSnapshot())[threadId]?.turns ?? [];
+    const entry = (await loadStoreSnapshot())[threadId];
+    const stored = entry?.turns ?? [];
     if (!stored.length) { engine.stdin.write(JSON.stringify(msg) + "\n"); return; }
     try {
       const engineTurns = (await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "asc", itemsView: "notLoaded" }).catch(() => ({ data: [] }))).data ?? [];
       const cutAt = (stored.find((t) => t.id === beforeTurnId) ?? engineTurns.find((t) => t.id === beforeTurnId))?.startedAt;
       if (cutAt == null) { engine.stdin.write(JSON.stringify(msg) + "\n"); return; }
-      await updateStore((st) => { const e = st[threadId] ?? {}; e.turns = (e.turns ?? []).filter((t) => (t.startedAt ?? 0) < cutAt); delete e.session; delete e.sessions; st[threadId] = e; });
+      // A143: as Codex's rollback keeps the native history up to the cut, Claude keeps its own: its
+      // session is forked after the last kept reply (fx and CloudRoom fork the same way), so the
+      // next request resends the same prefix and the prompt cache still holds. A turn without a
+      // recorded reply id (older chats) falls back to a fresh session seeded from the kept turns.
+      // Saved turns start on whole seconds, so a stored turn is cut by its place, not its time.
+      const at = stored.findIndex((t) => t.id === beforeTurnId);
+      const kept = at >= 0 ? stored.slice(0, at) : stored.filter((t) => (t.startedAt ?? 0) < cutAt);
+      const keptIds = new Set(kept.map((t) => t.id));
+      const forked = await forkClaudeAfter(threadId, entry, kept.at(-1)?.claudeMessageId)
+        .catch((e) => { log(`rewind fork failed, fresh session instead: ${e?.message ?? JSON.stringify(e)}`); return null; });
+      await updateStore((st) => { const e = st[threadId] ?? {}; e.turns = (e.turns ?? []).filter((t) => keptIds.has(t.id)); delete e.sessions; if (forked) e.session = forked; else delete e.session; st[threadId] = e; });
       sessions.delete(threadId);
       const engineCut = engineTurns.find((t) => (t.startedAt ?? 0) >= cutAt);
       const result = engineCut
         ? await engineCall("thread/revert", { threadId, beforeTurnId: engineCut.id })
         : { thread: (await engineCall("thread/read", { threadId })).thread, turnsBackwardsCursor: null };
-      log(`reverted thread ${threadId} before ${beforeTurnId} (${stored.filter((t) => (t.startedAt ?? 0) >= cutAt).length} Claude turns dropped${engineCut ? ", engine reverted too" : ""})`);
+      log(`reverted thread ${threadId} before ${beforeTurnId} (${stored.length - kept.length} Claude turns dropped${engineCut ? ", engine reverted too" : ""})`);
       toTui({ id: msg.id, result });
     } catch (e) {
       toTui({ id: msg.id, error: { code: -32603, message: `revert failed: ${e?.message ?? JSON.stringify(e)}` } });
