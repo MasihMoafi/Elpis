@@ -9,7 +9,7 @@ import path from 'node:path';
 import { ragMessage } from './rag-command.mjs';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
-import { settingsSnapshot, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
+import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
@@ -847,9 +847,12 @@ export class DesktopClient extends EventEmitter {
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
   /** Claude's Customize page: the skills found for a project, the installed plugins and the connectors (gh and MCP).
    * A part the engine can't give says why, and the others still show. */
-  async customize(cwd) {
+  #projectCwds(cwd) {
     if (cwd != null) { text(cwd, 'project folder', 4096); if (!path.isAbsolute(cwd)) throw new BridgeError('Choose a project folder'); }
-    const cwds = cwd ? [cwd] : [], why = error => ({ error: error instanceof Error ? error.message : 'Unavailable' });
+    return cwd ? [cwd] : [];
+  }
+  async customize(cwd) {
+    const cwds = this.#projectCwds(cwd), why = error => ({ error: error instanceof Error ? error.message : 'Unavailable' });
     const [skills, plugins, connectors, github] = await Promise.all([
       this.#rpc('skills/list', { cwds, forceReload: true }).then(skillsSnapshot, why),
       this.#rpc('plugin/installed', cwd ? { cwds } : {}).then(pluginsSnapshot, why),
@@ -924,12 +927,15 @@ export class DesktopClient extends EventEmitter {
   async setSkill(input) {
     object(input, ['path', 'enabled', 'cwd']); text(input.path, 'skill', 4096);
     if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
-    if (!(await this.customize(input.cwd)).skills.data?.some(skill => skill.path === input.path)) throw new BridgeError('That skill is not listed', 404);
-    const [read, { version }] = await Promise.all([this.#rpc('config/read', { includeLayers: false }), this.settings()]);
+    // A switch needs the list (is it a skill?) and one config read (its entries and the version to write against), not the whole Settings page.
+    const [listed, read] = await Promise.all([this.#rpc('skills/list', { cwds: this.#projectCwds(input.cwd) }).then(skillsSnapshot), this.#rpc('config/read', { includeLayers: true })]);
+    if (!listed.data?.some(skill => skill.path === input.path)) throw new BridgeError('That skill is not listed', 404);
+    const version = userConfigVersion(read);
     const entries = Array.isArray(read?.config?.skills?.config) ? read.config.skills.config : [];
     await this.#rpc('config/batchWrite', { expectedVersion: version, reloadUserConfig: true,
       edits: [{ keyPath: 'skills.config', value: [...entries.filter(entry => entry?.path !== input.path), { path: input.path, enabled: input.enabled }], mergeStrategy: 'replace' }] });
-    return this.customize(input.cwd);
+    // Only the skills changed: the answer is their list, not the plugins and connectors as well.
+    return { skills: await this.#rpc('skills/list', { cwds: this.#projectCwds(input.cwd), forceReload: true }).then(skillsSnapshot) };
   }
   async deleteSkill(input) {
     object(input, ['path', 'cwd']); text(input.path, 'skill', 4096);

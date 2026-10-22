@@ -96,6 +96,10 @@ function agentLimits(config) {
   return { graph: 256, atOnce: Math.min(32, threads ?? 6), source: threads === null ? 'Elpis default' : 'agents.max_threads' };
 }
 
+/** The version of the user's config layer: the one a write must quote. */
+export function userConfigVersion(read) {
+  return string(read?.layers?.find(layer => layer.name?.type === 'user' && !layer.name.profile && !layer.disabledReason)?.version);
+}
 export function settingsSnapshot(read, requirementsRead, prunerRead = null, saved = new Set(), env = process.env) {
   const config = read?.config ?? {};
   const requirements = requirementsRead?.requirements;

@@ -74,7 +74,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
   const [flipped, setFlipped] = useState<Record<string, boolean>>({});
   const setSkill = async (skill: Skill, enabled: boolean) => {
     setFlipped(previous => ({ ...previous, [skill.path]: enabled }));
-    try { setError(""); setData(readCustomize(await api<Customize>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) }))); }
+    try { setError(""); const { skills } = await api<Pick<Customize, "skills">>("/customize/skill", { path: skill.path, enabled, ...(cwd ? { cwd } : {}) }); setData(previous => previous && readCustomize({ ...previous, skills })); }
     catch (cause) { setError(message(cause)); }
     finally { setFlipped(({ [skill.path]: _settled, ...rest }) => rest); }
   };
