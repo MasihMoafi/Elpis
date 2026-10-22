@@ -81,7 +81,7 @@ fn owned_startup_shows_the_ledger_column_beside_the_composer() {
 }
 
 #[test]
-fn owned_startup_ledger_keeps_the_switch_above_the_title_at_each_size() {
+fn owned_startup_ledger_keeps_the_switch_on_the_title_row_at_each_size() {
     let pump = crate::startup_draft::tests::quiet_startup_test_pump();
     let layout = OwnedStartupLayout::new(&pump);
     for width in [80, 120, 200] {
@@ -89,13 +89,12 @@ fn owned_startup_ledger_keeps_the_switch_above_the_title_at_each_size() {
             let buffer = rendered(&layout, Rect::new(0, 0, width, height));
             let rule_x = width - crate::chatwidget::ledger_column_width(width);
             if height > 0 {
-                let control = row(&buffer, 0, rule_x + 1..width);
-                assert_eq!(control.trim(), "[━━━●] ON");
+                assert_eq!(row(&buffer, 0, rule_x + 1..width).trim(), "");
             }
             if height > 1 {
                 let title = row(&buffer, 1, rule_x + 1..width);
                 assert!(title.contains("CONTEXT LEDGER  context"), "{title}");
-                assert!(!title.contains("[━━━●] ON"));
+                assert!(title.trim_end().ends_with("[━━━●] ON"), "{title}");
             }
             assert!((0..height).all(|y| !row(&buffer, y, rule_x..width).contains(['×', '╳'])));
         }

@@ -65,6 +65,16 @@ fn ledger_title(width: usize, title: Vec<Span<'static>>) -> Line<'static> {
     crate::line_truncation::truncate_line_with_ellipsis_if_overflow(Line::from(title), width)
 }
 
+/// The owned column's title shares its row with the switch, so it stops one column before it.
+fn owned_title_width(content_width: usize) -> usize {
+    let toggle = ledger_toggle(Some(true)).width();
+    if content_width < toggle {
+        content_width
+    } else {
+        content_width.saturating_sub(toggle + 1)
+    }
+}
+
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
 /// `LEDGER_MIN_TERMINAL_WIDTH`, otherwise 52 or two fifths of the terminal.
 #[cfg(test)]
@@ -104,7 +114,6 @@ pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut
     if content_width == 0 || area.height == 0 {
         return;
     }
-    let _ = render_ledger_toggle(area, content_width, buf);
     let mut title = crate::status_indicator_widget::ledger_title_shimmer(
         CONTEXT_LEDGER_TITLE,
         std::time::Duration::ZERO,
@@ -117,7 +126,11 @@ pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut
         Span::raw("  "),
         Span::styled("context not measured · loading", ledger_muted_style()),
     ]);
-    Paragraph::new(ledger_title(usize::from(content_width), title)).render(
+    Paragraph::new(ledger_title(
+        owned_title_width(usize::from(content_width)),
+        title,
+    ))
+    .render(
         Rect::new(
             area.x + LEDGER_LEFT_COLS,
             area.y + 1,
@@ -126,18 +139,20 @@ pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut
         ),
         buf,
     );
+    let _ = render_ledger_toggle(area, content_width, buf);
 }
 
-/// The owned column's first row holds only its shared switch, aligned with the switches below.
+/// The owned column's first row stays blank; its second holds the title and, at its right
+/// edge, the shared switch, aligned with the switches below.
 fn render_ledger_toggle(area: Rect, content_width: u16, buf: &mut Buffer) -> Option<Rect> {
     let label = ledger_toggle(Some(true));
     let width = label.width() as u16;
-    if area.height == 0 || content_width < width {
+    if area.height < 2 || content_width < width {
         return None;
     }
     let toggle = Rect::new(
         area.x + LEDGER_LEFT_COLS + content_width - width,
-        area.y,
+        area.y + 1,
         width,
         1,
     );
@@ -883,7 +898,7 @@ impl ChatWidget {
         title.extend([Span::raw("  "), Span::styled(context_header, context)]);
         let title = ledger_title(
             if owned_column {
-                content_width
+                owned_title_width(content_width)
             } else {
                 content_width.saturating_sub(1)
             },
@@ -1496,7 +1511,7 @@ impl ChatWidget {
         if content_width == 0 || area.height == 0 {
             return;
         }
-        // Pin the switch and title; only the title is part of `rows`.
+        // Pin the blank top row and the title row; only the title is part of `rows`.
         let pinned = u16::from(owned_column);
         let content = Rect::new(
             area.x + LEDGER_LEFT_COLS,
