@@ -283,6 +283,11 @@ export const retainedUpdates = {
       "approval": "f6daa10832a22a3957d964cf7a606995fdd61af8",
       "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
     },
+    "tests/files-pane.test.cjs": {
+      "blob": "2cf60a078dc211db052e3c6117bd861b096fe9cf",
+      "approval": "97d52bcaabd025ba6eba5f6c51acb44092d0e144",
+      "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged."
+    },
     "tests/love-spot.test.cjs": {
       "blob": "52c6639f802fffbbc147208964cf35fcc2a3f619",
       "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
