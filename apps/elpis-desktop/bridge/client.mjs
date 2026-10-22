@@ -919,12 +919,16 @@ export class DesktopClient extends EventEmitter {
     await this.#githubConnector.setEnabled(input.enabled);
     return this.customize(input.cwd);
   }
-  /** Turns one listed skill on or off (native skills/config/write), then lists again. */
+  /** Turns one listed skill on or off, then lists again. The engine's skills/config/write answers and saves nothing (22 Oct:
+   * a planted skill stayed off), so the entry is written to the config's skills.config like any other setting. */
   async setSkill(input) {
     object(input, ['path', 'enabled', 'cwd']); text(input.path, 'skill', 4096);
     if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
     if (!(await this.customize(input.cwd)).skills.data?.some(skill => skill.path === input.path)) throw new BridgeError('That skill is not listed', 404);
-    await this.#rpc('skills/config/write', { path: input.path, enabled: input.enabled });
+    const [read, { version }] = await Promise.all([this.#rpc('config/read', { includeLayers: false }), this.settings()]);
+    const entries = Array.isArray(read?.config?.skills?.config) ? read.config.skills.config : [];
+    await this.#rpc('config/batchWrite', { expectedVersion: version, reloadUserConfig: true,
+      edits: [{ keyPath: 'skills.config', value: [...entries.filter(entry => entry?.path !== input.path), { path: input.path, enabled: input.enabled }], mergeStrategy: 'replace' }] });
     return this.customize(input.cwd);
   }
   async deleteSkill(input) {
