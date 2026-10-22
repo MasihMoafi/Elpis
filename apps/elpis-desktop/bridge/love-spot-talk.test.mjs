@@ -24,7 +24,7 @@ async function fixture(t) {
   });
   const talk = createLoveSpotTalk({ client, store });
   t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
-  const finish = (id = 'turn-1', status = 'completed') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: 'Here with you.' }] } } } });
+  const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries };
 }
 test('Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models', async t => {
@@ -47,7 +47,7 @@ test('Talk creates one persistent normal chat, attributes live notes by colour, 
 test('Talk is Matilda: who she is goes with every message, and only as text she can read', async t => {
   const f = await fixture(t);
   await f.talk.send({ text: 'Hello', model: 'text', persona: 'Masih\'s partner.' });
-  assert.match(f.created[0].instructions, /You are Matilda/); assert.match(f.created[0].instructions, /cannot draw on the board yourself yet/);
+  assert.match(f.created[0].instructions, /You are Matilda/); assert.match(f.created[0].instructions, /```excalidraw/);
   assert.deepEqual(f.sent[0].attachments.filter(a => a.name === 'Who you are.txt').map(a => [a.type, a.text]), [['text', 'Masih\'s partner.']]);
   f.finish(); await f.talk.idle();
   await f.talk.send({ text: 'Again', model: 'text', persona: 'A maths tutor.' });
@@ -57,6 +57,35 @@ test('Talk is Matilda: who she is goes with every message, and only as text she 
   await f.talk.send({ text: 'No persona sent', model: 'text' }); assert.equal(f.sent[2].attachments.some(a => a.name === 'Who you are.txt'), false);
   f.finish('turn-3'); await f.talk.idle();
   await assert.rejects(f.talk.send({ text: 'Hi', model: 'text', persona: 'x'.repeat(4001) }), /persona/i); assert.equal(f.sent.length, 3);
+});
+const flower = [{ type: 'ellipse', x: 20, y: 0, width: 24, height: 24, strokeColor: '#e03131', backgroundColor: '#ffc9c9' }, { type: 'line', points: [[32, 24], [32, 80]], strokeColor: '#2f9e44' }, { type: 'text', x: 0, y: 84, text: 'for you' }];
+test('Matilda paints: a fenced excalidraw block is drawn beneath her note, checked, grouped, and kept out of the note and the panel', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Hello', model: 'text' });
+  const reply = `A flower for you.\n\n\`\`\`excalidraw\n${JSON.stringify([...flower, { type: 'rocket' }, { type: 'ellipse', strokeColor: 'red; drop table' }])}\n\`\`\``;
+  f.finish('turn-1', 'completed', reply); await f.talk.idle();
+  const scene = (await f.store.read()).scene, note = scene.elements.find(e => e.id === 'love-reply-turn-1');
+  assert.equal(note.text, 'A flower for you.'); assert.doesNotMatch(note.originalText, /excalidraw|ellipse/);
+  const painted = scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-'));
+  assert.deepEqual(painted.map(e => e.type), ['ellipse', 'line', 'text', 'ellipse'], 'an unknown shape type is skipped; a bad colour falls back');
+  assert.equal(painted[3].strokeColor, '#e03131'); assert.equal(painted[0].strokeColor, '#e03131'); assert.equal(painted[0].backgroundColor, '#ffc9c9');
+  assert.deepEqual(painted[1].points, [[0, 0], [0, 56]]); assert.ok(painted.every(e => e.groupIds[0] === 'love-paint-turn-1'), 'one group, so it moves as one');
+  assert.ok(Math.min(...painted.map(e => e.y)) >= note.y + note.height, 'beneath the note');
+  assert.doesNotMatch(JSON.stringify((await f.talk.read()).entries), /excalidraw/, 'the panel shows the note only');
+});
+test('a painting without a note is still drawn once; a broken or oversized block draws what it can and never breaks the reply', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Draw me something', model: 'text' });
+  f.finish('turn-1', 'completed', `\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``); f.finish('turn-1', 'completed', `\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``); await f.talk.idle();
+  let scene = (await f.store.read()).scene;
+  assert.equal(scene.elements.filter(e => e.type === 'text' && e.id.startsWith('love-reply-')).length, 0, 'no empty note');
+  assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-')).length, 3, 'drawn once, though the turn finished twice');
+  await f.talk.send({ text: 'Again', model: 'text' });
+  f.finish('turn-2', 'completed', 'Still here.\n\n```excalidraw\n{not json'); await f.talk.idle();
+  scene = (await f.store.read()).scene; assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-2').text, 'Still here.');
+  await f.talk.send({ text: 'Lots', model: 'text' });
+  f.finish('turn-3', 'completed', `Many.\n\n\`\`\`excalidraw\n${JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ type: 'rectangle', x: i, y: i })))}\n\`\`\``); await f.talk.idle();
+  scene = (await f.store.read()).scene; assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-3-')).length, 60, 'at most 60 shapes');
 });
 test('replies are blue, unsigned, collision-free, idempotent and saved without a UI subscriber', async t => {
   const f = await fixture(t);

@@ -8,6 +8,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer } = require('./love-spot-order.cjs');
+const { paintElements, paintingSize } = require('./love-spot-painting.cjs');
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const fail = (message, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
@@ -322,16 +323,18 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return (await fs.readFile(path.join(directory, 'view.png'))).toString('base64');
     });
   }
-  async function reply(turnId, text, agentColor, page) {
-    if (typeof text !== 'string' || !text.trim()) return;
+  /** Writes the reply as a blue note, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. */
+  async function reply(turnId, text, agentColor, page, shapes = []) {
+    const note = typeof text === 'string' && text.trim() !== '';
+    if (!note && !shapes.length) return;
     return locked(async () => {
-      const { scene } = await read(), id = `love-reply-${turnId}`;
+      const { scene } = await read(), id = note ? `love-reply-${turnId}` : `love-paint-${turnId}-0`;
       if (page) samePage(page, scene.page);
       if (scene.elements.some(e => e.id === id)) return;
       const live = scene.elements.filter(e => !e.isDeleted);
       const anchor = live.filter(e => e.type === 'text' && !agentColor(e.strokeColor)).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
       // Monospaced text and generous bounds keep restored font metrics inside the reserved area.
-      const lines = text.trim().split('\n').flatMap(line => {
+      const lines = (note ? text.trim() : '').split('\n').flatMap(line => {
         const chars = Array.from(line), wrapped = [];
         // Wide glyphs and expanded tabs need more room than Latin letters when Excalidraw restores the font.
         const columns = char => char === '\t' ? 8 : char.codePointAt(0) > 127 ? 2 : 1;
@@ -344,7 +347,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         }
         return wrapped.length ? wrapped : [''];
       });
-      const width = 480, height = Math.max(1, lines.length) * 28;
+      const noteHeight = note ? Math.max(1, lines.length) * 28 : 0, painted = paintingSize(shapes), gap = note && shapes.length ? 24 : 0;
+      const width = Math.max(note ? 480 : 0, painted.width), height = noteHeight + gap + painted.height;
       const bounds = e => {
         const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
         return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height / 2 - h / 2, width: w, height: h };
@@ -356,11 +360,11 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         if (!hits.length) break;
         y = Math.max(...hits.map(e => e.y + e.height)) + 40;
       }
-      const element = { id, type: 'text', x, y, width, height, angle: 0, strokeColor: '#1971c2', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
+      const element = !note ? null : { id, type: 'text', x, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#1971c2', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
         isDeleted: false, boundElements: null, updated: Date.now(), link: null, locked: false, fontSize: 20, fontFamily: 3, text: lines.join('\n'),
         originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.4 };
-      await persist(merge(scene, { elements: [element] }));
+      await persist(merge(scene, { elements: [...(element ? [element] : []), ...paintElements(shapes, { x, y: y + noteHeight + gap }, turnId)] }));
     });
   }
   async function names(dir) { try { return await fs.readdir(dir); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } }
