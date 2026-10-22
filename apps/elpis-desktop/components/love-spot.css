@@ -48,31 +48,4 @@
 .love-spot-talk-controls .dictation-status:not(:empty) { order: 1; flex-basis: 100%; }
 .love-spot-talk-error { padding: 8px 12px; color: var(--destructive); font-size: var(--text-small); overflow-wrap: anywhere; }
 .love-spot-menu-anchor { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.love-agent-toolbar { position: relative; z-index: 6; display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
-.love-agent-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 460px; max-width: calc(100vw - 32px); max-height: var(--available-height); overflow-y: auto; padding: 8px; }
-.love-agent-picker > [role="menuitem"] { justify-content: flex-start; min-height: 66px; gap: 8px; text-align: left; }
-.love-spot-editor[data-placing-agent] canvas { cursor: crosshair; }
-.love-agent-placement { position: absolute; z-index: 5; bottom: 64px; left: 50%; transform: translateX(-50%); pointer-events: none; max-width: calc(100% - 24px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); font-size: 12px; }
-.love-agent-picker strong, .love-agent-picker small, .love-agent-heading small { display: block; }
-.love-agent-picker small, .love-agent-heading small { color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
-.love-agent-list { display: flex; flex: 1 1 120px; min-width: 0; gap: 4px; overflow-x: auto; }
-.love-agent-list > button { min-height: 40px; }
-.love-agent-list img, .love-agent-picker img, .love-agent-heading img { object-fit: contain; flex-shrink: 0; }
-.love-agent-panel { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 12px; padding: 16px; overflow-y: auto; background: var(--background); color: var(--foreground); font-size: 13px; }
-.love-agent-panel > * { flex-shrink: 0; }
-.love-agent-panel:has(+ .love-spot-talk:not([hidden])) { border-bottom: 1px solid var(--border); }
-.love-agent-heading { display: flex; gap: 10px; align-items: center; }
-.love-agent-heading > div { flex: 1; }
-.love-agent-panel label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
-.love-agent-panel input, .love-agent-panel textarea { width: 100%; min-height: 32px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); font: inherit; resize: vertical; font-weight: 400; }
-.love-agent-panel p { color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
-.love-agent-answer { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
-.love-agent-conversation { display: flex; flex-direction: column; gap: 12px; min-height: 60px; }
 /* The renderer's existing theme owns colour; no remote component stylesheet is loaded. */
-.love-agent-conversation .chat { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.love-agent-conversation .chat-end { align-items: flex-end; }
-.love-agent-conversation .chat-header { color: var(--muted-foreground); font-size: 11px; }
-.love-agent-conversation .chat-bubble { max-width: 95%; padding: 10px 12px; border-radius: var(--radius); background: var(--muted); color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
-.love-agent-conversation .chat-end .chat-bubble { background: var(--selected); }
-.love-agent-panel details > summary { cursor: pointer; padding: 8px 0; }
-.love-agent-panel details > div { padding-block: 8px; }
