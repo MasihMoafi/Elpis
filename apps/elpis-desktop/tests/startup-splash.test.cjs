@@ -1,4 +1,4 @@
-// The Elpis symbol rotates upright without the extra ribbon, in both themes.
+// The third E gyroscope animates at startup without surrounding rings.
 // Runs the exported renderer against the mock bridge; no engine or real desktop profile.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,40 +24,38 @@ async function starting(t, { colorScheme = 'light', reducedMotion = 'no-preferen
   if (failModels) await f.page.route(url => url.pathname === '/api/models', route => route.fulfill({ status: 503, json: { error: 'Fixture catalogue unavailable' } }));
   await f.page.reload({ waitUntil: 'domcontentloaded' });
   await f.page.locator('.startup-splash').waitFor();
+  // Readiness checks below run after the short introductory motion has played.
+  await f.page.clock.runFor(700);
   return { ...f, release: pathname => gates[pathname ?? hold[0]]() };
 }
 
 /** Seek the actual CSS motion rather than waiting for approximate wall-clock frames. */
 const frame = (page, ms) => page.evaluate(ms => {
   for (const animation of document.querySelector('.startup-splash').getAnimations({ subtree: true })) { animation.pause(); animation.currentTime = ms; }
-  const logo = document.querySelector('.splash-logo'), box = logo.getBoundingClientRect();
-  const transform = getComputedStyle(logo).transform;
-  const [a, b] = transform === 'none' ? [1, 0] : transform.match(/matrix\(([^)]+)\)/)[1].split(',').map(Number);
-  const trail = document.querySelector('.splash-ribbon path');
-  return { logo: Math.round(Math.atan2(b, a) * 180 / Math.PI), centre: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)],
-    ribbon: trail && { offset: parseFloat(getComputedStyle(trail).strokeDashoffset), opacity: Number(getComputedStyle(trail).opacity) } };
+  const logo = document.querySelector('.splash-logo'), box = document.querySelector('.splash-gyro').getBoundingClientRect();
+  return { logo: getComputedStyle(logo).transform, centre: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)] };
 }, ms);
 
-for (const colorScheme of ['light', 'dark']) test(`startup: symbol rotates upright without an added ribbon (${colorScheme})`, async t => {
+for (const colorScheme of ['light', 'dark']) test(`startup: the third E gyroscope turns without surrounding rings (${colorScheme})`, async t => {
   const { page } = await starting(t, { colorScheme });
   const splash = page.locator('.startup-splash');
   const logo = page.locator('.splash-logo');
   assert.match(await logo.getAttribute('src'), /\/branding\/elpis-symbol-amber\.svg$/);
   await page.waitForFunction(() => document.querySelector('.splash-logo')?.naturalWidth > 0);
+  assert.equal(await splash.locator('svg').count(), 0, 'There is no surrounding ring or hexagon');
   assert.equal(await splash.locator('.splash-dial, .splash-ticks, .splash-arcs, .splash-hex, .splash-scope, .splash-sweep, .splash-boot-panel, .splash-boot, .splash-meter').count(), 0, 'No HUD parts remain');
   const ground = await splash.evaluate(el => ({ background: getComputedStyle(el).backgroundColor,
     before: getComputedStyle(el, '::before').backgroundImage, after: getComputedStyle(el, '::after').backgroundImage }));
   assert.equal(ground.background, 'rgb(10, 11, 13)', 'The brand opening stays dark even when the app theme is light');
   assert.doesNotMatch(ground.before + ground.after, /repeating-linear-gradient/, 'No HUD floor grid remains');
   const m = await frame(page, 0), mid = await frame(page, 240), e = await frame(page, 800), end = await frame(page, 2000);
-  assert.equal(m.logo, 90, 'The first frame is the M');
-  assert.ok(mid.logo > 0 && mid.logo < 90, `A real quarter turn between M and E: ${mid.logo}°`);
-  assert.equal(e.logo, 0, 'The final mark is the upright Elpis E');
-  assert.equal(end.logo, 0, 'The E stays upright while startup waits');
+  assert.notEqual(mid.logo, m.logo, 'The E starts turning in depth');
+  assert.notEqual(mid.logo, e.logo, 'The rotation advances smoothly');
+  assert.notEqual(end.logo, e.logo, 'The mark keeps rotating while startup waits');
   assert.deepEqual(m.centre, e.centre, 'The mark rotates about its centre');
   assert.ok(Math.abs(m.centre[0] - 640) < 1, 'The mark is centred in the window');
   assert.equal(await splash.locator('.splash-ribbon').count(), 0, 'No extra ribbon is added to the initial animation');
-  assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getTiming().iterations === Infinity)), false, 'App startup plays once');
+  assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).some(animation => animation.effect.getTiming().iterations === Infinity)), true, 'The gyroscope stays animated until startup finishes');
   if (process.env.ELPIS_SPLASH_SHOTS) {
     await fs.mkdir(process.env.ELPIS_SPLASH_SHOTS, { recursive: true });
     for (const [name, ms] of [['0', 0], ['0.4', 400], ['0.8', 800], ['1.2', 1200], ['end', 2000]]) {
@@ -78,14 +76,18 @@ test('startup: the splash waits for conversations even after the engine connects
   await page.locator('.startup-splash.leaving').waitFor({ state: 'attached' });
 });
 
-test('reduced motion: nothing on the startup splash moves and the E stays upright', async t => {
+test('reduced motion: startup keeps a slow, smooth rotation', async t => {
   const { page } = await starting(t, { colorScheme: 'dark', reducedMotion: 'reduce' });
   const splash = page.locator('.startup-splash');
-  assert.equal(await splash.evaluate(el => el.getAnimations({ subtree: true }).length), 0, 'Reduced motion must stop all splash animation');
-  assert.equal(await page.locator('.splash-logo').evaluate(el => getComputedStyle(el).transform), 'none');
+  const rotor = splash.locator('.splash-logo');
+  assert.equal(await rotor.evaluate(el => getComputedStyle(el).animationDuration), '12s');
+  const first = await rotor.evaluate(el => getComputedStyle(el).transform);
+  await page.waitForTimeout(160);
+  assert.notEqual(await rotor.evaluate(el => getComputedStyle(el).transform), first, 'The animation remains visible');
+  assert.equal(await rotor.evaluate(el => getComputedStyle(el).animationName), 'splash-gyro');
   if (process.env.ELPIS_SPLASH_SHOTS) await page.screenshot({ path: path.join(process.env.ELPIS_SPLASH_SHOTS, 'reduced-motion.png') });
   const before = await splash.innerHTML(); await page.waitForTimeout(140);
-  assert.equal(await splash.innerHTML(), before, 'No JavaScript animation continues in reduced motion');
+  assert.equal(await splash.innerHTML(), before, 'The slow rotation uses CSS');
 });
 
 test('readiness starts a short fade immediately and real mouse clicks pass through it', async t => {
