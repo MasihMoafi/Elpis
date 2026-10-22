@@ -8,6 +8,14 @@ test('closing asks only when the saved preference says so', () => {
   for (const value of [{}, { error: 'unreadable' }, { 'elpis-preferences-v1': '{"confirmClose":false}' }, { 'elpis-preferences-v1': 'not json' }, { 'elpis-preferences-v1': '{"confirmClose":"yes"}' }]) assert.equal(closeNeedsConfirmation(store(value)), false);
 });
 
+test('the Session Manager is off unless saved on', () => {
+  const { sessionManagerOn } = require('./preferences.cjs');
+  const store = value => ({ read: () => value });
+  assert.equal(sessionManagerOn(store({ 'elpis-preferences-v1': JSON.stringify({ sessionManager: true }) })), true);
+  for (const value of [{}, { error: 'unreadable' }, { 'elpis-preferences-v1': '{"sessionManager":false}' }, { 'elpis-preferences-v1': '{"sessionManager":"yes"}' }, { 'elpis-preferences-v1': 'not json' }])
+    assert.equal(sessionManagerOn(store(value)), false);
+});
+
 test('Close to tray is off unless saved on; the Quick Entry shortcut is Ctrl+Alt+Space unless saved, and empty turns it off', () => {
   const { closesToTray, quickEntryShortcut } = require('./preferences.cjs');
   const store = value => ({ read: () => value });

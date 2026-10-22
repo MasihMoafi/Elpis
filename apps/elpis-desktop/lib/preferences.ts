@@ -45,6 +45,10 @@ export type Preferences = {
   selectedPalette: string;
   /** The sidebar's page order (lib/nav-order.ts): page ids joined by commas; pages not listed keep their place at the end. */
   navOrder: string;
+  /** Pages left out of the sidebar and the command menu: ids joined by commas. Pages that do not work yet stay here; their code and tests stay. */
+  hiddenPages: string;
+  /** The Session Manager chat, its sidebar row and its own review of running chats. Off until it does enough to keep (22 Oct); desktop/preferences.cjs reads it. */
+  sessionManager: boolean;
   /** Settings section and page order, using the same arranger as the sidebar. */
   settingsSectionOrder: string;
   settingsPageOrder: string;
@@ -56,7 +60,7 @@ export type Preferences = {
 export const DEFAULT_PREFERENCES: Preferences = {
   softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
-  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
+  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", hiddenPages: "experimentLab,canvas", sessionManager: false, settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
 };
 export const PREFERENCES_KEY = "elpis-preferences-v1";
 const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = {

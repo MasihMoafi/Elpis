@@ -65,6 +65,15 @@ async function guardDesktopStore(target) {
       current = value;
     } });
   }, STORE_KEYS.source);
+  // Tests see every page and the Session Manager unless a test sets them itself: the shipped defaults hide the unfinished ones (lib/preferences.ts).
+  await target.addInitScript(() => {
+    const read = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      const value = read.call(this, key);
+      if (key !== 'elpis-preferences-v1') return value;
+      try { return JSON.stringify({ hiddenPages: '', sessionManager: true, ...(value ? JSON.parse(value) : {}) }); } catch { return value; }
+    };
+  });
 }
 /** Unapproved oranges in the light theme (hue 15–50°, saturated, mid lightness), as `selector: property value`.
  * A87 approves one logo colour and its exact interaction mixes. Light text still uses ink.

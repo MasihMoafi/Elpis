@@ -2,7 +2,7 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useRef, useState } from "react";
-import { api, effortsOf, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
+import { api, connectionOrder, effortsOf, isListedProvider, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -75,7 +75,8 @@ function ModelChoice({ label, value, models, provider, catalogStatus, disabled, 
 }
 
 function providerOptions(current: string, providers: ElpisSettings["providers"] = []) {
-  return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{providers.map(item => <option key={item.id} value={item.id}>{providerLabel(null, item.id, providers)}</option>)}</>;
+  const listed = providers.filter(item => item.id === current || isListedProvider(item.id)).map(item => ({ id: item.id, label: providerLabel(null, item.id, providers) }));
+  return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{connectionOrder(listed).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
 }
 
 /** The main model (what new chats start with, here and in the TUI) and the background model Smart Prune falls back to. */

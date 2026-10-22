@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { providerLabel, providerChoices, choiceOf } from '../lib/api.ts';
+import { providerLabel, providerChoices, choiceOf, connectionOrder, isListedProvider } from '../lib/api.ts';
 
 const providers = [
   { id: 'openai', displayName: 'OpenAI' },
@@ -25,9 +25,15 @@ test('known providers keep their own short names whatever their saved nickname',
   assert.equal(providerLabel(null, 'openrouter'), 'OpenRouter');
 });
 
-test('the list leaves out the local gpt-oss servers and Bedrock, and ends with OpenRouter then Google Gemini', () => {
+test('the list leaves out the local gpt-oss servers and Bedrock, and keeps the owned order (R35)', () => {
   assert.deepEqual(providerChoices(models, settings).map(choice => choice.label),
-    ['OpenAI', 'Anthropic', 'Anthropic credits', 'Research (1)', 'Research (2)', 'OpenRouter', 'Google Gemini']);
+    ['OpenAI', 'Anthropic', 'OpenRouter', 'Anthropic credits', 'Google Gemini', 'Research (1)', 'Research (2)']);
+});
+
+test('every list orders connections as Masih owns them and lists neither Amazon entry (R35)', () => {
+  const ids = ['google-gemini', 'amazon-bedrock', 'anthropic', 'team', 'openrouter', 'openai', 'amazon-bedrock-runtime', 'claude/', 'agy/'];
+  const listed = connectionOrder(ids.filter(isListedProvider).map(id => ({ id, label: providerLabel(null, id, []) })));
+  assert.deepEqual(listed.map(item => item.id), ['openai', 'claude/', 'agy/', 'openrouter', 'anthropic', 'google-gemini', 'team']);
 });
 
 test('provider choices stay distinct without exposing internal keys as ordinary labels', () => {

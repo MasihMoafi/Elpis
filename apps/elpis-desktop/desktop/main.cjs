@@ -5,7 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
 const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, listActive } = require('./session-manager-agent.cjs');
-const { closeNeedsConfirmation, closesToTray, quickEntryShortcut } = require('./preferences.cjs');
+const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, sessionManagerOn } = require('./preferences.cjs');
 const { createStateStore } = require('./state.cjs');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
@@ -106,7 +106,7 @@ async function prepareWindows() {
         },
         log: line => console.warn(line),
       });
-      client.on('event', event => { if (event.type === 'message') sessionManagerMonitor.observe(event.data); });
+      client.on('event', event => { if (event.type === 'message' && sessionManagerOn(store)) sessionManagerMonitor.observe(event.data); });
       sleepBlocker = createSleepBlocker({ powerSaveBlocker, client, store });
       // A connected terminal may keep the previous bridge and engine alive after an install.
       try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {}

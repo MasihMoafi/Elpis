@@ -148,9 +148,13 @@ export function activityOf(method: string, params: Record<string, unknown>): str
 export type ProviderChoice = { id: string; label: string; provider?: string; models: Model[]; catalogVersion?: string | null; needsKey?: boolean };
 /** Engine providers the model list leaves out: the local gpt-oss servers and Amazon Bedrock. */
 const UNLISTED = new Set(["ollama", "lmstudio", "amazon-bedrock", "amazon-bedrock-runtime"]);
-/** Where each connection sits in the list: Anthropic's first, OpenRouter second to last, Google Gemini last. */
-const ORDER = ["claude/", "anthropic-credits", "anthropic", "agy/", "openrouter", "google-gemini"];
-const rank = (id: string) => { const index = ORDER.indexOf(id); return index < 0 ? ORDER.indexOf("agy/") - 0.5 : index; };
+/** Where each connection sits in every list, by what Masih has: the OpenAI and subscription connections, then OpenRouter, then API-key providers; any other after them, by name. */
+const ORDER = ["openai", "claude/", "agy/", "openrouter", "anthropic", "anthropic-credits", "google-gemini"];
+const rank = (id: string) => { const index = ORDER.indexOf(id); return index < 0 ? ORDER.length : index; };
+/** Connections in list order. */
+export const connectionOrder = <T extends { id: string; label: string }>(items: readonly T[]) => [...items].sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
+/** Whether a provider belongs in a list: Bedrock and the local servers appear only where already chosen. */
+export const isListedProvider = (id: string) => !UNLISTED.has(id);
 export function providerChoices(models: Model[], settings: ProviderSettings | null): ProviderChoice[] {
   const main = settings?.main.provider ?? null;
   const connection = (provider: string, id = provider): ProviderChoice => ({ id, label: providerLabel(null, provider, settings?.providers), provider,
@@ -165,7 +169,7 @@ export function providerChoices(models: Model[], settings: ProviderSettings | nu
     // API connections, including the default, get their own catalog and explicit route.
     main && main !== "openai" && !UNLISTED.has(main) ? connection(main)
       : { id: main ?? "", label: providerLabel(null, main, settings?.providers) || "Configured provider", models: models.filter(model => !subscriptionOf(model.model)) },
-    ...others.sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label)),
+    ...connectionOrder(others),
   ];
 }
 /** An unset selection inherits the default; a removed explicit connection never changes its route. */
