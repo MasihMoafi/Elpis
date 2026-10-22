@@ -249,6 +249,7 @@ impl App {
         if matches!(
             &notification,
             ServerNotification::ThreadStarted(_)
+                | ServerNotification::TurnStarted(_)
                 | ServerNotification::ThreadStatusChanged(_)
                 | ServerNotification::ThreadSettingsUpdated(_)
                 | ServerNotification::ThreadNameUpdated(_)

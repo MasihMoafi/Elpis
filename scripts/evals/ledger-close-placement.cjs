@@ -142,6 +142,7 @@ async function check({ binary, output, phase, smoke }, width, light) {
     key('Enter');
     await until(ledgerOpen);
     await pause(200);
+    save('before-first-request');
     // Real native transcript rendering, with a deterministic local inference response.
     // Dense lines expose both covered glyphs and a missing gap; idle screens cannot.
     provider.actions.push(message(Array(80).fill('X'.repeat(600)).join('\n')));
@@ -151,18 +152,27 @@ async function check({ binary, output, phase, smoke }, width, light) {
     const text = save('open');
     const lines = text.split('\n');
     const titleY = lines.findIndex(line => line.includes('CONTEXT LEDGER'));
-    const controlLabel = lines[titleY].includes(onLabel) ? onLabel
-      : legacyCloseLabels.find(label => lines.some(line => line.includes(label)));
-    assert(controlLabel, 'Ledger title must include its ON toggle');
+    const controlLabel = legacyCloseLabels.find(label => lines.some(line => line.includes(label)))
+      || (lines[0].includes(onLabel) ? onLabel : undefined);
+    assert(controlLabel, 'Ledger must have a switch or the legacy close control');
     const controlY = lines.findIndex(line => line.includes(controlLabel));
     const left = lines[controlY].indexOf(controlLabel);
     result.geometry = { controlY, titleY, left, buttonWidth: [...controlLabel].length };
-    result.layoutPass = controlLabel === onLabel && controlY === 0 && titleY === 0 && !/[╳×✕]/u.test(text);
-    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; expected title and ON toggle together on row 0, with no Close row`;
     const ledgerLeft = lines[titleY].indexOf('CONTEXT LEDGER') - 2;
+    result.controlRowAlone = lines[0].slice(ledgerLeft + 2).trim() === onLabel;
+    result.titleHasStatus = /CONTEXT LEDGER  (?:≈|context)/u.test(lines[titleY]);
+    const switchRows = lines.filter(row => /SMART PRUNE|SUBAGENTS/u.test(row));
+    result.switchesAligned = switchRows.length === 2 && switchRows.every(row =>
+      row.trimEnd().length === width - 1 && (row.trimEnd().endsWith(onLabel) || row.trimEnd().endsWith(offLabel)));
+    result.layoutPass = controlLabel === onLabel && controlY === 0 && titleY === 1
+      && result.controlRowAlone && result.titleHasStatus && result.switchesAligned && !/[╳×✕]/u.test(text);
+    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; title on row ${titleY}; expected ON alone on row 0 and title/status on row 1`;
     const xExtent = text => Math.max(-1, ...text.split('\n').map(row =>
       row.includes('X'.repeat(8)) ? row.lastIndexOf('X') : -1));
     const openExtent = xExtent(text);
+    must(result.controlRowAlone, 'TUILEDGER: the switch must be alone on the first Ledger row');
+    must(result.titleHasStatus, 'TUILEDGER: the title row omits context status');
+    must(result.switchesAligned, 'TUILEDGER: Ledger switches no longer share their right edge');
     result.visibleFixtureSourceRows = lines.map(line => line.slice(Math.max(0, ledgerLeft))).filter(line => line.includes('AGENTS.md'));
     result.sourceFilenameWrappingChecked = false;
     must(lines[controlY].slice(left) === controlLabel + ' ', 'Painted toggle label or right margin differs');
@@ -203,30 +213,24 @@ async function check({ binary, output, phase, smoke }, width, light) {
         assert(composerY >= 0, `${height} rows: draft disappeared`);
         // One padding row and the composer's gap precede the single-line input.
         const transcriptHeight = Math.max(0, composerY - 2);
-        const tabRows = rows.flatMap((row, y) => /╱|╲/u.test(row) || row.includes(offLabel) ? [y] : []);
-        const expected = transcriptHeight >= 3 ? 3 : 0;
-        const centred = expected === 0 || tabRows[0] === Math.floor((transcriptHeight - 3) / 2);
-        const tabX = width - 1 - 12; // dense fixture has a persistent scrollbar
-        const clear = expected === 0 || rows.slice(0, transcriptHeight).every(row =>
-          (row[tabX - 1] || ' ') === ' ' && !row.slice(tabX, width - 1).includes('X'));
-        const reachesEdge = expected === 0 || xExtent(rows.slice(0, transcriptHeight).join('\n')) === tabX - 2;
-        const pass = tabRows.length === expected && centred && tabRows.every(y => y < transcriptHeight) && clear && reachesEdge;
-        result.placements.push({ height, transcriptHeight, tabRows, clear, reachesEdge, pass });
-        must(pass, `${width}x${height}: tab must be centred in ${transcriptHeight} transcript rows, above the gap and bottom pane`);
-        must(clear, `${width}x${height}: transcript text occupies the tab gutter or its blank neighbour`);
+        const body = rows.slice(0, transcriptHeight);
+        const ledgerRows = body.flatMap((row, y) =>
+          /[│╱╲]/u.test(row.slice(0, width - 1)) || row.includes(onLabel) || row.includes(offLabel) || ledgerOpen(row) ? [y] : []);
+        const reachesEdge = transcriptHeight === 0 || xExtent(body.join('\n')) === width - 2;
+        const pass = ledgerRows.length === 0 && reachesEdge;
+        result.placements.push({ height, transcriptHeight, ledgerRows, reachesEdge, pass });
+        must(ledgerRows.length === 0, `TUILEDGER: ${width}x${height}: closed Ledger still draws cells`);
+        must(reachesEdge, `TUILEDGER: ${width}x${height}: closed transcript does not use its full width`);
       }
       result.placementPass = result.placements.every(item => item.pass);
-      const closed = capture(false).split('\n');
-      const tabY = closed.findIndex(row => row.includes(offLabel));
-      assert(tabY >= 0, 'Tall terminal must retain the OFF tab');
-      const tabX = closed[tabY].indexOf(offLabel) - 2;
       key('PageUp'); await pause(150);
-      const scrolled = save('scrolled').split('\n');
-      must(scrolled.findIndex(row => row.includes(offLabel)) === tabY && scrolled[tabY].indexOf(offLabel) - 2 === tabX, 'Scrolling moved the closed tab');
-      click(tabX - 1, tabY); await pause(120);
-      must(!ledgerOpen(capture(false)), 'A click outside the tab reopened Ledger');
-      click(tabX + 2, tabY); await until(ledgerOpen);
-      result.tabClickReopens = true;
+      const scrolled = save('scrolled');
+      must(scrolled.split('\n').every(row => !/[│╱╲]/u.test(row.slice(0, width - 1))) && !scrolled.includes(offLabel), 'TUILEDGER: closed Ledger draws cells after scrolling');
+      click(width - 3, 15); await pause(120);
+      result.closedClickMiss = !ledgerOpen(capture(false));
+      must(result.closedClickMiss, 'TUILEDGER: the removed tab still has a click target');
+      key('Tab'); await until(ledgerOpen);
+      result.tabReopens = true;
       const reopened = save('reopened');
       result.openWrappingUnchanged = xExtent(reopened) === openExtent;
       must(result.openWrappingUnchanged, 'The open Ledger acquired a closed-tab gutter');
@@ -234,6 +238,11 @@ async function check({ binary, output, phase, smoke }, width, light) {
       key('Tab'); await until(ledgerOpen);
       key('Tab'); await until(text => !ledgerOpen(text));
       result.keyboard = ['Alt+C', 'Escape', 'Tab'];
+      key('C-u'); literal('?'); await until(text => text.includes('Keyboard shortcuts'));
+      const shortcuts = save('shortcuts');
+      result.shortcutTip = shortcuts.includes('Tab shows or hides the Context Ledger');
+      must(result.shortcutTip, 'TUILEDGER: shortcuts omit the Ledger Tab tip');
+      key('Escape');
     } else {
       result.placementPass = false;
       key('Escape'); key('Escape'); await until(text => !ledgerOpen(text));
@@ -273,9 +282,10 @@ async function check({ binary, output, phase, smoke }, width, light) {
     const file = path.join(repo, 'codex-rs/tui/src/app/snapshots/codex_tui__app__composer_hints__tests__composer_usage_notice.snap');
     const text = fs.readFileSync(file, 'utf8').split('---\n').slice(2).join('---\n');
     const first = text.split('\n').slice(1, 5);
-    const content = first.map(row => row.slice(0, 67).trim()).filter(Boolean).join(' ');
-    assert(content.includes('Run /usage for a breakdown.'), 'A105: usage notice glyphs are covered by or touching the tab');
-    console.log('PASS A105: complete usage notice survives wrapping beside the closed tab');
+    const content = first.map(row => row.trim()).filter(Boolean).join(' ');
+    assert(content.includes('Run /usage for a breakdown.'), 'Usage notice lost text after restoring the full transcript width');
+    assert(!/[╱╲]/u.test(text) && !text.includes(offLabel), 'Snapshot still paints the removed closed tab');
+    console.log('PASS: complete usage notice survives full-width closed Ledger rendering');
     return;
   }
   const config = options();
@@ -293,8 +303,8 @@ async function check({ binary, output, phase, smoke }, width, light) {
   };
   result.pass = !interrupted && result.binaryUnchanged && result.allPositiveControlsPass && (config.phase === 'baseline'
     ? checks.every(check => (!check.layoutPass || !check.placementPass) && check.errors.every(error =>
-      /^\d+x\d+: (tab must be centred|transcript text occupies)/u.test(error)))
-    : result.layoutPasses === checks.length && checks.every(check => !check.errors.length && check.placementPass && check.tabClickReopens && check.openWrappingUnchanged));
+      /^TUILEDGER:/u.test(error)))
+    : result.layoutPasses === checks.length && checks.every(check => !check.errors.length && check.placementPass && check.tabReopens && check.closedClickMiss && check.shortcutTip && check.openWrappingUnchanged));
   fs.writeFileSync(path.join(config.output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
   if (!result.pass) process.exitCode = 1;
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

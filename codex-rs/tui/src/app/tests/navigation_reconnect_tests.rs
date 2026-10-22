@@ -280,6 +280,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
             &session,
             stale_request,
             Ok(AgentsOverviewThreadRefresh {
+                unmaterialized_threads: HashSet::new(),
                 last_messages: HashMap::new(),
                 threads: HashMap::new(),
                 recent_seed_complete: false,
@@ -433,6 +434,7 @@ async fn reconnect_daemon_command_center_after_socket_replacement_without_a_conv
             &session,
             stale_request,
             Ok(AgentsOverviewThreadRefresh {
+                unmaterialized_threads: HashSet::new(),
                 last_messages: HashMap::new(),
                 threads: stale_threads,
                 recent_seed_complete: true,

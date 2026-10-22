@@ -181,10 +181,7 @@ impl App {
         let mut footer_height_changed = false;
         let mut feedback_tick = None;
         let mut transcript_bottom = available.saturating_sub(u16::from(composer_gap.is_none()));
-        let transcript_area = Rect::new(0, 0, body_width, transcript_bottom);
-        let text_area = self
-            .chat_widget
-            .context_ledger_transcript_area(transcript_area, screen_size.width);
+        let text_area = Rect::new(0, 0, body_width, transcript_bottom);
         self.sync_owned_transcript(text_area.width);
         let chat_widget = &self.chat_widget;
         let view = &mut self.transcript_view;
@@ -260,18 +257,7 @@ impl App {
                 // their separator. Resizing must not preserve a stale return control.
                 ratatui::widgets::Clear.render(bottom_area, frame.buffer);
                 transcript_bottom = bottom_area.y;
-                let compact_text_area = chat_widget.context_ledger_transcript_area(
-                    Rect::new(0, 0, body_width, transcript_bottom),
-                    screen_size.width,
-                );
-                if compact_text_area.width != text_area.width {
-                    Self::sync_owned_transcript_tail(
-                        chat_widget,
-                        view,
-                        &self.transcript_cells,
-                        compact_text_area.width,
-                    );
-                }
+                let compact_text_area = Rect::new(0, 0, body_width, transcript_bottom);
                 completion_tip_area = view.render_with_turn_tip_space(
                     compact_text_area,
                     frame.buffer,
@@ -288,13 +274,6 @@ impl App {
             if let (Some(tip), Some(area)) = (completion_tip, completion_tip_area) {
                 tip.render(area, frame.buffer);
             }
-            chat_widget.render_context_ledger_tab(
-                // The scrollbar stays visible and keeps its own mouse target. Paint before
-                // the bottom pane so a slash popup overlays the tab along with history.
-                Rect::new(0, 0, body_width, transcript_bottom),
-                screen_size.width,
-                frame.buffer,
-            );
             bottom.render(bottom_area, frame.buffer);
             chat_widget.render_context_ledger_column(ledger_area, frame.buffer);
             // Elpis: the row above the composer stops at the Context Ledger, which starts there.

@@ -27,7 +27,6 @@ fn ledger_screen(chat: &ChatWidget, width: u16, height: u16) -> Buffer {
         Rect::new(width - ledger_width, 0, ledger_width, height),
         &mut buffer,
     );
-    chat.render_context_ledger_tab(screen, width, &mut buffer);
     buffer
 }
 
@@ -45,73 +44,82 @@ fn ledger_mouse(
 }
 
 #[tokio::test]
-async fn a105_header_toggle_closes_and_half_hexagon_tab_reopens_at_each_size() {
+async fn ledger_switch_has_its_own_row_and_closed_ledger_draws_nothing() {
     use crossterm::event::MouseButton::Left;
     use crossterm::event::MouseEventKind::Down;
     let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
     for (width, height) in LEDGER_SCREENS {
         show_context_ledger(&mut chat);
         let buffer = ledger_screen(&chat, width, height);
-        let lines = rows(&buffer, 0..width);
-        let title = lines
-            .iter()
-            .position(|line| line.contains("CONTEXT LEDGER"))
-            .unwrap();
-        assert!(lines[title].contains("[━━━●] ON"), "{lines:#?}");
+        let ledger_left = width - chat.context_ledger_width(width);
+        let lines = rows(&buffer, ledger_left + 1..width);
+        assert_eq!(lines[0].trim(), "[━━━●] ON");
+        assert!(lines[1].contains("CONTEXT LEDGER  context"), "{lines:#?}");
+        assert!(!lines[1].contains("[━━━●] ON"));
         assert!(!lines.join("\n").contains(['×', '╳', '✕']));
-        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), 0, title as u16)));
-        assert!(chat.handle_context_ledger_mouse(ledger_mouse(
-            Down(Left),
-            width - 3,
-            title as u16
-        )));
-        let closed = ledger_screen(&chat, width, height);
-        let text = rows(&closed, 0..width).join("\n");
-        assert!(!text.contains("CONTEXT LEDGER"));
-        assert!(
-            text.contains("[●━━━] OFF") && text.contains('╱') && text.contains('╲'),
-            "{text}"
+        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), ledger_left + 3, 1)));
+        assert!(chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 3, 0)));
+        assert_eq!(chat.context_ledger_width(width), 0);
+        for closed_height in [0, 1, 2, 6, height] {
+            let closed = ledger_screen(&chat, width, closed_height);
+            assert!(closed.content.iter().all(|cell| cell.symbol() == " "));
+        }
+        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 2, height / 2)));
+        chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(
+            rows(&ledger_screen(&chat, width, height), ledger_left + 1..width)[0].trim(),
+            "[━━━●] ON"
         );
-        assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 1, 0)));
-        assert!(chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 2, height / 2)));
-        assert!(rows(&ledger_screen(&chat, width, height), 0..width)[title].contains("[━━━●] ON"));
     }
 }
 
 #[tokio::test]
-async fn a105_tab_clears_its_hitbox_when_the_transcript_has_fewer_than_three_rows() {
-    use crossterm::event::MouseButton::Left;
-    use crossterm::event::MouseEventKind::Down;
-    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
-    chat.close_context_ledger();
-    let screen = Rect::new(0, 0, 80, 14);
-    let mut buffer = Buffer::empty(screen);
-    for height in [8, 2, 1, 0] {
-        let transcript = Rect::new(0, 0, 79, height);
-        buffer.content.iter_mut().for_each(|cell| {
-            cell.set_symbol(".");
-        });
-        chat.render_context_ledger_tab(transcript, 80, &mut buffer);
-        let text = rows(&buffer, 0..80);
-        assert!(
-            text.iter()
-                .skip(usize::from(height))
-                .all(|row| row == &".".repeat(80))
-        );
-        assert!(text.iter().all(|row| row.ends_with('.')));
-        if height >= 3 {
-            assert!(text.join("\n").contains("[●━━━] OFF"));
-            assert_eq!(
-                chat.context_ledger_transcript_area(transcript, 80).width,
-                66
-            );
-        } else {
-            assert!(!text.join("\n").contains("[●━━━] OFF"));
-            assert_eq!(
-                chat.context_ledger_transcript_area(transcript, 80),
-                transcript
-            );
-            assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), 77, 3)));
+async fn owned_ledger_header_rows_survive_compaction_and_tiny_viewports() {
+    for measured in [false, true] {
+        let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+        show_context_ledger(&mut chat);
+        if measured {
+            token_usage_update(&mut chat, None);
+        }
+        for width in [28, 40, 52, 80] {
+            for height in [0, 1, 2, 3, 4, 6, 12, 40, 160] {
+                let area = Rect::new(0, 0, width, height);
+                let mut buffer = Buffer::empty(area);
+                chat.render_context_ledger_column(area, &mut buffer);
+                let lines = rows(&buffer, 1..width);
+                if height > 0 {
+                    assert_eq!(lines[0].trim(), "[━━━●] ON");
+                    assert_eq!(buffer[(width - 1, 0)].symbol(), " ");
+                }
+                if height > 1 {
+                    let expected = if measured {
+                        "CONTEXT LEDGER  ≈1.0k"
+                    } else {
+                        "CONTEXT LEDGER  context"
+                    };
+                    assert!(
+                        lines[1].trim_start().starts_with(expected),
+                        "{width}x{height}: {lines:#?}"
+                    );
+                    assert!(!lines[1].contains("[━━━●] ON"));
+                    if width == 28 {
+                        assert!(lines[1].trim_end().ends_with('…'));
+                    }
+                    if width == 80 {
+                        assert!(lines[1].contains(if measured {
+                            "tokens in context"
+                        } else {
+                            "context not measured · ≈0 source estimates"
+                        }));
+                    }
+                }
+                if height > 2 {
+                    assert!(
+                        lines[2].contains("Alt+C controls"),
+                        "{width}x{height}: {lines:#?}"
+                    );
+                }
+            }
         }
     }
 }
@@ -657,7 +665,7 @@ async fn owned_ledger_title_stays_at_top_with_active_subagents() {
             "the shared toggle stays at the top"
         );
         assert!(
-            lines[0].contains("CONTEXT LEDGER"),
+            lines[1].contains("CONTEXT LEDGER"),
             "child activity must not displace the Ledger title"
         );
         let toggle = lines
@@ -691,7 +699,7 @@ async fn owned_ledger_without_subagents_omits_the_child_summary() {
     chat.render_context_ledger_column(area, &mut buffer);
     let lines = rows(&buffer, 0..area.width);
     assert!(lines[0].contains("[━━━●] ON"));
-    assert!(lines[0].contains("CONTEXT LEDGER"));
+    assert!(lines[1].contains("CONTEXT LEDGER"));
     assert!(!lines.iter().any(|line| line.contains("SUBAGENT LEDGER")));
 }
 

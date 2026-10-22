@@ -13,6 +13,7 @@ use crate::app_event::AgentsOverviewThreadRefresh;
 use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
 use crate::chatwidget::ChatWidget;
+use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
@@ -155,6 +156,8 @@ impl App {
         else {
             return;
         };
+        let closed_blank = matches!(notification, ServerNotification::ThreadClosed(_))
+            && self.agents_overview.blank_sessions.contains_key(&thread_id);
         if matches!(
             notification,
             ServerNotification::TurnStarted(_)
@@ -187,9 +190,21 @@ impl App {
                     return;
                 }
                 self.agents_overview.removed_threads.remove(&thread_id);
-                let mut thread = started.thread.clone();
-                thread.turns.clear();
-                self.agents_overview.threads.insert(thread_id, Some(thread));
+                // A peer's startup draft may not have durable history yet. Discover
+                // it through the history read before publishing a selectable row.
+                if !started.thread.preview.is_empty()
+                    || !started.thread.turns.is_empty()
+                    || self.agents_overview.blank_sessions.contains_key(&thread_id)
+                {
+                    let mut thread = started.thread.clone();
+                    thread.turns.clear();
+                    self.agents_overview.threads.insert(thread_id, Some(thread));
+                }
+                self.agents_overview.refresh_thread_ids.insert(thread_id);
+            }
+            ServerNotification::TurnStarted(_) => {
+                // A previously omitted startup draft becomes discoverable on its first turn.
+                self.agents_overview.refresh_thread_ids.insert(thread_id);
             }
             ServerNotification::ThreadArchived(_) | ServerNotification::ThreadDeleted(_) => {
                 self.agents_overview
@@ -215,7 +230,10 @@ impl App {
                 if let Some(usage) = self.agents_overview.usage.get_mut(&thread_id) {
                     usage.tokens = None;
                 }
-                if let Some(thread) = thread {
+                if closed_blank {
+                    self.agents_overview.removed_threads.insert(thread_id);
+                    self.agents_overview.threads.remove(&thread_id);
+                } else if let Some(thread) = thread {
                     thread.status = ThreadStatus::NotLoaded;
                 }
             }
@@ -233,6 +251,10 @@ impl App {
             ServerNotification::ThreadStatusChanged(status) => {
                 if let Some(thread) = thread {
                     thread.status = status.status.clone();
+                } else if !matches!(status.status, ThreadStatus::NotLoaded) {
+                    // Global status changes also reach clients that are not subscribed
+                    // to a peer's first turn. Recheck a draft omitted from discovery.
+                    self.agents_overview.refresh_thread_ids.insert(thread_id);
                 }
             }
             ServerNotification::ThreadNameUpdated(name) => {
@@ -400,6 +422,7 @@ impl App {
         let refresh_task = tokio::spawn(async move {
             let result = async {
                 let mut threads = HashMap::new();
+                let mut unmaterialized_threads = std::collections::HashSet::new();
                 let mut last_messages = HashMap::new();
                 let mut recent_seed_complete = true;
                 let pinned_thread_ids = match list_pinned_threads(&request_handle).await {
@@ -491,7 +514,7 @@ impl App {
                         {
                             Ok(mut response) => {
                                 let mut last_message = None;
-                                if let Ok(turns) = request_handle
+                                let turns = request_handle
                                     .request_typed::<ThreadTurnsListResponse>(
                                         ClientRequest::ThreadTurnsList {
                                             request_id: RequestId::String(
@@ -506,28 +529,39 @@ impl App {
                                             },
                                         },
                                     )
-                                    .await
-                                {
-                                    if let Some(turn) = turns.data.first() {
-                                    if let Some(ThreadItem::UserMessage { content, .. }) =
-                                        turn.items.first()
+                                    .await;
+                                match turns {
+                                    Err(TypedRequestError::Server { source, .. })
+                                        if source.code == -32600
+                                            && source.message == format!(
+                                                "thread {thread_id} is not materialized yet; thread/turns/list is unavailable before first user message"
+                                            ) =>
                                     {
-                                        response.thread.preview =
-                                            ChatWidget::user_message_display_from_inputs(content)
-                                                .message;
+                                        return Some((thread_id, response.thread, None, true));
                                     }
-                                    last_message =
-                                        turn.items.iter().rev().find_map(|item| match item {
-                                            ThreadItem::AgentMessage { text, .. } => {
-                                                Some(preview_agent_message(text))
+                                    Ok(turns) => {
+                                        if let Some(turn) = turns.data.first() {
+                                            if let Some(ThreadItem::UserMessage { content, .. }) =
+                                                turn.items.first()
+                                            {
+                                                response.thread.preview =
+                                                    ChatWidget::user_message_display_from_inputs(content)
+                                                        .message;
                                             }
-                                            _ => None,
-                                        });
+                                            last_message =
+                                                turn.items.iter().rev().find_map(|item| match item {
+                                                    ThreadItem::AgentMessage { text, .. } => {
+                                                        Some(preview_agent_message(text))
+                                                    }
+                                                    _ => None,
+                                                });
+                                        }
+                                        response.thread.turns = turns.data.into_iter().rev().collect();
+                                        super::agents_overview_details::retain_conversation(&mut response.thread.turns);
                                     }
-                                    response.thread.turns = turns.data.into_iter().rev().collect();
-                                    super::agents_overview_details::retain_conversation(&mut response.thread.turns);
+                                    Err(_) => {}
                                 }
-                                Some((thread_id, response.thread, last_message))
+                                Some((thread_id, response.thread, last_message, false))
                             }
                             Err(error) => {
                                 tracing::warn!(%thread_id, %error, "failed to read agent thread");
@@ -536,9 +570,12 @@ impl App {
                         }
                     });
                     if reads.len() >= 16
-                        && let Some(Ok(Some((thread_id, thread, last_message)))) =
+                        && let Some(Ok(Some((thread_id, thread, last_message, unmaterialized)))) =
                             reads.join_next().await
                     {
+                        if unmaterialized {
+                            unmaterialized_threads.insert(thread_id);
+                        }
                         threads.insert(thread_id, Some(thread));
                         if let Some(message) = last_message {
                             last_messages.insert(thread_id, message);
@@ -546,7 +583,10 @@ impl App {
                     }
                 }
                 while let Some(result) = reads.join_next().await {
-                    if let Ok(Some((thread_id, thread, last_message))) = result {
+                    if let Ok(Some((thread_id, thread, last_message, unmaterialized))) = result {
+                        if unmaterialized {
+                            unmaterialized_threads.insert(thread_id);
+                        }
                         threads.insert(thread_id, Some(thread));
                         if let Some(message) = last_message {
                             last_messages.insert(thread_id, message);
@@ -555,6 +595,7 @@ impl App {
                 }
                 Ok(AgentsOverviewThreadRefresh {
                     threads,
+                    unmaterialized_threads,
                     last_messages,
                     recent_seed_complete,
                     discovery,

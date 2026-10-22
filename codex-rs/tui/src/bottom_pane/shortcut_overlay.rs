@@ -156,10 +156,13 @@ pub(super) fn close_hint(props: &FooterProps, width: u16) -> Line<'static> {
 
 fn footer_lines(width: usize) -> Vec<Line<'static>> {
     word_wrap_lines(
-        [Line::from(vec![
-            "/keymap".fg(accent_color()),
-            " customize".set_style(secondary_text_style()),
-        ])],
+        [
+            Line::from(vec![
+                "/keymap".fg(accent_color()),
+                " customize".set_style(secondary_text_style()),
+            ]),
+            Line::from("Tab shows or hides the Context Ledger").set_style(secondary_text_style()),
+        ],
         width,
     )
 }

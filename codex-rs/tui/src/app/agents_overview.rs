@@ -228,6 +228,17 @@ impl App {
                     if self.agents_overview.removed_threads.contains(&thread_id) {
                         continue;
                     }
+                    if refresh.unmaterialized_threads.contains(&thread_id)
+                        && !self.agents_overview.blank_sessions.contains_key(&thread_id)
+                    {
+                        // Only this client's cached blank sessions can be reopened without
+                        // a rollout. Metadata from a live peer is not enough to attach.
+                        self.agents_overview.threads.remove(&thread_id);
+                        self.agents_overview.last_messages.remove(&thread_id);
+                        self.agents_overview.activity.remove(&thread_id);
+                        self.agents_overview.usage.remove(&thread_id);
+                        continue;
+                    }
                     if let Some(mut thread) = thread {
                         if thread.ephemeral {
                             self.agents_overview.threads.remove(&thread_id);

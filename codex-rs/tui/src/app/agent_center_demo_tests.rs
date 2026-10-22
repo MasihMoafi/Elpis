@@ -341,6 +341,7 @@ async fn demo_list_refresh_keeps_the_fetched_conversation_on_the_real_projection
         &app_server,
         request_id,
         Ok(crate::app_event::AgentsOverviewThreadRefresh {
+            unmaterialized_threads: HashSet::new(),
             threads: HashMap::from([(id, Some(thread))]),
             last_messages: HashMap::new(),
             recent_seed_complete: true,

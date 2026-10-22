@@ -12,11 +12,7 @@ fn screen() -> OnboardingScreen {
     OnboardingScreen {
         request_frame: FrameRequester::test_dummy(),
         steps: vec![
-            Step::Welcome(WelcomeWidget::new(
-                false,
-                FrameRequester::test_dummy(),
-                true,
-            )),
+            Step::Welcome(WelcomeWidget::new(false, true)),
             Step::TrustDirectory(TrustDirectoryWidget {
                 restricted: false,
                 existing_task: false,
@@ -37,7 +33,7 @@ fn screen() -> OnboardingScreen {
 }
 
 #[test]
-fn welcome_keys_reach_the_picker_before_the_animation_finishes() {
+fn welcome_keys_reach_the_picker_with_the_static_mark() {
     for width in [80, 120] {
         let mut screen = screen();
         let area = Rect::new(0, 0, width, 41);

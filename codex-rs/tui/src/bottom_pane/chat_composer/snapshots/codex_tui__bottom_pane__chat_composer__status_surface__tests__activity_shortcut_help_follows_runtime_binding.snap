@@ -25,6 +25,7 @@ expression: "snapshots.join(\"\\n---\\n\")"
   esc esc  Edit last message
 
   /keymap customize
+  Tab shows or hides the Context Ledger
 
 › Ask Elpis
 
@@ -53,6 +54,7 @@ expression: "snapshots.join(\"\\n---\\n\")"
   esc esc  Edit last message
 
   /keymap customize
+  Tab shows or hides the Context Ledger
 
 › Ask Elpis
 
@@ -81,6 +83,7 @@ expression: "snapshots.join(\"\\n---\\n\")"
   esc esc  Edit last message
 
   /keymap customize
+  Tab shows or hides the Context Ledger
 
 › Ask Elpis
 

@@ -13,35 +13,7 @@ const SIZE: Size = Size::new(/*width*/ 125, /*height*/ 40);
 const LEDGER_TOGGLE_LABEL: &str = "[━━━●] ON";
 
 #[tokio::test]
-async fn a105_closed_tab_rewraps_complete_text_instead_of_erasing_glyphs() -> Result<()> {
-    for width in [80, 120, 200] {
-        let (mut app, _events, _ops) = make_test_app_with_channels().await;
-        crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
-        let text = "X".repeat(usize::from((width - 13) * 2));
-        app.transcript_cells = vec![Arc::new(crate::history_cell::PlainHistoryCell::new(vec![
-            Line::from(text.clone()),
-        ]))];
-        let size = Size::new(width, 10);
-        let mut tui = crate::tui::test_support::make_test_tui_with_size(size)?;
-        tui.set_owned_screen(true)?;
-        let bottom = app.render_owned_transcript(&mut tui, size)?;
-        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
-        let glyphs = (0..bottom.y)
-            .flat_map(|y| (0..width).map(move |x| (x, y)))
-            .filter(|&position| buffer[position].symbol() == "X")
-            .count();
-        assert_eq!(
-            glyphs,
-            text.len(),
-            "{width} columns: the tab erased transcript glyphs"
-        );
-        tui.set_owned_screen(false)?;
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn a105_closed_tab_reserves_only_its_width_and_a_blank_column() -> Result<()> {
+async fn closed_ledger_returns_the_full_width_to_the_transcript() -> Result<()> {
     for width in [80, 120, 200] {
         let (mut app, _events, _ops) = make_test_app_with_channels().await;
         crate::chatwidget::tests::helpers::hide_context_ledger(&mut app.chat_widget);
@@ -54,43 +26,22 @@ async fn a105_closed_tab_reserves_only_its_width_and_a_blank_column() -> Result<
         for height in 10..=40 {
             let size = Size::new(width, height);
             tui.terminal.resize(size)?;
-            // Let the scrollbar reserve its column, as on the next real draw event.
+            // Settle the transcript's own scrollbar before measuring its last text cell.
             app.render_owned_transcript(&mut tui, size)?;
             let bottom = app.render_owned_transcript(&mut tui, size)?;
             let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
             let body_right = width - u16::from(app.transcript_view.reserves_scrollbar());
-            let tab_x = body_right - 12;
+            assert!(
+                (0..bottom.y).any(|y| buffer[(body_right - 1, y)].symbol() == "X"),
+                "{width}x{height}: closed Ledger left reserved columns"
+            );
             for y in 0..bottom.y {
-                assert_eq!(
-                    buffer[(tab_x - 1, y)].symbol(),
-                    " ",
-                    "{width}x{height}, row {y}: gap"
-                );
-                for x in tab_x..body_right {
-                    assert_ne!(
-                        buffer[(x, y)].symbol(),
-                        "X",
-                        "{width}x{height}: text under tab at {x},{y}"
-                    );
+                for x in 0..body_right {
+                    assert!(!matches!(buffer[(x, y)].symbol(), "│" | "╱" | "╲" | "●"));
                 }
             }
-            assert!(
-                (0..bottom.y).any(|y| buffer[(tab_x - 2, y)].symbol() == "X"),
-                "excess width lost"
-            );
-            let tab_y = (bottom.y - 3) / 2;
-            assert_eq!(buffer[(tab_x, tab_y + 1)].symbol(), "│");
-            app.transcript_view.scroll(&app.transcript_cells, -3);
-            app.render_owned_transcript(&mut tui, size)?;
-            let scrolled =
-                crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
-            assert_eq!(
-                scrolled[(tab_x, tab_y + 1)].symbol(),
-                "│",
-                "scroll moved the tab"
-            );
         }
-        // Negative control: the open Ledger consumes its usual column, with no tab gutter.
+        // The open Ledger retains its usual column and transcript wrapping.
         crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
         let size = Size::new(width, 40);
         tui.terminal.resize(size)?;
@@ -98,10 +49,7 @@ async fn a105_closed_tab_reserves_only_its_width_and_a_blank_column() -> Result<
         let bottom = app.render_owned_transcript(&mut tui, size)?;
         let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
         let text_right = bottom.width - u16::from(app.transcript_view.reserves_scrollbar());
-        assert!(
-            (0..bottom.y).any(|y| buffer[(text_right - 1, y)].symbol() == "X"),
-            "open Ledger changed wrapping"
-        );
+        assert!((0..bottom.y).any(|y| buffer[(text_right - 1, y)].symbol() == "X"));
         tui.set_owned_screen(false)?;
     }
     Ok(())
@@ -500,7 +448,7 @@ async fn ledger_saved_width_is_loaded_at_the_next_start() -> Result<()> {
 }
 
 /// Snapshot the actual owned-screen header after opening with the keyboard and, when
-/// requested, resizing with the mouse. The toggle shares the title row.
+/// requested, resizing with the mouse. The switch has its own row above the title and context status.
 async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> Result<String> {
     let (mut app, _events, _operations) = make_test_app_with_channels().await;
     attach_thread(&mut app, ThreadId::new());
@@ -550,9 +498,10 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
         })
         .expect("Ledger toggle");
     let close_x = (0..terminal_width)
-        .find(|&x| buffer[(x, y)].symbol() == "[")
+        .find(|&x| buffer[(x, 0)].symbol() == "[")
         .expect("Ledger toggle");
-    let header = [y]
+    assert_eq!(y, 1);
+    let header = [0, y]
         .into_iter()
         .map(|row| {
             (terminal_width - width..terminal_width)
@@ -574,7 +523,7 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
     app.handle_tui_event(
         &mut tui,
         &mut server,
-        mouse(MouseEventKind::Down(MouseButton::Left), close_x, y),
+        mouse(MouseEventKind::Down(MouseButton::Left), close_x, 0),
     )
     .await?;
     assert_eq!(app.chat_widget.context_ledger_width(terminal_width), 0);
@@ -584,7 +533,7 @@ async fn ledger_header_snapshot(terminal_width: u16, preferred: Option<u16>) -> 
 }
 
 #[tokio::test]
-async fn ledger_header_and_toggle_share_one_row_at_all_supported_widths() -> Result<()> {
+async fn ledger_switch_stays_above_the_title_at_all_supported_widths() -> Result<()> {
     for (width, preferred) in [
         (80, None),
         (120, None),
@@ -598,7 +547,16 @@ async fn ledger_header_and_toggle_share_one_row_at_all_supported_widths() -> Res
             header.contains("CONTEXT LEDGER") && header.contains(LEDGER_TOGGLE_LABEL),
             "{header}"
         );
-        assert_eq!(header.lines().count(), 1);
+        assert_eq!(header.lines().count(), 2);
+        assert_eq!(
+            header
+                .lines()
+                .next()
+                .unwrap()
+                .trim_start_matches('│')
+                .trim(),
+            LEDGER_TOGGLE_LABEL
+        );
         assert!(!header.contains(['×', '╳']));
     }
     Ok(())
@@ -626,7 +584,7 @@ async fn ledger_toggle_uses_the_shared_on_style_in_both_themes() -> Result<()> {
                         (0..SIZE.width)
                             .map(|x| buffer[(x, y)].symbol())
                             .collect::<String>()
-                            .contains("CONTEXT LEDGER")
+                            .contains(LEDGER_TOGGLE_LABEL)
                     })
                     .expect("Ledger toggle");
                 let button_left = SIZE.width - LEDGER_TOGGLE_LABEL.chars().count() as u16 - 1;
@@ -691,9 +649,13 @@ async fn ledger_toggle_hits_only_its_header_cells_owned_width_matrix() -> Result
         let title_y = (0..size.height)
             .find(|&y| row(y).contains("CONTEXT LEDGER"))
             .expect("visible title");
-        let close_y = title_y;
-        assert_eq!(title_y, 0);
-        assert!(row(title_y).contains(LEDGER_TOGGLE_LABEL));
+        let close_y = 0;
+        assert_eq!(title_y, 1);
+        assert_eq!(
+            row(close_y).trim_start_matches('│').trim(),
+            LEDGER_TOGGLE_LABEL
+        );
+        assert!(!row(title_y).contains(LEDGER_TOGGLE_LABEL));
         assert!(!row(title_y).contains(['×', '╳']));
         let close_x = (left..terminal_width)
             .find(|&x| buffer[(x, close_y)].symbol() == "[")

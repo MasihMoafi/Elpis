@@ -16,6 +16,7 @@ expression: terminal.backend()
 "  esc esc   Edit last message                                                                       "
 "                                                                                                    "
 "  /keymap customize                                                                                 "
+"  Tab shows or hides the Context Ledger                                                             "
 "                                                                                                    "
 "› Ask Elpis to do anything                                                                          "
 "                                                                                                    "

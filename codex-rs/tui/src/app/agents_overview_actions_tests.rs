@@ -628,6 +628,7 @@ async fn hidden_task_stays_hidden_through_activity_and_seed_until_explicit_resum
         &app_server,
         request_id,
         Ok(AgentsOverviewThreadRefresh {
+            unmaterialized_threads: HashSet::new(),
             threads: HashMap::from([(id, Some(thread.clone()))]),
             last_messages: HashMap::new(),
             recent_seed_complete: true,
@@ -911,6 +912,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
             &app_server,
             request_id,
             Ok(AgentsOverviewThreadRefresh {
+                unmaterialized_threads: HashSet::new(),
                 threads: stale_threads,
                 last_messages: HashMap::new(),
                 recent_seed_complete: true,
@@ -1027,6 +1029,7 @@ async fn lifecycle_removes_background_and_current_tasks_without_losing_the_dashb
             .send(AppEvent::AgentsOverviewThreadsLoaded {
                 request_id,
                 result: Ok(AgentsOverviewThreadRefresh {
+                    unmaterialized_threads: HashSet::new(),
                     threads: HashMap::new(),
                     last_messages: HashMap::new(),
                     recent_seed_complete: true,

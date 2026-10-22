@@ -24,6 +24,7 @@ expression: text
   esc esc  Edit last message
 
   /keymap customize
+  Tab shows or hides the Context Ledger
 
 › Ask Elpis
 

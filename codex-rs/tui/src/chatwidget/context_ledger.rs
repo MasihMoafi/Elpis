@@ -28,7 +28,6 @@ use crate::terminal_palette::effective_stdout_color_level;
 
 const CONTEXT_LEDGER_TITLE: &str = "CONTEXT LEDGER";
 const LEDGER_MIN_TERMINAL_WIDTH: u16 = 80;
-const LEDGER_TAB_WIDTH: u16 = 12;
 const LEDGER_WIDTH: u16 = 52;
 /// A dragged Ledger keeps at least this many columns, so its rows stay readable...
 const LEDGER_MIN_WIDTH: u16 = 28;
@@ -63,13 +62,7 @@ fn ledger_muted_style() -> Style {
 }
 
 fn ledger_title(width: usize, title: Vec<Span<'static>>) -> Line<'static> {
-    let toggle = ledger_toggle(Some(true));
-    let label = Line::from(title);
-    let pad = width.saturating_sub(label.width() + toggle.width()).max(1);
-    let mut spans = label.spans;
-    spans.push(Span::raw(" ".repeat(pad)));
-    spans.push(Span::styled(toggle, crate::style::context_style()));
-    Line::from(spans)
+    crate::line_truncation::truncate_line_with_ellipsis_if_overflow(Line::from(title), width)
 }
 
 /// Columns of the Ledger column on a terminal `terminal_width` wide: none below
@@ -111,20 +104,45 @@ pub(crate) fn render_startup_ledger_column(column: Rect, top_row: u16, buf: &mut
     if content_width == 0 || area.height == 0 {
         return;
     }
-    let title = crate::status_indicator_widget::ledger_title_shimmer(
+    let _ = render_ledger_toggle(area, content_width, buf);
+    let mut title = crate::status_indicator_widget::ledger_title_shimmer(
         CONTEXT_LEDGER_TITLE,
         std::time::Duration::ZERO,
         crate::motion::MotionMode::Reduced,
     );
+    if area.height < 2 {
+        return;
+    }
+    title.extend([
+        Span::raw("  "),
+        Span::styled("context not measured · loading", ledger_muted_style()),
+    ]);
     Paragraph::new(ledger_title(usize::from(content_width), title)).render(
         Rect::new(
             area.x + LEDGER_LEFT_COLS,
-            area.y,
+            area.y + 1,
             content_width,
             /*height*/ 1,
         ),
         buf,
     );
+}
+
+/// The owned column's first row holds only its shared switch, aligned with the switches below.
+fn render_ledger_toggle(area: Rect, content_width: u16, buf: &mut Buffer) -> Option<Rect> {
+    let label = ledger_toggle(Some(true));
+    let width = label.width() as u16;
+    if area.height == 0 || content_width < width {
+        return None;
+    }
+    let toggle = Rect::new(
+        area.x + LEDGER_LEFT_COLS + content_width - width,
+        area.y,
+        width,
+        1,
+    );
+    buf.set_string(toggle.x, toggle.y, label, crate::style::context_style());
+    Some(toggle)
 }
 
 /// The columns for the Ledger's text in a Ledger `ledger_width` columns wide.
@@ -240,7 +258,6 @@ pub(super) struct ContextLedgerState {
     crowded: std::cell::Cell<bool>,
     /// Full screen only, where Elpis owns the mouse: written by each draw, read by a click.
     click_map: std::cell::RefCell<Option<LedgerClickMap>>,
-    tab: std::cell::Cell<Option<Rect>>,
     scroll: std::cell::Cell<u16>,
     scrolling: std::cell::Cell<bool>,
     reveal_selection: std::cell::Cell<bool>,
@@ -275,7 +292,6 @@ impl Default for ContextLedgerState {
             why_visible: false,
             crowded: std::cell::Cell::new(false),
             click_map: std::cell::RefCell::new(None),
-            tab: std::cell::Cell::new(None),
             scroll: std::cell::Cell::new(0),
             scrolling: std::cell::Cell::new(false),
             reveal_selection: std::cell::Cell::new(false),
@@ -864,23 +880,18 @@ impl ChatWidget {
                 self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer,
             ),
         );
-        let title = if owned_column {
-            ledger_title(content_width, title)
-        } else {
-            title.extend([
-                Span::raw("  "),
-                Span::styled(context_header.clone(), context),
-            ]);
-            crate::line_truncation::truncate_line_with_ellipsis_if_overflow(
-                Line::from(title),
-                content_width.saturating_sub(1),
-            )
-        };
-        lines.extend(vec![title]);
-        if !compact {
+        title.extend([Span::raw("  "), Span::styled(context_header, context)]);
+        let title = ledger_title(
             if owned_column {
-                lines.push(Line::from(Span::styled(context_header, context)));
-            }
+                content_width
+            } else {
+                content_width.saturating_sub(1)
+            },
+            title,
+        );
+        lines.push(title);
+        // The owned header keeps its old hint and gap even when details are compacted.
+        if !compact || owned_column {
             lines.push(Line::from(Span::styled(interaction_hint, muted)));
             lines.push(Line::from(""));
         }
@@ -1485,12 +1496,13 @@ impl ChatWidget {
         if content_width == 0 || area.height == 0 {
             return;
         }
+        // Pin the switch and title; only the title is part of `rows`.
         let pinned = u16::from(owned_column);
         let content = Rect::new(
             area.x + LEDGER_LEFT_COLS,
-            area.y + pinned,
+            area.y + 2 * pinned,
             content_width,
-            area.height.saturating_sub(pinned),
+            area.height.saturating_sub(2 * pinned),
         );
         let max_scroll = u16::try_from(
             rows.len()
@@ -1541,21 +1553,25 @@ impl ChatWidget {
         if let Some(delay) = self.ledger_title_animation_delay(
             &title_rows,
             if owned_column { 0 } else { scroll_rows },
-            area.height,
+            area.height.saturating_sub(u16::from(owned_column)),
         ) {
             self.frame_requester.schedule_frame_in(delay);
         }
         Paragraph::new(rows.clone())
             .scroll((scroll_rows, 0))
             .render(content, buf);
-        if owned_column && let Some(title) = rows.first() {
+        if owned_column
+            && area.height > 1
+            && let Some(title) = rows.first()
+        {
             Paragraph::new(title.clone())
-                .render(Rect::new(content.x, area.y, content.width, 1), buf);
+                .render(Rect::new(content.x, area.y + 1, content.width, 1), buf);
         }
-        let toggle_width = ledger_toggle(Some(true)).width() as u16;
-        let toggle = (owned_column
-            && content_width >= CONTEXT_LEDGER_TITLE.width() as u16 + 1 + toggle_width)
-            .then(|| Rect::new(content.right() - toggle_width, area.y, toggle_width, 1));
+        let toggle = if owned_column {
+            render_ledger_toggle(area, content_width, buf)
+        } else {
+            None
+        };
         *self.context_ledger.click_map.borrow_mut() = Some(LedgerClickMap {
             toggle,
             content,
@@ -1633,75 +1649,13 @@ impl ChatWidget {
                 .map(|width| width.saturating_sub(area.width))
                 .unwrap_or(LEDGER_DETAIL_MAIN_WIDTH)
         };
-        if main_width < LEDGER_DETAIL_MAIN_WIDTH || full.rows.len() > usize::from(area.height) {
+        if main_width < LEDGER_DETAIL_MAIN_WIDTH
+            || full.rows.len().saturating_add(1) > usize::from(area.height)
+        {
             Some(self.ledger_lines(width, true, true))
         } else {
             Some(full)
         }
-    }
-
-    fn context_ledger_tab_area(&self, transcript: Rect, terminal_width: u16) -> Option<Rect> {
-        if self.context_ledger.visible
-            || self.has_active_view()
-            || terminal_width < LEDGER_MIN_TERMINAL_WIDTH
-            || transcript.width < LEDGER_TAB_WIDTH + 1
-            || transcript.height < 3
-        {
-            return None;
-        }
-        Some(Rect::new(
-            transcript.right() - LEDGER_TAB_WIDTH,
-            transcript.y + (transcript.height - 3) / 2,
-            LEDGER_TAB_WIDTH,
-            3,
-        ))
-    }
-
-    /// Wrap every transcript row before the closed tab, leaving one clear column.
-    /// The tab uses the original viewport, so scrolling cannot move its hitbox.
-    pub(crate) fn context_ledger_transcript_area(
-        &self,
-        transcript: Rect,
-        terminal_width: u16,
-    ) -> Rect {
-        self.context_ledger_tab_area(transcript, terminal_width)
-            .map_or(transcript, |tab| Rect {
-                width: tab.x - transcript.x - 1,
-                ..transcript
-            })
-    }
-
-    /// A closed panel leaves a small cut-corner tab inside the transcript body. Its caller
-    /// excludes the composer gap, bottom pane and scrollbar from this rectangle, and paints
-    /// composer popups over it. Popups keep mouse ownership in `handle_context_ledger_mouse`.
-    pub(crate) fn render_context_ledger_tab(
-        &self,
-        transcript: Rect,
-        terminal_width: u16,
-        buf: &mut Buffer,
-    ) {
-        self.context_ledger.tab.set(None);
-        let Some(tab) = self.context_ledger_tab_area(transcript, terminal_width) else {
-            return;
-        };
-        for (row, text) in [" ╱──────────", "│           ", " ╲──────────"]
-            .into_iter()
-            .enumerate()
-        {
-            buf.set_string(
-                tab.x,
-                tab.y + row as u16,
-                text,
-                crate::style::context_style(),
-            );
-        }
-        buf.set_string(
-            tab.x + 2,
-            tab.y + 1,
-            ledger_toggle(Some(false)),
-            ledger_muted_style(),
-        );
-        self.context_ledger.tab.set(Some(tab));
     }
 
     fn scroll_context_ledger(&self, delta: i32) {
@@ -1730,24 +1684,6 @@ impl ChatWidget {
     ) -> bool {
         use crossterm::event::MouseEventKind;
         let position = ratatui::layout::Position::new(mouse.column, mouse.row);
-        if mouse.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left)
-            && mouse.modifiers.is_empty()
-            && self
-                .context_ledger
-                .tab
-                .get()
-                .is_some_and(|tab| tab.contains(position))
-            && self.no_modal_or_popup_active()
-        {
-            self.context_ledger.visible = true;
-            self.context_ledger.scroll.set(0);
-            self.context_ledger.scrolling.set(false);
-            self.context_ledger.reveal_selection.set(false);
-            self.context_ledger.title_started_at = Instant::now();
-            self.context_ledger.tab.set(None);
-            self.request_redraw();
-            return true;
-        }
         if matches!(
             mouse.kind,
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown

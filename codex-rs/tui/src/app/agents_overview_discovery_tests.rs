@@ -14,6 +14,200 @@ use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test]
+async fn overview_excludes_unmaterialized_peers_until_their_first_turn() -> Result<()> {
+    let mut app = make_test_app().await;
+    let empty_ids = [ThreadId::new(), ThreadId::new(), ThreadId::new()];
+    let saved_id = ThreadId::new();
+    let saved = overview_thread(saved_id, None, "Saved chat", ThreadStatus::Idle);
+    let first_turn_started = Arc::new(AtomicBool::new(false));
+    let server_first_turn_started = Arc::clone(&first_turn_started);
+    let server_saved = saved.clone();
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let endpoint = crate::resolve_remote_addr(&format!("ws://{}", listener.local_addr()?))?;
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        let mut socket = tokio_tungstenite::accept_async(stream).await?;
+        while let Some(Ok(Message::Text(text))) = socket.next().await {
+            let JSONRPCMessage::Request(request) = serde_json::from_str(&text)? else {
+                continue;
+            };
+            let params = request.params.unwrap_or_default();
+            let started = server_first_turn_started.load(Ordering::SeqCst);
+            let thread_id = params["threadId"].as_str().unwrap_or_default();
+            let result = match request.method.as_str() {
+                "initialize" => json!({"userAgent": "overview-test/1.0"}),
+                "thread/loaded/list" => json!({
+                    "data": empty_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    "nextCursor": null,
+                }),
+                "thread/list"
+                    if params["sectionId"].is_string()
+                        || params["ancestorThreadId"].is_string() =>
+                {
+                    json!({"data": [], "nextCursor": null})
+                }
+                "thread/list" => json!({"data": [server_saved.clone()], "nextCursor": null}),
+                "thread/read" if thread_id == server_saved.id => {
+                    json!({"thread": server_saved.clone()})
+                }
+                "thread/read" => {
+                    let id = ThreadId::from_string(thread_id)?;
+                    let preview = if started && id == empty_ids[0] {
+                        "First message"
+                    } else {
+                        ""
+                    };
+                    json!({"thread": overview_thread(id, None, preview, ThreadStatus::Idle)})
+                }
+                "thread/turns/list" if thread_id == server_saved.id => {
+                    // A transient history error must not hide a real chat.
+                    socket
+                        .send(Message::Text(
+                            json!({"id": request.id, "error": {
+                                "code": -32603, "message": "history temporarily unavailable",
+                            }})
+                            .to_string()
+                            .into(),
+                        ))
+                        .await?;
+                    continue;
+                }
+                "thread/turns/list" if started && thread_id == empty_ids[0].to_string() => {
+                    json!({"data": [], "nextCursor": null})
+                }
+                "thread/turns/list" => {
+                    socket.send(Message::Text(json!({"id": request.id, "error": {
+                        "code": -32600,
+                        "message": format!("thread {thread_id} is not materialized yet; thread/turns/list is unavailable before first user message"),
+                    }}).to_string().into())).await?;
+                    continue;
+                }
+                method => panic!("unexpected request: {method}"),
+            };
+            socket
+                .send(Message::Text(
+                    json!({"id": request.id, "result": result})
+                        .to_string()
+                        .into(),
+                ))
+                .await?;
+        }
+        Ok::<_, color_eyre::Report>(())
+    });
+    let session = AppServerSession::new(
+        crate::connect_remote_app_server(endpoint).await?,
+        ThreadParamsMode::Remote,
+    );
+    let view = app.agents_overview_view(vec![saved.clone()], Some(saved_id));
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = AppEventSender::new(tx);
+    // Include a stale row from a notification received before discovery finishes.
+    app.agents_overview.threads.insert(
+        empty_ids[1],
+        Some(overview_thread(empty_ids[1], None, "", ThreadStatus::Idle)),
+    );
+    app.refresh_agents_overview_threads(&session);
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    assert_eq!(app.agents_overview.visible_thread_ids, vec![saved_id]);
+
+    // A later startup notification must not put an unopenable row back.
+    app.track_agents_overview_notification(&ServerNotification::ThreadStarted(
+        ThreadStartedNotification {
+            thread: overview_thread(empty_ids[2], None, "", ThreadStatus::Idle),
+        },
+    ));
+    app.repaint_agents_overview();
+    assert_eq!(app.agents_overview.visible_thread_ids, vec![saved_id]);
+
+    first_turn_started.store(true, Ordering::SeqCst);
+    let notification = serde_json::from_value(json!({
+        "method": "turn/started", "params": {"threadId": empty_ids[0].to_string(), "turn": {
+            "id": "first-turn", "items": [], "status": "inProgress", "error": null,
+        }},
+    }))?;
+    app.handle_app_server_event(
+        &session,
+        codex_app_server_client::AppServerEvent::ServerNotification(Box::new(notification)),
+    )
+    .await;
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    assert_eq!(
+        app.agents_overview
+            .visible_thread_ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>(),
+        HashSet::from([saved_id, empty_ids[0]])
+    );
+    // A fresh overview after reconnect repeats the same filtering.
+    app.agents_overview.initialized = false;
+    app.agents_overview.threads.clear();
+    app.refresh_agents_overview_threads(&session);
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    assert_eq!(
+        app.agents_overview
+            .visible_thread_ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>(),
+        HashSet::from([saved_id, empty_ids[0]])
+    );
+    // Other clients only receive the global status update, not turn/started.
+    app.agents_overview.threads.remove(&empty_ids[0]);
+    app.handle_app_server_event(
+        &session,
+        codex_app_server_client::AppServerEvent::ServerNotification(Box::new(
+            ServerNotification::ThreadStatusChanged(
+                codex_app_server_protocol::ThreadStatusChangedNotification {
+                    thread_id: empty_ids[0].to_string(),
+                    status: ThreadStatus::Idle,
+                },
+            ),
+        )),
+    )
+    .await;
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    assert!(
+        app.agents_overview
+            .visible_thread_ids
+            .contains(&empty_ids[0])
+    );
+    session.shutdown().await?;
+    server.await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn overview_keeps_its_own_blank_draft_until_the_live_session_closes() -> Result<()> {
+    let mut app = make_test_app().await;
+    let mut session = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let started = session.start_thread(&app.config).await?;
+    let id = started.session.thread_id;
+    app.agents_overview.blank_sessions.insert(id, started);
+    let thread = overview_thread(id, None, "", ThreadStatus::Idle);
+    let view = app.agents_overview_view(vec![thread.clone()], Some(id));
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = AppEventSender::new(tx);
+    app.refresh_agents_overview_threads(&session);
+    finish_overview_refresh(&mut app, &session, &mut rx).await;
+    assert_eq!(app.agents_overview.visible_thread_ids, vec![id]);
+    assert!(app.agents_overview.blank_sessions.contains_key(&id));
+    app.track_agents_overview_notification(&ServerNotification::ThreadClosed(
+        ThreadClosedNotification {
+            thread_id: id.to_string(),
+        },
+    ));
+    app.repaint_agents_overview();
+    assert!(app.agents_overview.visible_thread_ids.is_empty());
+    assert!(!app.agents_overview.blank_sessions.contains_key(&id));
+    assert!(app.agents_overview.removed_threads.contains(&id));
+    session.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn overview_reopen_discovers_delegated_helper_after_missed_notification() -> Result<()> {
     let mut app = make_test_app().await;
     let root_id = ThreadId::new();

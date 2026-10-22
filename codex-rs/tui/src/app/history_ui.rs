@@ -361,7 +361,6 @@ impl App {
             self.config.cwd.to_path_buf(),
             version,
         )
-        .with_animations(self.local_settings.tui.animations && self.local_settings.tui.effects.shimmer)
         .with_yolo_mode(history_cell::is_yolo_mode(&self.config))
         .with_bypass_mode(history_cell::is_bypass_mode(&self.config))
     }

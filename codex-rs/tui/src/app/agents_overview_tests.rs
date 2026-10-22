@@ -490,6 +490,7 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
         &app_server,
         request_id,
         Ok(AgentsOverviewThreadRefresh {
+            unmaterialized_threads: HashSet::new(),
             last_messages: HashMap::new(),
             threads: HashMap::from([
                 (retained, Some(retained_thread.clone())),
@@ -515,6 +516,7 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
         &app_server,
         request_id,
         Ok(AgentsOverviewThreadRefresh {
+            unmaterialized_threads: HashSet::new(),
             last_messages: HashMap::new(),
             threads: HashMap::from([(retained, None)]),
             recent_seed_complete: true,
@@ -565,6 +567,7 @@ async fn shared_overview_keeps_rows_and_replays_changes_over_stale_reads() -> Re
                 &app_server,
                 request_id,
                 Ok(AgentsOverviewThreadRefresh {
+                    unmaterialized_threads: HashSet::new(),
                     threads: HashMap::new(),
                     last_messages,
                     recent_seed_complete: true,
@@ -2941,6 +2944,7 @@ async fn command_center_refresh_failure_is_inline_and_clears_on_success() -> Res
     for result in [
         Err("unavailable".into()),
         Ok(AgentsOverviewThreadRefresh {
+            unmaterialized_threads: HashSet::new(),
             threads: HashMap::new(),
             last_messages: HashMap::new(),
             recent_seed_complete: false,
@@ -2973,6 +2977,7 @@ async fn command_center_refresh_failure_is_inline_and_clears_on_success() -> Res
         &server,
         request_id,
         Ok(AgentsOverviewThreadRefresh {
+            unmaterialized_threads: HashSet::new(),
             threads: HashMap::new(),
             last_messages: HashMap::new(),
             recent_seed_complete: true,

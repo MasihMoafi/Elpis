@@ -43,33 +43,16 @@ pub(crate) fn with_border_with_inner_width(
 
 /// Brand title shared by the session header and the status card; each owns its own indentation.
 pub(crate) fn codex_title(version: &str) -> Vec<Span<'static>> {
-    // Elpis: the ember, the Elpis name and the Elpis release, not ">_ OpenAI Codex". This one
-    // title serves the session header and the /status card.
     let version = if version == crate::version::CODEX_CLI_VERSION {
         crate::branding::ELPIS_VERSION
     } else {
         version
     };
-    codex_title_with_palette(
-        version,
-        crate::branding::wordmark_palette(crate::terminal_palette::default_bg()),
-    )
-}
-
-fn codex_title_with_palette(version: &str, palette: [(u8, u8, u8); 5]) -> Vec<Span<'static>> {
-    let mut spans = vec![">_ ".fg(accent_color())];
-    spans.extend(
-        crate::branding::CODEX_RUNTIME_TITLE
-            .chars()
-            .zip(palette.into_iter().cycle())
-            .map(|(letter, color)| {
-                Span::from(letter.to_string())
-                    .fg(crate::terminal_palette::best_color(color))
-                    .bold()
-            }),
-    );
-    spans.push(format!(" (v{version})").dim());
-    spans
+    vec![
+        ">_ ".fg(accent_color()),
+        crate::branding::CODEX_RUNTIME_TITLE.fg(Color::Reset).bold(),
+        format!(" (v{version})").dim(),
+    ]
 }
 
 #[derive(Debug)]
@@ -230,7 +213,6 @@ pub(crate) fn new_session_info(
         config.cwd.to_path_buf(),
         CODEX_CLI_VERSION,
     )
-    .with_animations(local_settings.tui.animations && local_settings.tui.effects.shimmer)
     .with_yolo_mode(has_yolo_permissions(
         session.approval_policy,
         &session.permission_profile,
@@ -351,7 +333,6 @@ pub(crate) struct SessionHeaderHistoryCell {
     yolo_mode: bool,
     /// Elpis: Bypass permissions replaces the YOLO line with a red one.
     bypass_mode: bool,
-    animation_origin: Option<Instant>,
 }
 
 impl SessionHeaderHistoryCell {
@@ -369,13 +350,7 @@ impl SessionHeaderHistoryCell {
             directory,
             yolo_mode: false,
             bypass_mode: false,
-            animation_origin: None,
         }
-    }
-
-    pub(crate) fn with_animations(mut self, enabled: bool) -> Self {
-        self.animation_origin = enabled.then(Instant::now);
-        self
     }
 
     pub(crate) fn with_yolo_mode(mut self, yolo_mode: bool) -> Self {
@@ -423,21 +398,10 @@ impl SessionHeaderHistoryCell {
 }
 
 impl HistoryCell for SessionHeaderHistoryCell {
-    fn transcript_animation_tick(&self) -> Option<u64> {
-        self.animation_origin
-            .map(|origin| (origin.elapsed().as_millis() / 100) as u64)
-    }
-
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let width = usize::from(width);
         let mut title = vec!["  ".into()];
-        let palette = crate::branding::wordmark_palette_at(
-            crate::terminal_palette::default_bg(),
-            self.animation_origin
-                .map(|origin| origin.elapsed().as_millis())
-                .unwrap_or(0),
-        );
-        title.extend(codex_title_with_palette(self.version, palette));
+        title.extend(codex_title(self.version));
         let mut lines = vec![
             Line::default(),
             Line::from(title),
