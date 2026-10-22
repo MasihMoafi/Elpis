@@ -178,9 +178,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes."
     },
     "tests/customize.test.cjs": {
-      "blob": "f5fd374f832bb88d2c97a72763d9793aaf38a61d",
-      "approval": "ef1a6199498a80ddafb94d14afcee3eccdc4412e",
-      "reason": "LEDGER, Masih's approved request in GATE11: \"MCP and plugin switches, Add plugins\". Supply writable versions and check both switch states, metadata and exact save requests; keep skill and navigation checks."
+      "blob": "7bfa3a8964edbc3a66549de0c44d1239642363ce",
+      "approval": "e254c9c47069666c14d5a34a96eacfd3e1e0e3e8",
+      "reason": "LEDGER, Masih's approved request in GATE11: \"MCP and plugin switches, Add plugins\". Supply writable versions and check both switch states, metadata and exact save requests; keep skill and navigation checks. 22 Oct, Masih (relayed): the skills switch \"reacts slowly. He wants the UI to flip immediately while the backend catches up\"; the switch flips at once and goes back if refused."
     },
     "tests/night-themes.test.cjs": {
       "blob": "5deae3213e50c3df45df91e9fe810f5bbac84c53",
@@ -233,9 +233,9 @@ export const retainedUpdates = {
       "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
     },
     "tests/love-spot-talk.test.cjs": {
-      "blob": "7b3688b449784c836866fddc1e129da0e22ba4a8",
-      "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
+      "blob": "64c04d6cc5279136d0e34e15a3e95ff988d99ca9",
+      "approval": "91b61c7ba08d0916a6e7968ea69075c66f1e2bfe",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip."
     },
     "tests/view-errors.test.cjs": {
       "blob": "5dec1ecf6fa40788b16f9aced96f48e962347755",
