@@ -13,6 +13,7 @@ async function fixture(t) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const home = await fs.mkdtemp(path.join(base, 'skill-trash-'));
   const root = path.join(home, 'skills'), calls = [];
+  t.after(async () => { await fs.chmod(root, 0o755).catch(() => {}); await fs.rm(home, { recursive: true, force: true }); });
   const skills = [];
   for (const [name, scope, pluginId] of [['own', 'user'], ['project', 'repo'], ['built-in', 'system'], ['managed', 'admin'], ['plugin', 'user', 'docs@local']]) {
     const file = path.join(root, name, 'SKILL.md');
@@ -179,7 +180,7 @@ test('a skill folder linked into a skill root is refused at the canonical path t
 
 test('a failed move to Trash says why, and the skill stays', async t => {
   const f = await fixture(t), skill = f.skills[0];
-  await fs.chmod(f.root, 0o555); t.after(() => fs.chmod(f.root, 0o755));
+  await fs.chmod(f.root, 0o555);
   await assert.rejects(f.client.deleteSkill({ path: skill.path }), /Could not move skill to Trash: .*permission denied/i);
   assert.ok(await fs.stat(skill.path));
 });
