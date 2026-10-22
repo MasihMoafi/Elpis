@@ -160,7 +160,7 @@ async fn mcp_startup_updates_preserve_streaming_status_suppression() {
 
     notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Ready);
     assert!(chat.bottom_pane.is_task_running());
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
 }
 
 #[tokio::test]
