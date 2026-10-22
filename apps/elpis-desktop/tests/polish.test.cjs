@@ -40,7 +40,7 @@ for (const theme of ['light', 'dark']) {
         measurements.push(...await f.page.evaluate(modelSpacing));
         if (evidence) await shot(f.page.locator('.settings-page'), path.join(evidence, 'shots'), `${theme}-${name.replace(/\W+/g, '-').toLowerCase()}`);
       }
-      assert.ok(measurements.length >= 4, 'main, background and memory model fields are exercised');
+      assert.ok(measurements.length >= 2, 'main and background model fields are exercised (the memory models show once Memories is on)');
       const cramped = measurements.flatMap(m => ['selectToLabel', 'labelToHint', 'hintToField'].filter(key => m[key] !== null && m[key] + .5 < m.rowGap).map(key => `${m.label}: ${key} ${m[key]}px < Settings ${m.rowGap}px`));
       if (evidence) await fs.writeFile(path.join(evidence, `${theme}-spacing.json`), JSON.stringify(measurements, null, 2));
       assert.deepEqual(cramped, []);
@@ -79,7 +79,7 @@ for (const theme of ['light', 'dark']) {
       for (const [name, selectors] of [
         ['Models & accounts', ['.settings-card']],
         ['Configuration', ['.settings-rows', '[data-slot="select-trigger"]']],
-        ['Personalization', ['[data-slot="input"]']],
+        ['Personalization', ['textarea']],
       ]) {
         await visit(f.page, name);
         const closed = f.page.locator('details:not([open]) > summary').filter({ hasText: 'Advanced: custom model', visible: true });
