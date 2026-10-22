@@ -66,7 +66,8 @@ async fn ledger_switch_shares_the_title_row_and_closed_ledger_draws_nothing() {
             assert!(closed.content.iter().all(|cell| cell.symbol() == " "));
         }
         assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), width - 2, height / 2)));
-        chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+        // Tab reaches the Ledger before the composer, as in the app (checked in tmux, 22 Oct).
+        assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::Tab)));
         assert!(
             rows(&ledger_screen(&chat, width, height), ledger_left + 1..width)[1]
                 .trim_end()
