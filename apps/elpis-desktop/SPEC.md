@@ -42,3 +42,7 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 ## Junk tests
 
 22 Oct, Masih: "it's not a thing you run. it's a skill. You identify and delete the junk tests." The audit (`skills/test-audit`, `skills/junk-test`) found tests that only re-assert source text, copy constants, replay stronger tests or keep dead code alive; removing a retained baseline test goes through `retainedUpdates` or `retiredPaths` in `scripts/renderer-artifact-gate.mjs` with this commit as its approval.
+
+## Chat menu, footer and profile
+
+22 Oct, Masih, on the chat menu and the sidebar footer: "it shouldn't have this show agents when there are no agents! and it shouldn't have ctrl shift n for a new chat here! theme should be next to settings; and the name of the user shouldn't be clickable." and "it should actually ask the user for their name and assign an avatar to them; for instance, for me I like this avatar ... The gangster one that we generated. make sure it's optimized for loading as to not lower the speed." Built: Show agents only for a chat with agents; no New Session in New Window in chat menus; a Theme button beside the Settings gear; the account row only shows; a name and avatar asked once (`profileAsked`, seeded false by the packaged app), editable in Settings → General; six 96 px WebP avatars (about 5 KB each), only the chosen one loads at startup. Retained tests that used the account menu follow it (approval commit for `retainedUpdates`).
