@@ -140,6 +140,18 @@ async function loadStore() {
     throw error;
   }
 }
+// Elpis: Esc-Esc rewind pages the whole thread history, and every page re-read and re-parsed this
+// whole file (13.6 MB = ~55 ms each). Read-only callers on that path share one parse per saved
+// version; saves rename a new file into place, so inode, size or mtime changes with every save.
+let storeSnapshot = null;
+async function loadStoreSnapshot() {
+  let sig = null;
+  try { const s = statSync(STORE); sig = `${s.ino}:${s.size}:${s.mtimeMs}`; } catch {}
+  if (sig && storeSnapshot?.sig === sig) return storeSnapshot.store;
+  const store = await loadStore();
+  if (sig) storeSnapshot = { sig, store };
+  return store;
+}
 let storeChain = Promise.resolve();
 const deletingThreads = new Set();
 const deletedThreads = new Set();
@@ -2302,7 +2314,7 @@ wss.on("connection", (ws) => {
   async function revertThread(msg) {
     const { threadId, beforeTurnId } = msg.params ?? {};
     await storeChain;
-    const stored = (await loadStore())[threadId]?.turns ?? [];
+    const stored = (await loadStoreSnapshot())[threadId]?.turns ?? [];
     if (!stored.length) { engine.stdin.write(JSON.stringify(msg) + "\n"); return; }
     try {
       const engineTurns = (await engineCall("thread/turns/list", { threadId, limit: 200, sortDirection: "asc", itemsView: "notLoaded" }).catch(() => ({ data: [] }))).data ?? [];
@@ -2684,7 +2696,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/read" && msg.params?.includeTurns) {
       (async () => {
         await storeChain;
-        const historyStore = await loadStore();
+        const historyStore = await loadStoreSnapshot();
         const tid = msg.params.threadId;
         if (historyStore[tid]?.providerHistory) {
           const result = await engineCall("thread/read", msg.params);
@@ -2717,7 +2729,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/turns/list" || msg.method === "thread/items/list") {
       (async () => {
         await storeChain;
-        const historyStore = await loadStore();
+        const historyStore = await loadStoreSnapshot();
         const tid = msg.params?.threadId;
         if (claudeModel.has(tid) || (historyStore[tid]?.model || historyStore[tid]?.providerHistory) || (providerOwners.has(tid) && !providerOwners.get(tid).nativeHelper) || childIds.has(tid)) await listProviderHistory(msg, historyStore);
         else engine.stdin.write(JSON.stringify(msg) + "\n");
