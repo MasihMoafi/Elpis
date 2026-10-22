@@ -48,9 +48,18 @@ const session: Promise<void> = token
   : Promise.resolve();
 session.catch(() => {}); // The page reports a failed exchange (sessionReady); requests then show their own errors.
 export const sessionReady = () => session;
+/** The bridge refuses a second action on one chat while another runs, and refuses it before doing anything, so asking again a
+ * moment later is safe. A send that overlaps another action on the chat (22 Oct: annotating a page, then Enter) waits for it. */
+const BUSY = /Another operation on this conversation is pending/, BUSY_RETRIES = 5, BUSY_WAIT_MS = 150;
 export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   await session.catch(() => {});
-  return call<T>(path, body, signal);
+  for (let attempt = 0; ; attempt++) {
+    try { return await call<T>(path, body, signal); }
+    catch (error) {
+      if (attempt >= BUSY_RETRIES || signal?.aborted || !(error instanceof Error) || !BUSY.test(error.message)) throw error;
+      await new Promise(resolve => setTimeout(resolve, BUSY_WAIT_MS));
+    }
+  }
 }
 const spawn = (thread: Thread) => {
   const source = thread.source;

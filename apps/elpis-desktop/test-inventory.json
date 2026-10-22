@@ -245,6 +245,7 @@
     "tests/sidebar-order.test.cjs",
     "tests/chat-to-edge.test.cjs",
     "tests/made-chats.test.cjs",
+    "tests/busy-retry.test.cjs",
     "tests/shortcut-hints.test.cjs",
     "tests/sidebar-parity.test.cjs",
     "tests/sidebar-resize.test.cjs",
