@@ -52,6 +52,7 @@ for (const theme of ['light', 'dark']) {
     const f = await fixture({ width: 1600, height: 1000, colorScheme: theme, storage: { 'elpis-theme': theme } });
     const measurements = [], problems = [];
     try {
+      await f.page.locator('.startup-splash').waitFor({ state: 'detached' }); // The start-up screen holds a moment; measure the card, not it.
       const cdp = await f.page.context().newCDPSession(f.page);
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 4, mobile: false });
       await f.composer.evaluate(el => el.blur());
