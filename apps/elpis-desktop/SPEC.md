@@ -38,3 +38,7 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 - **Q6 (S14):** OpenRouter has no Whisper model: none of its 468 models has whisper, transcription or speech in its name, and 45 chat models accept audio. Use local Whisper for OpenRouter chats too (my pick), or choose from those audio models?
 - **Q8 (S18):** What is a chat "no longer needed"? I suggest: idle for 7 days, not pinned, not unread, and not the newest chat of its project. Rename: any chat still named after its first line or "Untitled". Reorder: running first (done), then the rest by last activity. It would archive and rename on its own, with no chat, and each action is listed under Archived with its reason. Yes, or what to change?
 - **Q3 (S4):** Link `~/.elpis-next/AGENTS.md` to your global file (about 16 KB of rules into every Elpis chat), or write a shorter Elpis file?
+
+## Junk tests
+
+22 Oct, Masih: "it's not a thing you run. it's a skill. You identify and delete the junk tests." The audit (`skills/test-audit`, `skills/junk-test`) found tests that only re-assert source text, copy constants, replay stronger tests or keep dead code alive; removing a retained baseline test goes through `retainedUpdates` or `retiredPaths` in `scripts/renderer-artifact-gate.mjs` with this commit as its approval.
