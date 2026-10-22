@@ -24,6 +24,46 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/code-opens.test.cjs": {
+      "blob": "eeb0761006b96eb06f2032ff8abb4bd7ab54cbaa",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/customize-description-fit.test.cjs": {
+      "blob": "c362d6ee69d60ef7bd388b698a29fd7faa36dceb",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/github-connector.test.cjs": {
+      "blob": "93524667970c3a5ffa4e49ee15b44b6392d75894",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/hud-language.test.cjs": {
+      "blob": "ca3d5b6617be4a5123a08c5e2f4afdcf39db3dc5",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/ledger-page.test.cjs": {
+      "blob": "f72f2dc56e31964bfed4aa0c07f90b466ee8b599",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/page-column-app.cjs": {
+      "blob": "e9ddbc3d5d0f6cb916b4d862151c54d39bd4a2a5",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/page-column.test.cjs": {
+      "blob": "2531b596a69db78f6181c8a70c60474375d8d0f3",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
+    "tests/view-boundaries.test.cjs": {
+      "blob": "345650a3abb3d055ae51e1c5acbbd1d3f047434b",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+    },
     "tests/parity-fixture.cjs": {
       "blob": "6eb06acbf86a0bbfd60a1995c7fa56ca21590e4b",
       "approval": "81bcad8466ae9c8497cd85be70eeb235c99f2325",
@@ -65,9 +105,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984)."
     },
     "tests/desktop-small-fixes.test.cjs": {
-      "blob": "e0ed82d0eb6cccaed1d06ea42d9f6d6ace180974",
-      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
-      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged."
+      "blob": "bcf7d003f013ed3a78bdffd1e5300b1c78999d16",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
     "tests/chat-groups.test.mjs": {
       "blob": "2df494abc42feb2c83e34ea9259c25050ebfad6b",
@@ -94,9 +134,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/page-column.cjs": {
-      "blob": "0b7fed1852f2513490a63ad2d28f3699bfbd54f5",
-      "approval": "189f5bd0d80042f037527d5653edf7b0f156c7b9",
-      "reason": "A126: shared column measurements cover the centred page shells"
+      "blob": "e4e6b692bcfe74810bc0f0629dd5cd16393d956f",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "A126: shared column measurements cover the centred page shells Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
     "tests/view-boundaries.test.cjs": {
       "blob": "b77da2a3d0cb0a6ba70aa2a7fd7f4d66ba6afb1e",
@@ -129,9 +169,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/desktop-sweep.test.cjs": {
-      "blob": "d58e3ba4cc69d493c73810be57269eb0f0b71c38",
-      "approval": "ac82360bda390fea91268f3a263cd9375b2af175",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks."
+      "blob": "4d579deeb3b190a518b3b4ba291ca31e7d6e7bde",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
     "tests/love-spot-pages.test.cjs": {
       "blob": "c33b24f4ffa59627206f31ab417b5d4038361fa8",
@@ -193,9 +233,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes."
     },
     "tests/customize.test.cjs": {
-      "blob": "7bfa3a8964edbc3a66549de0c44d1239642363ce",
-      "approval": "e254c9c47069666c14d5a34a96eacfd3e1e0e3e8",
-      "reason": "LEDGER, Masih's approved request in GATE11: \"MCP and plugin switches, Add plugins\". Supply writable versions and check both switch states, metadata and exact save requests; keep skill and navigation checks. 22 Oct, Masih (relayed): the skills switch \"reacts slowly. He wants the UI to flip immediately while the backend catches up\"; the switch flips at once and goes back if refused."
+      "blob": "e7478d146149e0be40694c1b2c7a125f4a15b7c8",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "LEDGER, Masih's approved request in GATE11: \"MCP and plugin switches, Add plugins\". Supply writable versions and check both switch states, metadata and exact save requests; keep skill and navigation checks. 22 Oct, Masih (relayed): the skills switch \"reacts slowly. He wants the UI to flip immediately while the backend catches up\"; the switch flips at once and goes back if refused. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
     "tests/night-themes.test.cjs": {
       "blob": "5deae3213e50c3df45df91e9fe810f5bbac84c53",
@@ -253,9 +293,9 @@ export const retainedUpdates = {
       "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip."
     },
     "tests/view-errors.test.cjs": {
-      "blob": "5dec1ecf6fa40788b16f9aced96f48e962347755",
-      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
-      "reason": "A121/GATE11, Masih: \"never weaken or delete an assertion that still describes wanted behaviour\". dd2ca3576 gave navigation rows accessible names: scope every bad-reply assertion to the Ledger page instead of its same-named shortcut; all error and survival checks remain."
+      "blob": "b61d6fa7059a657594a381f58ab8b2e6ce705fce",
+      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
+      "reason": "A121/GATE11, Masih: \"never weaken or delete an assertion that still describes wanted behaviour\". dd2ca3576 gave navigation rows accessible names: scope every bad-reply assertion to the Ledger page instead of its same-named shortcut; all error and survival checks remain. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     }
   }
 };
