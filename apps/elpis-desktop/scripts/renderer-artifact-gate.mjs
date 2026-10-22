@@ -284,9 +284,9 @@ export const retainedUpdates = {
       "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
     },
     "tests/love-spot-talk.test.cjs": {
-      "blob": "64c04d6cc5279136d0e34e15a3e95ff988d99ca9",
-      "approval": "91b61c7ba08d0916a6e7968ea69075c66f1e2bfe",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip."
+      "blob": "fd5390bd64b470fb95156ad52d1e7c8ff9459cb3",
+      "approval": "c46fdf97e0955306a2ceaf8fba42125a09ef52d6",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip. Then, Masih 22 Oct: \"I wanted to be able to move it anywhere not just horizontally. And it shouldn't interfere with the other ones either.\" and \"when I have one function somewhere I want the exact same function elsewhere.\" The sideways-slide test first sends the bar down off the controls it sits on in a narrow board; two tests are added for free movement and for the shared handle on every bar."
     },
     "tests/view-errors.test.cjs": {
       "blob": "b61d6fa7059a657594a381f58ab8b2e6ce705fce",
