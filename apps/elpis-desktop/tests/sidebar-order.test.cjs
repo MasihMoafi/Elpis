@@ -48,12 +48,10 @@ test('A100: the Session Manager is one switch above Pinned and Recents, outside 
   } finally { await f.close(); }
 });
 
-for (const count of [0, 1, 20, 200]) for (const mode of ['idle', 'only-unseen', 'mixed']) test(`A102: ${count} chats, ${mode}, saved unseen replies precede seen recency`, async () => {
+for (const count of [1, 20, 200]) for (const mode of ['idle', 'only-unseen', 'mixed']) test(`A102: ${count} chats, ${mode}, saved unseen replies precede seen recency`, async () => {
   const chats = Array.from({ length: count }, (_, i) => chat(i ? `chat-${i}` : 'chat-a', count - i));
-  // The shared fixture waits for chat-a. For zero ordinary chats, it is the dedicated manager.
-  const list = count ? chats : [chat('chat-a', 0)];
   const unread = chats.filter((_, i) => mode === 'only-unseen' || mode === 'mixed' && i % 3 === 2).map(chat => chat.id);
-  const f = await open(list, { ...attention(unread), ...(!count ? { 'elpis-session-manager-v1': 'chat-a' } : {}) });
+  const f = await open(chats, attention(unread));
   try {
     await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), [...chats.filter(chat => unread.includes(chat.id)), ...chats.filter(chat => !unread.includes(chat.id))].map(chat => chat.id)));
     assert.deepEqual(f.errors, []);

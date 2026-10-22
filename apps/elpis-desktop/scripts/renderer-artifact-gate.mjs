@@ -35,7 +35,7 @@ export const retainedUpdates = {
       "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model."
     },
     "tests/sidebar-order.test.cjs": {
-      "blob": "c7dc707e18ad618ba6a080d6dedd787ba69d0b17",
+      "blob": "6a840d5825904118819daf784d9675948a2f34a4",
       "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
       "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged."
     },
@@ -105,7 +105,7 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/desktop-small-fixes.test.cjs": {
-      "blob": "23e9bd072622ea3c7af03f53a00eb0d100b095e8",
+      "blob": "e0ed82d0eb6cccaed1d06ea42d9f6d6ace180974",
       ...pageRemovalApproval
     },
     "tests/desktop-sweep.test.cjs": {

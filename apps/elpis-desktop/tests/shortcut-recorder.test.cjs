@@ -11,7 +11,7 @@ test('a focused shortcut says it is listening and records the pressed keys', asy
     await openSettings(page); await page.getByRole('tab', { name: 'Keyboard shortcuts', exact: true }).click();
     const recorder = page.getByLabel('Shortcut for New chat', { exact: true });
     await recorder.focus();
-    assert.equal((await recorder.textContent()).trim(), 'Press the new keys…');
+    assert.equal((await recorder.innerText()).trim(), 'Press the new keys…');
     await page.keyboard.press('Control+Alt+Shift+J');
     await page.keyboard.press('Tab');
     assert.deepEqual(await recorder.locator('kbd').allTextContents(), ['Ctrl', 'Alt', 'Shift', 'J']);
