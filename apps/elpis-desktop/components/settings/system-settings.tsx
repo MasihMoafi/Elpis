@@ -28,8 +28,9 @@ export function ShortcutRecorder({ label, shortcut, disabled, onRecord, onRefuse
     if (plain || reserved.includes(accelerator)) { onRefuse(RESERVED_TEXT); return; }
     onRecord(accelerator);
   }
-  return <Button variant="outline" className="min-w-[120px]" aria-label={label} title="Press the new shortcut" disabled={disabled} onKeyDown={keyDown}>
-    {shortcut ? shortcut.split("+").map((key, index) => <kbd key={`${key}:${index}`} className="kbd">{key}</kbd>) : <span className="text-muted-foreground">Set shortcut</span>}
+  const [recording, setRecording] = useState(false);
+  return <Button variant="outline" className="min-w-[120px]" aria-label={label} title="Click, then press the new shortcut" disabled={disabled} onKeyDown={keyDown} onFocus={() => setRecording(true)} onBlur={() => setRecording(false)}>
+    {recording ? <span className="text-muted-foreground">Press the new keys…</span> : shortcut ? shortcut.split("+").map((key, index) => <kbd key={`${key}:${index}`} className="kbd">{key}</kbd>) : <span className="text-muted-foreground">Set shortcut</span>}
   </Button>;
 }
 

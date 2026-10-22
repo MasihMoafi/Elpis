@@ -45,7 +45,7 @@ export function ShortcutSettings() {
         {canCustomizeShortcut(item.id) ? <>
           <ShortcutRecorder label={`Shortcut for ${item.label}`} shortcut={item.keys[0] ?? ""} reserved={[]} onRecord={binding => save(item.id, binding)} onRefuse={setError} />
           {item.keys.slice(1).map(key => <kbd key={key} className="kbd">{key}</kbd>)}
-          {item.keys.length > 0 && <Button variant="ghost" aria-label={`Turn off shortcut for ${item.label}`} onClick={() => save(item.id, "")}>Off</Button>}
+          {item.keys.length > 0 && <Button variant="ghost" aria-label={`Turn off shortcut for ${item.label}`} title="Turn this shortcut off" onClick={() => save(item.id, "")}>Off</Button>}
           {Object.hasOwn(bindings, item.id) && <Button variant="ghost" aria-label={`Reset shortcut for ${item.label}`} onClick={() => save(item.id, null)}>Reset</Button>}
         </> : <span className="flex items-center gap-1" aria-label={item.keys.join("+")}>{item.keys.map((key, index) => <kbd key={`${key}:${index}`} className="kbd">{key}</kbd>)}</span>}
       </SettingRow>)}
