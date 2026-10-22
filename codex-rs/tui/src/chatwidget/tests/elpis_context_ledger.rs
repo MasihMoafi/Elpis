@@ -54,7 +54,7 @@ async fn ledger_switch_shares_the_title_row_and_closed_ledger_draws_nothing() {
         let ledger_left = width - chat.context_ledger_width(width);
         let lines = rows(&buffer, ledger_left + 1..width);
         assert_eq!(lines[0].trim(), "");
-        assert!(lines[1].contains("CONTEXT LEDGER  context"), "{lines:#?}");
+        assert!(lines[1].contains("CONTEXT LEDGER  co"), "{lines:#?}");
         assert!(lines[1].trim_end().ends_with("[━━━●] ON"));
         assert!(!lines.join("\n").contains(['×', '╳', '✕']));
         assert!(!chat.handle_context_ledger_mouse(ledger_mouse(Down(Left), ledger_left + 3, 1)));
@@ -169,6 +169,8 @@ async fn a106_wheel_and_keys_reach_the_last_line_without_consuming_outside_wheel
                 .contains('↑')
         );
         chat.handle_context_ledger_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+        // The app redraws after each key; the focused hint wraps longer, so the range grows.
+        let _ = ledger_screen(&chat, width, height);
         for _ in 0..100 {
             assert!(chat.handle_context_ledger_key_event(KeyEvent::from(KeyCode::PageDown)));
         }
@@ -870,10 +872,10 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
         "the selected source fits below the header: {text}"
     );
     let close_x = (0..area.width)
-        .find(|&x| buffer[(x, 0)].symbol() == "[")
+        .find(|&x| buffer[(x, 1)].symbol() == "[")
         .expect("pinned ON toggle");
     assert!(
-        (0..area.width).all(|x| !buffer[(x, 0)].symbol().contains("\x1b]8;")),
+        (0..area.width).all(|x| !buffer[(x, 1)].symbol().contains("\x1b]8;")),
         "the Close row has no source file links after scrolling"
     );
     let last = area
@@ -908,7 +910,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
         !chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
             kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
             column: close_x,
-            row: 0,
+            row: 1,
             modifiers: KeyModifiers::CONTROL,
         })
     );
@@ -916,7 +918,7 @@ async fn owned_ledger_close_stays_above_scrolled_source_links_and_hits() -> anyh
         chat.handle_context_ledger_mouse(crossterm::event::MouseEvent {
             kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
             column: close_x,
-            row: 0,
+            row: 1,
             modifiers: KeyModifiers::NONE,
         })
     );

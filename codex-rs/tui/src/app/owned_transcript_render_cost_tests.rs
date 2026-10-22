@@ -92,8 +92,8 @@ async fn full_screen_ledger_starts_at_the_top_beside_the_composer() -> Result<()
         .find(|&y| row(y, 0..rule_x).contains("first line of the transcript"))
         .unwrap_or_else(|| panic!("the transcript must stay beside the Ledger\n{screen_text}"));
     assert_eq!(
-        close_row, 0,
-        "the Ledger header starts at the top\n{screen_text}"
+        close_row, 1,
+        "the Ledger header starts below one blank row\n{screen_text}"
     );
     assert_eq!(
         ledger_title, close_row,
