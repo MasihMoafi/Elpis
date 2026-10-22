@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import { readPersonalizationDraft, writePersonalizationDraft, type PersonalizationDraft } from "@/lib/personalization-drafts";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
+import { MarkdownText } from "@/components/markdown-text";
+import { Segmented, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
 
 type FileSnapshot = { path: string; content: string; version: string };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -16,6 +17,7 @@ export function FileSettings({ kind, label }: { kind: "instructions" | "memory";
   const [saved, setSaved] = useState<FileSnapshot | null>(null);
   const [draft, setDraft] = useState<PersonalizationDraft | null>(null);
   const [pending, setPending] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
   const current = useRef(draft); current.current = draft;
   function journal(value: PersonalizationDraft | null) {
     // Keep text in memory even if the device refuses to journal it.
@@ -55,14 +57,20 @@ export function FileSettings({ kind, label }: { kind: "instructions" | "memory";
     if (current.current && !window.confirm(`Discard unsaved changes to ${label}?`)) return;
     if (await load()) journal(null);
   }
+  const missing = saved?.version === "missing", text = draft?.content ?? saved?.content ?? "";
   return <SettingsGroup title={label}>
-    <SettingRow stacked title={kind === "instructions" ? "AGENTS.md" : "memories/MEMORY.md"} description={saved?.path ?? "Loading the engine’s file…"}>
-      <Textarea aria-label={label} data-settings-file className="max-h-80 min-h-28 font-mono" disabled={pending || !saved} value={draft?.content ?? saved?.content ?? ""} onChange={event => {
-        setError(""); setNotice("");
-        journal(event.target.value === saved?.content ? null : { content: event.target.value, version: draft?.version ?? saved!.version });
-      }} onKeyDown={event => {
-        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); event.stopPropagation(); void save(); }
-      }} />
+    <SettingRow stacked title={kind === "instructions" ? "AGENTS.md" : "memories/MEMORY.md"} description={saved ? missing ? `${saved.path} · not created yet` : saved.path : "Loading the engine’s file…"}>
+      <div className="settings-field-stack">
+        <Segmented label={`${label} view`} value={mode} options={[{ value: "edit", label: "Edit" }, { value: "preview", label: "Preview" }]} onChange={setMode} disabled={!saved} />
+        {mode === "preview"
+          ? <div aria-label={`${label} preview`} className="max-h-80 min-h-28 overflow-auto border border-border p-3 text-sm">{text.trim() ? <MarkdownText text={text} /> : <p className="text-muted-foreground">{missing ? "Not created yet. Switch to Edit and save to create it." : "Nothing written yet."}</p>}</div>
+          : <Textarea aria-label={label} data-settings-file className="max-h-80 min-h-28 font-mono" disabled={pending || !saved} placeholder={missing ? "Not created yet. Write here and press Save to create it." : undefined} value={text} onChange={event => {
+            setError(""); setNotice("");
+            journal(event.target.value === saved?.content ? null : { content: event.target.value, version: draft?.version ?? saved!.version });
+          }} onKeyDown={event => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); event.stopPropagation(); void save(); }
+          }} />}
+      </div>
     </SettingRow>
     <SettingsActions feedback={error ? <SettingsNotice tone="alert">{error}</SettingsNotice> : <SettingsNotice>{notice || (draft ? "Unsaved changes · draft preserved on this device." : pending ? "Loading…" : "Saved changes apply to new chats.")}</SettingsNotice>}>
       <Button variant="ghost" aria-label={`Reload ${label}`} disabled={pending} onClick={() => void reload()}>Reload</Button>
