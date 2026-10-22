@@ -24,6 +24,9 @@ export function arrowUsable(element: Element): element is HTMLElement {
 
 /** The controls the focused one moves among, in page order, or null when it is alone in its landmark. */
 export function arrowGroup(control: HTMLElement): HTMLElement[] | null {
+  // A tab list is one group, however its tabs are wrapped (Settings wraps each section's tabs in a box of its own, which stopped the arrows at every section's end).
+  const tabs = control.closest('[role="tablist"]');
+  if (tabs) { const items = [...tabs.querySelectorAll(ARROW_CONTROL)].filter(arrowUsable); if (items.length > 1 && items.includes(control)) return items; }
   const limit = control.parentElement?.closest(LANDMARK) ?? control.ownerDocument.body;
   for (let at = control.parentElement; at; at = at.parentElement) {
     const items = [...at.querySelectorAll(ARROW_CONTROL)].filter(arrowUsable);

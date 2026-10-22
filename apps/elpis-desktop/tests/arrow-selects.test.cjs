@@ -38,14 +38,15 @@ test('in Settings an arrow selects the section it reaches', async () => {
     const tabs = page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab');
     await tabs.first().click();
     await page.waitForTimeout(150);
-    const first = await tabs.first().innerText();
+    const first = (await tabs.first().innerText()).trim(), focused = () => page.evaluate(() => ({ text: document.activeElement.textContent.trim(), tab: document.activeElement.getAttribute('role') === 'tab', selected: document.activeElement.getAttribute('aria-selected') }));
     await page.keyboard.press('ArrowDown');
-    const second = await page.evaluate(() => document.activeElement.textContent.trim());
-    assert.notEqual(second, first.trim());
-    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-selected')), 'true', 'the tab it reached is the selected one');
-    await page.keyboard.press('ArrowUp');
-    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), first.trim());
-    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-selected')), 'true');
+    assert.equal((await focused()).tab, false, 'the next section\'s heading is reached first; the arrows cross from one section to the next');
+    await page.keyboard.press('ArrowDown');
+    const reached = await focused();
+    assert.equal(reached.tab, true); assert.notEqual(reached.text, first);
+    assert.equal(reached.selected, 'true', 'the tab it reached is the selected one, with no Enter');
+    await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
+    assert.deepEqual(await focused(), { text: first, tab: true, selected: 'true' }, 'and back again'); 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
