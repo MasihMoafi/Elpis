@@ -1120,7 +1120,8 @@ async fn plan_completion_restores_status_indicator_after_streaming_plan_output()
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
 
-    assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
+    // A142: the working row stays while the plan streams.
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
     assert_eq!(chat.bottom_pane.is_task_running(), true);
 
     chat.on_plan_item_completed("- Step 1\n".to_string());
