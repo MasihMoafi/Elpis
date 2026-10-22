@@ -61,12 +61,11 @@ test('Ledger names the sidebar, heading, command action and window; customize vi
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`owned skill menu deletion confirms once, names its folder and restores with Undo (${colorScheme}, 1280px)`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`deleting an owned skill with its Delete button confirms once, names its folder and restores with Undo (${colorScheme}, 1280px)`, async () => {
   const f = await setup({ colorScheme });
   try {
     const { page } = f; await open(page);
-    await row(page, 'My skill').getByRole('button', { name: 'Actions for My skill', exact: true }).click();
-    await page.getByRole('menuitem', { name: /Delete/ }).click();
+    await row(page, 'My skill').getByRole('button', { name: 'Delete My skill', exact: true }).click();
     const dialog = page.getByRole('alertdialog'); await dialog.waitFor();
     assert.match(await dialog.innerText(), /My skill/);
     assert.ok((await dialog.innerText()).includes(`${f.root}/skills/My skill`));
@@ -131,7 +130,7 @@ test('bundled, plugin and managed skills explain their source and offer only tur
       assert.match(await tooltip.innerText(), /turned off instead/);
       assert.ok((await tooltip.innerText()).includes(`${f.root}/skills/${name}`));
       assert.match(await item.getAttribute('title'), /turned off instead/);
-      assert.equal(await item.getByRole('button', { name: `Actions for ${name}` }).count(), 0);
+      assert.equal(await item.getByRole('button', { name: `Delete ${name}` }).count(), 0);
       assert.equal(await item.getByRole('switch').count(), 1);
       await item.click({ position: { x: 5, y: 5 } }); await page.keyboard.press('Delete');
       assert.equal(await page.getByRole('alertdialog').count(), 0);

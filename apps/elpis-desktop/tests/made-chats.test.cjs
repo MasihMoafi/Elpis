@@ -21,6 +21,7 @@ test('chats made by a chat fold under it in the sidebar and open from there, sti
     await f.page.getByRole('button', { name: 'Expand agents in Rust notes', exact: true }).click();
     assert.equal(await row(f.page, 'made-1').count() + await row(f.page, 'made-2').count(), 2, 'they sit under it');
     await row(f.page, 'made-1').locator('.thread-link').click();
-    assert.equal(await f.page.getByRole('button', { name: 'Send message', exact: true }).count() + await f.page.locator('textarea, [contenteditable="true"]').count() > 0, true, 'the made chat is not read-only');
+    await f.page.locator('.thread-row.active[data-thread-id="made-1"]').waitFor();
+    assert.equal(await f.composer.count(), 1, 'the made chat has its message box: it is not a read-only run');
   } finally { await f.close(); }
 });

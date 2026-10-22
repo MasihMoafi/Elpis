@@ -7,7 +7,6 @@ import { FileRefLink } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
-import { MoreMenu } from "@/components/action-menu";
 import { Description, LedgerRow } from "@/components/ledger-row";
 import { LedgerPlugins, type ConfigWrite, type Plugin, type PluginChange } from "@/components/ledger-plugins";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -140,7 +139,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         {skill.deletable ? <span className="customize-badge">{SCOPE[skill.scope]}</span>
           : <Tooltip content={skillOrigin(skill)} detail={<span className="break-all">{skillProtection(skill)}</span>}><span className="customize-badge">{skill.plugin ? `From ${skill.plugin.split("@")[0]}` : SCOPE[skill.scope]}</span></Tooltip>}
         <Switch aria-label={`Use ${skill.name}`} checked={skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
-        <span className="flex size-6 shrink-0 items-center justify-center">{skill.deletable && <MoreMenu label={`Actions for ${skill.name}`} title="Skill actions" actions={[{ id: "delete", label: "Delete", icon: <Trash2 size={14} />, hint: "Delete", destructive: true, run: () => requestDelete(skill) }]} />}</span>
+        <span className="flex size-6 shrink-0 items-center justify-center">{skill.deletable && <Button variant="ghost" size="icon-xs" aria-label={`Delete ${skill.name}`} title="Delete (Delete key)" disabled={savingSkill} onClick={() => requestDelete(skill)}><Trash2 size={14} /></Button>}</span>
       </li>)}</ul>
       {(data.skills.errors?.length ?? 0) > 0 && <details className="customize-errors"><DisclosureSummary>{data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read</DisclosureSummary>
         <ul>{data.skills.errors!.map(item => <li key={item.path}><FileRefLink target={{ path: item.path }}><code>{item.path}</code></FileRefLink> {item.message}</li>)}</ul></details>}
