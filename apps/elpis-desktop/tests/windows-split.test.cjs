@@ -15,9 +15,9 @@ test('split chats keep separate composers, send to their own chat, focus with br
     await f.open('chat-a'); await composer.fill('left draft'); await split(page);
     const right = secondary(page).getByRole('textbox', { name: 'Message Elpis', exact: true });
     await right.fill('right draft'); assert.equal(await composer.inputValue(), 'left draft');
-    await composer.click(); await page.keyboard.press('Control+]');
+    await composer.click(); await page.keyboard.press('Control+Alt+]');
     assert.ok(await right.evaluate(el => el === document.activeElement));
-    await page.keyboard.press('Control+['); assert.ok(await composer.evaluate(el => el === document.activeElement));
+    await page.keyboard.press('Control+Alt+['); assert.ok(await composer.evaluate(el => el === document.activeElement));
     await right.click(); const sent = page.waitForResponse(res => res.url().endsWith('/threads/chat-b/turns')); await page.keyboard.press('Enter'); await sent;
     assert.ok(f.posts.some(p => p.path === '/api/threads/chat-b/turns' && JSON.stringify(p.body).includes('right draft')));
     assert.equal(await composer.inputValue(), 'left draft');
