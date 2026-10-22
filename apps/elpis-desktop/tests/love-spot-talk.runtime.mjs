@@ -95,7 +95,7 @@ try {
     await record(panel);
     await page.waitForFunction(() => /read the secret phrase/i.test(document.querySelector('.love-spot-talk textarea')?.value || ''), null, { timeout: 60000 });
     assert.equal(submitted, undefined, 'voice remains an editable draft until Send');
-  } else await panel.getByRole('textbox', { name: 'Message Elpis' }).fill('Read our secret phrase from the board. Reply with only that entire phrase, without its introductory words. Do not use tools.');
+  } else await panel.getByRole('textbox', { name: 'Message Matilda' }).fill('Read our secret phrase from the board. Reply with only that entire phrase, without its introductory words. Do not use tools.');
   await panel.getByRole('button', { name: 'Send', exact: true }).click();
   let scene;
   for (let i = 0; i < 180; i++) {

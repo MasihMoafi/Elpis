@@ -13,9 +13,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
-import { MatildaPanel } from "@/components/matilda-panel";
 import { MovableBars } from "@/components/love-spot-bars";
-import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
@@ -47,7 +46,7 @@ async function savePicture(data: Saved) {
   await api("/love-spot/picture", { revision: data.revision, png: dataURL.split(",")[1] });
 }
 
-export default function LoveSpot({ dark, cwd, threads = [], onOpenChat, toolbarHost }: { dark: boolean; cwd?: string; threads?: Thread[]; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null }) {
+export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null }) {
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
@@ -55,7 +54,7 @@ export default function LoveSpot({ dark, cwd, threads = [], onOpenChat, toolbarH
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
-  const [talk, setTalk] = useState(false), [matilda, setMatilda] = useState(false), [quote, setQuote] = useState<LoveSpotQuote>();
+  const [talk, setTalk] = useState(false), [quote, setQuote] = useState<LoveSpotQuote>();
   const [boardBusy, setBoardBusy] = useState(false), [talkDictating, setTalkDictating] = useState(false);
   const [models, setModels] = useState<Model[]>([]), [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [model, setModel] = useState(""), [choiceId, setChoiceId] = useState("");
@@ -402,8 +401,7 @@ export default function LoveSpot({ dark, cwd, threads = [], onOpenChat, toolbarH
         </form>}
       </div>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
-      <Button variant="outline" size="sm" aria-expanded={matilda} onClick={() => { setMatilda(value => !value); setTalk(false); }}>Matilda</Button>
-      <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => { setTalk(value => !value); setMatilda(false); }}>Talk</Button>
+      <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
     </div>;
   return <section className="love-spot" aria-label="Love Spot">
@@ -464,15 +462,14 @@ export default function LoveSpot({ dark, cwd, threads = [], onOpenChat, toolbarH
         </MainMenu>
       </Excalidraw> : !error && <p role="status">Opening Love Spot…</p>}
     </div>
-    <div className="love-spot-panels" hidden={!talk && !matilda}>
+    <div className="love-spot-panels" hidden={!talk}>
       <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
         onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} sendWithBoard={sendWithBoard} />
-      <MatildaPanel open={matilda} onClose={() => setMatilda(false)} cwd={cwd} threads={threads} onOpenChat={id => onOpenChat?.(id)} />
     </div>
     </div>
     {menu && <DropdownMenu open onOpenChange={open => { if (!open) setMenu(undefined); }}>
       <DropdownMenuTrigger aria-label="Note actions" className="love-spot-menu-anchor" style={{ left: menu.x, top: menu.y }} />
-      <DropdownMenuContent align="start"><DropdownMenuItem onClick={() => { setQuote({ id: Date.now(), text: menu.text }); setTalk(true); setMatilda(false); setMenu(undefined); }}>Ask about this note</DropdownMenuItem></DropdownMenuContent>
+      <DropdownMenuContent align="start"><DropdownMenuItem onClick={() => { setQuote({ id: Date.now(), text: menu.text }); setTalk(true); setMenu(undefined); }}>Ask about this note</DropdownMenuItem></DropdownMenuContent>
     </DropdownMenu>}
   </section>;
 }

@@ -44,6 +44,20 @@ test('Talk creates one persistent normal chat, attributes live notes by colour, 
   f.talk.close(); const second = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => second.close());
   await second.read(); await second.send({ text: 'After restart', model: 'text' }); assert.equal(f.created.length, 1);
 });
+test('Talk is Matilda: who she is goes with every message, and only as text she can read', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Hello', model: 'text', persona: 'Masih\'s partner.' });
+  assert.match(f.created[0].instructions, /You are Matilda/); assert.match(f.created[0].instructions, /cannot draw on the board yourself yet/);
+  assert.deepEqual(f.sent[0].attachments.filter(a => a.name === 'Who you are.txt').map(a => [a.type, a.text]), [['text', 'Masih\'s partner.']]);
+  f.finish(); await f.talk.idle();
+  await f.talk.send({ text: 'Again', model: 'text', persona: 'A maths tutor.' });
+  assert.equal(f.sent[1].attachments.find(a => a.name === 'Who you are.txt').text, 'A maths tutor.');
+  assert.equal(f.sent[1].attachments[0].name, 'Love Spot notes.txt', 'the board notes stay first');
+  f.finish('turn-2'); await f.talk.idle();
+  await f.talk.send({ text: 'No persona sent', model: 'text' }); assert.equal(f.sent[2].attachments.some(a => a.name === 'Who you are.txt'), false);
+  f.finish('turn-3'); await f.talk.idle();
+  await assert.rejects(f.talk.send({ text: 'Hi', model: 'text', persona: 'x'.repeat(4001) }), /persona/i); assert.equal(f.sent.length, 3);
+});
 test('replies are blue, unsigned, collision-free, idempotent and saved without a UI subscriber', async t => {
   const f = await fixture(t);
   await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 }), note('block', 'Obstacle', '#e03131', { x: 20, y: 100, width: 500, height: 500 })] });

@@ -56,7 +56,7 @@ test('Talk sends the board and picture with the chosen model, reuses a sidebar c
     await microphone(f.page); await f.open(f.page); await note(f, 'The secret is apricot');
     const panel = f.page.getByRole('region', { name: 'Love Spot Talk', exact: true }); assert.equal(await panel.isVisible(), false);
     await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
-    const draft = panel.getByRole('textbox', { name: 'Message Elpis' }); await draft.fill('What is our secret?');
+    const draft = panel.getByRole('textbox', { name: 'Message Matilda' }); await draft.fill('What is our secret?');
     await panel.getByRole('combobox').click(); await f.page.getByRole('option', { name: /GPT-6-Luna/ }).click();
     await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await panel.getByText('I am here with you.', { exact: true }).waitFor();
@@ -89,7 +89,7 @@ test('right-clicking a Masih note quotes it in Talk without sending', async () =
     const box = await f.page.locator('.excalidraw').boundingBox();
     await f.page.mouse.click(box.x + 460, box.y + 310, { button: 'right' });
     await f.page.getByRole('menuitem', { name: 'Ask about this note' }).click();
-    const draft = f.page.getByRole('textbox', { name: 'Message Elpis' });
+    const draft = f.page.getByRole('textbox', { name: 'Message Matilda' });
     assert.match(await draft.inputValue(), /> Please ask about this/); assert.equal(f.turns.length, 0);
     await draft.press('Enter'); await f.waitFor(s => s.elements.some(e => e.strokeColor === '#1971c2'), 'quoted question reply missing');
   } finally { await f.close(); }
@@ -99,7 +99,7 @@ test('a failed Talk turn shows its error and adds no agent note', async () => {
   const f = await loveSpotFixture({ reply: '' });
   try {
     await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
-    await f.page.getByRole('textbox', { name: 'Message Elpis' }).fill('Hello'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
+    await f.page.getByRole('textbox', { name: 'Message Matilda' }).fill('Hello'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await f.page.getByRole('alert').filter({ hasText: 'Test provider failed' }).waitFor();
     assert.equal((await f.scene()).elements.filter(e => !e.isDeleted).length, 0);
   } finally { await f.close(); }
@@ -112,7 +112,7 @@ test('Talk waits for Settings and its model list before sending with the main mo
     await f.page.route('**/api/models*', async route => { await ready; await route.continue(); });
     await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
     const panel = f.page.getByRole('region', { name: 'Love Spot Talk', exact: true });
-    await panel.getByRole('textbox', { name: 'Message Elpis' }).fill('Use our main model');
+    await panel.getByRole('textbox', { name: 'Message Matilda' }).fill('Use our main model');
     const send = panel.getByRole('button', { name: 'Send', exact: true });
     assert.equal(await send.isDisabled(), true, 'sending before the model loads must be blocked'); assert.equal(f.turns.length, 0);
     release(); await send.click();
@@ -128,7 +128,7 @@ test('a reply reaches the board after navigating away; text-only models receive 
     await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
     const panel = f.page.getByRole('region', { name: 'Love Spot Talk', exact: true });
     await panel.getByRole('combobox').click(); await f.page.getByRole('option', { name: /Text only/ }).click();
-    await panel.getByRole('textbox', { name: 'Message Elpis' }).fill('Stay with this thought');
+    await panel.getByRole('textbox', { name: 'Message Matilda' }).fill('Stay with this thought');
     await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await f.page.waitForResponse(response => response.url().endsWith('/api/love-spot/talk') && response.request().method() === 'POST');
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
@@ -151,7 +151,7 @@ test('a long non-Latin reply avoids obstacles after the editor restores its actu
     await f.page.mouse.down(); await f.page.mouse.move(box.x + 550, box.y + 674, { steps: 5 }); await f.page.mouse.up(); await f.page.keyboard.press('Escape');
     await f.waitFor(s => s.elements.some(e => e.type === 'rectangle'), 'obstacle was not saved');
     await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
-    await f.page.getByRole('textbox', { name: 'Message Elpis' }).fill('What do you think?'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
+    await f.page.getByRole('textbox', { name: 'Message Matilda' }).fill('What do you think?'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await f.waitFor(s => s.elements.some(e => e.id.startsWith('love-reply-')), 'long reply missing');
     await f.page.evaluate(() => document.fonts.ready.then(() => document.fonts.load('20px Cascadia')));
     // A real nudge records the restored dimensions, rather than trusting the bridge's estimated bounds.
@@ -169,7 +169,7 @@ test('Talk fits in light and dark at 1280 and 1440', async () => {
   try {
     await f.open(f.page); await note(f, 'A quiet place to think together');
     await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
-    await f.page.getByRole('textbox', { name: 'Message Elpis' }).fill('Hello from our board'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
+    await f.page.getByRole('textbox', { name: 'Message Matilda' }).fill('Hello from our board'); await f.page.getByRole('button', { name: 'Send', exact: true }).click();
     await f.page.getByText('I am here with you.', { exact: true }).waitFor();
     await fs.mkdir('/tmp/love-spot-talk-shots', { recursive: true });
     for (const theme of ['light', 'dark']) {
