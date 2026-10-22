@@ -152,7 +152,8 @@ button:disabled { cursor:not-allowed; }
 .account-plan { flex-shrink:0; color:var(--muted-foreground); }
 .account-plan::before { content:"· "; }
 .account-chevron { flex-shrink:0; margin-inline-start:auto; color:var(--muted-foreground); }
-.sidebar > .status-line { color:var(--subtle-foreground); font-size:var(--text-small); padding:0 8px 2px; }
+.sidebar-status { display:flex; align-items:center; justify-content:space-between; padding:0 4px 2px 8px; }
+.sidebar-status .status-line { color:var(--subtle-foreground); font-size:var(--text-small); }
 .header-action { order:3; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
