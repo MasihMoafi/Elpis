@@ -13,8 +13,7 @@ import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger,
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
-import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './customize.mjs';
-import { SkillTrash, skillRoots } from './skill-trash.mjs';
+import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
 import { SESSION_MANAGER_INSTRUCTIONS, SESSION_MANAGER_NAME } from './session-manager-mcp.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
@@ -25,7 +24,8 @@ import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowRuns } from './workflow-acp.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
-import { appCatalogs, linkBundledCatalog } from './app-catalogs.mjs';
+import { Ledger } from './ledger.mjs';
+import { BridgeError, object, text, threadId } from './validate.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
@@ -34,23 +34,7 @@ const CHAT_SOURCE_KINDS = ['cli', 'vscode', 'appServer', 'unknown'];
 // Image history can exceed 8 MiB; keep runtime messages and HTTP responses bounded together.
 export const MAX_BRIDGE_MESSAGE_BYTES = 100 * 1024 * 1024;
 
-export class BridgeError extends Error {
-  constructor(message, status = 400) { super(message); this.status = status; }
-}
-export function object(value, keys) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !keys.includes(k))) {
-    throw new BridgeError('Unsupported request fields');
-  }
-  return value;
-}
-export function text(value, label, max = 32000) {
-  if (typeof value !== 'string' || !value.trim() || value.length > max) throw new BridgeError(`Invalid ${label}`);
-  return value;
-}
-export function threadId(value) {
-  if (typeof value !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)) throw new BridgeError('Invalid thread ID');
-  return value;
-}
+export { BridgeError, object, text, threadId } from './validate.mjs';
 
 /** The Elpis home the runtime uses: its config, sessions and logs. */
 export const elpisHome = (env = process.env) => path.resolve(env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'));
@@ -184,7 +168,7 @@ export class DesktopClient extends EventEmitter {
   #browserConfig;
   #sessionManagerConfig;
   #archiveHistory; #spawnLinks; #appHome;
-  #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
+  #rewindSnapshots; #rewindHistory; #githubConnector; #ledger;
   constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), appHome = os.homedir(), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
@@ -193,7 +177,8 @@ export class DesktopClient extends EventEmitter {
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
     this.#spawnLinks = new SpawnLinks(spawnLinksFile); this.#appHome = appHome;
     this.#githubConnector = githubConnector;
-    this.#skillTrash = new SkillTrash(skillTrashOptions);
+    this.#ledger = new Ledger({ rpc: (method, params) => this.#rpc(method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
+      githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: elpisHome });
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
     this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
       const result = await this.#rpc(method, params);
@@ -845,115 +830,15 @@ export class DesktopClient extends EventEmitter {
     return { anthropicSignedOut: answer?.signedOut === true };
   }
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
-  /** Claude's Customize page: the skills found for a project, the installed plugins and the connectors (gh and MCP).
-   * A part the engine can't give says why, and the others still show. */
-  #projectCwds(cwd) {
-    if (cwd != null) { text(cwd, 'project folder', 4096); if (!path.isAbsolute(cwd)) throw new BridgeError('Choose a project folder'); }
-    return cwd ? [cwd] : [];
-  }
-  async customize(cwd) {
-    const cwds = this.#projectCwds(cwd), why = error => ({ error: error instanceof Error ? error.message : 'Unavailable' });
-    const [skills, plugins, connectors, github] = await Promise.all([
-      this.#rpc('skills/list', { cwds, forceReload: true }).then(skillsSnapshot, why),
-      this.#rpc('plugin/installed', cwd ? { cwds } : {}).then(pluginsSnapshot, why),
-      this.mcp().then(snapshot => ({ data: snapshot.servers.map(({ name, enabled, transport }) => ({ name, enabled, transport })), version: snapshot.version, write: snapshot.write }), why),
-      this.#githubConnector.snapshot().then(data => ({ data }), why),
-    ]);
-    return { skills, plugins: { ...plugins, version: connectors.version ?? null, write: connectors.write ?? { available: false } }, connectors: { version: connectors.version ?? null, write: connectors.write ?? { available: false }, data: [...(github.data ? [github.data] : []), ...(connectors.data ?? [])],
-      ...((connectors.error || github.error) ? { error: [github.error, connectors.error].filter(Boolean).join(' ') } : {}) } };
-  }
-  async pluginCatalog(input = {}) {
-    object(input, ['cwd', 'search', 'cursor']);
-    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
-    if (input.search != null) text(input.search, 'plugin search', 1000);
-    if (input.cursor != null) text(input.cursor, 'plugin search cursor', 4096);
-    const scope = input.cwd ? { cwds: [input.cwd] } : {};
-    const catalog = await this.#rpc('plugin/list', scope);
-    const search = input.search?.trim() ? await this.#rpc('plugin/search', { ...scope, searchTerm: input.search.trim(), ...(input.cursor ? { cursor: input.cursor } : {}), limit: 50 }) : null;
-    const snapshot = pluginCatalogSnapshot(catalog, search);
-    return { ...snapshot, appCatalogs: appCatalogs(this.#appHome).map(({ app, label, name }) => ({ app, label, added: snapshot.marketplaces.some(market => market.name === name) })) };
-  }
-  /** Turns plugins on and adds the catalog the named desktop app keeps on this computer (bridge/app-catalogs.mjs). */
-  async #addAppCatalog(app) {
-    const found = appCatalogs(this.#appHome).find(catalog => catalog.app === app);
-    if (!found) throw new BridgeError('That app has no plugin catalog on this computer', 404);
-    const { version } = await this.settings();
-    await this.saveSettings({ version, features: { plugins: true } });
-    if (found.app === 'claude') return this.#rpc('marketplace/add', { source: found.source });
-    const folder = await linkBundledCatalog(elpisHome(), found.source), current = await this.settings();
-    return this.#rpc('config/batchWrite', { expectedVersion: current.version, reloadUserConfig: true,
-      edits: [{ keyPath: `marketplaces."${found.name}"`, value: { source_type: 'local', source: folder }, mergeStrategy: 'replace' }] });
-  }
-  async changePlugin(input) {
-    object(input, ['action', 'id', 'enabled', 'version', 'cwd']); text(input.id, 'plugin', 512);
-    if (!['install', 'uninstall', 'enable'].includes(input.action)) throw new BridgeError('Choose a plugin action');
-    let install = null;
-    if (input.action === 'install') {
-      const plugin = (await this.pluginCatalog(input.cwd ? { cwd: input.cwd } : {})).plugins.find(plugin => plugin.id === input.id);
-      if (!plugin) throw new BridgeError('That plugin is not listed. Refresh the catalog.', 404);
-      if (!plugin.installable) throw new BridgeError(plugin.reason);
-      install = await this.#rpc('plugin/install', { pluginName: plugin.pluginName, ...(plugin.marketplacePath ? { marketplacePath: plugin.marketplacePath } : { remoteMarketplaceName: plugin.marketplaceName }) });
-    } else {
-      const snapshot = await this.customize(input.cwd);
-      if (!snapshot.plugins.data?.some(plugin => plugin.id === input.id)) throw new BridgeError(snapshot.plugins.error || 'That plugin is not installed', 404);
-      if (input.action === 'uninstall') await this.#rpc('plugin/uninstall', { pluginId: input.id });
-      else {
-        if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
-        text(input.version, 'plugin settings version', 200);
-        if (!snapshot.plugins.write.available || snapshot.plugins.version !== input.version) throw new BridgeError('Settings changed in another client. Reload before saving again.', 409);
-        await this.#rpc('config/batchWrite', { edits: [{ keyPath: `plugins.${JSON.stringify(input.id)}.enabled`, value: input.enabled, mergeStrategy: 'replace' }], expectedVersion: input.version, reloadUserConfig: true });
-      }
-    }
-    return { ...await this.customize(input.cwd), appsNeedingAuth: install?.appsNeedingAuth?.map(app => ({ name: app.name })) ?? [] };
-  }
-  async changeMarketplace(input) {
-    object(input, ['action', 'source', 'name', 'cwd', 'app']);
-    // Validate the project folder before any engine mutation.
-    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
-    if (input.action === 'add') return this.#rpc('marketplace/add', { source: text(input.source, 'marketplace source', 4096).trim() });
-    if (input.action === 'add-app') return this.#addAppCatalog(input.app);
-    if (input.action === 'remove') return this.#rpc('marketplace/remove', { marketplaceName: text(input.name, 'marketplace', 256) });
-    throw new BridgeError('Choose a marketplace action');
-  }
-  async setGithubConnector(input) {
-    object(input, ['enabled', 'cwd']);
-    if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
-    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
-    await this.#githubConnector.setEnabled(input.enabled);
-    return this.customize(input.cwd);
-  }
-  /** Turns one listed skill on or off, then lists again. The engine's skills/config/write answers and saves nothing (22 Oct:
-   * a planted skill stayed off), so the entry is written to the config's skills.config like any other setting. */
-  async setSkill(input) {
-    object(input, ['path', 'enabled', 'cwd']); text(input.path, 'skill', 4096);
-    if (typeof input.enabled !== 'boolean') throw new BridgeError('Choose on or off');
-    // A switch needs the list (is it a skill?) and one config read (its entries and the version to write against), not the whole Settings page.
-    const [listed, read] = await Promise.all([this.#rpc('skills/list', { cwds: this.#projectCwds(input.cwd) }).then(skillsSnapshot), this.#rpc('config/read', { includeLayers: true })]);
-    if (!listed.data?.some(skill => skill.path === input.path)) throw new BridgeError('That skill is not listed', 404);
-    const version = userConfigVersion(read);
-    const entries = Array.isArray(read?.config?.skills?.config) ? read.config.skills.config : [];
-    await this.#rpc('config/batchWrite', { expectedVersion: version, reloadUserConfig: true,
-      edits: [{ keyPath: 'skills.config', value: [...entries.filter(entry => entry?.path !== input.path), { path: input.path, enabled: input.enabled }], mergeStrategy: 'replace' }] });
-    // Only the skills changed: the answer is their list, not the plugins and connectors as well.
-    return { skills: await this.#rpc('skills/list', { cwds: this.#projectCwds(input.cwd), forceReload: true }).then(skillsSnapshot) };
-  }
-  async deleteSkill(input) {
-    object(input, ['path', 'cwd']); text(input.path, 'skill', 4096);
-    const snapshot = await this.customize(input.cwd);
-    if (!snapshot.skills.data) throw new BridgeError(snapshot.skills.error || 'Skills could not be listed');
-    const read = await this.#rpc('config/read', { includeLayers: true, ...(input.cwd ? { cwd: input.cwd } : {}) });
-    let deleted;
-    try { deleted = await this.#skillTrash.delete(input.path, snapshot.skills.data, skillRoots(read, input.cwd)); }
-    catch (error) { throw new BridgeError(error.message); }
-    return { ...await this.customize(input.cwd), deleted };
-  }
-  async undoSkillDelete(input) {
-    object(input, ['token', 'cwd']); text(input.token, 'Undo token', 128);
-    if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
-    try { await this.#skillTrash.undo(input.token); }
-    catch (error) { throw new BridgeError(error.message); }
-    return this.customize(input.cwd);
-  }
+  // The Ledger page (skills, plugins, connectors): bridge/ledger.mjs.
+  customize(cwd) { return this.#ledger.customize(cwd); }
+  pluginCatalog(input) { return this.#ledger.pluginCatalog(input); }
+  changePlugin(input) { return this.#ledger.changePlugin(input); }
+  changeMarketplace(input) { return this.#ledger.changeMarketplace(input); }
+  setGithubConnector(input) { return this.#ledger.setGithubConnector(input); }
+  setSkill(input) { return this.#ledger.setSkill(input); }
+  deleteSkill(input) { return this.#ledger.deleteSkill(input); }
+  undoSkillDelete(input) { return this.#ledger.undoSkillDelete(input); }
   async hooks() {
     const [list, read] = await Promise.all([this.#rpc('hooks/list', {}), this.#rpc('config/read', { includeLayers: true })]);
     return hooksSnapshot(list, read);
