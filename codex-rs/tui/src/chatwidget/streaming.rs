@@ -104,11 +104,6 @@ impl ChatWidget {
             } else {
                 crate::app_event::ConsolidationScrollbackReflow::IfResizeReflowRan
             };
-            // Match newline-committed streaming behavior: once assistant output is ready to be
-            // committed into history, hide the inline status row so transcript content replaces it.
-            if cell.is_some() {
-                self.bottom_pane.hide_status_indicator();
-            }
             let deferred_history_cell =
                 if scrollback_reflow == crate::app_event::ConsolidationScrollbackReflow::Required {
                     cell
@@ -518,8 +513,9 @@ impl ChatWidget {
             scope,
             now,
         );
+        // A142: like Claude Code, the working row stays while the answer streams; the turn's
+        // end hides it.
         for cell in outcome.cells {
-            self.bottom_pane.hide_status_indicator();
             self.add_boxed_history(cell);
         }
         if scope == CommitTickScope::AnyMode || outcome.has_controller {
@@ -636,7 +632,6 @@ impl ChatWidget {
                 return self.clear_active_stream_tail();
             }
 
-            self.bottom_pane.hide_status_indicator();
             let cell = history_cell::StreamingAgentTailCell::new(
                 tail_lines,
                 controller.tail_starts_stream(),
@@ -665,7 +660,6 @@ impl ChatWidget {
                 return self.clear_active_stream_tail();
             }
 
-            self.bottom_pane.hide_status_indicator();
             let cell = history_cell::StreamingPlanTailCell::new(
                 tail_lines,
                 !controller.tail_starts_stream(),
