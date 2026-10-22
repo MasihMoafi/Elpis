@@ -43,8 +43,8 @@ function state() {
   return { routes, snapshot, connectors, plugins, reject: value => { reject = value; } };
 }
 async function ledger(page, section) {
-  await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
-  await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: section, exact: true }).click();
+  await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
+  await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: section, exact: true }).click();
 }
 async function checked(control, value) {
   await control.page().waitForFunction(({ label, value }) => document.querySelector(`[role="switch"][aria-label="${label}"]`)?.getAttribute('aria-checked') === String(value), { label: await control.getAttribute('aria-label'), value });
@@ -150,7 +150,7 @@ test('LEDGER loading and long lists stay inside their rows; unavailable writes e
     await chooseTheme(page, 'dark'); await shot(page, 'connectors-long-dark');
     writable = false; await page.reload(); await ledger(page, 'Connectors');
     assert(await rows.getByRole('switch').first().isDisabled());
-    await rows.getByRole('status').filter({ hasText: 'Reload Ledger to read writable MCP settings' }).first().waitFor();
+    await rows.getByRole('status').filter({ hasText: 'Reload Customize to read writable MCP settings' }).first().waitFor();
     assert.deepEqual(f.errors, []);
   } finally { release(); await f.close(); }
 });

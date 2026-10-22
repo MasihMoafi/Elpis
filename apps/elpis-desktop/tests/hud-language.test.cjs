@@ -79,7 +79,7 @@ function labels(report, where, seen) {
   }
 }
 
-for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat, its menus and dialogs, Settings, Ledger and the flat canvas (${colorScheme})`, async t => {
+for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat, its menus and dialogs, Settings, Customize and the flat canvas (${colorScheme})`, async t => {
   const f = await fixture({ width: 1280, height: 800, colorScheme, chat: CHAT, routes: ROUTES });
   t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   const { page } = f, reports = [], low = [];
@@ -97,8 +97,8 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
   await visit('rename dialog'); await page.keyboard.press('Escape'); await page.locator('.hud-dialog').waitFor({ state: 'detached' });
   await openSettings(page); await page.getByRole('tab', { name: 'General', exact: true }).waitFor(); await page.locator('.settings-rows').first().waitFor();
   await visit('Settings'); await leaveSettings(page);
-  await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click(); await page.getByText('web-dev', { exact: true }).waitFor();
-  await visit('Ledger');
+  await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click(); await page.getByText('web-dev', { exact: true }).waitFor();
+  await visit('Customize');
   await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.locator('.react-flow__node-agent').first().waitFor();
   await visit('canvas');
   await t.test('one chamfer and one edge per role; the send button shares the control cuts', () => {

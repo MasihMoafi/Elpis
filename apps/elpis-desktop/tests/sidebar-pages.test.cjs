@@ -7,7 +7,7 @@ const { fixture } = require('./parity-fixture.cjs');
 
 const retired = 'observability'; // Legacy saved data only; never a supported destination.
 const pages = ['experimentLab', 'canvas', 'loveSpot', 'customize'];
-const names = { experimentLab: 'Lab', canvas: 'Workflows', loveSpot: 'Love Spot', customize: 'Ledger' };
+const names = { experimentLab: 'Lab', canvas: 'Workflows', loveSpot: 'Love Spot', customize: 'Customize' };
 const nav = page => page.locator('aside.sidebar nav[aria-label="Workspace"]');
 const labels = page => nav(page).getByRole('button').allTextContents();
 

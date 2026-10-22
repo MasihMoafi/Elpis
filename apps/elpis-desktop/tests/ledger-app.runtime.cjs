@@ -65,8 +65,8 @@ async function main() {
     };
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     const ledger = async section => {
-      await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
-      await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: section, exact: true }).click();
+      await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
+      await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: section, exact: true }).click();
       await page.getByRole('region', { name: `Your ${section.toLowerCase()}`, exact: true }).waitFor();
     };
     const shot = async name => { await page.screenshot({ path: path.join(shots, `${baseline ? 'baseline-' : ''}${name}.png`) }); };
@@ -82,7 +82,7 @@ async function main() {
           if (section === 'Plugins' && !await page.getByRole('button', { name: 'Add plugins', exact: true }).count()) missing.push(`${mode}: Add plugins missing`);
         }
       }
-      assert.deepEqual(missing, [], 'Unchanged CI renderer lacks the requested Ledger controls');
+      assert.deepEqual(missing, [], 'Unchanged CI renderer lacks the requested Customize controls');
       return;
     }
     await ledger('Connectors');

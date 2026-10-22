@@ -24,7 +24,7 @@ import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowRuns } from './workflow-acp.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
-import { Ledger } from './ledger.mjs';
+import { CustomizePage } from './customize-page.mjs';
 import { BridgeError, object, text, threadId } from './validate.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
@@ -168,7 +168,7 @@ export class DesktopClient extends EventEmitter {
   #browserConfig;
   #sessionManagerConfig;
   #archiveHistory; #spawnLinks; #appHome;
-  #rewindSnapshots; #rewindHistory; #githubConnector; #ledger;
+  #rewindSnapshots; #rewindHistory; #githubConnector; #customize;
   constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), appHome = os.homedir(), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
@@ -177,7 +177,7 @@ export class DesktopClient extends EventEmitter {
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
     this.#spawnLinks = new SpawnLinks(spawnLinksFile); this.#appHome = appHome;
     this.#githubConnector = githubConnector;
-    this.#ledger = new Ledger({ rpc: (method, params) => this.#rpc(method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
+    this.#customize = new CustomizePage({ rpc: (method, params) => this.#rpc(method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
       githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: elpisHome });
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
     this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
@@ -830,15 +830,15 @@ export class DesktopClient extends EventEmitter {
     return { anthropicSignedOut: answer?.signedOut === true };
   }
   async mcp() { return mcpSnapshot(await this.#rpc('config/read', { includeLayers: true })); }
-  // The Ledger page (skills, plugins, connectors): bridge/ledger.mjs.
-  customize(cwd) { return this.#ledger.customize(cwd); }
-  pluginCatalog(input) { return this.#ledger.pluginCatalog(input); }
-  changePlugin(input) { return this.#ledger.changePlugin(input); }
-  changeMarketplace(input) { return this.#ledger.changeMarketplace(input); }
-  setGithubConnector(input) { return this.#ledger.setGithubConnector(input); }
-  setSkill(input) { return this.#ledger.setSkill(input); }
-  deleteSkill(input) { return this.#ledger.deleteSkill(input); }
-  undoSkillDelete(input) { return this.#ledger.undoSkillDelete(input); }
+  // The Customize page (skills, plugins, connectors): bridge/customize-page.mjs.
+  customize(cwd) { return this.#customize.customize(cwd); }
+  pluginCatalog(input) { return this.#customize.pluginCatalog(input); }
+  changePlugin(input) { return this.#customize.changePlugin(input); }
+  changeMarketplace(input) { return this.#customize.changeMarketplace(input); }
+  setGithubConnector(input) { return this.#customize.setGithubConnector(input); }
+  setSkill(input) { return this.#customize.setSkill(input); }
+  deleteSkill(input) { return this.#customize.deleteSkill(input); }
+  undoSkillDelete(input) { return this.#customize.undoSkillDelete(input); }
   async hooks() {
     const [list, read] = await Promise.all([this.#rpc('hooks/list', {}), this.#rpc('config/read', { includeLayers: true })]);
     return hooksSnapshot(list, read);

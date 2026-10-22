@@ -8,7 +8,7 @@ const { assertUiFit } = require('./ui-fit.cjs');
 async function setup(options = {}) {
   const root = await fs.mkdtemp('/tmp/elpis-ledger-ui-');
   const skills = [['My skill', 'user'], ['Project skill', 'repo'], ['Built in', 'system'], ['Plugin skill', 'user', 'docs@local'], ['Managed skill', 'admin']].map(([name, scope, plugin]) => ({
-    id: name, name, description: 'A throwaway skill for checking Ledger.', path: `${root}/skills/${name}/SKILL.md`, scope, enabled: true, plugin: plugin || null,
+    id: name, name, description: 'A throwaway skill for checking Customize.', path: `${root}/skills/${name}/SKILL.md`, scope, enabled: true, plugin: plugin || null,
     deletable: !plugin && ['user', 'repo'].includes(scope),
   }));
   const state = { skills: [...skills], deleted: null, fail: false };
@@ -27,35 +27,35 @@ async function setup(options = {}) {
   return { ...f, state, root };
 }
 const row = (page, name) => page.locator('.customize-item').filter({ has: page.getByText(name, { exact: true }) });
-const open = async page => { await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click(); await page.getByRole('heading', { name: 'Your skills', exact: true }).waitFor(); };
+const open = async page => { await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click(); await page.getByRole('heading', { name: 'Your skills', exact: true }).waitFor(); };
 const windowTitle = async (page, title) => { await page.waitForFunction(expected => document.title === expected, title); assert.equal(await page.title(), title); };
 
-test('Ledger names the sidebar, heading, command action and window; customize view identity is retained', async () => {
+test('Customize names the sidebar, heading, command action and window; customize view identity is retained', async () => {
   const f = await setup();
   try {
     const { page } = f;
     await open(page);
-    await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
-    await windowTitle(page, 'Ledger — Elpis');
+    await page.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
+    await windowTitle(page, 'Customize — Elpis');
     assert.equal(await page.getByRole('button', { name: 'Customize', exact: true }).count(), 0);
     await page.keyboard.press('Control+k');
-    await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Ledger');
-    const option = page.getByRole('option', { name: 'Ledger', exact: true });
+    await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Customize');
+    const option = page.getByRole('option', { name: 'Customize', exact: true });
     await option.waitFor(); await page.keyboard.press('Enter');
-    await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
     await f.open('chat-a');
     assert.equal(await page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Ledger', exact: true }).count(), 1);
-    assert.equal(await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).count(), 1);
+    assert.equal(await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).count(), 1);
     await windowTitle(page, 'Elpis');
     await page.getByRole('button', { name: 'Back', exact: true }).click();
-    await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
-    await windowTitle(page, 'Ledger — Elpis');
+    await page.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
+    await windowTitle(page, 'Customize — Elpis');
     await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
     await page.getByRole('region', { name: 'Workflows', exact: true }).waitFor();
     await windowTitle(page, 'Workflows · Elpis');
     await page.getByRole('button', { name: 'Back', exact: true }).click();
-    await page.getByRole('heading', { name: 'Ledger', exact: true }).waitFor();
-    await windowTitle(page, 'Ledger — Elpis');
+    await page.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
+    await windowTitle(page, 'Customize — Elpis');
     assert.equal(f.posts.some(post => post.path.includes('/delete')), false);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -82,7 +82,7 @@ for (const colorScheme of ['light', 'dark']) test(`deleting an owned skill with 
     await notice.getByRole('button', { name: 'Undo', exact: true }).click();
     await row(page, 'My skill').waitFor();
     assert.equal(f.posts.filter(post => post.path.endsWith('/undo')).length, 1);
-    await assertUiFit(page.locator('.customize'), 'Ledger fits at 1280');
+    await assertUiFit(page.locator('.customize'), 'Customize fits at 1280');
     if (shots) await page.screenshot({ path: path.join(shots, `ledger-${colorScheme}.png`) });
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

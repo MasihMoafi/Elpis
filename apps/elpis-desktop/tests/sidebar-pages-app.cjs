@@ -16,7 +16,7 @@ const { chooseTheme } = require('./controls.cjs');
     await nav.waitFor();
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     await page.screenshot({ path: path.join(output, 'initial.png') });
-    assert.deepEqual(await nav.getByRole('button').allTextContents(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Ledger']);
+    assert.deepEqual(await nav.getByRole('button').allTextContents(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Customize']);
     const order = ['customize', 'loveSpot', 'canvas', 'experimentLab'];
     for (const position of [0, 2, 4]) {
       const legacy = [...order]; legacy.splice(position, 0, 'observability');
@@ -28,7 +28,7 @@ const { chooseTheme } = require('./controls.cjs');
       await page.reload();
       await page.locator('.startup-splash').waitFor({ state: 'detached' });
       await nav.waitFor();
-      assert.deepEqual(await nav.getByRole('button').allTextContents(), ['New chat', 'Ledger', 'Love Spot', 'Workflows', 'Lab']);
+      assert.deepEqual(await nav.getByRole('button').allTextContents(), ['New chat', 'Customize', 'Love Spot', 'Workflows', 'Lab']);
       assert.equal(await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).isVisible(), true);
     }
     for (const theme of ['light', 'dark']) {

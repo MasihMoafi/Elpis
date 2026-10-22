@@ -14,7 +14,7 @@ const skills = Array.from({ length: 40 }, (_, index) => ({
 const customize = () => ({ skills: { data: skills, errors: [] }, plugins: { data: [] }, connectors: { data: [] } });
 
 for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 2000]) {
-  test(`page column: Ledger long and empty tabs (${colorScheme}, ${width}px)`, async t => {
+  test(`page column: Customize long and empty tabs (${colorScheme}, ${width}px)`, async t => {
     let release, failed = false, first = true;
     const pending = new Promise(resolve => { release = resolve; });
     const f = await fixture({ width, height: 800, colorScheme, showScrollbars: true, routes: {
@@ -26,13 +26,13 @@ for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 200
     const { page } = f;
     try {
       await page.locator('.startup-splash').waitFor({ state: 'detached' });
-      await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+      await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
       await page.getByText('Reading what Elpis has…', { exact: true }).waitFor();
       const loadingColumn = await edges(page.locator('.customize'));
-      const loadingTabs = await edges(page.getByRole('radiogroup', { name: 'Ledger', exact: true }));
+      const loadingTabs = await edges(page.getByRole('radiogroup', { name: 'Customize', exact: true }));
       release(customize());
       await page.locator('.customize-item').last().waitFor();
-      const tabs = page.getByRole('radiogroup', { name: 'Ledger', exact: true });
+      const tabs = page.getByRole('radiogroup', { name: 'Customize', exact: true });
       const long = await ledgerGeometry(page);
       assert.equal(long.scrolling, true, 'Skills must exercise a real page scrollbar');
       assert.ok(long.gutter > 0, 'native scrollbars must consume horizontal space; hidden/overlay scrollbars cannot reproduce A126');
@@ -66,10 +66,10 @@ for (const colorScheme of ['light', 'dark']) for (const width of [900, 1280, 200
       failed = false;
       await page.reload();
       await page.locator('.startup-splash').waitFor({ state: 'detached' });
-      await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+      await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
       await page.locator('.customize-item').last().waitFor();
       sameLedger(await ledgerGeometry(page), long, 'after reload');
-      await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: 'Plugins', exact: true }).click();
+      await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: 'Plugins', exact: true }).click();
       sameLedger(await ledgerGeometry(page), long, 'empty tab after reload');
       assert.deepEqual(f.errors, []);
     } finally { release(customize()); await f.close(); }

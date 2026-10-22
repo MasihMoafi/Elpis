@@ -5,8 +5,8 @@ export function Description({ text }: { text: string }) {
   return <span className="customize-description" title={text}>{text}</span>;
 }
 
-/** Installed and catalog entries share the Ledger's existing row and theme. */
-export function LedgerRow({ name, description, badge, error, notice, children }: { name: string; description?: string; badge?: string; error?: string; notice?: string; children: ReactNode }) {
+/** Installed and catalog entries share the Customize page's existing row and theme. */
+export function CustomizeRow({ name, description, badge, error, notice, children }: { name: string; description?: string; badge?: string; error?: string; notice?: string; children: ReactNode }) {
   return <li className="customize-item">
     <div className="customize-text"><span className="customize-name break-words">{name}</span>{description && <Description text={description} />}
       {notice && <SettingsNotice>{notice}</SettingsNotice>}{error && <SettingsNotice tone="alert">{error}</SettingsNotice>}

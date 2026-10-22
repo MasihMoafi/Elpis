@@ -73,7 +73,7 @@ async function main() {
         }
       }
       await leaveSettings(page);
-      for (const name of ['Lab', 'Workflows', 'Love Spot', 'Ledger']) {
+      for (const name of ['Lab', 'Workflows', 'Love Spot', 'Customize']) {
         await page.getByRole('button', { name, exact: true }).first().click();
         await page.waitForTimeout(200);
         problems.push(...(await scanDisclosures(page)).map(hit => `${theme} ${name}: ${hit}`));

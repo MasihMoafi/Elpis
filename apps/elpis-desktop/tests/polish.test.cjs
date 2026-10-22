@@ -20,7 +20,7 @@ for (const theme of ['light', 'dark']) {
       await leaveSettings(f.page);
       await f.open('chat-a');
       problems.push(...(await scanDisclosures(f.page)).map(hit => `Chat: ${hit}`)); visited.push('Chat');
-      for (const name of ['Lab', 'Workflows', 'Love Spot', 'Ledger']) {
+      for (const name of ['Lab', 'Workflows', 'Love Spot', 'Customize']) {
         await f.page.getByRole('button', { name, exact: true }).first().click();
         await f.page.waitForTimeout(150);
         problems.push(...(await scanDisclosures(f.page)).map(hit => `${name}: ${hit}`)); visited.push(name);

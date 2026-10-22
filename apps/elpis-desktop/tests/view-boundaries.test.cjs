@@ -27,8 +27,8 @@ async function throwView(page, selector) {
 for (const view of [
   { name: 'Love Spot', selector: '.love-spot' },
   { name: 'Workflows', selector: '.agents-canvas' },
-  // dd2ca3576 labels navigation buttons too; inject the failure in the Ledger view.
-  { name: 'Ledger', selector: '.customize[aria-label="Ledger"]' },
+  // dd2ca3576 labels navigation buttons too; inject the failure in the Customize view.
+  { name: 'Customize', selector: '.customize[aria-label="Customize"]' },
   { name: 'Settings', selector: '.settings-layout' },
   { name: 'Chat', selector: '.elpis-features' },
 ]) test(`${view.name} catches a deliberate render failure, reloads, and leaves navigation usable`, async () => {

@@ -42,11 +42,11 @@ async function stands(f, label) {
 const says = (reply, locator) => reply.status === 500 ? locator.getByText(MESSAGE, { exact: false }).first().waitFor() : locator.getByText(/could not read/i).first().waitFor();
 
 for (const [name, reply] of Object.entries(REPLIES)) {
-  test(`${name}: Ledger, Canvas and every Settings page stay up`, () => using(reply, async f => {
+  test(`${name}: Customize, Canvas and every Settings page stay up`, () => using(reply, async f => {
     const { page } = f;
-    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
-    await says(reply, page.locator('.customize[aria-label="Ledger"]'));
-    await stands(f, 'Ledger');
+    await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
+    await says(reply, page.locator('.customize[aria-label="Customize"]'));
+    await stands(f, 'Customize');
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await stands(f, 'Workflows');
     for (const tab of SETTINGS_PAGES) {

@@ -4,10 +4,10 @@ import { pluginCatalogSnapshot, pluginsSnapshot, skillsSnapshot } from './custom
 import { skillRoots } from './skill-trash.mjs';
 import { userConfigVersion } from './elpis-features.mjs';
 
-/** The Ledger page's side of the bridge: the skills, plugins and connectors Elpis has, and the switches on them. The client
+/** The Customize page's side of the bridge: the skills, plugins and connectors Elpis has, and the switches on them. The client
  * hands it the few things it needs (the engine call, the settings, the GitHub connector, the skill Trash) and answers the page's
  * requests through it. */
-export class Ledger {
+export class CustomizePage {
   #rpc; #mcp; #settings; #saveSettings; #github; #trash; #appHome; #home;
   constructor({ rpc, mcp, settings, saveSettings, githubConnector, skillTrash, appHome, home }) {
     this.#rpc = rpc; this.#mcp = mcp; this.#settings = settings; this.#saveSettings = saveSettings;

@@ -15,8 +15,8 @@ test('the Plugins tab offers each app\'s catalog until it is added', async () =>
   try {
     const { page } = f;
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
-    await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: 'Plugins', exact: true }).click();
+    await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: 'Plugins', exact: true }).click();
     await page.getByRole('button', { name: 'Add plugins', exact: true }).click();
     const claude = page.getByRole('button', { name: 'Add the Claude plugins', exact: true }), chatgpt = page.getByRole('button', { name: 'Add the ChatGPT plugins', exact: true });
     await claude.waitFor(); await chatgpt.waitFor();

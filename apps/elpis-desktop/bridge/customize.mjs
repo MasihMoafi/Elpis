@@ -48,7 +48,7 @@ function catalogPlugin(plugin, market) {
     reason: installable ? null : `Installation unavailable: ${words(plugin.disabledReason) || words(plugin.availability) || words(plugin.installPolicy) || 'marketplace policy'}`,
   };
 }
-/** Only the engine's catalog fields needed by Ledger; source URLs and arbitrary manifest data stay in the engine. */
+/** Only the engine's catalog fields needed by the Customize page; source URLs and arbitrary manifest data stay in the engine. */
 export function pluginCatalogSnapshot(response, search) {
   const markets = list(response?.marketplaces);
   const marketplaces = markets.map(market => ({ name: market.name, displayName: words(market.interface?.displayName) || market.name, path: market.path ?? null }));

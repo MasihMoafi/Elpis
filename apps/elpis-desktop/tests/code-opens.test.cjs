@@ -90,10 +90,10 @@ test('tool output file references are keyboard actionable', async () => {
   } finally { await f.close(); }
 });
 
-test('Ledger skill names open their source in Files by keyboard', async () => {
+test('Customize skill names open their source in Files by keyboard', async () => {
   const f = await open();
   try {
-    await f.page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
     await f.page.getByRole('button', { name: 'Worker skill', exact: true }).focus();
     await f.page.keyboard.press('Enter');
     await editor(f.page, outside).waitFor();

@@ -18,7 +18,7 @@ test('hidden pages leave the sidebar, the command menu and the Workflows chat gr
   const f = await fixture({ storage: shipped, threads: [workflowChat, { ...workflowChat, id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser' }] });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
-    assert.deepEqual(await nav(f.page).getByRole('button').allTextContents(), ['New chat', 'Love Spot', 'Ledger']);
+    assert.deepEqual(await nav(f.page).getByRole('button').allTextContents(), ['New chat', 'Love Spot', 'Customize']);
     await f.page.keyboard.press('Control+k');
     const search = f.page.getByRole('combobox', { name: 'Search or start a chat' });
     for (const name of ['Lab', 'Workflows', 'Guide to managing agents']) {
@@ -38,7 +38,7 @@ test('with hiddenPages empty, every page shows, as before', async () => {
   const f = await fixture({ storage: { 'elpis-preferences-v1': JSON.stringify({ hiddenPages: '' }) } });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
-    assert.deepEqual(await nav(f.page).getByRole('button').allTextContents(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Ledger']);
+    assert.deepEqual(await nav(f.page).getByRole('button').allTextContents(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Customize']);
     assert.equal(await f.page.getByRole('switch', { name: 'Session Manager', exact: true }).getAttribute('aria-checked'), 'true', 'the renderer default is on');
   } finally { await f.close(); }
 });

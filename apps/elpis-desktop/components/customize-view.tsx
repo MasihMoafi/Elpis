@@ -7,8 +7,8 @@ import { FileRefLink } from "@/components/file-ref";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
-import { Description, LedgerRow } from "@/components/ledger-row";
-import { LedgerPlugins, type ConfigWrite, type Plugin, type PluginChange } from "@/components/ledger-plugins";
+import { Description, CustomizeRow } from "@/components/customize-row";
+import { CustomizePlugins, type ConfigWrite, type Plugin, type PluginChange } from "@/components/customize-plugins";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Segmented, SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { api, unreadable } from "@/lib/api";
@@ -121,9 +121,9 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
   const skills = data?.skills.data ?? [], plugins = data?.plugins.data ?? [], connectors = data?.connectors.data ?? [];
   const own = skills.find(skill => skill.scope === "user");
 
-  return <div className="customize" aria-label="Ledger">
+  return <div className="customize" aria-label="Customize">
     <header className="customize-head">
-      <Segmented label="Ledger" value={section} onChange={setSection} options={[{ value: "skills", label: "Skills" }, { value: "plugins", label: "Plugins" }, { value: "connectors", label: "Connectors" }]} />
+      <Segmented label="Customize" value={section} onChange={setSection} options={[{ value: "skills", label: "Skills" }, { value: "plugins", label: "Plugins" }, { value: "connectors", label: "Connectors" }]} />
     </header>
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {deleted && <div className="error-banner notice" role="status"><span>Deleted {deleted.name} ·</span><Button variant="link" size="sm" disabled={savingSkill} onClick={() => void undoDelete()}>Undo</Button></div>}
@@ -150,7 +150,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
     </section>}
     {data && section === "plugins" && <section aria-label="Your plugins">
       {data.plugins.error && <SettingsNotice tone="alert">{data.plugins.error}</SettingsNotice>}
-      <LedgerPlugins cwd={cwd} plugins={plugins} loaded={Array.isArray(data.plugins.data)} config={data.plugins} onChange={changePlugin} onReload={load} />
+      <CustomizePlugins cwd={cwd} plugins={plugins} loaded={Array.isArray(data.plugins.data)} config={data.plugins} onChange={changePlugin} onReload={load} />
     </section>}
     {data && section === "connectors" && <section aria-label="Your connectors">
       <div className="customize-title"><h2>Your connectors</h2><span className="customize-actions"><Button size="icon-sm" variant="ghost" aria-label="Refresh connectors" onClick={() => void load()}><RefreshCw /></Button><Button size="sm" variant="outline" onClick={onOpenSettings}><Settings2 />Manage connectors</Button></span></div>
@@ -158,14 +158,14 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
       {data.connectors.error && <SettingsNotice tone="alert">{data.connectors.error}</SettingsNotice>}
       {!data.connectors.error && !connectors.length && <SettingsEmpty title="No connectors yet">Add an MCP server under Manage connectors.</SettingsEmpty>}
       {savingMcp && <SettingsNotice>Saving connector changes…</SettingsNotice>}
-      <ul className="customize-list">{connectors.map(connector => <LedgerRow key={`${connector.transport}:${connector.name}`} name={connector.name}
+      <ul className="customize-list">{connectors.map(connector => <CustomizeRow key={`${connector.transport}:${connector.name}`} name={connector.name}
         description={connector.transport === "gh" ? (connector.login ? `Connected as ${connector.login}` : "Not connected") : connector.transport === "http" ? "Remote server" : "Local server"}
-        error={connectorErrors[connector.name]} notice={connector.transport !== "gh" && (!data.connectors.version || !data.connectors.write?.available) ? "Reload Ledger to read writable MCP settings." : undefined}>
+        error={connectorErrors[connector.name]} notice={connector.transport !== "gh" && (!data.connectors.version || !data.connectors.write?.available) ? "Reload Customize to read writable MCP settings." : undefined}>
         {connector.transport === "gh" ? <>
           {!connector.login && <Button size="sm" disabled={savingGithub} onClick={() => void setGithub(true, true)}>Connect</Button>}
           <Switch aria-label="Use GitHub" checked={connector.enabled} disabled={savingGithub} onCheckedChange={enabled => void setGithub(enabled)} />
         </> : <Switch aria-label={`Use ${connector.name}`} checked={connector.enabled} disabled={savingMcp !== null || !data.connectors.version || !data.connectors.write?.available} onCheckedChange={enabled => void setMcp(connector, enabled)} />}
-      </LedgerRow>)}</ul>
+      </CustomizeRow>)}</ul>
     </section>}
     <AlertDialog open={!!deleting} onOpenChange={value => { if (!value && !savingSkill) setDeleting(null); }}>
       <AlertDialogContent finalFocus={() => returnFocus.current?.isConnected ? returnFocus.current : skillList.current?.querySelector<HTMLElement>(".customize-item")}>

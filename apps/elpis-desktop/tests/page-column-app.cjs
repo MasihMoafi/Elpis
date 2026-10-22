@@ -16,7 +16,7 @@ const { ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cjs
   for (let index = 1; index <= 40; index++) {
     const directory = path.join(home, '.agents', 'skills', `a126-column-${String(index).padStart(2, '0')}`);
     await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'SKILL.md'), `---\nname: a126-column-${index}\ndescription: Synthetic A126 layout skill for checking a long scrolling Ledger column.\n---\nUse only in the A126 layout check.\n`);
+    await fs.writeFile(path.join(directory, 'SKILL.md'), `---\nname: a126-column-${index}\ndescription: Synthetic A126 layout skill for checking a long scrolling Customize column.\n---\nUse only in the A126 layout check.\n`);
   }
   await fs.mkdir(shots, { recursive: true });
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -29,11 +29,11 @@ const { ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cjs
     await leaveSettings(page);
     if (await page.locator('html').evaluate(element => element.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
     const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/customize' && response.request().method() === 'GET');
-    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
+    await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
     const data = await (await response).json();
     assert.ok(data.skills.data.filter(skill => skill.name.startsWith('a126-column-')).length >= 40, 'real engine must discover the synthetic skills');
     await page.locator('.customize-item').last().waitFor();
-    const tabs = page.getByRole('radiogroup', { name: 'Ledger', exact: true });
+    const tabs = page.getByRole('radiogroup', { name: 'Customize', exact: true });
     await tabs.getByRole('radio', { name: 'Skills', exact: true }).click();
     const long = await ledgerGeometry(page);
     assert.equal(long.scrolling, true);
@@ -55,11 +55,11 @@ const { ledgerGeometry, sameLedger, sharedColumns } = require('./page-column.cjs
     for (const name of ['Plugins', 'Connectors', 'Skills']) sameLedger(snapshots[name], long, name);
     await page.reload();
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click();
-    await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: 'Skills', exact: true }).click();
+    await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: 'Skills', exact: true }).click();
     await page.locator('.customize-item').last().waitFor();
     sameLedger(await ledgerGeometry(page), long, 'after reload');
-    await page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name: 'Plugins', exact: true }).click();
+    await page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name: 'Plugins', exact: true }).click();
     sameLedger(await ledgerGeometry(page), long, 'empty tab after reload');
     const shells = [];
     await sharedColumns(page, Number(widthText), value => shells.push(value));

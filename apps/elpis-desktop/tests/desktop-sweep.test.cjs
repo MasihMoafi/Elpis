@@ -129,8 +129,8 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
         }
       }
       await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-      await check('Ledger Skills', () => page.locator('.nav-list').getByRole('button', { name: 'Ledger', exact: true }).click());
-      for (const name of ['Plugins', 'Connectors']) await check(`Ledger ${name}`, () => page.getByRole('radiogroup', { name: 'Ledger', exact: true }).getByRole('radio', { name, exact: true }).click());
+      await check('Customize Skills', () => page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click());
+      for (const name of ['Plugins', 'Connectors']) await check(`Customize ${name}`, () => page.getByRole('radiogroup', { name: 'Customize', exact: true }).getByRole('radio', { name, exact: true }).click());
       await check('guide', () => command(page, 'Guide'));
       for (const name of TOPICS) await check(`Guide ${name}`, () => page.getByRole('region', { name: 'Guide to managing agents' }).getByRole('button', { name, exact: true }).click());
       await check('Canvas 2D', () => command(page, 'Workflows'));

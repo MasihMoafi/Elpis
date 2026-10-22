@@ -14,10 +14,10 @@ function sameEdges(actual, expected, label) {
 }
 
 async function ledgerGeometry(page) {
-  const column = page.locator('.customize[aria-label="Ledger"]');
+  const column = page.locator('.customize[aria-label="Customize"]');
   return {
     column: await edges(column),
-    tabs: await edges(column.getByRole('radiogroup', { name: 'Ledger', exact: true })),
+    tabs: await edges(column.getByRole('radiogroup', { name: 'Customize', exact: true })),
     content: await edges(column.locator(':scope > section')),
     scrolling: await column.evaluate(element => element.parentElement.scrollHeight > element.parentElement.clientHeight),
     gutter: await column.evaluate(element => element.parentElement.offsetWidth - element.parentElement.clientWidth),
