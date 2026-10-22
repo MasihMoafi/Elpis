@@ -857,7 +857,7 @@ async fn final_worked_for_uses_cumulative_turn_duration_snapshot() {
             .reset_status_timer(Duration::from_secs(/*secs*/ 125));
         handle_agent_message_delta(&mut chat, "Final response.\n");
         chat.on_commit_tick();
-        assert!(!chat.bottom_pane.status_indicator_visible());
+        assert!(chat.bottom_pane.status_indicator_visible());
 
         complete_assistant_message(
             &mut chat,

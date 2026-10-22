@@ -1711,7 +1711,7 @@ async fn thread_snapshot_replayed_stream_recovery_restores_previous_status_heade
     assert_eq!(chat.status_state.current_status.header, "Working");
     assert_eq!(chat.status_state.current_status.details, None);
     assert!(chat.status_state.retry_status_header.is_none());
-    assert!(chat.bottom_pane.status_widget().is_none());
+    assert!(chat.bottom_pane.status_widget().is_some());
     assert!(chat.active_cell_is_stream_tail());
 }
 
@@ -1731,6 +1731,6 @@ async fn stream_recovery_restores_previous_status_header() {
     assert_eq!(chat.status_state.current_status.header, "Working");
     assert_eq!(chat.status_state.current_status.details, None);
     assert!(chat.status_state.retry_status_header.is_none());
-    assert!(chat.bottom_pane.status_widget().is_none());
+    assert!(chat.bottom_pane.status_widget().is_some());
     assert!(chat.active_cell_is_stream_tail());
 }

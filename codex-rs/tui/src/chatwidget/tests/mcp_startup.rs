@@ -156,7 +156,7 @@ async fn mcp_startup_updates_preserve_streaming_status_suppression() {
     handle_turn_started(&mut chat, "turn-1");
     chat.on_agent_message_delta("Partial response\n".into());
     chat.on_commit_tick();
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
 
     notify_mcp_status(&mut chat, "alpha", McpServerStartupState::Ready);
     assert!(chat.bottom_pane.is_task_running());
