@@ -289,9 +289,9 @@ export const retainedUpdates = {
       "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
     },
     "tests/love-spot-talk.test.cjs": {
-      "blob": "fd5390bd64b470fb95156ad52d1e7c8ff9459cb3",
-      "approval": "c46fdf97e0955306a2ceaf8fba42125a09ef52d6",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip. Then, Masih 22 Oct: \"I wanted to be able to move it anywhere not just horizontally. And it shouldn't interfere with the other ones either.\" and \"when I have one function somewhere I want the exact same function elsewhere.\" The sideways-slide test first sends the bar down off the controls it sits on in a narrow board; two tests are added for free movement and for the shared handle on every bar."
+      "blob": "9abd2c9bbf3fabf0688aa30362d784ec4b9b1760",
+      "approval": "b095b1238cab87fba3e2f2027f10c426707aec2b",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip. Then, Masih 22 Oct: \"I wanted to be able to move it anywhere not just horizontally. And it shouldn't interfere with the other ones either.\" and \"when I have one function somewhere I want the exact same function elsewhere.\" The sideways-slide test first sends the bar down off the controls it sits on in a narrow board; two tests are added for free movement and for the shared handle on every bar. Then, Masih 22 Oct: \"the drap and drop ..s shouldn't be on top it but to its right - and there should be another row of ... so it's 3*3.\" The handle now sits beside the bar, so the narrow-board step checks it is not on a tool."
     },
     "tests/view-errors.test.cjs": {
       "blob": "b61d6fa7059a657594a381f58ab8b2e6ce705fce",
