@@ -54,10 +54,10 @@ function Speed() {
   </>}</SettingsLoader>;
 }
 
-/** The name and avatar the sidebar shows; the name saves when the field loses focus, the avatar when chosen. */
-function Profile({ name, avatar, save }: { name: string; avatar: string; save: (patch: Partial<Preferences>) => void }) {
+/** The name the sidebar shows; it saves when the field loses focus. */
+function Profile({ name, save }: { name: string; save: (patch: Partial<Preferences>) => void }) {
   const [draft, setDraft] = useState(name);
-  return <ProfileFields name={draft} avatar={avatar} onName={setDraft} onNameCommit={() => { if (draft.trim() !== name) save({ profileName: draft.trim() }); }} onAvatar={profileAvatar => save({ profileAvatar })} />;
+  return <ProfileFields name={draft} onName={setDraft} onNameCommit={() => { if (draft.trim() !== name) save({ profileName: draft.trim() }); }} />;
 }
 
 export function GeneralSettings() {
@@ -68,7 +68,7 @@ export function GeneralSettings() {
     <SettingsHeader title="General" description="Saved on this device, except Speed, which is saved in the Elpis config." />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     <SettingsGroup title="Profile" description="Shown at the bottom of the sidebar.">
-      <Profile name={preferences.profileName} avatar={preferences.profileAvatar} save={save} />
+      <Profile name={preferences.profileName} save={save} />
     </SettingsGroup>
     <SettingsGroup>
       <DefaultFolder folder={preferences.defaultFolder} onSave={defaultFolder => save({ defaultFolder })} />

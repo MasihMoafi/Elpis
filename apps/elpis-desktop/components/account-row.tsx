@@ -1,7 +1,6 @@
 "use client";
 
 import { useProviderUsage } from "@/components/provider-usage";
-import { AVATAR_IDS, avatarSrc } from "@/lib/avatars";
 import { usePreferences } from "@/lib/preferences";
 
 /** Who Elpis works as, from the accounts Settings > Models & accounts shows: the ChatGPT account with its plan, else the
@@ -18,15 +17,13 @@ function whoIs(data: ReturnType<typeof useProviderUsage>["data"], error: string)
   return { name: "Not signed in", plan: null, label: "Account: not signed in" };
 }
 
-/** The sidebar's bottom row: the user's avatar, the name they gave (else the account's) and the plan. It only shows; Settings
- * holds the name and avatar, the gear beside it opens Settings. */
+/** The sidebar's bottom row: the first letter of the name they gave (else the account's), the name and the plan. It only shows;
+ * Settings holds the name, the gear beside it opens Settings. */
 export function AccountRow({ refreshKey }: { refreshKey: number }) {
   const { data, error } = useProviderUsage(refreshKey), { name, plan, label } = whoIs(data, error);
-  const { profileName, profileAvatar } = usePreferences(), shown = profileName || name;
+  const { profileName } = usePreferences(), shown = profileName || name;
   return <div data-slot="account-row" className="account-row" role="group" aria-label={profileName ? `${profileName}. ${label}` : label} title={label}>
-    {AVATAR_IDS.includes(profileAvatar)
-      ? <img className="account-avatar" src={avatarSrc(profileAvatar)} alt="" width={32} height={32} decoding="async" />
-      : <span className="account-avatar" aria-hidden="true">{shown[0]?.toUpperCase()}</span>}
+    <span className="account-avatar" aria-hidden="true">{shown[0]?.toUpperCase()}</span>
     <span className="account-name">{shown}</span>
     {plan && <span className="account-plan">{plan}</span>}
   </div>;

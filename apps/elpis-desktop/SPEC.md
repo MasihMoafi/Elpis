@@ -50,3 +50,7 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 ## Annotation note and Love Spot agents
 
 22 Oct, Masih: "when we anotate and send it shows the browser note to the user. it shouldn't ." and "I said remove the agents section in love spot; it's still there." Built: a sent message shows the user's own browser comments as a numbered list and never shows the note the model reads (`lib/browser-notes.ts`); the Love Spot page has no agents section: no Agents menu, no board agent list, no agent panel, no `A` placement and no `@agent` notes. The agents code in the bridge (`bridge/love-agents.mjs`, its routes and tests) is now unused and is the next clean-up.
+
+## Avatars removed
+
+22 Oct, Masih, after trying them: "it's not really visible from afar. So, not a great idea ... remove the avatars." The six avatars, the picker and the `profileAvatar` setting are gone. The footer shows the first letter of the user's name in a bold accent-coloured circle, then the name and the plan. The name prompt and Settings → General → Profile stay. A real-server test now serves every file type in `public/` (`bridge/static-assets.test.mjs`).
