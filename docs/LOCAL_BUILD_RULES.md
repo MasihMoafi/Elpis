@@ -3,14 +3,15 @@
 Read this before running any `cargo` command on Masih's workstation. These are
 machine facts, not preferences — ignoring them has already cost a near-full disk.
 
-## Builds use GitHub Actions — October 20–21, 2026
+## Builds — October 20–22, 2026
 
-Masih: “use github actions for all builds from now on” (20 October), reaffirmed
-21 October after a local eight-worker browser matrix drove the fans. All builds
-and heavy test matrices, including parallel browser suites, use GitHub Actions.
-Only small focused checks remain local. This does not authorize a push or upload.
-Older local recipes below are historical; they do not authorize local compilation.
-The shared workstation disk guard covers new hooked shell commands and write tools;
+The TUI and every Rust build, and heavy test matrices, use GitHub Actions (Masih, 20 October:
+“use github actions for all builds from now on”; reaffirmed 21 October after a local eight-worker
+browser matrix drove the fans). The desktop app (Next and Electron, not Rust) is built and tested
+locally (Masih, 22 October: “do the GUI app locally and only TUI on github”): one job,
+`nice -n 19`, the `.next` cache on the New Volume, never while a game runs. This does not authorize
+a push or upload. Older local Cargo recipes below are historical; they do not authorize local
+compilation. The shared workstation disk guard covers new hooked shell commands and write tools;
 see `/home/masih/.local/lib/agent-resource-guard/README.md` for its checked scope.
 
 Measured on 2026-09-23 at two jobs, with no thermal pauses: a cold `dev-small` TUI
