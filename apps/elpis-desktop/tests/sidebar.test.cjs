@@ -100,11 +100,13 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await page.keyboard.press('Control+b'); await aside.waitFor({ state: 'hidden' });
     await page.keyboard.press('Control+b'); await aside.waitFor({ state: 'visible' });
 
-    // 3. Row hover shows only Pin and Archive (and the "…" menu); showing agents is a worded menu item.
+    // 3. Row hover shows only Pin and Archive (and the "…" menu); showing agents is a worded menu item, offered only to a chat that has agents.
     await row('alpha').hover();
     assert.deepEqual(await row('alpha').getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') || button.textContent.trim())), ['Alpha', 'Pin Alpha', 'Archive Alpha', 'Actions for Alpha']);
     await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Show agents', exact: true }).waitFor(); await page.keyboard.press('Escape');
+    await page.getByRole('menuitem', { name: 'Rename', exact: true }).waitFor();
+    assert.equal(await page.getByRole('menuitem', { name: 'Show agents', exact: true }).count(), 0, 'a chat with no agents offers no Show agents');
+    await page.keyboard.press('Escape');
     // D in a chat's menu, opened by "…" or by right-click, picks Delete (Claude's shortcut); Cancel deletes nothing.
     for (const open of [() => row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click(), () => link('alpha').click({ button: 'right' })]) {
       await open(); await page.getByRole('menuitem', { name: /^Delete/ }).waitFor();

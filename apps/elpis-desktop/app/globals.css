@@ -145,10 +145,13 @@ button:disabled { cursor:not-allowed; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:0.8125rem; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 .sidebar-footer { display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
-/* The account row (components/account-menu.tsx): avatar, account, plan and a chevron; its menu opens above it. */
-.account-row { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 8px; border:0; background:none; color:var(--foreground); font-size:0.8125rem; text-align:left; cursor:pointer; }
-.account-row:hover, .account-row[aria-expanded="true"] { background:var(--hover); }
-.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--selected); font:600 0.75rem/1 var(--serif); }
+/* The account row (components/account-row.tsx): avatar, name and plan; it only shows. */
+.account-row { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 8px; color:var(--foreground); font-size:0.8125rem; text-align:left; cursor:default; }
+.account-avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:var(--selected); font:600 0.75rem/1 var(--serif); }
+img.account-avatar { border-radius:0; background:none; object-fit:contain; }
+.avatar-choice { display:inline-flex; padding:3px; border:1px solid var(--border); background:none; cursor:pointer; }
+.avatar-choice:hover { background:var(--hover); }
+.avatar-choice[aria-checked="true"] { border-color:var(--primary); background:var(--selected); }
 .account-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:450; }
 .account-plan { flex-shrink:0; color:var(--muted-foreground); }
 .account-plan::before { content:"· "; }

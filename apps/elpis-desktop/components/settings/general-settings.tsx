@@ -10,6 +10,7 @@ import { Choice, SaveFeedback, Segmented, SettingRow, SettingsActions, SettingsG
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { SystemSettings } from "@/components/settings/system-settings";
+import { ProfileFields } from "@/components/profile-fields";
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -53,6 +54,12 @@ function Speed() {
   </>}</SettingsLoader>;
 }
 
+/** The name and avatar the sidebar shows; the name saves when the field loses focus, the avatar when chosen. */
+function Profile({ name, avatar, save }: { name: string; avatar: string; save: (patch: Partial<Preferences>) => void }) {
+  const [draft, setDraft] = useState(name);
+  return <ProfileFields name={draft} avatar={avatar} onName={setDraft} onNameCommit={() => { if (draft.trim() !== name) save({ profileName: draft.trim() }); }} onAvatar={profileAvatar => save({ profileAvatar })} />;
+}
+
 export function GeneralSettings() {
   const preferences = usePreferences();
   const [error, setError] = useState("");
@@ -60,6 +67,9 @@ export function GeneralSettings() {
   return <div aria-label="General">
     <SettingsHeader title="General" description="Saved on this device, except Speed, which is saved in the Elpis config." />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
+    <SettingsGroup title="Profile" description="Shown at the bottom of the sidebar.">
+      <Profile name={preferences.profileName} avatar={preferences.profileAvatar} save={save} />
+    </SettingsGroup>
     <SettingsGroup>
       <DefaultFolder folder={preferences.defaultFolder} onSave={defaultFolder => save({ defaultFolder })} />
       <SettingRow title="Prevent sleep while Elpis is working" description="Keep this computer awake during running turns. Sleep resumes when all turns finish.">

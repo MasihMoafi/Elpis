@@ -9,7 +9,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 const CWD = '/tmp/elpis-rclick-fixture';
-const CHAT_ACTIONS = ['Rename', 'Pin', 'Move to group', 'Move to project…', 'Mark as unread', 'Show agents', 'Open session in split view', 'Archive', 'Delete'];
+const CHAT_ACTIONS = ['Rename', 'Pin', 'Move to group', 'Move to project…', 'Mark as unread', 'Open session in split view', 'Archive', 'Delete'];
 async function eventually(check) {
   const deadline = Date.now() + 4000;
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 40)); } }
@@ -189,7 +189,7 @@ test('the chat tab opens the "Chat actions" menu on right-click', () => fixture(
   await tab.waitFor();
   await page.getByRole('button', { name: 'Chat actions', exact: true }).click();
   const fromButton = await items(), buttonLook = await popup();
-  assert.deepEqual(fromButton, CHAT_ACTIONS.filter(label => label !== 'Show agents'));
+  assert.deepEqual(fromButton, CHAT_ACTIONS);
   await shot('chat-tab-dots-menu');
   await closeMenu();
   await tab.click({ button: 'right' });

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Search, Settings as SettingsIcon, Square, X } from "lucide-react";
+import { Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -71,7 +71,8 @@ import { Dictation } from "@/components/dictation";
 import { chooseProject, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
-import { AccountMenu } from "@/components/account-menu";
+import { AccountRow } from "@/components/account-row";
+import { ProfileDialog } from "@/components/profile-dialog";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjectChats, readProjects, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
@@ -1714,12 +1715,12 @@ export default function Home() {
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     const canExpandAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
-    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined}
+    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
       onMoveToProject={!isAgent(thread) ? setProjectMove : undefined}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
       group={depth ? undefined : groupMenu(thread, marked.length > 1 && marked.includes(thread.id) ? marked : [thread.id])}
-      agents={!depth && !isAgent(thread) ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
+      agents={!depth && !isAgent(thread) && canExpandAgents ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
         try { if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true }); }
         catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
         setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
@@ -1747,7 +1748,7 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} onNewWindow={windowAvailable ? () => openSessionWindow() : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} onMoveToProject={!isAgent(thread) ? setProjectMove : undefined} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} onMoveToProject={!isAgent(thread) ? setProjectMove : undefined} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
@@ -1808,6 +1809,7 @@ export default function Home() {
 
   return <div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /><AppUpdate /></div>}
+    <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash done={ready && connected} />}
@@ -1861,10 +1863,13 @@ export default function Home() {
         </section>}
       </div>
       <UsagePanel refreshKey={accountRefresh} onOpen={() => { setSettingsSection("usage"); show("settings"); }} />
-      <div className="sidebar-footer"><AccountMenu refreshKey={accountRefresh} dark={dark} onTheme={() => setTheme(dark ? "light" : "dark")} onSettings={() => openSettings("general")} onAccounts={manageConnections} /></div>
+      <div className="sidebar-footer"><AccountRow refreshKey={accountRefresh} /></div>
       <div className="sidebar-status">
         <span className="status-line"><i className={`status-dot${connected ? " connected" : ""}`} />{connected ? "Local workspace" : "Disconnected"}</span>
-        <Button variant="ghost" size="icon-xs" aria-label="Settings" title="Settings (Ctrl+,)" onClick={() => openSettings("general")}><SettingsIcon size={14} /></Button>
+        <span className="flex items-center gap-1">
+          <Button variant="ghost" size="icon-xs" aria-label={dark ? "Use light theme" : "Use dark theme"} title={dark ? "Use light theme" : "Use dark theme"} onClick={() => setTheme(dark ? "light" : "dark")}>{dark ? <Sun size={14} /> : <Moon size={14} />}</Button>
+          <Button variant="ghost" size="icon-xs" aria-label="Settings" title="Settings (Ctrl+,)" onClick={() => openSettings("general")}><SettingsIcon size={14} /></Button>
+        </span>
       </div>
       <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
     </aside>

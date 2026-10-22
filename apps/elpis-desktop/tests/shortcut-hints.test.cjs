@@ -17,7 +17,7 @@ test('New chat shows Ctrl+N beside its name and the key chosen in Settings repla
   }
 });
 
-test('the chat menu and the account menu show the keys of Pin, Archive and Settings', async () => {
+test('the chat menu shows the keys of Pin and Archive', async () => {
   const f = await fixture({ threads: [chat] });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
@@ -25,8 +25,7 @@ test('the chat menu and the account menu show the keys of Pin, Archive and Setti
     const hint = name => f.page.getByRole('menuitem', { name, exact: true }).locator('.kbd-hint').textContent();
     assert.equal(await hint('Pin'), 'Ctrl+Alt+P');
     assert.equal(await hint('Archive'), 'Ctrl+Shift+A');
+    assert.equal(await f.page.getByRole('menuitem', { name: 'New Session in New Window', exact: true }).count(), 0, 'a new session is not an action on this chat');
     await f.page.keyboard.press('Escape');
-    await f.page.locator('aside.sidebar .account-row').click();
-    assert.equal(await hint('Settings'), 'Ctrl+,');
   } finally { await f.close(); }
 });

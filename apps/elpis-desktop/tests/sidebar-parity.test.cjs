@@ -153,46 +153,41 @@ test('start screen: a Local chip beside the project chip says where the chat wor
   });
 });
 
-test('account row: bottom left, the signed-in account and plan, and a menu with Settings, Models & accounts and the theme', async () => {
+test('account row: bottom left, the signed-in account and plan, only shown; the theme button sits beside Settings', async () => {
   await fixture(async ({ page, aside, shoot }) => {
-    const row = aside.getByRole('button', { name: /masih@example\.com/ });
+    const row = aside.getByRole('group', { name: /masih@example\.com/ });
     await row.waitFor();
     assert.equal(await row.locator('.account-name').innerText(), 'masih', 'the name before the @, as Claude shows a first name'); assert.equal(await row.locator('.account-plan').innerText(), 'Pro');
     assert.equal(await row.getAttribute('aria-label'), 'Account: masih@example.com, Pro plan', 'the full email is its label');
-    assert.equal(await row.getAttribute('aria-haspopup'), 'menu');
+    assert.equal(await row.evaluate(element => element.tagName), 'DIV', 'the name is not a button');
     const box = await row.boundingBox(), side = await aside.boundingBox();
     assert.ok(box.x < side.x + 24 && box.y + box.height > 560, `bottom left of the sidebar (${JSON.stringify(box)})`);
     assert.ok(box.height >= 34, 'a full-size row');
     const labels = await row.evaluate(element => [...element.querySelectorAll('.account-name, .account-plan')].map(node => node.scrollWidth <= node.clientWidth + 1));
     assert.deepEqual(labels, [true, true], 'the account and the plan are not cut');
     await row.click();
-    const menu = page.getByRole('menu'); await menu.waitFor();
-    assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.trim())), ['Settings', 'Models & accounts', 'Use dark theme']);
-    assert.equal(await menu.getByRole('menuitem', { name: /sign.?out|log.?out/i }).count(), 0, 'no sign-out here');
-    await shoot('account-menu-light');
-    await menu.getByRole('menuitem', { name: 'Models & accounts', exact: true }).click();
-    await page.getByRole('heading', { name: 'Models & accounts', exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    await row.click(); await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    assert.equal(await page.getByRole('menu').count(), 0, 'clicking the name opens nothing');
+    const theme = aside.getByRole('button', { name: 'Use dark theme', exact: true }), settings = aside.getByRole('button', { name: 'Settings', exact: true });
+    const [themeBox, settingsBox] = [await theme.boundingBox(), await settings.boundingBox()];
+    assert.ok(themeBox.x < settingsBox.x && Math.abs(themeBox.y - settingsBox.y) < 4 && settingsBox.x - (themeBox.x + themeBox.width) < 12, 'the theme button is right beside Settings');
+    await shoot('account-row-light');
+    await theme.click();
+    await page.locator('.app-shell.dark').waitFor();
+    await aside.getByRole('button', { name: 'Use light theme', exact: true }).waitFor();
+    await shoot('account-row-dark');
+    await aside.getByRole('button', { name: 'Use light theme', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('.app-shell.dark'));
+    await settings.click();
     await page.getByRole('button', { name: 'Back to app', exact: true }).waitFor();
     assert.equal(await page.getByRole('heading', { name: 'General', exact: true }).isVisible(), true, 'Settings opens on General');
     await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    // The theme item switches the theme, and then offers the other one.
-    await row.click(); await page.getByRole('menuitem', { name: 'Use dark theme', exact: true }).click();
-    await page.locator('.app-shell.dark').waitFor();
-    await row.click(); await page.getByRole('menuitem', { name: 'Use light theme', exact: true }).waitFor();
-    assert.deepEqual(await page.getByRole('menu').getByRole('menuitem').allInnerTexts().then(items => items.map(text => text.trim())), ['Settings', 'Models & accounts', 'Use light theme']);
-    await shoot('account-menu-dark');
-    await page.getByRole('menuitem', { name: 'Use light theme', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('.app-shell.dark'));
     assert.deepEqual(await oranges(page), [], 'light theme, account row: no orange');
   });
 });
 
-test('account row without a signed-in account says so, and keeps its menu', async () => {
+test('account row without a signed-in account says so', async () => {
   await fixture(async ({ page, aside }) => {
     const row = aside.locator('.account-row');
     await eventually(async () => assert.equal(await row.locator('.account-name').innerText(), 'Not signed in'));
     assert.equal(await row.locator('.account-plan').count(), 0);
-    await row.click(); await page.getByRole('menuitem', { name: 'Models & accounts', exact: true }).waitFor();
   }, { signedIn: false });
 });

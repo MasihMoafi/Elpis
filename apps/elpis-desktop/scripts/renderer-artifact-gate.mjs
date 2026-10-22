@@ -25,9 +25,9 @@ const pageRemovalApproval = {
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
     "tests/controls.cjs": {
-      "blob": "20fa1f28bc021504e00de6a9aa405270de734ce1",
+      "blob": "88c707e2a62524bbd4e6b2ce37d650ed556cba36",
       "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards."
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. Footer, Masih 22 Oct: \"theme should be next to settings\". The helpers open Settings with the gear and switch the theme with its button (c88df8e6d)."
     },
     "tests/input-hints.test.cjs": {
       "blob": "8709043fe7d186dde635579ca33e30fe481ba62f",
@@ -40,9 +40,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged."
     },
     "tests/sidebar.test.cjs": {
-      "blob": "ef75229db779465c4d80534e424aaf9a84bc98d3",
+      "blob": "f6592d9d87eca70ef857a22f709daeb34e06f0f7",
       "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
-      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged."
+      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d)."
     },
     "tests/desktop-small-fixes.test.cjs": {
       "blob": "e0ed82d0eb6cccaed1d06ea42d9f6d6ace180974",
@@ -132,9 +132,9 @@ export const retainedUpdates = {
       "reason": "S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": the memory options show only while Memories is on, so the saved-settings fixture has Memories on; every version-chained save assertion is unchanged."
     },
     "tests/context-menu.test.cjs": {
-      "blob": "06e37a08fecc7fee315d92b3a2f23832c288a0f0",
+      "blob": "3f99bf0cdc98f059df5187122c504114e0c2e717",
       "approval": "ff010db233ed8c4aea32cdb295b58afbad1c30b0",
-      "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion."
+      "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" Show agents leaves the menu of a chat without agents (c88df8e6d)."
     },
     "tests/preferences.test.cjs": {
       "blob": "2a27c24660a0a2d14da383b02f7ad95ab2e6529f",
@@ -211,6 +211,16 @@ export const retainedUpdates = {
       "blob": "ffe378c097f6eef6a88506a8682deaf5c3b0785f",
       "approval": "efb597b8b6ce2adf92546a544b3688d39016ee30",
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the sidebar reorder test that tests/desktop-small-fixes.test.cjs repeats with stronger assertions."
+    },
+    "tests/sidebar-parity.test.cjs": {
+      "blob": "02943d2f19811a05e53e63a20c0417d777bdfe1a",
+      "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
+      "reason": "Footer, Masih 22 Oct: \"theme should be next to settings; and the name of the user shouldn't be clickable.\" The account-row test follows: the name only shows, and the theme button sits beside Settings."
+    },
+    "tests/reading-options.test.cjs": {
+      "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
+      "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
+      "reason": "Footer, Masih 22 Oct: \"the name of the user shouldn't be clickable.\" The font check opens a chat menu instead of the account menu, which no longer exists."
     },
     "tests/view-errors.test.cjs": {
       "blob": "5dec1ecf6fa40788b16f9aced96f48e962347755",

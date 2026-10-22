@@ -194,7 +194,7 @@ test('production Electron windows share chats and live replies; native menu, cha
     // The surviving window must keep its registered handlers and create another window after its sibling closes.
     await second.getByRole('button', { name: 'Chat actions', exact: true }).click();
     const newWindow = electron.waitForEvent('window');
-    await second.getByRole('menuitem', { name: 'New Session in New Window', exact: true }).click();
+    await second.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
     const fourth = await newWindow; await fourth.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
     assert.equal(await second.getByRole('textbox', { name: 'Message Elpis', exact: true }).inputValue(), 'Second window draft');
     await fourth.close();

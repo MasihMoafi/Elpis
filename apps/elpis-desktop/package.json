@@ -21,7 +21,8 @@
     "test:bridge": "node scripts/test-gate.mjs bridge",
     "test": "node scripts/test-gate.mjs",
     "test:inventory": "node scripts/test-gate.mjs --check",
-    "test:fast": "node scripts/test-gate.mjs fast"
+    "test:fast": "node scripts/test-gate.mjs fast",
+    "check:install": "node scripts/pre-install.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "0.18.1",

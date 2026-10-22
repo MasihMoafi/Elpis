@@ -44,7 +44,6 @@ type Props = {
   /** Mark as read or unread (U), as in Claude's sidebar; a plan waiting for review is marked completed instead. */
   onOpenSplit?: (thread: Thread) => void;
   onOpenWindow?: (thread: Thread) => void;
-  onNewWindow?: () => void;
   attention?: { unread: boolean; planReady: boolean; onToggleRead: () => void; onComplete: () => void };
   /** "Move to group" (several selected: "Move N chats to group"), as in Claude's sidebar: the groups, the chat's own one
    * checked (`current`; undefined when the selected chats are in different ones), Ungrouped, and New group…. */
@@ -53,7 +52,7 @@ type Props = {
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, onNewWindow, attention, group, onMoveToProject }: Props) {
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -99,7 +98,6 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     onOpenInTui ? { id: "tui", label: "Open in Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
     onOpenSplit ? { id: "split", label: "Open session in split view", icon: <Columns2 size={14} />, hint: "Alt+click", run: () => onOpenSplit(thread) } : undefined,
     onOpenWindow ? { id: "window", label: "Open session in new window", icon: <SquareArrowOutUpRight size={14} />, run: () => onOpenWindow(thread) } : undefined,
-    onNewWindow ? { id: "new-window", label: "New Session in New Window", icon: <Plus size={14} />, hint: shortcutHint("new-window"), run: onNewWindow } : undefined,
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>

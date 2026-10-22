@@ -15,7 +15,7 @@ const closesToTray = store => saved(store).closeToTray === true;
 /** What the packaged app ships hidden (22 Oct): the pages that do not work yet and the Session Manager. The renderer's own defaults
  * (lib/preferences.ts) show everything, so a browser and the tests see every page. To bring one back, save its preference
  * (hiddenPages without the page's id, or sessionManager: true) or remove it here. */
-const SHIPPED_DEFAULTS = { hiddenPages: 'experimentLab,canvas', sessionManager: false };
+const SHIPPED_DEFAULTS = { hiddenPages: 'experimentLab,canvas', sessionManager: false, profileAsked: false };
 /** Saves a shipped default once, and never over a value the person or an earlier run already saved. */
 async function seedShippedDefaults(store) {
   const current = saved(store);

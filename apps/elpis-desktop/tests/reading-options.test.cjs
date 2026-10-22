@@ -53,7 +53,7 @@ test('Appearance offers the reading options; Large, Wide and Serif change the tr
     assert.equal(await style(page.locator('.composer'), 'maxWidth'), '1100px', 'the composer column follows');
     assert.equal(await style(page.locator('.composer textarea'), 'fontSize'), before.box, 'the message box keeps its size');
     assert.match(await style(page.locator('aside.sidebar .thread-title'), 'fontFamily'), /^ui-serif/);
-    await page.locator('aside.sidebar .account-row').click();
+    await page.locator('aside.sidebar .thread-row').first().click({ button: 'right' });
     assert.match(await style(page.getByRole('menu'), 'fontFamily'), /^ui-serif/, 'menus too');
     await page.keyboard.press('Escape');
     await page.reload();
