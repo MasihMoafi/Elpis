@@ -91,6 +91,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   const destination = path.join(os.homedir(), '.local/lib/elpis-desktop/versions', `${name}-${commit.slice(0, 9)}`);
   if (fs.existsSync(destination)) throw new Error(`${destination} already exists.`);
   const renderer = actions ? ['--out-directory', await actionsRenderer(commit)] : [];
+  // The package list is checked against what the entry points import before anything is installed (22 Oct: an unlisted module kept Elpis from opening).
+  execFileSync(process.execPath, ['--test', 'desktop/package.test.mjs'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
   assertSourceCommit(root, commit);
   execFileSync(process.execPath, ['desktop/package.mjs', '--source', '.', '--destination', destination, '--link-runtime',
     '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...renderer], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
