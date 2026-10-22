@@ -319,7 +319,7 @@ async fn delegated_helper_notifications_group_only_under_their_chat() -> Result<
             "sessionId": helper.to_string(),
             "forkedFromId": null,
             "parentThreadId": chat.to_string(),
-            "preview": "",
+            "preview": "Inspect the parser",
             "ephemeral": false,
             "section": null,
             "sectionEnteredAt": null,
@@ -693,7 +693,8 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
     let retained: HashSet<_> = app.agents_overview.threads.keys().copied().collect();
     assert_eq!(retained, expected);
 
-    // A creation notification adds a session without attaching a local view.
+    // A140: a peer's creation notification without history adds no row; an unmaterialized
+    // session cannot be opened.
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let event = app_server.next_event().await.expect("server notification");
@@ -703,7 +704,6 @@ async fn shared_overview_seeds_once_and_retains_locally_resumed_history() -> Res
             if is_created { break; }
         }
     }).await.expect("creation notification received");
-    expected.insert(created);
     let retained: HashSet<_> = app.agents_overview.threads.keys().copied().collect();
     assert_eq!(retained, expected);
 

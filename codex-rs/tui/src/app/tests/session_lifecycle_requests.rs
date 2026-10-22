@@ -3239,6 +3239,9 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
         )
         .await?;
         let started = app_server.start_thread(&app.config).await?;
+        let started_id = started.session.thread_id;
+        // A140: a session with no history is listed only as this client's own blank draft.
+        app.agents_overview.blank_sessions.insert(started_id, started);
         app.app_server_target = AppServerTarget::LocalDaemon {
             allow_embedded_fallback: true,
             endpoint: crate::RemoteAppServerEndpoint::UnixSocket {
@@ -3265,7 +3268,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     .keys()
                     .copied()
                     .collect::<Vec<_>>(),
-                vec![started.session.thread_id]
+                vec![started_id]
             );
             assert!(app.agents_overview.initialized);
             assert_eq!(
@@ -3285,7 +3288,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     AppServerEvent::ServerNotification(Box::new(
                         ServerNotification::ThreadStatusChanged(
                             codex_app_server_protocol::ThreadStatusChangedNotification {
-                                thread_id: started.session.thread_id.to_string(),
+                                thread_id: started_id.to_string(),
                                 status: codex_app_server_protocol::ThreadStatus::Idle,
                             },
                         ),
@@ -3312,7 +3315,7 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                         .keys()
                         .copied()
                         .collect::<Vec<_>>(),
-                    vec![started.session.thread_id]
+                    vec![started_id]
                 );
             }
         }
