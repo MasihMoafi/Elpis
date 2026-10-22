@@ -60,10 +60,14 @@ test('Talk sends the board and picture with the chosen model, reuses a sidebar c
     await panel.getByRole('combobox').click(); await f.page.getByRole('option', { name: /GPT-6-Luna/ }).click();
     await panel.getByRole('button', { name: 'Send', exact: true }).click();
     await panel.getByText('I am here with you.', { exact: true }).waitFor();
+    // A message's hover buttons hang below it (28px): the gap to the next line must hold them.
+    const gaps = await f.page.evaluate(() => [...document.querySelectorAll('.love-spot-talk-messages .message, .love-spot-talk-messages .user-turn')].filter(el => el.querySelector('.message-actions')).map(el => ({ margin: parseFloat(getComputedStyle(el).marginBottom), buttons: el.querySelector('.message-actions')?.getBoundingClientRect().height ?? 0 })));
+    assert.ok(gaps.length > 0 && gaps.every(gap => gap.margin >= gap.buttons), `a message's buttons fit in the gap below it: ${JSON.stringify(gaps)}`);
     const saved = await f.waitFor(s => s.elements.some(e => e.text === 'I am here with you.'), 'reply did not land on the board');
     const answer = saved.elements.find(e => e.text === 'I am here with you.'); assert.equal(answer.strokeColor, '#1971c2');
     assert.equal(f.chats.length, 1); assert.equal(f.chats[0].name, 'Love Spot'); assert.equal(f.chats[0].cwd, f.directory);
     await f.page.locator('aside [data-thread-id="love-chat"] .thread-title').filter({ hasText: 'Love Spot' }).waitFor();
+    assert.deepEqual(await f.page.locator('aside [data-thread-id="love-chat"] .thread-link').allInnerTexts(), ['Love Spot'], 'the Love Spot group already names the origin: the chat says it once');
     assert.equal(f.turns[0].model, 'luna'); assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /Masih.*The secret is apricot/s);
     assert.match(f.turns[0].attachments.find(a => a.type === 'image').dataUrl, /^data:image\/png;base64,/);
     for (const e of saved.elements.filter(e => !e.isDeleted && e.id !== answer.id)) assert.ok(answer.x + answer.width <= e.x || e.x + e.width <= answer.x || answer.y + answer.height <= e.y || e.y + e.height <= answer.y, 'reply overlaps another element');
@@ -177,5 +181,31 @@ test('Talk fits in light and dark at 1280 and 1440', async () => {
         await f.page.screenshot({ path: `/tmp/love-spot-talk-shots/${theme}-${width}.png` });
       }
     }
+  } finally { await f.close(); }
+});
+
+test('the tool bar slides by its grip so Talk never leaves tools out of reach, and the place is kept', async () => {
+  const f = await loveSpotFixture({ colorScheme: 'dark' });
+  try {
+    await f.page.setViewportSize({ width: 900, height: 760 });
+    await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
+    const bar = f.page.locator('.love-spot-editor .shapes-section .App-toolbar'), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
+    const spill = async () => { const [b, a] = await Promise.all([bar.boundingBox(), area.boundingBox()]); return { left: Math.round(b.x - a.x), right: Math.round(a.x + a.width - (b.x + b.width)) }; };
+    await grip.waitFor();
+    const middle = await spill(); assert.ok(middle.left < 0 || middle.right < 0, `with Talk open the bar spills past the board: ${JSON.stringify(middle)}`);
+    await grip.focus();
+    for (let i = 0; i < 40; i++) await f.page.keyboard.press('ArrowRight');
+    let now = await spill(); assert.ok(now.left >= 7 && now.left <= 9, `its first tool can be brought in and the slide stops there: ${JSON.stringify(now)}`);
+    for (let i = 0; i < 40; i++) await f.page.keyboard.press('ArrowLeft');
+    now = await spill(); assert.ok(now.right >= 7 && now.right <= 9, `its last tool can be brought in too: ${JSON.stringify(now)}`);
+    const box = await grip.boundingBox(), before = await spill();
+    await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await f.page.mouse.down();
+    await f.page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 }); await f.page.mouse.up();
+    const dragged = await spill(); assert.ok(dragged.left - before.left >= 50, `the mouse moves the bar: ${JSON.stringify({ before, dragged })}`);
+    await f.page.reload(); await f.open(f.page); await f.page.getByRole('button', { name: 'Talk', exact: true }).click(); await grip.waitFor();
+    const kept = await spill(); assert.ok(Math.abs(kept.left - dragged.left) <= 2, `the place is kept: ${JSON.stringify({ dragged, kept })}`);
+    await grip.dblclick();
+    const home = await spill(); assert.ok(Math.abs(home.left - middle.left) <= 2, `double-click puts the bar back in the middle: ${JSON.stringify({ middle, home })}`);
+    assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

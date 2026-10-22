@@ -1717,7 +1717,8 @@ export default function Home() {
     const section = sectionOf(id), chats = sectionChats(section), edge = top ? chats[0] : chats.at(-1);
     if (edge && edge.id !== id) placeDragged(id, section, { target: edge.id, after: !top });
   }
-  function threadRow(thread: Thread, depth = 0) {
+  /** `inOrigin`: the row sits in the group named for its origin, so the origin is not written again beside its title. */
+  function threadRow(thread: Thread, depth = 0, inOrigin = false) {
     const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
@@ -1746,7 +1747,7 @@ export default function Home() {
         <span className="thread-title">{name}</span>
         {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
-        {origin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
+        {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
@@ -1847,8 +1848,8 @@ export default function Home() {
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><div className="section-label">Pinned</div></div>{pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
         {(loveChats.length > 0 || workflowChats.length > 0) && <div className="section-label">Agent chats</div>}
-        {loveChats.length > 0 && <SidebarGroup kind="chat" name="Love Spot" icon={<LoveSpotIcon size={14} />} open={originOpen.love} onToggle={() => setOriginOpen(value => ({ ...value, love: !value.love }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{loveChats.map(thread => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
-        {workflowChats.length > 0 && <SidebarGroup kind="chat" name="Workflows" icon={<WorkflowsIcon size={14} />} open={originOpen.workflows} onToggle={() => setOriginOpen(value => ({ ...value, workflows: !value.workflows }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{workflowChats.map(thread => <div key={thread.id}>{threadRow(thread)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
+        {loveChats.length > 0 && <SidebarGroup kind="chat" name="Love Spot" icon={<LoveSpotIcon size={14} />} open={originOpen.love} onToggle={() => setOriginOpen(value => ({ ...value, love: !value.love }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
+        {workflowChats.length > 0 && <SidebarGroup kind="chat" name="Workflows" icon={<WorkflowsIcon size={14} />} open={originOpen.workflows} onToggle={() => setOriginOpen(value => ({ ...value, workflows: !value.workflows }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{workflowChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
         {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}><div className="section-label">{searchTerm ? "Results" : "Recents"}</div>
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>

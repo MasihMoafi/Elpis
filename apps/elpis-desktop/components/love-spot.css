@@ -15,7 +15,10 @@
 .love-spot > [role="status"] { padding: 24px; color: var(--muted-foreground); }
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
 .love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
-.love-spot-editor { flex: 1; min-width: 0; height: 100%; min-height: 0; }
+.love-spot-editor { position: relative; flex: 1; min-width: 0; height: 100%; min-height: 0; }
+.love-spot-editor .shapes-section { transform: translateX(var(--love-tools-x, 0px)); }
+.love-tools-grip { position: absolute; z-index: 6; cursor: grab; touch-action: none; }
+.love-tools-grip:active { cursor: grabbing; }
 .love-spot-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
 .workspace-header:has(> .love-spot-toolbar-host) { gap: 8px; padding-inline: 12px; }
 .workspace-header:has(> .love-spot-toolbar-host) > .header-titles { flex: 0 1 auto; }
@@ -40,6 +43,8 @@
 .love-spot-talk-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .love-spot-talk-messages { flex: 1; min-height: 0; overflow: auto; padding: 12px; overflow-wrap: anywhere; }
 .love-spot-talk-messages .message { min-width: 0; max-width: 100%; }
+/* The hover buttons hang 28px below a message: leave that room so they never sit on the next line ("Elpising…", the next message). */
+.love-spot-talk-messages .message, .love-spot-talk-messages .user-turn { margin-bottom: 32px; }
 .love-spot-talk-form { border-top: 1px solid var(--border); padding: 10px; }
 .love-spot-talk-form textarea { max-height: 160px; overflow-y: auto; resize: none; }
 .love-spot-talk-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; min-width: 0; }

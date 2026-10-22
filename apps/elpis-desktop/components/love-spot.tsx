@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
 import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
+import { ToolsGrip } from "@/components/love-spot-tools-grip";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
@@ -443,6 +444,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       if (note?.type !== "text") return;
       event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, text: note.originalText || note.text });
     }}>
+      {initial && <ToolsGrip board={boardArea} />}
       {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"} /> : !error && <p role="status">Opening Love Spot…</p>}
     </div>
     <div className="love-spot-panels" hidden={!talk}>
