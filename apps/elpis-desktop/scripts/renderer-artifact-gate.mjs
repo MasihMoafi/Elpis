@@ -92,9 +92,14 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "e875da6914fd4862a82c28168c762f4b323f8df2",
-      "approval": "ac82360bda390fea91268f3a263cd9375b2af175",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion."
+      "blob": "d6822334319362be618459aa5aee0e36688385d2",
+      "approval": "279499d6bed5a579413834c6e7bc3e4d35006bfd",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on."
+    },
+    "tests/settings-write.test.cjs": {
+      "blob": "09f90ee692006240e183eb49d99051431d05de7b",
+      "approval": "279499d6bed5a579413834c6e7bc3e4d35006bfd",
+      "reason": "S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": the memory options show only while Memories is on, so the saved-settings fixture has Memories on; every version-chained save assertion is unchanged."
     },
     "tests/context-menu.test.cjs": {
       "blob": "06e37a08fecc7fee315d92b3a2f23832c288a0f0",

@@ -180,12 +180,13 @@ export function PrunerSettings({ value, models }: { value: ElpisSettings; models
 }
 
 const SWITCHES: { key: "enabled" | "generate" | "use" | "allowExternal"; title: string; description: string }[] = [
-  { key: "enabled", title: "Enable memories", description: "Let Elpis keep memories from chats and use them to personalize later chats." },
+  { key: "enabled", title: "Memories", description: "Let Elpis keep memories from chats and use them to personalize later chats. Off: nothing is saved or used." },
   { key: "generate", title: "Generate memories", description: "Create memories from new chats." },
   { key: "use", title: "Use memories", description: "Give new chats the memories Elpis has saved." },
   { key: "allowExternal", title: "Allow memories from tool-assisted chats", description: "Generate memories from chats that used MCP tools or web search." },
 ];
-// Unset values follow Elpis's defaults: memories off; generate, use and tool-assisted chats on.
+// Unset values follow Elpis's defaults: memories off; generate, use and tool-assisted chats on once memories are on.
+// Memories is the master switch: while it is off the other options are not shown, so no page says "on" for what is off.
 function switchValue(memory: Memory, key: (typeof SWITCHES)[number]["key"]) {
   if (key === "enabled") return memory.enabled ?? false;
   if (key === "allowExternal") return !(memory.skipExternalContext ?? false);
@@ -202,18 +203,21 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
   const changed = Object.keys(draft).length > 0;
   const reload = () => void saver.run("reload", async () => { await reloadSettings(); setDraft({}); }, reloaded.text);
   const toggle = (key: (typeof SWITCHES)[number]["key"], next: boolean) => void saver.run(key, () => saveSettings("/settings", { version: value.version, memory: key === "allowExternal" ? { skipExternalContext: !next } : { [key]: next } }), "Saved. Applies to new conversations.");
+  const on = switchValue(value.memory, "enabled");
   if (!editable(value)) return <SettingsGroup title="Memories">
-    <SettingRow title="Enable memories"><span className="text-sm">{shown(value.memory.enabled ?? null)}</span></SettingRow>
-    <SettingRow title="Generate memories"><span className="text-sm">{shown(value.memory.generate)}</span></SettingRow>
-    <SettingRow title="Use memories"><span className="text-sm">{shown(value.memory.use)}</span></SettingRow>
-    <SettingRow title="Extraction model"><span className="text-sm">{shown(value.memory.extractionModel)}</span></SettingRow>
-    <SettingRow title="Consolidation model" description={value.write.reason}><span className="text-sm">{shown(value.memory.consolidationModel)}</span></SettingRow>
+    <SettingRow title="Memories" description={on ? undefined : value.write.reason}><span className="text-sm">{shown(value.memory.enabled ?? null)}</span></SettingRow>
+    {on && <>
+      <SettingRow title="Generate memories"><span className="text-sm">{shown(value.memory.generate)}</span></SettingRow>
+      <SettingRow title="Use memories"><span className="text-sm">{shown(value.memory.use)}</span></SettingRow>
+      <SettingRow title="Extraction model"><span className="text-sm">{shown(value.memory.extractionModel)}</span></SettingRow>
+      <SettingRow title="Consolidation model" description={value.write.reason}><span className="text-sm">{shown(value.memory.consolidationModel)}</span></SettingRow>
+    </>}
   </SettingsGroup>;
   return <SettingsGroup title="Memories" description={`Memory models use their conversation’s provider. Default provider: ${catalogs.connectionLabel(value.main.provider)}.`}>
-    {SWITCHES.map(item => <SettingRow key={item.key} title={item.title} description={item.description}>
+    {SWITCHES.filter(item => item.key === "enabled" || on).map(item => <SettingRow key={item.key} title={item.title} description={item.description}>
       <Switch aria-label={item.title} checked={switchValue(value.memory, item.key)} disabled={saver.pending !== null} onCheckedChange={next => toggle(item.key, next)} />
     </SettingRow>)}
-    {(["extractionModel", "consolidationModel"] as const).map(key => <SettingRow key={key} title={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"} description={key === "extractionModel" ? "Summarizes each chat into memories." : "Merges memories into the saved set."}>
+    {on && (["extractionModel", "consolidationModel"] as const).map(key => <SettingRow key={key} title={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"} description={key === "extractionModel" ? "Summarizes each chat into memories." : "Merges memories into the saved set."}>
       <ModelChoice label={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"} value={memory[key]} models={catalogs.mainModels} provider={catalogs.connectionLabel(value.main.provider)} disabled={saver.pending !== null} inheritLabel="Default conversation model"
         onChange={model => { saver.clear(); setDraft(old => { const patch = { ...old }; if (model === value.memory[key]) delete patch[key]; else patch[key] = model; return patch; }); }} />
     </SettingRow>)}
