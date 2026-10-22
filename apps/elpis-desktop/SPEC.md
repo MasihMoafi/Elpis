@@ -28,6 +28,8 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 |  | S25 | Love Spot polish (22 Oct): the sidebar chat names itself once inside the Love Spot group; Talk leaves room under a message for its hover buttons; the tool bar slides by a grip (mouse or arrow keys, kept, double-click puts it back) so Talk never hides tools. | Tests in `tests/love-spot-talk.test.cjs`. | R5, R50 | Built 22 Oct (A159, A160, A161). Moving Talk itself by mouse is later. |
 |  | S26 | Start-up screen (A68): option 3 of the 20 Oct motion study, the E turning in depth, no hexagons, the current dark background. | `tests/startup-splash.test.cjs`; watch it once in the real app. | R5 | Rebuilt 22 Oct from the trashed draft; pinned in the retained gate with his words. |
 |  | S27 | The skills switch flips as it is pressed and goes back with the reason if refused (A165). A message sent while Elpis works stays as it behaves now (Masih, 22 Oct: "the behavior it does now"). | Test in `tests/customize.test.cjs`. | R5 | Built and installed 22 Oct. |
+|  | S28 | The Ledger page is called Customize (Masih, 22 Oct: "The name of Ledger is incorrect for this ... Claude calls it customize"; "Yes please"). Ledger names only the chat's Context Ledger. | Sidebar, heading, window title, command menu and notices say Customize; the Context Ledger button keeps its name. | R5 | Coded 22 Oct; tests follow the label. |
+|  | S29 | An install opens the new package for real before it switches `elpis-app` to it (22 Oct: two installs shipped a package Elpis could not open). | `scripts/smoke-launch.mjs`: a package missing one file fails in under a second with the module error; the installed package passes in 3 s. | R51 | Built 22 Oct; the install runs it. |
 
 ## Needs your answer
 

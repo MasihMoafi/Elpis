@@ -37,7 +37,7 @@ test('Customize names the sidebar, heading, command action and window; customize
     await open(page);
     await page.getByRole('heading', { name: 'Customize', exact: true }).waitFor();
     await windowTitle(page, 'Customize — Elpis');
-    assert.equal(await page.getByRole('button', { name: 'Customize', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Ledger', exact: true }).count(), 0, 'nothing on the page is still called Ledger (that name is the chat\'s Context Ledger)');
     await page.keyboard.press('Control+k');
     await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Customize');
     const option = page.getByRole('option', { name: 'Customize', exact: true });
