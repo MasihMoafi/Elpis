@@ -134,7 +134,7 @@ test('Draw loads the editor only when used, captures before hiding the page, and
   await add.click();
   await dialog(page).waitFor({ state: 'detached' });
   await page.getByText('Drawing added to your message').waitFor();
-  await chips(page).getByText('Page drawing.jpg').waitFor(); await chips(page).getByText('Page drawing context').waitFor();
+  await chips(page).getByText('Page drawing.jpg').waitFor(); assert.equal(await chips(page).getByText('Page drawing context').count(), 0, 'the note for the model is not shown');
   assert.equal((await f.log()).includes('obscured') && (await f.log()).at(-1), 'visible', 'the page returns when the drawing closes');
   assert.equal(f.posts.filter(post => /\/turns$/.test(post.path)).length, 0, 'adding does not send');
   await f.shoot('draw-added-to-composer-light');

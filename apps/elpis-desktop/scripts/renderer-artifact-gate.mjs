@@ -55,9 +55,9 @@ export const retainedUpdates = {
       "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed."
     },
     "tests/browser-drawing.test.cjs": {
-      "blob": "d5a470f12c93b03027ec3658b833d8ea6bb11031",
+      "blob": "4282b57ba27181f3ad642d668316c2f9e7e5c61c",
       "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
-      "reason": "S21, Masih 22 Oct: \"when you click on it the browser goes away and a new page opens, can't we use the same draw in the same page with the brower unmoved?\" The drawing fills the browser panel it opened from instead of the whole window; every other drawing assertion is unchanged."
+      "reason": "S21, Masih 22 Oct: \"when you click on it the browser goes away and a new page opens, can't we use the same draw in the same page with the brower unmoved?\" The drawing fills the browser panel it opened from instead of the whole window; every other drawing assertion is unchanged. Annotation note, Masih 22 Oct: \"when we anotate and send it shows the browser note to the user. it shouldn't .\" The drawing context note is no longer shown as a chip; it is still sent (a3b057c0f)."
     },
     "tests/composer-corner.test.cjs": {
       "blob": "d77e771f90a41d538ad3deee2a22ac52f62cc7de",

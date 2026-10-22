@@ -13,7 +13,7 @@ export type Plugin = { id: string; name: string; description: string; marketplac
 export type ConfigWrite = { version?: string | null; write?: { available: boolean } };
 export type PluginChange = { action: "enable" | "uninstall" | "install"; id: string; enabled?: boolean; version?: string | null };
 type CatalogPlugin = Plugin & { pluginName: string; marketplaceName: string; marketplacePath: string | null; installed: boolean; installable: boolean; reason: string | null };
-type Catalog = { marketplaces: { name: string; displayName: string; path: string | null }[]; plugins: CatalogPlugin[]; errors: string[]; nextCursor: string | null };
+type Catalog = { marketplaces: { name: string; displayName: string; path: string | null }[]; appCatalogs?: { app: string; label: string; added: boolean }[]; plugins: CatalogPlugin[]; errors: string[]; nextCursor: string | null };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function LedgerPlugins({ cwd, plugins, loaded, config, onChange, onReload }: { cwd: string | null; plugins: Plugin[]; loaded: boolean; config: ConfigWrite; onChange: (change: PluginChange) => Promise<string[]>; onReload: () => Promise<void> }) {
@@ -63,12 +63,12 @@ function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { c
     finally { if (request.current === id) setLoading(false); }
   }, [cwd, search]);
   useEffect(() => { setCatalog(null); void load(); return () => { request.current++; }; }, [load, version]);
-  const marketplace = async (key: string, body: { action: "add"; source: string } | { action: "remove"; name: string }) => {
+  const marketplace = async (key: string, body: { action: "add"; source: string } | { action: "add-app"; app: string } | { action: "remove"; name: string }) => {
     if (locked.current) return;
     locked.current = true; setChanging(key); setActionErrors(previous => ({ ...previous, [key]: "" }));
     try {
       await api("/customize/marketplace", { ...body, ...(cwd ? { cwd } : {}) });
-      if (body.action === "add") setSource("");
+      if (body.action !== "remove") setSource("");
       await Promise.all([load(), onReload()]);
     } catch (error) { setActionErrors(previous => ({ ...previous, [key]: message(error) })); }
     finally { locked.current = false; setChanging(null); }
@@ -91,6 +91,10 @@ function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { c
     <section aria-label="Marketplaces" className="grid gap-3">
       <div className="customize-title"><h2>Marketplaces</h2></div>
       <p className="customize-note">GitHub owner/repo, a git URL, or a folder containing a Codex or Claude Code marketplace.</p>
+      {!!catalog?.appCatalogs?.some(item => !item.added) && <div className="flex flex-wrap items-center gap-2">
+        {catalog.appCatalogs.filter(item => !item.added).map(item => <Button key={item.app} size="sm" variant="outline" disabled={busy} onClick={() => void marketplace("add", { action: "add-app", app: item.app })}>Add the {item.label} plugins</Button>)}
+        <span className="customize-note">From the app on this computer; nothing is downloaded until you install a plugin.</span>
+      </div>}
       <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); if (source.trim() && !busy) void marketplace("add", { action: "add", source: source.trim() }); }}>
         <Input className="flex-1" aria-label="Marketplace source" placeholder="owner/repo, git URL or folder" value={source} maxLength={4096} onChange={event => setSource(event.target.value)} />
         <Button type="submit" size="sm" variant="outline" disabled={busy || !source.trim()}>Add marketplace</Button>

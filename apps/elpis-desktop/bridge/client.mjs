@@ -25,6 +25,7 @@ import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowRuns } from './workflow-acp.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
+import { appCatalogs, linkBundledCatalog } from './app-catalogs.mjs';
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
@@ -182,15 +183,15 @@ export class DesktopClient extends EventEmitter {
   #settingsConfirmMs;
   #browserConfig;
   #sessionManagerConfig;
-  #archiveHistory; #spawnLinks;
+  #archiveHistory; #spawnLinks; #appHome;
   #rewindSnapshots; #rewindHistory; #githubConnector; #skillTrash;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), appHome = os.homedir(), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
     this.#sessionManagerConfig = sessionManagerConfig;
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
-    this.#spawnLinks = new SpawnLinks(spawnLinksFile);
+    this.#spawnLinks = new SpawnLinks(spawnLinksFile); this.#appHome = appHome;
     this.#githubConnector = githubConnector;
     this.#skillTrash = new SkillTrash(skillTrashOptions);
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
@@ -866,7 +867,19 @@ export class DesktopClient extends EventEmitter {
     const scope = input.cwd ? { cwds: [input.cwd] } : {};
     const catalog = await this.#rpc('plugin/list', scope);
     const search = input.search?.trim() ? await this.#rpc('plugin/search', { ...scope, searchTerm: input.search.trim(), ...(input.cursor ? { cursor: input.cursor } : {}), limit: 50 }) : null;
-    return pluginCatalogSnapshot(catalog, search);
+    const snapshot = pluginCatalogSnapshot(catalog, search);
+    return { ...snapshot, appCatalogs: appCatalogs(this.#appHome).map(({ app, label, name }) => ({ app, label, added: snapshot.marketplaces.some(market => market.name === name) })) };
+  }
+  /** Turns plugins on and adds the catalog the named desktop app keeps on this computer (bridge/app-catalogs.mjs). */
+  async #addAppCatalog(app) {
+    const found = appCatalogs(this.#appHome).find(catalog => catalog.app === app);
+    if (!found) throw new BridgeError('That app has no plugin catalog on this computer', 404);
+    const { version } = await this.settings();
+    await this.saveSettings({ version, features: { plugins: true } });
+    if (found.app === 'claude') return this.#rpc('marketplace/add', { source: found.source });
+    const folder = await linkBundledCatalog(elpisHome(), found.source), current = await this.settings();
+    return this.#rpc('config/batchWrite', { expectedVersion: current.version, reloadUserConfig: true,
+      edits: [{ keyPath: `marketplaces."${found.name}"`, value: { source_type: 'local', source: folder }, mergeStrategy: 'replace' }] });
   }
   async changePlugin(input) {
     object(input, ['action', 'id', 'enabled', 'version', 'cwd']); text(input.id, 'plugin', 512);
@@ -891,10 +904,11 @@ export class DesktopClient extends EventEmitter {
     return { ...await this.customize(input.cwd), appsNeedingAuth: install?.appsNeedingAuth?.map(app => ({ name: app.name })) ?? [] };
   }
   async changeMarketplace(input) {
-    object(input, ['action', 'source', 'name', 'cwd']);
+    object(input, ['action', 'source', 'name', 'cwd', 'app']);
     // Validate the project folder before any engine mutation.
     if (input.cwd != null) { text(input.cwd, 'project folder', 4096); if (!path.isAbsolute(input.cwd)) throw new BridgeError('Choose a project folder'); }
     if (input.action === 'add') return this.#rpc('marketplace/add', { source: text(input.source, 'marketplace source', 4096).trim() });
+    if (input.action === 'add-app') return this.#addAppCatalog(input.app);
     if (input.action === 'remove') return this.#rpc('marketplace/remove', { marketplaceName: text(input.name, 'marketplace', 256) });
     throw new BridgeError('Choose a marketplace action');
   }
