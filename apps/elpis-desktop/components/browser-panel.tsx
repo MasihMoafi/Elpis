@@ -157,7 +157,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
       </div>}
     </div>
     <AnnotationDock browser={browser} onAttach={onAttach} imagesAllowed={imagesAllowed} />
-    {drawing && onAttach && <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="fixed inset-0 z-40 grid place-items-center bg-background text-sm text-muted-foreground"><p role="status">Opening the drawing tools…</p></div>}>
+    {drawing && onAttach && <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="absolute inset-0 z-10 grid place-items-center bg-background text-sm text-muted-foreground"><p role="status">Opening the drawing tools…</p></div>}>
       <BrowserDrawing draft={drawing} dark={document.documentElement.classList.contains("dark")} onAttach={onAttach}
         onClose={() => { setDrawing(null); setHeld(!!heldDrawing()); requestAnimationFrame(() => drawButton.current?.focus()); }} onAdded={() => { setDrawing(null); setHeld(false); setNotice("Drawing added to your message"); }} />
     </Suspense>}

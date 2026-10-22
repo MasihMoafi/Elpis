@@ -29,6 +29,16 @@ export const retainedUpdates = {
       "approval": "5004ae69409ce4a08e49f12e638b081e35fbff1a",
       "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. S8/S12/S18, Masih 22 Oct: \"remove lab for now\", \"hide workflows\", \"session manager ... hide it for now\": Lab, Workflows and the Session Manager are hidden by default, so the test page sees them unless a test sets hiddenPages or sessionManager itself."
     },
+    "tests/input-hints.test.cjs": {
+      "blob": "619257f53c6317aca0adf337df26282c99a7695c",
+      "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
+      "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model."
+    },
+    "tests/browser-drawing.test.cjs": {
+      "blob": "bb23c98e3e11f8f2868bde42174ff0652bcca158",
+      "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
+      "reason": "S21, Masih 22 Oct: \"when you click on it the browser goes away and a new page opens, can't we use the same draw in the same page with the brower unmoved?\" The drawing fills the browser panel it opened from instead of the whole window; every other drawing assertion is unchanged."
+    },
     "tests/composer-corner.test.cjs": {
       "blob": "d77e771f90a41d538ad3deee2a22ac52f62cc7de",
       "approval": "3b472fffa5c8b9158766709a6367f08a5f350b94",

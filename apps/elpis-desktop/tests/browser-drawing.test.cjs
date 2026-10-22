@@ -242,7 +242,8 @@ for (const colorScheme of ['light', 'dark']) test(`the drawing modal follows the
   assert.equal(shade < 100, colorScheme === 'dark', `modal background shade ${shade}`);
   assert.equal(await page.locator('.excalidraw').evaluate(element => element.classList.contains('theme--dark')), colorScheme === 'dark');
   const box = await dialog(page).boundingBox();
-  assert.deepEqual([box.x, box.y, box.width, box.height], [0, 36, 760, 604], 'the modal fills the window below its title bar');
+  const panel = await page.locator('.browser-panel').boundingBox();
+  assert.deepEqual([box.x, box.y, box.width, box.height], [panel.x, panel.y, panel.width, panel.height], 'the drawing fills the browser panel it opened from, which does not move');
   for (const name of ['Cancel', 'Add to message']) { const b = await page.getByRole('button', { name, exact: true }).boundingBox(); assert.ok(b.x >= 0 && b.x + b.width <= 760 && b.y >= 0, `${name} stays inside the window`); }
   await assertUiFit(dialog(page), 'the drawing header fits the window');
   await f.shoot(`draw-modal-narrow-${colorScheme}`);

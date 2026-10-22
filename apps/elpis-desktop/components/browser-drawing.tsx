@@ -2,7 +2,6 @@
 
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Excalidraw, MainMenu, convertToExcalidrawElements, exportToCanvas, getCommonBounds, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -102,7 +101,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
     finally { setBusy(false); }
   }
 
-  return createPortal(<div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Draw on the page" className="browser-drawing fixed inset-0 z-40 flex flex-col bg-background text-foreground outline-none"
+  return <div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Draw on the page" className="browser-drawing absolute inset-0 z-10 flex flex-col bg-background text-foreground outline-none"
     onKeyDownCapture={event => {
       if (event.key === "Tab" && !asking && root.current) {
         const stops = tabbable(root.current), index = stops.indexOf(document.activeElement as HTMLElement);
@@ -147,5 +146,5 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </div>, document.body);
+  </div>;
 }

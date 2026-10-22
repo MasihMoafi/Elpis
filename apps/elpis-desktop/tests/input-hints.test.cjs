@@ -11,7 +11,9 @@ for (const colorScheme of ['light', 'dark']) test(`long input hints show an elli
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     await openSettings(page); await page.getByRole('tab', { name: 'MCP servers', exact: true }).click();
-    for (const name of ['RAG answer model', 'RAG reranker']) {
+    // R34: the RAG models are menus; the typed field sits behind Advanced: custom model.
+    for (const [group, name] of [['RAG answer model', 'RAG answer model'], ['RAG reranker', 'Custom RAG reranker']]) {
+      await page.getByRole('group', { name: `${group} choices`, exact: true }).locator('summary').click();
       const input = page.getByRole('textbox', { name, exact: true }); await input.waitFor(); await input.hover();
       const hint = await input.getAttribute('placeholder');
       assert.equal(await input.getAttribute('title'), hint, 'the complete example remains available on hover');

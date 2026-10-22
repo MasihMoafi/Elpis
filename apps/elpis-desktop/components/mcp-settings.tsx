@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { api } from "@/lib/api";
+import { api, type Model } from "@/lib/api";
+import { ModelChoice } from "@/components/settings/maintenance";
 
 type Credential = { name: string; source: "config" | "environment"; set: boolean };
 type Server = { name: string; enabled: boolean; transport: "stdio" | "http"; command: string | null; url: string | null; credentials: Credential[]; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } };
@@ -20,6 +21,8 @@ type Rag = { stages: Stage[]; keys: { openrouter: boolean } };
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 /** A reply without its server list (an older or failing bridge) reads as no servers, never as a broken page. */
 const readMcp = (value: Mcp): Mcp => ({ ...value, servers: Array.isArray(value?.servers) ? value.servers : [], write: value?.write ?? { available: false } });
+/** What the rag tool accepts for its reranker (bridge/tools.mjs): off, the local engine, or an OpenRouter reranker ID. */
+const RERANKERS: Model[] = [["off", "Off"], ["fastembed", "Local (FastEmbed)"], ["cohere/rerank-4-fast", "Cohere Rerank 4 Fast (OpenRouter)"]].map(([model, displayName]) => ({ id: model, model, displayName }));
 const providerName = (stage: Stage) => stage.location === "local" ? "Local" : stage.provider === "openrouter" ? "OpenRouter" : stage.provider === "openai_compatible" ? "OpenAI-compatible API" : stage.provider ?? "Not set";
 const Key = ({ name, set, note, plain }: { name: string; set: boolean; note?: string; plain?: boolean }) => <li className={`key-state ${set ? "set" : "unset"}`}>{plain ? name : <code>{name}</code>} · {set ? "set" : "not set"}{note && <span className="text-muted-foreground"> ({note})</span>}</li>;
 
@@ -49,7 +52,9 @@ function RagSettings({ version }: { version: string | null }) {
   const [answer, setAnswer] = useState("");
   const [reranker, setReranker] = useState("");
   const [busy, setBusy] = useState(false);
+  const [answerModels, setAnswerModels] = useState<Model[]>([]);
   useEffect(() => { api<Rag>("/tools/rag").then(setRag).catch(e => setError(message(e))); }, [version]);
+  useEffect(() => { api<{ data: Model[] }>("/models?provider=openrouter").then(result => setAnswerModels(Array.isArray(result?.data) ? result.data : [])).catch(() => setAnswerModels([])); }, []);
   async function save(stage: "generation" | "reranking", model: string) {
     setBusy(true); setError("");
     try { setRag(await api<Rag>("/tools/rag", { stage, model })); if (stage === "generation") setAnswer(""); else setReranker(""); }
@@ -64,9 +69,9 @@ function RagSettings({ version }: { version: string | null }) {
     <ul className="grid gap-1 text-sm"><Key name="OpenRouter key" plain set={rag.keys.openrouter} note="as rag sees it" /></ul>
     <div className="grid gap-3 sm:grid-cols-2">
       <form className="field" onSubmit={e => { e.preventDefault(); void save("generation", answer.trim()); }}>Change answer model (OpenRouter)
-        <div className="flex gap-2"><Input aria-label="RAG answer model" placeholder="e.g. deepseek/deepseek-v4.1-flash" value={answer} onChange={e => setAnswer(e.target.value)} /><Button type="submit" variant="outline" disabled={busy || !answer.trim()}>Save</Button></div></form>
+        <div className="flex gap-2"><ModelChoice label="RAG answer model" value={answer || stage("generation")?.model || null} models={answerModels} provider="OpenRouter" disabled={busy} onChange={model => setAnswer(model ?? "")} /><Button type="submit" variant="outline" disabled={busy || !answer.trim() || answer === stage("generation")?.model}>Save</Button></div></form>
       <form className="field" onSubmit={e => { e.preventDefault(); void save("reranking", reranker.trim()); }}>Change reranker
-        <div className="flex gap-2"><Input aria-label="RAG reranker" placeholder="off, fastembed (local) or cohere/rerank-4-fast" value={reranker} onChange={e => setReranker(e.target.value)} /><Button type="submit" variant="outline" disabled={busy || !reranker.trim()}>Save</Button></div></form>
+        <div className="flex gap-2"><ModelChoice label="RAG reranker" value={reranker || stage("reranking")?.model || null} models={RERANKERS} provider="OpenRouter" disabled={busy} onChange={model => setReranker(model ?? "")} /><Button type="submit" variant="outline" disabled={busy || !reranker.trim() || reranker === stage("reranking")?.model}>Save</Button></div></form>
     </div>
     <p className="provider-note">Embeddings change with <code>rag setup</code> because documents are re-indexed. Agents search documents with the <code>rag</code> tool.</p>
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
