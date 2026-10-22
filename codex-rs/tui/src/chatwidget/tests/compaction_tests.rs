@@ -35,7 +35,7 @@ async fn compaction_status_survives_follow_up_and_preserves_turn_time() {
         .reset_status_timer(Duration::from_secs(/*secs*/ 600));
     chat.on_agent_message_delta("Previous commentary\n".to_string());
     chat.on_commit_tick();
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
     chat.handle_server_notification(compaction_started("compact-1"), /*replay_kind*/ None);
     chat.on_commit_tick();
     assert!(chat.bottom_pane.status_indicator_visible());

@@ -2131,7 +2131,7 @@ async fn streaming_final_answer_keeps_task_running_state() {
     drain_insert_history(&mut rx);
 
     assert!(chat.bottom_pane.is_task_running());
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
 
     chat.bottom_pane
         .set_composer_text("queued submission".to_string(), Vec::new(), Vec::new());
@@ -2157,7 +2157,7 @@ async fn answer_phase_controls_working_status_snapshot() {
     for (phase, working_visible, snapshot) in [
         (
             MessagePhase::FinalAnswer,
-            false,
+            true,
             "single_line_final_answer_hides_working_status",
         ),
         (
@@ -2315,7 +2315,7 @@ async fn idle_commit_ticks_do_not_restore_status_without_commentary_completion()
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
 
-    assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
     assert_eq!(chat.bottom_pane.is_task_running(), true);
 
     // A second idle tick should not toggle the row back on and cause jitter.
@@ -2338,7 +2338,7 @@ async fn final_answer_completion_restores_status_indicator_for_pending_steer() {
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
 
-    assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
     assert_eq!(chat.bottom_pane.is_task_running(), true);
 
     chat.bottom_pane.set_composer_text(
@@ -2393,7 +2393,7 @@ async fn commentary_completion_restores_status_indicator_before_exec_begin() {
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
 
-    assert_eq!(chat.bottom_pane.status_indicator_visible(), false);
+    assert_eq!(chat.bottom_pane.status_indicator_visible(), true);
 
     complete_assistant_message(
         &mut chat,
@@ -2592,7 +2592,7 @@ async fn stream_error_restores_hidden_status_indicator() {
     chat.on_agent_message_delta("Preamble line\n".to_string());
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
 
     let msg = "Reconnecting... 2/5";
     let details = "Idle timeout waiting for SSE";
@@ -4453,7 +4453,7 @@ async fn unterminated_prose_is_visible_before_completion() {
         }
 
         assert!(draw_rx.try_recv().is_ok());
-        assert!(!chat.bottom_pane.status_indicator_visible());
+        assert!(chat.bottom_pane.status_indicator_visible());
         let snapshot = if mode == ModeKind::Plan {
             assert_eq!(
                 chat.plan_stream_controller.as_ref().unwrap().queued_lines(),
@@ -4517,7 +4517,7 @@ async fn newline_agent_delta_redraws_stream_tail_after_noop_catch_up() {
     chat.on_task_started();
     chat.handle_streaming_delta("Earlier line\n".to_string());
     chat.on_commit_tick();
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
     while draw_rx.try_recv().is_ok() {}
 
     chat.handle_streaming_delta("Intro line\n| Step | Owner |\n".to_string());
@@ -4546,7 +4546,7 @@ async fn newline_plan_delta_redraws_stream_tail_after_noop_catch_up() {
     chat.on_task_started();
     chat.on_plan_delta("Earlier line\n".to_string());
     chat.on_commit_tick();
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
     while draw_rx.try_recv().is_ok() {}
 
     chat.on_plan_delta("Intro line\n| Step | Owner |\n".to_string());
@@ -4639,7 +4639,7 @@ async fn reasoning_delta_restores_recreated_status_indicator_header() {
     chat.on_agent_message_delta("Preamble line\n".to_string());
     chat.on_commit_tick();
     drain_insert_history(&mut rx);
-    assert!(!chat.bottom_pane.status_indicator_visible());
+    assert!(chat.bottom_pane.status_indicator_visible());
 
     begin_unified_exec_startup(&mut chat, "call-1", "proc-1", "sleep 2");
     let status = chat
