@@ -101,12 +101,6 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
     const before = await sidebar.boundingBox();
     assert.equal(before.width, 320, 'the check must preserve a user-resized sidebar');
     await f.open(page);
-    for (let i = 0; i < 3; i++) {
-      await page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true }).click();
-      await page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
-      await page.getByLabel('Agent details', { exact: true }).waitFor();
-      await page.getByRole('button', { name: 'Done', exact: true }).click();
-    }
     for (const width of [1600, 1280, 1024, 820]) {
       await page.setViewportSize({ width, height: 960 });
       await page.waitForTimeout(200);
@@ -118,7 +112,7 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
           const range = document.createRange(); range.selectNodeContents(node);
           const r = range.getBoundingClientRect(); return { text: node.textContent, left: r.left, right: r.right };
         });
-        return { sidebar: box('.app-shell > .sidebar'), title: box('.workspace-header h1'), tools: box('.love-spot-tools'), tabs: box('.love-agent-list'), editor: box('.love-spot-editor'), controls: ['.love-spot-pages', '.love-agent-toolbar', '.love-spot-tools > [role="group"]', '.love-spot-tools > button'].map(box), text, scrollX, shellScroll: document.querySelector('.app-shell').scrollLeft, scrollWidth: document.documentElement.scrollWidth };
+        return { sidebar: box('.app-shell > .sidebar'), title: box('.workspace-header h1'), tools: box('.love-spot-tools'), editor: box('.love-spot-editor'), controls: ['.love-spot-pages', '.love-spot-tools > [role="group"]', '.love-spot-tools > button'].map(box), text, scrollX, shellScroll: document.querySelector('.app-shell').scrollLeft, scrollWidth: document.documentElement.scrollWidth };
       });
       measurements.push({ width, ...bounds });
       await page.screenshot({ path: path.join(output, `${process.env.LOVE_CONFIRM_PHASE || 'current'}-${colorScheme}-${width}.png`) });
@@ -128,15 +122,14 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
       assert.equal(m.sidebar.x, 0, `sidebar starts at the left edge at ${m.width}`);
       assert.equal(m.sidebar.width, before.width, `sidebar retains its chosen width at ${m.width}`);
       assert.equal(m.scrollX, 0, 'Love Spot must not scroll the whole window sideways');
-      assert.equal(m.shellScroll, 0, 'focusing an agent must not scroll the sidebar out of the shell');
+      assert.equal(m.shellScroll, 0, 'the board must not scroll the sidebar out of the shell');
       assert.ok(m.scrollWidth <= m.width, `the document must fit at ${m.width}`);
       assert.ok(m.text.every(t => t.left >= 0 && t.right <= m.sidebar.right), `sidebar text remains inside its bounds at ${m.width}`);
       assert.ok(m.editor.x >= m.sidebar.right && m.editor.right <= m.width + 1, 'the drawing stays beside the sidebar');
       assert.ok(m.controls.every(c => c.x >= m.sidebar.right && c.right <= m.width + 1), `all toolbar controls fit at ${m.width}`);
       if (m.width >= 1280) {
         const center = r => r.y + r.height / 2;
-        assert.ok(Math.abs(center(m.title) - center(m.tools)) <= 2, 'title and page/agent controls share one row');
-        assert.ok(Math.abs(center(m.tabs) - center(m.tools)) <= 2, 'board-agent tabs share that same row');
+        assert.ok(Math.abs(center(m.title) - center(m.tools)) <= 2, 'title and page controls share one row');
         assert.ok(m.editor.y - m.title.y < 48, 'only one compact row sits above the drawing');
       }
     }

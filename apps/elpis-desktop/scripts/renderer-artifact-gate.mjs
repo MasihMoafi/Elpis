@@ -114,7 +114,7 @@ export const retainedUpdates = {
       "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks."
     },
     "tests/love-spot-pages.test.cjs": {
-      "blob": "e3d0115cac2c58f459fe7e69b4eff4b5706d06c0",
+      "blob": "c33b24f4ffa59627206f31ab417b5d4038361fa8",
       ...pageRemovalApproval
     },
     "tests/navigation-drafts.test.cjs": {
@@ -221,6 +221,16 @@ export const retainedUpdates = {
       "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
       "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
       "reason": "Footer, Masih 22 Oct: \"the name of the user shouldn't be clickable.\" The font check opens a chat menu instead of the account menu, which no longer exists."
+    },
+    "tests/love-spot.test.cjs": {
+      "blob": "52c6639f802fffbbc147208964cf35fcc2a3f619",
+      "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
+    },
+    "tests/love-spot-talk.test.cjs": {
+      "blob": "7b3688b449784c836866fddc1e129da0e22ba4a8",
+      "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
     },
     "tests/view-errors.test.cjs": {
       "blob": "5dec1ecf6fa40788b16f9aced96f48e962347755",

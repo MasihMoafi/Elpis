@@ -99,16 +99,13 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboa
   } finally { await f.close(); }
 });
 
-test('Love Spot creates a page from its toolbar and keeps Agents available', async () => {
+test('Love Spot creates a page from its toolbar and has no agents section', async () => {
   const f = await loveSpotFixture();
   try {
     await f.open(f.page);
     await f.page.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 2' && s.elements.length === 0, 'the direct New page action did not create an empty page');
-    const agents = f.page.locator('.love-agent-toolbar').getByRole('button', { name: 'Agents', exact: true });
-    await agents.click();
-    await f.page.getByRole('menuitem', { name: 'Add Researcher', exact: true }).click();
-    assert.equal(await f.page.getByRole('button', { name: 'Inspect Researcher', exact: true }).count(), 1);
+    assert.equal(await f.page.getByRole('button', { name: 'Agents', exact: true }).count(), 0, 'Love Spot has no agents section');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
