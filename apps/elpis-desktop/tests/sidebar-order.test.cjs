@@ -76,7 +76,7 @@ test('A100: a manager registered by another window leaves the list; a matching n
       dispatchEvent(new StorageEvent('storage', { key: 'elpis-session-manager-v1', newValue: 'chat-b' }));
     });
     await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a']));
-    assert.equal(await row(f.page, 'chat-b').count(), 1);
+    assert.equal(await row(f.page, 'chat-b').count(), 0, 'the manager chat is not listed anywhere');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
