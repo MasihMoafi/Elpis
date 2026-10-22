@@ -24,6 +24,16 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/windows-split.test.cjs": {
+      "blob": "f371968667c8d9a764f9a91471ffc955f75b2419",
+      "approval": "e848a1dca89c80945da8b7abcf4d3d8cd2060a53",
+      "reason": "SPLIT, Masih 22 Oct (R44): Ctrl+[ and Ctrl+] move the open chat in its list, so split-view focus is Ctrl+Alt+[ and Ctrl+Alt+]."
+    },
+    "tests/sidebar-focus.test.cjs": {
+      "blob": "50f2854d79e342ef997aa27d396390d505247037",
+      "approval": "e848a1dca89c80945da8b7abcf4d3d8cd2060a53",
+      "reason": "SIDEBAR, Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good.\" Its row is a switch, not a chat, so the focus-ring check skips it."
+    },
     "tests/startup-splash.test.cjs": {
       "blob": "37f7147778dc05d333f2c8ffb7536be4693ee60d",
       "approval": "b8c8d51e4058b7ac06c78aa5a02c922d44c0ed62",
