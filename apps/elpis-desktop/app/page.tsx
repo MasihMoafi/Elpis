@@ -18,7 +18,8 @@ import { ChatMessage } from "@/components/chat-message";
 import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
-import { readPins, savePins } from "@/lib/pins";
+import { useChatAttention, usePins } from "@/lib/use-sidebar-state";
+import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
 import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { configuredShortcuts, shortcutFor, shortcutHint } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
@@ -82,7 +83,6 @@ import { chatOrigin } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
-import { readAttention, saveAttention, type Attention } from "@/lib/attention";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
@@ -99,7 +99,6 @@ import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fi
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { changesModelCatalog } from "@/lib/account-events";
 import { loadConversationPage } from "@/lib/conversation-page";
-import type { ThemeChoice } from "@/components/appearance-settings";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, isUnlinkedAgent, modelLabel, providerChoices, providerLabel, title, agentName,
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
@@ -114,7 +113,6 @@ type Live = { thread: Thread; activeTurnId?: string | null; permissions?: Permis
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
 /** The sidebar's width in pixels: the default, and how far its edge can be dragged. */
-const SIDEBAR = { initial: 256, min: 200, max: 480 };
 const without = <T,>(record: Record<string, T>, key: string) => { if (!(key in record)) return record; const next = { ...record }; delete next[key]; return next; };
 // Sidebar sections by last activity, as in ChatGPT and Claude; the list keeps Elpis's own order inside each.
 const CHAT_DRAG_TYPE = "text/x-elpis-chat";
@@ -182,7 +180,7 @@ export default function Home() {
   const [threadPlans, setThreadPlans] = useState<Record<string, boolean>>({});
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
-  const [pins, setPins] = useState<string[]>([]);
+  const { pins, togglePinned } = usePins();
   // Groups the person made, and how the sidebar lists chats (lib/chat-groups.ts); kept on this computer, read once.
   const [chatGroups, setChatGroups] = useState<ChatGroups>(emptyGroups);
   const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
@@ -202,21 +200,8 @@ export default function Home() {
     chatListOrder.release();
     chatGroupsRef.current = next; setChatGroups(next);
   }
-  const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
-  const [attentionLoaded, setAttentionLoaded] = useState(false);
-  const planTurns = useRef(new Map<string, string>());
-  useEffect(() => { setAttention(readAttention()); setAttentionLoaded(true); }, []);
-  useEffect(() => {
-    if (attentionLoaded) try { saveAttention(attention); } catch { setError("Could not save chat attention on this device."); }
-  }, [attention, attentionLoaded]);
-  const markRead = useCallback((id: string) => setAttention(previous => previous.unread.includes(id) ? { ...previous, unread: previous.unread.filter(value => value !== id) } : previous), []);
-  useEffect(() => {
-    setAttention(previous => {
-      const answered = Object.keys(previous.plans).filter(id => previous.plans[id] === planAnswered[id]);
-      if (!answered.length) return previous;
-      return { ...previous, plans: Object.fromEntries(Object.entries(previous.plans).filter(([id]) => !answered.includes(id))) };
-    });
-  }, [planAnswered]);
+  const [error, setError] = useState("");
+  const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
   /** Chats awaiting the shared delete confirmation (a row's menu, D, or the header's Chat actions). */
   const [deleteTargets, setDeleteTargets] = useState<Thread[] | null>(null);
   const [deleteRunHistory, setDeleteRunHistory] = useState(false);
@@ -248,7 +233,6 @@ export default function Home() {
   const [newWorktree, setNewWorktree] = useState(false), [worktreeNotice, setWorktreeNotice] = useState("");
   const noteKept = (text: string) => { if (text) setWorktreeNotice(previous => previous ? `${previous} ${text}` : text); };
   const shortcutAction = useRef<(id: string, index?: number) => void>(() => {});
-  useEffect(() => { setPins(readPins()); }, []);
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
   const [text, setTextState] = useState("");
   const [shellMode, setShellMode] = useState(false);
@@ -294,7 +278,6 @@ export default function Home() {
     setApprovalDrafts(previous => ({ ...previous, [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: value } } }));
   };
   const newDraftKey = useRef("new");
-  const [error, setError] = useState("");
   const [fileNotice, setFileNotice] = useState("");
   const [connected, setConnected] = useState(false);
   const [ready, setReady] = useState(false);
@@ -418,17 +401,9 @@ export default function Home() {
   }, []);
   const [agentsPanel, setAgentsPanel] = useState(true);
   const [loveToolbarHost, setLoveToolbarHost] = useState<HTMLDivElement | null>(null);
-  // Theme: System follows the operating system; the choice is kept on this device.
-  const [theme, setThemeChoice] = useState<ThemeChoice>("system");
-  const [systemDark, setSystemDark] = useState(false);
-  const dark = theme === "dark" || (theme === "system" && systemDark);
+  const { theme, dark, setTheme, sidebarWidth, resizeSidebar } = useAppearance(setError);
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const brandMark = dark ? "/branding/elpis-wordmark-amber-loop.svg" : "/branding/elpis-wordmark-amber-light-loop.svg";
-  // The sidebar's width, set by dragging its edge (components/resize-edge.tsx) and kept on this device.
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR.initial);
-  useEffect(() => { const saved = Number(appStorage().getItem("elpis-sidebar-width")); if (saved >= SIDEBAR.min && saved <= SIDEBAR.max) setSidebarWidth(saved); }, []);
-  const resizeSidebar = (width: number) => { setSidebarWidth(width); try { appStorage().setItem("elpis-sidebar-width", String(width)); } catch { /* the width still applies to this window */ } };
-  const setTheme = (next: ThemeChoice) => { setThemeChoice(next); try { appStorage().setItem("elpis-theme", next); } catch { setError("Could not save appearance on this device."); } };
   const searchInput = useRef<HTMLInputElement>(null);
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -552,12 +527,8 @@ export default function Home() {
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
-  // The desktop gets the theme as dark or not, the choice (System keeps the operating system in charge of pages in the browser)
-  // and the page's own --background, resolved: main paints the browser's blank pages with it.
-  useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
   useEffect(() => {
-    let saved: string | null = null;
-    try { saved = appStorage().getItem("elpis-theme"); const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setWorkflowProjectId(stored.selectedId); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
+    try { const stored = readProjects(); newDraftKey.current = "new"; setText(savedDraft(newDraftKey.current)); restoreAttachments(newDraftKey.current); setProjects(stored.projects); setWorkflowProjectId(stored.selectedId); const memberships = readProjectChats(); projectChatsRef.current = memberships; setProjectChats(memberships); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not restore workspace preferences."); }
     try {
       const store = window.elpisDesktop?.storage, restored = store && readTabs(store);
@@ -568,10 +539,6 @@ export default function Home() {
       }
     } catch { /* The tabs start afresh. */ }
     setTabsRestored(true);
-    if (saved === "system" || saved === "light" || saved === "dark") setThemeChoice(saved);
-    const media = matchMedia("(prefers-color-scheme: dark)"); setSystemDark(media.matches);
-    const follow = (event: MediaQueryListEvent) => setSystemDark(event.matches);
-    media.addEventListener("change", follow); return () => media.removeEventListener("change", follow);
   }, []);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
   // The mouse's side buttons go back and forward, as in a browser.
@@ -1580,10 +1547,7 @@ export default function Home() {
     else if (id === "terminal" && hasTerminal) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleTerminal(selected?.cwd || cwd, !away)) focusComposer(); }
     else if (id === "files" && desktop) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleFiles(!away)) focusComposer(); }
   };
-  function togglePin(thread: Thread) {
-    const next = pins.includes(thread.id) ? pins.filter(id => id !== thread.id) : [thread.id, ...pins];
-    setPins(next); savePins(next);
-  }
+  const togglePin = (thread: Thread) => togglePinned(thread.id);
   /** A narrow window slides the sidebar over the page; a wide one collapses it (the sidebar button and Ctrl+B), as in ChatGPT and Claude. */
   function narrow() { return matchMedia("(max-width: 760px)").matches || (panelShown && panelDrawer); }
   function showSidebar(open: boolean) { if (!narrow()) { setSidebarCollapsed(!open); return; } setSidebar(open); if (open) setSidebarCollapsed(false); }
