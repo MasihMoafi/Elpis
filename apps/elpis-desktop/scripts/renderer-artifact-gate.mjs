@@ -105,9 +105,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984)."
     },
     "tests/desktop-small-fixes.test.cjs": {
-      "blob": "bcf7d003f013ed3a78bdffd1e5300b1c78999d16",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
-      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
+      "blob": "8f44071a24a1dafdf1b8ae3e793421bf1baf0797",
+      "approval": "2f40cf051c18ccc4610891e024a9db0262e406de",
+      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. Then, Masih 22 Oct: \"Just put Matilda at the helm as the mother. We show her the task, and give her an option to use two subagents.\" The page order lists Matilda before Customize, and the reorder step walks one more page (Alt+Up three times)."
     },
     "tests/chat-groups.test.mjs": {
       "blob": "2df494abc42feb2c83e34ea9259c25050ebfad6b",
@@ -162,10 +162,6 @@ export const retainedUpdates = {
     },
     "tests/desktop-polish.test.cjs": {
       "blob": "0ec66f04a4a7dba9158e6add376ff28761c6f871",
-      ...pageRemovalApproval
-    },
-    "tests/desktop-small-fixes.test.cjs": {
-      "blob": "e0ed82d0eb6cccaed1d06ea42d9f6d6ace180974",
       ...pageRemovalApproval
     },
     "tests/desktop-sweep.test.cjs": {
