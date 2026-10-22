@@ -13,7 +13,6 @@ async function fixture(t) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const home = await fs.mkdtemp(path.join(base, 'skill-trash-'));
   const root = path.join(home, 'skills'), calls = [];
-  t.after(async () => { await fs.chmod(root, 0o755).catch(() => {}); await fs.rm(home, { recursive: true, force: true }); });
   const skills = [];
   for (const [name, scope, pluginId] of [['own', 'user'], ['project', 'repo'], ['built-in', 'system'], ['managed', 'admin'], ['plugin', 'user', 'docs@local']]) {
     const file = path.join(root, name, 'SKILL.md');
@@ -37,6 +36,7 @@ async function fixture(t) {
     githubConnector: { snapshot: async () => ({ name: 'GitHub', enabled: false, transport: 'gh' }) },
     skillTrashOptions: { env: { ...process.env, XDG_DATA_HOME: path.join(home, 'data') } } });
   t.after(() => client.close());
+  t.after(async () => { await fs.chmod(root, 0o755).catch(() => {}); await fs.rm(home, { recursive: true, force: true }); });
   return { home, root, client, skills, calls };
 }
 
@@ -147,6 +147,7 @@ test('skill Trash HTTP routes require an app session and reject extra fields', a
   const app = await startDesktopServer({ client: f.client, staticDir: f.home, trashFile: path.join(f.home, 'chats.json'), elpisHome: f.home,
     loveSpot: { directory: path.join(f.home, 'drawing'), screenshots: path.join(f.home, 'screenshots') } });
   t.after(() => app.close());
+  t.after(() => fs.rm(f.home, { recursive: true, force: true })); // The server writes its chat list when it closes.
   const url = new URL(app.url), post = (route, body, cookie) => fetch(url.origin + route, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });
   assert.equal((await post('/api/customize/skill/delete', { path: f.skills[0].path })).status, 401);
   const auth = await post('/api/session', { token: new URLSearchParams(url.hash.slice(1)).get('token') });
