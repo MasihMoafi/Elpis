@@ -278,6 +278,11 @@ export const retainedUpdates = {
       "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
       "reason": "Footer, Masih 22 Oct: \"the name of the user shouldn't be clickable.\" The font check opens a chat menu instead of the account menu, which no longer exists."
     },
+    "tests/improve.test.cjs": {
+      "blob": "dfdfbb96812e10f40b32134630b1397ea9db54a7",
+      "approval": "f6daa10832a22a3957d964cf7a606995fdd61af8",
+      "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
+    },
     "tests/love-spot.test.cjs": {
       "blob": "52c6639f802fffbbc147208964cf35fcc2a3f619",
       "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
