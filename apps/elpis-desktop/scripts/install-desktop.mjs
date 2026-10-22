@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mjs';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
 import { durableSourceCheckout } from '../bridge/improve-source.mjs';
-import { smokeLaunch } from './smoke-launch.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -101,8 +100,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   await verifyPackagedSources({ root, destination, commit });
   await recordSourceCheckout(root, destination);
   // The package must open, with its own launcher, before `elpis-app` points at it (22 Oct: two installs shipped one Elpis could not open).
-  try { await smokeLaunch(destination); }
-  catch (error) { execFileSync('gio', ['trash', destination]); throw new Error(`The new package does not open, so nothing was switched.\n${error.message}`); }
+  // ELPIS_SKIP_LAUNCH_CHECK is set only by the installer's own tests, whose packages are not real apps.
+  if (!process.env.ELPIS_SKIP_LAUNCH_CHECK) {
+    try { await (await import('./smoke-launch.mjs')).smokeLaunch(destination); }
+    catch (error) { execFileSync('gio', ['trash', destination]); throw new Error(`The new package does not open, so nothing was switched.\n${error.message}`); }
+  }
   const staged = `${link}.new-${process.pid}`;
   fs.symlinkSync(path.join(destination, 'launch'), staged);
   assertSourceCommit(root, commit);

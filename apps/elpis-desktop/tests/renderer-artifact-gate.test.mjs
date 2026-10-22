@@ -432,7 +432,7 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
 `, { mode: 0o755 });
   const marker = path.join(f.repo, 'packaging-called');
   const env = { ...process.env, HOME: home, TMPDIR: temporary, PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-    MOCK_COMMIT: commit, MOCK_RECEIPT: mode, PACKAGING_MARKER: marker, SOURCE_OUT: f.out };
+    MOCK_COMMIT: commit, MOCK_RECEIPT: mode, PACKAGING_MARKER: marker, SOURCE_OUT: f.out, ELPIS_SKIP_LAUNCH_CHECK: '1' };
   delete env.NODE_TEST_CONTEXT;
   const result = spawnSync(process.execPath, ['scripts/install-desktop.mjs', 'candidate', '--actions'], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
   assert.equal(result.status, mode === 'valid' ? 0 : 1, result.stderr);
