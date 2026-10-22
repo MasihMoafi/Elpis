@@ -40,9 +40,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged."
     },
     "tests/sidebar.test.cjs": {
-      "blob": "f6592d9d87eca70ef857a22f709daeb34e06f0f7",
+      "blob": "37e88bfd1c9081425af59ec002cb2c0e8755033f",
       "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
-      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d)."
+      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984)."
     },
     "tests/desktop-small-fixes.test.cjs": {
       "blob": "e0ed82d0eb6cccaed1d06ea42d9f6d6ace180974",

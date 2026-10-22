@@ -118,6 +118,8 @@ button:disabled { cursor:not-allowed; }
 /* Navigation rows: the sidebar's and Settings' (which takes the sidebar's place) are one item. */
 .nav-list button, .settings-nav button[role="tab"], .back-link { justify-content:flex-start; width:100%; gap:10px; height:34px; padding:0 8px; border:0; background:none; color:var(--foreground); font-size:0.8125rem; font-weight:450; text-align:left; }
 .nav-list button:hover, .settings-nav button[role="tab"]:hover, .back-link:hover { background:var(--hover); }
+/* These rows fill a scrolling column, which clips an outline drawn outside them: the focus ring is drawn inside (web-dev: one source). */
+.nav-list button:focus-visible, .settings-nav button[role="tab"]:focus-visible, .back-link:focus-visible { outline-offset:-2px; }
 .nav-list button[aria-current="page"], .settings-nav button[role="tab"].active { background:var(--selected); font-weight:500; }
 .nav-list button svg, .settings-nav button[role="tab"] svg, .back-link svg { flex-shrink:0; color:var(--muted-foreground); }
 .back-link { display:flex; align-items:center; cursor:pointer; }

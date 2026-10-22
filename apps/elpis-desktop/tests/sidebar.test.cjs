@@ -126,14 +126,11 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await row('bravo').waitFor({ state: 'detached' }); assert.deepEqual(deleted, ['bravo']);
     await page.getByLabel('Message Elpis').fill('add a d'); assert.equal(await dialog.count(), 0, 'D in the composer types');
 
-    // 5. Arrow keys move focus; Enter opens the focused chat.
+    // 5. Arrow keys move focus and open the chat at once, as in ChatGPT; Enter is not needed.
     await link('alpha').click(); await eventually(async () => assert.equal(await shown(), 'Alpha'));
-    await page.keyboard.press('ArrowDown'); assert.equal(await focusedRow(), 'charlie'); assert.equal(await shown(), 'Alpha');
-    await page.keyboard.press('Enter'); await eventually(async () => assert.equal(await shown(), 'Charlie'));
-    await page.keyboard.press('ArrowDown'); assert.equal(await focusedRow(), 'delta');
-    await page.keyboard.press('Enter'); await eventually(async () => assert.equal(await shown(), 'Delta'));
-    await page.keyboard.press('ArrowUp'); assert.equal(await focusedRow(), 'charlie');
-    await page.keyboard.press('Enter'); await eventually(async () => assert.equal(await shown(), 'Charlie'));
+    await page.keyboard.press('ArrowDown'); assert.equal(await focusedRow(), 'charlie'); await eventually(async () => assert.equal(await shown(), 'Charlie'));
+    await page.keyboard.press('ArrowDown'); assert.equal(await focusedRow(), 'delta'); await eventually(async () => assert.equal(await shown(), 'Delta'));
+    await page.keyboard.press('ArrowUp'); assert.equal(await focusedRow(), 'charlie'); await eventually(async () => assert.equal(await shown(), 'Charlie'));
 
     // 6. Ctrl+click adds to the selection, Escape clears it, Shift+click selects a range; D deletes them all after one confirmation.
     await link('alpha').click();

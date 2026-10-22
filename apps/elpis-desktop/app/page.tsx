@@ -1638,6 +1638,7 @@ export default function Home() {
     } else { setMarked([]); markAnchor.current = thread.id; void loadThread(thread); }
   }
   /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
+  const arrowSelect = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function sidebarKeys(event: React.KeyboardEvent<HTMLElement>) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -1648,7 +1649,13 @@ export default function Home() {
     if (at < 0 || !event.currentTarget.contains(target)) return;
     if (target instanceof HTMLInputElement && target.value && (event.key === "Home" || event.key === "End")) return;
     const index = event.key === "Home" ? 0 : event.key === "End" ? stops.length - 1 : Math.max(0, Math.min(stops.length - 1, at + (event.key === "ArrowDown" ? 1 : -1)));
-    event.preventDefault(); stops[index]?.focus();
+    event.preventDefault();
+    const destination = stops[index];
+    destination?.focus();
+    // Selection follows focus, as in ChatGPT: a page or a chat opens as the arrow reaches it, after a pause so that holding the
+    // key does not open every row on the way. New chat, the search field and the switches are only reached, never activated.
+    clearTimeout(arrowSelect.current);
+    if (destination?.matches(".nav-list > button:not(.new-chat), .thread-row > .thread-link")) arrowSelect.current = setTimeout(() => destination.click(), 150);
   }
   /** Keys on a focused chat row: D deletes, U changes attention, and Escape clears the marks. */
   function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {

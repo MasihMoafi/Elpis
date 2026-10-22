@@ -5,7 +5,9 @@
  * Controls that read the arrows themselves keep them: a component that handles a key marks it handled
  * (preventDefault), and text fields, sliders, the board, the drawing, editors and terminals are never entered.
  * A closed drop-down list is an ordinary button here, as in Claude Code's /config: Enter and Space open it
- * (components/ui/select.tsx stops it opening on the arrows). */
+ * (components/ui/select.tsx stops it opening on the arrows). A tab or a radio is one choice of a set, so reaching it with an arrow
+ * also selects it (Masih, 22 Oct: "make it change just by the stroke of the keyboards"), as in ChatGPT; the sidebar's pages and chats
+ * do the same (app/page.tsx sidebarKeys). */
 export const ARROW_CONTROL = 'button, a[href], summary, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="switch"], [role="treeitem"], [role="radio"]:not(input), [role="checkbox"]:not(input)';
 const OWN_KEYS = '[role="combobox"]:not([aria-haspopup="listbox"]), [role="slider"], [role="spinbutton"]';
 const SKIP = '.xterm, .excalidraw, .react-flow, .cm-editor, [data-arrows="off"]';
@@ -44,4 +46,5 @@ export function onArrowKey(event: KeyboardEvent) {
   event.preventDefault();
   items[next].focus();
   items[next].scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (items[next].matches('[role="tab"], [role="radio"]:not(input)')) items[next].click();
 }
