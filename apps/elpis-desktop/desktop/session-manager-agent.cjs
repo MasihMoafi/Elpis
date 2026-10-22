@@ -25,17 +25,15 @@ function lastActivity(thread) {
     .map(value => typeof value === 'number' ? value * 1000 : Date.parse(value));
   return values.length && values.every(Number.isFinite) ? Math.max(...values) : null;
 }
-function eligibility(thread, project, now = Date.now()) {
+function eligibility(thread, project) {
   let reason;
   if (!project || projectPath(thread.cwd) !== project) reason = 'The session is outside this review’s project.';
   else if (thread.archived || thread.path?.includes('/archived_sessions/')) reason = 'The session is already archived.';
   else if (thread.parentThreadId || thread.ephemeral || thread.source === 'exec' || (typeof thread.source === 'object' && thread.source?.subAgent)) reason = 'Agent and temporary sessions are excluded.';
   else if (!['idle', 'notLoaded'].includes(thread.status?.type)) reason = 'The session is running or its status is unknown.';
   else if (!irrelevantName(thread)) reason = 'The session already has a meaningful name.';
-  if (reason) return { canRename: false, canArchive: false, reason };
-  const activity = lastActivity(thread);
-  return { canRename: true, canArchive: activity !== null && activity < now - 7 * 86400_000,
-    reason: 'The session name is unset or a placeholder.', lastActivity: activity };
+  if (reason) return { canRename: false, reason };
+  return { canRename: true, reason: 'The session name is unset or a placeholder.', lastActivity: lastActivity(thread) };
 }
 
 function readActions(stored) {
@@ -108,7 +106,7 @@ async function handleTool(name, args, { client, store, managerThreadId, project 
     };
   }
 
-  if (!['session_rename', 'session_organize', 'session_archive'].includes(name)) throw Error('Unknown Session Manager action.');
+  if (!['session_rename', 'session_organize'].includes(name)) throw Error('Unknown Session Manager action.');
   if (Object.hasOwn(args, 'sessionIds') || Object.hasOwn(args, 'threadIds')) throw Error('Session Manager actions operate on one session at a time.');
   const id = args.sessionId;
   if (typeof id !== 'string' || !id || id.length > 200) throw Error('Choose one valid session.');
@@ -119,26 +117,17 @@ async function handleTool(name, args, { client, store, managerThreadId, project 
   if (name === 'session_rename') {
     if (Object.keys(args).some(key => !['sessionId', 'name'].includes(key))) throw Error('Rename one session by ID and name only.');
     if (typeof args.name !== 'string' || !args.name.trim() || args.name.trim().length > 120) throw Error('Session names must contain 1 to 120 characters.');
-  } else if (name === 'session_organize') {
+  } else {
     if (Object.keys(args).some(key => !['sessionId', 'groupName'].includes(key))) throw Error('Move one session by ID and group name only.');
     if (typeof args.groupName !== 'string' || args.groupName.trim().length > 60) throw Error('Group names must be 60 characters or fewer.');
-  } else if (Object.keys(args).some(key => key !== 'sessionId')) throw Error('Archive one session by ID only.');
+  }
   const guard = async thread => {
     const reviewProject = project();
     const rule = eligibility(thread, reviewProject);
     if (!rule.canRename) throw Error(rule.reason);
-    if (name === 'session_archive') {
-      if (!rule.canArchive) throw Error('Archive requires an unset or irrelevant name and no activity for more than 7 days.');
-      // Native archive cascades to descendants. Refuse trees so no protected child can be changed indirectly.
-      const all = client.sessionHasChildren ? null : await listActive(client, undefined, true);
-      if (all ? all.truncated || all.data.some(item => item.parentThreadId === id) : await client.sessionHasChildren(id)) throw Error('Cannot archive a session with spawned chats or an incomplete child list.');
-      if (project() !== reviewProject) throw Error('The automatic review ended before the session could be archived.');
-    }
   };
   await guard(target);
-  const reason = name === 'session_archive'
-    ? 'Name unset or irrelevant; no activity for more than 7 days; idle in this review’s project.'
-    : 'Name unset or irrelevant; idle in this review’s project.';
+  const reason = 'Name unset or irrelevant; idle in this review’s project.';
   const actions = readActions(store.read());
   const entry = { action: name.slice(8), reason, at: Date.now(), project: project(), previousName: target.name ?? null, status: 'pending' };
   actions[id] = [...(actions[id] ?? []), entry];
@@ -172,8 +161,6 @@ async function handleTool(name, args, { client, store, managerThreadId, project 
     return { organized: true, name: target.name || 'Untitled session', group: group || null };
   }
 
-  await act(() => client.archiveThread(id, {}, guard, { reason }));
-  return { archived: true, name: target.name || 'Untitled session', project: target.cwd ? path.basename(target.cwd.replace(/[\\/]+$/, '')) : '', reason };
 }
 
 function startSessionManagerAgent({ client, store }) {

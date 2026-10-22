@@ -83,8 +83,8 @@ test('a review asked for while one runs waits for it; a failed review is reporte
 test('the prompt asks for scoped actions under the standing rule', () => {
   const text = reviewPrompt({ text: '3 chats are running at once' });
   assert.match(text, /3 chats are running at once/);
-  assert.match(text, /Call your scoped tools directly/);
-  assert.match(text, /more than 7 days/);
+  assert.match(text, /Call your scoped tool directly/);
+  assert.doesNotMatch(text, /archive/i, 'the manager never archives');
   assert.match(text, /grouping requires an explicit request and approval/);
 });
 

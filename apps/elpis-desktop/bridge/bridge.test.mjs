@@ -2188,7 +2188,7 @@ test('Session Manager is a dedicated least-access chat with its own approved too
     await cold.client.prepareSessionManager(managerId);
     assert.ok(cold.socket.sent.some(row => row.method === 'thread/unsubscribe' && row.params.threadId === managerId));
     const refreshed = cold.socket.sent.findLast(row => row.method === 'thread/resume').params;
-    assert.equal(refreshed.config['mcp_servers.elpis_session_manager'].tools.session_archive.approval_mode, 'auto');
+    assert.equal(refreshed.config['mcp_servers.elpis_session_manager'].tools.session_rename.approval_mode, 'auto');
     assert.equal(refreshed.developerInstructions, SESSION_MANAGER_INSTRUCTIONS);
     assert.equal(requested.length, 3);
     await cold.client.createThread({});
@@ -2199,12 +2199,12 @@ test('Session Manager is a dedicated least-access chat with its own approved too
     await assert.rejects(client.createThread({ sessionManager: true, instructions: 'replace manager policy' }), /managed by Elpis/);
     assert.equal(cold.socket.sent.filter(row => row.method === 'thread/start').length, 1);
     assert.doesNotMatch(SESSION_MANAGER_INSTRUCTIONS, /delete sessions? with a tool/i);
-    assert.deepEqual(SESSION_MANAGER_TOOLS.map(tool => tool.name), ['session_list', 'session_rename', 'session_organize', 'session_archive']);
+    assert.deepEqual(SESSION_MANAGER_TOOLS.map(tool => tool.name), ['session_list', 'session_rename', 'session_organize']);
     assert.equal(closed.length, 0);
   } finally { client.close(); coldClient?.close(); }
 });
 
-test('Session Manager tools list, rename, group, and archive one active session; reject self, bulk, and forged calls', async t => {
+test('Session Manager tools list, rename and group one active session; reject self, bulk and forged calls; no archive tool', async t => {
   const { startSessionManagerAgent, SESSION_GROUPS_KEY: SESSION_MANAGER_GROUPS_KEY, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
   const active = [
     { id: 'chat-a', name: null, cwd: '/work/parser', updatedAt: '2026-10-01T10:00:00Z', status: { type: 'idle' } },
@@ -2241,20 +2241,17 @@ test('Session Manager tools list, rename, group, and archive one active session;
   assert.equal(groups.groups[0].name, 'Review later');
   assert.equal(groups.members['chat-a'], groups.groups[0].id);
   active[0].name = null;
-  const archive = await call('session_archive', { sessionId: 'chat-a' });
-  assert.match(SESSION_MANAGER_TOOLS.find(tool => tool.name === 'session_archive').description, /spawned agent chats/);
-  assert.match(archive.result.content[0].text, /7 days/);
-  assert.deepEqual(archived, ['chat-a']);
-
-  const self = await call('session_archive', { sessionId: 'manager' });
+  assert.equal((await call('session_archive', { sessionId: 'chat-a' })).result.isError, true, 'there is no archive tool');
+  const self = await call('session_rename', { sessionId: 'manager', name: 'Tidy' });
   assert.equal(self.result.isError, true);
-  const bulk = await call('session_archive', { sessionId: 'chat-a', sessionIds: ['chat-a', 'chat-b'] });
+  const bulk = await call('session_rename', { sessionId: 'chat-a', name: 'Tidy', sessionIds: ['chat-a', 'chat-b'] });
   assert.equal(bulk.result.isError, true);
-  const forged = await call('session_archive', { sessionId: 'chat-a' }, 'wrong-capability');
+  const forged = await call('session_rename', { sessionId: 'chat-a', name: 'Tidy' }, 'wrong-capability');
   assert.equal(forged.result.isError, true);
-  const missingIdentity = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_archive', arguments: { sessionId: 'chat-a' } } }, { socketPath: agent.path, capability });
+  const missingIdentity = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_rename', arguments: { sessionId: 'chat-a', name: 'Tidy' } } }, { socketPath: agent.path, capability });
   assert.equal(missingIdentity.result.isError, true);
-  assert.deepEqual(archived, ['chat-a'], 'rejected calls never archive anything');
+  assert.deepEqual(renamed, [['chat-a', 'Parser tests']], 'rejected calls change nothing');
+  assert.deepEqual(archived, [], 'nothing is ever archived');
 
   const configured = sessionManagerMcpConfig(agent.path, 'node', capability)['mcp_servers.elpis_session_manager'];
   assert.equal(configured.default_tools_approval_mode, 'approve');
@@ -2263,11 +2260,11 @@ test('Session Manager tools list, rename, group, and archive one active session;
 });
 
 
-test('A101 automatic policy is limited to manager rename/archive, never group or unrelated tools', () => {
+test('A101 automatic policy is limited to manager rename, never group, archive or unrelated tools', () => {
   const config = sessionManagerMcpConfig('/tmp/manager.sock', 'node', 'cap')['mcp_servers.elpis_session_manager'];
   assert.equal(config.default_tools_approval_mode, 'approve');
   assert.equal(config.tools.session_rename.approval_mode, 'auto');
-  assert.equal(config.tools.session_archive.approval_mode, 'auto');
+  assert.equal(config.tools.session_archive, undefined);
   assert.equal(config.tools.session_organize?.approval_mode ?? 'approve', 'approve');
 });
 
@@ -2296,18 +2293,17 @@ test('A101 uses current native metadata when a listed project is stale, and refu
   const call = (name, id, extra = {}) => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { sessionId: id, ...extra }, _meta: { threadId: CREATED } } }, { socketPath: agent.path, capability });
   const list = await call('session_list');
   const sessions = JSON.parse(list.result.content[0].text.split('\n').slice(1).join('\n')).sessions;
-  assert.equal(sessions.find(row => row.sessionId === ROOT).canArchive, true);
+  assert.equal(sessions.find(row => row.sessionId === ROOT).canRename, true);
   assert.equal(sessions.find(row => row.sessionId === FORK).canRename, false);
-  assert.equal((await call('session_archive', FORK)).result.isError, true);
   assert.equal((await call('session_rename', FORK, { name: 'Leave alone' })).result.isError, true);
-  const result = await call('session_archive', ROOT);
+  const result = await call('session_rename', ROOT, { name: 'Parser tests' });
   assert.notEqual(result.result.isError, true, JSON.stringify(result));
-  assert.equal(threads.get(ROOT).archived, true);
-  assert.equal(threads.get(FORK).archived, undefined);
-  assert.equal(socket.sent.some(row => row.method === 'thread/resume'), false, 'metadata checks never resume another chat');
+  assert.equal(threads.get(ROOT).archived, undefined, 'nothing is archived');
+  assert.equal(threads.get(FORK).name ?? null, null);
+  assert.equal(socket.sent.some(row => row.method === 'thread/resume' && row.params.threadId === FORK), false, 'metadata checks never resume a chat they refuse');
 });
 
-test('A101 host refuses named, recent archive, running, unknown, another project, child trees, and missing scope', async t => {
+test('A101 host refuses named, running, unknown, another project, agent chats and missing scope; nothing is archived', async t => {
   const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, SESSION_MANAGER_ACTIONS_KEY } = sessionManagerAgent;
   const now = Date.now(), old = Math.floor(now / 1000) - 8 * 86400;
   const base = { cwd: '/tmp/project-a', name: null, updatedAt: old, createdAt: old, status: { type: 'idle' } };
@@ -2329,40 +2325,33 @@ test('A101 host refuses named, recent archive, running, unknown, another project
   const agent = await startSessionManagerAgent({ client, store }); t.after(() => agent.close());
   const capability = agent.scope('manager');
   const call = (name, id, extra = {}, token = capability, thread = 'manager') => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { sessionId: id, ...extra }, _meta: { threadId: thread } } }, { socketPath: agent.path, capability: token });
-  assert.equal((await call('session_archive', 'old')).result.isError, true, 'no project scope');
+  assert.equal((await call('session_rename', 'old', { name: 'Task' })).result.isError, true, 'no project scope');
   const end = agent.beginReview('manager', '/tmp/project-a');
-  for (const id of ['named', 'recent', 'running', 'unknown', 'other', 'tree', 'missing', 'manager']) {
-    assert.equal((await call('session_archive', id)).result.isError, true, id);
+  for (const id of ['named', 'running', 'unknown', 'other', 'child', 'missing', 'manager']) {
+    assert.equal((await call('session_rename', id, { name: 'Task' })).result.isError, true, id);
   }
-  for (const id of ['named', 'running', 'unknown', 'other']) assert.equal((await call('session_rename', id, { name: 'Task' })).result.isError, true, id);
-  assert.equal((await call('session_archive', 'old', {}, 'forged')).result.isError, true);
-  const unsigned = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_archive', arguments: { sessionId: 'old' }, _meta: { threadId: 'manager' } } }, { socketPath: agent.path });
+  assert.equal((await call('session_rename', 'old', { name: 'Task' }, 'forged')).result.isError, true);
+  const unsigned = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_rename', arguments: { sessionId: 'old', name: 'Task' }, _meta: { threadId: 'manager' } } }, { socketPath: agent.path });
   assert.equal(unsigned.result.isError, true);
-  assert.equal((await call('session_archive', 'old', {}, capability, 'ordinary')).result.isError, true);
-  assert.equal((await call('session_archive', 'old', { sessionIds: ['old'] })).result.isError, true);
-  assert.equal((await call('session_archive', 'old')).result.isError, undefined);
+  assert.equal((await call('session_rename', 'old', { name: 'Task' }, capability, 'ordinary')).result.isError, true);
+  assert.equal((await call('session_rename', 'old', { name: 'Task', sessionIds: ['old'] })).result.isError, true);
+  assert.equal((await call('session_rename', 'old', { name: 'Task' })).result.isError, undefined);
   assert.equal((await call('session_rename', 'recent', { name: 'Parser tests' })).result.isError, undefined);
-  assert.equal((await call('session_archive', 'recent')).result.isError, true, 'rename does not grant archive');
-  assert.equal((await call('session_archive', 'placeholder')).result.isError, undefined);
+  assert.equal((await call('session_archive', 'recent')).result.isError, true, 'there is no archive tool');
+  assert.equal((await call('session_rename', 'placeholder', { name: 'Notes' })).result.isError, undefined);
   end();
-  assert.equal((await call('session_archive', 'placeholder')).result.isError, true, 'expired review');
-  assert.deepEqual(changed, [['archive', 'old'], ['rename', 'recent'], ['archive', 'placeholder']]);
+  assert.equal((await call('session_rename', 'tree', { name: 'Late' })).result.isError, true, 'expired review');
+  assert.deepEqual(changed, [['rename', 'old'], ['rename', 'recent'], ['rename', 'placeholder']]);
   const actions = JSON.parse(values[SESSION_MANAGER_ACTIONS_KEY]);
-  assert.equal(actions.old[0].action, 'archive');
+  assert.equal(actions.old[0].action, 'rename');
   assert.equal(actions.old[0].status, 'done');
-  assert.match(actions.old[0].reason, /7 days/);
-  assert.equal(actions.recent[0].action, 'rename');
-  assert.ok(actions.recent[0].reason);
+  assert.ok(actions.old[0].reason);
 });
 
 
-test('A101 age boundary, meaningful workflow titles, and malformed dates fail closed', () => {
+test('A101 meaningful workflow titles and archived paths are never renamed', () => {
   const { eligibility } = sessionManagerAgent, now = Date.now();
   const base = { cwd: '/tmp/a101-project', status: { type: 'notLoaded' }, createdAt: (now - 8 * 86400000) / 1000 };
-  assert.equal(eligibility(base, base.cwd, now).canArchive, true);
-  assert.equal(eligibility({ ...base, updatedAt: (now - 7 * 86400000) / 1000 }, base.cwd, now).canArchive, false);
-  assert.equal(eligibility({ ...base, updatedAt: 'bad date' }, base.cwd, now).canArchive, false);
-  assert.equal(eligibility({ ...base, recencyAt: now / 1000 }, base.cwd, now).canArchive, false);
   assert.equal(eligibility({ ...base, name: ' ', workflowTaskTitle: 'Parser' }, base.cwd, now).canRename, false);
   assert.equal(eligibility({ ...base, name: 'Untitled', workflowTitle: 'Parser' }, base.cwd, now).canRename, false);
   assert.equal(eligibility({ ...base, name: 'New chat' }, base.cwd, now).canRename, true);
@@ -2392,17 +2381,6 @@ test('A101 a failed reason write prevents the native action', async () => {
   const store = { read: () => ({ [SESSION_MANAGER_ID_KEY]: CREATED }), set: async () => { throw Error('journal unavailable'); } };
   await assert.rejects(handleTool('session_rename', { sessionId: ROOT, name: 'Parser' }, { client, store, managerThreadId: CREATED, project: () => row.cwd }), /journal unavailable/);
   assert.equal(changed, false);
-});
-
-test('A101 expiry during descendant lookup prevents archive and journal writes', async () => {
-  const { handleTool, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
-  const row = { id: ROOT, cwd: '/tmp/a101-expiry-project', name: null, status: { type: 'idle' }, updatedAt: Math.floor(Date.now() / 1000) - 9 * 86400 };
-  let project = row.cwd;
-  const client = { listThreads: async () => ({ data: [row] }), readThreadMetadata: async () => row,
-    sessionHasChildren: async () => { project = undefined; return false; },
-    archiveThread: async () => assert.fail('expired review must not archive') };
-  const store = { read: () => ({ [SESSION_MANAGER_ID_KEY]: CREATED }), set: async () => assert.fail('expired review must not journal an action') };
-  await assert.rejects(handleTool('session_archive', { sessionId: ROOT }, { client, store, managerThreadId: CREATED, project: () => project }), /review ended/);
 });
 
 test('A101 guard rechecks runtime state immediately before a native mutation', async () => {

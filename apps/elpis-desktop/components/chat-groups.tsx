@@ -43,11 +43,11 @@ export function useChatListOrder<T extends { id: string }>(chats: T[]) {
   } };
 }
 
-/** The Session Manager's one fixed row: a switch, no chat. On, it names, groups and archives chats in the background. */
+/** The Session Manager's one fixed row: a switch, no chat. On, it names and groups chats in the background. */
 export function SessionManagerRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   return <section aria-label="Session Manager"><div className="thread-row">
     <Layers size={14} className="ml-2 shrink-0" aria-hidden="true" /><span className="thread-title flex-1 px-2">Session Manager</span>
-    <Switch size="sm" aria-label="Session Manager" data-sidebar-stop="" title="Name, group and archive chats for you, in the background" checked={on} onCheckedChange={onChange} className="mr-2" />
+    <Switch size="sm" aria-label="Session Manager" data-sidebar-stop="" title="Name and group chats for you, in the background" checked={on} onCheckedChange={onChange} className="mr-2" />
   </div></section>;
 }
 
