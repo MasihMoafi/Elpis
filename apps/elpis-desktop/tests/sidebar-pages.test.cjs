@@ -6,8 +6,8 @@ const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 
 const retired = 'observability'; // Legacy saved data only; never a supported destination.
-const pages = ['experimentLab', 'canvas', 'loveSpot', 'customize'];
-const names = { experimentLab: 'Lab', canvas: 'Workflows', loveSpot: 'Love Spot', customize: 'Customize' };
+const pages = ['experimentLab', 'canvas', 'loveSpot', 'matilda', 'customize'];
+const names = { experimentLab: 'Lab', canvas: 'Workflows', loveSpot: 'Love Spot', matilda: 'Matilda', customize: 'Customize' };
 const nav = page => page.locator('aside.sidebar nav[aria-label="Workspace"]');
 const labels = page => nav(page).getByRole('button').allTextContents();
 
@@ -38,7 +38,7 @@ for (const position of [0, 2, 4]) test(`OBSRM: legacy page at position ${positio
     for (let reload = 0; reload < 2; reload++) {
       if (reload) await f.page.reload();
       await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
-      assert.deepEqual(await labels(f.page), ['New chat', ...order.map(id => names[id])]);
+      assert.deepEqual(await labels(f.page), ['New chat', ...order.map(id => names[id]), 'Matilda'], 'a page the saved order does not know comes last');
       assert.equal(await f.composer.isVisible(), true, 'a stale saved view must not leave a blank app');
       await f.open('chat-a');
       assert.equal(await f.composer.isVisible(), true);

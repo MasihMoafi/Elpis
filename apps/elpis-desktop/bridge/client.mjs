@@ -1145,9 +1145,11 @@ export class DesktopClient extends EventEmitter {
   /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
    * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents', 'sessionManager']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents', 'maxAgents', 'sessionManager']);
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
     if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
+    // How many helper agents the chat may have open at once (Matilda's two); only for a chat that runs agents.
+    if (body.maxAgents !== undefined && (!Number.isInteger(body.maxAgents) || body.maxAgents < 1 || body.maxAgents > 6 || body.agents !== true)) throw new BridgeError('maxAgents is a number from 1 to 6, for a chat that runs agents');
     if (body.sessionManager !== undefined && typeof body.sessionManager !== 'boolean') throw new BridgeError('sessionManager must be true or false');
     const sessionManager = body.sessionManager === true;
     if (sessionManager && !this.#sessionManagerConfig?.forSession) throw new BridgeError('Session Manager tools are unavailable in this runtime', 503);
@@ -1184,7 +1186,7 @@ export class DesktopClient extends EventEmitter {
     const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
     const browserSession = `pending-${randomUUID()}`;
     const managerConfig = sessionManager ? this.#sessionManagerConfig.forSession(browserSession) : {};
-    const config = { ...(sessionManager ? {} : this.#browserOptions(browserSession).config), ...managerConfig, ...(body.agents ? { 'features.multi_agent': true } : {}) };
+    const config = { ...(sessionManager ? {} : this.#browserOptions(browserSession).config), ...managerConfig, ...(body.agents ? { 'features.multi_agent': true, ...(body.maxAgents ? { 'agents.max_threads': body.maxAgents } : {}) } : {}) };
     let result;
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),

@@ -1,0 +1,9 @@
+/* Matilda's page: a portrait and her name over the shared settings groups. Tokens only (DESIGN.md). */
+.matilda-head { display: flex; align-items: center; gap: 16px; padding: 4px 0 8px; }
+.matilda-portrait { flex: none; width: 96px; height: 96px; object-fit: cover; border: 1px solid var(--border); background: var(--card); }
+.matilda-intro { display: grid; gap: 4px; min-width: 0; }
+.matilda-intro h2 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.matilda-intro p { margin: 0; color: var(--muted-foreground); }
+.matilda-focus { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; color: var(--foreground); }
+.matilda-task { padding: 12px 16px 4px; }
+.matilda-task textarea { width: 100%; min-height: 7.5rem; resize: vertical; }

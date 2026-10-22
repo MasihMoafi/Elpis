@@ -23,7 +23,7 @@ Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind
 | Need | Use | Where |
 | --- | --- | --- |
 | A settings page | `SettingsHeader`, `SettingsGroup`, `SettingRow`, `SettingsNotice`, `SettingsEmpty`, `SettingsActions`, `Segmented`, `Choice` | `components/settings/rows.tsx` |
-| A list of items with a state and an action | `LedgerRow` in `.customize-list` | `components/customize-view.tsx`, `ledger-plugins.tsx` |
+| A list of items with a state and an action | `CustomizeRow` in `.customize-list` | `components/customize-view.tsx`, `customize-plugins.tsx`, `matilda-page.tsx` |
 | Actions on an item | `MenuAction` with `MoreMenu` / `RightClickMenu`; one action is a button, not a menu | `components/action-menu.tsx`, `thread-actions.tsx` |
 | A dialog | `AlertDialog`: title, one sentence, cancel left, the action right | `components/ui/alert-dialog.tsx` |
 | A key beside a command | `shortcutHint(id)` and `.kbd-hint` (or `data-shortcut` on a row); follows Settings → Keyboard shortcuts | `lib/shortcuts.ts` |

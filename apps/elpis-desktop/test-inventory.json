@@ -303,7 +303,8 @@
     "tests/scroll-to-bottom.test.cjs",
     "tests/turn-time.test.cjs",
     "tests/sidebar-pages.test.cjs",
-    "tests/settings2.test.cjs"
+    "tests/settings2.test.cjs",
+    "tests/matilda-page.test.cjs"
   ],
   "opt-in": [
     "tests/polish.runtime.cjs",
