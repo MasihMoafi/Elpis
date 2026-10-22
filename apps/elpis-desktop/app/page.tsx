@@ -73,6 +73,7 @@ import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
 import { ProfileDialog } from "@/components/profile-dialog";
+import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjectChats, readProjects, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
@@ -1960,7 +1961,7 @@ export default function Home() {
           </div> : <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
             {!shellMode && <><SlashMenu menu={slash} /><MentionMenu menu={mention} /></>}
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
-            <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const next = attachmentsRef.current.filter(item => item.id !== id); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
+            <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const removed = attachmentsRef.current.find(item => item.id === id), next = attachmentsRef.current.filter(item => item.id !== id && !(item.name === DRAWING_NOTE && removed?.name === "Page drawing.jpg")); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {shellMode && <p role="status" className="bash-mode-notice"><span className="composer-pill">bash</span><span>Bash mode. Press Escape to return to chat.</span></p>}
             {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}

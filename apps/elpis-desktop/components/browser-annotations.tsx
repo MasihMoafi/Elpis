@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { BROWSER_COMMENTS } from "@/lib/browser-notes";
 import { Eye, EyeOff, Send, SquareDashedMousePointer, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,7 +69,7 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
       if (draft && body.trim() && !await save()) return;
       const response = await browser.command("annotationsCollect", { value: imagesAllowed ? "images" : "text" });
       const result = response?.result; if (!result?.count || !result.text) { setError("Write a comment before sending."); return; }
-      const parts: Attachment[] = [{ id: crypto.randomUUID(), name: "Browser comments", type: "text", mimeType: "text/plain", text: result.text }];
+      const parts: Attachment[] = [{ id: crypto.randomUUID(), name: BROWSER_COMMENTS, type: "text", mimeType: "text/plain", text: result.text }];
       if (result.images?.length) parts.push({ id: crypto.randomUUID(), name: "Browser comments.jpg", type: "image", mimeType: "image/jpeg", dataUrl: await screenshotSheet(result.images) });
       if (await onAttach(parts, submit)) await command("annotationsSent");
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }

@@ -1,6 +1,7 @@
 "use client";
 
 import { readReply } from "@/lib/message-reply";
+import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { ReplyPreview } from "@/components/message-reply";
 import { X } from "lucide-react";
 import { fileKind } from "@/components/file-cards";
@@ -12,7 +13,7 @@ import type { Attachment } from "@/lib/attachments";
 export function AttachmentChips({ attachments, disabled, onRemove }: { attachments: Attachment[]; disabled?: boolean; onRemove: (id: string) => void }) {
   if (!attachments.length) return null;
   return <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">
-    {attachments.map(part => {
+    {attachments.filter(part => part.name !== DRAWING_NOTE).map(part => {
       const reply = readReply(part);
       if (reply) return <li key={part.id} className="w-full min-w-0"><ReplyPreview reply={reply} disabled={disabled} onRemove={() => onRemove(part.id)} /></li>;
       const { Icon, kind, ext } = fileKind(part.name), caption = part.type === "image" ? "Image" : kind;

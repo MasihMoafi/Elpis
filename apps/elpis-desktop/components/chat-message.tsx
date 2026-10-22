@@ -4,6 +4,8 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SmartPruneLine } from "@/components/smart-prune";
 import { useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
+import { BrowserComments } from "@/components/browser-comments";
+import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
 import { Copy, FileText, Pencil, RefreshCw, Reply, Terminal, Undo2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
@@ -115,7 +117,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
     const replies=attached.flatMap(({part,file})=>{const reply=file?readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}):null;return reply?[reply]:[];});
     const reason=editBlockedReason||(attachments.length?"This message contains attachments that this app cannot safely resend.":undefined);
-    const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.filter(({part,file})=>!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)})).map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><DisclosureSummary className="cursor-pointer break-all">{file}</DisclosureSummary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
+    const shown=attached.filter(({part,file})=>file!==DRAWING_NOTE&&(!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}))),attachmentContent=shown.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{shown.map(({part,index,file})=><li key={index}>{file===BROWSER_COMMENTS ? <BrowserComments text={text(part.text).slice(`File: ${file}\n`.length)}/> : file ? <details className="max-w-full rounded-md border border-border p-2"><DisclosureSummary className="cursor-pointer break-all">{file}</DisclosureSummary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
     const originalBody=content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n"), answers=questionReplies(originalBody);
     const body=answers?questionReplyText(answers):originalBody;
     const bodyContent=answers?<div className="space-y-3">{answers.map((reply,index)=><div key={index} className="space-y-1"><p className="text-sm text-muted-foreground" dir="auto">{reply.question}</p><p dir="auto">{reply.answer}</p></div>)}</div>:undefined;

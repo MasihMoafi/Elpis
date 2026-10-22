@@ -1,6 +1,7 @@
 "use client";
 
 import "@/lib/love-spot-assets";
+import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Excalidraw, MainMenu, convertToExcalidrawElements, exportToCanvas, getCommonBounds, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -95,7 +96,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
       for (const quality of [0.85, 0.7, 0.55, 0.4]) { url = page.toDataURL("image/jpeg", quality); if (bytes(url) <= IMAGE_LIMIT) break; url = ""; }
       if (!url) throw Error("The marked picture is too large to attach.");
       const note = `The attached image "Page drawing.jpg" is a screenshot of the browser page ${draft.url}${draft.title ? ` (“${draft.title}”)` : ""}, ${draft.width}×${draft.height} px, with the user's own marks drawn on top: arrows, pen strokes, shapes and text. Read the marks as the changes or questions the user wants about that page.`;
-      const added = await onAttach([{ id: crypto.randomUUID(), name: "Page drawing context", type: "text", mimeType: "text/plain", text: note }, { id: crypto.randomUUID(), name: "Page drawing.jpg", type: "image", mimeType: "image/jpeg", dataUrl: url }], false);
+      const added = await onAttach([{ id: crypto.randomUUID(), name: DRAWING_NOTE, type: "text", mimeType: "text/plain", text: note }, { id: crypto.randomUUID(), name: "Page drawing.jpg", type: "image", mimeType: "image/jpeg", dataUrl: url }], false);
       if (added) { holdDrawing(null); onAdded(); } else setError("The drawing could not be added to your message. It is still here: try again.");
     } catch (e) { setError(`${e instanceof Error ? e.message : String(e)} Your drawing is still here: try again.`); }
     finally { setBusy(false); }

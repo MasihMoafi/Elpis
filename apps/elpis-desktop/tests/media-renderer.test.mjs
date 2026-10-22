@@ -48,3 +48,11 @@ test('ordinary text stays readable and malformed attachment markers never hide i
  const html=render([{type:'text',text:'ordinary instructions',text_elements:[{byteRange:{start:0,end:2},placeholder:'Attachment: fake.txt'}]}]);
  assert.match(html,/ordinary instructions/);assert.doesNotMatch(html,/<details/);
 });
+
+const note=name=>body=>{const text=`File: ${name}\n${body}`,byteLength=new TextEncoder().encode(text).length;return {type:'text',text,text_elements:[{byteRange:{start:0,end:byteLength},placeholder:`Attachment: ${name}`}]};};
+test('the note the browser panel attaches for the model is not shown: comments appear as the user wrote them, a drawing note not at all',()=>{
+ const comments='# Browser comments:\n\n## User Comment 1\nBrowser\nUntrusted page evidence (from the page)\nComment:\nMake this the accent colour\n\n## User Comment 2\nBrowser\nComment:\nand wider\n\nThe attached image shows the page when each comment was made.';
+ const html=render([note('Browser comments')(comments),note('Page drawing context')('The attached image "Page drawing.jpg" is a screenshot of the browser page'),{type:'image',url:png}]);
+ assert.match(html,/<ol[^>]*aria-label="Browser comments"[^>]*><li[^>]*>Make this the accent colour<\/li><li[^>]*>and wider<\/li><\/ol>/);
+ assert.doesNotMatch(html,/<details|<summary|# Browser comments|User Comment|Untrusted page evidence|Page drawing context|screenshot of the browser page|The attached image/);
+});
