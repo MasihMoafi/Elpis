@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/parity-fixture.cjs": {
+      "blob": "6eb06acbf86a0bbfd60a1995c7fa56ca21590e4b",
+      "approval": "81bcad8466ae9c8497cd85be70eeb235c99f2325",
+      "reason": "STARTUP, Masih 22 Oct: \"the third one without the hexagonal around it. The same background it is now.\" The start-up screen holds at least a moment, so the shared fixture waits for it to go before a test acts."
+    },
     "tests/windows-split.test.cjs": {
       "blob": "f371968667c8d9a764f9a91471ffc955f75b2419",
       "approval": "e848a1dca89c80945da8b7abcf4d3d8cd2060a53",
