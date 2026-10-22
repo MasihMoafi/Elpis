@@ -192,14 +192,14 @@ test('the tool bar slides sideways by its grip so Talk never leaves tools out of
     const bar = f.page.locator('.love-spot-editor .App-toolbar').first(), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
     const spill = async () => { const [b, a] = await Promise.all([bar.boundingBox(), area.boundingBox()]); return { left: Math.round(b.x - a.x), right: Math.round(a.x + a.width - (b.x + b.width)) }; };
     await grip.waitFor();
-    const [gripBox, barBox] = await Promise.all([grip.boundingBox(), bar.boundingBox()]); assert.ok(gripBox.y + gripBox.height <= barBox.y + 1, 'the grip sits above the bar, not on a tool');
+    const [gripBox, barBox] = await Promise.all([grip.boundingBox(), bar.boundingBox()]); assert.equal(touches(gripBox, barBox), false, 'the grip sits beside or below the bar, never on a tool');
     const middle = await spill(); assert.ok(middle.left < 0 || middle.right < 0, `with Talk open the bar spills past the board: ${JSON.stringify(middle)}`);
     await grip.focus();
     await f.page.keyboard.press('ArrowDown'); // the bar sits on the other controls in a narrow board; a stroke down takes it to the first free place
     for (let i = 0; i < 40; i++) await f.page.keyboard.press('ArrowRight');
     let now = await spill(); assert.ok(now.left >= 7 && now.left <= 9, `its first tool can be brought in and the slide stops there: ${JSON.stringify(now)}`);
     for (let i = 0; i < 40; i++) await f.page.keyboard.press('ArrowLeft');
-    now = await spill(); assert.ok(now.right >= 7 && now.right <= 9, `its last tool can be brought in too: ${JSON.stringify(now)}`);
+    now = await spill(); assert.ok(now.right >= 36 && now.right <= 40, `its last tool can be brought in too, with room left for the handle: ${JSON.stringify(now)}`);
     const box = await grip.boundingBox(), before = await spill();
     await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await f.page.mouse.down();
     await f.page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 }); await f.page.mouse.up();
@@ -221,11 +221,14 @@ test('the tool bar moves anywhere in the board, stops against the other controls
     await f.open(f.page);
     const bar = f.page.locator('.love-spot-editor .App-toolbar').first(), area = f.page.locator('.love-spot-editor'), grip = f.page.getByRole('button', { name: 'Move tools' });
     const others = f.page.locator('.love-spot-editor').locator('.main-menu-trigger, .layer-ui__wrapper__top-right, .layer-ui__wrapper__footer-left, .layer-ui__wrapper__footer-right');
-    const covers = async () => { const box = await bar.boundingBox(); const hit = []; for (const other of await others.all()) { const o = await other.boundingBox(); if (o && touches(box, o)) hit.push(await other.getAttribute('class')); } return hit; };
+    const covers = async () => { const box = await bar.boundingBox(); const hit = []; for (const other of await others.all()) { const o = await other.boundingBox(); if (o && o.width > 0 && o.height > 0 && touches(box, o)) hit.push(await other.getAttribute('class')); } return hit; };
     const dragTo = async (x, y) => { const g = await grip.boundingBox(); await f.page.mouse.move(g.x + g.width / 2, g.y + g.height / 2); await f.page.mouse.down(); await f.page.mouse.move(x, y, { steps: 12 }); await f.page.mouse.up(); };
     await grip.waitFor();
     const start = await bar.boundingBox(), board = await area.boundingBox();
     assert.deepEqual(await covers(), [], 'at the start the bar covers nothing');
+    const gripBox = await grip.boundingBox();
+    assert.ok(gripBox.x >= start.x + start.width && Math.abs(gripBox.y + gripBox.height / 2 - (start.y + start.height / 2)) <= 3, `the handle is to the right of the bar, level with its middle: ${JSON.stringify({ gripBox, start })}`);
+    assert.equal(await grip.locator('svg circle').count(), 9, 'the handle is a 3 by 3 grid of dots');
     await dragTo(board.x + board.width / 2 - 150, board.y + board.height / 2 + 120);
     const moved = await bar.boundingBox();
     assert.ok(moved.y - start.y >= 150, `the bar goes down, not only sideways: ${JSON.stringify({ start, moved })}`);

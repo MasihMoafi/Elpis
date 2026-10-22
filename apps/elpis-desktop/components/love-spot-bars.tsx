@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
-import { GripHorizontal } from "lucide-react";
+import { Grip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { appStorage } from "@/lib/projects";
 
 const KEY = "elpis-love-bars", LEGACY_KEY = "elpis-love-tools-offset";
-const MARGIN = 8, GAP = 6, STEP = 24, GRIP_WIDTH = 28, GRIP_HEIGHT = 15;
+const MARGIN = 8, GAP = 6, STEP = 24, HANDLE = 24;
 /** The board's controls that stay where they are: the main menu, the help button, the shape properties and the library panel. */
 const FIXED = ".App-menu_top__left, .layer-ui__wrapper__footer-right, .App-menu__left, .sidebar";
 
@@ -36,9 +36,9 @@ const saved = (): Offsets => {
 };
 
 /** Excalidraw centres its tool bar at the top of the board and keeps its other bars in fixed corners, so with Talk open or in a narrow
- * window they sit on one another or spill past an edge. Each bar has this handle: it moves the bar anywhere in the board, by mouse or
- * arrow keys, and the bar stops against the other controls and bars instead of covering them. The place is kept; double-click or Home
- * puts the bar back where Excalidraw puts it. */
+ * window they sit on one another or spill past an edge. Each bar has this handle, a 3 by 3 grid of dots to the right of the bar: it
+ * moves the bar anywhere in the board, by mouse or arrow keys, and the bar stops against the other controls and bars instead of
+ * covering them. The place is kept; double-click or Home puts the bar back where Excalidraw puts it. */
 export function MovableBars({ board }: { board: RefObject<HTMLDivElement | null> }) {
   const [offsets, setOffsets] = useState(saved);
   const [spots, setSpots] = useState<Spots>({});
@@ -52,17 +52,17 @@ export function MovableBars({ board }: { board: RefObject<HTMLDivElement | null>
     const { x, y } = current.current[id];
     return { left: box.left - x, right: box.right - x, top: box.top - y, bottom: box.bottom - y };
   }, [element]);
-  /** The offsets that keep the bar in the board, with a free strip above it for the handle; a bar wider or taller than the board can slide until either end shows. */
+  /** The offsets that keep the bar in the board with room for its handle on the right; a bar wider or taller than the board can slide until either end shows. */
   const clamp = useCallback((id: BarId, value: Offset): Offset => {
     const area = board.current?.getBoundingClientRect(), base = natural(id);
     if (!area || !base) return value;
     const span = (low: number, high: number, v: number) => Math.round(Math.min(Math.max(low, high), Math.max(Math.min(low, high), v)));
-    return { x: span(area.left + MARGIN - base.left, area.right - MARGIN - base.right, value.x), y: span(area.top + GRIP_HEIGHT + 2 - base.top, area.bottom - MARGIN - base.bottom, value.y) };
+    return { x: span(area.left + MARGIN - base.left, area.right - MARGIN - HANDLE - GAP - base.right, value.x), y: span(area.top + MARGIN - base.top, area.bottom - MARGIN - base.bottom, value.y) };
   }, [board, natural]);
-  /** Whether the bar, standing at `value`, would touch a fixed control or another bar. */
+  /** Whether the bar and its handle, standing at `value`, would touch a fixed control or another bar. */
   const blocked = useCallback((id: BarId, value: Offset) => {
     const base = natural(id); if (!base) return false;
-    const left = base.left + value.x - GAP, right = base.right + value.x + GAP, top = base.top + value.y - GAP, bottom = base.bottom + value.y + GAP;
+    const left = base.left + value.x - GAP, right = base.right + value.x + GAP + HANDLE + GAP, top = base.top + value.y - GAP, bottom = base.bottom + value.y + GAP;
     const others = [...(board.current?.querySelectorAll<HTMLElement>(FIXED) ?? []), ...BARS.filter(bar => bar.id !== id).map(bar => element(bar.id))];
     return others.some(other => {
       const box = other?.getBoundingClientRect();
@@ -86,17 +86,20 @@ export function MovableBars({ board }: { board: RefObject<HTMLDivElement | null>
     return from;
   };
 
-  /** Each handle sits in the free strip above its bar, over the part of the bar that shows, so it never covers a tool. */
+  /** Each handle sits to the right of its bar, level with its middle; with no room there it goes to the left. A bar that fills the board gets its handle
+   * at the board's right edge, below the bar (above it, or over its end only when neither has room), so it never hides a tool. */
   const measure = useCallback(() => {
     const area = board.current?.getBoundingClientRect(); if (!area) return;
     const next: Spots = {};
     for (const { id } of BARS) {
       const box = element(id)?.getBoundingClientRect(); if (!box || !box.width) continue;
-      const shownLeft = Math.max(box.left, area.left), shownRight = Math.min(box.right, area.right);
-      next[id] = {
-        left: Math.round(Math.max(4, Math.min(area.width - GRIP_WIDTH - 4, (shownLeft + shownRight) / 2 - area.left - GRIP_WIDTH / 2))),
-        top: Math.round(Math.max(0, box.top - area.top - GRIP_HEIGHT - 1)),
-      };
+      const level = Math.max(0, Math.min(area.height - HANDLE, box.top - area.top + (box.height - HANDLE) / 2));
+      const right = box.right - area.left + GAP, left = box.left - area.left - GAP - HANDLE;
+      const below = box.bottom - area.top + GAP, above = box.top - area.top - GAP - HANDLE;
+      const spot = right + HANDLE + 4 <= area.width ? { left: right, top: level }
+        : left >= 4 ? { left, top: level }
+        : { left: area.width - HANDLE - 4, top: below + HANDLE <= area.height ? below : above >= 0 ? above : level };
+      next[id] = { left: Math.round(spot.left), top: Math.round(spot.top) };
     }
     setSpots(previous => BARS.every(({ id }) => previous[id]?.left === next[id]?.left && previous[id]?.top === next[id]?.top) ? previous : next);
   }, [board, element]);
@@ -137,9 +140,9 @@ export function MovableBars({ board }: { board: RefObject<HTMLDivElement | null>
     else if (event.key === "Home") { event.preventDefault(); event.stopPropagation(); keep(id, clamp(id, ORIGIN)); }
   };
 
-  return <>{BARS.map(({ id, label }) => spots[id] && <Button key={id} variant="ghost" size="icon-xs" className="love-tools-grip h-[15px] w-7 min-h-0 min-w-0 p-0" aria-label={label}
+  return <>{BARS.map(({ id, label }) => spots[id] && <Button key={id} variant="ghost" size="icon-xs" className="love-tools-grip size-6 min-h-0 min-w-0 p-0" aria-label={label}
     title="Drag to move this bar anywhere (double-click to put it back)" style={spots[id]} onPointerDown={down(id)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
     onKeyDown={key(id)} onDoubleClick={() => keep(id, clamp(id, ORIGIN))}>
-    <GripHorizontal size={12} />
+    <Grip size={14} />
   </Button>)}</>;
 }
