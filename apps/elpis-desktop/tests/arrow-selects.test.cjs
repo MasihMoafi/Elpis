@@ -14,8 +14,6 @@ test('in the sidebar an arrow opens the page it reaches, but never New chat, the
     await nav(page).getByRole('button', { name: 'Customize', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Customize');
     await page.keyboard.press('ArrowUp');
-    await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Matilda');
-    await page.keyboard.press('ArrowUp');
     await page.waitForFunction(() => document.querySelector('.workspace-header h1')?.textContent === 'Love Spot');
     assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), 'Love Spot', 'focus is on the page it opened');
     assert.equal(await page.evaluate(() => getComputedStyle(document.activeElement).outlineOffset), '-2px', 'the focus ring is drawn inside the row, where the column does not clip it');
