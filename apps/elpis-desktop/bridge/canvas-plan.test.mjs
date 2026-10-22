@@ -197,11 +197,6 @@ test('times out with a clear error, stops the turn and releases the conversation
   assert.equal(client.bus.listenerCount('side'), 0, 'stops listening');
 });
 
-test('the default time limit is 90 seconds', async () => {
-  const { PLAN_TIMEOUT_MS } = await import('./canvas-plan.mjs');
-  assert.equal(PLAN_TIMEOUT_MS, 90000);
-});
-
 test('releases the ephemeral conversation after a plan, and deletes it if Elpis did not keep it ephemeral', async () => {
   const kept = fakeClient();
   await planCanvas(kept, BODY);

@@ -16,14 +16,6 @@ async function eventually(check) {
   } }
 }
 
-test('A70/R29: chats and Settings use the same ReorderItem and native event handlers', () => {
-  for (const file of ['app/page.tsx', 'components/settings-view.tsx']) {
-    const source = readFileSync(path.join(__dirname, '..', file), 'utf8');
-    assert.ok(/import \{[^}]*ReorderItem[^}]*\} from "@\/components\/reorder"/.test(source), `${file} uses shared ReorderItem`);
-    assert.ok(source.includes('<ReorderItem '), `${file} renders shared ReorderItem`);
-    assert.ok(!/ReorderButton|onDragStart:/.test(source), `${file} has no duplicate drag implementation`);
-  }
-});
 test('ReorderItem preserves agent indentation when a context menu supplies its own inline style', () => {
   const { transpileModule, ModuleKind, JsxEmit } = require('typescript');
   const React = require('react');

@@ -85,9 +85,6 @@ export function writeAttachmentDraft(id: string, attachments: Attachment[], targ
     return true;
   } catch { return false; }
 }
-export function withoutSubmittedAttachments(current: Attachment[], submitted: Attachment[]): Attachment[] {
-  const ids = new Set(submitted.map(part => part.id)); return current.filter(part => !ids.has(part.id));
-}
 async function fileDataUrl(file: Blob, mimeType = file.type): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer()); let encoded = "";
   for (let offset = 0; offset < bytes.length; offset += 8192) encoded += String.fromCharCode(...bytes.subarray(offset, offset + 8192));

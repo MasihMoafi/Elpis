@@ -37,7 +37,7 @@ const providers = [{ id: 'openai', displayName: 'OpenAI' }, { id: 'lab', display
 const settings = {
   version: 'v1', main: { model: 'gpt-6-sol', provider: 'openai' }, providers,
   background: { model: 'gpt-6-sol', provider: 'openai' },
-  memory: { generate: true, use: true, extractionModel: 'gpt-6-sol', consolidationModel: null },
+  memory: { enabled: true, generate: true, use: true, extractionModel: 'gpt-6-sol', consolidationModel: null },
   smartPrune: { enabled: true, explicitOverride: { available: true, version: 'p1', model: 'gpt-6-sol', provider: 'openai' } },
   write: { available: true },
 };

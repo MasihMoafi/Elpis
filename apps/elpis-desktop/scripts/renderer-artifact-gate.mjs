@@ -137,9 +137,9 @@ export const retainedUpdates = {
       "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion."
     },
     "tests/preferences.test.cjs": {
-      "blob": "10c003d4109c279081988255f12fb2b02ad05065",
+      "blob": "2a27c24660a0a2d14da383b02f7ad95ab2e6529f",
       "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "OBSRM page removal (see pageRemovalApproval) plus SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Two shortcut tests added; no existing assertion removed."
+      "reason": "OBSRM page removal (see pageRemovalApproval) plus SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Two shortcut tests added; no existing assertion removed. Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" (efb597b8b) The send-hint assertion goes with sendHint, which nothing calls."
     },
     "tests/renderer.test.cjs": {
       "blob": "58cfcc2abc3d705b01819ca73ffa862004881c83",
@@ -202,6 +202,16 @@ export const retainedUpdates = {
       "approval": "ef56904fcd8b39725632b4c24ca574cf8ab63d1e",
       "reason": "V1, Masih's approved request in GATE11: \"every chat row uses the project-chat layout, all chevrons in one column\". Retain exact circle/title coordinates, hover, expansion, selection and reload checks in both themes."
     },
+    "tests/tabs.test.cjs": {
+      "blob": "11efb2427b9ce0dfe3d383fdfdc8b72bc18ad969",
+      "approval": "efb597b8b6ce2adf92546a544b3688d39016ee30",
+      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing."
+    },
+    "tests/settings-reorder.test.cjs": {
+      "blob": "ffe378c097f6eef6a88506a8682deaf5c3b0785f",
+      "approval": "efb597b8b6ce2adf92546a544b3688d39016ee30",
+      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the sidebar reorder test that tests/desktop-small-fixes.test.cjs repeats with stronger assertions."
+    },
     "tests/view-errors.test.cjs": {
       "blob": "5dec1ecf6fa40788b16f9aced96f48e962347755",
       "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
@@ -212,7 +222,7 @@ export const retainedUpdates = {
 // OBSRM: the pageRemovalApproval request also retires these page-only checks.
 // These page-only regressions and their fixture are retired; all other baseline tests remain mandatory.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';

@@ -137,7 +137,7 @@ test('preferences keep valid choices on this device, and the desktop reads the s
 
 test('send shortcut, hint and new-chat folder follow the saved preferences', () => {
   browser();
-  const { isSendKey, sendHint, newChatFolder } = loader()('lib/preferences.ts');
+  const { isSendKey, newChatFolder } = loader()('lib/preferences.ts');
   const key = (extra = {}) => ({ key: 'Enter', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, nativeEvent: { isComposing: false }, ...extra });
   const enter = { sendShortcut: 'enter' }, mod = { sendShortcut: 'modEnter' };
   assert.equal(isSendKey(key(), enter), true);
@@ -147,7 +147,6 @@ test('send shortcut, hint and new-chat folder follow the saved preferences', () 
   assert.equal(isSendKey(key({ ctrlKey: true }), mod), true);
   assert.equal(isSendKey(key({ metaKey: true }), mod), true);
   assert.equal(isSendKey(key({ key: 'a', ctrlKey: true }), mod), false);
-  assert.match(sendHint(mod), /^Ctrl\+Enter to send/);
   assert.equal(newChatFolder(' /project ', { defaultFolder: '/default' }), '/project');
   assert.equal(newChatFolder('', { defaultFolder: '/default' }), '/default');
   assert.equal(newChatFolder('', { defaultFolder: '' }), '');

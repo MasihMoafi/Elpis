@@ -222,28 +222,6 @@ test('the side panel resizes from its left edge and a page that Electron opens b
   await eventually(async () => assert((await side.boundingBox()).width > before + 120));
 }));
 
-test('screenshots: chat tabs above a side panel with a shell and a page, light and dark', () => fixture(async ({ page, link, strip, shoot }) => {
-  if (!shots) return;
-  await link('chat-one').click();
-  await link('chat-two').click({ button: 'middle' });
-  await link('chat-three').click({ button: 'middle' });
-  await page.keyboard.press('Control+t');
-  await strip.getByRole('tab', { name: 'Plan the release' }).click();
-  const side = page.getByRole('region', { name: 'Side panel' });
-  await page.getByRole('button', { name: 'Show side panel' }).click();
-  await side.getByRole('button', { name: 'New side panel tab' }).click();
-  await page.getByRole('menuitem', { name: 'Browser tab' }).click();
-  await side.getByRole('button', { name: 'New side panel tab' }).click();
-  await page.getByRole('menuitem', { name: 'Terminal' }).click();
-  await eventually(async () => assert.equal((await page.evaluate(() => window.__terminal)).open.length, 1));
-  await page.evaluate(key => window.__emit(key, '\x1b[32mmasih@elpis\x1b[0m:\x1b[34m~/work/release\x1b[0m$ cargo test\r\nrunning 12 tests\r\n'), (await page.evaluate(() => window.__terminal)).open[0][0]);
-  await shoot('tabs-light');
-  await chooseTheme(page, 'dark');
-  await shoot('tabs-dark');
-  await side.getByRole('tab', { name: 'New tab' }).click();
-  await shoot('tabs-dark-browser');
-}));
-
 test('many tabs scroll inside the strip; the + and the panel buttons stay in view', () => fixture(async ({ page, strip, names, shoot }) => {
   for (let count = 0; count < 14; count++) await page.keyboard.press('Control+t');
   await eventually(async () => assert.equal((await names()).length, 15));

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as lib from '../lib/attachments.ts';
 import * as bridge from '../bridge/attachments.mjs';
-const { validateAttachments, readAttachmentDraft, writeAttachmentDraft, withoutSubmittedAttachments, attachmentFromFile, inlineMediaUrl } = lib;
+const { validateAttachments, readAttachmentDraft, writeAttachmentDraft, attachmentFromFile, inlineMediaUrl } = lib;
 
 const png = 'data:image/png;base64,iVBORw0KGgo=';
 const image = { id: 'image-a', name: 'book.png', type: 'image', mimeType: 'image/png', dataUrl: png };
@@ -19,10 +19,6 @@ test('attachment drafts round-trip independently and failed persistence is expli
   assert(values.has('elpis-attachments-v1:a'));
   assert.equal(writeAttachmentDraft('a', [], storage), true); assert.deepEqual(readAttachmentDraft('a', storage), []);
   assert.equal(writeAttachmentDraft('a', [image], { setItem() { throw Error('quota'); } }), false);
-});
-test('acknowledgement removes only submitted attachment IDs and keeps newer additions', () => {
-  assert.deepEqual(withoutSubmittedAttachments([image, text], [image]), [text]);
-  assert.deepEqual(withoutSubmittedAttachments([text], [image]), [text]);
 });
 test('file snapshots preserve text, extract PDFs explicitly, and reject unknown binaries', async () => {
   const contents = 'first\nمتن';

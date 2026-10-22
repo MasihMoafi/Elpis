@@ -135,9 +135,6 @@ export function isSendKey(event: Key, preferences = readPreferences()) {
   if (event.key !== "Enter" || event.shiftKey || event.nativeEvent?.isComposing) return false;
   return preferences.sendShortcut === "enter" || event.ctrlKey || event.metaKey;
 }
-export function sendHint(preferences = readPreferences()) {
-  return preferences.sendShortcut === "enter" ? "Enter to send · Shift+Enter for a new line" : "Ctrl+Enter to send · Enter for a new line";
-}
 /** While a turn runs, as in Claude's desktop app: the send key follows Settings → General → Follow-up behavior, and
  * the same key with Ctrl (with Ctrl+Shift under the Ctrl+Enter shortcut) does the other, for that one message.
  * Returns what this key press does, or null when it does not send. */

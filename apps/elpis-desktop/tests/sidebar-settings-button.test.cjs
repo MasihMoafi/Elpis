@@ -1,16 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const { fixture } = require('./parity-fixture.cjs');
 
-const page = fs.readFileSync(path.resolve(__dirname, '../app/page.tsx'), 'utf8');
-const css = fs.readFileSync(path.resolve(__dirname, '../app/globals.css'), 'utf8');
-
-test('the sidebar footer shows a Settings button that opens General settings', () => {
-  const footer = page.slice(page.indexOf('<div className="sidebar-status">'));
-  const button = footer.slice(0, footer.indexOf('</div>'));
-  assert.ok(button.includes('aria-label="Settings"'), 'the sidebar status row has a Settings button');
-  assert.ok(button.includes('openSettings("general")'), 'the button opens General settings');
-  assert.ok(button.includes('variant="ghost" size="icon-xs"'), 'it is the shared small icon button');
-  assert.match(css, /\.sidebar-status\s*\{[^}]*justify-content:space-between/, 'the button sits at the row end');
+test('the sidebar footer has a Settings button that opens General settings', async () => {
+  const f = await fixture();
+  try {
+    await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await f.page.locator('aside.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+    await f.page.locator('.settings-title').waitFor();
+    assert.equal(await f.page.locator('.settings-title').innerText(), 'Settings');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
 });

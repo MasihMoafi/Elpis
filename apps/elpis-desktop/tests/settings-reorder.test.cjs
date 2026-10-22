@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { check, drag } = require('./settings-reorder-check.cjs');
+const { check } = require('./settings-reorder-check.cjs');
 const { openSettings } = require('./controls.cjs');
 
 for (const theme of ['light', 'dark']) test(`A70: Settings reorder, cancel, keyboard and reload (${theme})`, async () => {
@@ -64,21 +64,3 @@ test('A70: a boundary key cannot steal focus from the next section or reorder it
   } finally { await f.close(); }
 });
 
-test('A13/A70: the shared sidebar navigation still reorders by keyboard and drag', async () => {
-  const f = await fixture({ height: 1080 });
-  try {
-    const rows = f.page.locator('aside.sidebar [data-nav-page]');
-    const ids = () => rows.evaluateAll(elements => elements.map(element => element.dataset.navPage));
-    const expected = await ids();
-    await rows.first().focus(); await f.page.keyboard.press('Alt+ArrowDown');
-    [expected[0], expected[1]] = [expected[1], expected[0]];
-    assert.deepEqual(await ids(), expected);
-    assert.equal(await rows.nth(1).evaluate(element => element === document.activeElement), true);
-    await drag(f.page, rows.last(), rows.first());
-    expected.unshift(expected.pop());
-    assert.deepEqual(await ids(), expected);
-    await f.page.reload(); await rows.first().waitFor();
-    assert.deepEqual(await ids(), expected);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});

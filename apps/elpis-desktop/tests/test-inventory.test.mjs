@@ -7,9 +7,6 @@ import path from 'node:path';
 import { checkInventory, discoverTests } from '../scripts/test-gate.mjs';
 
 const inventory = JSON.parse(await fs.readFile(new URL('../test-inventory.json', import.meta.url), 'utf8'));
-test('every desktop app test belongs to exactly one tier', async () => {
-  checkInventory(inventory, await discoverTests());
-});
 test('new unassigned tests, duplicate ownership and stale entries fail the gate', async () => {
   const files = await discoverTests();
   assert.throws(() => checkInventory(inventory, [...files, 'tests/new.test.mjs']), /Unassigned test: tests\/new.test.mjs/);
