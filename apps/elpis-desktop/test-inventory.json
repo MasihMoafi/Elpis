@@ -246,6 +246,7 @@
     "tests/made-chats.test.cjs",
     "tests/busy-retry.test.cjs",
     "tests/profile.test.cjs",
+    "tests/arrow-selects.test.cjs",
     "tests/plugin-app-catalogs.test.cjs",
     "tests/shortcut-hints.test.cjs",
     "tests/sidebar-parity.test.cjs",

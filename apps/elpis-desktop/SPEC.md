@@ -54,3 +54,7 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 ## Avatars removed
 
 22 Oct, Masih, after trying them: "it's not really visible from afar. So, not a great idea ... remove the avatars." The six avatars, the picker and the `profileAvatar` setting are gone. The footer shows the first letter of the user's name in a bold accent-coloured circle, then the name and the plan. The name prompt and Settings → General → Profile stay. A real-server test now serves every file type in `public/` (`bridge/static-assets.test.mjs`).
+
+## Arrow keys select
+
+22 Oct, Masih, with a screenshot of the sidebar pages: "I wanted the options to be moved and changed by keys on the keyboard; they just move but they don't change like chatgpt does. I need to press enter for it to do so. Please make it change just by the stroke of the keyboards. Don't forget this happens to the settings keys not just the chats." Built: an arrow that reaches a sidebar page or chat opens it (after 150 ms, so holding the key does not open every row); an arrow that reaches a tab or radio selects it, in Settings and everywhere; New chat, the search field and switches are only reached. The focus ring of the sidebar and Settings rows is drawn inside them, because the scrolling column clipped it to two lines.
