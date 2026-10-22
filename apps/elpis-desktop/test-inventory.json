@@ -85,6 +85,7 @@
     "bridge/slash-routes.test.mjs",
     "bridge/source-map.test.mjs",
     "bridge/spawn-links.test.mjs",
+    "bridge/static-assets.test.mjs",
     "bridge/thread-deletion.test.mjs",
     "bridge/tools.test.mjs",
     "bridge/transcription.test.mjs",
