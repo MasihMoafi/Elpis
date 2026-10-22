@@ -9,12 +9,14 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "side-chat", group: "Chat", label: "Toggle side chat", keys: ["Ctrl+;"] },
   // Native File menu and the split surface own these handlers.
   { id: "new-window", group: "Chat", label: "New Session in New Window", keys: ["Ctrl+Shift+N"] },
-  { id: "next-pane", group: "Navigation", label: "Focus next split view", keys: ["Ctrl+]"] },
-  { id: "previous-pane", group: "Navigation", label: "Focus previous split view", keys: ["Ctrl+["] },
+  { id: "next-pane", group: "Navigation", label: "Focus next split view", keys: ["Ctrl+Alt+]"] },
+  { id: "previous-pane", group: "Navigation", label: "Focus previous split view", keys: ["Ctrl+Alt+["] },
   { id: "open-split", group: "Navigation", label: "Open session in split view", keys: ["Alt+click"] },
   { id: "rename", group: "Chat", label: "Rename chat (F2 on a focused chat in the sidebar)", keys: ["Ctrl+Alt+R", "F2"] },
   { id: "archive", group: "Chat", label: "Archive chat", keys: ["Ctrl+Shift+A"] },
   { id: "pin", group: "Chat", label: "Toggle pin", keys: ["Ctrl+Alt+P"] },
+  { id: "chat-to-top", group: "Chat", label: "Move the selected chat to the top of its list", keys: ["Ctrl+["] },
+  { id: "chat-to-bottom", group: "Chat", label: "Move the selected chat to the bottom of its list", keys: ["Ctrl+]"] },
   // Handled by the sidebar's chat list (app/page.tsx), where the row has focus.
   { id: "delete", group: "Chat", label: "Delete the selected chats in the sidebar", keys: ["D"] },
   { id: "select-chats", group: "Chat", label: "Select several chats in the sidebar (Esc clears)", keys: ["Ctrl+click", "Shift+click"] },
@@ -51,7 +53,7 @@ export const SHORTCUTS: Shortcut[] = [
 // These actions run through shortcutFor. The other entries document native window controls,
 // mouse gestures or keys whose meaning depends on focus in the composer/sidebar.
 const APP_BINDINGS = new Set([
-  "new-chat", "side-chat", "rename", "archive", "pin", "undo-delete", "command-menu", "search",
+  "new-chat", "side-chat", "rename", "archive", "pin", "chat-to-top", "chat-to-bottom", "undo-delete", "command-menu", "search",
   "previous-chat", "next-chat", "new-tab", "close-tab", "next-tab", "previous-tab", "back", "forward",
   "terminal", "full-view", "files", "sidebar", "copy-folder", "settings", "shortcuts",
 ]);
@@ -115,6 +117,8 @@ function defaultShortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (event.code === "Backquote") return { id: "terminal" };
     if (key === ",") return { id: "settings" };
     if (key === "/") return { id: "shortcuts" };
+    if (event.code === "BracketLeft") return { id: "chat-to-top" };
+    if (event.code === "BracketRight") return { id: "chat-to-bottom" };
     if (key === "pageup") return { id: "previous-chat" };
     if (key === "pagedown") return { id: "next-chat" };
   }

@@ -205,8 +205,8 @@ export function MemorySettings({ value, models }: { value: ElpisSettings; models
   const toggle = (key: (typeof SWITCHES)[number]["key"], next: boolean) => void saver.run(key, () => saveSettings("/settings", { version: value.version, memory: key === "allowExternal" ? { skipExternalContext: !next } : { [key]: next } }), "Saved. Applies to new conversations.");
   const on = switchValue(value.memory, "enabled");
   if (!editable(value)) return <SettingsGroup title="Memories">
-    <SettingRow title="Memories" description={on ? undefined : value.write.reason}><span className="text-sm">{shown(value.memory.enabled ?? null)}</span></SettingRow>
-    {on && <>
+    <SettingRow title="Memories" description={value.memory.enabled === false ? value.write.reason : undefined}><span className="text-sm">{shown(value.memory.enabled ?? null)}</span></SettingRow>
+    {value.memory.enabled !== false && <>
       <SettingRow title="Generate memories"><span className="text-sm">{shown(value.memory.generate)}</span></SettingRow>
       <SettingRow title="Use memories"><span className="text-sm">{shown(value.memory.use)}</span></SettingRow>
       <SettingRow title="Extraction model"><span className="text-sm">{shown(value.memory.extractionModel)}</span></SettingRow>

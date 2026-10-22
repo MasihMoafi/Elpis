@@ -242,6 +242,7 @@
     "tests/personalization-files.test.cjs",
     "tests/shortcut-recorder.test.cjs",
     "tests/sidebar-order.test.cjs",
+    "tests/chat-to-edge.test.cjs",
     "tests/sidebar-parity.test.cjs",
     "tests/sidebar-resize.test.cjs",
     "tests/sidebar-search-fit.test.cjs",

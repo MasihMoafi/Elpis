@@ -1,4 +1,4 @@
-// S8, S12, S18: the packaged app ships Lab, Workflows and the Session Manager hidden (desktop/preferences.cjs); their code and tests stay.
+// S8, S12, S18: the packaged app ships Lab and Workflows hidden and the Session Manager off (desktop/preferences.cjs); their code and tests stay.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -17,7 +17,7 @@ test('the shell ships Lab, Workflows and the Session Manager hidden; the rendere
   assert.match(source('../desktop/state.cjs'), /hiddenPages: 'string', sessionManager: 'boolean'/);
 });
 
-test('hidden pages leave the sidebar, the command menu and the Workflows chat group', async () => {
+test('hidden pages leave the sidebar, the command menu and the Workflows chat group; the Session Manager switch stays', async () => {
   const f = await fixture({ storage: shipped, threads: [workflowChat, { ...workflowChat, id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser' }] });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
@@ -30,7 +30,7 @@ test('hidden pages leave the sidebar, the command menu and the Workflows chat gr
     }
     await f.page.keyboard.press('Escape');
     assert.equal(await f.page.getByText('Agent chats', { exact: true }).count(), 0);
-    assert.equal(await f.page.getByRole('region', { name: 'Session Manager chat' }).count(), 0, 'the Session Manager row is hidden');
+    assert.equal(await f.page.getByRole('switch', { name: 'Session Manager', exact: true }).getAttribute('aria-checked'), 'false', 'the Session Manager ships off, with its switch in the sidebar');
     assert.equal(await f.page.locator('aside.sidebar').getByText('Workflows · demo').count(), 0, 'the Workflows chat is not listed');
     assert.equal(await f.page.locator('aside.sidebar').getByText('Fix the parser').count() > 0, true, 'ordinary chats stay');
     assert.deepEqual(f.errors, []);
@@ -42,6 +42,6 @@ test('with hiddenPages empty, every page shows, as before', async () => {
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
     assert.deepEqual(await nav(f.page).getByRole('button').allTextContents(), ['New chat', 'Lab', 'Workflows', 'Love Spot', 'Ledger']);
-    assert.equal(await f.page.getByRole('region', { name: 'Session Manager chat' }).count(), 1, 'tests see the Session Manager row');
+    assert.equal(await f.page.getByRole('switch', { name: 'Session Manager', exact: true }).getAttribute('aria-checked'), 'true', 'the renderer default is on');
   } finally { await f.close(); }
 });

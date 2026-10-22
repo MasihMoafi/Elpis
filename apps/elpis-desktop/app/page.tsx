@@ -130,8 +130,6 @@ export default function Home() {
   const hiddenPages = preferences.hiddenPages.split(",");
   const [threads, setThreads] = useState<Thread[]>([]);
   const [sessionManagerId, setSessionManagerId] = useState("");
-  const [openingSessionManager, setOpeningSessionManager] = useState(false);
-  const openingSessionManagerRef = useRef(false);
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
@@ -879,28 +877,6 @@ export default function Home() {
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
-  async function openSessionManager() {
-    if (openingSessionManagerRef.current) return;
-    openingSessionManagerRef.current = true; setOpeningSessionManager(true);
-    try {
-      const savedId = appStorage().getItem(SESSION_MANAGER_ID_KEY) || sessionManagerId;
-      if (savedId) {
-        setSessionManagerId(savedId);
-        const existing = threads.find(thread => thread.id === savedId);
-        if (existing) { await loadThread(existing); return; }
-        try {
-          const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(savedId)}?limit=1`);
-          if (result.thread) { upsertThread(result.thread); await loadThread(result.thread); return; }
-        } catch { /* The saved manager was removed; create a fresh dedicated chat below. */ }
-      }
-      const result = await api<{ thread: Thread }>("/threads", { sessionManager: true, permissions: "ask" });
-      const managerId = result.thread.id;
-      if (window.elpisDesktop?.storage?.saveItem) await window.elpisDesktop.storage.saveItem(SESSION_MANAGER_ID_KEY, managerId);
-      else appStorage().setItem(SESSION_MANAGER_ID_KEY, managerId);
-      setSessionManagerId(managerId); upsertThread(result.thread); await loadThread(result.thread);
-    } catch (cause) { setError(`Could not open Session Manager: ${cause instanceof Error ? cause.message : String(cause)}`); }
-    finally { openingSessionManagerRef.current = false; setOpeningSessionManager(false); }
-  }
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
     if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
@@ -1593,6 +1569,7 @@ export default function Home() {
     else if (id === "rename" && selected) setRenameRequest(true);
     else if (id === "archive" && selected) void archiveThread(selected);
     else if (id === "pin" && selected) togglePin(selected);
+    else if ((id === "chat-to-top" || id === "chat-to-bottom") && selected) moveToEdge(selected.id, id === "chat-to-top");
     else if (id === "copy-folder" && (selected?.cwd || cwd)) void navigator.clipboard.writeText(selected?.cwd || cwd);
     else if (id === "new-tab" && desktop) { newChatTab(); }
     else if (id === "close-tab" && desktop && view === "chat") closeChatTab(tabs.activeId);
@@ -1725,6 +1702,12 @@ export default function Home() {
       const others = sectionChats(section).filter(thread => thread.id !== id);
       placeDragged(id, section, section === "recents" && others[0] ? { target: others[0].id, after: false } : others.at(-1) ? { target: others.at(-1)!.id, after: true } : undefined);
     } });
+  /** Ctrl+[ and Ctrl+]: the open chat goes to the top or the bottom of the list it is in (Pinned, its group, its project or Recents). */
+  function moveToEdge(id: string, top: boolean) {
+    if (searchTerm || !ordinaryThreads.some(thread => thread.id === id && !isAgent(thread))) return;
+    const section = sectionOf(id), chats = sectionChats(section), edge = top ? chats[0] : chats.at(-1);
+    if (edge && edge.id !== id) placeDragged(id, section, { target: edge.id, after: !top });
+  }
   function threadRow(thread: Thread, depth = 0) {
     const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
     const origin = chatOrigin(thread, loveActivity.threads);
@@ -1842,7 +1825,7 @@ export default function Home() {
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
-      {preferences.sessionManager && <SessionManagerRow id={sessionManagerId} active={!!sessionManagerId && selected?.id === sessionManagerId && view === "chat"} disabled={!ready || !connected || openingSessionManager} onOpen={() => void openSessionManager()} />}
+      <SessionManagerRow on={preferences.sessionManager} onChange={on => savePreferences({ sessionManager: on })} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><div className="section-label">Projects</div><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));

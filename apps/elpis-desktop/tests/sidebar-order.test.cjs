@@ -23,40 +23,27 @@ function open(chats, storage = {}, extra = {}) {
 }
 const attention = unread => ({ 'elpis-chat-attention-v1': JSON.stringify({ unread, plans: {} }) });
 
-test('A100: one highlighted manager above Pinned and Recents, outside the scroller, even in search', async () => {
+test('A100: the Session Manager is one switch above Pinned and Recents, outside the scroller, even in search; its chat is never listed', async () => {
   const f = await open([chat('chat-a', 50), chat('manager', 1)], { 'elpis-session-manager-v1': 'manager', 'elpis-pinned-chats-v1': '["manager","chat-a"]' });
   const { page } = f;
   try {
-    const button = page.getByRole('button', { name: 'Open Session Manager', exact: true });
-    await button.click();
-    await eventually(async () => assert.equal(await button.getAttribute('aria-current'), 'page'));
-    assert.equal(await row(page, 'manager').count(), 1);
-    assert.equal(await row(page, 'manager').evaluate(row => row.classList.contains('active')), true);
-    assert.equal(await row(page, 'manager').evaluate(row => !!row.closest('.thread-list')), false);
-    assert.equal(await row(page, 'manager').evaluate(row => {
-      const box = row.getBoundingClientRect(), label = row.querySelector('.thread-title').getBoundingClientRect(), icon = row.querySelector('svg').getBoundingClientRect();
-      return label.top >= box.top && label.bottom <= box.bottom && label.right <= box.right && Math.abs((label.top + label.bottom - icon.top - icon.bottom) / 2) < 2;
-    }), true, 'manager label fits inside its row, level with its icon');
-    assert.equal(await button.evaluate(button => !!(button.compareDocumentPosition(document.querySelector('section[aria-label="Pinned"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
-    if (process.env.ELPIS_PARITY_SHOTS) {
-      await fs.mkdir(process.env.ELPIS_PARITY_SHOTS, { recursive: true });
-      for (const theme of ['light', 'dark']) {
-        if (theme === 'dark') await chooseTheme(page, theme);
-        await page.locator('.startup-splash').waitFor({ state: 'detached' });
-        await page.screenshot({ path: path.join(process.env.ELPIS_PARITY_SHOTS, `regression-manager-${theme}.png`) });
-      }
-    }
+    const toggle = page.getByRole('switch', { name: 'Session Manager', exact: true });
+    assert.equal(await row(page, 'manager').count(), 0, 'the manager chat is not listed');
+    assert.equal(await toggle.getAttribute('aria-checked'), 'true');
+    assert.equal(await toggle.evaluate(node => !!node.closest('.thread-list')), false);
+    assert.equal(await toggle.evaluate(node => !!(node.compareDocumentPosition(document.querySelector('section[aria-label="Pinned"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
+    assert.equal(await toggle.evaluate(node => {
+      const row = node.closest('.thread-row'), box = row.getBoundingClientRect(), label = row.querySelector('.thread-title').getBoundingClientRect(), mark = node.getBoundingClientRect();
+      return label.top >= box.top && label.bottom <= box.bottom && mark.right <= box.right && label.right <= mark.left;
+    }), true, 'label and switch fit inside the row');
     await page.getByRole('textbox', { name: 'Search conversations' }).fill('manager');
-    await eventually(async () => assert.equal(await row(page, 'manager').count(), 1));
-    assert.equal(await button.isVisible(), true);
+    assert.equal(await row(page, 'manager').count(), 0);
+    assert.equal(await toggle.isVisible(), true);
     await page.getByRole('textbox', { name: 'Search conversations' }).fill('');
-    await row(page, 'chat-a').locator('.thread-link').click();
-    assert.equal(await button.getAttribute('aria-current'), null, 'another chat removes the highlight');
-    await page.reload();
-    await button.waitFor();
-    await button.click();
-    await eventually(async () => assert.equal(await button.getAttribute('aria-current'), 'page'));
-    assert.equal(f.posts.filter(post => post.path === '/api/threads').length, 0, 'reuses the saved manager');
+    await toggle.click();
+    await eventually(async () => assert.equal(await toggle.getAttribute('aria-checked'), 'false'));
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('elpis-preferences-v1'))).sessionManager, false, 'the choice is saved');
+    assert.equal(f.posts.filter(post => post.path === '/api/threads').length, 0, 'the switch never opens or creates a chat');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -82,21 +69,7 @@ test('A102: bridge recency changes reorder idle chats outside interaction; equal
   } finally { await f.close(); }
 });
 
-test('A100: a rejected manager creation leaves one available row and does not invent a chat', async () => {
-  const f = await open([chat('chat-a', 1)], {}, { '/api/threads': (body, url) => body ? { __http: 503, error: 'Manager unavailable' } : { data: url.searchParams.get('archived') === 'true' ? [] : [chat('chat-a', 1)], nextCursor: null } });
-  try {
-    const button = f.page.getByRole('button', { name: 'Open Session Manager', exact: true });
-    await button.click();
-    await f.page.getByRole('alert').filter({ hasText: 'Could not open Session Manager: Manager unavailable' }).waitFor();
-    assert.equal(await button.count(), 1);
-    assert.equal(await button.isEnabled(), true);
-    assert.equal(await button.getAttribute('aria-current'), null);
-    assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a']);
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('A100: a manager registered by another window takes its one fixed place; a matching name alone is ordinary', async () => {
+test('A100: a manager registered by another window leaves the list; a matching name alone is ordinary', async () => {
   const f = await open([chat('chat-a', 20), { ...chat('chat-b', 10), name: 'Session Manager' }]);
   try {
     assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a', 'chat-b'], 'names do not identify the dedicated manager');
@@ -106,9 +79,6 @@ test('A100: a manager registered by another window takes its one fixed place; a 
     });
     await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a']));
     assert.equal(await row(f.page, 'chat-b').count(), 1);
-    await f.page.getByRole('button', { name: 'Open Session Manager', exact: true }).click();
-    await eventually(async () => assert.equal(await f.page.getByRole('button', { name: 'Open Session Manager', exact: true }).getAttribute('aria-current'), 'page'));
-    assert.equal(f.posts.filter(post => post.path === '/api/threads').length, 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -140,20 +110,20 @@ test('A102: archived unseen/waiting chats never enter the live list; a not-loade
   } finally { await f.close(); }
 });
 
-test('A102: waiting flags and approvals beat unseen; working, errors and seen replies do not', async () => {
+test('A102: waiting flags and approvals come first, running chats next, then unseen replies; errors and seen replies keep their place', async () => {
   const chats = [chat('chat-a', 100), chat('working', 90, { type: 'active' }), chat('error', 80, { type: 'systemError' }), chat('done', 20), chat('question', 10, { type: 'active', activeFlags: ['waitingOnUserInput'] }), chat('approval', 5, { type: 'active', activeFlags: ['waitingOnApproval'] })];
   const f = await open(chats, attention(['done', 'working', 'error']));
   try {
     const recents = section(f.page, 'Recents');
-    await eventually(async () => assert.deepEqual(await ids(recents), ['question', 'approval', 'done', 'chat-a', 'working', 'error']));
+    await eventually(async () => assert.deepEqual(await ids(recents), ['question', 'approval', 'working', 'done', 'chat-a', 'error']));
     f.emit('approval', { id: 'ap', ownerThreadId: 'chat-a', method: 'item/tool/requestUserInput', params: { questions: [] } });
-    await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'question', 'approval', 'done', 'working', 'error']));
+    await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'question', 'approval', 'working', 'done', 'error']));
     f.emit('approvalResolved', { id: 'ap' });
     await eventually(async () => assert.equal((await ids(recents))[0], 'question'));
     await row(f.page, 'done').locator('.thread-link').click();
     await f.page.mouse.move(700, 300);
     await eventually(async () => assert.equal(await row(f.page, 'done').locator('.thread-dot').getAttribute('data-state'), 'idle'));
-    assert.deepEqual(await ids(recents), ['question', 'approval', 'chat-a', 'working', 'error', 'done']);
+    assert.deepEqual(await ids(recents), ['question', 'approval', 'working', 'chat-a', 'error', 'done']);
     await f.page.reload();
     await row(f.page, 'chat-a').waitFor();
     assert.equal(await row(f.page, 'done').locator('.thread-dot').getAttribute('data-state'), 'idle');

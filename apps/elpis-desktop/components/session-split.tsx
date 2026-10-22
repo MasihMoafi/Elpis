@@ -28,7 +28,7 @@ export function useSessionSplit(session: Session, focus: () => void, promote: (s
       }
     };
     const key = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || !["[", "]"].includes(event.key)) return;
+      if (!(event.ctrlKey || event.metaKey) || !event.altKey || event.shiftKey || !["BracketLeft", "BracketRight"].includes(event.code)) return;
       if (embedded) {
         event.preventDefault(); window.parent.postMessage({ type: "elpis:previous-pane" }, location.origin);
       } else if (splitRef.current) {

@@ -168,20 +168,17 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await dialog.getByText('Delete “Foxtrot”?').waitFor();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    assert.equal(creates.length, 0, 'the manager chat is created only when opened');
-    const managerButton = page.getByRole('button', { name: 'Open Session Manager', exact: true });
-    assert.equal(await managerButton.evaluate(button => !!button.closest('.thread-list')), false, 'manager stays above the scrolling chat list');
-    assert.equal(await managerButton.evaluate(button => !!(button.compareDocumentPosition(document.querySelector('section[aria-label="Projects"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'manager precedes projects and chats');
+    assert.equal(creates.length, 0, 'the sidebar never creates the manager chat');
+    const managerSwitch = page.getByRole('switch', { name: 'Session Manager', exact: true });
+    assert.equal(await managerSwitch.evaluate(node => !!node.closest('.thread-list')), false, 'manager stays above the scrolling chat list');
+    assert.equal(await managerSwitch.evaluate(node => !!(node.compareDocumentPosition(document.querySelector('section[aria-label="Projects"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'manager precedes projects and chats');
     const sidebarSearch = aside.locator('input[aria-label="Search conversations"]');
     await sidebarSearch.fill('no matching chat');
-    assert.equal(await managerButton.isVisible(), true, 'search never hides the manager entry');
+    assert.equal(await managerSwitch.isVisible(), true, 'search never hides the manager switch');
     await sidebarSearch.fill('');
-    await managerButton.click();
-    await eventually(async () => assert.deepEqual(creates, [{ sessionManager: true, permissions: 'ask' }]));
-    await eventually(async () => assert.ok(await page.locator('.thread-row[data-thread-id="session-manager"]').count()));
-    await page.reload();
-    await page.getByRole('button', { name: 'Open Session Manager', exact: true }).click();
-    await eventually(async () => assert.equal(creates.length, 1, 'reopening uses the saved manager chat'));
+    await managerSwitch.click();
+    assert.equal(await managerSwitch.getAttribute('aria-checked'), 'false');
+    assert.equal(creates.length, 0, 'turning it off or on creates no chat');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

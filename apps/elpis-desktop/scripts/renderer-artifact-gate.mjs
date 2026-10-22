@@ -34,6 +34,26 @@ export const retainedUpdates = {
       "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
       "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model."
     },
+    "tests/sidebar-order.test.cjs": {
+      "blob": "c7dc707e18ad618ba6a080d6dedd787ba69d0b17",
+      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
+      "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged."
+    },
+    "tests/sidebar.test.cjs": {
+      "blob": "ef75229db779465c4d80534e424aaf9a84bc98d3",
+      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
+      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged."
+    },
+    "tests/desktop-small-fixes.test.cjs": {
+      "blob": "e0ed82d0eb6cccaed1d06ea42d9f6d6ace180974",
+      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
+      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged."
+    },
+    "tests/chat-groups.test.mjs": {
+      "blob": "2df494abc42feb2c83e34ea9259c25050ebfad6b",
+      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
+      "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed."
+    },
     "tests/browser-drawing.test.cjs": {
       "blob": "d5a470f12c93b03027ec3658b833d8ea6bb11031",
       "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",

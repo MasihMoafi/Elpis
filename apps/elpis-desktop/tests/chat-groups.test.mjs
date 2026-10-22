@@ -14,10 +14,10 @@ test('A102: recency uses bridge timestamps after merges, with stable ties and no
   assert.deepEqual(ids(list), ['old', 'new', 'run', 'tie', 'unknown']);
 });
 
-test('A102: waiting then unread; active, errors, idle and unknown have no attention priority', () => {
-  const list = ['working', 'idle', 'unread', 'error', 'waiting', 'unknown', 'unread', 'waiting'];
-  assert.deepEqual(prioritizeChats(list, value => value), ['waiting', 'waiting', 'unread', 'unread', 'working', 'idle', 'error', 'unknown']);
-  assert.deepEqual(prioritizeChats(['idle', 'working'], value => value), ['idle', 'working']);
+test('A102: waiting, then running, then unread; errors, idle and unknown have no priority', () => {
+  const list = ['working', 'idle', 'unread', 'error', 'waiting', 'unknown', 'unread', 'waiting', 'working'];
+  assert.deepEqual(prioritizeChats(list, value => value), ['waiting', 'waiting', 'working', 'working', 'unread', 'unread', 'idle', 'error', 'unknown']);
+  assert.deepEqual(prioritizeChats(['idle', 'working'], value => value), ['working', 'idle']);
 });
 
 test('A102: holding positions keeps fresh statuses, appends arrivals, removes missing chats, and releases to live order', () => {
