@@ -201,6 +201,7 @@
     "tests/input-hints.test.cjs",
     "tests/ledger-page.test.cjs",
     "tests/love-spot-live.test.cjs",
+    "tests/love-spot-menu.test.cjs",
     "tests/love-spot-standalone.test.cjs",
     "tests/love-spot-sync.test.cjs",
     "tests/love-spot-talk.test.cjs",
