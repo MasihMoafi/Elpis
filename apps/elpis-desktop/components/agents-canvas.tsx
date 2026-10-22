@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
@@ -1184,7 +1185,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <span className="canvas-toolbar-label">Add</span>
         <Button variant="ghost" size="sm" aria-label="Add agent" title="An agent that writes: give it a prompt and the folders it may write; Elpis checks its work after it" onClick={() => addAgent()}><i className="canvas-kind" data-kind="agent" />Agent</Button>
         <details className="dropdown dropdown-top canvas-characters">
-          <summary className={buttonVariants({ variant: "ghost", size: "sm", className: "btn btn-ghost btn-sm" })}>Characters</summary>
+          <DisclosureSummary className={buttonVariants({ variant: "ghost", size: "sm", className: "btn btn-ghost btn-sm" })}>Characters</DisclosureSummary>
           <div className="dropdown-content bg-base-100 text-base-content rounded-box shadow p-2 z-20 grid gap-1" role="group" aria-label="Character agents">
             {characters.map(character => <Button key={character.id} variant="ghost" size="sm" className="btn btn-ghost btn-sm justify-start" aria-label={`Add ${character.name}`} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); addCharacter(character); }}>
               <span className="avatar"><div className="w-7 h-7"><img src={portraits[character.id]} alt="" /></div></span>{character.name}

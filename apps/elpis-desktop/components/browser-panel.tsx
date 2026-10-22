@@ -1,7 +1,7 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, PenLine, SquareDashedMousePointer, TriangleAlert, X } from "lucide-react";
+import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, PenLine, SquareDashedMousePointer, CircleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -114,7 +114,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
       <Button type="button" variant="ghost" size="icon-sm" aria-label="Forward" disabled={!active?.canGoForward} onClick={() => void command("forward")}><ArrowRight size={15} /></Button>
       <Button type="button" variant="ghost" size="icon-sm" aria-label={active?.loading ? "Stop loading page" : "Reload page"} onClick={() => void command(active?.loading ? "stop" : "reload")}>{active?.loading ? <Square size={13} /> : <RefreshCw size={14} />}</Button>
       <div className="browser-address">
-        {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><TriangleAlert size={12} aria-hidden="true" /><span className="browser-security-text">Not secure</span></span>}
+        {active?.security === "insecure" && <span className="browser-security" title="This site does not use a secure connection"><CircleAlert size={12} aria-hidden="true" /><span className="browser-security-text">Not secure</span></span>}
         <Input ref={address} aria-label="Search or enter a URL" placeholder="Search or enter a URL" value={value} onChange={e => active && setEdit({ tab: active.id, value: e.target.value })} onKeyDown={e => { if (e.key === "Escape") { setEdit(null); address.current?.blur(); } }} spellCheck={false} autoComplete="off" />
         {active && active.zoom !== 100 && <button data-slot="zoom-reset" type="button" className="browser-zoom" title="Reset zoom to 100%" onClick={() => void command("zoom", { value: "reset" })}>{active.zoom}%</button>}
       </div>

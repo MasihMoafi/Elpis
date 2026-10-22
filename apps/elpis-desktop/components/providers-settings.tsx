@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -106,7 +107,7 @@ export function ProvidersSettings({ refreshKey, onChanged }: { refreshKey: numbe
       </Card>}
       {custom.length > 0 && <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}><ConfiguredList config={config} onEdit={edit} empty="No custom providers configured." items={custom.map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, envKey: provider.auth.envKey, keySet: provider.auth.keySet }))} /></Card>}
     </>}
-    <details className="provider-advanced settings-card"><summary>Advanced API connections</summary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
+    <details className="provider-advanced settings-card"><DisclosureSummary>Advanced API connections</DisclosureSummary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
     {editing && <form className="settings-card" aria-label="API provider settings" onSubmit={saveProvider}>
       <h3 className="font-semibold">{editing.existing ? `Edit ${editing.name}` : "Add API provider"}</h3>
       <p className="provider-note">Provider settings apply to new conversations and agents. Existing conversations keep their original connection settings and credentials.</p>

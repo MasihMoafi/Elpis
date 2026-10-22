@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type Thread } from "@/lib/api";
@@ -172,7 +173,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
         {change?.dirty && <p className="text-sm">There are uncommitted changes. Commit and check them before continuing.</p>}
         {change?.diff && <div className="diff-body elpis-improve-diff">{change.diff.split(/(?=^diff --git )/m).filter(Boolean).map((file, index) => <section key={index}><p className="px-2 py-1 text-xs font-mono">{file.split("\n")[0]}</p>{/^@@ /m.test(file) ? <DiffLines lines={parseDiff(file)} /> : <pre className="elpis-improve-log">{file}</pre>}</section>)}</div>}
         {change?.truncated && <p className="text-sm">The diff is truncated. Review the full diff in the worktree before keeping.</p>}
-        {change?.checks?.commands.map((command, index) => <details key={index} open={command.code !== 0} className="text-sm"><summary>{command.command} · exit {command.code}</summary><pre className="elpis-improve-log">{command.output || (command.code !== 0 ? `Check exited with code ${command.code} without output.` : "")}</pre></details>)}
+        {change?.checks?.commands.map((command, index) => <details key={index} open={command.code !== 0} className="text-sm"><DisclosureSummary>{command.command} · exit {command.code}</DisclosureSummary><pre className="elpis-improve-log">{command.output || (command.code !== 0 ? `Check exited with code ${command.code} without output.` : "")}</pre></details>)}
         {(error || change?.error) && <p role="alert" className="text-sm text-destructive">{error || change?.error}</p>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
         <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>Close</Button><Button variant="outline" disabled={busy || change?.status === "checking"} title={change?.status === "checking" ? "Checking build and tests…" : busy ? "Wait for the current action to finish." : undefined} onClick={() => void action("check")}>Check build &amp; tests</Button><Button variant="outline" disabled={!!previewReason} title={previewReason || undefined} onClick={() => void action("try")}>Try it</Button><Button disabled={!canKeep} disabledReason={blockedReason} title={blockedReason || undefined} onClick={() => void action("keep")}>Keep</Button></AlertDialogFooter>

@@ -66,11 +66,11 @@ html { font-size:var(--interface-size, 16px); }
 :root { --accent-surface:rgb(from var(--card) r r r); --accent-canvas:rgb(from var(--canvas) r r r); --cut-sm:4px; --cut:7px; --cut-lg:10px; --hud-edge:var(--border); --hud-face:var(--card); --hud-face-hover:color-mix(in oklab, var(--card), var(--foreground) 8%);
   --label-size:var(--text-small); --label-track:.14em; --motion-fast:.12s; --motion:.2s; --ease:cubic-bezier(.2,.7,.2,1); }
 .dark { --hud-edge:color-mix(in oklch, var(--gold) 60%, transparent); --hud-face:color-mix(in srgb, var(--gold) 8%, var(--accent-surface)); --hud-face-hover:color-mix(in srgb, var(--gold) 22%, var(--accent-surface)); }
-/* Chamfers: the lab's cut corners (.iso-chamfer) without its clip-path, so focus rings and shadows stay visible. Controls
+/* Shared native chamfers keep each element's border width, focus rings and shadows. Controls
  * (components/ui: buttons, fields, select triggers) take .hud-cut, those 24px tall or less .hud-cut-sm, and panels and
  * floating surfaces --cut-lg (below). Roundness stays only where it means something: dots, rings and switches. */
-.hud-cut, .hud-cut-sm { corner-shape:var(--corner-shape, bevel); }
-.hud-cut { border-radius:var(--corner-radius, var(--cut) 0); }
+.hud-cut, .hud-cut-sm, .iso-chamfer { corner-shape:var(--corner-shape, bevel); }
+.hud-cut, .iso-chamfer { border-radius:var(--corner-radius, var(--cut) 0); }
 .hud-cut-sm { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); }
 /* The HUD label: every small uppercase caption (the lab's mono labels) in one type — 12px, never smaller (--text-small),
  * mono, .14em, uppercase. Each label keeps its own line-height, colour and spacing. */
@@ -102,6 +102,13 @@ body { margin:0; background:var(--background); color:var(--foreground); font:0.8
 /* --text-small: the smallest text in the app (Masih: icons and text larger, never smaller). */
 :root { --serif:"Inter Display", Inter, system-ui, sans-serif; --mono:"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace; --text-small:0.75rem; }
 button, select { cursor:pointer; }
+/* Hide browser disclosure triangles everywhere, including recorded Markdown. */
+summary { list-style:none; }
+summary::marker { content:""; }
+summary::-webkit-details-marker { display:none; }
+.disclosure-summary { display:flex; align-items:center; gap:8px; cursor:pointer; min-width:0; overflow-wrap:anywhere; }
+.disclosure-chevron { flex:none; align-self:center; color:var(--muted-foreground); }
+details[open] > .disclosure-summary > .disclosure-chevron { transform:rotate(90deg); }
 button:disabled { cursor:not-allowed; }
 :focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
 .app-shell { display:grid; grid-template-columns:var(--sidebar-width, 256px) minmax(0,1fr); height:100dvh; overflow:hidden; background:var(--background); color:var(--foreground); }
@@ -336,8 +343,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-advanced > * + * { margin-top:10px; }
 .activity-card { font-size:0.78125rem; margin:2px 0; color:var(--muted-foreground); }
 .activity-card + :not(.activity-card) { margin-top:14px; }
-.activity-heading { display:flex; align-items:center; gap:8px; padding:4px 8px; cursor:pointer; min-width:0; list-style:none; }
-.activity-heading::-webkit-details-marker { display:none; }
+.activity-heading { display:flex; align-items:center; gap:8px; padding:4px 8px; cursor:pointer; min-width:0; }
 .activity-heading:hover { background:var(--hover); color:var(--foreground); }
 .activity-heading svg { flex-shrink:0; color:var(--muted-foreground); }
 .activity-heading > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
@@ -577,10 +583,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 :root { --code-ink:#b3261e; --sh-command:#1f5fbf; --sh-string:#1a7f37; --sh-variable:#8241c8; }
 .dark { --code-ink:#ff8b7d; --sh-command:#7cb7ff; --sh-string:#8bd49c; --sh-variable:#c9a2ff; }
 .activity-group { margin:2px 0 12px; }
-.activity-group > summary { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; list-style:none; cursor:pointer; font-size:0.875rem; color:var(--muted-foreground); transition:color .12s, background .12s; }
-.activity-group > summary::-webkit-details-marker { display:none; }
-.activity-group > summary::after { content:"›"; flex-shrink:0; font-size:0.9375rem; line-height:1; color:var(--subtle-foreground); transition:transform .15s; }
-.activity-group[open] > summary::after { transform:rotate(90deg); }
+.activity-group > summary { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; cursor:pointer; font-size:0.875rem; color:var(--muted-foreground); transition:color .12s, background .12s; }
 .activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
 .activity-group[open] > summary { position:sticky; top:calc(-1 * var(--chat-top-inset, 0px)); z-index:1; width:100%; background:var(--background); }
 .activity-group[open] > summary:hover { background:var(--card); }
@@ -621,8 +624,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .sh-operator { color:var(--muted-foreground); }
 .sh-comment { color:var(--subtle-foreground); font-style:italic; }
 .worked-for { margin:4px 0 14px; }
-.worked-for > summary { display:flex; align-items:center; gap:12px; list-style:none; cursor:pointer; color:color-mix(in oklch, var(--accent-text) 70%, var(--muted-foreground)); font:500 var(--text-small)/1 var(--mono); letter-spacing:.04em; padding:6px 0; }
-.worked-for > summary::-webkit-details-marker { display:none; }
+.worked-for > summary { display:flex; align-items:center; gap:12px; cursor:pointer; color:color-mix(in oklch, var(--accent-text) 70%, var(--muted-foreground)); font:500 var(--text-small)/1 var(--mono); letter-spacing:.04em; padding:6px 0; }
 .worked-for > summary::before, .worked-for > summary::after { content:""; height:1px; flex:1; background:linear-gradient(90deg, transparent, var(--border)); }
 .worked-for > summary::after { background:linear-gradient(90deg, var(--border), transparent); }
 .worked-for > summary:hover { color:var(--accent-text); }
@@ -634,15 +636,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--shadow); }
 .composer-tray { border-color:var(--edge); }
 /* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
-/* Each cut corner carries a line along its bevel in the box's own edge colour (--edge), so the bar, the composer and
-   both corner lines read as one edge (Masih 18-19 Oct: they "shouldn't be" different) (the square's anti-diagonal is the cut). On a new chat the
-   environment bar sits on top and squares the composer's top corners, so the bar's own cut carries the top accent. */
-.composer::before, .composer::after, .composer-tray::before { content:""; position:absolute; width:var(--cut-lg); height:var(--cut-lg); pointer-events:none;
-  background:linear-gradient(to bottom right, transparent calc(50% - 1px), var(--edge) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
-.composer::before, .composer-tray::before { top:-1px; left:-1px; }
-.composer::after { bottom:-1px; right:-1px; }
-.composer-tray { position:relative; }
-.composer-tray + .composer::before { display:none; }
+/* The native bevel draws the border once, using the same width and colour as its straight edges. */
 .composer:focus-within { box-shadow:var(--shadow), var(--glow, none); }
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
@@ -1224,21 +1218,16 @@ body:has(> .app-shell.has-title-bar) > .browser-drawing { top:36px; }
 .iso-label[data-hot] { border-color:var(--foreground); }
 .iso-label[data-selected] { border-color:var(--context); box-shadow:0 0 0 1px var(--context); }
 .iso-badge { flex:none; display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:3px; background:var(--kind); color:var(--card); font:600 0.75rem/1 var(--mono); }
-/* Chamfered, as Deus Ex's buttons: the edge is the element, its face a layer 1px inside, so the cut corners keep it. */
-.iso-chamfer { --cut:7px; position:relative; isolation:isolate; background:var(--border); clip-path:polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
-.iso-chamfer::before { content:""; position:absolute; inset:1px; z-index:-1; background:var(--card); clip-path:inherit; }
-.dark .iso-chamfer { background:color-mix(in oklch, var(--gold) 60%, transparent); }
-.dark .iso-chamfer::before { background:var(--hud-face); }
+/* The isometric HUD uses the same native border as the other cut controls and cards. */
+.iso-chamfer { --cut:7px; border:1px solid var(--hud-edge); background:var(--hud-face); }
 .iso-hud { position:absolute; z-index:2; bottom:12px; }
 .iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
-.iso-key { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:32px; height:30px; padding:0 10px; border:0; color:var(--foreground); font-size:0.78125rem; font-weight:500; cursor:pointer; }
-.iso-key:hover::before { background:color-mix(in oklab, var(--card), var(--foreground) 8%); }
+.iso-key { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:32px; height:30px; padding:0 10px; color:var(--foreground); font-size:0.78125rem; font-weight:500; cursor:pointer; }
+.iso-key:hover { background:var(--hud-face-hover); }
 .iso-key:focus-visible { outline:none; background:var(--ring); }
 .dark .iso-key { color:var(--gold); }
-.dark .iso-key:hover::before { background:var(--hud-face-hover); }
 .iso-keys b { color:var(--foreground); font-weight:500; }
-.iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; }
-.iso-status::before { box-shadow:inset 3px 0 var(--kind, var(--border)); }
+.iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; border-left-color:var(--kind, var(--border)); }
 .iso-status strong { min-width:0; overflow-wrap:anywhere; font-size:0.84375rem; font-weight:600; color:var(--foreground); }
 .iso-status small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.75rem; color:var(--muted-foreground); }
 @container iso-board (max-width:760px) { .iso-keys { display:none; } }

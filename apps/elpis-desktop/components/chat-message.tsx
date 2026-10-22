@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SmartPruneLine } from "@/components/smart-prune";
 import { useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
@@ -114,7 +115,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
     const replies=attached.flatMap(({part,file})=>{const reply=file?readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}):null;return reply?[reply]:[];});
     const reason=editBlockedReason||(attachments.length?"This message contains attachments that this app cannot safely resend.":undefined);
-    const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.filter(({part,file})=>!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)})).map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><summary className="cursor-pointer break-all">{file}</summary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
+    const attachmentContent=attached.length ? <ul className="mt-2 space-y-3 text-sm" aria-label="Message attachments">{attached.filter(({part,file})=>!file||!readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)})).map(({part,index,file})=><li key={index}>{file ? <details className="max-w-full rounded-md border border-border p-2"><DisclosureSummary className="cursor-pointer break-all">{file}</DisclosureSummary><pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">{text(part.text).slice(`File: ${file}\n`.length)}</pre></details> : <RecordedAttachment part={part} index={index} mediaBase={mediaBase}/>}</li>)}</ul> : undefined;
     const originalBody=content.filter(part=>part.type==="text"&&!fileAttachment(part)).map(part=>text(part.text)).join("\n"), answers=questionReplies(originalBody);
     const body=answers?questionReplyText(answers):originalBody;
     const bodyContent=answers?<div className="space-y-3">{answers.map((reply,index)=><div key={index} className="space-y-1"><p className="text-sm text-muted-foreground" dir="auto">{reply.question}</p><p dir="auto">{reply.answer}</p></div>)}</div>:undefined;
@@ -134,7 +135,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     const result=object(item.result);const contents=list(item.type==="mcpToolCall"?result.content:item.contentItems);
     const output=contents.map(part=>text(object(part).text)).filter(Boolean).join("\n");const error=object(item.error);
     const label=item.type==="mcpToolCall"?stepLabel(item):`Used ${text(item.tool)||"a tool"}`;
-    return <Activity label={label} status={item.status} time={typeof item.durationMs==="number"?item.durationMs:undefined}>{item.arguments!==undefined&&<details className="step-input"><summary>Input</summary><TextOutput value={item.arguments}/></details>}{output?<TextOutput value={output}/>:result.structuredContent?<TextOutput value={result.structuredContent}/>:contents.length?<p className="step-note">Non-text output is recorded for this tool.</p>:null}{text(error.message)&&<p role="alert" className="step-note step-error"><FilePathText text={text(error.message)}/></p>}</Activity>;
+    return <Activity label={label} status={item.status} time={typeof item.durationMs==="number"?item.durationMs:undefined}>{item.arguments!==undefined&&<details className="step-input"><DisclosureSummary>Input</DisclosureSummary><TextOutput value={item.arguments}/></details>}{output?<TextOutput value={output}/>:result.structuredContent?<TextOutput value={result.structuredContent}/>:contents.length?<p className="step-note">Non-text output is recorded for this tool.</p>:null}{text(error.message)&&<p role="alert" className="step-note step-error"><FilePathText text={text(error.message)}/></p>}</Activity>;
   }
   if(item.type==="subAgentActivity"){
     const id=text(item.agentThreadId),agent=threads.find(thread=>thread.id===id);
@@ -166,5 +167,5 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="contextCompaction")return <div className="context-event">Context compacted</div>;
   if(item.type==="enteredReviewMode")return <div className="context-event">{`Review started${typeof item.review==="string"&&item.review?`: ${item.review}`:""}`}</div>;
   if(item.type==="exitedReviewMode")return <article className="message agent"><MarkdownText text={typeof item.review==="string"?item.review:""}/></article>;
-  return <Activity label={readable(item.type)}><details className="step-input"><summary>Recorded details</summary><TextOutput value={item}/></details></Activity>;
+  return <Activity label={readable(item.type)}><details className="step-input"><DisclosureSummary>Recorded details</DisclosureSummary><TextOutput value={item}/></details></Activity>;
 }

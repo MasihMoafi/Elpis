@@ -47,7 +47,9 @@ const render=(name,props)=>renderToStaticMarkup(React.createElement(load(MAINTEN
 
 test('catalog-backed maintenance models keep selections and offer custom IDs in a closed advanced disclosure', () => {
   const html = render('BackgroundSettings', { value: settings, models }) + render('MemorySettings', { value: settings, models });
-  assert.match(html, /<details><summary[^>]*>Advanced: custom model/);
+  assert.match(html, /<details><summary[^>]*data-slot="disclosure-summary"/);
+  assert.match(html, /lucide-chevron-right/);
+  assert.match(html, /Advanced: custom model/);
   assert.doesNotMatch(html, /<details open/);
   for (const label of ['Background model', 'Memory extraction model', 'Memory consolidation model']) assert.match(html, new RegExp(`aria-label="Custom ${label}"`));
   assert.match(html, /Sol 6/);

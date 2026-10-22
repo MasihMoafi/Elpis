@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dictation } from "@/components/dictation";
@@ -64,7 +65,7 @@ export function LoveAgentPanel({ agent, busy, cwd, onChange, onInterview, onRun,
       </form>
     </>}
     <details className="rounded-box border border-border">
-      <summary>Agent settings</summary>
+      <DisclosureSummary>Agent settings</DisclosureSummary>
       <div className="grid gap-3">
         <label>Task<textarea className="textarea textarea-sm" aria-label="Task" rows={3} value={draft.task} maxLength={16000} onChange={e => field("task", e.target.value)} /></label>
         <label>Prompt<textarea className="textarea textarea-sm" aria-label="Prompt" rows={5} value={draft.prompt} maxLength={32000} onChange={e => field("prompt", e.target.value)} /></label>

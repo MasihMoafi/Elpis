@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useRef, useState } from "react";
 import { api, effortsOf, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -60,14 +61,14 @@ function useProviderCatalogs(value: ElpisSettings, models: Model[], selected: (s
 function ModelChoice({ label, value, models, provider, catalogStatus, disabled, inheritLabel, onChange }: {
   label: string; value: string | null; models: Model[]; provider: string; catalogStatus?: string; disabled: boolean; inheritLabel?: string; onChange: (value: string | null) => void;
 }) {
-  return <div role="group" aria-label={`${label} choices`} className="grid min-w-0 gap-1 text-sm">
+  return <div role="group" aria-label={`${label} choices`} className="settings-field-stack text-sm">
     {models.length ? <OptionSelect aria-label={label} className="settings-choice" value={value ?? ""} onChange={event => onChange(event.target.value || null)} disabled={disabled}>
     {inheritLabel ? <option value="">{inheritLabel}</option> : !value && <option value="" disabled>Choose a model</option>}
     {value && !models.some(model => model.model === value) && <option value={value}>Current configured model</option>}
     {models.map(model => <option key={model.model} value={model.model}>{model.displayName || model.model}</option>)}
     </OptionSelect> : <span className="text-muted-foreground">{value ? "Current configured model" : inheritLabel ?? "No model chosen"}</span>}
     {catalogStatus && <span role="status" className="text-xs text-muted-foreground">{catalogStatus}</span>}
-    <details><summary className="cursor-pointer">Advanced: custom model</summary><p className="text-xs text-muted-foreground">{models.length ? `Enter a model ID supported by ${provider}.` : `No model catalog is available for ${provider}.`}</p>
+    <details><DisclosureSummary className="cursor-pointer">Advanced: custom model</DisclosureSummary><p className="text-xs text-muted-foreground">{models.length ? `Enter a model ID supported by ${provider}.` : `No model catalog is available for ${provider}.`}</p>
       <Input aria-label={models.length ? `Custom ${label}` : label} value={value ?? ""} onChange={event => onChange(event.target.value.trim() || null)} placeholder="Model name supplied by this connection" maxLength={200} disabled={disabled} />
     </details>
   </div>;

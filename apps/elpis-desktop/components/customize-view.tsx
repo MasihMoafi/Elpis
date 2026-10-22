@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, Plus, RefreshCw, Settings2, Trash2 } from "lucide-react";
 import { FileRefLink } from "@/components/file-ref";
@@ -141,7 +142,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         <Switch aria-label={`Use ${skill.name}`} checked={skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
         <span className="flex size-6 shrink-0 items-center justify-center">{skill.deletable && <MoreMenu label={`Actions for ${skill.name}`} title="Skill actions" actions={[{ id: "delete", label: "Delete", icon: <Trash2 size={14} />, hint: "Delete", destructive: true, run: () => requestDelete(skill) }]} />}</span>
       </li>)}</ul>
-      {(data.skills.errors?.length ?? 0) > 0 && <details className="customize-errors"><summary>{data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read</summary>
+      {(data.skills.errors?.length ?? 0) > 0 && <details className="customize-errors"><DisclosureSummary>{data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read</DisclosureSummary>
         <ul>{data.skills.errors!.map(item => <li key={item.path}><FileRefLink target={{ path: item.path }}><code>{item.path}</code></FileRefLink> {item.message}</li>)}</ul></details>}
     </section>}
     {data && section === "plugins" && <section aria-label="Your plugins">

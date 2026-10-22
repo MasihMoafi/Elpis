@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { ChevronDown } from "lucide-react";
@@ -84,7 +85,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
           <ComboboxList>{(item: Choice) => <ComboboxItem key={item.key} value={item} data-value={item.model}><span className="model-option-name">{item.label}{item.description && <small title={item.description}>{item.description}</small>}</span><span className="model-option-provider">{item.providerLabel}</span></ComboboxItem>}</ComboboxList>
         </Tabs.Panel>
       </Tabs.Root>
-      {allowCustom && configured.length > 0 && <details className="model-custom"><summary>Advanced: use an unlisted model</summary><div className="grid gap-2 pt-2"><OptionSelect aria-label="Provider" value={customProvider} onChange={e => setCustomProvider(e.target.value)}><option value="">Choose connection</option>{configured.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</OptionSelect><Input aria-label="Model ID" placeholder="Model name supplied by this connection" value={customModel} maxLength={200} onChange={e => setCustomModel(e.target.value)} /><Button type="button" size="sm" disabled={!customProvider || !customModel.trim()} onClick={() => choose({ model: customModel.trim(), choiceId: customProvider })}>Use model</Button></div></details>}
+      {allowCustom && configured.length > 0 && <details className="model-custom"><DisclosureSummary>Advanced: use an unlisted model</DisclosureSummary><div className="grid gap-2 pt-2"><OptionSelect aria-label="Provider" value={customProvider} onChange={e => setCustomProvider(e.target.value)}><option value="">Choose connection</option>{configured.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</OptionSelect><Input aria-label="Model ID" placeholder="Model name supplied by this connection" value={customModel} maxLength={200} onChange={e => setCustomModel(e.target.value)} /><Button type="button" size="sm" disabled={!customProvider || !customModel.trim()} onClick={() => choose({ model: customModel.trim(), choiceId: customProvider })}>Use model</Button></div></details>}
     </ComboboxContent>
   </Combobox>;
 }

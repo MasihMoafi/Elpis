@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { CollapseDetails } from "@/components/step";
 import { WorkingMark } from "@/components/working-mark";
 
@@ -88,7 +89,7 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: Turn
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for">
       {/* Without recorded times, ChatGPT's "41 previous messages" says what the fold holds. */}
-      <summary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : `${folded.length} previous ${folded.length === 1 ? "message" : "messages"}`}</span></summary>
+      <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : `${folded.length} previous ${folded.length === 1 ? "message" : "messages"}`}</span></DisclosureSummary>
       <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} /></div>
     </details>}
     <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} live={active} />
@@ -130,13 +131,13 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
   const recorded = items.some(item => item.type === "reasoning" && reasoningOf(item));
   const shown = recorded ? entries.filter(entry => entry.item.type !== "reasoning" || reasoningOf(entry.item)) : entries;
   return <details className="activity-group" onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary aria-expanded={open}>
+    <DisclosureSummary aria-expanded={open}>
       {running
         ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
         : <span className="activity-group-label">{summaryParts(items).map((part, index) => <Fragment key={index}>{index > 0 && ", "}{part.text}{part.failed > 0 && <> <span className="activity-group-failed">({part.failed} failed)</span></>}</Fragment>)}</span>}
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
       {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
-    </summary>
+    </DisclosureSummary>
     <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}{open && <CollapseDetails label="Collapse tool calls" />}</div>
   </details>;
 }

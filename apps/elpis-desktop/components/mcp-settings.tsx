@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -95,7 +96,7 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     <div className="settings-stack">
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
-    {data?.configPath && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Configuration file</summary><p className="mt-2 break-all">{data.configPath}</p></details>}
+    {data?.configPath && <details className="text-xs text-muted-foreground"><DisclosureSummary className="cursor-pointer">Configuration file</DisclosureSummary><p className="mt-2 break-all">{data.configPath}</p></details>}
     {adding && <form className="settings-card settings-form" aria-label="Add MCP server" onSubmit={add}>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">Server name<Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="letters, numbers, - or _" /></label>

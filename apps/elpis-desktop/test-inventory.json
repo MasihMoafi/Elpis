@@ -1,5 +1,6 @@
 {
   "fast": [
+    "tests/polish-source.test.cjs",
     "tests/dialog-actions.test.cjs",
     "tests/install-forward.test.mjs",
     "tests/account-events.test.cjs",
@@ -120,6 +121,7 @@
     "desktop/sleep-blocker.test.cjs"
   ],
   "ui": [
+    "tests/polish.test.cjs",
     "tests/approved-working-mark.test.cjs",
     "tests/effort-shortcuts.test.cjs",
     "tests/project-membership.test.cjs",
@@ -291,6 +293,7 @@
     "tests/settings2.test.cjs"
   ],
   "opt-in": [
+    "tests/polish.runtime.cjs",
     "tests/ledger-app.runtime.cjs",
     "tests/ledger-engine.runtime.mjs",
     "tests/changes-installed.runtime.cjs",

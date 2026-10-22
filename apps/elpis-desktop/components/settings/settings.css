@@ -21,7 +21,7 @@
 .settings-section-link[aria-current="page"] { color:var(--accent-text); background:var(--selected); }
 .settings-row-description { font-size:0.78125rem; line-height:1.45; color:var(--muted-foreground); margin-top:2px; overflow-wrap:anywhere; }
 /* A control keeps the width its content needs (max-width still caps it); a long description wraps instead of squeezing it. */
-.settings-row-control { flex:0 0 auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; min-width:0; max-width:60%; }
+.settings-row-control { flex:0 0 auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:var(--settings-field-gap); min-width:0; max-width:60%; }
 .settings-row.stacked { flex-direction:column; align-items:stretch; gap:10px; }
 .settings-row.stacked .settings-row-control { max-width:none; justify-content:flex-start; }
 .settings-row-control .settings-choice, .settings-row-control [data-slot="select-trigger"] { min-width:180px; max-width:100%; }
@@ -58,7 +58,10 @@
 .archived-check { display:flex; align-items:center; gap:16px; margin-right:auto; font-size:0.875rem; color:var(--muted-foreground); cursor:pointer; }
 .archived-check input, .archived-row-check { width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
 /* Fields use the shared Button's default size; switches, icon actions and segmented choices keep their own shape. */
-.settings-page { --settings-control-h:32px; }
+.settings-page { --settings-control-h:32px; --settings-field-gap:8px; }
+.settings-field-stack { display:grid; min-width:0; gap:var(--settings-field-gap); }
+.settings-page .field { gap:var(--settings-field-gap); }
+.settings-page details > :not(summary) { margin-top:var(--settings-field-gap); }
 .settings-page :is([data-slot="input"], [data-slot="select-trigger"], .model-picker-trigger, .search-field) { height:var(--settings-control-h); min-height:var(--settings-control-h); font-size:var(--text-sm); }
 .settings-page [data-slot="textarea"] { font-size:0.8125rem; }
 .settings-page [data-settings-file] { font-size:var(--code-size, 12.5px); white-space:pre-wrap; overflow-wrap:anywhere; }

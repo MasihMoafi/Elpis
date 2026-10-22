@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useState } from "react";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ export function RewindDialog({ threadId, turnId, prompt, turns, onConfirm, onClo
       <div className="grid min-w-0 gap-2 text-sm text-muted-foreground" aria-live="polite">
         {!preview ? <p>Checking for file changes…</p> : !preview.available ? <p>{preview.reason || "No file checkpoint for this message."}</p> : mode !== "conversation" && <>
           <p>{preview.files?.length ?? 0} {preview.files?.length === 1 ? "file" : "files"} · <ChangeCounts added={preview.added ?? 0} removed={preview.removed ?? 0} /></p>
-          {preview.diff && <details className="min-w-0"><summary className="cursor-pointer">View changes</summary><pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-background p-2 text-xs leading-relaxed">{preview.diff.split("\n").map((line, index) => <span key={index} className={`block ${line.startsWith("+") && !line.startsWith("+++") ? "text-[var(--success)]" : line.startsWith("-") && !line.startsWith("---") ? "text-destructive" : ""}`}>{line || " "}</span>)}</pre>{preview.truncated && <p>Showing the first part of the diff.</p>}</details>}
+          {preview.diff && <details className="min-w-0"><DisclosureSummary className="cursor-pointer">View changes</DisclosureSummary><pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-background p-2 text-xs leading-relaxed">{preview.diff.split("\n").map((line, index) => <span key={index} className={`block ${line.startsWith("+") && !line.startsWith("+++") ? "text-[var(--success)]" : line.startsWith("-") && !line.startsWith("---") ? "text-destructive" : ""}`}>{line || " "}</span>)}</pre>{preview.truncated && <p>Showing the first part of the diff.</p>}</details>}
           <p>Commits stay in place.</p>
         </>}
         {mode !== "code" && <p>Undo rewind brings back the messages. Your files stay as they are. Undo works until you send your next message.</p>}

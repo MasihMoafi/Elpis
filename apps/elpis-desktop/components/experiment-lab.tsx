@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,9 +116,9 @@ function Lab({ graph }: { graph: CanvasGraph }) {
       <div className={styles.tableWrap}><table aria-label="Comparison"><thead><tr><th>Approach</th><th>Passes</th><th>Mean time</th><th>Mean tokens</th></tr></thead>
         <tbody>{(["baseline", "pattern"] as const).map(arm => { const summary = labSummary(record, arm); return <tr key={arm}><th>{arm === "baseline" ? "Single agent" : "Pattern"}</th><td>{summary.passed}/{summary.count}</td><td>{summary.elapsedMs === null ? "—" : `${(summary.elapsedMs / 1000).toFixed(2)} s`}</td><td>{summary.tokens === null ? "Unknown" : Math.round(summary.tokens).toLocaleString()}</td></tr>; })}</tbody></table></div>
       <p className={styles.muted}>All completed trials count, including failures. Unknown tokens are never treated as zero. A single task cannot establish general superiority; model sampling and service load vary. Pair order alternates.</p>
-      {record.trials.map((trial, index) => <details key={index} className={styles.trial}><summary>Trial {trial.repetition} · {trial.arm === "baseline" ? "Single agent" : "Pattern"} · {!trial.endedAt ? "Running" : trial.passed ? "Pass" : "Fail"}</summary>
+      {record.trials.map((trial, index) => <details key={index} className={styles.trial}><DisclosureSummary>Trial {trial.repetition} · {trial.arm === "baseline" ? "Single agent" : "Pattern"} · {!trial.endedAt ? "Running" : trial.passed ? "Pass" : "Fail"}</DisclosureSummary>
         {trial.error && <p className={styles.error}>{trial.error}</p>}<pre>{trial.answer || "No final answer"}</pre>
-        {trial.steps.map((step, index) => <details key={index}><summary>{step.title} · {(step.elapsedMs / 1000).toFixed(2)} s · {step.usage ? `${step.usage.totalTokens} tokens` : "tokens unknown"}</summary><pre>{JSON.stringify(step, null, 2)}</pre></details>)}
+        {trial.steps.map((step, index) => <details key={index}><DisclosureSummary>{step.title} · {(step.elapsedMs / 1000).toFixed(2)} s · {step.usage ? `${step.usage.totalTokens} tokens` : "tokens unknown"}</DisclosureSummary><pre>{JSON.stringify(step, null, 2)}</pre></details>)}
       </details>)}
     </section>}
   </section>;
