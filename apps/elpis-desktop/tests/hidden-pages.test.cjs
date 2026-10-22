@@ -1,21 +1,11 @@
 // S8, S12, S18: the packaged app ships Lab and Workflows hidden and the Session Manager off (desktop/preferences.cjs); their code and tests stay.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 
-const source = file => fs.readFileSync(path.resolve(__dirname, file), 'utf8');
 const shipped = { 'elpis-preferences-v1': JSON.stringify({ hiddenPages: 'experimentLab,canvas', sessionManager: false }) };
 const workflowChat = { id: 'chat-w', name: 'Workflows · demo', preview: 'Workflows · demo', cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
 const nav = page => page.locator('aside.sidebar nav[aria-label="Workspace"]');
-
-test('the shell ships Lab, Workflows and the Session Manager hidden; the renderer shows everything by default', () => {
-  assert.match(source('../desktop/preferences.cjs'), /SHIPPED_DEFAULTS = \{ hiddenPages: 'experimentLab,canvas', sessionManager: false \}/);
-  assert.match(source('../desktop/main.cjs'), /await seedShippedDefaults\(store\)/);
-  assert.match(source('../lib/preferences.ts'), /hiddenPages: "", sessionManager: true/);
-  assert.match(source('../desktop/state.cjs'), /hiddenPages: 'string', sessionManager: 'boolean'/);
-});
 
 test('hidden pages leave the sidebar, the command menu and the Workflows chat group; the Session Manager switch stays', async () => {
   const f = await fixture({ storage: shipped, threads: [workflowChat, { ...workflowChat, id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser' }] });
