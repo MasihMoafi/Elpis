@@ -46,20 +46,26 @@ function ConfigOptionsGroup({ settings }: { settings: ElpisSettings }) {
   </SettingsGroup>;
 }
 
+/** The engine's feature flags, shared with the terminal: the ones that are on, then the ones that are off, each by name. */
 function FeatureDefaults({ settings }: { settings: ElpisSettings }) {
   const [query, setQuery] = useState("");
   const saver = useSaver();
   const features = settings.features;
   if (!features) return null;
-  return <SettingsGroup title="Features" description={features.available ? "Defaults shared with the terminal. Changes apply to new chats." : features.reason}>
-    {features.available && <SettingRow title="Search features"><Input aria-label="Search features" value={query} onChange={event => setQuery(event.target.value)} /></SettingRow>}
-    {features.data.filter(feature => `${feature.key} ${feature.title}`.toLowerCase().includes(query.toLowerCase())).map(feature => <SettingRow key={feature.key} title={feature.title} description={feature.reason ?? feature.description} scope="new chats">
-      <Switch aria-label={feature.title} checked={feature.enabled} disabled={!editable(settings) || !!feature.reason || saver.pending !== null}
-        onCheckedChange={enabled => void saver.run(feature.key, () => saveSettings("/settings", { version: settings.version, features: { [feature.key]: enabled } }), "Feature default saved. Applies to new conversations.")} />
-    </SettingRow>)}
-    {features.available && !features.data.some(feature => `${feature.key} ${feature.title}`.toLowerCase().includes(query.toLowerCase())) && <SettingRow title="No matching features" />}
-    {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
-  </SettingsGroup>;
+  const shown = features.data.filter(feature => `${feature.key} ${feature.title}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => a.title.localeCompare(b.title));
+  const rows = (enabled: boolean) => shown.filter(feature => feature.enabled === enabled).map(feature => <SettingRow key={feature.key} title={feature.title} description={feature.reason ?? feature.description} scope="new chats">
+    <Switch aria-label={feature.title} checked={feature.enabled} disabled={!editable(settings) || !!feature.reason || saver.pending !== null}
+      onCheckedChange={enabled => void saver.run(feature.key, () => saveSettings("/settings", { version: settings.version, features: { [feature.key]: enabled } }), "Feature default saved. Applies to new conversations.")} />
+  </SettingRow>);
+  return <>
+    <SettingsGroup title="Features" description={features.available ? "Defaults shared with the terminal. Changes apply to new chats." : features.reason}>
+      {features.available && <SettingRow title="Search features"><Input aria-label="Search features" value={query} onChange={event => setQuery(event.target.value)} /></SettingRow>}
+      {features.available && !shown.length && <SettingRow title="No matching features" />}
+      {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
+    </SettingsGroup>
+    {shown.some(feature => feature.enabled) && <SettingsGroup title="On">{rows(true)}</SettingsGroup>}
+    {shown.some(feature => !feature.enabled) && <SettingsGroup title="Off">{rows(false)}</SettingsGroup>}
+  </>;
 }
 
 export function ConfigurationSettings() {

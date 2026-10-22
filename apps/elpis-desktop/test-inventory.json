@@ -238,6 +238,7 @@
     "tests/sidebar-nav-icons.test.cjs",
     "tests/sidebar-settings-button.test.cjs",
     "tests/hidden-pages.test.cjs",
+    "tests/features-order.test.cjs",
     "tests/sidebar-order.test.cjs",
     "tests/sidebar-parity.test.cjs",
     "tests/sidebar-resize.test.cjs",
