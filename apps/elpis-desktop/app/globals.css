@@ -390,6 +390,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* APP-FIX-2: task-titled rows, live agents, settings sections. */
 .brand img { width:73px; height:36px; flex-shrink:0; }
 .brand-home { flex:0 0 auto; }
+/* The mark is not a row: no tinted box appears behind it (Masih, 23 Oct: "the light orange shadow behind the elpis shouldn't show to the user"). */
+.brand .brand-home:hover, .brand .brand-home:active, .brand .brand-home[aria-expanded="true"] { background:transparent; }
 .thread-row { display:flex; align-items:center; gap:2px; min-width:0; padding-right:2px; min-height:34px; }
 .thread-row:hover, .thread-row[data-popup-open] { background:var(--hover); }
 .thread-row.active { background:var(--selected); }
@@ -807,8 +809,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; border:0; background:none; color:var(--foreground); padding:5px 6px; font-size:0.8125rem; text-align:left; }
 .sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
-.sidebar-group-chevron { transition:transform .15s; }
-.sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron, .section-toggle[aria-expanded="true"] .sidebar-group-chevron { transform:rotate(90deg); }
+.sidebar-group-chevron, .section-chevron { transition:transform .15s; }
+.sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron, .section-toggle[aria-expanded="true"] .section-chevron { transform:rotate(90deg); }
 .section-toggle { display:flex; align-items:center; gap:4px; border:0; background:none; padding:0; cursor:pointer; text-align:left; font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; }
 .sidebar-group-row.active .sidebar-group-toggle svg:not(.sidebar-group-chevron) { color:var(--primary); }
 .sidebar-group-items { padding-left:0; }

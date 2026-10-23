@@ -33,5 +33,5 @@ export function SidebarGroup({ kind, name, title, icon, open, active, onToggle, 
 
 /** A section heading (Projects, Pinned, Recents) that folds its list, with the chevron a project row has. */
 export function SectionToggle({ name, open, onToggle }: { name: string; open: boolean; onToggle: () => void }) {
-  return <div className="section-label"><button type="button" className="section-toggle" aria-expanded={open} onClick={onToggle}><ChevronRight size={13} className="sidebar-group-chevron" aria-hidden="true" />{name}</button></div>;
+  return <div className="section-label"><button type="button" className="section-toggle" aria-expanded={open} onClick={onToggle}><ChevronRight size={13} className="section-chevron" aria-hidden="true" />{name}</button></div>;
 }

@@ -34,6 +34,10 @@ test('Projects, Pinned and Recents each fold their list and open it again', asyn
       await heading.click();
       await content.first().waitFor();
     }
+    // Masih, 23 Oct: "the light orange shadow behind the elpis shouldn't show to the user": the mark is not a row, so hovering it tints nothing.
+    const mark = side.getByRole('button', { name: 'Elpis home' });
+    await mark.hover();
+    assert.equal(await mark.evaluate(button => getComputedStyle(button).backgroundColor), 'rgba(0, 0, 0, 0)', 'no box appears behind the Elpis mark');
     assert.deepEqual(f.errors ?? [], []);
   } finally { await f.close(); }
 });
