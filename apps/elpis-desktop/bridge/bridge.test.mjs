@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -166,7 +167,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
   // 156e765a4 adds optional gh instructions. Provider routing tests must not read the operator's connector or credentials.
-  const client = new DesktopClient(socket, { browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
+  const client = new DesktopClient(socket, { browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url))], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 

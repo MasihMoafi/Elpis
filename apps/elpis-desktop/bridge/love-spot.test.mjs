@@ -320,7 +320,7 @@ test('a later Love Spot process receives private pending screenshots from the al
       console.log(JSON.stringify({shots:b.screenshotsList(),scene:(await b.read()).scene}));
     } finally { await b.close(); }
   })().catch(e=>{console.error(e);process.exitCode=1});`;
-  const result = JSON.parse((await exec(process.execPath, ['-e', script, new URL('./love-spot-store.cjs', import.meta.url).pathname, f.directory, f.screenshots])).stdout);
+  const result = JSON.parse((await exec(process.execPath, ['-e', script, fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url)), f.directory, f.screenshots])).stdout);
   assert.deepEqual(result.shots, a.screenshotsList(), 'a new process must not classify the other app\'s pending screenshot as old');
   assert.equal(result.scene.elements.length, 0);
 });
@@ -345,7 +345,7 @@ test('a later app receives a private screenshot backlog larger than one IPC resp
       console.log(JSON.stringify({names,shared:(await b.read()).scene.elements.length}));
     } finally { await b.close(); }
   })().catch(e=>{console.error(e);process.exitCode=1});`;
-  const result = JSON.parse((await exec(process.execPath, ['-e', script, new URL('./love-spot-store.cjs', import.meta.url).pathname, f.directory, f.screenshots])).stdout);
+  const result = JSON.parse((await exec(process.execPath, ['-e', script, fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url)), f.directory, f.screenshots])).stdout);
   assert.deepEqual(result.names.sort(), expected, 'every pending screenshot must arrive in the later process');
   assert.equal(result.shared, 0);
 });
@@ -409,7 +409,7 @@ test('dismissed screenshots stay dismissed and leave all shared files unchanged'
 
 test('Love Spot independent processes serialize their merges on the same drawing', async t => {
   const f = await fixture(t);
-  const module = new URL('./love-spot-store.cjs', import.meta.url).pathname;
+  const module = fileURLToPath(new URL('./love-spot-store.cjs', import.meta.url));
   await Promise.all(Array.from({ length: 8 }, (_, i) => exec(process.execPath, ['-e', `const {createLoveSpot}=require(${JSON.stringify(module)});createLoveSpot({directory:process.argv[1]}).save(JSON.parse(process.argv[2])).catch(e=>{console.error(e);process.exitCode=1});`, f.directory, JSON.stringify({ elements: [element(`process-${i}`)], files: {} })])));
   assert.equal((await f.load()).scene.elements.length, 8);
 });

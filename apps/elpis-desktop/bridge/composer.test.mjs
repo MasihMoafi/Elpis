@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -120,7 +121,7 @@ test('disconnect closes ephemeral side panels instead of leaving an endless runn
 
 test('composer routes require authentication, enforce their schema, and reach only their intended operations', async t => {
   const f = fixture();
-  const app = await startDesktopServer({ client: f.client, trashFile: new URL(`../.tmp/composer-http-${process.pid}.json`, import.meta.url).pathname });
+  const app = await startDesktopServer({ client: f.client, trashFile: fileURLToPath(new URL(`../.tmp/composer-http-${process.pid}.json`, import.meta.url)) });
   t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin;
   const post = (route, body, cookie) => fetch(origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) }, body: JSON.stringify(body) });

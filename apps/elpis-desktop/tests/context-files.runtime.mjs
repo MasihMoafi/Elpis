@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 // One real ChatGPT subscription turn, then desktop/TUI admission parity on that thread.
 // Usage: ELPIS_PLAYWRIGHT_PACKAGE=... ELPIS_CHROMIUM=... node tests/context-files.runtime.mjs /absolute/elpis-next
 // All config, sessions and bridge state are isolated under /tmp. Never print credentials.
@@ -37,7 +38,7 @@ const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, label, timeout = 20000) { const deadline = Date.now() + timeout; while (Date.now() < deadline) { if (await check()) return; await pause(200); } throw Error(`Timed out: ${label}`); }
 const log = await fs.open(path.join(root, 'bridge.log'), 'a');
-const bridge = spawn(process.execPath, [new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url).pathname], { cwd: project, env, stdio: ['ignore', log.fd, log.fd] });
+const bridge = spawn(process.execPath, [fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url))], { cwd: project, env, stdio: ['ignore', log.fd, log.fd] });
 let app, client, browser, page, threadId, terminal = false;
 const evidence = { root, engine, model: 'gpt-6-luna', checks: [] };
 try {

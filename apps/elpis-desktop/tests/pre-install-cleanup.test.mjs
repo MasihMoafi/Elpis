@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 // 23 Oct: six test processes the pre-install check had started kept running for up to 24 h and froze Masih's machine. A file that leaves a
 // process behind must not outlive the check: everything the file started goes with it.
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
-const root = new URL('../', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../', import.meta.url));
 const running = marker => execFileSync('ps', ['-eo', 'args'], { encoding: 'utf8' }).split('\n').filter(line => line.includes(marker)).length;
 
 test('a test file that leaves a process running does not leave it behind after the check', () => {

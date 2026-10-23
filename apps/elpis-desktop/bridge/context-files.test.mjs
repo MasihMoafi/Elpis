@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -43,7 +44,7 @@ test('context files validate thread, path and boolean before forwarding writes',
 });
 test('context files HTTP routes require authentication and preserve the engine response', async t => {
   const { client, files } = fixture(); await client.initialize();
-  const app = await startDesktopServer({ client, staticDir: new URL('../out', import.meta.url).pathname, loveSpot: { directory: '/tmp/ctxdesk-test-love' } }); t.after(() => app.close());
+  const app = await startDesktopServer({ client, staticDir: fileURLToPath(new URL('../out', import.meta.url)), loveSpot: { directory: '/tmp/ctxdesk-test-love' } }); t.after(() => app.close());
   const url = new URL(app.url), origin = url.origin, token = new URLSearchParams(url.hash.slice(1)).get('token');
   const endpoint = origin + '/api/threads/' + ID + '/context-files';
   assert.equal((await fetch(endpoint)).status, 401);
