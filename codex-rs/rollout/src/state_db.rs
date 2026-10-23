@@ -515,6 +515,78 @@ pub async fn mark_thread_memory_mode_polluted(
     }
 }
 
+/// Register an imported rollout already copied into this home's sessions directory.
+/// Unlike best-effort read repair, success confirms that SQLite selected this rollout.
+/// The rollout is only read, and an existing thread's selected path is never replaced.
+pub async fn register_rollout(
+    context: &codex_state::StateRuntime,
+    codex_home: &Path,
+    rollout_path: &Path,
+    default_provider: &str,
+) -> anyhow::Result<ThreadId> {
+    let home = tokio::fs::canonicalize(codex_home).await?;
+    let requested_path = if rollout_path.is_absolute() {
+        rollout_path.to_path_buf()
+    } else {
+        home.join(rollout_path)
+    };
+    let path = tokio::fs::canonicalize(&requested_path)
+        .await
+        .context("invalid rollout path")?;
+    anyhow::ensure!(
+        path.starts_with(home.join(crate::SESSIONS_SUBDIR)) && path.is_file(),
+        "rollout must be a file inside CODEX_HOME/sessions"
+    );
+    let session_meta = crate::read_session_meta_line(&path)
+        .await
+        .context("invalid rollout session metadata")?;
+    let thread_id = session_meta.meta.id;
+    let outcome = metadata::extract_metadata_from_rollout(&path, default_provider)
+        .await
+        .context("invalid rollout")?;
+    anyhow::ensure!(
+        outcome.parse_errors == 0,
+        "invalid rollout: malformed records"
+    );
+    anyhow::ensure!(
+        metadata::builder_from_session_meta(&session_meta, &path).is_some(),
+        "invalid rollout: invalid session timestamp"
+    );
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(crate::rollout_file_name::RolloutFileName::parse);
+    anyhow::ensure!(
+        file_name.is_some_and(|name| name.thread_id() == thread_id),
+        "invalid rollout: expected a canonical filename with the session id"
+    );
+    if let Some(existing) = context.get_thread(thread_id).await? {
+        anyhow::ensure!(
+            existing.rollout_path == path,
+            "thread {thread_id} already selects a different rollout"
+        );
+        return Ok(thread_id);
+    }
+    reconcile_rollout(
+        Some(context),
+        &path,
+        default_provider,
+        /*builder*/ None,
+        &[],
+        Some(false),
+        /*new_thread_memory_mode*/ None,
+    )
+    .await;
+    anyhow::ensure!(
+        context
+            .get_thread(thread_id)
+            .await?
+            .is_some_and(|metadata| metadata.rollout_path == path),
+        "failed to register rollout for thread {thread_id} in SQLite"
+    );
+    Ok(thread_id)
+}
+
 /// Reconcile rollout items into SQLite, falling back to scanning the rollout file.
 pub async fn reconcile_rollout(
     context: Option<&codex_state::StateRuntime>,

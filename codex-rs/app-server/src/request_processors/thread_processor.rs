@@ -16,6 +16,8 @@ use codex_app_server_protocol::SelectedCapabilityRoot;
 use codex_app_server_protocol::ThreadHistoryMode as ApiThreadHistoryMode;
 use codex_app_server_protocol::ThreadItemsListAnchor;
 use codex_app_server_protocol::ThreadItemsListCursor;
+use codex_app_server_protocol::ThreadRegisterParams;
+use codex_app_server_protocol::ThreadRegisterResponse;
 use codex_app_server_protocol::ThreadRevertParams;
 use codex_app_server_protocol::ThreadRevertResponse;
 use codex_app_server_protocol::ThreadRevertedNotification;
@@ -857,6 +859,40 @@ impl ThreadRequestProcessor {
         self.thread_loaded_list_response_inner(params)
             .await
             .map(|response| Some(response.into()))
+    }
+
+    pub(crate) async fn thread_register(
+        &self,
+        params: ThreadRegisterParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        let _thread_list_state_permit = self.acquire_thread_list_state_permit().await?;
+        let state_db = self
+            .state_db
+            .as_deref()
+            .ok_or_else(|| internal_error("SQLite is required to register a rollout"))?;
+        let thread_id = codex_rollout::state_db::register_rollout(
+            state_db,
+            &self.config.codex_home,
+            &params.path,
+            &self.config.model_provider_id,
+        )
+        .await
+        .map_err(|err| invalid_request(format!("cannot register rollout: {err:#}")))?;
+        let stored_thread = self
+            .thread_store
+            .read_thread(StoreReadThreadParams {
+                thread_id,
+                include_archived: false,
+                include_history: false,
+            })
+            .await
+            .map_err(thread_store_resume_read_error)?;
+        let thread = self.stored_thread_to_api_thread(
+            stored_thread,
+            &self.config.model_provider_id,
+            /*include_turns*/ false,
+        );
+        Ok(Some(ThreadRegisterResponse { thread }.into()))
     }
 
     pub(crate) async fn thread_read(

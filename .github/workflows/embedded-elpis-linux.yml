@@ -371,6 +371,8 @@ jobs:
             auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
           cargo test --profile dev-small --locked -p codex-app-server --test all -- \
             elpis_instructions_read thread_read_paginated_carrier_persists_before_first_turn \
+            thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idempotently \
+            thread_register_rejects_external_and_malformed_rollouts \
             2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
       - name: Preserve UI and integration check diagnostics
         if: ${{ !cancelled() && inputs.verification != 'build' }}

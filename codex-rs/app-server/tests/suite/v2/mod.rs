@@ -154,6 +154,7 @@ mod thread_name_persistence;
 mod thread_name_websocket;
 mod thread_queue;
 mod thread_read;
+mod thread_register;
 mod thread_resume;
 mod thread_revert;
 mod thread_sections;
