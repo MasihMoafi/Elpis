@@ -132,7 +132,7 @@ export async function startDesktopServer(options = {}) {
   };
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const voice = createVoice(client);
-  const importChats = createImportChats({ client });
+  const importChats = createImportChats({ client, elpisHome: options.elpisHome ?? elpisHome(), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {

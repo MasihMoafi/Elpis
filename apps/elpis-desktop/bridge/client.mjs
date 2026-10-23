@@ -1329,6 +1329,11 @@ export class DesktopClient extends EventEmitter {
     const result = await this.#rpc('externalAgentConfig/detect', { includeHome: true, source: 'claude' });
     return (result.items ?? []).filter(item => item.itemType === 'SESSIONS').flatMap(item => (item.details?.sessions ?? []).map(({ path, cwd, title }) => ({ path, cwd, title })));
   }
+  /** Registers a Codex rollout already copied into Elpis's sessions folder, so it lists, opens and forks like a chat Elpis made. */
+  async registerRollout(rollout) {
+    text(rollout, 'rollout', 4096);
+    return (await this.#rpc('thread/register', { path: rollout })).thread;
+  }
   /** Imports Claude Code chats as Elpis chats and resolves when the engine has finished them: { imported, skipped: [reasons] }. */
   async importExternalSessions(sessions) {
     if (!Array.isArray(sessions) || !sessions.length) return { imported: 0, skipped: [] };
