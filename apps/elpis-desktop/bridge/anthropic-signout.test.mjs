@@ -19,7 +19,7 @@ function fixture({ oldBridge = false, signedOut = false } = {}) {
       case 'account/read': result = { account: { type: 'chatgpt', email: 'person@example.com', planType: 'pro' }, requiresOpenaiAuth: true }; break;
       case 'claudeAccounts/read':
       case 'claudeAccounts/write':
-        result = { activeId: request.params.id ?? 'default', accounts: [{ id: 'default', label: 'Claude 1', authenticated: true }, { id: '66601136-bf70-4727-8da3-0e2e8efc7e99', label: 'Claude 2', authenticated: true }] }; break;
+        result = { activeId: request.params.id ?? 'default', accounts: [{ id: 'default', label: 'Claude 1', authenticated: true }, { id: '00000000-0000-4000-8000-0000000000a1', label: 'Claude 2', authenticated: true }] }; break;
       case 'account/rateLimits/read': result = { rateLimits: codex, rateLimitsByLimitId: { codex, ...(state.signedOut ? {} : { claude }) } }; break;
       case 'model/list': result = { data: [{ id: 'test-model', model: 'test-model', displayName: 'Test model' }, ...(state.signedOut ? [] : [{ id: 'claude/opus', model: 'claude/opus', displayName: 'Opus (Claude subscription)' }])], nextCursor: null }; break;
       case 'claudeSubscription/read':
@@ -56,7 +56,7 @@ test('the Claude account selector validates writes and refreshes models and usag
   f.client.on('event', event => events.push(event));
   try {
     assert.equal((await f.client.claudeAccounts()).activeId, 'default');
-    const id = '66601136-bf70-4727-8da3-0e2e8efc7e99';
+    const id = '00000000-0000-4000-8000-0000000000a1';
     assert.equal((await f.client.claudeAccounts({ action: 'select', id })).activeId, id);
     assert.equal(events.filter(event => event.type === 'account').length, 1);
     const before = f.socket.sent.length;
@@ -131,7 +131,7 @@ test('a bridge without the switch cannot sign out, says so, and the providers st
 // Masih, 21 October: "the anthropic's double-login which was fixed is now broken". The shared model list (a1cd69635)
 // outlived a Claude sign-in or switch, so the app kept asking for a sign-in that had already succeeded.
 test('a Claude sign-in, code or switch reloads the model list instead of reusing the cached one', async () => {
-  for (const input of [{ action: 'code', id: '66601136-bf70-4727-8da3-0e2e8efc7e99', code: 'abc#def' }, { action: 'select', id: '66601136-bf70-4727-8da3-0e2e8efc7e99' }, { action: 'login', id: 'default' }]) {
+  for (const input of [{ action: 'code', id: '00000000-0000-4000-8000-0000000000a1', code: 'abc#def' }, { action: 'select', id: '00000000-0000-4000-8000-0000000000a1' }, { action: 'login', id: 'default' }]) {
     const f = fixture(); await f.client.initialize();
     try {
       await f.client.models();

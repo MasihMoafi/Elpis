@@ -15,7 +15,7 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
   const clients = new Set(); const posts = []; let modelRequests = 0;
   // `signedOut`: Elpis's own switch. `claudeCodeIn`: whether Claude Code on this computer is logged in.
   const state = { signedOut: false, claudeCodeIn: true, activeId: 'default', signingIn: false };
-  const secondId = '66601136-bf70-4727-8da3-0e2e8efc7e99', accountPosts = [];
+  const secondId = '00000000-0000-4000-8000-0000000000a1', accountPosts = [];
   const claudeAccounts = () => ({ activeId: state.activeId, accounts: [
     { id: 'default', label: 'Claude 1', email: 'first@example.com', plan: 'max', authenticated: true, signingIn: false, error: null },
     { id: secondId, label: 'Claude 2', email: 'second@example.com', plan: 'pro', authenticated: !state.signingIn, signingIn: state.signingIn, error: null },

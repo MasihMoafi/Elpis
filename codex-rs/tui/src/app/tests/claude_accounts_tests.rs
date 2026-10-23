@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
-const SECOND: &str = "66601136-bf70-4727-8da3-0e2e8efc7e99";
+const SECOND: &str = "00000000-0000-4000-8000-0000000000a1";
 
 #[tokio::test]
 async fn claude_accounts_picker_sends_bridge_payload_and_preserves_selection_on_rejection()

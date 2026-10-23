@@ -5,7 +5,7 @@ use codex_app_server_protocol::ClaudeAccountsReadResponse;
 fn accounts() -> ClaudeAccountsReadResponse {
     ClaudeAccountsReadResponse {
         active_id: "default".into(),
-        accounts: ["default", "66601136-bf70-4727-8da3-0e2e8efc7e99"]
+        accounts: ["default", "00000000-0000-4000-8000-0000000000a1"]
             .into_iter()
             .enumerate()
             .map(|(index, id)| ClaudeAccount {
