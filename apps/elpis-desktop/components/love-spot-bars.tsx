@@ -14,7 +14,6 @@ const FIXED = ".App-menu_top__left, .layer-ui__wrapper__footer-right, .App-menu_
 const BARS = [
   { id: "tools", label: "Move tools", find: (board: HTMLElement) => board.querySelector<HTMLElement>(".App-toolbar")?.closest("section") ?? null },
   { id: "extras", label: "Move lock and hand", find: (board: HTMLElement) => board.querySelector<HTMLElement>(".mobile-misc-tools-container") },
-  { id: "bottom", label: "Move zoom and undo", find: (board: HTMLElement) => board.querySelector<HTMLElement>(".App-bottom-bar > .Island") ?? board.querySelector<HTMLElement>(".layer-ui__wrapper__footer-left") },
 ] as const;
 type BarId = (typeof BARS)[number]["id"];
 type Offset = { x: number; y: number };
@@ -26,7 +25,7 @@ const same = (a: Offset, b: Offset) => a.x === b.x && a.y === b.y;
 const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 /** Kept as JSON by bar; the first version kept the tool bar's sideways offset alone, as a number. */
 const saved = (): Offsets => {
-  const offsets: Offsets = { tools: ORIGIN, extras: ORIGIN, bottom: ORIGIN };
+  const offsets: Offsets = { tools: ORIGIN, extras: ORIGIN };
   try {
     const raw = appStorage().getItem(KEY);
     if (raw) { const parsed = JSON.parse(raw); for (const { id } of BARS) offsets[id] = { x: number(parsed?.[id]?.x), y: number(parsed?.[id]?.y) }; }

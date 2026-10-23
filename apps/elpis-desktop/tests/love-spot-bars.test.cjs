@@ -45,26 +45,24 @@ test('the tool bar moves anywhere in the board, stops against the other controls
 });
 
 // Masih, 22 Oct: "when I have one function somewhere I want the exact same function elsewhere": every floating bar has the one handle.
-test('every bar has the same handle: lock and hand and the zoom and undo bar move on their own, and no bar covers another', async () => {
+test('lock and hand moves on its own handle, and no bar covers another', async () => {
   const f = await loveSpotFixture({ colorScheme: 'dark' });
   try {
     await f.page.setViewportSize({ width: 860, height: 760 }); // a board this narrow lays its bars out in the narrow arrangement
     await f.open(f.page); await f.page.locator('.love-spot-editor .mobile-misc-tools-container').waitFor();
     const handle = name => f.page.getByRole('button', { name, exact: true });
-    for (const name of ['Move tools', 'Move lock and hand', 'Move zoom and undo']) await handle(name).waitFor();
-    const bars = { tools: f.page.locator('.love-spot-editor section:has(.App-toolbar)').first(), extras: f.page.locator('.love-spot-editor .mobile-misc-tools-container'), bottom: f.page.locator('.love-spot-editor .App-bottom-bar > .Island') };
+    for (const name of ['Move tools', 'Move lock and hand']) await handle(name).waitFor();
+    assert.equal(await handle('Move zoom and undo').count(), 0, 'the zoom and undo bar has no handle');
+    const bars = { tools: f.page.locator('.love-spot-editor section:has(.App-toolbar)').first(), extras: f.page.locator('.love-spot-editor .mobile-misc-tools-container') };
     const rects = async () => Object.fromEntries(await Promise.all(Object.entries(bars).map(async ([name, bar]) => [name, await bar.boundingBox()])));
     const drag = async (name, x, y) => { const g = await handle(name).boundingBox(); await f.page.mouse.move(g.x + g.width / 2, g.y + g.height / 2); await f.page.mouse.down(); await f.page.mouse.move(x, y, { steps: 12 }); await f.page.mouse.up(); };
-    const apart = async note => { const r = await rects(); for (const [a, b] of [['tools', 'extras'], ['tools', 'bottom'], ['extras', 'bottom']]) assert.equal(touches(r[a], r[b]), false, `${note}: ${a} and ${b} touch ${JSON.stringify(r)}`); return r; };
+    const apart = async note => { const r = await rects(); for (const [a, b] of [['tools', 'extras']]) assert.equal(touches(r[a], r[b]), false, `${note}: ${a} and ${b} touch ${JSON.stringify(r)}`); return r; };
     const board = await f.page.locator('.love-spot-editor').boundingBox();
     const before = await apart('at the start');
     await drag('Move lock and hand', board.x + 120, board.y + board.height / 2);
     let after = await apart('lock and hand moved');
     assert.ok(Math.abs(after.extras.x - before.extras.x) > 100 && after.extras.y - before.extras.y > 100, `lock and hand move by their own handle: ${JSON.stringify({ before: before.extras, after: after.extras })}`);
-    assert.deepEqual([after.tools.x, after.tools.y, after.bottom.x, after.bottom.y].map(Math.round), [before.tools.x, before.tools.y, before.bottom.x, before.bottom.y].map(Math.round), 'and nothing else moves with them');
-    await drag('Move zoom and undo', board.x + 200, board.y + board.height / 2);
-    after = await apart('zoom and undo moved');
-    assert.ok(before.bottom.y - after.bottom.y > 40 || Math.abs(before.bottom.x - after.bottom.x) > 40, 'the bottom bar moves by its own handle');
+    assert.deepEqual([after.tools.x, after.tools.y].map(Math.round), [before.tools.x, before.tools.y].map(Math.round), 'and the tool bar does not move with it');
     const middle = after.extras;
     await drag('Move tools', middle.x + middle.width / 2, middle.y + middle.height / 2);
     await apart('the tool bar dragged onto lock and hand');

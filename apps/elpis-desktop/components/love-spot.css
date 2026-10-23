@@ -16,10 +16,9 @@
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
 .love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .love-spot-editor { position: relative; flex: 1; min-width: 0; height: 100%; min-height: 0; }
-/* One rule per movable bar (components/love-spot-bars.tsx). Lock and hand sit inside the tool bar's section in the narrow layout, so they take its move off. */
+/* One rule per movable bar (the zoom and undo bar stays where it is) (components/love-spot-bars.tsx). Lock and hand sit inside the tool bar's section in the narrow layout, so they take its move off. */
 .love-spot-editor section:has(.App-toolbar) { transform: translate(var(--love-tools-x, 0px), var(--love-tools-y, 0px)); }
 .love-spot-editor .mobile-misc-tools-container { transform: translate(calc(var(--love-extras-x, 0px) - var(--love-tools-x, 0px)), calc(var(--love-extras-y, 0px) - var(--love-tools-y, 0px))); }
-.love-spot-editor .App-bottom-bar > .Island, .love-spot-editor .layer-ui__wrapper__footer-left { transform: translate(var(--love-bottom-x, 0px), var(--love-bottom-y, 0px)); }
 /* Excalidraw's Library button is not part of Love Spot. */
 .love-spot-editor .sidebar-trigger__label-element { display: none; }
 .love-tools-grip { position: absolute; z-index: 6; cursor: grab; touch-action: none; }
