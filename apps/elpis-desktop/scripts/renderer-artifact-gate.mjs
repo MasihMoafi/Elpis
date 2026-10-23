@@ -25,9 +25,9 @@ const pageRemovalApproval = {
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
   "tests/browser-drawing.test.cjs": {
-    "blob": "5f4d6ee90df5f3ee5bf57e866bca10ce595787b6",
-    "approval": "0864860125d66b628ca4f0f88896cadb09af0e50",
-    "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks."
+    "blob": "1c1f224d84c38fcd37397d8520b7649885b76549",
+    "approval": "e3db232c95e08534da9d7cc5e599fcad7fcf259c",
+    "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks. Masih, 23 Oct: the palette \"should be somewhere in this\" style panel, and the opacity number was \"visually wrong\": the toggle sits in the panel, and the opacity value stays under its slider after the panel reopens."
   },
   "tests/love-spot-identity.test.cjs": {
     "blob": "22c1869b9fbbdad68d1f5a461f7b2b9225514b3f",
@@ -175,9 +175,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
     },
     "tests/love-spot-pages.test.cjs": {
-      "blob": "d478e47c506ccdb2d3faf79fcfd049013f196fd4",
-      "approval": "835ac6ebc12dd2667c7e32fce29bc23c74a36858",
-      "reason": "Masih, handwritten Love Spot board, 23 October 2026: “The Delete must be aligned with its icon” horizontally; asks to close the properties panel in the other Excalidraw view too. Keep page creation, deletion, recovery and storage checks; add the shared Style and horizontal icon-label journey in both themes."
+      "blob": "5e6bb4c0b87a64d9cf1d7217e2c583fbab199a2b",
+      "approval": "e3db232c95e08534da9d7cc5e599fcad7fcf259c",
+      "reason": "Masih, handwritten Love Spot board, 23 October 2026: “The Delete must be aligned with its icon” horizontally; asks to close the properties panel in the other Excalidraw view too. Keep page creation, deletion, recovery and storage checks; add the shared Style and horizontal icon-label journey in both themes. Masih, 23 Oct: the palette \"should be somewhere in this\" style panel, and the opacity number was \"visually wrong\": the toggle sits in the panel, and the opacity value stays under its slider after the panel reopens."
     },
     "tests/love-spot-live.test.cjs": {
       "blob": "c7604087c6f6b2dcc22a3c31afeb98d1b332d98f",
@@ -274,11 +274,6 @@ export const retainedUpdates = {
       "approval": "efb597b8b6ce2adf92546a544b3688d39016ee30",
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing."
     },
-    "tests/settings-reorder.test.cjs": {
-      "blob": "ffe378c097f6eef6a88506a8682deaf5c3b0785f",
-      "approval": "efb597b8b6ce2adf92546a544b3688d39016ee30",
-      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the sidebar reorder test that tests/desktop-small-fixes.test.cjs repeats with stronger assertions."
-    },
     "tests/sidebar-parity.test.cjs": {
       "blob": "02943d2f19811a05e53e63a20c0417d777bdfe1a",
       "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
@@ -329,7 +324,7 @@ export const retainedUpdates = {
 // split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit); the
 // Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
