@@ -1668,6 +1668,11 @@ impl Session {
                 if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
                     let mut state = self.state.lock().await;
                     state.set_token_info(Some(info));
+                    // Elpis: a pre-turn compaction check can run before any sampling request
+                    // re-initializes this, so seed it the same way sampling does.
+                    state.set_server_reasoning_included(
+                        turn_context.model_info().use_responses_lite,
+                    );
                 }
                 self.state.lock().await.latest_token_usage_record =
                     Self::last_token_usage_record_from_rollout(&rollout_items);
@@ -1696,6 +1701,10 @@ impl Session {
                 if let Some(info) = Self::last_token_info_from_rollout(&rollout_items) {
                     let mut state = self.state.lock().await;
                     state.set_token_info(Some(info));
+                    // Elpis: see the resumed branch above.
+                    state.set_server_reasoning_included(
+                        turn_context.model_info().use_responses_lite,
+                    );
                 }
                 self.state.lock().await.latest_token_usage_record =
                     Self::last_token_usage_record_from_rollout(&rollout_items);
@@ -4868,6 +4877,8 @@ impl Session {
             }
 
             state.set_token_info(Some(info));
+            // The local estimate already includes every retained reasoning item.
+            state.set_server_reasoning_included(/*included*/ true);
         }
         self.set_auto_compact_window_estimated_prefill_for_scope(
             turn_context,

@@ -3406,6 +3406,16 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
         },
     )));
 
+    // The seeded count is the API's; Responses Lite already includes retained reasoning in it.
+    let expected_reasoning_included = session
+        .new_default_turn()
+        .await
+        .model_info()
+        .use_responses_lite;
+    session
+        .set_server_reasoning_included(!expected_reasoning_included)
+        .await;
+
     session
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
             history_revision: None,
@@ -3415,8 +3425,12 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
         }))
         .await;
 
-    let actual = session.state.lock().await.token_info();
-    assert_eq!(actual, Some(info2));
+    let state = session.state.lock().await;
+    assert_eq!(state.token_info(), Some(info2));
+    assert_eq!(
+        state.server_reasoning_included(),
+        expected_reasoning_included
+    );
 }
 
 #[test]
@@ -3532,6 +3546,19 @@ async fn recompute_token_usage_updates_model_context_window() {
 
     let actual = session.state.lock().await.token_info().expect("token info");
     assert_eq!(actual.model_context_window, Some(128_000));
+}
+
+#[tokio::test]
+async fn recompute_token_usage_marks_reasoning_included() {
+    let (session, turn_context) = make_session_and_context().await;
+    session
+        .set_server_reasoning_included(/*included*/ false)
+        .await;
+
+    session.recompute_token_usage(&turn_context).await;
+
+    // The local estimate already counts retained reasoning; adding it again double-counts.
+    assert!(session.state.lock().await.server_reasoning_included());
 }
 
 #[tokio::test]
