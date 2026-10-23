@@ -158,3 +158,22 @@ Commit plan (implementation starts only in a later authorized task):
 3. `feat(desktop): route voice through the selected chat` — consume speech-thread side events, admit handoff/transcript notifications, replace selected-provider gates with ChatGPT availability plus native speech-thread validation, relay through normal send/FIFO and add Read aloud/Stop; verify RA3/RA4/RA6/RA9–RA13 before exposure.
 4. `feat(love-spot): speak Matilda while she writes` — delta-fed board preview and speech, incremental painting filter, saved mute and cost text; verify RA14–RA19 with both text providers.
 5. `docs(voice): record live acceptance and limits` — measure fidelity, consecutive handoffs, long replies, receive-only audio, cold/warm latency and allowance changes; keep any failed requirement unavailable and record remaining blockers (RA4–RA6/RA13/RA20).
+
+## Workflows: a team of pets — 24 October 2026
+
+Masih, 23 Oct: "That's what I like to have with my agents and I like to be able to connect them in the workflows … it's going to provide an easy to manage and a seamless agentic workflow for professionals. The current version is quite not-functional. There is just too many things and it's not been tested." Reference: the ChatGPT app's pet (a small character on screen; under it a Write button and a Voice button; Write opens a small "Start new chat" box).
+
+Problem: a professional wants a small team of agents set up once, to hand it work, see at a glance who is working, and step in only when needed. Before: the page showed ten concepts (Kahn's order, waves, critical path, patterns, Mother and Father, isometric view, auto-arrange, notes, command bar, AutoCAD hints), and Run stopped at a hidden "choose a project" step; no run was tested end to end. Evidence that the engine part works (23 Oct, Luna): a two-step run through `/api/workflows/run` passed the Writer's poem to the Critic, who quoted it.
+
+| ID | Requirement | Check |
+| --- | --- | --- |
+| W1 | The board shows pets: each agent is its character art with its name under it, and one calm status mark: idle (none), working, needs you, done, failed (R8: no looping animation). | Screenshot, light and dark. |
+| W2 | Add: one **Add** menu lists the six characters (Researcher, Builder, Reviewer, Tester, Writer, Critic), each bringing its own prompt; the model defaults to the main model. | Add two pets; both show. |
+| W3 | Connect: drag from one pet to another; the arrow means "hands its result to". Select an arrow or pet and press Delete to remove it; deleting a pet removes its arrows. | UI test. |
+| W4 | Pet actions, as in ChatGPT: under a selected pet, **Edit** (name, role prompt, model menu R34, "Edits files") and **Chat** (opens that pet's chat from its last run). | UI test. |
+| W5 | Run: one box under the board, "Give the team a task", and Run. Pets with no incoming arrow start; each pet gets the task, its role prompt and the results arrowed into it. The run's chat opens beside the board; the last pets' results end there. | Live run with Luna: a second pet quotes the first one's result. |
+| W6 | It runs in the chosen project's folder, or the Elpis workspace folder when none is chosen; it never stops at a hidden step. A Run that cannot start says why beside it (R20). | UI test. |
+| W7 | A pet answers in text by default (engine kind `explore`); "Edits files" makes it a writer with its own folder and the engine's required check step after it. | Live run with Luna. |
+| W8 | The board and its pets survive a restart; an old saved board (Mother, notes, patterns) loads as its agents and arrows. | UI test with an old board. |
+
+Removed (R38, R57): Kahn's order, waves, critical path, the patterns panel, Mother and Father, the isometric view, auto-arrange, notes, the command bar, AutoCAD selection hints, the run planner. Later, for Masih to choose: a floating pet on the desktop outside Elpis; pixel-art pets; a Voice button on each pet; agents working on their own machine (Cloudroom: each agent its own Linux user and VM, with its history kept there).
