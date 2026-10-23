@@ -322,6 +322,23 @@ impl LocalThreadStore {
         .await
     }
 
+    /// Project an imported paginated thread's durable rollout lineage into SQLite.
+    pub async fn materialize_thread_history(&self, thread_id: ThreadId) -> ThreadStoreResult<()> {
+        let lineage = self
+            .resolve_rollout_lineage(thread_id, /*initial_path*/ None)
+            .await?;
+        for segment in lineage.segments() {
+            let _writer_guard = self.live_writer_locks.lock(segment.rollout_id()).await;
+            thread_history_materialization::materialize_to_sqlite(
+                self,
+                segment.rollout_id(),
+                segment.rollout_path.as_path(),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
     /// Return the live local rollout path for legacy local-only code paths.
     pub async fn live_rollout_path(&self, thread_id: ThreadId) -> ThreadStoreResult<PathBuf> {
         live_writer::rollout_path(self, thread_id).await
