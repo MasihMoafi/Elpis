@@ -231,7 +231,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.ok((await c.call("thread/list", {})).result.data.length);
     // Its turn done, it stops and starts the newer bundle; the client reconnects to that one.
     const state = () => { try { return JSON.parse(fs.readFileSync(stateFile)); } catch { return {}; } };
-    await until(() => state().pid && state().pid !== running.pid, "the newer bundle takes over", 25000);
+    await until(() => state().pid && state().pid !== running.pid && fs.existsSync(path.join(path.dirname(stateFile), "bridge.sock")), "the newer bundle takes over", 25000);
     assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mjs")));
     assert.notEqual(c.ws.readyState, WebSocket.OPEN, "the old bridge's clients were disconnected");
     assert.equal((await (await f.connect()).call("thread/read", { threadId: "chat", includeTurns: true })).result.thread.turns[0].items[0].text, "preserve this answer");
