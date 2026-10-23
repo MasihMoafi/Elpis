@@ -356,7 +356,8 @@ jobs:
             elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
             live_permissions inherited_permissions step_activation thread_settings turn_input \
             loaded_children_give_up_the_full_access_their_parent_gives_up \
-            revocation regains_full_access
+            revocation regains_full_access \
+            recompute_token_usage record_initial_history_seeds_token_info_from_rollout
       - name: Context and session integration tests
         if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
         working-directory: codex-rs
@@ -366,7 +367,8 @@ jobs:
             elpis_ledger_admission elpis_context_attribution work_graphs settings_commits \
             agents_md scenarios_shared_instructions \
             deferred_executor_promotes_primary_environment_when_startup_completes \
-            deferred_executor_stays_pending_after_materialization 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
+            deferred_executor_stays_pending_after_materialization \
+            auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
           cargo test --profile dev-small --locked -p codex-app-server --test all -- \
             elpis_instructions_read thread_read_paginated_carrier_persists_before_first_turn \
             2>&1 | tee -a "$RUNNER_TEMP/elpis-integration-checks.log"
