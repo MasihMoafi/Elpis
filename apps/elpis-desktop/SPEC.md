@@ -106,6 +106,4 @@ Status: the cat was deleted using the editor’s Delete action, with all 16 tomb
 - V4: Other voice providers require a working authenticated route. Never present
   a catalog from another protocol or an unconnected provider as usable.
 
-Status (23 Oct, p-1d): V1 and V2 built. The choice is Settings → Voice → Voice chat, saved as `realtime.voice` and sent
-with each call; bridge/bridge.test.mjs and tests/voice-handoff.test.cjs cover them, and each fails without its fix.
-V4 is not built: which other provider (ElevenLabs, Gemini) waits on Masih.
+Status (23 Oct): installed and running in gui-20261023-a401aacd7. Settings → Voice has a saved native-catalog picker; technical transcription options are under Advanced. Nine voices and saving the current choice were verified against the real runtime. Five UI/contract checks pass (light/dark, 1262/760, reload, call cleanup); packaged production bytes match the selected commit. V5 supplies developer context to the realtime speaker; live spoken acceptance remains Masih’s check. V4 needs a separately connected provider. Evidence: ~/.cache/elpis-tests/voice-settings-20261023/verification.json.
