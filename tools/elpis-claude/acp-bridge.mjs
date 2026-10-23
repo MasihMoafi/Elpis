@@ -512,7 +512,7 @@ function decorateThread(thread) {
   providerOwners.get(thread.id)?.decorate(thread);
 }
 let idleTimer, stopping = false;
-async function stopBridge() {
+async function stopBridge(successor) {
   if (stopping) return;
   stopping = true;
   clearTimeout(idleTimer);
@@ -520,6 +520,8 @@ async function stopBridge() {
   await storeChain;
   for (const c of contexts) c.close();
   await shutdownRuntime();
+  // Started only now, so the new bridge never meets this one's engines or unsaved chats.
+  if (successor) spawn(process.execPath, [join(dirname(successor), "shared-runtime.mjs"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
   process.exit(0);
 }
 function checkIdle() {
@@ -532,7 +534,15 @@ function checkIdle() {
     await stopBridge();
   }, 30_000);
 }
-for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, stopBridge);
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => stopBridge());
+// A newer installation that joined this bridge left its bridge's path here (shared-runtime.mjs). Once no work
+// runs, this bridge stops and starts that one; the open terminals and the desktop app reconnect to it.
+const successorFile = process.env.ELPIS_SHARED_BRIDGE && process.env.ELPIS_BRIDGE_SOCKET && join(dirname(process.env.ELPIS_BRIDGE_SOCKET), "successor");
+if (successorFile) setInterval(() => {
+  if (stopping || [...contexts].some((c) => c.busy())) return;
+  let successor; try { successor = readFileSync(successorFile, "utf8").trim(); } catch { return; }
+  if (successor) void stopBridge(successor);
+}, 5000).unref();
 wss.on("connection", (ws) => {
   if (stopping) { ws.close(1012, "Session backend is stopping"); return; }
   clients.add(ws);

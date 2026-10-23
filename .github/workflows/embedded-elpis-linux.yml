@@ -220,6 +220,7 @@ jobs:
           node scripts/store-guard.test.cjs
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
+          node --test tools/elpis-claude/test/bridge-idle.test.mjs
           node scripts/bridge-launcher.test.cjs
           node scripts/agy-steering.test.cjs
           node scripts/build-elpis-local.test.cjs

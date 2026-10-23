@@ -110,7 +110,7 @@ export function runtimeDir(home = homeDir()) {
     if (Buffer.byteLength(sock) > SOCKET_PATH_MAX) continue;
     ensurePrivateDir(base);
     ensurePrivateDir(dir);
-    return { home: real, dir, sock, state: path.join(dir, "state.json"), lock: path.join(dir, "launch.lock"), log: path.join(dir, "daemon.log") };
+    return { home: real, dir, sock, state: path.join(dir, "state.json"), lock: path.join(dir, "launch.lock"), log: path.join(dir, "daemon.log"), successor: path.join(dir, "successor") };
   }
   throw new Error(`no runtime directory with a socket path under ${SOCKET_PATH_MAX} bytes (set XDG_RUNTIME_DIR or TMPDIR to a shorter path)`);
 }
@@ -516,8 +516,11 @@ async function ensureBridge(rt, bridgeScript, identity) {
       if (state.identity !== identity.hash && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
       // Like the desktop app, a terminal joins the Elpis that is already running instead of refusing (19 Oct: every
       // install made while the app was open stopped `elpis` from starting). It uses that installation's engine, so the
-      // pair matches; the newer installation starts once the running one's clients have closed.
-      if (state.identity !== identity.hash && !config.length && usable(state.engine)) return { engine: state.engine, running: state.script };
+      // pair matches. The running bridge hands over to this installation once no work runs (acp-bridge.mjs).
+      if (state.identity !== identity.hash && !config.length && usable(state.engine)) {
+        fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
+        return { engine: state.engine, running: state.script };
+      }
       const lines = [];
       if (state.identity !== identity.hash) {
         lines.push(`an Elpis bridge for ${rt.home} is already running from a different installation, so this terminal was not started.`,
@@ -538,6 +541,7 @@ async function ensureBridge(rt, bridgeScript, identity) {
   }
   // Nothing living: remove what a crashed bridge left.
   fs.rmSync(rt.state, { force: true });
+  fs.rmSync(rt.successor, { force: true });
   await removeStaleSocket(rt.sock);
   await reapOrphans(rt);
 
@@ -579,7 +583,7 @@ async function launcherMain(bridgeScript) {
   const release = await acquireLock(rt.lock);
   let joined;
   try { joined = await ensureBridge(rt, bridgeScript, identity); } finally { release(); }
-  if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) starts after Elpis and its terminals restart.\n`);
+  if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over as soon as no chat is working.\n`);
   await new Promise((resolve) => process.stdout.write(`unix://${rt.sock}\n${joined ? `engine ${joined.engine}\n` : ""}`, resolve));
 }
 
