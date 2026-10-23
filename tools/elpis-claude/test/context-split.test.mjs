@@ -1,4 +1,4 @@
-// The context split Elpis draws for a bridged chat (/context, the Context Ledger, the dashboard).
+// The context split Elpis draws for a bridged chat (/context, the Context Ledger).
 // Elpis requires its parts to add up to the reported context; a debug build panicked when the
 // text-length estimates exceeded what Antigravity reported (4379 vs 3210).
 import { test } from "node:test";

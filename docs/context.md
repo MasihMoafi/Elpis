@@ -460,8 +460,8 @@ uses its existing context colors; it does not impose a separate chatbox theme.
 ### Manual memory is explicit
 
 The configured memory directory has one dedicated `MEMORY.md` row. The row remains visible while
-its status is loading, missing, available, admitted, being created, or unavailable; Ledger,
-`/usage`, and `/dashboard` use the same cached status rather than rereading the file while they
+its status is loading, missing, available, admitted, being created, or unavailable; Ledger
+and `/usage` use the same cached status rather than rereading the file while they
 render.
 
 - A missing row cannot be admitted. With that row selected, lowercase `c` creates the minimal

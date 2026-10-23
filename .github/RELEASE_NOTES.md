@@ -2,7 +2,7 @@ Elpis v0.4.1 moves the terminal runtime to Codex rust-v0.160.0 and adds `elpis c
 
 Changes since v0.4.0:
 
-- `elpis claude` starts the Claude Code CLI and runs Smart Prune on its requests through a loopback proxy. It is not a model provider for Elpis sessions. `/dashboard` shows the tokens that it saves.
+- `elpis claude` starts the Claude Code CLI and runs Smart Prune on its requests through a loopback proxy. It is not a model provider for Elpis sessions.
 - A new wrapper theme: gold titles, thin teal rules around the composer, popups and Context Ledger, and the Codex status indicator.
 - `/model` shows the provider rows first, and each provider shows one time.
 - Rewind (Esc, Esc, then Enter) also starts when the Context Ledger has focus.
