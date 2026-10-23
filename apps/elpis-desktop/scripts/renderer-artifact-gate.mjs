@@ -165,9 +165,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/desktop-sweep.test.cjs": {
-      "blob": "4d579deeb3b190a518b3b4ba291ca31e7d6e7bde",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
+      "blob": "ab7b9ecdd8cae06cc0d13681d7e51786e57b548a",
+      "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
     },
     "tests/love-spot-pages.test.cjs": {
       "blob": "0729c64c5a02e0a14deb8dc705970016f6950101",
@@ -184,9 +184,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "45e8e8446314e6dc671e70f085aee69127473537",
-      "approval": "279499d6bed5a579413834c6e7bc3e4d35006bfd",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on."
+      "blob": "cfd25d0654fbd7cc75d76a47268e3c5e49dce851",
+      "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
     },
     "tests/settings-write.test.cjs": {
       "blob": "09f90ee692006240e183eb49d99051431d05de7b",
@@ -305,9 +305,9 @@ export const retainedUpdates = {
       "reason": "Love Spot, Masih 23 Oct: \"remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda.\" The native window has no Talk button or panel: a captured voice note on the board is what Matilda answers, on the board, and the voice control still has to fit the window."
     },
     "tests/view-errors.test.cjs": {
-      "blob": "b61d6fa7059a657594a381f58ab8b2e6ce705fce",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
-      "reason": "A121/GATE11, Masih: \"never weaken or delete an assertion that still describes wanted behaviour\". dd2ca3576 gave navigation rows accessible names: scope every bad-reply assertion to the Ledger page instead of its same-named shortcut; all error and survival checks remain. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
+      "blob": "3aa697bf47386452b99868dae38662643f8d08fe",
+      "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
+      "reason": "A121/GATE11, Masih: \"never weaken or delete an assertion that still describes wanted behaviour\". dd2ca3576 gave navigation rows accessible names: scope every bad-reply assertion to the Ledger page instead of its same-named shortcut; all error and survival checks remain. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
     }
   }
 };
