@@ -73,6 +73,8 @@ async fn claude_accounts_picker_sends_bridge_payload_and_preserves_selection_on_
             ThreadId::new(),
             test_path_buf("/tmp/project"),
         ));
+        // The accounts belong to the Claude subscription, so its model answers.
+        app.chat_widget.set_model("claude/opus");
 
         // Opening again reads the bridge, including a selection changed by another client.
         for opened in 0..2 {

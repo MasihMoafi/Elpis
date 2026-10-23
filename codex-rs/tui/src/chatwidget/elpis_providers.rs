@@ -440,7 +440,7 @@ impl ChatWidget {
                 },
             ));
         }
-        if let Some(row) = self.claude_accounts_picker_row() {
+        if let Some(row) = self.claude_accounts_picker_row(provider_id) {
             rows.push(("elpis:claude-accounts".to_string(), row));
         }
         rows
@@ -506,7 +506,8 @@ impl ChatWidget {
                 }
             })
             .collect();
-        if let Some(row) = self.claude_accounts_picker_row() {
+        // While the Claude subscription answers, its accounts are one step away.
+        if let Some(row) = self.claude_accounts_picker_row(&active) {
             items.push(row);
         }
         let selected_index = self
