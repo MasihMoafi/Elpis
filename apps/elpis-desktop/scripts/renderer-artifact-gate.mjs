@@ -316,7 +316,7 @@ export const retainedUpdates = {
 // The standalone Love Spot sync (Masih, 22 Oct: "Fix those loose-ends. delete them if we don't need them."): Love Spot lives inside Elpis, the sync tool and its test failed since before that day, so both go.
 // These page-only regressions and their fixture are retired; all other baseline tests remain mandatory.
 // The Talk panel (Masih, 23 Oct: "remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda."): its test file is
-// split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit) and tests/love-spot-bars.test.cjs (the movable bars); the
+// split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit); the
 // Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
 export const retiredPaths = {
   '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs'],

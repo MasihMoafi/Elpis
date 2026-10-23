@@ -215,6 +215,8 @@ export default function Home() {
   const threadList = useRef<HTMLDivElement>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  /** The heading of a sidebar section: every one of them folds its list the same way. */
+  const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => setCollapsedSections(value => ({ ...value, [key]: !value[key] }))} />;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const commandReturnFocus = useRef<HTMLElement | null>(null);
@@ -370,7 +372,6 @@ export default function Home() {
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
   const loveActivity = useLoveActivity(view === "loveSpot", ready);
-  const [originOpen, setOriginOpen] = useState({ love: true, workflows: true });
   const viewRef = useRef(view); viewRef.current = view;
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
@@ -1503,7 +1504,7 @@ export default function Home() {
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Love Spot");
   const workflowChats = searchTerm || hiddenPages.includes("canvas") ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !chatOrigin(thread, loveActivity.threads));
-  const ordered = [...pinnedChats, ...(grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(originOpen.love ? loveChats : []), ...(originOpen.workflows ? workflowChats : []), ...recentChats];
+  const ordered = [...(collapsedSections.pinned ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
   // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
   const inlineAgents = new Set<string>();
   const collectAgents = (id: string, seen = new Set<string>()) => {
@@ -1513,7 +1514,7 @@ export default function Home() {
       inlineAgents.add(child.id); collectAgents(child.id, next);
     }
   };
-  for (const root of [...ordered, ...ordinaryThreads.filter(thread => !isAgent(thread) && projectChats[thread.id] && !collapsedProjects[projectChats[thread.id]] && !pins.includes(thread.id))]) collectAgents(root.id);
+  for (const root of [...ordered, ...ordinaryThreads.filter(thread => !isAgent(thread) && projectChats[thread.id] && !collapsedProjects[projectChats[thread.id]] && !collapsedSections.projects && !pins.includes(thread.id))]) collectAgents(root.id);
   const topLevelAgentRuns = agentRuns.filter(thread => !inlineAgents.has(thread.id) && (!thread.parentThreadId || !agentRunIds.has(thread.parentThreadId)));
   // Check newly visible agents once, so only agents with actual children get an expansion control.
   useEffect(() => {
@@ -1805,24 +1806,23 @@ export default function Home() {
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <SessionManagerRow on={preferences.sessionManager} onChange={on => savePreferences({ sessionManager: on })} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
-        {!searchTerm && <section aria-label="Projects"><div className="section-label-row"><SectionToggle name="Projects" open={!collapsedSections.projects} onToggle={() => setCollapsedSections(value => ({ ...value, projects: !value.projects }))} /><Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
+        {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));
             return <SidebarGroup key={item.id} kind="project" dropProps={chatReorder.targetProps(`project:${item.id}`, true)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
               wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<ReorderItem reorder={projectReorder} itemId={item.id} render={area as React.ReactElement<React.HTMLAttributes<HTMLElement>>} />}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
               empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>; })}
         </section>}
-        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row"><SectionToggle name="Pinned" open={!collapsedSections.pinned} onToggle={() => setCollapsedSections(value => ({ ...value, pinned: !value.pinned }))} /></div>{!collapsedSections.pinned && pinnedChats.map(chatRows)}</section>}
-        {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label">Groups</div>{grouped.groups.map(chatGroupSection)}</section>}
-        {(loveChats.length > 0 || workflowChats.length > 0) && <div className="section-label">Agent chats</div>}
-        {loveChats.length > 0 && <SidebarGroup kind="chat" name="Love Spot" icon={<LoveSpotIcon size={14} />} open={originOpen.love} onToggle={() => setOriginOpen(value => ({ ...value, love: !value.love }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
-        {workflowChats.length > 0 && <SidebarGroup kind="chat" name="Workflows" icon={<WorkflowsIcon size={14} />} open={originOpen.workflows} onToggle={() => setOriginOpen(value => ({ ...value, workflows: !value.workflows }))} wrap={(area, content) => cloneElement(area, {}, content(null))} empty={false}>{workflowChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</SidebarGroup>}
-        {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>{searchTerm ? <div className="section-label">Results</div> : <SectionToggle name="Recents" open={!collapsedSections.recents} onToggle={() => setCollapsedSections(value => ({ ...value, recents: !value.recents }))} />}
+        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{!collapsedSections.pinned && pinnedChats.map(chatRows)}</section>}
+        {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}
+        {loveChats.length > 0 && <section aria-label="Love Spot"><div className="section-label-row">{foldable("love", "Love Spot")}</div>{!collapsedSections.love && loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
+        {workflowChats.length > 0 && <section aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}</div>{!collapsedSections.workflows && workflowChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
+        {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>{searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents")}
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
           {(searchTerm || !collapsedSections.recents) && recentChats.map(chatRows)}
         </section>}
-        {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label mt-4" title="Their parent conversation is not in the current list.">Other agents</div>{unlinked.map(thread => threadBranch(thread))}</div>}
+        {unlinked.length > 0 && <div className="unlinked-thread-list" aria-label="Agents whose parent is not listed"><div className="section-label-row mt-4" title="Their parent conversation is not in the current list.">{foldable("unlinked", "Other agents")}</div>{!collapsedSections.unlinked && unlinked.map(thread => threadBranch(thread))}</div>}
         {ready && !threads.length && <p className="px-2 text-xs text-muted-foreground">Your conversations will appear here.</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
