@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { speechChunks } from './client.mjs';
 import { BridgeError, object, text, threadId } from './validate.mjs';
 
 /** One line per call in logs/voice-calls.jsonl, sent by the window when a call ends: how long, whether it connected, how many events of each kind the call
@@ -25,11 +27,18 @@ let owner;
 export function createVoice(client) {
   let call;
   async function close() { if (call) await call.stop(); }
-  async function start(input, response) {
-    object(input, ['threadId', 'sdp']); threadId(input.threadId); text(input.sdp, 'voice offer', 64000);
+  async function start(input, response, { readAloud = false } = {}) {
+    object(input, readAloud ? ['threadId', 'sdp', 'text'] : ['threadId', 'sdp']); threadId(input.threadId); text(input.sdp, 'voice offer', 64000);
+    if (readAloud) text(input.text, 'speech text', 2_000_000);
     if (!input.sdp.startsWith('v=0\r\n') || !input.sdp.includes('\n')) throw new BridgeError('Invalid voice offer');
+    if (readAloud) {
+      const audio = input.sdp.split(/\r?\nm=/).filter(section => section.startsWith('audio '));
+      // The window sends generated silence, never the microphone: the voice model only runs while audio comes in.
+      if (audio.length !== 1 || !/\r?\na=sendrecv(?:\r?\n|$)/.test(audio[0])) throw new BridgeError('Read aloud needs one two-way audio channel.');
+    }
     if (owner) throw new BridgeError('Voice is already open. End that call first.', 409);
-    const current = { stopped: false, started: null, stopping: null, stop: null };
+    const current = { stopped: false, started: null, stopping: null, stop: null, id: randomUUID(), speech: null, ready: false, pending: false, index: 0 };
+    const chunks = readAloud ? speechChunks(input.text) : [];
     owner = call = current;
     const send = value => { if (!current.stopped && !response.destroyed) response.write(JSON.stringify(value) + '\n'); };
     let timeout, heartbeat;
@@ -37,30 +46,61 @@ export function createVoice(client) {
       if (current.stopping) return current.stopping;
       current.stopped = true; clearTimeout(timeout); clearInterval(heartbeat);
       client.off('event', onEvent);
+      client.off('side', onSide);
       current.stopping = (async () => {
         // End may arrive while authentication or native startup is still pending.
-        try { await current.started; if (current.started) await client.stopVoice(input.threadId); } catch {}
+        let started = false;
+        try { await current.started; started = true; } catch {}
+        try {
+          if (current.speech) await client.closeSpeechThread(current.speech.id);
+          else if (!readAloud && started && current.started) await client.stopVoice(input.threadId);
+        } catch {}
         finally { if (owner === current) owner = undefined; if (call === current) call = undefined; response.end(); }
       })();
       return current.stopping;
     };
     current.stop = stop;
     const fail = message => { send({ type: 'error', message }); void stop(); };
+    const append = () => {
+      if (current.stopped || !current.ready || !current.speech || !current.startComplete || current.pending) return;
+      if (current.index === chunks.length) { clearTimeout(timeout); send({ type: 'complete' }); return; }
+      current.pending = true;
+      clearTimeout(timeout); timeout = setTimeout(() => fail('Read aloud timed out waiting for speech. Retry explicitly.'), 300000).unref();
+      void client.appendSpeech(current.speech.id, chunks[current.index++]).catch(() => fail('Read aloud delivery is uncertain. Stop and try again explicitly.'));
+    };
+    if (readAloud) current.readyForSpeech = () => { if (!current.ready) { current.ready = true; append(); } };
+    const onSide = message => {
+      const { method, params } = message;
+      if (params?.threadId !== current.speech?.id || current.stopped) return;
+      onEvent({ type: 'message', data: message });
+      if (method === 'thread/realtime/transcript/done' && params.role === 'assistant' && current.pending) { current.pending = false; append(); }
+    };
     const onEvent = event => {
       if (event.type === 'connection' && !event.data?.connected) return fail('Elpis disconnected. Reconnect before starting voice again.');
       const { method, params } = event.data ?? {};
-      if (event.type !== 'message' || params?.threadId !== input.threadId) return;
+      if (event.type !== 'message' || params?.threadId !== (readAloud ? current.speech?.id : input.threadId)) return;
       if (method === 'thread/realtime/sdp') { clearTimeout(timeout); send({ type: 'sdp', sdp: params.sdp }); }
       if (method === 'thread/realtime/error') fail('Voice could not connect. Check your ChatGPT connection and try again.');
-      if (method === 'thread/realtime/closed' || method === 'thread/deleted' || method === 'thread/archived') { send({ type: 'ended' }); void stop(); }
+      if (method === 'thread/realtime/closed' || method === 'thread/closed' || method === 'thread/deleted' || method === 'thread/archived') { send({ type: 'ended' }); void stop(); }
     };
     response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
     response.flushHeaders();
-    response.once('close', stop); client.on('event', onEvent);
+    response.once('close', stop); client.on('event', onEvent); if (readAloud) client.on('side', onSide);
     timeout = setTimeout(() => fail('Voice connection timed out. Try again.'), 30000).unref();
     heartbeat = setInterval(() => send({ type: 'ping' }), 15000).unref();
-    current.started = client.startVoice(input.threadId, input.sdp);
+    if (readAloud) send({ type: 'session', id: current.id });
+    current.started = readAloud ? (async () => {
+      current.speech = await client.createSpeechThread(input.threadId);
+      if (current.stopped) return;
+      await client.startSpeechThread(current.speech, input.sdp);
+      current.startComplete = true; append();
+    })() : client.startVoice(input.threadId, input.sdp);
     current.started.catch(error => fail(error instanceof BridgeError && error.status < 500 ? error.message : 'Voice could not start. Check your ChatGPT connection and try again.'));
   }
-  return { start, close, busy: () => !!call };
+  function ready(input) {
+    object(input, ['id']); text(input.id, 'speech session', 64);
+    if (!call || call.stopped || !call.readyForSpeech || call.id !== input.id) throw new BridgeError('This Read aloud session has ended.', 409);
+    call.readyForSpeech(); return { ok: true };
+  }
+  return { start, ready, close, busy: () => !!call };
 }
