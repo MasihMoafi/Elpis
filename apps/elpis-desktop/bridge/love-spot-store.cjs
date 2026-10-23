@@ -327,14 +327,15 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     });
   }
   /** Writes the reply as a blue note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. Face, note and painting are one group. */
-  async function reply(turnId, text, agentColor, page, shapes = []) {
+  async function reply(turnId, text, agentColor, page, shapes = [], { preview = false } = {}) {
     const note = typeof text === 'string' && text.trim() !== '';
     if (!note && !shapes.length) return;
     return locked(async () => {
       const { scene } = await read(), id = note ? `love-reply-${turnId}` : `love-paint-${turnId}-0`;
       if (page) samePage(page, scene.page);
-      if (scene.elements.some(e => e.id === id)) return;
-      const live = scene.elements.filter(e => !e.isDeleted);
+      const previousFace = scene.elements.find(e => e.id === `love-face-${turnId}`);
+      if (previousFace && !previousFace.customData?.streaming) return;
+      const live = scene.elements.filter(e => !e.isDeleted && !e.groupIds?.includes(`love-reply-group-${turnId}`));
       const anchor = live.filter(e => e.type === 'text' && !agentColor(e.strokeColor)).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
       // Her note is set in Nunito, the board's friendly sans; its lines are cut at 38 columns, so its height is known without measuring text.
       const lines = (note ? text.trim() : '').split('\n').flatMap(line => {
@@ -356,7 +357,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
         return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height / 2 - h / 2, width: w, height: h };
       };
-      const a = anchor ? bounds(anchor) : { x: 0, y: -40, height: 0 };
+      const a = previousFace ? { x: previousFace.x, y: previousFace.y - 40, height: 0 } : anchor ? bounds(anchor) : { x: 0, y: -40, height: 0 };
       const x = a.x, group = `love-reply-group-${turnId}`; let y = a.y + a.height + 40;
       for (;;) {
         const hits = live.map(bounds).filter(e => x < e.x + e.width + 24 && x + width + 24 > e.x && y < e.y + e.height + 24 && y + height + 24 > e.y);
@@ -371,7 +372,12 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
         isDeleted: false, boundElements: null, updated: now, link: null, locked: false, fontSize: 20, fontFamily: 6, text: lines.join('\n'),
         originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.25 };
-      await persist(merge(scene, { elements: [face, ...(element ? [element] : []), ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group)], files: { [file.id]: file } }));
+      face.customData = { streaming: preview };
+      const updated = [face, ...(element ? [element] : []), ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group)].map(e => {
+        const previous = scene.elements.find(old => old.id === e.id);
+        return previous ? { ...e, version: previous.version + 1, versionNonce: previous.versionNonce + 1 } : e;
+      });
+      await persist(merge(scene, { elements: updated, files: { [file.id]: file } }));
     });
   }
   async function names(dir) { try { return await fs.readdir(dir); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } }
@@ -482,6 +488,23 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     await fs.rmdir(peerDirectory).catch(() => {});
     pending.clear();
   }
-  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, start, watch, screenshotsList, chooseScreenshot, close };
+  async function voice(muted) {
+    return locked(async () => {
+      const file = path.join(directory, '.voice.json');
+      if (muted !== undefined) {
+        if (typeof muted !== 'boolean') throw fail('Invalid voice preference');
+        const temporary = `${file}.${randomUUID()}.tmp`;
+        await fs.writeFile(temporary, JSON.stringify({ muted }), { mode: 0o600 });
+        await fs.rename(temporary, file);
+      }
+      try {
+        const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+        if (typeof saved?.muted !== 'boolean') throw fail('Invalid Voice preference');
+        return saved.muted;
+      }
+      catch (cause) { if (cause.code !== 'ENOENT') throw cause; return false; }
+    });
+  }
+  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, close };
 }
 module.exports = { createLoveSpot, newer, merge };

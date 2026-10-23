@@ -911,13 +911,15 @@ export class DesktopClient extends EventEmitter {
   async stopVoice(id) {
     return this.#rpc('thread/realtime/stop', { threadId: threadId(id) });
   }
-  async createSpeechThread(id) {
+  async createSpeechThread(id, { independent = false } = {}) {
     const status = await this.voiceStatus({ strict: true });
     if (!status.available) throw new BridgeError('Read aloud needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
     const thread = await this.readThreadMetadata(id);
-    if (thread.modelProvider !== 'openai' || /^(?:claude|agy)\//.test(thread.model ?? '')) throw new BridgeError('Read aloud is available in ChatGPT Codex chats.', 403);
-    if (!thread.model) throw new BridgeError('This chat has no native model for Read aloud.', 400);
-    const result = await this.sideRpc('thread/start', { model: thread.model, modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only' });
+    const native = thread.modelProvider === 'openai' && !/^(?:claude|agy)\//.test(thread.model ?? '');
+    if (!native && !independent) throw new BridgeError('Read aloud is available in ChatGPT Codex chats.', 403);
+    const model = native ? thread.model : 'gpt-5';
+    if (!model) throw new BridgeError('This chat has no native model for Read aloud.', 400);
+    const result = await this.sideRpc('thread/start', { model, modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only' });
     if (result.thread?.ephemeral !== true || result.thread?.id === id) throw new BridgeError('Elpis did not create a private speech thread.', 502);
     return { id: threadId(result.thread.id), voice: status.voice };
   }

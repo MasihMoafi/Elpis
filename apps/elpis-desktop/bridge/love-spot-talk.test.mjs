@@ -11,11 +11,12 @@ import { createLoveSpotTalk } from './love-spot-talk.mjs';
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
 async function fixture(t, { refuseFast = false } = {}) {
-  const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
+  const base = os.tmpdir();
   const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(), created = [], sent = [], entries = [], speeds = [];
   Object.assign(client, {
     settings: async () => ({ main: { model: 'luna', provider: 'openai' } }),
+    voiceStatus: async () => ({ available: true, voice: 'juniper' }),
     models: async () => ({ data: [{ model: 'luna', inputModalities: ['text', 'image'] }, { model: 'text', inputModalities: ['text'] }], nextCursor: null }),
     createThread: async value => { created.push(value); return { thread: { id: 'chat', ...value } }; },
     readThread: async () => ({ thread: { id: 'chat', name: 'Love Spot', cwd: directory }, data: [...entries].reverse(), nextCursor: null }),
@@ -212,4 +213,91 @@ test('a model from another connection starts Matilda a new chat; one from the sa
   assert.equal(f.created.length, 2);
   assert.equal(f.created[1].provider, 'anthropic');
   assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['Hello', 'text'], ['Same connection', 'text'], ['Now on Claude', 'claude/sonnet']]);
+});
+
+const delta = (f, text, itemId = 'reply', method = 'item/agentMessage/delta') => f.client.emit('event', { type: 'message', data: { method, params: { threadId: 'chat', turnId: `turn-${f.sent.length}`, itemId, delta: text } } });
+test('Matilda feeds speech and one growing board note before completion, excluding painting, commentary, tools and reasoning', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Hello', model: 'claude/sonnet', provider: 'anthropic' });
+  const events = [], feed = await f.talk.speech(); feed.subscribe(event => events.push(event));
+  f.client.emit('event', { type: 'message', data: { method: 'item/started', params: { threadId: 'chat', turnId: 'turn-1', item: { id: 'progress', type: 'agentMessage', phase: 'commentary' } } } });
+  delta(f, 'PRIVATE. ', 'progress'); delta(f, 'REASON. ', 'hidden', 'item/reasoning/textDelta'); delta(f, 'TOOL. ', 'tool', 'item/commandExecution/outputDelta');
+  for (const text of ['Hello. \n', '`', '``excalidraw\n[{"type":"ellipse"}]\n``', '`', '\nStill ', 'here. ', 'The tail']) delta(f, text);
+  assert.match(events.filter(e => e.type === 'text').map(e => e.text).join(''), /Hello\.\s+Still here\./);
+  assert.doesNotMatch(JSON.stringify(events), /PRIVATE|REASON|TOOL|excalidraw|ellipse/);
+  await new Promise(resolve => setTimeout(resolve, 350)); await f.talk.idle();
+  assert.match((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText ?? '', /Hello/);
+  f.finish('turn-1', 'completed', 'Hello. \n```excalidraw\n[{"type":"ellipse"}]\n```\nStill here. The tail'); await f.talk.idle();
+  assert.equal(events.filter(e => e.type === 'text').map(e => e.text).join('').trim(), 'Hello. \n\nStill here. The tail');
+  assert.equal(events.filter(e => e.type === 'done').length, 1);
+  f.finish(); await f.talk.idle();
+  const scene = (await f.store.read()).scene;
+  assert.equal(scene.elements.filter(e => e.id === 'love-reply-turn-1').length, 1);
+  assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-1').originalText, 'Hello. \n\nStill here. The tail');
+  assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-')).length, 1);
+});
+
+test('Mute stops the feed while writing continues, persists on restart, and unmute never replays old text', async t => {
+  const f = await fixture(t); await f.talk.send({ text: 'Hello', model: 'text' });
+  const events = [], feed = await f.talk.speech(); feed.subscribe(event => events.push(event));
+  delta(f, 'First. '); delta(f, 'Old half');
+  await f.talk.setVoice({ enabled: false });
+  const count = events.filter(e => e.type === 'text').length;
+  delta(f, ' MUTED. ');
+  assert.ok(events.some(e => e.type === 'stop'));
+  assert.equal(events.filter(e => e.type === 'text').length, count);
+  assert.match(JSON.stringify((await f.talk.read()).entries), /MUTED/);
+  f.finish(); await f.talk.idle(); f.talk.close();
+  const next = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => next.close());
+  assert.equal((await next.read()).voice.enabled, false);
+  await next.send({ text: 'Again', model: 'text' });
+  delta(f, 'Before unmute. ');
+  await next.setVoice({ enabled: true });
+  const fresh = []; (await next.speech()).subscribe(event => fresh.push(event));
+  delta(f, 'New words. ');
+  assert.equal(fresh.filter(e => e.type === 'text').map(e => e.text).join(''), 'New words. ');
+});
+
+test('speech failure and interrupted turns stop voice without losing the text; unavailable ChatGPT defaults off', async t => {
+  const f = await fixture(t); f.client.voiceStatus = async () => ({ available: false });
+  const state = await f.talk.read(); assert.equal(state.voice.enabled, false); assert.match(state.voice.reason, /ChatGPT/);
+  await f.talk.send({ text: 'Hello', model: 'text' });
+  delta(f, 'Still writing. ');
+  await assert.rejects(f.talk.speech(), /ChatGPT/);
+  f.client.voiceStatus = async () => ({ available: true }); await f.talk.setVoice({ enabled: true });
+  const events = [], feed = await f.talk.speech(); feed.subscribe(event => events.push(event));
+  delta(f, 'Heard. '); feed.fail('Speech disconnected; retry explicitly.'); delta(f, 'Not retried. ');
+  assert.match((await f.talk.read()).voice.error, /disconnected/);
+  assert.doesNotMatch(events.filter(e => e.type === 'text').map(e => e.text).join(''), /retried/);
+  f.finish('turn-1', 'completed', 'Still writing. Heard. Not retried.'); await f.talk.idle();
+  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1').originalText, 'Still writing. Heard. Not retried.');
+  await f.talk.send({ text: 'Again', model: 'text' });
+  const cancelled = []; (await f.talk.speech()).subscribe(event => cancelled.push(event));
+  delta(f, 'DROP TAIL'); f.finish('turn-2', 'interrupted', 'DROP TAIL. A cancelled sentence. '); await f.talk.idle();
+  assert.equal(cancelled.filter(e => e.type === 'text').length, 0); assert.ok(cancelled.some(e => e.type === 'stop'));
+});
+
+test('unreadable Voice preferences disable speech and report the reason without blocking Matilda writing', async t => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.directory, '.voice.json'), '{');
+  await f.talk.send({ text: 'Hello', model: 'text' });
+  const state = await f.talk.read(); assert.equal(state.voice.enabled, false); assert.match(state.voice.reason, /Voice settings/);
+  f.finish(); await f.talk.idle();
+  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1').originalText, 'Here with you.');
+});
+
+test('one speech queue preserves message order and bounds a backlog while the complete note still saves', async t => {
+  const f = await fixture(t); await f.talk.send({ text: 'Hello', model: 'text' });
+  const spoken = []; (await f.talk.speech()).subscribe(event => { if (event.type === 'text') spoken.push(event.text); });
+  delta(f, 'First tail', 'first');
+  f.client.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: 'chat', turnId: 'turn-1', item: { id: 'first', type: 'agentMessage', text: 'First tail' } } } });
+  delta(f, 'Second. ', 'second');
+  assert.equal(spoken.join(''), 'First tail\n\nSecond. ');
+  f.finish(); await f.talk.idle();
+  await f.talk.send({ text: 'A long reply', model: 'text' });
+  const long = 'A sentence. '.repeat(300);
+  delta(f, long);
+  assert.match((await f.talk.read()).voice.error, /fell behind/);
+  f.finish('turn-2', 'completed', long); await f.talk.idle();
+  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-2').originalText, long.trim());
 });

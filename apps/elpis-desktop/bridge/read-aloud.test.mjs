@@ -96,7 +96,7 @@ async function fixture(t) {
   const methods = name => socket.sent.filter(row => row.method === name);
   const open = async (text = 'Read these words exactly.') => {
     const controller = new AbortController();
-    const response = await post('voice/read-aloud', { threadId: CHAT, text, sdp: offer }, controller.signal);
+    const response = await post(text === null ? 'love-spot/voice' : 'voice/read-aloud', text === null ? { sdp: offer } : { threadId: CHAT, text, sdp: offer }, controller.signal);
     assert.equal(response.status, 200);
     const reader = response.body.getReader(); let pending = '';
     const next = async () => {
@@ -105,8 +105,50 @@ async function fixture(t) {
     };
     return { controller, reader, next };
   };
-  return { state, notify, post, methods, open, app, socket };
+  return { state, notify, post, methods, open, app, socket, client };
 }
+
+test('Matilda streams through the shared HTTP transport for native and Claude text; mute retires the speaker while text continues', async t => {
+  for (const provider of ['openai', 'anthropic']) {
+    const f = await fixture(t); f.state.provider = provider;
+    Object.assign(f.client, {
+      settings: async () => ({ main: { model: 'text', provider } }),
+      models: async () => ({ data: [{ model: 'text', inputModalities: ['text'] }] }),
+      createThread: async () => ({ thread: { id: CHAT, modelProvider: provider } }),
+      setServiceTier: async () => ({}),
+      send: async () => ({ turn: { id: 'matilda-turn' } }),
+    });
+    assert.equal((await f.post('love-spot/talk', { text: 'Hello', model: 'text', provider })).status, 200);
+    const event = (method, params) => f.client.emit('event', { type: 'message', data: { method, params: { threadId: CHAT, turnId: 'matilda-turn', ...params } } });
+    event('item/agentMessage/delta', { itemId: 'note', delta: 'First sentence. ' });
+    const { controller, reader, next } = await f.open(null);
+    const session = await next(); assert.equal(session.type, 'session');
+    assert.equal((await next()).type, 'sdp');
+    assert.equal(f.methods('thread/realtime/appendText').length, 0);
+    await f.post('voice/read-aloud/ready', { id: session.id });
+    await until(() => f.methods('thread/realtime/appendText').length === 1);
+    assert.equal(f.methods('thread/realtime/start')[0].params.voice, 'juniper');
+    assert.equal(f.methods('thread/start')[0].params.modelProvider, 'openai');
+    event('item/agentMessage/delta', { itemId: 'note', delta: 'Second sentence. ' });
+    assert.equal(f.methods('thread/realtime/appendText').length, 1, 'RPC acknowledgement does not advance speech');
+    f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'user' });
+    assert.equal(f.methods('thread/realtime/appendText').length, 1);
+    f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
+    await until(() => f.methods('thread/realtime/appendText').length === 2);
+    assert.equal(f.methods('thread/realtime/appendText')[1].params.text, 'Read this aloud exactly, word for word, and say nothing else:\n\nSecond sentence. ');
+    const muted = await f.post('love-spot/voice/settings', { enabled: false }); assert.equal(muted.status, 200);
+    assert.equal((await next()).type, 'stopped');
+    event('item/agentMessage/delta', { itemId: 'note', delta: 'Still writing. ' });
+    f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
+    assert.equal(f.methods('thread/realtime/appendText').length, 2);
+    assert.equal((await f.post('love-spot/voice', { sdp: offer })).status, 409);
+    assert.equal(f.methods('thread/start').length, 1);
+    assert.equal(f.methods('thread/realtime/stop').length, 1);
+    assert.equal(f.methods('turn/interrupt').length, 0);
+    controller.abort(); await reader.cancel().catch(() => {});
+    await f.app.close();
+  }
+});
 
 test('read aloud uses the saved subscription voice in a private native thread and orders speech by completed output', async t => {
   const f = await fixture(t), original = 'Hello سلام 🌍. '.repeat(900);

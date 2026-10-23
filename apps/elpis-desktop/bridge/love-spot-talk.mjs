@@ -1,6 +1,7 @@
 import { BridgeError, object, text } from './client.mjs';
 import { agentColor } from '../lib/love-spot.ts';
 import { splitPainting, withoutPainting } from './love-spot-painting.cjs';
+import { createSentenceBuffer } from './speech-buffer.mjs';
 
 // The engine names an unknown thread in these ways; thread/read of a purged one answers only "rejected the operation (-32600)".
 const MISSING = /thread not (found|loaded)|no rollout found|rejected the operation \(-32600\)/i;
@@ -10,11 +11,87 @@ const INSTRUCTIONS = 'You are Matilda, the collaborator on Masih\'s shared Love 
 export function createLoveSpotTalk({ client, store }) {
   let threadId = null, thread = null, entries = [], activeTurnId = null, finishedTurnId = null, error = '', loaded = false, sending = false, closed = false, stale;
   let work = Promise.resolve(), loading, sendingPage;
+  let muted = false, available = false, voiceReason = '', voiceError = '', writing, speechFeed;
+  const finished = new Set();
   const listeners = new Set(), parts = new Map(), turnPages = new Map(), fastAsked = new Set();
   /** The panel shows her note, not the block she paints with. */
-  const shown = entry => entry.item.type === 'agentMessage' && typeof entry.item.text === 'string' && entry.item.text.includes('```excalidraw') ? { ...entry, item: { ...entry.item, text: withoutPainting(entry.item.text) } } : entry;
-  const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error });
+  const shown = entry => {
+    const buffer = writing?.id === entry.turnId && writing.items.get(entry.item.id)?.buffer;
+    return entry.item.type === 'agentMessage' ? { ...entry, item: { ...entry.item, text: buffer && !writing.done ? buffer.text() : withoutPainting(entry.item.text ?? '') } } : entry;
+  };
+  const voice = () => ({ enabled: available && !muted, available, reason: voiceReason, error: voiceError });
+  const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error, voice: voice() });
   const publish = () => { if (!closed) for (const listen of listeners) listen(snapshot()); };
+  async function refreshVoice() {
+    try { muted = await store.voice(); }
+    catch {
+      available = false; voiceReason = 'Voice settings could not be read. Writing can continue.';
+      speechFeed?.emit({ type: 'stop' }); return voice();
+    }
+    try { available = (await client.voiceStatus()).available; voiceReason = available ? '' : 'Connect ChatGPT in Settings → Connections.'; }
+    catch { available = false; voiceReason = 'ChatGPT voice is unavailable. Check Settings → Connections.'; }
+    if (!available) speechFeed?.emit({ type: 'stop' });
+    return voice();
+  }
+  function newSpeechFeed() {
+    speechFeed?.emit({ type: 'stop' });
+    let listener, consumed = false, ended = false, queued = [], size = 0;
+    const feed = {
+      threadId,
+      emit(event) {
+        if (ended) return;
+        if (event.type === 'stop') { ended = true; queued = []; }
+        if (event.type === 'text') {
+          if (!voice().enabled || voiceError) return;
+          size += event.text.length;
+          if (!listener && (size > 262144 || queued.length >= 256)) return feed.fail('Voice fell behind. Stop and retry explicitly.');
+        }
+        if (listener) listener(event); else queued.push(event);
+      },
+      subscribe(listen) {
+        if (consumed) throw new BridgeError('This Matilda reply already had a speaker. Retry explicitly.', 409);
+        consumed = true; listener = listen;
+        const backlog = queued; queued = []; size = 0;
+        for (const event of backlog) listen(event);
+        return () => { listener = undefined; ended = true; queued = []; };
+      },
+      fail(message) { voiceError = message; feed.emit({ type: 'stop' }); publish(); },
+    };
+    speechFeed = feed;
+    return feed;
+  }
+  function begin(turnId) {
+    if (writing?.id === turnId && !writing.done) return;
+    if (writing) { clearTimeout(writing.timer); for (const item of writing.items.values()) item.buffer.cancel(); }
+    writing = { id: turnId, items: new Map(), page: sendingPage, timer: null, done: false };
+    voiceError = ''; newSpeechFeed();
+  }
+  function streamed(turnId, item, delta) {
+    if (finished.has(turnId) || (item.phase && item.phase !== 'final_answer')) return;
+    if (!writing || writing.done) begin(turnId);
+    if (!writing.id) writing.id = turnId;
+    if (writing.id !== turnId) return;
+    let stream = writing.items.get(item.id);
+    if (!stream) {
+      let separator = writing.items.size ? '\n\n' : '';
+      for (const previous of writing.items.values()) previous.buffer.finish();
+      stream = { raw: '', buffer: createSentenceBuffer(chunk => {
+        speechFeed?.emit({ type: 'text', text: separator + chunk }); separator = '';
+      }) };
+      writing.items.set(item.id, stream);
+    }
+    const next = delta ?? (item.text?.startsWith(stream.raw) ? item.text.slice(stream.raw.length) : '');
+    stream.raw += next; stream.buffer.push(next);
+    if (!writing.timer) {
+      const current = writing;
+      current.timer = setTimeout(() => {
+        current.timer = null;
+        if (current.done) return;
+        const note = [...current.items.values()].map(item => item.buffer.text()).join('\n\n');
+        work = work.catch(() => {}).then(() => store.reply(turnId, note, agentColor, current.page ?? turnPages.get(turnId), [], { preview: true })).catch(cause => { error = cause.message; publish(); });
+      }, 300).unref();
+    }
+  }
   function upsert(turnId, item) {
     const at = entries.findIndex(e => e.turnId === turnId && e.item.id === item.id);
     const entry = { turnId, item };
@@ -24,6 +101,7 @@ export function createLoveSpotTalk({ client, store }) {
     if (loaded) return;
     if (loading) return loading;
     loading = (async () => {
+      await refreshVoice();
       threadId = await store.chat();
       // A chat deleted from the sidebar is gone for good once Elpis quits; the next message starts a new one.
       const result = threadId && await client.readThread(threadId, { limit: 100 }).catch(cause => {
@@ -42,24 +120,38 @@ export function createLoveSpotTalk({ client, store }) {
     if (closed || value.type !== 'message') return;
     const { method, params } = value.data;
     if (params.threadId !== threadId) return;
-    if (method === 'turn/started') { activeTurnId = params.turn.id; error = ''; }
+    if (method === 'turn/started') { activeTurnId = params.turn.id; error = ''; if (!writing || writing.done) begin(params.turn.id); else writing.id ??= params.turn.id; }
+    if (method === 'item/started' && params.item?.type === 'agentMessage') upsert(params.turnId, params.item);
     if (method === 'item/completed' && ['userMessage', 'agentMessage'].includes(params.item?.type)) {
       if (params.item.type === 'userMessage') entries = entries.filter(e => e.turnId !== params.turnId || !e.item.id.startsWith('love-prompt-'));
       upsert(params.turnId, params.item);
       if (params.item.type === 'agentMessage') {
+        streamed(params.turnId, params.item);
+        if (writing?.id === params.turnId) writing.items.get(params.item.id)?.buffer.finish();
         const turnParts = parts.get(params.turnId) ?? new Map(); turnParts.set(params.item.id, params.item); parts.set(params.turnId, turnParts);
       }
     }
     if (method === 'item/agentMessage/delta') {
       const previous = entries.find(e => e.turnId === params.turnId && e.item.id === params.itemId)?.item;
-      upsert(params.turnId, { id: params.itemId, type: 'agentMessage', text: (previous?.text ?? '') + params.delta });
+      const item = { ...previous, id: params.itemId, type: 'agentMessage', text: (previous?.text ?? '') + params.delta };
+      upsert(params.turnId, item); streamed(params.turnId, item, params.delta);
     }
     if (method === 'turn/completed') {
       const turn = params.turn;
+      if (finished.has(turn.id)) return;
       finishedTurnId = turn.id;
       activeTurnId = null;
-      const messages = (turn.items?.length ? turn.items : [...(parts.get(turn.id)?.values() ?? [])]).filter(item => item.type === 'agentMessage');
-      for (const item of messages) upsert(turn.id, item);
+      const completed = turn.status === 'completed' && !turn.error;
+      const recorded = [...(parts.get(turn.id)?.values() ?? [])];
+      const messages = (turn.items?.length ? turn.items : recorded.length ? recorded : entries.filter(entry => entry.turnId === turn.id).map(entry => entry.item)).filter(item => item.type === 'agentMessage');
+      for (const item of messages) { upsert(turn.id, item); if (completed) streamed(turn.id, item); }
+      const partial = writing?.id === turn.id ? [...writing.items.values()].map(item => item.buffer.text()).join('\n\n').trim() : '';
+      if (writing?.id === turn.id) {
+        writing.done = true; clearTimeout(writing.timer);
+        for (const item of writing.items.values()) { if (completed) item.buffer.finish(); else item.buffer.cancel(); }
+      }
+      speechFeed?.emit({ type: completed ? 'done' : 'stop' });
+      finished.add(turn.id); if (finished.size > 100) finished.delete(finished.values().next().value);
       const final = messages.filter(item => !item.phase || item.phase === 'final_answer').map(item => item.text ?? '').join('\n\n').trim();
       parts.delete(turn.id);
       error = turn.error?.message || (turn.status === 'failed' ? 'Love Spot could not get a reply. Try again.' : '');
@@ -67,15 +159,45 @@ export function createLoveSpotTalk({ client, store }) {
       if (turn.status === 'completed' && !turn.error && (note || shapes.length)) {
         const page = turnPages.get(turn.id) ?? sendingPage;
         work = work.catch(() => {}).then(() => store.reply(turn.id, note, agentColor, page, shapes)).catch(cause => { error = cause.message || 'The reply could not be added to the board.'; publish(); });
+      } else if (!completed && partial) {
+        const page = turnPages.get(turn.id) ?? sendingPage;
+        work = work.catch(() => {}).then(() => store.reply(turn.id, partial, agentColor, page)).catch(cause => { error = cause.message; publish(); });
       }
+      turnPages.delete(turn.id);
     }
-    if (method === 'error' && !params.willRetry) { error = params.error?.message || params.message || 'Love Spot could not get a reply.'; }
+    if (method === 'error' && !params.willRetry) {
+      error = params.error?.message || params.message || 'Love Spot could not get a reply.';
+      speechFeed?.emit({ type: 'stop' });
+      if (writing) { clearTimeout(writing.timer); for (const item of writing.items.values()) item.buffer.cancel(); }
+    }
     publish();
   };
   client.on('event', event);
   return {
     busy: () => sending || !!activeTurnId,
     async read() { await load(); return snapshot(); },
+    async voice() { await load(); return refreshVoice(); },
+    async setVoice(body) {
+      object(body, ['enabled']);
+      if (typeof body.enabled !== 'boolean') throw new BridgeError('Invalid Voice preference');
+      await load();
+      if (!body.enabled) speechFeed?.emit({ type: 'stop' });
+      for (const item of writing?.items.values() ?? []) item.buffer.discard();
+      await store.voice(!body.enabled); await refreshVoice();
+      if (body.enabled && available && writing && !writing.done) {
+        for (const item of writing.items.values()) item.buffer.discard();
+        voiceError = ''; newSpeechFeed();
+      }
+      publish(); return voice();
+    },
+    async speech() {
+      await load();
+      if (!available) throw new BridgeError(voiceReason, 403);
+      if (muted) throw new BridgeError('Matilda Voice is off.', 409);
+      if (voiceError) throw new BridgeError(voiceError, 409);
+      if (!speechFeed) throw new BridgeError('Matilda has no new reply to speak.', 409);
+      return speechFeed;
+    },
     async send(body) {
       object(body, ['text', 'model', 'provider', 'revision', 'persona']); text(body.text, 'message');
       if (body.persona !== undefined) text(body.persona, 'persona', 4000);
@@ -84,7 +206,7 @@ export function createLoveSpotTalk({ client, store }) {
       if (sending) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
       sending = true; error = ''; publish();
       try {
-        await load(); await work;
+        await load(); await work; await refreshVoice();
         if (activeTurnId) throw new BridgeError('Love Spot is already replying. Wait for this turn.', 409);
         const settings = await client.settings(), model = body.model || settings.main.model;
         // Read all model pages: an unknown model never gets an unverified image attachment.
@@ -119,17 +241,19 @@ export function createLoveSpotTalk({ client, store }) {
           await client.setServiceTier(threadId, { enabled: true }).catch(cause => console.warn(`Love Spot stays at normal speed: ${cause.message}`));
         }
         sendingPage = board.scene.page;
+        begin(null);
         const result = await client.send(threadId, { text: body.text, model, effort: 'low', attachments });
+        writing.id ??= result.turn.id;
         turnPages.set(result.turn.id, sendingPage);
         // Some local providers finish before send returns; do not revive their completed turn.
         if (finishedTurnId !== result.turn.id) activeTurnId = result.turn.id;
         if (!entries.some(e => e.turnId === result.turn.id && e.item.type === 'userMessage')) upsert(result.turn.id, { id: `love-prompt-${result.turn.id}`, type: 'userMessage', content: [{ type: 'text', text: body.text }] });
         return { ...snapshot(), busy: !!activeTurnId, turn: result.turn };
-      } catch (cause) { error = cause.message; throw cause; }
+      } catch (cause) { error = cause.message; speechFeed?.emit({ type: 'stop' }); throw cause; }
       finally { sending = false; sendingPage = undefined; publish(); }
     },
     async watch(listen) { await load(); listeners.add(listen); listen(snapshot()); return () => listeners.delete(listen); },
     idle: () => work,
-    close() { closed = true; client.off('event', event); listeners.clear(); },
+    close() { closed = true; speechFeed?.emit({ type: 'stop' }); if (writing) { clearTimeout(writing.timer); for (const item of writing.items.values()) item.buffer.cancel(); } client.off('event', event); listeners.clear(); },
   };
 }

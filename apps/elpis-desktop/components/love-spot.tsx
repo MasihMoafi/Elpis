@@ -3,11 +3,13 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Heart, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Heart, Plus, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { ReadAloud, useReadAloud } from "@/components/read-aloud";
 import { useDrawingStyle } from "@/components/drawing-style";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -49,7 +51,16 @@ async function savePicture(data: Saved) {
   await api("/love-spot/picture", { revision: data.revision, png: dataURL.split(",")[1] });
 }
 
-export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null }) {
+type LoveSpotProps = { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null };
+type MatildaVoice = { enabled: boolean; available: boolean; reason: string; error: string };
+export default function LoveSpot(props: LoveSpotProps) {
+  return <ReadAloud threadId="love-spot" enabled><LoveSpotBoard {...props} /></ReadAloud>;
+}
+function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
+  const speech = useReadAloud();
+  const [voice, setVoice] = useState<MatildaVoice | null>(null), [voiceSaving, setVoiceSaving] = useState(false), [voiceError, setVoiceError] = useState("");
+  const voiceEnabled = useRef(false);
+  const voiceVersion = useRef(0);
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
@@ -96,6 +107,13 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     }).catch(report);
     return () => { active = false; };
   }, [report]);
+  useEffect(() => {
+    let active = true;
+    void api<MatildaVoice>("/love-spot/voice/settings").then(value => {
+      if (active) { setVoice(value); voiceEnabled.current = value.enabled; }
+    }).catch(cause => { if (active) setVoiceError(cause instanceof Error ? cause.message : "Voice settings could not be read."); });
+    return () => { active = false; };
+  }, []);
   const provider = chatProvider(settings?.main.model, undefined, settings?.main.provider);
   // Any connected model: a model from another connection starts her a new chat (bridge/love-spot-talk.mjs).
   const choices = providerChoices(models, settings);
@@ -310,7 +328,31 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
   const matilda = useMatilda({ ready: !!editor && !!settings, onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
-    send: (text, persona) => sendWithBoard(async revision => { await api("/love-spot/talk", { text, persona, revision, ...(pick.model ? { model: pick.model, ...(pickedProvider ? { provider: pickedProvider } : {}) } : {}) }); }) });
+    send: (text, persona) => sendWithBoard(async revision => {
+      const version = voiceVersion.current;
+      speech?.stop();
+      const reply = await api<{ voice: MatildaVoice }>("/love-spot/talk", { text, persona, revision, ...(pick.model ? { model: pick.model, ...(pickedProvider ? { provider: pickedProvider } : {}) } : {}) });
+      if (mounted.current && version === voiceVersion.current) { setVoice(reply.voice); voiceEnabled.current = reply.voice.enabled; }
+      if (mounted.current && voiceEnabled.current && reply.voice.enabled) speech?.stream("matilda");
+    }) });
+
+  async function changeVoice(enabled: boolean) {
+    voiceVersion.current++;
+    voiceEnabled.current = enabled;
+    setVoice(previous => previous ? { ...previous, enabled } : previous);
+    if (!enabled) speech?.stop();
+    setVoiceSaving(true); setVoiceError("");
+    try {
+      const value = await api<MatildaVoice>("/love-spot/voice/settings", { enabled });
+      if (!mounted.current) return;
+      setVoice(value); voiceEnabled.current = value.enabled;
+      if (value.enabled && matilda.replying) speech?.stream("matilda");
+    } catch (cause) {
+      voiceEnabled.current = false;
+      setVoice(previous => previous ? { ...previous, enabled: false } : previous);
+      setVoiceError(cause instanceof Error ? cause.message : "Voice could not be saved.");
+    } finally { if (mounted.current) setVoiceSaving(false); }
+  }
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
     noticeStyle(appState);
@@ -410,6 +452,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       </div>
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
+      <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
+        <label className="flex items-center gap-2" title="Matilda speaks each reply in your ChatGPT voice. It may use your ChatGPT allowance."><span aria-hidden="true">{voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Voice<Switch aria-label="Voice" checked={!!voice?.enabled} disabled={!voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
+        {/* Only a reason or a problem is written out; on and off are the switch itself, so the bar stays one row (R6). */}
+        {(() => { const why = voiceSaving ? "Saving Voice…" : voiceError || speech?.error?.message || voice?.error || (!voice ? "" : !voice.available ? voice.reason : ""); return why ? <span className="text-muted-foreground" role="status">{why}</span> : null; })()}
+      </div>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}

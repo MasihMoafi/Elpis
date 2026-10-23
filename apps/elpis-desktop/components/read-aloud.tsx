@@ -4,11 +4,11 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { api, sessionReady } from "@/lib/api";
 
 type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; session?: string; ready: boolean; complete: boolean };
-type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stop: () => void };
+type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void };
 const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
-/** One receive-only player for the visible chat. Closing its request also retires its native session. */
+/** One player with generated silence as input. Closing its request also retires its native session. */
 export function ReadAloud({ threadId, enabled, children }: { threadId: string; enabled: boolean; children: ReactNode }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
@@ -29,7 +29,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
   }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!enabled) stop(); }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function play(id: string, text: string) {
+  async function play(id: string, text?: string) {
     stop(); setError(null);
     if (!enabled) { setError({ id, message: "Reconnect to Elpis before using Read aloud." }); return; }
     const current: Playback = { controller: new AbortController(), peer: null, audio: null, silence: null, timer: null, ready: false, complete: false };
@@ -81,7 +81,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
         if (current.controller.signal.aborted) aborted();
       });
       await sessionReady(); if (call.current !== current) return;
-      const response = await fetch("/api/voice/read-aloud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId, text, sdp: peer.localDescription?.sdp }), signal: current.controller.signal });
+      const response = await fetch(text === undefined ? "/api/love-spot/voice" : "/api/voice/read-aloud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(text === undefined ? {} : { threadId, text }), sdp: peer.localDescription?.sdp }), signal: current.controller.signal });
       if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result?.error?.message || result?.error || "Read aloud could not start."); }
       if (!response.body) throw new Error("Read aloud disconnected.");
       const reader = response.body.getReader(), decoder = new TextDecoder(); let pending = "";
@@ -98,6 +98,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
             if (event.type === "session") { current.session = event.id; ready(); }
             if (event.type === "sdp" && event.sdp) await peer.setRemoteDescription({ type: "answer", sdp: event.sdp });
             if (event.type === "error") throw new Error(event.message || "Read aloud failed.");
+            if (event.type === "stopped") stop();
             // The last transcript ends with its audio; a moment later the player is done.
             if (event.type === "complete") { current.complete = true; current.timer = setTimeout(() => { if (call.current === current) stop(); }, 1500); }
             if (event.type === "ended") throw new Error("Read aloud ended. Try again explicitly.");
@@ -107,5 +108,5 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
   }
-  return <SpeechContext.Provider value={{ active, error, play: (id, text) => void play(id, text), stop }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={{ active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop }}>{children}</SpeechContext.Provider>;
 }

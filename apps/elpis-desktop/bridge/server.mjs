@@ -193,6 +193,12 @@ export async function startDesktopServer(options = {}) {
           return response.end(JSON.stringify(value));
         }
         if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
+        if (url.pathname === '/api/love-spot/voice/settings' && ['GET', 'POST'].includes(method)) {
+          const state = method === 'GET' ? await loveTalk.voice() : await loveTalk.setVoice(await body(request));
+          if (method === 'POST') await voice.closeStream();
+          return json(response, 200, state);
+        }
+        if (url.pathname === '/api/love-spot/voice' && method === 'POST') return await voice.start(await body(request), response, { source: await loveTalk.speech() });
         if (url.pathname === '/api/love-spot/talk/events' && method === 'GET') {
           // Load first so a failed resume still returns a useful HTTP error.
           await loveTalk.read();
