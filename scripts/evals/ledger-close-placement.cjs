@@ -276,6 +276,8 @@ async function check({ binary, output, phase, smoke }, width, light) {
   }
   fs.writeFileSync(path.join(output, `${label}.json`), JSON.stringify(result, null, 2) + '\n');
   console.log(JSON.stringify({ case: label, layout: result.layoutAssertion, positiveMouseCells: result.positiveMouseCells, modelRequests: result.modelRequests, errors: result.errors.length }));
+  // A failing case names its errors in the log; the full evidence otherwise sits only in the multi-gigabyte artifact.
+  for (const error of result.errors) console.error(`${label}: ${String(error).slice(0, 600)}`);
   return result;
 }
 
