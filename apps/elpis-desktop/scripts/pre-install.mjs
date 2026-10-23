@@ -8,7 +8,8 @@ import fs from 'node:fs';
 
 const root = new URL('../', import.meta.url).pathname;
 const inventory = JSON.parse(fs.readFileSync(new URL('../test-inventory.json', import.meta.url), 'utf8'));
-const files = ['fast', 'bridge', 'desktop'].flatMap(tier => inventory[tier]).filter(file => /\.test\./.test(file));
+// ELPIS_CHECK_FILES (comma-separated) runs only those files: the check's own test uses it.
+const files = process.env.ELPIS_CHECK_FILES ? process.env.ELPIS_CHECK_FILES.split(',') : ['fast', 'bridge', 'desktop'].flatMap(tier => inventory[tier]).filter(file => /\.test\./.test(file));
 const jobs = Math.max(1, Number(process.env.ELPIS_CHECK_JOBS) || 8);
 // A file whose tests each start their own processes: split its tests by name over several runs of the same file.
 const SHARDED = { 'bridge/claude-turn-delivery.test.mjs': { sources: ['../../../tools/elpis-claude/test/turn-delivery.test.mjs', '../../../tools/elpis-claude/test/claude-turn-record.test.mjs'], ways: 4 } };
@@ -20,14 +21,22 @@ const shardsOf = file => {
   return Array.from({ length: shard.ways }, (_, way) => ({ file, args: names.filter((_, index) => index % shard.ways === way).flatMap(name => ['--test-name-pattern', escape(name)]) }));
 };
 
+// Each file runs in its own process group, and the whole group goes when the file ends, times out or this check is stopped. Killing only the
+// runner left the file's own process (and anything it started) running: six such leftovers ran for up to 24 h on 23 Oct.
+const groups = new Set();
+const stopGroup = pid => { try { process.kill(-pid, 'SIGKILL'); } catch {} };
+process.on('exit', () => { for (const pid of groups) stopGroup(pid); });
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => process.exit(130));
+
 const check = ({ file, args }) => new Promise(resolve => {
   const started = Date.now();
   let output = '';
-  const child = spawn('nice', ['-n', '19', process.execPath, '--test', '--test-reporter=tap', ...args, file], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] });
-  const timer = setTimeout(() => child.kill('SIGKILL'), 300_000);
+  const child = spawn('nice', ['-n', '19', process.execPath, '--test', '--test-reporter=tap', ...args, file], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'], detached: true });
+  groups.add(child.pid);
+  const timer = setTimeout(() => stopGroup(child.pid), 300_000);
   child.stdout.on('data', chunk => { output += chunk; });
   child.on('close', status => {
-    clearTimeout(timer);
+    clearTimeout(timer); stopGroup(child.pid); groups.delete(child.pid);
     const fail = /^# fail (\d+)/m.exec(output)?.[1];
     resolve({ file, seconds: (Date.now() - started) / 1000, failure: status !== 0 || fail !== '0' ? `${file} (${fail ?? 'did not finish'} failing)` : null });
   });

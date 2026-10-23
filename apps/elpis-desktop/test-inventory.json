@@ -42,7 +42,8 @@
     "tests/love-activity.test.mjs",
     "tests/love-spot-events.test.mjs",
     "tests/agent-label.test.mjs",
-    "tests/personalization-drafts.test.cjs"
+    "tests/personalization-drafts.test.cjs",
+    "tests/pre-install-cleanup.test.mjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",
