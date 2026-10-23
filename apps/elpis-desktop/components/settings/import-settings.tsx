@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, unreadable } from "@/lib/api";
-import { SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 
 type Listing = { days: number; atATime: number; sources: { id: string; name: string; chats: number }[] };
 type Outcome = { source: string; imported: number; skipped: string[] };
@@ -33,11 +33,11 @@ export function ImportSettings({ onImported }: { onImported?: () => void }) {
   return <>
     <SettingsHeader title="Import chats" description="Bring your Claude Code and Codex chats over as Elpis chats. They keep their full history, and your originals stay untouched." />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
-    {listing && (listing.sources.length ? <SettingsGroup>
-      {listing.sources.map(source => <SettingRow key={source.id} title={source.name} description={`${plural(source.chats, "chat")} from the last ${listing.days} days${source.chats > listing.atATime ? `; ${listing.atATime} at a time` : ""}.`}>
-        <Button variant="outline" aria-label={`Import ${source.name} chats`} disabled={!!busy} onClick={() => void run(source.id, source.name)}>{busy === source.id ? "Importing…" : `Import ${Math.min(source.chats, listing.atATime)}`}</Button>
+    {listing && listing.sources.length > 0 && <SettingsGroup>
+      {listing.sources.map(source => <SettingRow key={source.id} title={source.name} description={source.chats ? `${plural(source.chats, "chat")} from the last ${listing.days} days${source.chats > listing.atATime ? `; ${listing.atATime} at a time` : ""}.` : `No chats from the last ${listing.days} days.`}>
+        <Button variant="outline" aria-label={`Import ${source.name} chats`} disabled={!!busy || !source.chats} onClick={() => void run(source.id, source.name)}>{busy === source.id ? "Importing…" : source.chats ? `Import ${Math.min(source.chats, listing.atATime)}` : "Import"}</Button>
       </SettingRow>)}
-    </SettingsGroup> : !outcome && <SettingsEmpty title="No chats to import">{`No new Claude Code or Codex chats from the last ${listing.days} days.`}</SettingsEmpty>)}
+    </SettingsGroup>}
     {outcome && <SettingsNotice tone={outcome.imported || !outcome.skipped.length ? "status" : "alert"}>
       {`Imported ${plural(outcome.imported, "chat")} from ${outcome.source}.${outcome.skipped.length ? ` ${outcome.skipped.length} skipped: ${outcome.skipped[0]}` : ""}`}
     </SettingsNotice>}

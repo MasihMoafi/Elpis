@@ -13,9 +13,9 @@ function fixture(count, extra = {}) {
   return { calls, imports: createImportChats({ client, codexHome: '/nonexistent-codex', elpisHome: '/nonexistent-elpis', ...extra }) };
 }
 
-test('Claude Code is offered with how many chats it has, and nothing is offered when it has none', async () => {
-  assert.deepEqual(await fixture(3).imports.list(), { days: 30, atATime: 50, sources: [{ id: 'claude-code', name: 'Claude Code', chats: 3 }] });
-  assert.deepEqual((await fixture(0).imports.list()).sources, []);
+test('both apps are always offered, each with how many chats it has (0 when none)', async () => {
+  assert.deepEqual(await fixture(3).imports.list(), { days: 30, atATime: 50, sources: [{ id: 'claude-code', name: 'Claude Code', chats: 3 }, { id: 'codex', name: 'Codex', chats: 0 }] });
+  assert.deepEqual((await fixture(0).imports.list()).sources.map(source => source.chats), [0, 0]);
 });
 
 test('one press imports at most 50 through the engine, and a second press at the same time is refused', async () => {
@@ -51,7 +51,7 @@ async function codexFixture() {
 
 test('Codex offers only recent chat rollouts of a reasonable size: no exec runs, sub-agents, unreadable or oversized files', async () => {
   const f = await codexFixture();
-  try { assert.deepEqual((await f.imports.list()).sources, [{ id: 'codex', name: 'Codex', chats: 2 }]); }
+  try { assert.deepEqual((await f.imports.list()).sources.find(source => source.id === 'codex'), { id: 'codex', name: 'Codex', chats: 2 }); }
   finally { await fs.rm(f.root, { recursive: true }); }
 });
 
@@ -67,6 +67,6 @@ test('a Codex chat is copied under its own name and registered; the original is 
     assert.deepEqual(await fs.readFile(f.files.cli), original);
     await assert.rejects(fs.access(f.copy(f.files.vscode)), /ENOENT/);
     for (const name of ['exec', 'guardian', 'old', 'huge', 'broken']) await assert.rejects(fs.access(f.copy(f.files[name])), /ENOENT/, name);
-    assert.deepEqual((await f.imports.list()).sources, [{ id: 'codex', name: 'Codex', chats: 1 }], 'only the refused one is offered again');
+    assert.deepEqual((await f.imports.list()).sources.find(source => source.id === 'codex'), { id: 'codex', name: 'Codex', chats: 1 }, 'only the refused one is offered again');
   } finally { await fs.rm(f.root, { recursive: true }); }
 });

@@ -69,10 +69,10 @@ export function createImportChats({ client, codexHome = path.join(os.homedir(), 
   }
   const listers = { 'claude-code': () => client.externalSessions(), codex: codexChats };
   return {
-    /** What could be imported now, by app: only an app that has chats is listed. */
+    /** Both apps, each with how many chats could be imported now (none is a count of 0: the option is always there, as in Cloudroom). */
     async list() {
       const sources = [];
-      for (const [id, name] of SOURCES) { const chats = (await listers[id]()).length; if (chats) sources.push({ id, name, chats }); }
+      for (const [id, name] of SOURCES) sources.push({ id, name, chats: (await listers[id]()).length });
       return { days: DAYS, atATime: AT_A_TIME, sources };
     },
     /** Imports up to 50 of one app's chats; the rest wait for the next press. */

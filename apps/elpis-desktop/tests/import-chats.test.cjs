@@ -8,7 +8,7 @@ test('Import chats offers Claude Code and Codex with their chats, imports on pre
   let chats = 60, codex = 3;
   const posts = [];
   const f = await fixture({ routes: { '/api/import-chats': body => {
-    if (!body) return { days: 30, atATime: 50, sources: [...(chats ? [{ id: 'claude-code', name: 'Claude Code', chats }] : []), ...(codex ? [{ id: 'codex', name: 'Codex', chats: codex }] : [])] };
+    if (!body) return { days: 30, atATime: 50, sources: [{ id: 'claude-code', name: 'Claude Code', chats }, { id: 'codex', name: 'Codex', chats: codex }] };
     posts.push(body);
     if (body.source === 'codex') { codex = 0; return { imported: 3, skipped: [] }; }
     chats -= 50; return { imported: 49, skipped: ['This chat is empty.'] };
@@ -28,16 +28,20 @@ test('Import chats offers Claude Code and Codex with their chats, imports on pre
     await panel.getByRole('button', { name: 'Import Codex chats' }).click();
     await panel.getByText('Imported 3 chats from Codex.').waitFor();
     assert.deepEqual(posts, [{ source: 'claude-code' }, { source: 'codex' }]);
-    assert.equal(await panel.getByRole('button', { name: 'Import Codex chats' }).count(), 0, 'Codex leaves the list once its chats are in');
+    await panel.getByText('No chats from the last 30 days.').waitFor();
+    assert.equal(await panel.getByRole('button', { name: 'Import Codex chats' }).isDisabled(), true, 'Codex stays in the list, with nothing left to import');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
-test('with nothing to import it says so', async () => {
-  const f = await fixture({ routes: { '/api/import-chats': () => ({ days: 30, atATime: 50, sources: [] }) } });
+test('with nothing to import both apps are still there and say so', async () => {
+  const f = await fixture({ routes: { '/api/import-chats': () => ({ days: 30, atATime: 50, sources: [{ id: 'claude-code', name: 'Claude Code', chats: 0 }, { id: 'codex', name: 'Codex', chats: 0 }] }) } });
   try {
     await openSettings(f.page); await f.page.getByRole('tab', { name: 'Import chats', exact: true }).click();
-    await f.page.getByText('No chats to import').waitFor();
+    const panel = f.page.getByRole('tabpanel');
+    await panel.getByText('No chats from the last 30 days.').first().waitFor();
+    assert.equal(await panel.getByText('No chats from the last 30 days.').count(), 2, 'one line for each app');
+    for (const name of ['Import Claude Code chats', 'Import Codex chats']) assert.equal(await panel.getByRole('button', { name }).isDisabled(), true, name);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
