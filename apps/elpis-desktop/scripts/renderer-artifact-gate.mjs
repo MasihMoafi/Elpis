@@ -289,9 +289,14 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "52c6639f802fffbbc147208964cf35fcc2a3f619",
-      "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
+      "blob": "94fddf69cdb5846badf7c8ead8d6ff381f7e3617",
+      "approval": "6c55175a10129526a7b1fcb3f92c55b529fcea14",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured."
+    },
+    "tests/love-dock.test.cjs": {
+      "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",
+      "approval": "6c55175a10129526a7b1fcb3f92c55b529fcea14",
+      "reason": "Love Spot, Masih 23 Oct: \"remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda.\" The native window has no Talk button or panel: a captured voice note on the board is what Matilda answers, on the board, and the voice control still has to fit the window."
     },
     "tests/view-errors.test.cjs": {
       "blob": "b61d6fa7059a657594a381f58ab8b2e6ce705fce",
