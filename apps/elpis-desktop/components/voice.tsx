@@ -76,7 +76,7 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
         if (peer.connectionState === "connected") {
           if (current.timer) clearTimeout(current.timer); current.timer = null; current.heard.listened = true; setPhase("listening");
           // What came in and went out so far, for the call report: sampled while the peer is still open.
-          current.sampler = setInterval(() => void peer.getStats().then(rows => { for (const row of rows.values()) {
+          current.sampler = setInterval(() => void Promise.resolve(peer.getStats?.()).then(rows => { if (!rows) return; for (const row of rows.values()) {
             if (row.type === "inbound-rtp" && row.kind === "audio") { current.heard.bytes = row.bytesReceived ?? 0; current.heard.packets = row.packetsReceived ?? 0; current.heard.energy = row.totalAudioEnergy ?? 0; }
             if (row.type === "media-source" && row.kind === "audio") current.heard.mic = row.totalAudioEnergy ?? 0;
           } }).catch(() => {}), 2000);
