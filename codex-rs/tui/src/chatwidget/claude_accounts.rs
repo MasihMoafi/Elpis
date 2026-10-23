@@ -39,7 +39,12 @@ impl ChatWidget {
         }
     }
 
-    pub(super) fn claude_accounts_picker_row(&self) -> Option<SelectionItem> {
+    /// The "Claude accounts…" row for a list about `provider_id`: only the Claude subscription
+    /// has these accounts, so any other provider's list goes without it.
+    pub(super) fn claude_accounts_picker_row(&self, provider_id: &str) -> Option<SelectionItem> {
+        if provider_id != CLAUDE_SUBSCRIPTION_PROVIDER_ID {
+            return None;
+        }
         let snapshot = self.claude_accounts.as_ref()?;
         if snapshot.accounts.is_empty() {
             return None;
