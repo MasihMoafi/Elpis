@@ -1,4 +1,4 @@
-import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
+import { isVoiceHandoff } from "../bridge/voice-handoff.cjs"; // relative: tests/slash-helpers.test.mjs loads this file with plain Node, which has no "@/" alias
 import type { Entry, Item } from "./api";
 
 /** "/name some arguments" as typed in the composer; null for a bare name, a leading space, or text that is not a command. */
