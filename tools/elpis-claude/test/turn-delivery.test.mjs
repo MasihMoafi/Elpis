@@ -66,7 +66,7 @@ async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connec
     t.diagnostic(`engine: ${fs.realpathSync(engine)}; bridge: ${env.ELPIS_BRIDGE_SOCKET}`);
     if (errors.trim()) t.diagnostic(`bridge stderr: ${errors.slice(-2000)}`);
   });
-  await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, `bridge starts: ${errors}`);
+  await until(() => (fs.statSync(socketPath, { throwIfNoEntry: false })?.mode & 0o777) === 0o600, `bridge starts: ${errors}`);
   const connect = async () => {
     const client = await DesktopClient.connect({ socketPath, timeoutMs: 5000, rewindHome: path.join(root, "rewind"), archiveDirectory: path.join(root, "archive"), ...connectOptions });
     clients.push(client);
@@ -86,8 +86,9 @@ async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connec
     await ended;
     launch();
     await until(() => {
-      if (!fs.existsSync(socketPath)) return false;
-      const next = fs.statSync(socketPath);
+      // The restarting bridge unlinks the stale socket before it binds, so the path can vanish between two checks.
+      const next = fs.statSync(socketPath, { throwIfNoEntry: false });
+      if (!next) return false;
       return (next.ino !== previous.ino || next.ctimeMs !== previous.ctimeMs) && (next.mode & 0o777) === 0o600;
     }, "the new bridge replaces the dead listener");
     if (reconnect) { await until(() => desktop.client.connected, "the existing desktop reconnects"); return desktop; }
