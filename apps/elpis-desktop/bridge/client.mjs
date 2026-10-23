@@ -1722,7 +1722,8 @@ export class DesktopClient extends EventEmitter {
     threadId(id);
     if(this.#workflowRuns.cancel(id))return { interrupted: true };
     return this.#mutate(id, async () => {
-      await this.#attach(id);
+      // A Claude subagent's thread is read-only (the bridge refuses to resume it), yet Stop reaches it.
+      await this.#attach(id).catch(error => { if (!/read-only/.test(error.message)) throw error; });
       let turnId = body.turnId === undefined ? null : text(body.turnId, 'turn ID', 200);
       turnId ??= (await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' })).data?.find(turn => turn.status === 'inProgress')?.id;
       if (!turnId) throw new BridgeError('This agent is not running', 409);
