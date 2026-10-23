@@ -35,7 +35,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
-  const { notice: noticeStyle, topRight: styleTopRight, className: styleClassName } = useDrawingStyle(editor);
+  const { notice: noticeStyle, toggle: styleToggle, className: styleClassName } = useDrawingStyle(editor);
   const scene = useRef<DrawingDraft>(draft);
   const root = useRef<HTMLDivElement>(null);
   const first = useRef<ExcalidrawElement>(draft.elements.find(element => element.id === BACKGROUND)!);
@@ -114,8 +114,9 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
       <Button type="button" size="sm" onClick={() => void add()} disabled={!marked || busy} title={marked ? "Add the marked picture and the page address to your message" : "Draw something first"}>{busy ? "Adding…" : "Add to message"}</Button>
     </header>
     <div className={`browser-drawing-editor relative min-h-0 flex-1 ${styleClassName}`}>
+      {styleToggle}
       <Excalidraw initialData={{ elements: draft.elements, files: draft.files, appState: { collaborators: new Map() } }} excalidrawAPI={setEditor} onChange={changed}
-        theme={dark ? "dark" : "light"} handleKeyboardGlobally={false} autoFocus renderTopRightUI={styleTopRight}
+        theme={dark ? "dark" : "light"} handleKeyboardGlobally={false} autoFocus
         UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false, clearCanvas: false, changeViewBackgroundColor: false } }}>
         {/* Without the default menu's file actions and its links to other sites. */}
         <MainMenu><MainMenu.DefaultItems.SearchMenu /><MainMenu.DefaultItems.Help /></MainMenu>

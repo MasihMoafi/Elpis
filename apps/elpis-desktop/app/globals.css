@@ -1385,3 +1385,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .nav-list button[data-nav-page="loveSpot"]:has(.love-unread) { background:color-mix(in oklab, var(--love-red) 12%, transparent); box-shadow:inset 2px 0 var(--love-red); }
 
 [data-drop-target="true"] { outline:1px solid var(--primary); outline-offset:-1px; background:var(--hover); }
+
+/* A hidden drawing style panel keeps its place, so its slider still measures its width; only the toggle in its corner stays visible (components/drawing-style.tsx). */
+.drawing-style-hidden .selected-shape-actions .App-menu__left { visibility: hidden; }

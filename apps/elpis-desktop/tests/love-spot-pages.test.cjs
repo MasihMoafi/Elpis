@@ -210,6 +210,13 @@ test('an unreadable page list is reported in Love Spot, and the rest of the app 
   } finally { await f.close(); }
 });
 
+// The opacity value sits under the slider (at 100, its right end), not cut off at the panel's left edge.
+const opacityUnderSlider = page => page.evaluate(() => {
+  const range = document.querySelector('.selected-shape-actions .range-input')?.getBoundingClientRect();
+  const value = document.querySelector('.selected-shape-actions .value-bubble')?.getBoundingClientRect();
+  return !!range && !!value && value.width > 0 && value.left >= range.left && value.right <= range.right + 8;
+});
+
 for (const colorScheme of ['light', 'dark']) test(`board Style closes and reopens; Delete stays beside its icon (${colorScheme})`, async () => {
   const f = await loveSpotFixture({ colorScheme });
   try {
@@ -219,12 +226,14 @@ for (const colorScheme of ['light', 'dark']) test(`board Style closes and reopen
     for (const width of [1440, 760]) {
       await f.page.setViewportSize({ width, height: 960 });
       const style = f.page.getByRole('button', { name: 'Drawing style', exact: true });
-      const properties = f.page.locator('.selected-shape-actions .Island, .App-mobile-menu');
-      assert.equal(await style.evaluate(button => !!button.closest('.excalidraw')), true, 'the style button sits in the drawing itself');
+      const properties = f.page.locator('.selected-shape-actions .App-menu__left, .App-mobile-menu');
+      assert.equal(await style.evaluate(button => !!button.closest('.selected-shape-actions')), true, 'the style button sits in the style panel itself');
       await style.click();
       assert.equal(await style.getAttribute('aria-pressed'), 'false');
       assert.equal(await properties.isVisible(), false);
+      assert.equal(await style.isVisible(), true, 'a hidden panel keeps its toggle where it was');
       await style.click(); await properties.waitFor({ state: 'visible' });
+      assert.equal(await opacityUnderSlider(f.page), true, 'the opacity value sits under its slider after the panel reopens');
       const aligned = await f.page.getByRole('button', { name: 'Delete current page', exact: true }).evaluate(button => {
         const svg = button.querySelector('svg').getBoundingClientRect();
         const text = [...button.querySelectorAll('*')].flatMap(e => [...e.childNodes]).find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim() === 'Delete');

@@ -283,13 +283,20 @@ test('drawing stays below the desktop title bar and fits the whole captured page
   assert.deepEqual(f.errors, []);
 });
 
+// The opacity value sits under the slider (at 100, its right end), not cut off at the panel's left edge.
+const opacityUnderSlider = page => page.evaluate(() => {
+  const range = document.querySelector('.selected-shape-actions .range-input')?.getBoundingClientRect();
+  const value = document.querySelector('.selected-shape-actions .value-bubble')?.getBoundingClientRect();
+  return !!range && !!value && value.width > 0 && value.left >= range.left && value.right <= range.right + 8;
+});
+
 // Masih, 23 Oct: Style cannot close and drawing prevents returning to chat.
 test('Style closes without losing marks and Chat pauses drawing for a lossless Resume', async t => {
   const f = await fixture(t), { page } = f;
   const area = await open(f);
   await draw(page, 'rectangle', { x: area.x + area.width / 2 - 60, y: area.y + area.height / 2 - 40 }, { x: area.x + area.width / 2 + 60, y: area.y + area.height / 2 + 40 });
   const style = page.getByRole('button', { name: 'Drawing style', exact: true });
-  const properties = page.locator('.selected-shape-actions .Island, .App-mobile-menu');
+  const properties = page.locator('.selected-shape-actions .App-menu__left, .App-mobile-menu');
   for (const width of [1320, 760]) {
     await page.setViewportSize({ width, height: 860 });
     // Excalidraw's narrow layout keeps its own palette button in its bottom bar.
@@ -304,14 +311,16 @@ test('Style closes without losing marks and Chat pauses drawing for a lossless R
     assert.equal(await style.count(), narrow ? 0 : 1);
     if (!narrow) {
       assert.equal(await style.getAttribute('aria-pressed'), 'true');
-      assert.equal(await style.evaluate(button => !!button.closest('.excalidraw')), true, 'the style button sits in the drawing itself');
+      assert.equal(await style.evaluate(button => !!button.closest('.selected-shape-actions')), true, 'the style button sits in the style panel itself');
     } else if (!await properties.isVisible()) { await toggle.click(); await properties.waitFor({ state: 'visible' }); }
     await toggle.click();
     if (!narrow) assert.equal(await style.getAttribute('aria-pressed'), 'false');
     await properties.waitFor({ state: 'hidden', timeout: 2000 });
+    if (!narrow) assert.equal(await style.isVisible(), true, 'a hidden panel keeps its toggle where it was');
     assert.equal(await page.getByRole('button', { name: 'Add to message' }).isEnabled(), true);
     await toggle.click();
     await properties.waitFor({ state: 'visible' });
+    if (!narrow) assert.equal(await opacityUnderSlider(page), true, 'the opacity value sits under its slider after the panel reopens');
     await f.shoot(`style-on-${width}`);
   }
   await page.setViewportSize({ width: 1320, height: 860 });
