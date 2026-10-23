@@ -53,7 +53,8 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     if (url.pathname === '/api/health') return json({ connected: true });
     // A route answers with its value, or with { __http: status, error } for a refusal.
     if (routes[url.pathname]) {
-      const reply = await routes[url.pathname](raw ? JSON.parse(raw) : null, url);
+      const reply = await routes[url.pathname](raw ? JSON.parse(raw) : null, url, res);
+      if (res.headersSent) return; // Streaming routes keep ownership until the view disconnects.
       if (reply?.__http) { res.statusCode = reply.__http; return json({ error: reply.error }); }
       if (reply?.__asset) { res.writeHead(200, { 'Content-Type': reply.__asset.mimeType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...reply.__asset.headers }); return res.end(reply.__asset.bytes); }
       return json(reply);

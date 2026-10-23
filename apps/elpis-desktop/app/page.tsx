@@ -69,6 +69,7 @@ import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
+import { Voice } from "@/components/voice";
 import { chooseProject, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
@@ -253,6 +254,7 @@ export default function Home() {
   const readingFiles = useRef(false);
   const setAttachments = useCallback((value: Attachment[]) => { attachmentsRef.current = value; setAttachmentsState(value); }, []);
   const [dictating, setDictating] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
   const [search, setSearch] = useState("");
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
@@ -1954,7 +1956,8 @@ export default function Home() {
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
               </OptionSelect>}
-              {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging} onBusy={setDictating}
+              {ready && selected && dictationProvider === "openai" && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} onBusy={setVoiceBusy} />}
+              {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging || voiceBusy} onBusy={setDictating}
                 selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
                 onTranscript={(selection, transcript) => {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);

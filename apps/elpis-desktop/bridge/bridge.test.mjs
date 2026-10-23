@@ -839,6 +839,58 @@ test('provider history cursors fit the HTTP query and stay bound to their chat (
   assert.deepEqual(index.data.map(row => row.turnId), ['oldest', 'newest']);
 });
 
+test('live voice delivers SDP privately and ends the native call when its window disconnects', async t => {
+  const { client, socket } = fixture(); await client.initialize();
+  const nativeSend = socket.send;
+  let stopCount = 0, startRequest, holdStart = false, finishStart, chatgpt = true;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method === 'account/read' && !chatgpt) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { account: { type: 'apiKey' } } }))); return; }
+    if (!request.method?.startsWith('thread/realtime/')) return nativeSend(raw);
+    socket.sent.push(request);
+    if (request.method === 'thread/realtime/start') startRequest = request;
+    if (request.method === 'thread/realtime/stop') stopCount++;
+    const reply = () => {
+      socket.emit('message', JSON.stringify({ id: request.id, result: request.method.endsWith('listVoices') ? { v1: ['juniper'], defaultV1: 'juniper' } : {} }));
+      if (request.method.endsWith('/start')) socket.emit('message', JSON.stringify({ method: 'thread/realtime/sdp', params: { threadId: ROOT, sdp: 'v=0\r\nanswer' } }));
+    };
+    if (holdStart && request.method.endsWith('/start')) finishStart = reply; else queueMicrotask(reply);
+  };
+  const app = await startDesktopServer({ client }); t.after(() => app.close());
+  const url = new URL(app.url), origin = url.origin;
+  const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
+  const headers = { Origin: origin, Cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+  const post = (body, signal) => fetch(origin + '/api/voice', { method: 'POST', headers, body: JSON.stringify(body), signal });
+  assert.equal((await post({ threadId: 'invalid', sdp: 'v=0\r\noffer' })).status, 400);
+  const abort = new AbortController();
+  const response = await post({ threadId: ROOT, sdp: 'v=0\r\noffer' }, abort.signal);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /ndjson/);
+  const reader = response.body.getReader();
+  let received = ''; while (!received.includes('answer')) received += new TextDecoder().decode((await reader.read()).value);
+  assert.doesNotMatch(received, /PRIVATE CONFIG SECRET|auth|token/);
+  assert.equal(JSON.parse(received.trim()).sdp, 'v=0\r\nanswer');
+  assert.equal(startRequest.params.transport.type, 'webrtc');
+  assert.equal((await post({ threadId: ROOT, sdp: 'v=0\r\noffer' })).status, 409);
+  abort.abort(); await reader.cancel().catch(() => {});
+  const deadline = Date.now() + 2000;
+  while (!stopCount && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(stopCount, 1, 'closing the stream must release the native call');
+  holdStart = true; const duringStart = new AbortController();
+  const pending = await post({ threadId: ROOT, sdp: 'v=0\r\noffer' }, duringStart.signal);
+  const startingDeadline = Date.now() + 2000;
+  while (!finishStart && Date.now() < startingDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(typeof finishStart, 'function');
+  duringStart.abort(); await pending.body.cancel().catch(() => {}); finishStart();
+  const endedDeadline = Date.now() + 2000;
+  while (stopCount < 2 && Date.now() < endedDeadline) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(stopCount, 2, 'End during native startup must stop the late call');
+  chatgpt = false;
+  const denied = await post({ threadId: ROOT, sdp: 'v=0\r\noffer' });
+  assert.match(await denied.text(), /Voice needs a ChatGPT connection/);
+  assert.equal(socket.sent.filter(row => row.method === 'thread/realtime/start').length, 2, 'API-key accounts must never start a call');
+});
+
 test('HTTP requires capability/cookie, strict origin/host, allowlisted routes and contained assets', async t => {
   const { client, socket } = fixture(); await client.initialize();
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-desktop-test-'));

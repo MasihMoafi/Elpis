@@ -11,6 +11,7 @@ import { listFolders, projectDirectory } from './folders.mjs';
 import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
+import { createVoice } from './voice.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
 import { smartPruneDetail } from './smart-prune.mjs';
@@ -129,6 +130,7 @@ export async function startDesktopServer(options = {}) {
     return saved.cursor;
   };
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
+  const voice = createVoice(client);
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {
@@ -144,7 +146,7 @@ export async function startDesktopServer(options = {}) {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
     response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
     try {
       if (request.headers.host !== new URL(origin).host || (request.headers.origin && request.headers.origin !== origin)
         || request.headers['sec-fetch-site'] === 'cross-site') throw new BridgeError('Local application origin required', 403);
@@ -221,6 +223,8 @@ export async function startDesktopServer(options = {}) {
           });
           response.on('close', () => { stop(); loveStreams.delete(response); }); return;
         }
+        if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
+        if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
@@ -403,7 +407,7 @@ export async function startDesktopServer(options = {}) {
   return {
     url: `${origin}/#token=${capability}`,
     async canRestart() {
-      const busy = () => loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || client.hasLocalActivity?.();
+      const busy = () => voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || client.hasLocalActivity?.();
       if (busy()) return false;
       let cursor;
       const seen = new Set();
@@ -419,6 +423,7 @@ export async function startDesktopServer(options = {}) {
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);
+      await voice.close();
       await experimentLab.close();
       if (improvementStore) (await improvementStore).close();
       await devServers.close();

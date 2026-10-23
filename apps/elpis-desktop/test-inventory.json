@@ -125,6 +125,7 @@
     "desktop/sleep-blocker.test.cjs"
   ],
   "ui": [
+    "tests/voice.test.cjs",
     "tests/polish.test.cjs",
     "tests/approved-working-mark.test.cjs",
     "tests/effort-shortcuts.test.cjs",

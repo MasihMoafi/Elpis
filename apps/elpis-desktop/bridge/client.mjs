@@ -63,6 +63,7 @@ export function existingSocket(explicit, env = process.env) {
 }
 
 const NOTIFICATIONS = new Set([
+  'thread/realtime/sdp', 'thread/realtime/started', 'thread/realtime/error', 'thread/realtime/closed',
   'thread/tokenUsage/updated', 'thread/smartPrune/updated',
   'thread/started', 'thread/status/changed', 'thread/name/updated', 'thread/settings/updated',
   'thread/closed', 'thread/archived', 'thread/deleted', 'turn/started', 'turn/completed',
@@ -866,6 +867,23 @@ export class DesktopClient extends EventEmitter {
     return { reset: true };
   }
   // Private subprocess configuration. HTTP responses expose only the selected route, never this object.
+  async voiceStatus() {
+    const account = await this.#rpc('account/read', { refreshToken: false });
+    if (account?.account?.type !== 'chatgpt') return { available: false };
+    await this.#rpc('thread/realtime/listVoices', {});
+    return { available: true };
+  }
+  async startVoice(id, sdp) {
+    threadId(id); text(sdp, 'voice offer', 64000);
+    if (!(await this.voiceStatus()).available) throw new BridgeError('Voice needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
+    const thread = await this.readThreadMetadata(id);
+    if (thread.modelProvider !== 'openai' || /^(?:claude|agy)\//.test(thread.model ?? '')) throw new BridgeError('Voice is available in Codex chats using your ChatGPT connection.', 403);
+    await this.#attach(id);
+    return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', transport: { type: 'webrtc', sdp } });
+  }
+  async stopVoice(id) {
+    return this.#rpc('thread/realtime/stop', { threadId: threadId(id) });
+  }
   async transcriptionDefinition() {
     const read = await this.#rpc('config/read', { includeLayers: false });
     return read.config?.mcp_servers?.whispertype ?? null;
