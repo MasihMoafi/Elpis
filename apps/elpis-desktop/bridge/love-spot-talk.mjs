@@ -10,7 +10,7 @@ const INSTRUCTIONS = 'You are Matilda, the collaborator on Masih\'s shared Love 
 export function createLoveSpotTalk({ client, store }) {
   let threadId = null, thread = null, entries = [], activeTurnId = null, finishedTurnId = null, error = '', loaded = false, sending = false, closed = false, stale;
   let work = Promise.resolve(), loading, sendingPage;
-  const listeners = new Set(), parts = new Map(), turnPages = new Map();
+  const listeners = new Set(), parts = new Map(), turnPages = new Map(), fastAsked = new Set();
   /** The panel shows her note, not the block she paints with. */
   const shown = entry => entry.item.type === 'agentMessage' && typeof entry.item.text === 'string' && entry.item.text.includes('```excalidraw') ? { ...entry, item: { ...entry.item, text: withoutPainting(entry.item.text) } } : entry;
   const snapshot = () => ({ thread, entries: entries.map(shown), busy: sending || !!activeTurnId, error });
@@ -109,8 +109,14 @@ export function createLoveSpotTalk({ client, store }) {
           if (!thread) thread = (await client.readThread(threadId)).thread;
         }
         if (body.provider && body.provider !== thread.modelProvider) throw new BridgeError('Choose a model from the Love Spot chat’s connection.', 400);
+        // Masih, 23 Oct: "set her thinking to low so it be faster, and set her to /fast as well". Fast is asked for once per
+        // chat; a model or account without it still answers, at normal speed.
+        if (!fastAsked.has(threadId)) {
+          fastAsked.add(threadId);
+          await client.setServiceTier(threadId, { enabled: true }).catch(cause => console.warn(`Love Spot stays at normal speed: ${cause.message}`));
+        }
         sendingPage = board.scene.page;
-        const result = await client.send(threadId, { text: body.text, model, attachments });
+        const result = await client.send(threadId, { text: body.text, model, effort: 'low', attachments });
         turnPages.set(result.turn.id, sendingPage);
         // Some local providers finish before send returns; do not revive their completed turn.
         if (finishedTurnId !== result.turn.id) activeTurnId = result.turn.id;

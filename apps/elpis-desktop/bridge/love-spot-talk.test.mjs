@@ -10,10 +10,10 @@ import { createLoveSpotTalk } from './love-spot-talk.mjs';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
-async function fixture(t) {
+async function fixture(t, { refuseFast = false } = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
-  const client = new EventEmitter(), created = [], sent = [], entries = [];
+  const client = new EventEmitter(), created = [], sent = [], entries = [], speeds = [];
   Object.assign(client, {
     settings: async () => ({ main: { model: 'luna', provider: 'openai' } }),
     models: async () => ({ data: [{ model: 'luna', inputModalities: ['text', 'image'] }, { model: 'text', inputModalities: ['text'] }], nextCursor: null }),
@@ -21,11 +21,12 @@ async function fixture(t) {
     readThread: async () => ({ thread: { id: 'chat', name: 'Love Spot', cwd: directory }, data: [...entries].reverse(), nextCursor: null }),
     resume: async () => ({ activeTurnId: null }),
     send: async (id, value) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
+    setServiceTier: async (id, value) => { speeds.push({ id, ...value }); if (refuseFast) throw Error('no Fast here'); return { serviceTier: 'priority' }; },
   });
   const talk = createLoveSpotTalk({ client, store });
   t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
-  return { directory, store, talk, client, created, sent, finish, entries };
+  return { directory, store, talk, client, created, sent, finish, entries, speeds };
 }
 test('Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models', async t => {
   const f = await fixture(t);
@@ -185,4 +186,16 @@ for (const message of [id => `thread not loaded: ${id}`, () => 'Elpis rejected t
   await next.send({ text: 'Are you still there?', model: 'text' });
   assert.equal(f.created.length, 2);
   assert.equal(f.sent.at(-1).text, 'Are you still there?');
+});
+
+// Masih, 23 Oct: "set her thinking to low so it be faster, and set her to /fast as well".
+test('Matilda thinks at low effort and her chat asks for Fast once; a model without Fast still answers', async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: 'Hello', model: 'text' }); f.finish(); await f.talk.idle();
+  await f.talk.send({ text: 'Again', model: 'text' });
+  assert.deepEqual(f.sent.map(item => item.effort), ['low', 'low']);
+  assert.deepEqual(f.speeds, [{ id: 'chat', enabled: true }], 'Fast is asked for once, not on every message');
+  const g = await fixture(t, { refuseFast: true });
+  await g.talk.send({ text: 'Hello', model: 'text' });
+  assert.equal(g.sent.length, 1, 'a refused Fast does not stop the message');
 });
