@@ -44,6 +44,10 @@ const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 // agents (the subagent tool is "Agent", listed as "Task"; Workflow runs agent scripts;
 // RemoteTrigger runs cloud agents) are disallowed, and the elpis-agents server is left out.
 const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger"];
+// A37: the adapter's origins of a result Claude reached on its own (its AUTONOMOUS_RESULT_ORIGINS),
+// and the updates that start such a reply between turns.
+const AUTONOMOUS_ORIGINS = new Set(["task-notification", "peer", "coordinator", "observer", "observer-activity"]);
+const REPLY_UPDATES = new Set(["agent_message_chunk", "agent_thought_chunk", "tool_call", "plan"]);
 // The delegate tool reaches back into this bridge, so a helper can be any model it serves
 // (engine models, Claude, Antigravity), and it names the chat that started it.
 // Elpis's own tools for a Claude or Antigravity session: helpers on other models (when it may
@@ -778,7 +782,8 @@ wss.on("connection", (ws) => {
       if (saved.effort) claudeEffort.set(threadId, saved.effort);
       claimProvider(threadId);
     }
-    if (!active?.userItems || (saved.agent ?? "claude") !== "claude") return;
+    // A followup (A37) has no prompt of its own to find in Claude's record.
+    if (!active?.userItems?.length || (saved.agent ?? "claude") !== "claude") return;
     const project = active.cwd.replace(/[^a-zA-Z0-9]/g, "-");
     const file = join(claudeAccounts.configDir(saved.claudeAccountId ?? "default"), "projects", project, `${saved.session}.jsonl`);
     const final = await recordedClaudeEnd(file, active.transcriptOffset ?? 0, active.inputs ?? []);
@@ -1786,12 +1791,32 @@ wss.on("connection", (ws) => {
     return lane;
   }
 
+  // A37: a background job Claude started can end after its reply. Claude then answers on its own,
+  // outside any prompt (the adapter's autonomous cycle), so between turns the chat's session wakes
+  // a followup turn that shows the answer, as Claude Code does. Updates that carry no reply
+  // (commands, modes, usage) wake nothing.
+  function listenBetweenTurns(threadId, acp, sessionId) {
+    const turnFor = (wake) => {
+      const running = activeTurns.get(threadId);
+      if (running || !wake || sessions.get(threadId)?.id !== sessionId || deletedThreads.has(threadId)) return running ?? null;
+      void claudeTurn({ kind: "followup", params: { threadId }, acp, sessionId });
+      return activeTurns.get(threadId) ?? null;
+    };
+    acp.bySession.set(sessionId, {
+      // Until the turn listens itself, its updates reach it in order once its session is ready.
+      onUpdate: (params) => { const t = turnFor(REPLY_UPDATES.has(params.update?.sessionUpdate)); t?.ready.then(() => t.own?.onUpdate(params)); },
+      onPermission: async (params) => { const t = turnFor(true); return t && (await t.ready) && t.own?.onPermission ? t.own.onPermission(params) : null; },
+    });
+  }
+
   async function claudeTurn(req) {
     const { threadId, input = [] } = req.params;
     const turnId = randomUUID();
     const turn = { id: turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null };
     if (req.id !== undefined) toTui({ id: req.id, result: req.kind === "review" ? { turn, reviewThreadId: threadId } : { turn } });
     const compacting = req.kind === "compact";
+    // A37: Claude's own reply after a background job it started ends (listenBetweenTurns): no user message, no prompt.
+    const followup = req.kind === "followup";
     const startedAt = Math.floor(now() / 1000);
     notify("thread/status/changed", { threadId, status: { type: "active", activeFlags: [] } });
     notify("turn/started", { threadId, turn: { ...turn, startedAt } });
@@ -1799,13 +1824,16 @@ wss.on("connection", (ws) => {
     const t0 = now();
     turn.startedAtMs = t0;
     let firstTokenAt = null;
-    const userItem = req.kind === "review"
+    const userItem = followup ? null : req.kind === "review"
       ? { type: "enteredReviewMode", id: randomUUID(), review: req.reviewHint }
       : { type: "userMessage", id: randomUUID(), clientId: req.params.clientUserMessageId ?? null, content: input };
+    const lead = userItem ? [userItem] : [];
     // A chat's first turn is not a saved turn until it ends; this lets any connection list the chat meanwhile.
-    updateStore((st) => { st[threadId] = { ...st[threadId], active: { turnId, startedAt, startedAtMs: t0, pid: process.pid, cwd: threadCwd.get(threadId) ?? process.cwd(), userItems: [userItem], preview: previewOf(userItem).trim().slice(0, 500) } }; });
-    notify("item/started", { item: userItem, threadId, turnId, startedAtMs: now() });
-    notify("item/completed", { item: userItem, threadId, turnId, completedAtMs: now() });
+    updateStore((st) => { st[threadId] = { ...st[threadId], active: { turnId, startedAt, startedAtMs: t0, pid: process.pid, cwd: threadCwd.get(threadId) ?? process.cwd(), userItems: lead, ...(userItem && { preview: previewOf(userItem).trim().slice(0, 500) }) } }; });
+    for (const item of lead) {
+      notify("item/started", { item, threadId, turnId, startedAtMs: now() });
+      notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
+    }
 
     const cwd = threadCwd.get(threadId) ?? process.cwd();
     const lane = newLane(threadId, turnId, cwd, true);
@@ -1822,7 +1850,9 @@ wss.on("connection", (ws) => {
     turnState.toolsBusy = busy;
     turnState.whenToolsIdle = () => (!busy() ? Promise.resolve() : new Promise((r) => turnState.toolsIdle.push(r)));
     lane.onIdle = () => { if (!busy()) turnState.toolsIdle.splice(0).forEach((r) => r()); };
-    turnState.snapshot = (view = "full") => ({ ...turn, startedAt, itemsView: view, items: view === "notLoaded" ? [] : view === "summary" ? [userItem, ...(lane.message ? [lane.message] : items.filter(item => item.type === "agentMessage").slice(-1))] : [userItem, ...items, ...(lane.message ? [lane.message] : [])] });
+    turnState.snapshot = (view = "full") => ({ ...turn, startedAt, itemsView: view, items: view === "notLoaded" ? [] : view === "summary" ? [...lead, ...(lane.message ? [lane.message] : items.filter(item => item.type === "agentMessage").slice(-1))] : [...lead, ...items, ...(lane.message ? [lane.message] : [])] });
+    // A followup ends at Claude's autonomous result, or when the user stops it.
+    if (followup) turnState.followupEnded = new Promise((resolve) => { turnState.endFollowup = resolve; });
     activeTurns.set(threadId, turnState);
     let status = "completed";
     let error = null;
@@ -1840,7 +1870,7 @@ wss.on("connection", (ws) => {
         materializedProviders.add(threadId);
       }
       refuseSignedOut(agent);
-      const acp = await ensureAcp(agent);
+      const acp = followup ? req.acp : await ensureAcp(agent);
       turnState.acp = acp;
       // The engine's confirmed policy only: the TUI puts its own choice on every turn/start,
       // also one the engine has not accepted yet, or refused.
@@ -1860,7 +1890,8 @@ wss.on("connection", (ws) => {
       // MCP servers are fixed when a session is created, so changed app servers reload it.
       const appServers = acpServersFrom(threadMcp.get(threadId), threadId);
       const mcp = JSON.stringify(appServers);
-      if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions && (live.mcp ?? "[]") === mcp) sessionId = live.id;
+      if (followup) sessionId = req.sessionId;
+      else if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions && (live.mcp ?? "[]") === mcp) sessionId = live.id;
       else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const proxy = prune ? await smartPruneProxy() : null;
@@ -1893,30 +1924,32 @@ wss.on("connection", (ws) => {
         const sid = sessionId;
         updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key, ...(agent.key === "claude" && { claudeAccountId: accountId }) }; });
       }
-      updateStore((st) => { st[threadId] = { ...st[threadId], model: claudeModel.get(threadId), effort: claudeEffort.get(threadId) ?? null }; });
-      const want = claudeModel.get(threadId)?.slice(agent.prefix.length);
-      if (want && sessionModel.get(sessionId) !== want) {
-        await acp.call("session/set_config_option", { sessionId, configId: "model", value: want });
-        sessionModel.set(sessionId, want);
-        log(`session ${sessionId} model -> ${want}`);
+      if (!followup) {
+        updateStore((st) => { st[threadId] = { ...st[threadId], model: claudeModel.get(threadId), effort: claudeEffort.get(threadId) ?? null }; });
+        const want = claudeModel.get(threadId)?.slice(agent.prefix.length);
+        if (want && sessionModel.get(sessionId) !== want) {
+          await acp.call("session/set_config_option", { sessionId, configId: "model", value: want });
+          sessionModel.set(sessionId, want);
+          log(`session ${sessionId} model -> ${want}`);
+        }
+        const wantMode = claudeModeOf(threadId, agent.key, ask);
+        if (sessionMode.get(sessionId) !== wantMode) {
+          await acp.call("session/set_mode", { sessionId, modeId: wantMode })
+            .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })
+            .catch(async (e) => {
+              log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`);
+              // A refused Bypass changes nothing the user sees: Full Access answers every question.
+              if (wantMode === "bypassPermissions") return;
+              const allowed = (await catalogFor(agent)).modes;
+              const why = allowed && !allowed.includes(wantMode) ? `${agent.speaker}'s own settings turn it off` : (e.message ?? "it refused");
+              const kept = MODE_NAMES[sessionMode.get(sessionId)];
+              throw new Error(`${agent.speaker} did not switch to ${MODE_NAMES[wantMode] ?? wantMode}: ${why}. ${kept ? `It stays in ${kept}.` : "Its mode is unchanged."} The turn was not started.`);
+            });
+        }
+        const effort = claudeEffort.get(threadId);
+        const known = (await catalogFor(agent)).efforts[want];
+        if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort))) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       }
-      const wantMode = claudeModeOf(threadId, agent.key, ask);
-      if (sessionMode.get(sessionId) !== wantMode) {
-        await acp.call("session/set_mode", { sessionId, modeId: wantMode })
-          .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })
-          .catch(async (e) => {
-            log(`mode ${wantMode}: ${e.message ?? JSON.stringify(e)}`);
-            // A refused Bypass changes nothing the user sees: Full Access answers every question.
-            if (wantMode === "bypassPermissions") return;
-            const allowed = (await catalogFor(agent)).modes;
-            const why = allowed && !allowed.includes(wantMode) ? `${agent.speaker}'s own settings turn it off` : (e.message ?? "it refused");
-            const kept = MODE_NAMES[sessionMode.get(sessionId)];
-            throw new Error(`${agent.speaker} did not switch to ${MODE_NAMES[wantMode] ?? wantMode}: ${why}. ${kept ? `It stays in ${kept}.` : "Its mode is unchanged."} The turn was not started.`);
-          });
-      }
-      const effort = claudeEffort.get(threadId);
-      const known = (await catalogFor(agent)).efforts[want];
-      if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort))) await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
       turnState.sessionId = sessionId;
       sessionReady(sessionId);
       // The chat's updates draw into this turn; a subagent's come under its own ACP session and
@@ -1933,6 +1966,15 @@ wss.on("connection", (ws) => {
           if (typeof u.messageId === "string" && u.messageId) lastClaudeMessageId = u.messageId;
         }
         into.update(u);
+        if (followup && into === lane) {
+          if (u.sessionUpdate === "usage_update" && AUTONOMOUS_ORIGINS.has(u._meta?.["_claude/origin"]?.kind)) turnState.endFollowup({ stopReason: "end_turn" });
+          else quietEnd();
+        }
+      };
+      // Without the adapter's end marker, a followup ends after a minute without updates or running tools.
+      const quietEnd = () => {
+        clearTimeout(turnState.quiet);
+        turnState.quiet = setTimeout(() => { if (busy()) quietEnd(); else turnState.endFollowup({ stopReason: "end_turn" }); }, 60_000);
       };
       own.onUpdate = update => { if (turnState.bufferedUpdates) turnState.bufferedUpdates.push(update); else drawUpdate(update); };
       turnState.flushUpdates = () => {
@@ -2087,7 +2129,7 @@ wss.on("connection", (ws) => {
       let recovering;
       turnState.recover = () => {
         if (recovering) return recovering;
-        if (!file || turnState.promptEnded || turnState.cancelled) return;
+        if (followup || !file || turnState.promptEnded || turnState.cancelled) return;
         return recovering ??= (async () => {
           const expected = [...inputs];
           const final = await recordedClaudeEnd(file, transcriptOffset, expected);
@@ -2105,7 +2147,7 @@ wss.on("connection", (ws) => {
           await done;
         })().catch(e => log(`turn recovery: ${e.message}`)).finally(() => { recovering = null; });
       };
-      if (file) {
+      if (file && !followup) {
         try {
           await mkdir(dirname(file), { recursive: true });
           let timer;
@@ -2119,7 +2161,8 @@ wss.on("connection", (ws) => {
           turnState.stopRecordWatch = () => { clearTimeout(timer); watcher.close(); };
         } catch (error) { log(`turn record watcher: ${error.message}`); }
       }
-      const result = turnState.cancelled ? { stopReason: "cancelled" } : await acp.call("session/prompt", { sessionId, prompt });
+      const result = turnState.cancelled ? { stopReason: "cancelled" } : followup ? await turnState.followupEnded : await acp.call("session/prompt", { sessionId, prompt });
+      clearTimeout(turnState.quiet);
       turnState.promptEnded = true;
       turnState.toolsIdle.splice(0).forEach(resolve => resolve());
       await turnState.steers;
@@ -2138,7 +2181,7 @@ wss.on("connection", (ws) => {
       const say = (role, text) => record.push({ type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] });
       let used = [];
       const flush = () => { if (used.length) say("assistant", `[${claudeModel.get(threadId) ?? "Claude"} used tools: ${used.join("; ")}]`); used = []; };
-      say("user", userText);
+      if (!followup) say("user", userText);
       for (const it of items) {
         if (it.type === "userMessage") { flush(); say("user", inputSummary(it.content)); }
         else if (it.type === "commandExecution") used.push(plainCommand(it.command));
@@ -2167,6 +2210,7 @@ wss.on("connection", (ws) => {
     for (const sid of [turnState.sessionId, ...subLanes.keys()]) {
       if (turnState.own && turnState.acp.bySession.get(sid) === turnState.own) turnState.acp.bySession.delete(sid);
     }
+    if (agent.key === "claude" && turnState.sessionId) listenBetweenTurns(threadId, turnState.acp, turnState.sessionId);
     // A subagent or row still running when the turn ends (stop, error) must not spin forever.
     turnState.endSubagents?.();
     lane.end();
@@ -2180,7 +2224,7 @@ wss.on("connection", (ws) => {
     turnState.toolsIdle.splice(0).forEach((r) => r());
     const completedAt = Math.floor(now() / 1000);
     {
-      const record = clipTurn({ id: turnId, items: [userItem, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000, ...(lastClaudeMessageId && { claudeMessageId: lastClaudeMessageId }) });
+      const record = clipTurn({ id: turnId, items: [...lead, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000, ...(lastClaudeMessageId && { claudeMessageId: lastClaudeMessageId }) });
       await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record].slice(-200) }; });
     }
     if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
@@ -2905,6 +2949,7 @@ wss.on("connection", (ws) => {
     if (msg.method === "turn/interrupt" && activeTurns.has(msg.params?.threadId)) {
       const running = activeTurns.get(msg.params.threadId);
       running.cancelled = true;
+      running.endFollowup?.({ stopReason: "cancelled" });
       cancelWaitingClaudeSteers(msg.params.threadId, [...(pendingSteers.get(msg.params.threadId)?.keys() ?? [])]);
       if (running.sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId: running.sessionId } });
       toTui({ id: msg.id, result: {} });

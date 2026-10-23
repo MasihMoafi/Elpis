@@ -356,6 +356,19 @@ test("A143: rewinding a Claude chat forks its Claude session after the last kept
   assert.ok(!after.some(e => e.method === "session/new" && e.params._meta), "no fresh Claude session is seeded");
 });
 
+test("A37: Claude's report on a background job that ends after its reply opens a turn in the chat", { timeout: 20000 }, async t => {
+  const f = await fixture(t, {}, { prepare: (root, env) => { env.FAKE_ACP_BACKGROUND_RELEASE = path.join(root, "background"); } });
+  const { turn } = await f.client.send(f.id, { text: "build it [background]" });
+  await until(() => f.ended(turn.id), "the reply ends while the job runs");
+  fs.writeFileSync(f.env.FAKE_ACP_BACKGROUND_RELEASE, "");
+  await until(() => f.events.some(e => e.method === "turn/completed" && e.params.threadId === f.id && e.params.turn.id !== turn.id), "the report's turn ends");
+  const read = await f.client.readThread(f.id);
+  assert.ok(read.data.some(e => e.item.text === "The background build finished."), "the report is saved in the chat");
+  const next = await f.client.send(f.id, { text: "thanks" });
+  await until(() => f.ended(next.turn.id), "the chat takes the next message");
+  assert.ok(!f.agent().some(e => e.method === "session/new" && e.params._meta && e !== f.agent().find(x => x.method === "session/new" && x.params._meta)), "the same Claude session goes on");
+});
+
 test("a completed chat survives a graceful bridge restart with several turns in order", { timeout: 20000 }, async t => {
   const f = await fixture(t);
   for (const text of ["first", "middle", "last — پایان"]) {
