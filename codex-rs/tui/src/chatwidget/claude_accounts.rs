@@ -1,5 +1,6 @@
 //! The model picker switches the bridge's shared Claude account for subsequent turns.
 
+use super::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 use super::*;
 use codex_app_server_protocol::ClaudeAccountsReadResponse;
 
