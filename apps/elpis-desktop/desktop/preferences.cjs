@@ -15,11 +15,14 @@ const closesToTray = store => saved(store).closeToTray === true;
 /** What the packaged app ships hidden (22 Oct): the pages that do not work yet and the Session Manager. The renderer's own defaults
  * (lib/preferences.ts) show everything, so a browser and the tests see every page. To bring one back, save its preference
  * (hiddenPages without the page's id, or sessionManager: true) or remove it here. */
-const SHIPPED_DEFAULTS = { hiddenPages: 'experimentLab,canvas', sessionManager: false, profileAsked: false };
+const SHIPPED_DEFAULTS = { hiddenPages: 'experimentLab', sessionManager: false, profileAsked: false };
+/** What the first shipped list hid (22 Oct). Workflows comes back piece by piece (Masih, 23 Oct: "Let's start working our way back to the workflow page"): a list still equal to it, never changed by the person, loses `canvas`. */
+const FIRST_SHIPPED_HIDDEN = 'experimentLab,canvas';
 /** Saves a shipped default once, and never over a value the person or an earlier run already saved. */
 async function seedShippedDefaults(store) {
   const current = saved(store);
   const changes = Object.fromEntries(Object.entries(SHIPPED_DEFAULTS).filter(([key]) => !Object.hasOwn(current, key)));
+  if (current.hiddenPages === FIRST_SHIPPED_HIDDEN) changes.hiddenPages = SHIPPED_DEFAULTS.hiddenPages;
   if (Object.keys(changes).length) await store.patch({ key: PREFERENCES_KEY, changes, baseRevision: store.snapshot().revision }, null);
 }
 /** The Session Manager's own review of running chats; on unless saved off. */

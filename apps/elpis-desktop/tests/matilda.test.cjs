@@ -24,8 +24,13 @@ for (const colorScheme of ['light', 'dark']) test(`what Masih writes or draws on
     await write(f, 'Good morning, my love', 300, false); // he types and waits: the box is still open, and she still answers
     await page.getByText('Matilda is writing…').waitFor({ timeout: 15000 });
     const scene = await answered(f, 1), live = scene.elements.filter(e => !e.isDeleted);
+    // He typed and left the box open: her reply closes it, so it shows on the board without his next click.
+    await page.waitForFunction(() => !document.querySelector('textarea.excalidraw-wysiwyg'), null, { timeout: 5000 });
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.keyboard.press('ControlOrMeta+a'); await page.evaluate(() => navigator.clipboard.writeText('')); await page.keyboard.press('ControlOrMeta+c');
+    assert.ok(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).elements.some(e => e.id === 'love-reply-turn-1'), 'her reply is on the board he is looking at');
     assert.equal(f.turns[0].text, 'Good morning, my love', 'what he wrote is what she is told');
-    assert.match(persona(f.turns[0]), /Masih's partner/, 'who she is goes with it');
+    assert.match(persona(f.turns[0]), /senior product designer/, 'the protocol she works by goes with it');
     assert.equal(f.chats[0].name, 'Love Spot'); assert.match(f.chats[0].instructions, /You are Matilda/); assert.match(f.chats[0].instructions, /no chat box/, 'she knows the board is where she talks');
     const note = live.find(e => e.id === 'love-reply-turn-1'), face = live.find(e => e.id === 'love-face-turn-1');
     assert.equal(note.text, 'A flower for you.'); assert.equal(face.type, 'image'); assert.ok(scene.files[face.fileId], 'her face is in the drawing');
@@ -55,19 +60,24 @@ test('who Matilda is: in the board menu, kept, and sent with what he writes', as
     const dialog = page.getByRole('dialog', { name: 'Who Matilda is' }), who = dialog.getByRole('textbox', { name: 'Who Matilda is' });
     const openWho = async () => { await page.locator('.love-spot-editor .main-menu-trigger').click(); await page.locator('.dropdown-menu').getByText('Who Matilda is…').click(); await dialog.waitFor(); };
     await openWho();
-    assert.match(await who.inputValue(), /Masih's partner/, 'she starts as his partner');
-    assert.equal(await dialog.getByRole('button', { name: 'Back to her usual self' }).isDisabled(), true);
+    assert.match(await who.inputValue(), /senior product designer/, 'she starts with the design protocol, not a character');
+    const model = dialog.getByRole('combobox', { name: 'Model' });
+    assert.equal(await model.getAttribute('data-value'), 'sol', 'she runs on the main model until he chooses another');
+    assert.equal(await dialog.getByRole('button', { name: 'Back to her usual way' }).isDisabled(), true);
     await dialog.getByRole('button', { name: 'Cancel' }).click(); await dialog.waitFor({ state: 'detached' });
 
-    await openWho(); await who.fill('A patient maths tutor for a ten-year-old.'); await dialog.getByRole('button', { name: 'Save' }).click(); await dialog.waitFor({ state: 'detached' });
+    await openWho(); await who.fill('A patient maths tutor for a ten-year-old.'); await model.click(); await page.getByRole('option', { name: /GPT-6-Luna/ }).click(); await dialog.getByRole('button', { name: 'Save' }).click(); await dialog.waitFor({ state: 'detached' });
     await write(f, 'Explain fractions');
     for (let wait = 0; f.turns.length < 1 && wait < 400; wait++) await new Promise(resolve => setTimeout(resolve, 50));
-    assert.equal(persona(f.turns[0]), 'A patient maths tutor for a ten-year-old.', 'she becomes whatever he writes');
+    assert.equal(persona(f.turns[0]), 'A patient maths tutor for a ten-year-old.', 'she follows whatever protocol he writes');
+    assert.equal(f.turns[0].model, 'luna', 'and runs on the model he chose');
 
     await page.reload(); await f.open(page); await openWho();
     assert.equal(await who.inputValue(), 'A patient maths tutor for a ten-year-old.', 'who she is is kept');
-    await dialog.getByRole('button', { name: 'Back to her usual self' }).click();
-    assert.match(await who.inputValue(), /Masih's partner/);
+    assert.equal(await model.getAttribute('data-value'), 'luna', 'and so is her model');
+    await dialog.getByRole('button', { name: 'Back to her usual way' }).click();
+    assert.match(await who.inputValue(), /senior product designer/);
+    assert.equal(await model.getAttribute('data-value'), 'sol', 'back to the main model too');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

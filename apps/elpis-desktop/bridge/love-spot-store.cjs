@@ -335,21 +335,21 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       if (scene.elements.some(e => e.id === id)) return;
       const live = scene.elements.filter(e => !e.isDeleted);
       const anchor = live.filter(e => e.type === 'text' && !agentColor(e.strokeColor)).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
-      // Monospaced text and generous bounds keep restored font metrics inside the reserved area.
+      // Her note is set in Nunito, the board's friendly sans; its lines are cut at 38 columns, so its height is known without measuring text.
       const lines = (note ? text.trim() : '').split('\n').flatMap(line => {
         const chars = Array.from(line), wrapped = [];
         // Wide glyphs and expanded tabs need more room than Latin letters when Excalidraw restores the font.
         const columns = char => char === '\t' ? 8 : char.codePointAt(0) > 127 ? 2 : 1;
         while (chars.length) {
           let at = 0, used = 0;
-          while (at < chars.length && used + columns(chars[at]) <= 32) used += columns(chars[at++]);
+          while (at < chars.length && used + columns(chars[at]) <= 38) used += columns(chars[at++]);
           if (at === chars.length) { wrapped.push(chars.join('')); break; }
           const space = chars.slice(0, at + 1).lastIndexOf(' '); if (space >= 8) at = space;
           wrapped.push(chars.splice(0, at).join('')); if (chars[0] === ' ') chars.shift();
         }
         return wrapped.length ? wrapped : [''];
       });
-      const noteHeight = note ? Math.max(1, lines.length) * 28 : 0, painted = paintingSize(shapes), gap = note && shapes.length ? 24 : 0;
+      const noteHeight = note ? Math.max(1, lines.length) * 25 : 0, painted = paintingSize(shapes), gap = note && shapes.length ? 24 : 0;
       const width = FACE_SIDE + Math.max(note ? 480 : 0, painted.width), height = Math.max(FACE, noteHeight + gap + painted.height);
       const bounds = e => {
         const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
@@ -366,10 +366,10 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const face = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0, isDeleted: false, boundElements: null,
         updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };
-      const element = !note ? null : { id, type: 'text', x: x + FACE_SIDE, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#1971c2', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
+      const element = !note ? null : { id, type: 'text', x: x + FACE_SIDE, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#1864ab', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
         strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
-        isDeleted: false, boundElements: null, updated: now, link: null, locked: false, fontSize: 20, fontFamily: 3, text: lines.join('\n'),
-        originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.4 };
+        isDeleted: false, boundElements: null, updated: now, link: null, locked: false, fontSize: 20, fontFamily: 6, text: lines.join('\n'),
+        originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.25 };
       await persist(merge(scene, { elements: [face, ...(element ? [element] : []), ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group)], files: { [file.id]: file } }));
     });
   }

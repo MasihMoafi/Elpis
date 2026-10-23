@@ -59,7 +59,7 @@ test('what he writes reaches her with the board and its picture and the main mod
   try {
     await f.open(f.page); await note(f, 'The secret is apricot');
     const saved = await f.waitFor(s => s.elements.some(e => e.id === 'love-reply-turn-1' && !e.isDeleted), 'reply did not land on the board', 20000);
-    const answer = saved.elements.find(e => e.id === 'love-reply-turn-1'); assert.equal(answer.text, 'I am here with you.'); assert.equal(answer.strokeColor, '#1971c2');
+    const answer = saved.elements.find(e => e.id === 'love-reply-turn-1'); assert.equal(answer.text, 'I am here with you.'); assert.equal(answer.strokeColor, '#1864ab');
     assert.equal(f.chats.length, 1); assert.equal(f.chats[0].name, 'Love Spot'); assert.equal(f.chats[0].cwd, f.directory);
     await f.page.locator('aside [data-thread-id="love-chat"] .thread-title').filter({ hasText: 'Love Spot' }).waitFor();
     assert.deepEqual(await f.page.locator('aside [data-thread-id="love-chat"] .thread-link').allInnerTexts(), ['Love Spot'], 'the Love Spot group already names the origin: the chat says it once');

@@ -14,7 +14,8 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Dictation } from "@/components/dictation";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { MovableBars } from "@/components/love-spot-bars";
-import { api, chatProvider, unreadable, type ProviderSettings } from "@/lib/api";
+import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
+import { keepModel, savedModel } from "@/lib/matilda";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
@@ -56,6 +57,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
   const [settings, setSettings] = useState<ProviderSettings | null>(null), [whoOpen, setWhoOpen] = useState(false);
+  const [models, setModels] = useState<Model[]>([]), [pick, setPick] = useState(savedModel);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
   const [pageToDelete, setPageToDelete] = useState<string>();
@@ -86,13 +88,16 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
 
   useEffect(() => {
     let active = true;
-    api<ProviderSettings>("/settings").then(config => {
-      if (!config.main || (config.providers !== undefined && !Array.isArray(config.providers))) throw unreadable("Love Spot settings");
-      if (active) setSettings(config);
+    Promise.all([api<ProviderSettings>("/settings"), api<{ data: Model[] }>("/models")]).then(([config, catalog]) => {
+      if (!config.main || (config.providers !== undefined && !Array.isArray(config.providers)) || !Array.isArray(catalog.data)) throw unreadable("Love Spot settings");
+      if (active) { setSettings(config); setModels(catalog.data); }
     }).catch(report);
     return () => { active = false; };
   }, [report]);
   const provider = chatProvider(settings?.main.model, undefined, settings?.main.provider);
+  // Her chat keeps the connection it started on, so only that connection's models are offered.
+  const choices = providerChoices(models, settings).filter(choice => !choice.provider || choice.provider === settings?.main.provider);
+  const pickedProvider = choices.find(choice => choice.id === pick.choiceId)?.provider;
 
   useEffect(() => {
     if (!editor || !boardArea.current) return;
@@ -136,7 +141,11 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     // Updating any scene can detach Excalidraw's live textarea. Admit the
     // newest complete remote scene only after the local edit is committed.
     if (editor?.getAppState().editingTextElement || document.querySelector("textarea.excalidraw-wysiwyg")) {
-      deferred.current = data; return;
+      deferred.current = data;
+      // His box is still open after the quiet she waited for, so close it as Escape does (Excalidraw's own text box listens for it): her reply shows now, not after his next click.
+      if (data.scene.elements.some(e => !e.isDeleted && e.id.startsWith("love-reply-") && !editor?.getSceneElementsIncludingDeleted().some(shown => shown.id === e.id)))
+        document.querySelector("textarea.excalidraw-wysiwyg")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      return;
     }
     const recovered = journal.current!.recover(data.scene.elements, data.scene.page);
     const hasRecovery = versions(recovered) !== versions(data.scene.elements);
@@ -299,7 +308,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
   const matilda = useMatilda({ ready: !!editor && !!settings, onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
-    send: (text, persona) => sendWithBoard(async revision => { await api("/love-spot/talk", { text, persona, revision }); }) });
+    send: (text, persona) => sendWithBoard(async revision => { await api("/love-spot/talk", { text, persona, revision, ...(pick.model ? { model: pick.model, ...(pickedProvider ? { provider: pickedProvider } : {}) } : {}) }); }) });
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
     const before = latest.current;
@@ -427,7 +436,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         <Button variant="outline" size="icon-xs" className="love-spot-screenshot-dismiss" aria-label={`Dismiss ${shot.name}`} title={`Dismiss ${shot.name}`} disabled={choosing} onClick={() => void chooseScreenshot(shot.id, "dismiss")}><X aria-hidden="true" /></Button>
       </li>)}</ul>
     </section>}
-    <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} onSave={matilda.keep} />
+    <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} pick={pick} fallback={settings?.main.model ?? ""} models={models} choices={choices} onSave={(persona, chosen) => { matilda.keep(persona); setPick(chosen); keepModel(chosen); }} />
     {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
     <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }

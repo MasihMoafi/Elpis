@@ -112,7 +112,7 @@ test('replies are blue, unsigned, collision-free, idempotent and saved without a
   await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 }), note('block', 'Obstacle', '#e03131', { x: 20, y: 100, width: 500, height: 500 })] });
   await f.talk.send({ text: 'Hi', model: 'text' }); f.finish(); f.finish(); await f.talk.idle();
   const scene = (await f.store.read()).scene, reply = scene.elements.find(e => e.text === 'Here with you.');
-  assert.ok(reply); assert.equal(reply.strokeColor, '#1971c2'); assert.equal(scene.elements.filter(e => e.text === reply.text).length, 1);
+  assert.ok(reply); assert.equal(reply.strokeColor, '#1864ab'); assert.equal(scene.elements.filter(e => e.text === reply.text).length, 1);
   for (const e of scene.elements.filter(e => e.id !== reply.id)) assert.ok(reply.x + reply.width <= e.x || e.x + e.width <= reply.x || reply.y + reply.height <= e.y || e.y + e.height <= reply.y);
 });
 test('empty, failed and interrupted replies add nothing; invalid messages and stale pictures fail before send', async t => {

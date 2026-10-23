@@ -17,7 +17,7 @@ test('the Session Manager is on unless saved off', () => {
 
 test('the shell seeds what ships hidden once and never over a saved choice', async () => {
   const { seedShippedDefaults, SHIPPED_DEFAULTS } = require('./preferences.cjs');
-  assert.deepEqual(SHIPPED_DEFAULTS, { hiddenPages: 'experimentLab,canvas', sessionManager: false, profileAsked: false });
+  assert.deepEqual(SHIPPED_DEFAULTS, { hiddenPages: 'experimentLab', sessionManager: false, profileAsked: false });
   const patches = [], store = value => ({ read: () => value, snapshot: () => ({ revision: 3 }), patch: async (input, writer) => { patches.push([input, writer]); } });
   await seedShippedDefaults(store({}));
   assert.deepEqual(patches, [[{ key: 'elpis-preferences-v1', changes: SHIPPED_DEFAULTS, baseRevision: 3 }, null]]);
@@ -26,6 +26,9 @@ test('the shell seeds what ships hidden once and never over a saved choice', asy
   assert.deepEqual(patches, [], 'a saved choice is never replaced');
   await seedShippedDefaults(store({ 'elpis-preferences-v1': JSON.stringify({ hiddenPages: 'canvas' }) }));
   assert.deepEqual(patches[0][0].changes, { sessionManager: false, profileAsked: false }, 'only what is missing is seeded');
+  patches.length = 0;
+  await seedShippedDefaults(store({ 'elpis-preferences-v1': JSON.stringify({ hiddenPages: 'experimentLab,canvas', sessionManager: false, profileAsked: false }) }));
+  assert.deepEqual(patches[0][0].changes, { hiddenPages: 'experimentLab' }, 'the list the first version shipped, never changed, gets Workflows back');
 });
 
 test('the real store accepts the seed, keeps other preferences and seeds only once', async () => {
@@ -37,7 +40,7 @@ test('the real store accepts the seed, keeps other preferences and seeds only on
   await store.set(PREFERENCES_KEY, JSON.stringify({ navOrder: 'customize' }));
   await seedShippedDefaults(store);
   const saved = JSON.parse(store.read()[PREFERENCES_KEY]);
-  assert.deepEqual(saved, { navOrder: 'customize', hiddenPages: 'experimentLab,canvas', sessionManager: false, profileAsked: false });
+  assert.deepEqual(saved, { navOrder: 'customize', hiddenPages: 'experimentLab', sessionManager: false, profileAsked: false });
   assert.equal(sessionManagerOn(store), false);
   const revision = store.snapshot().revision;
   await seedShippedDefaults(store);
