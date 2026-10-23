@@ -860,6 +860,12 @@ client_request_definitions! {
         serialization: None,
         response: v2::ThreadLoadedListResponse,
     },
+    #[experimental("thread/register")]
+    ThreadRegister => "thread/register" {
+        params: v2::ThreadRegisterParams,
+        serialization: global("thread-register"),
+        response: v2::ThreadRegisterResponse,
+    },
     ThreadRead => "thread/read" {
         params: v2::ThreadReadParams,
         serialization: thread_id(params.thread_id),
