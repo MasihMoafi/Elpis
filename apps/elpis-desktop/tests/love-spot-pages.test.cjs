@@ -76,7 +76,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboa
     await other.getByRole('button', { name: 'Pages', exact: true }).waitFor();
     await other.getByText('Page 3', { exact: true }).waitFor();
     await f.draw(other);
-    await f.waitFor(s => s.elements.filter(e => !e.isDeleted).length === 1, 'the other window kept the old drawing');
+    await f.waitFor(s => s.elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length === 1, 'the other window kept the old drawing');
     await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     await f.page.getByRole('menuitem', { name: 'Rename page', exact: true }).click();
     const input = f.page.getByRole('textbox', { name: 'Page name', exact: true });
@@ -92,9 +92,9 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot pages: mouse/keyboa
     await f.waitFor(s => s.page?.name === '2026-10-18-morning' && !s.elements.length, 'archive did not load');
     await f.page.getByRole('button', { name: 'Pages', exact: true }).click();
     await f.page.getByRole('menuitem', { name: /Current page/ }).click();
-    await f.waitFor(s => s.page?.name === 'Current page' && s.elements.filter(e => !e.isDeleted).length === 1, 'original drawing was lost');
+    await f.waitFor(s => s.page?.name === 'Current page' && s.elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length === 1, 'original drawing was lost');
     await f.page.waitForTimeout(500);
-    assert.equal((await f.scene()).elements.filter(e => !e.isDeleted).length, 1, 'a delayed save mixed drawings');
+    assert.equal((await f.scene()).elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length, 1, 'a delayed save mixed drawings');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
