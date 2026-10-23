@@ -2631,6 +2631,10 @@ async fn try_run_sampling_request(
     let effort = sess
         .reasoning_effort_for_request(&step_context.settings, super::RequestEffortUsage::Sampling)
         .await;
+    // Responses Lite counts retained reasoning without sending X-Reasoning-Included;
+    // a server header still overrides this default.
+    sess.set_server_reasoning_included(step_context.settings.model_info.use_responses_lite)
+        .await;
     let mut stream = client_session
         .stream(
             prompt,
