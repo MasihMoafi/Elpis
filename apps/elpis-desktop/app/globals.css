@@ -806,7 +806,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
 .sidebar-group-chevron { transition:transform .15s; }
-.sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron { transform:rotate(90deg); }
+.sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron, .section-toggle[aria-expanded="true"] .sidebar-group-chevron { transform:rotate(90deg); }
+.section-toggle { display:flex; align-items:center; gap:4px; border:0; background:none; cursor:pointer; text-align:left; }
 .sidebar-group-row.active .sidebar-group-toggle svg:not(.sidebar-group-chevron) { color:var(--primary); }
 .sidebar-group-items { padding-left:0; }
 .sidebar-group-empty { margin:0; padding:3px 8px 6px 26px; font-size:0.75rem; color:var(--subtle-foreground); }

@@ -30,3 +30,8 @@ export function SidebarGroup({ kind, name, title, icon, open, active, onToggle, 
     {open && <div className={`sidebar-group-items ${own.items}`}>{children}{empty && <p className={`sidebar-group-empty ${own.empty}`}>No chats yet</p>}</div>}
   </div>;
 }
+
+/** A section heading (Projects, Pinned, Recents) that folds its list, with the chevron a project row has. */
+export function SectionToggle({ name, open, onToggle }: { name: string; open: boolean; onToggle: () => void }) {
+  return <button type="button" className="section-label section-toggle" aria-expanded={open} onClick={onToggle}><ChevronRight size={13} className="sidebar-group-chevron" aria-hidden="true" />{name}</button>;
+}

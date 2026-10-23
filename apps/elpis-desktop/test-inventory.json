@@ -236,6 +236,7 @@
     "tests/sidebar-focus.test.cjs",
     "tests/sidebar-groups.test.cjs",
     "tests/sidebar-indent.test.cjs",
+    "tests/sidebar-sections.test.cjs",
     "tests/sidebar-chevron-column.test.cjs",
     "tests/sidebar-nav-icons.test.cjs",
     "tests/sidebar-settings-button.test.cjs",
