@@ -8,7 +8,7 @@ import { appStorage } from "@/lib/projects";
 const KEY = "elpis-love-bars", LEGACY_KEY = "elpis-love-tools-offset";
 const MARGIN = 8, GAP = 6, STEP = 24, HANDLE = 24;
 /** The board's controls that stay where they are: the main menu, the help button, the shape properties and the library panel. */
-const FIXED = ".App-menu_top__left, .layer-ui__wrapper__footer-right, .App-menu__left, .sidebar";
+const FIXED = ".App-menu_top__left, .layer-ui__wrapper__footer-right, .layer-ui__wrapper__footer-left, .App-bottom-bar > .Island, .App-menu__left, .sidebar";
 
 /** The bars the person can move, each found in Excalidraw's own layout, wide or narrow (a small window makes it narrow). */
 const BARS = [
