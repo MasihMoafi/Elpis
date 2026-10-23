@@ -85,9 +85,9 @@ export const retainedUpdates = {
       "reason": "SPLIT, Masih 22 Oct (R44): Ctrl+[ and Ctrl+] move the open chat in its list, so split-view focus is Ctrl+Alt+[ and Ctrl+Alt+]."
     },
     "tests/sidebar-focus.test.cjs": {
-      "blob": "50f2854d79e342ef997aa27d396390d505247037",
-      "approval": "e848a1dca89c80945da8b7abcf4d3d8cd2060a53",
-      "reason": "SIDEBAR, Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good.\" Its row is a switch, not a chat, so the focus-ring check skips it."
+      "blob": "9c637b66d2fa18fe710fcd05ae395074a7ba3055",
+      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
+      "reason": "SIDEBAR, Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good.\" Its row is a switch, not a chat, so the focus-ring check skips it. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/startup-splash.test.cjs": {
       "blob": "37f7147778dc05d333f2c8ffb7536be4693ee60d",
@@ -105,19 +105,19 @@ export const retainedUpdates = {
       "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model."
     },
     "tests/sidebar-order.test.cjs": {
-      "blob": "d92fe9f449dc5d4014145c5b29f45c885d963666",
-      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
-      "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged."
+      "blob": "b67ceb9a7c0dd52adc5f9ebf6fe0d6e486b5664b",
+      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
+      "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/sidebar.test.cjs": {
-      "blob": "37e88bfd1c9081425af59ec002cb2c0e8755033f",
-      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
-      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984)."
+      "blob": "7c90469686a4dabe0c86c7b3f189f1ffeff87fd5",
+      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
+      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984). Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/desktop-small-fixes.test.cjs": {
-      "blob": "bcf7d003f013ed3a78bdffd1e5300b1c78999d16",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
-      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
+      "blob": "f02b388191828cac085bcbd12a80f994762ef192",
+      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
+      "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/chat-groups.test.mjs": {
       "blob": "2df494abc42feb2c83e34ea9259c25050ebfad6b",
