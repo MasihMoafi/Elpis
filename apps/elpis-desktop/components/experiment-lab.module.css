@@ -12,7 +12,7 @@
 .history button small { flex:none; color:var(--muted-foreground); }
 .lab h1 { font-size:21px; font-weight:600; margin-bottom:6px; }
 .lab h2 { font-size:16px; font-weight:600; }
-.lab p, .sources p { font-size:13px; line-height:1.5; margin:6px 0; }
+.lab p { font-size:13px; line-height:1.5; margin:6px 0; }
 .muted { color:var(--muted-foreground); }
 .form { display:grid; gap:18px; }
 .group { display:grid; gap:10px; min-width:0; margin:0; padding:0 0 18px; border:0; border-bottom:1px solid var(--hairline); }
@@ -37,10 +37,4 @@
 .trial summary { cursor:pointer; padding:4px 0; }
 .trial details { margin:8px 0 8px 12px; }
 .trial pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:10px; background:var(--sidebar); font:12px/1.5 var(--mono); border-radius:6px; }
-.sources { overflow-wrap:anywhere; }
-.sources h2 { font-size:16px; font-weight:600; }
-.sources h3 { font-size:13px; font-weight:600; }
-.sources article { padding:12px 0; border-top:1px solid var(--hairline); }
-.sources a { color:var(--accent-text); text-decoration:underline; text-decoration-color:var(--primary); text-underline-offset:3px; }
-.sources .muted { font-size:12px; }
 @media (max-width:720px) { .fields, .noCount { grid-template-columns:minmax(0,1fr); } .count { max-width:140px; } .history button { flex-wrap:wrap; } }
