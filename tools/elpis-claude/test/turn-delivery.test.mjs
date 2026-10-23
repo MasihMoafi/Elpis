@@ -164,6 +164,20 @@ test("A128: Stop interrupts the slow tool and cancels waiting messages", { timeo
   assert.deepEqual(f.agent().filter(e => e.method === "session/prompt").map(e => e.params.prompt[0].text), ["[wait] [tool-flight] [tool-race] stop this", "after Stop"], "Stop must not silently restart with a waiting message");
 });
 
+test("A37: Stop on a Claude helper's thread stops only that helper, and its chat answers", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[subagent] look for the notes" });
+  await until(() => f.events.some(e => e.method === "thread/started" && e.params.thread.parentThreadId === f.id), "the helper's thread appears");
+  const helper = f.events.find(e => e.method === "thread/started" && e.params.thread.parentThreadId === f.id).params.thread;
+  assert.equal(helper.name, "Explore");
+  const task = await until(async () => (await f.client.readThread(helper.id)).data.find(entry => entry.item.type === "userMessage" && entry.item.content[0].text === "find the notes"), "the helper's task shows in its thread");
+  await f.client.interrupt(helper.id, { turnId: task.turnId });
+  await until(() => f.ended(turn.id), "the chat answers after its helper stops");
+  assert.deepEqual(f.agent().filter(e => e.method === "session/cancel").map(e => e.params.sessionId), [`${f.agent().find(e => e.method === "session/prompt").params.sessionId}-helper`], "only the helper is cancelled");
+  assert.equal(f.ended(turn.id).params.turn.status, "completed");
+  await until(() => f.store()[helper.id]?.turns[0].status === "interrupted", "the helper's turn is saved as stopped");
+});
+
 test("A128: desktop reload while a tool has waiting messages keeps their order and answer", { timeout: 20000 }, async t => {
   const f = await fixture(t);
   const initial = "[wait] [tool-flight] [tool-race] reload this";

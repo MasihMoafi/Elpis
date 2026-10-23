@@ -7,7 +7,8 @@
 // A prompt is answered `<name>(<model>) answered: <prompt text>` after a progress message and a tool call; markers in
 // the prompt change that: [permission] asks permission first, [hang] waits for session/cancel, [ignore-cancel] never
 // ends, [crash] exits with code 5, [empty] answers nothing, [commentary-only] answers only Elpis commentary,
-// [refuse] stops with `refusal`.
+// [refuse] stops with `refusal`, [subagent] starts a helper (the subagents RFD form) that works until session/cancel on
+// its own session, and then answers.
 import fs from "node:fs";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -41,7 +42,7 @@ const app = agent({ name: "fake-acp-agent" })
     const s = sessions.get(params.sessionId);
     return { ...(models.length ? { configOptions: [modelOption(s.model)] } : {}) };
   })
-  .onRequest("session/fork", ({ params }) => {
+  .onRequest("session/fork", params => params, ({ params }) => {
     log({ method: "session/fork", params });
     return { sessionId: `${params.sessionId}-fork` };
   })
@@ -137,6 +138,16 @@ const app = agent({ name: "fake-acp-agent" })
       const { file, text } = JSON.parse(process.env.FAKE_ACP_EXPECT);
       const passed = fs.existsSync(file) && fs.readFileSync(file, 'utf8') === text;
       checked = JSON.stringify({ passed, summary: passed ? `Read planted result: ${text}` : 'The planted result did not arrive' });
+    }
+    if (text.includes("[subagent]")) {
+      const helper = `${params.sessionId}-helper`;
+      sessions.set(helper, { stopped: false });
+      const sayHelper = (update) => client.notify("session/update", { sessionId: helper, update });
+      await say({ sessionUpdate: "subagent_update", sessionId: helper, title: "Explore", description: "Look around", capabilities: { cancel: {} }, state: { state: "running" } });
+      await sayHelper({ sessionUpdate: "session_message", messageId: "p1", recipientSessionId: helper, content: [{ type: "text", text: "find the notes" }] });
+      await sayHelper({ sessionUpdate: "agent_message_chunk", messageId: "h1", content: { type: "text", text: "helper looking" } });
+      while (!sessions.get(helper).stopped && !s.stopped) await pause(10);
+      await say({ sessionUpdate: "subagent_update", sessionId: helper, state: { state: "idle", stopReason: "cancelled" } });
     }
     if (text.includes("[wait]")) while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_RELEASE)) await pause(10);
     if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }

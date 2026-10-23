@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Prototype: Claude (subscription, via ACP) answering turns in the Elpis TUI",
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.86.0",
+    "@agentclientprotocol/claude-agent-acp": "0.94.0",
     "ws": "^8"
   }
 }

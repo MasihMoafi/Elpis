@@ -358,9 +358,8 @@ class Acp {
       for (const p of this.pending.values()) p.reject({ message: this.dead });
       this.pending.clear();
     });
-    // `subagents`: each subagent Claude starts gets its own ACP session (subagent_spawned, its
-    // updates under that session, subagent_state_update), which the bridge draws as an Elpis
-    // child thread.
+    // `subagents`: each subagent Claude starts gets its own ACP session (subagent_update on its
+    // parent's session, its updates under its own), which the bridge draws as an Elpis child thread.
     this.ready = this.call("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, subagents: {} } });
   }
   send(msg) { this.proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n"); }
@@ -1973,10 +1972,19 @@ wss.on("connection", (ws) => {
       // draw into its child thread (see spawnSubagent). The turn hears only its own sessions.
       const own = turnState.own = {};
       const drawUpdate = ({ sessionId: sid, update: u }) => {
-        if (u.sessionUpdate === "subagent_spawned") { spawnSubagent(u, sid === sessionId ? lane : subLanes.get(sid) ?? lane); return; }
-        if (u.sessionUpdate === "subagent_state_update") { finishSubagent(subLanes.get(u.subagentSessionId), u.state); return; }
+        // A subagent's start and each change of its work state, on its parent's session (the subagents RFD form).
+        if (u.sessionUpdate === "subagent_update") {
+          if (!subLanes.has(u.sessionId)) spawnSubagent(u, sid === sessionId ? lane : subLanes.get(sid) ?? lane);
+          if (u.state?.state === "idle") finishSubagent(subLanes.get(u.sessionId), { end_turn: "completed", cancelled: "cancelled", error: "failed" }[u.state.stopReason] ?? "completed");
+          return;
+        }
         const into = sid === sessionId ? lane : subLanes.get(sid);
         if (!into) { log(`update for unknown session ${sid}: ${u.sessionUpdate}`); return; }
+        // The task its parent gave a subagent.
+        if (u.sessionUpdate === "session_message") {
+          if (into !== lane) into.say({ type: "userMessage", id: randomUUID(), clientId: null, content: (u.content ?? []).filter((b) => b.type === "text").map((b) => ({ type: "text", text: b.text, text_elements: [] })) });
+          return;
+        }
         if (into === lane && u.sessionUpdate === "agent_message_chunk") {
           firstTokenAt ??= now();
           // A143: Claude's id for its reply, where a rewind to the next turn forks its session.
@@ -2000,10 +2008,9 @@ wss.on("connection", (ws) => {
         for (const update of buffered) drawUpdate(update);
       };
       const spawnSubagent = (u, parent) => {
-        if (!u.subagentSessionId || subLanes.has(u.subagentSessionId)) return;
         const childId = randomUUID();
-        const name = u.name?.trim() || "Claude subagent";
-        const task = (u.prompt ?? u.task ?? "").trim();
+        const name = u.title?.trim() || "Claude subagent";
+        const task = (u.description ?? "").trim();
         const base = threadSeen.get(threadId) ?? {};
         const t = Math.floor(now() / 1000);
         const depth = (parent.depth ?? 0) + 1;
@@ -2015,16 +2022,16 @@ wss.on("connection", (ws) => {
         };
         const sub = newLane(childId, randomUUID(), cwd, false);
         sub.depth = depth; sub.name = name; sub.parent = parent; sub.startedAt = t;
-        subLanes.set(u.subagentSessionId, sub);
-        acp.bySession.set(u.subagentSessionId, own);
-        childThreads.set(childId, { thread, lane: sub, rootThreadId: threadId });
+        subLanes.set(u.sessionId, sub);
+        acp.bySession.set(u.sessionId, own);
+        // Stop on its thread stops only this subagent, when the adapter can (its `cancel` capability).
+        childThreads.set(childId, { thread, lane: sub, rootThreadId: threadId, cancel: u.capabilities?.cancel ? () => acp.send({ method: "session/cancel", params: { sessionId: u.sessionId } }) : null });
         childIds.add(childId);
-        log(`claude subagent "${name}" (session ${u.subagentSessionId}) -> child thread ${childId} of ${parent.threadId}`);
+        log(`claude subagent "${name}" (session ${u.sessionId}) -> child thread ${childId} of ${parent.threadId}`);
         notify("thread/started", { thread: { ...thread, status: { type: "active", activeFlags: [] } } });
         parent.activity("started", childId, name);
         notify("thread/status/changed", { threadId: childId, status: { type: "active", activeFlags: [] } });
         notify("turn/started", { threadId: childId, turn: { id: sub.turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: t, completedAt: null, durationMs: null } });
-        sub.say({ type: "userMessage", id: randomUUID(), clientId: null, content: [{ type: "text", text: task || name, text_elements: [] }] });
       };
       const finishSubagent = (sub, state) => {
         if (!sub || sub.done) return;
@@ -2960,6 +2967,11 @@ wss.on("connection", (ws) => {
       const extra = msg.params.instructions ? ` ${msg.params.instructions}` : "";
       log(`claude compact for thread ${msg.params.threadId}`);
       claudeTurn({ kind: "compact", params: { threadId: msg.params.threadId, input: [{ type: "text", text: `/compact${extra}`, text_elements: [] }] } });
+      return;
+    }
+    if (msg.method === "turn/interrupt" && childThreads.get(msg.params?.threadId)?.cancel && !childThreads.get(msg.params.threadId).lane.done) {
+      childThreads.get(msg.params.threadId).cancel();
+      toTui({ id: msg.id, result: {} });
       return;
     }
     if (msg.method === "turn/interrupt" && structured.has(msg.params?.threadId)) {
