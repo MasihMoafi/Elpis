@@ -871,7 +871,9 @@ impl ThreadRequestProcessor {
             .as_any()
             .downcast_ref::<LocalThreadStore>()
             .ok_or_else(|| {
-                invalid_request("rollout registration is only supported with the local thread store")
+                invalid_request(
+                    "rollout registration is only supported with the local thread store",
+                )
             })?;
         let state_db = self
             .state_db
@@ -898,7 +900,9 @@ impl ThreadRequestProcessor {
             local_thread_store
                 .materialize_thread_history(thread_id)
                 .await
-                .map_err(|err| internal_error(format!("failed to project registered rollout: {err}")))?;
+                .map_err(|err| {
+                    internal_error(format!("failed to project registered rollout: {err}"))
+                })?;
         }
         let thread = self.stored_thread_to_api_thread(
             stored_thread,
