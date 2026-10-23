@@ -124,7 +124,7 @@ if (process.argv.includes('app-server')) {
       const deadline = Date.now() + 8000;
       while (!predicate()) { assert.ok(Date.now() < deadline, `${label}: ${stderr}`); await pause(10); }
     };
-    await until(() => fs.existsSync(socketPath) && (fs.statSync(socketPath).mode & 0o777) === 0o600, 'bridge startup');
+    await until(() => (fs.statSync(socketPath, { throwIfNoEntry: false })?.mode & 0o777) === 0o600, 'bridge startup');
     observer = new WebSocket(`ws+unix://${socketPath}:/`);
     await once(observer, 'open');
     const pending = new Map(); let seq = 0;
