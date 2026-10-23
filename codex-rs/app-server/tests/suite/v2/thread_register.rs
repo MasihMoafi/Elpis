@@ -204,7 +204,12 @@ async fn thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idem
                     timeout(READ_TIMEOUT, mcp.read_response(items_id)).await??;
                 assert_eq!(items.data.len(), 2);
                 assert_eq!(items.next_cursor, None);
-                assert!(items.data.iter().all(|entry| entry.turn_id == "imported-turn"));
+                assert!(
+                    items
+                        .data
+                        .iter()
+                        .all(|entry| entry.turn_id == "imported-turn")
+                );
                 let mut paged_thread = registered.thread.clone();
                 paged_thread.turns = turns.data;
                 paged_thread.turns[0].items =
