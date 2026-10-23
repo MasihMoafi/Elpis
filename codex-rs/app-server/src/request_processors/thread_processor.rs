@@ -866,6 +866,13 @@ impl ThreadRequestProcessor {
         params: ThreadRegisterParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         let _thread_list_state_permit = self.acquire_thread_list_state_permit().await?;
+        let local_thread_store = self
+            .thread_store
+            .as_any()
+            .downcast_ref::<LocalThreadStore>()
+            .ok_or_else(|| {
+                invalid_request("rollout registration is only supported with the local thread store")
+            })?;
         let state_db = self
             .state_db
             .as_deref()
@@ -887,6 +894,12 @@ impl ThreadRequestProcessor {
             })
             .await
             .map_err(thread_store_resume_read_error)?;
+        if matches!(stored_thread.history_mode, ThreadHistoryMode::Paginated) {
+            local_thread_store
+                .materialize_thread_history(thread_id)
+                .await
+                .map_err(|err| internal_error(format!("failed to project registered rollout: {err}")))?;
+        }
         let thread = self.stored_thread_to_api_thread(
             stored_thread,
             &self.config.model_provider_id,

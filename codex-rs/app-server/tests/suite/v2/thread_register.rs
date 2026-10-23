@@ -8,11 +8,14 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemsListResponse;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
+use codex_app_server_protocol::ThreadTurnsListResponse;
 use codex_app_server_protocol::UserInput;
 use codex_state::SqliteConfig;
 use codex_utils_absolute_path::test_support::PathExt;
@@ -170,6 +173,44 @@ async fn thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idem
             assert_eq!(registered.thread.id, thread_id);
             assert_eq!(registered.thread.session_id, thread_id);
             assert_eq!(registered.thread.source, SessionSource::Cli);
+            assert_eq!(
+                registered.thread.history_mode,
+                if paginated {
+                    ThreadHistoryMode::Paginated
+                } else {
+                    ThreadHistoryMode::Legacy
+                }
+            );
+            if paginated {
+                // Page before any full-history read or live writer can repair projection.
+                let turns_id = mcp
+                    .send_raw_request(
+                        "thread/turns/list",
+                        Some(json!({"threadId": thread_id, "itemsView": "notLoaded"})),
+                    )
+                    .await?;
+                let turns: ThreadTurnsListResponse =
+                    timeout(READ_TIMEOUT, mcp.read_response(turns_id)).await??;
+                assert_eq!(turns.data.len(), 1);
+                assert_eq!(turns.data[0].id, "imported-turn");
+                assert_eq!(turns.next_cursor, None);
+                let items_id = mcp
+                    .send_raw_request(
+                        "thread/items/list",
+                        Some(json!({"threadId": thread_id, "turnId": turns.data[0].id})),
+                    )
+                    .await?;
+                let items: ThreadItemsListResponse =
+                    timeout(READ_TIMEOUT, mcp.read_response(items_id)).await??;
+                assert_eq!(items.data.len(), 2);
+                assert_eq!(items.next_cursor, None);
+                assert!(items.data.iter().all(|entry| entry.turn_id == "imported-turn"));
+                let mut paged_thread = registered.thread.clone();
+                paged_thread.turns = turns.data;
+                paged_thread.turns[0].items =
+                    items.data.into_iter().map(|entry| entry.item).collect();
+                assert_imported_history(&paged_thread);
+            }
             let read_id = mcp
                 .send_raw_request(
                     "thread/read",
