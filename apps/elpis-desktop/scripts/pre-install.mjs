@@ -5,8 +5,9 @@
 // (Masih, 23 Oct: "it's unacceptable for your builds to take long. period."): the one file that took 100 s alone runs as four shards of its tests.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('../', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../', import.meta.url));
 const inventory = JSON.parse(fs.readFileSync(new URL('../test-inventory.json', import.meta.url), 'utf8'));
 // ELPIS_CHECK_FILES (comma-separated) runs only those files: the check's own test uses it.
 const files = process.env.ELPIS_CHECK_FILES ? process.env.ELPIS_CHECK_FILES.split(',') : ['fast', 'bridge', 'desktop'].flatMap(tier => inventory[tier]).filter(file => /\.test\./.test(file));
