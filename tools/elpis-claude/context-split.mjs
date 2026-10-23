@@ -1,5 +1,5 @@
 // How a bridged chat's context splits into the categories Elpis draws (/context, the Context
-// Ledger, the dashboard). The parts come from text length (about 4 characters a token); the
+// Ledger). The parts come from text length (about 4 characters a token); the
 // total is what the model reports.
 const tok = (n) => Math.round((n ?? 0) / 4);
 

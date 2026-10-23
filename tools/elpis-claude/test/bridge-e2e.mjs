@@ -187,7 +187,7 @@ for (const s of scenarios) {
     // Anthropic reports cached input apart from input; Elpis counts it as input, like OpenAI.
     const inputCounted = tokens?.total?.inputTokens >= 1000 && tokens.total.inputTokens >= tokens.total.cachedInputTokens;
     // `last` is the latest request, as the engine reports it: its parts add up to its total, the
-    // context now (the dashboard's Last answer card shows them side by side).
+    // context now.
     const l = tokens?.last;
     const lastAddsUp = l && l.totalTokens === l.inputTokens + l.outputTokens && l.cachedInputTokens <= l.inputTokens;
     shown === 3 && (process.env.E2E_REAL_USAGE || asked <= 1) && tokens?.modelContextWindow > 0 && inputCounted && lastAddsUp
