@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // A scripted ACP agent built on the official SDK, for tests of ACP clients. No model calls.
 // Environment: FAKE_ACP_LOG (every request and notification it receives, as JSON lines), FAKE_ACP_NAME (its name in
-// answers), FAKE_ACP_MODELS (comma-separated values of a `model` config option it offers).
+// answers), FAKE_ACP_MODELS (comma-separated values of a `model` config option it offers), FAKE_ACP_BACKGROUND_RELEASE
+// (a file whose creation finishes a "[background]" prompt's job).
 // A prompt is answered `<name>(<model>) answered: <prompt text>` after a progress message and a tool call; markers in
 // the prompt change that: [permission] asks permission first, [hang] waits for session/cancel, [ignore-cancel] never
 // ends, [crash] exits with code 5, [empty] answers nothing, [commentary-only] answers only Elpis commentary,
@@ -152,6 +153,12 @@ const app = agent({ name: "fake-acp-agent" })
     }
     await chunk("m2", answer.slice(0, 10));
     await chunk("m2", answer.slice(10));
+    // A background job that finishes after the reply: Claude reports it on its own, outside any prompt.
+    if (text.includes("[background]")) void (async () => {
+      while (!fs.existsSync(process.env.FAKE_ACP_BACKGROUND_RELEASE)) await pause(10);
+      await chunk("bg1", "The background build finished.");
+      await say({ sessionUpdate: "usage_update", used: 10, size: 1000, _meta: { "_claude/origin": { kind: "task-notification" } } });
+    })();
     s.running = false;
     log({ ended: params.sessionId, answer });
     return { stopReason: "end_turn" };
