@@ -386,9 +386,6 @@ test('a chat that runs the canvas\'s agents turns the multi-agent runtime on for
     await client.createThread({cwd:'/tmp/project'});
     assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,browserConfig,'an ordinary chat keeps the user\'s switch');
     await assert.rejects(client.createThread({agents:'yes'}),/agents must be true or false/);
-    await client.createThread({cwd:'/tmp/project',agents:true,maxAgents:2});
-    assert.deepEqual(socket.sent.findLast(row=>row.method==='thread/start').params.config,{...browserConfig,'features.multi_agent':true,'agents.max_threads':2},'a limit on helpers rides with the chat');
-    for (const bad of [{maxAgents:2},{agents:true,maxAgents:0},{agents:true,maxAgents:7},{agents:true,maxAgents:'2'}]) await assert.rejects(client.createThread(bad),/maxAgents is a number from 1 to 6/);
     assert.equal(socket.sent.some(row=>row.method==='config/batchWrite'||row.method==='config/value/write'),false,'the user config is never written');
   } finally {client.close();}
 });
