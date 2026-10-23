@@ -11,7 +11,7 @@ import { listFolders, projectDirectory } from './folders.mjs';
 import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
-import { createVoice } from './voice.mjs';
+import { createVoice, recordVoiceCall } from './voice.mjs';
 import { createImportChats } from './import-chats.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
@@ -227,6 +227,7 @@ export async function startDesktopServer(options = {}) {
         }
         if (url.pathname === '/api/import-chats' && method === 'GET') return json(response, 200, await importChats.list());
         if (url.pathname === '/api/import-chats' && method === 'POST') return json(response, 200, await importChats.run(await body(request)));
+        if (url.pathname === '/api/voice/report' && method === 'POST') return json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
         if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
         if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);

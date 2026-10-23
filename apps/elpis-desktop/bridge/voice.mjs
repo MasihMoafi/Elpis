@@ -1,4 +1,24 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { BridgeError, object, text, threadId } from './validate.mjs';
+
+/** One line per call in logs/voice-calls.jsonl, sent by the window when a call ends: how long, whether it connected, how many events of each kind the call
+ * sent, and how much sound came in and went out. No words, no names: it exists so that "it says Listening and never answers" can be read from the machine. */
+const REPORT_KEYS = ['seconds', 'listened', 'events', 'inboundBytes', 'inboundPackets', 'inboundEnergy', 'micEnergy', 'error'];
+export async function recordVoiceCall(home, body) {
+  object(body, REPORT_KEYS);
+  const number = (value, name) => { if (!Number.isFinite(value) || value < 0 || value > 1e12) throw new BridgeError(`Invalid ${name}`); return Math.round(value * 1000) / 1000; };
+  if (typeof body.listened !== 'boolean') throw new BridgeError('Invalid listened');
+  if (!body.events || typeof body.events !== 'object' || Array.isArray(body.events) || Object.keys(body.events).length > 40) throw new BridgeError('Invalid events');
+  const events = Object.fromEntries(Object.entries(body.events).map(([kind, count]) => { if (!/^[A-Za-z0-9_.-]{1,60}$/.test(kind)) throw new BridgeError('Invalid event kind'); return [kind, number(count, 'event count')]; }));
+  const line = JSON.stringify({ at: new Date().toISOString(), seconds: number(body.seconds, 'seconds'), listened: body.listened, events, inboundBytes: number(body.inboundBytes, 'inbound bytes'), inboundPackets: number(body.inboundPackets, 'inbound packets'),
+    inboundEnergy: number(body.inboundEnergy, 'inbound energy'), micEnergy: number(body.micEnergy, 'microphone energy'), error: typeof body.error === 'string' ? body.error.slice(0, 200) : '' });
+  const file = path.join(home, 'logs', 'voice-calls.jsonl');
+  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  let lines = []; try { lines = (await fs.readFile(file, 'utf8')).split('\n').filter(Boolean); } catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
+  await fs.writeFile(file, [...lines.slice(-199), line].join('\n') + '\n', { mode: 0o600 });
+  return { ok: true };
+}
 
 // All desktop windows share the engine. A call keeps its owner until native cleanup finishes.
 let owner;

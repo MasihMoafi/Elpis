@@ -5,7 +5,8 @@ import { AudioLines, MicOff, Mic, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, sessionReady } from "@/lib/api";
 
-type Call = { controller: AbortController; peer: RTCPeerConnection | null; stream: MediaStream | null; audio: HTMLAudioElement | null; timer: ReturnType<typeof setTimeout> | null };
+type Heard = { events: Record<string, number>; bytes: number; packets: number; energy: number; mic: number; listened: boolean; began: number };
+type Call = { controller: AbortController; peer: RTCPeerConnection | null; stream: MediaStream | null; audio: HTMLAudioElement | null; timer: ReturnType<typeof setTimeout> | null; sampler: ReturnType<typeof setInterval> | null; heard: Heard };
 type VoiceEvent = { type: string; sdp?: string; message?: string };
 
 /** The streaming request owns the native call: aborting it ends voice even if this window disappears. */
@@ -25,6 +26,8 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
     if (current) {
       current.controller.abort(); if (current.timer) clearTimeout(current.timer);
       current.stream?.getTracks().forEach(track => track.stop());
+      if (current.sampler) clearInterval(current.sampler);
+      const heard = current.heard; void api("/voice/report", { seconds: (Date.now() - heard.began) / 1000, listened: heard.listened, events: heard.events, inboundBytes: heard.bytes, inboundPackets: heard.packets, inboundEnergy: heard.energy, micEnergy: heard.mic, error: message }).catch(() => {});
       if (current.peer) { current.peer.onconnectionstatechange = null; current.peer.ontrack = null; current.peer.close(); }
       if (current.audio) { current.audio.pause(); current.audio.srcObject = null; }
     }
@@ -40,7 +43,7 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
 
   async function start() {
     if (disabled || !available || call.current) return;
-    const current: Call = { controller: new AbortController(), peer: null, stream: null, audio: null, timer: null };
+    const current: Call = { controller: new AbortController(), peer: null, stream: null, audio: null, timer: null, sampler: null, heard: { events: {}, bytes: 0, packets: 0, energy: 0, mic: 0, listened: false, began: Date.now() } };
     call.current = current; setError(""); setPhase("connecting"); busyCallback.current(true);
     current.timer = setTimeout(() => { if (call.current === current) end("Voice connection timed out. Try again."); }, 35000);
     try {
@@ -55,9 +58,12 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       const events = peer.createDataChannel("oai-events");
       if (events) events.onmessage = message => {
         try {
-          const { type } = JSON.parse(String(message.data)) as { type?: string };
-          if (call.current !== current) return;
-          if (type === "input_transcript.added") note("hearing"); else if (type === "delegation.created") note("working"); else if (type === "output_transcript.added") note("speaking");
+          const body = JSON.parse(String(message.data)) as { type?: string; message?: string; error?: { message?: string } };
+          const type = body.type;
+          if (call.current !== current || !type) return;
+          current.heard.events[type] = (current.heard.events[type] ?? 0) + 1;
+          if (/error/i.test(type)) setError(String(body.error?.message ?? body.message ?? "The voice session reported an error.").slice(0, 200));
+          else if (type === "input_transcript.added") note("hearing"); else if (type === "delegation.created") note("working"); else if (type === "output_transcript.added") note("speaking");
         } catch { /* An event that is not JSON changes nothing. */ }
       };
       const audio = new Audio(); current.audio = audio; audio.autoplay = true;
@@ -67,7 +73,14 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       };
       peer.onconnectionstatechange = () => {
         if (call.current !== current) return;
-        if (peer.connectionState === "connected") { if (current.timer) clearTimeout(current.timer); current.timer = null; setPhase("listening"); }
+        if (peer.connectionState === "connected") {
+          if (current.timer) clearTimeout(current.timer); current.timer = null; current.heard.listened = true; setPhase("listening");
+          // What came in and went out so far, for the call report: sampled while the peer is still open.
+          current.sampler = setInterval(() => void peer.getStats().then(rows => { for (const row of rows.values()) {
+            if (row.type === "inbound-rtp" && row.kind === "audio") { current.heard.bytes = row.bytesReceived ?? 0; current.heard.packets = row.packetsReceived ?? 0; current.heard.energy = row.totalAudioEnergy ?? 0; }
+            if (row.type === "media-source" && row.kind === "audio") current.heard.mic = row.totalAudioEnergy ?? 0;
+          } }).catch(() => {}), 2000);
+        }
         if (["failed", "closed", "disconnected"].includes(peer.connectionState)) end("Voice disconnected. Start again to reconnect.");
       };
       await peer.setLocalDescription(await peer.createOffer());

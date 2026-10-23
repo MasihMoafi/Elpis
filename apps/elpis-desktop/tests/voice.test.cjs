@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
+async function eventually(check, ms = 4000) { const end = Date.now() + ms; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } }
 
 test('voice controls release the microphone after denial, cancelled startup, mute, End and navigation', async () => {
   const streams = new Set();
@@ -49,6 +50,9 @@ test('voice controls release the microphone after denial, cancelled startup, mut
     await said('delegation.created'); await status.filter({ hasText: 'Working on it' }).waitFor();
     await said('output_transcript.added'); await status.filter({ hasText: 'Speaking' }).waitFor();
     await status.filter({ hasText: 'Listening' }).waitFor({ timeout: 4000 });
+    // An error the call itself reports is read out to the person, not swallowed behind "Listening".
+    await page.evaluate(() => window.voiceTest.channel.onmessage({ data: JSON.stringify({ type: 'error', error: { message: 'Voice limit reached for now.' } }) }));
+    await page.getByRole('alert').filter({ hasText: 'Voice limit reached for now.' }).waitFor();
     // Masih, 23 Oct: icons "shouldn't misconfigure ... with size": the call's buttons are the size of dictation's and share its row.
     const sizes = await page.evaluate(() => ['Mute microphone', 'End voice chat'].map(name => { const b = document.querySelector(`button[aria-label="${name}"]`).getBoundingClientRect(), d = document.querySelector('button[aria-label^="Dictate"], button[aria-label*="ictat"]')?.getBoundingClientRect(); return { name, w: b.width, h: b.height, dw: d?.width, dh: d?.height, top: b.top, dtop: d?.top }; }));
     for (const s of sizes) { assert.ok(s.dw, 'dictation button found'); assert.equal(Math.round(s.w), Math.round(s.dw), `${s.name} has the width of dictation's button`); assert.equal(Math.round(s.h), Math.round(s.dh), `${s.name} has its height`); assert.ok(Math.abs(s.top - s.dtop) <= 2, `${s.name} sits on dictation's row`); }
@@ -58,6 +62,8 @@ test('voice controls release the microphone after denial, cancelled startup, mut
     assert.equal(await page.evaluate(() => window.voiceTest.tracks.at(-1).enabled), true);
     await page.getByRole('button', { name: 'End voice chat' }).click();
     await page.waitForFunction(() => window.voiceTest.tracks.every(track => track.readyState === 'ended') && window.voiceTest.peers.every(peer => peer.connectionState === 'closed'));
+    // Ending leaves one report of what the call heard and sent, with kinds and counts only.
+    await eventually(() => { const sent = f.posts.filter(row => row.path === '/api/voice/report'); assert.ok(sent.length >= 1, 'the call reported itself'); assert.equal(sent.at(-1).body.listened, true); assert.equal(sent.at(-1).body.events['input_transcript.added'], 1); assert.equal(sent.at(-1).body.events['output_transcript.added'], 1); assert.deepEqual(Object.keys(sent.at(-1).body).sort(), ['error', 'events', 'inboundBytes', 'inboundEnergy', 'inboundPackets', 'listened', 'micEnergy', 'seconds']); });
     await start.click(); await page.getByRole('button', { name: 'Mute microphone', exact: true }).waitFor();
     await f.open('chat-b');
     await page.waitForFunction(() => window.voiceTest.tracks.every(track => track.readyState === 'ended') && window.voiceTest.peers.every(peer => peer.connectionState === 'closed'));
