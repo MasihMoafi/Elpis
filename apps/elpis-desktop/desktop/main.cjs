@@ -4,8 +4,7 @@ const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, globalShortcut, sc
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startBrowserAgentSocket } = require('./browser-agent.cjs');
-const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, listActive } = require('./session-manager-agent.cjs');
-const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, seedShippedDefaults, sessionManagerOn } = require('./preferences.cjs');
+const { closeNeedsConfirmation, closesToTray, quickEntryShortcut, seedShippedDefaults } = require('./preferences.cjs');
 const { createStateStore } = require('./state.cjs');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
@@ -20,8 +19,6 @@ let sleepBlocker;
 // The renderer gets only the loopback app, never Node or filesystem access.
 let server;
 let browserAgentSocket;
-let sessionManagerAgent;
-let sessionManagerMonitor;
 let window;
 let closing = false;
 let opening;
@@ -71,50 +68,20 @@ async function prepareWindows() {
     const { DesktopClient, existingSocket } = await import(pathToFileURL(path.join(__dirname, '../bridge/client.mjs')).href);
     const { ensureInstalledRuntime } = await import(pathToFileURL(path.join(__dirname, 'runtime.mjs')).href);
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
-    const { sessionManagerMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-mcp.mjs')).href);
-    const { createSessionManagerMonitor, reviewPrompt, runSessionManagerReview } = await import(pathToFileURL(path.join(__dirname, '../bridge/session-manager-monitor.mjs')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
-      let client;
-      sessionManagerAgent = await startSessionManagerAgent({ store, client: {
-        listThreads: (...args) => client.listThreads(...args),
-        readThreadMetadata: (...args) => client.readThreadMetadata(...args),
-        renameThread: (...args) => client.renameThread(...args),
-        archiveThread: (...args) => client.archiveThread(...args),
-        sessionHasChildren: (...args) => client.sessionHasChildren(...args),
-      } });
-      client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, sessionManagerConfig: {
-        isManager: id => store.read()[SESSION_MANAGER_ID_KEY] === id,
-        forSession: id => sessionManagerMcpConfig(sessionManagerAgent.path, undefined, sessionManagerAgent.scope(id)),
-        bind: (from, to) => sessionManagerAgent.bind(from, to),
-        close: id => sessionManagerAgent.revoke(id),
-      }, browserConfig: {
+      const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: {
         forSession: id => browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
         bind: (from, to) => browserAgentSocket.rebind(from, to),
         close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
       } });
-      // The Session Manager reviews the chats by itself when three run at once or three start within twenty minutes
-      // (Masih, 20–21 October); its chat is made on the background model the first time it is needed.
-      sessionManagerMonitor = createSessionManagerMonitor({
-        list: () => listActive(client),
-        isManager: id => !!id && store.read()[SESSION_MANAGER_ID_KEY] === id,
-        review: async reason => {
-          let id = store.read()[SESSION_MANAGER_ID_KEY];
-          if (!id) { id = (await client.createThread({ sessionManager: true, permissions: 'ask' })).thread.id; await store.set(SESSION_MANAGER_ID_KEY, id); }
-          const { background } = await client.settings();
-          await runSessionManagerReview(client, id, { text: reviewPrompt(reason), ...(background.model ? { model: background.model } : {}) },
-            () => sessionManagerAgent.beginReview(id, reason.cwd));
-        },
-        log: line => console.warn(line),
-      });
-      client.on('event', event => { if (event.type === 'message' && sessionManagerOn(store)) sessionManagerMonitor.observe(event.data); });
       sleepBlocker = createSleepBlocker({ powerSaveBlocker, client, store });
       // A connected terminal may keep the previous bridge and engine alive after an install.
       try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {}
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
       try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }
-    } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; sessionManagerMonitor?.close(); sessionManagerMonitor = undefined; await sessionManagerAgent?.close(); sessionManagerAgent = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
+    } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   if (!sessionWindows) {
     sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, updates,
@@ -160,8 +127,7 @@ async function quitApp(restartTarget) {
       if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
       closing = true;
       sleepBlocker?.dispose(); sleepBlocker = undefined;
-      sessionManagerMonitor?.close();
-      await Promise.all([server?.close(), browserAgentSocket?.close(), sessionManagerAgent?.close()]);
+      await Promise.all([server?.close(), browserAgentSocket?.close()]);
       quickEntry?.dispose?.(); tray?.destroy();
       // All editable text is saved. A page's beforeunload must not veto explicit Quit afterward.
       for (const host of hosts) if (!host.isDestroyed()) host.webContents.on('will-prevent-unload', event => event.preventDefault());

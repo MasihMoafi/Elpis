@@ -6,7 +6,7 @@ const { fixture } = require('./parity-fixture.cjs');
 
 const rings = page => page.evaluate(() => [...document.querySelectorAll('aside.sidebar .thread-row')].flatMap(row => {
   const link = row.querySelector('.thread-link'), drawn = element => getComputedStyle(element).outlineStyle !== 'none' && getComputedStyle(element).outlineWidth !== '0px';
-  if (!link) return []; // The Session Manager's row is a switch, not a chat.
+  if (!link) return [];
   return [drawn(row) && `row ${row.dataset.threadId}`, drawn(link) && `title ${row.dataset.threadId}`].filter(Boolean);
 }));
 

@@ -47,8 +47,6 @@ export type Preferences = {
   navOrder: string;
   /** Pages left out of the sidebar and the command menu: ids joined by commas. Empty here; the packaged app seeds "experimentLab,canvas" (desktop/preferences.cjs) until those pages work, and their code and tests stay. */
   hiddenPages: string;
-  /** The Session Manager chat, its sidebar row and its own review of running chats. On here; the packaged app seeds it off (desktop/preferences.cjs) until it does enough to keep (22 Oct). */
-  sessionManager: boolean;
   /** What Elpis calls the user. profileAsked is true once the name prompt was answered or skipped; the renderer default is true
    * (no prompt) and the packaged app seeds false (desktop/preferences.cjs) so it asks once. */
   profileName: string;
@@ -64,7 +62,7 @@ export type Preferences = {
 export const DEFAULT_PREFERENCES: Preferences = {
   softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: true, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
-  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", hiddenPages: "", sessionManager: true, profileName: "", profileAsked: true, settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
+  transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", hiddenPages: "", profileName: "", profileAsked: true, settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
 };
 export const PROFILE_NAME_MAX = 40;
 export const PREFERENCES_KEY = "elpis-preferences-v1";

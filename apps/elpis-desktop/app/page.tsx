@@ -49,7 +49,7 @@ import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
-import { GroupActions, GroupAndSortMenu, GroupNameDialog, SessionManagerRow, useChatListOrder } from "@/components/chat-groups";
+import { GroupActions, GroupAndSortMenu, GroupNameDialog, useChatListOrder } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
 import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { fastServiceTier } from "@/lib/service-tier.mjs";
@@ -105,7 +105,6 @@ import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effort
   mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
-const SESSION_MANAGER_ID_KEY = "elpis-session-manager-v1";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
@@ -131,7 +130,6 @@ export default function Home() {
   const preferences = useAppPreferences();
   const hiddenPages = preferences.hiddenPages.split(",");
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [sessionManagerId, setSessionManagerId] = useState("");
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
   // Chat tabs (lib/chat-tabs.ts): the shown tab follows the chat on screen, so every way of opening a chat lands in it.
@@ -188,14 +186,6 @@ export default function Home() {
   const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
   const [newGroupFor, setNewGroupFor] = useState<string[] | null>(null);
   useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
-  useEffect(() => {
-    const read = () => setSessionManagerId(appStorage().getItem(SESSION_MANAGER_ID_KEY) ?? "");
-    read();
-    const unsubscribe = window.elpisDesktop?.storage?.onChange?.(key => { if (key === SESSION_MANAGER_ID_KEY) read(); });
-    const changed = (event: StorageEvent) => { if (event.key === SESSION_MANAGER_ID_KEY) read(); };
-    window.addEventListener("storage", changed);
-    return () => { unsubscribe?.(); window.removeEventListener("storage", changed); };
-  }, []);
   function updateGroups(change: (state: ChatGroups) => ChatGroups) {
     const next = change(chatGroupsRef.current);
     if (!writeGroups(next, appStorage())) { setError("Could not save chat groups on this device."); return; }
@@ -1485,12 +1475,12 @@ export default function Home() {
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
-  const searchedThreads = (searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads).filter(thread => thread.id !== sessionManagerId);
+  const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
   const unreadIds = new Set(attention.unread);
   const sidebarState = (thread: Thread) => agentState(thread, waitingIds, unreadIds);
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
-  const chatListOrder = useChatListOrder(prioritizeChats(sortChats(threads.filter(thread => thread.id !== sessionManagerId && !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order), thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
+  const chatListOrder = useChatListOrder(prioritizeChats(sortChats(threads.filter(thread => !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order), thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
   const ordinaryThreads = chatListOrder.chats;
   const agentRuns = threads.filter(isAgentRun);
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
@@ -1816,7 +1806,6 @@ export default function Home() {
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
-      <SessionManagerRow on={preferences.sessionManager} onChange={on => savePreferences({ sessionManager: on })} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));

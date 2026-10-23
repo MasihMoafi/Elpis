@@ -98,7 +98,6 @@
     "bridge/personal.test.mjs",
     "bridge/smart-prune.test.mjs",
     "bridge/workflow-acp.test.mjs",
-    "bridge/session-manager-monitor.test.mjs",
     "bridge/settings-files.test.mjs"
   ],
   "desktop": [

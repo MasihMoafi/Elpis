@@ -21,11 +21,6 @@ test('in the sidebar an arrow opens the page it reaches, but never New chat, the
     assert.equal(await page.evaluate(() => document.activeElement.textContent.trim().replace(/Ctrl\+N$/, '')), 'New chat', 'three more arrows reach New chat');
     await page.waitForTimeout(400);
     assert.equal(await title(page).innerText(), 'Love Spot', 'pages passed in quick strokes do not open, and New chat is not activated');
-    const switchControl = page.getByRole('switch', { name: 'Session Manager', exact: true }), before = await switchControl.getAttribute('aria-checked');
-    await nav(page).getByRole('button', { name: 'Customize', exact: true }).focus();
-    await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
-    await page.waitForTimeout(400);
-    assert.equal(await switchControl.getAttribute('aria-checked'), before, 'reaching the switch does not flip it');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

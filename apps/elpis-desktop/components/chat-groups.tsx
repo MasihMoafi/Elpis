@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactElement, type ReactNode, type PointerEvent } from "react";
-import { Layers, ListFilter, Pencil, Trash2 } from "lucide-react";
+import { ListFilter, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
@@ -41,14 +40,6 @@ export function useChatListOrder<T extends { id: string }>(chats: T[]) {
     onPointerEnter: () => { inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },
     onPointerLeave: (event: PointerEvent) => { inside.current = false; if (!pressed.current && !event.buttons) release(); },
   } };
-}
-
-/** The Session Manager's one fixed row: a switch, no chat. On, it names and groups chats in the background. */
-export function SessionManagerRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
-  return <section aria-label="Session Manager"><div className="thread-row">
-    <Layers size={14} className="ml-2 shrink-0" aria-hidden="true" /><span className="thread-title flex-1 px-2">Session Manager</span>
-    <Switch size="sm" aria-label="Session Manager" data-sidebar-stop="" title="Name and group chats for you, in the background" checked={on} onCheckedChange={onChange} className="mr-2" />
-  </div></section>;
 }
 
 const GROUP_BY: [GroupBy, string][] = [["custom", "Custom groups"], ["none", "None"]];

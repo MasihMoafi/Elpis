@@ -16,7 +16,6 @@ import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
 import { SkillTrash } from './skill-trash.mjs';
 import { createGithubConnector } from './github-connector.mjs';
-import { SESSION_MANAGER_INSTRUCTIONS, SESSION_MANAGER_NAME } from './session-manager-mcp.mjs';
 import { scanDeletionThreads } from '../lib/thread-deletion.ts';
 import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff, isChatWorktreePath, releaseChatWorktree, restoreChatWorktree, reviewChoices, undoChatWorktree, workingDiff, NOT_A_REPOSITORY } from './git.mjs';
 import { recordedChanges } from './recorded-changes.mjs';
@@ -169,14 +168,12 @@ export class DesktopClient extends EventEmitter {
   #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
   #settingsConfirmMs;
   #browserConfig;
-  #sessionManagerConfig;
   #archiveHistory; #spawnLinks; #appHome;
   #rewindSnapshots; #rewindHistory; #githubConnector; #customize;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, sessionManagerConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), appHome = os.homedir(), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), appHome = os.homedir(), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
-    this.#sessionManagerConfig = sessionManagerConfig;
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
     this.#spawnLinks = new SpawnLinks(spawnLinksFile); this.#appHome = appHome;
     this.#githubConnector = githubConnector;
@@ -223,11 +220,8 @@ export class DesktopClient extends EventEmitter {
   get connected() { return this.#ready && !this.#closed; }
   hasLocalActivity() { return this.#mutating.size > 0 || this.#workflowRuns.busy(); }
   #browserOptions(id) {
-    const managerThread = this.#sessionManagerConfig?.isManager?.(id) === true;
-    const browser = !managerThread && this.#browserConfig ? (this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig) : {};
-    const manager = managerThread ? this.#sessionManagerConfig.forSession(id) : {};
-    const config = { ...browser, ...manager };
-    return Object.keys(config).length ? { config, ...(managerThread ? { developerInstructions: SESSION_MANAGER_INSTRUCTIONS } : {}) } : {};
+    const config = this.#browserConfig ? (this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig) : {};
+    return Object.keys(config).length ? { config } : {};
   }
   get pendingApprovals() { return [...this.#approvals.values()].map(({ wireId, ...visible }) => visible); }
   #disconnect() {
@@ -459,7 +453,7 @@ export class DesktopClient extends EventEmitter {
     return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
       canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
-  #forget(id) { this.#browserConfig?.close?.(id); this.#sessionManagerConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); this.#turnRevisions.delete(id); }
+  #forget(id) { this.#browserConfig?.close?.(id); this.#forgetSubscription(id); this.#known.delete(id); this.#context.delete(id); this.#attaching.delete(id); this.#workflowTitles.delete(id); this.#turnRevisions.delete(id); }
   async listThreads(options = {}) {
     object(options, ['cursor', 'limit', 'ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns']);
     if (options.includeAgentRuns !== undefined && typeof options.includeAgentRuns !== 'boolean') throw new BridgeError('includeAgentRuns must be true or false');
@@ -1179,29 +1173,14 @@ export class DesktopClient extends EventEmitter {
   /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
    * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents', 'sessionManager']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents']);
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
     if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
-    if (body.sessionManager !== undefined && typeof body.sessionManager !== 'boolean') throw new BridgeError('sessionManager must be true or false');
-    const sessionManager = body.sessionManager === true;
-    if (sessionManager && !this.#sessionManagerConfig?.forSession) throw new BridgeError('Session Manager tools are unavailable in this runtime', 503);
-    if (sessionManager && body.instructions !== undefined) throw new BridgeError('Session Manager instructions are managed by Elpis');
-    if (sessionManager && (body.cwd !== undefined || body.worktree === true || body.agents === true)) throw new BridgeError('Session Manager does not use a project folder, worktree, or spawned agents');
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
-    const permissions = permissionMode(sessionManager ? 'ask' : body.permissions);
-    const name = sessionManager ? SESSION_MANAGER_NAME : body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
-    const ownInstructions = sessionManager ? SESSION_MANAGER_INSTRUCTIONS : body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
+    const permissions = permissionMode(body.permissions);
+    const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
+    const ownInstructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
     if (body.cwd !== undefined && !path.isAbsolute(text(body.cwd, 'working directory', 4096))) throw new BridgeError('Working directory must be absolute');
-    // Masih (21 October): the Session Manager answers on the background model, unless a model is asked for. A
-    // background model this Elpis cannot start leaves the default model, so the manager still opens.
-    if (sessionManager && body.model === undefined && body.provider === undefined) {
-      const { background, main } = await this.settings();
-      const provider = background.provider && background.provider !== main.provider ? background.provider : undefined;
-      if (background.model) {
-        try { if (!this.#models.size) await this.models(); await this.#providerModel(background.model, provider); body = { ...body, model: background.model, ...(provider ? { provider } : {}) }; }
-        catch (error) { console.warn(`Session Manager uses the default model: ${error instanceof Error ? error.message : String(error)}`); }
-      }
-    }
     let differentProvider = false;
     if (body.provider !== undefined) {
       text(body.provider, 'provider', 200);
@@ -1212,22 +1191,20 @@ export class DesktopClient extends EventEmitter {
     }
     if (differentProvider) text(body.model, 'model for this provider', 200);
     const model = await this.#providerModel(body.model, body.provider);
-    const instructions = [ownInstructions, ...(sessionManager ? [] : [await this.#githubConnector.instructions()])].filter(Boolean).join('\n\n');
+    const instructions = [ownInstructions, await this.#githubConnector.instructions()].filter(Boolean).join('\n\n');
     // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
     // worktree goes again.
     const made = body.worktree ? await createChatWorktree(body.cwd) : null, cwd = made?.cwd ?? body.cwd;
     const browserSession = `pending-${randomUUID()}`;
-    const managerConfig = sessionManager ? this.#sessionManagerConfig.forSession(browserSession) : {};
-    const config = { ...(sessionManager ? {} : this.#browserOptions(browserSession).config), ...managerConfig, ...(body.agents ? { 'features.multi_agent': true } : {}) };
+    const config = { ...this.#browserOptions(browserSession).config, ...(body.agents ? { 'features.multi_agent': true } : {}) };
     let result;
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
         ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
         ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
-    } catch (error) { if (!sessionManager) this.#browserConfig?.close?.(browserSession); this.#sessionManagerConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
-    if (!sessionManager) this.#browserConfig?.bind?.(browserSession, result.thread.id);
-    if (sessionManager) this.#sessionManagerConfig.bind?.(browserSession, result.thread.id);
+    } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
+    this.#browserConfig?.bind?.(browserSession, result.thread.id);
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
     return { ...result, thread: this.#decorate(result.thread), ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
@@ -1395,35 +1372,28 @@ export class DesktopClient extends EventEmitter {
       return this.#forkChat(thread, undefined, 'continued');
     });
   }
-  async renameThread(id, body, guard) {
+  async renameThread(id, body) {
     object(body, ['name']); const name = text(body.name, 'name', 120).trim();
     if (!name) throw new BridgeError('Enter a name');
     return this.#mutate(id, async () => {
-      await this.#guardSession(id, guard);
       await this.#rpc('thread/name/set', { threadId: threadId(id), name });
       return { thread: { ...(await this.#current(id)), name } };
     });
   }
-  async sessionHasChildren(id) {
-    // Keep guardian and other hidden descendants: native archive can cascade to them too.
-    const result = await this.#rpc('thread/list', { ancestorThreadId: threadId(id), limit: 1, archived: false, modelProviders: [], sourceKinds: SOURCE_KINDS });
-    if (!Array.isArray(result.data)) throw new BridgeError('Could not check spawned chats', 502);
-    return result.data.length > 0 || !!result.nextCursor;
-  }
   /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. */
-  async archiveThread(id, body, guard, metadata) {
+  async archiveThread(id, body) {
     object(body, []);
     const archived = await this.#mutate(id, async () => {
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
-      await this.#archiveHistory.record(id, metadata?.reason ?? 'Archived by you.');
-      try { await this.#guardSession(id, guard); await this.#rpc('thread/archive', { threadId: id }); }
+      await this.#archiveHistory.record(id, 'Archived by you.');
+      try { await this.#rpc('thread/archive', { threadId: id }); }
       catch (error) { await this.#archiveHistory.forget(id); throw error; }
       await this.#rewindHistory.hide(id, true);
       this.#forget(id);
       const worktree = await this.#releaseWorktree(cwd);
       return { archived: true, ...(worktree ? { worktree } : {}) };
     });
-    for (const child of this.#spawnLinks.madeBy(id)) await this.archiveThread(child, {}, undefined, metadata).catch(() => {});
+    for (const child of this.#spawnLinks.madeBy(id)) await this.archiveThread(child, {}).catch(() => {});
     return archived;
   }
   async unarchiveThread(id, body) {
@@ -1513,16 +1483,6 @@ export class DesktopClient extends EventEmitter {
     return result;
   }
   /** Opens a chat live in this app: subscribes it and reports the turn it is running, if any. */
-  async prepareSessionManager(id) {
-    if (!this.#sessionManagerConfig?.isManager?.(id)) throw new BridgeError('This is not the Session Manager', 403);
-    const { thread } = await this.#rpc('thread/read', { threadId: threadId(id), includeTurns: false });
-    if (thread?.status?.type === 'active') throw new BridgeError('Wait for the Session Manager to finish', 409);
-    // A loaded thread keeps its old MCP configuration. Drop only our manager subscription so an idle
-    // cache entry can cold-resume with this installation’s tools, capability and standing instructions.
-    await this.#rpc('thread/unsubscribe', { threadId: id });
-    this.#forgetSubscription(id);
-    return this.resume(id, {});
-  }
   async resume(id, body) {
     object(body, []);
     const result = await this.#attach(id);
@@ -1779,10 +1739,6 @@ export class DesktopClient extends EventEmitter {
     const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
     if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
     return thread.cwd;
-  }
-  async #guardSession(id, guard) {
-    if (!guard) return;
-    await guard(await this.readThreadMetadata(id));
   }
   async #mutate(id, run) {
     threadId(id);

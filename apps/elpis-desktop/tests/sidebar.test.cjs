@@ -29,9 +29,9 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     if (url.pathname === '/api/models') return json({ data: [{ id: 'luna', model: 'gpt-6-luna', displayName: 'Luna 6' }], nextCursor: null });
     if (url.pathname === '/api/threads' && req.method === 'POST') {
       const body = JSON.parse(raw); creates.push(body);
-      const manager = { id: 'session-manager', name: 'Session Manager', preview: '', model: 'gpt-6-luna', status: { type: 'idle' } };
-      if (!threads.some(item => item.id === manager.id)) threads.unshift(manager);
-      return json({ thread: manager });
+      const made = { id: `made-${creates.length}`, name: 'New chat', preview: '', model: 'gpt-6-luna', status: { type: 'idle' } };
+      threads.unshift(made);
+      return json({ thread: made });
     }
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.get('ancestorThreadId') ? [] : threads.filter(item => !deleted.includes(item.id)), nextCursor: null });
     if (url.pathname === '/api/trash') { const { threadIds } = JSON.parse(raw); deleted.push(...threadIds); return json({ trashed: threadIds }); }
@@ -167,17 +167,7 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await dialog.getByText('Delete “Foxtrot”?').waitFor();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    assert.equal(creates.length, 0, 'the sidebar never creates the manager chat');
-    const managerSwitch = page.getByRole('switch', { name: 'Session Manager', exact: true });
-    assert.equal(await managerSwitch.evaluate(node => !!node.closest('.thread-list')), false, 'manager stays above the scrolling chat list');
-    assert.equal(await managerSwitch.evaluate(node => !!(node.compareDocumentPosition(document.querySelector('section[aria-label="Projects"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'manager precedes projects and chats');
-    const sidebarSearch = aside.locator('input[aria-label="Search conversations"]');
-    await sidebarSearch.fill('no matching chat');
-    assert.equal(await managerSwitch.isVisible(), true, 'search never hides the manager switch');
-    await sidebarSearch.fill('');
-    await managerSwitch.click();
-    assert.equal(await managerSwitch.getAttribute('aria-checked'), 'false');
-    assert.equal(creates.length, 0, 'turning it off or on creates no chat');
+    assert.equal(creates.length, 0, 'the sidebar creates no chat by itself');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

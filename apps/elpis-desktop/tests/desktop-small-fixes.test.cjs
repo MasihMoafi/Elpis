@@ -111,8 +111,6 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar arrows cover navigati
   await page.keyboard.press('ArrowDown');
   assert.equal(await nav.getByLabel('Search conversations').evaluate(node => node === document.activeElement), true);
   await page.keyboard.press('ArrowDown');
-  assert.equal(await nav.getByRole('switch', { name: 'Session Manager', exact: true }).evaluate(node => node === document.activeElement), true);
-  await page.keyboard.press('ArrowDown');
   assert.match(await page.evaluate(() => document.activeElement.textContent), /Parser project/);
   await page.keyboard.press('ArrowDown');
   assert.equal(await page.evaluate(() => document.activeElement.closest('.thread-row')?.dataset.threadId), 'chat-a');

@@ -8,8 +8,6 @@ import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
 import { DesktopClient, existingSocket } from './client.mjs';
-import { handleSessionManagerMcp, SESSION_MANAGER_INSTRUCTIONS, SESSION_MANAGER_TOOLS, sessionManagerMcpConfig } from './session-manager-mcp.mjs';
-import sessionManagerAgent from '../desktop/session-manager-agent.cjs';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mjs';
 
@@ -71,7 +69,7 @@ test('A32 missing or disabled writable config layers explain why and write nothi
     assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   } finally { client.close(); }
 });
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, sessionManagerConfig, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`) } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`) } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -168,7 +166,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
   // 156e765a4 adds optional gh instructions. Provider routing tests must not read the operator's connector or credentials.
-  const client = new DesktopClient(socket, { browserConfig, sessionManagerConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
+  const client = new DesktopClient(socket, { browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url).pathname], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -2207,267 +2205,11 @@ test('Voice can return the fallback engine to Automatic, which is no explicit ba
   } finally { client.close(); }
 });
 
-test('Session Manager answers on the background model (Masih, 21 October)', async () => {
-  const managerConfig = { isManager: () => false, forSession: () => sessionManagerMcpConfig('/tmp/elpis-session-manager-test.sock', 'node', 'private-capability'), bind() {}, close() {} };
-  const { client, socket, configRead } = fixture({ sessionManagerConfig: managerConfig });
-  try {
-    configRead.config.background_model = 'claude/opus'; configRead.config.background_provider = 'openai';
-    await client.createThread({ sessionManager: true });
-    assert.equal(socket.sent.find(row => row.method === 'thread/start').params.model, 'claude/opus');
-    await client.createThread({});
-    assert.notEqual(socket.sent.filter(row => row.method === 'thread/start')[1].params.model, 'claude/opus', 'ordinary chats keep the main model');
-  } finally { client.close(); }
-});
-
-test('Session Manager is a dedicated least-access chat with its own approved tools', async () => {
-  const requested = [], bound = [], closed = [];
-  let managerId = '';
-  const managerConfig = {
-    isManager: id => id === managerId,
-    forSession(id) { requested.push(id); return sessionManagerMcpConfig('/tmp/elpis-session-manager-test.sock', 'node', 'private-capability'); },
-    bind(from, to) { bound.push([from, to]); },
-    close(id) { closed.push(id); },
-  };
-  const browserConfig = { 'mcp_servers.elpis_browser': { command: 'node', args: ['browser-mcp.mjs'] } };
-  const { client, socket } = fixture({ browserConfig, sessionManagerConfig: managerConfig });
-  let coldClient;
-  try {
-    const manager = await client.createThread({ sessionManager: true, permissions: 'full' });
-    const started = socket.sent.find(row => row.method === 'thread/start').params;
-    assert.equal(started.model, undefined, 'a background model the catalogue lacks leaves the default model');
-    assert.equal(manager.thread.name, 'Session Manager');
-    assert.match(started.developerInstructions, /dedicated Session Manager chat/);
-    assert.equal(started.config['mcp_servers.elpis_session_manager'].default_tools_approval_mode, 'approve');
-    assert.equal(started.config['mcp_servers.elpis_session_manager'].tools.session_list.approval_mode, 'auto');
-    assert.equal(started.config['mcp_servers.elpis_browser'], undefined, 'the manager receives only its own tools');
-    assert.equal(started.cwd, undefined, 'the manager has no project folder');
-    assert.equal(requested.length, 1);
-    assert.deepEqual(bound, [[requested[0], CREATED]]);
-    managerId = manager.thread.id;
-    const cold = fixture({ browserConfig, sessionManagerConfig: managerConfig });
-    coldClient = cold.client;
-    cold.threads.set(managerId, structuredClone(manager.thread));
-    await cold.client.resume(managerId, {});
-    const resumed = cold.socket.sent.find(row => row.method === 'thread/resume').params;
-    assert.ok(resumed.config['mcp_servers.elpis_session_manager'], 'cold resume restores the manager tools');
-    assert.equal(resumed.config['mcp_servers.elpis_browser'], undefined);
-    await cold.client.prepareSessionManager(managerId);
-    assert.ok(cold.socket.sent.some(row => row.method === 'thread/unsubscribe' && row.params.threadId === managerId));
-    const refreshed = cold.socket.sent.findLast(row => row.method === 'thread/resume').params;
-    assert.equal(refreshed.config['mcp_servers.elpis_session_manager'].tools.session_rename.approval_mode, 'auto');
-    assert.equal(refreshed.developerInstructions, SESSION_MANAGER_INSTRUCTIONS);
-    assert.equal(requested.length, 3);
-    await cold.client.createThread({});
-    const ordinary = cold.socket.sent.find(row => row.method === 'thread/start').params;
-    assert.equal(ordinary.config['mcp_servers.elpis_session_manager'], undefined, 'ordinary chats do not receive session controls');
-    assert.ok(ordinary.config['mcp_servers.elpis_browser'], 'ordinary chats retain their browser tools');
-    assert.equal(requested.length, 3);
-    await assert.rejects(client.createThread({ sessionManager: true, instructions: 'replace manager policy' }), /managed by Elpis/);
-    assert.equal(cold.socket.sent.filter(row => row.method === 'thread/start').length, 1);
-    assert.doesNotMatch(SESSION_MANAGER_INSTRUCTIONS, /delete sessions? with a tool/i);
-    assert.deepEqual(SESSION_MANAGER_TOOLS.map(tool => tool.name), ['session_list', 'session_rename', 'session_organize']);
-    assert.equal(closed.length, 0);
-  } finally { client.close(); coldClient?.close(); }
-});
-
-test('Session Manager tools list, rename and group one active session; reject self, bulk and forged calls; no archive tool', async t => {
-  const { startSessionManagerAgent, SESSION_GROUPS_KEY: SESSION_MANAGER_GROUPS_KEY, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
-  const active = [
-    { id: 'chat-a', name: null, cwd: '/work/parser', updatedAt: '2026-10-01T10:00:00Z', status: { type: 'idle' } },
-    { id: 'manager', name: 'Session Manager', status: { type: 'idle' } },
-  ];
-  const values = {
-    [SESSION_MANAGER_ID_KEY]: 'manager',
-    [SESSION_MANAGER_GROUPS_KEY]: JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [] }),
-  };
-  const renamed = [], archived = [];
-  const store = { read: () => ({ ...values }), async set(key, value) { values[key] = value; } };
-  const client = {
-    async listThreads() { return { data: [...active], nextCursor: null }; },
-    async readThreadMetadata(id) { return { ...active.find(thread => thread.id === id) }; },
-    async renameThread(id, body) { renamed.push([id, body.name]); active.find(thread => thread.id === id).name = body.name; return {}; },
-    async archiveThread(id) { archived.push(id); return { archived: true }; },
-  };
-  const agent = await startSessionManagerAgent({ client, store });
-  t.after(() => agent.close());
-  const capability = agent.scope('manager');
-  agent.beginReview('manager', '/work/parser');
-  const call = (name, args, token = capability, managerThreadId = 'manager') => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args, _meta: { threadId: managerThreadId } } }, { socketPath: agent.path, capability: token });
-  const list = await call('session_list', {});
-  const listText = list.result.content[0].text;
-  assert.match(listText, /Untitled session/);
-  assert.doesNotMatch(listText, /Session Manager/);
-  assert.match(listText, /parser/);
-  assert.deepEqual(await call('session_rename', { sessionId: 'chat-a', name: 'Parser tests' }).then(result => result.result.isError), undefined);
-  assert.deepEqual(renamed, [['chat-a', 'Parser tests']]);
-  active[0].name = null;
-  await call('session_organize', { sessionId: 'chat-a', groupName: 'Review later' });
-  const groups = JSON.parse(values[SESSION_MANAGER_GROUPS_KEY]);
-  assert.equal(groups.groupBy, 'custom');
-  assert.equal(groups.groups[0].name, 'Review later');
-  assert.equal(groups.members['chat-a'], groups.groups[0].id);
-  active[0].name = null;
-  assert.equal((await call('session_archive', { sessionId: 'chat-a' })).result.isError, true, 'there is no archive tool');
-  const self = await call('session_rename', { sessionId: 'manager', name: 'Tidy' });
-  assert.equal(self.result.isError, true);
-  const bulk = await call('session_rename', { sessionId: 'chat-a', name: 'Tidy', sessionIds: ['chat-a', 'chat-b'] });
-  assert.equal(bulk.result.isError, true);
-  const forged = await call('session_rename', { sessionId: 'chat-a', name: 'Tidy' }, 'wrong-capability');
-  assert.equal(forged.result.isError, true);
-  const missingIdentity = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_rename', arguments: { sessionId: 'chat-a', name: 'Tidy' } } }, { socketPath: agent.path, capability });
-  assert.equal(missingIdentity.result.isError, true);
-  assert.deepEqual(renamed, [['chat-a', 'Parser tests']], 'rejected calls change nothing');
-  assert.deepEqual(archived, [], 'nothing is ever archived');
-
-  const configured = sessionManagerMcpConfig(agent.path, 'node', capability)['mcp_servers.elpis_session_manager'];
-  assert.equal(configured.default_tools_approval_mode, 'approve');
-  assert.equal(configured.tools.session_list.approval_mode, 'auto');
-  assert.equal('session_delete' in Object.fromEntries(SESSION_MANAGER_TOOLS.map(tool => [tool.name, true])), false);
-});
-
-
-test('A101 automatic policy is limited to manager rename, never group, archive or unrelated tools', () => {
-  const config = sessionManagerMcpConfig('/tmp/manager.sock', 'node', 'cap')['mcp_servers.elpis_session_manager'];
-  assert.equal(config.default_tools_approval_mode, 'approve');
-  assert.equal(config.tools.session_rename.approval_mode, 'auto');
-  assert.equal(config.tools.session_archive, undefined);
-  assert.equal(config.tools.session_organize?.approval_mode ?? 'approve', 'approve');
-});
-
-test('A101 uses current native metadata when a listed project is stale, and refuses a session moved away', async t => {
-  const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
-  const { client, socket, threads } = fixture(); await client.initialize();
-  t.after(() => client.close());
-  const cwd = '/tmp/a101-current-project', old = Math.floor(Date.now() / 1000) - 9 * 86400;
-  threads.clear();
-  threads.set(ROOT, { id: ROOT, cwd, name: null, createdAt: old, updatedAt: old, source: 'cli', status: { type: 'notLoaded' } });
-  threads.set(FORK, { ...threads.get(ROOT), id: FORK, cwd: '/tmp/a101-other-project' });
-  const values = { [SESSION_MANAGER_ID_KEY]: CREATED };
-  const hostClient = {
-    listThreads: async options => {
-      const result = await client.listThreads(options);
-      return { ...result, data: result.data.map(row => ({ ...row, cwd: row.id === ROOT ? '/tmp/a101-stale-project' : cwd })) };
-    },
-    readThreadMetadata: (...args) => client.readThreadMetadata(...args),
-    renameThread: (...args) => client.renameThread(...args),
-    archiveThread: (...args) => client.archiveThread(...args),
-    sessionHasChildren: (...args) => client.sessionHasChildren(...args),
-  };
-  const agent = await startSessionManagerAgent({ client: hostClient, store: { read: () => ({ ...values }), async set(key, value) { values[key] = value; } } });
-  t.after(() => agent.close());
-  const capability = agent.scope(CREATED); agent.beginReview(CREATED, cwd);
-  const call = (name, id, extra = {}) => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { sessionId: id, ...extra }, _meta: { threadId: CREATED } } }, { socketPath: agent.path, capability });
-  const list = await call('session_list');
-  const sessions = JSON.parse(list.result.content[0].text.split('\n').slice(1).join('\n')).sessions;
-  assert.equal(sessions.find(row => row.sessionId === ROOT).canRename, true);
-  assert.equal(sessions.find(row => row.sessionId === FORK).canRename, false);
-  assert.equal((await call('session_rename', FORK, { name: 'Leave alone' })).result.isError, true);
-  const result = await call('session_rename', ROOT, { name: 'Parser tests' });
-  assert.notEqual(result.result.isError, true, JSON.stringify(result));
-  assert.equal(threads.get(ROOT).archived, undefined, 'nothing is archived');
-  assert.equal(threads.get(FORK).name ?? null, null);
-  assert.equal(socket.sent.some(row => row.method === 'thread/resume' && row.params.threadId === FORK), false, 'metadata checks never resume a chat they refuse');
-});
-
-test('A101 host refuses named, running, unknown, another project, agent chats and missing scope; nothing is archived', async t => {
-  const { startSessionManagerAgent, SESSION_MANAGER_ID_KEY, SESSION_MANAGER_ACTIONS_KEY } = sessionManagerAgent;
-  const now = Date.now(), old = Math.floor(now / 1000) - 8 * 86400;
-  const base = { cwd: '/tmp/project-a', name: null, updatedAt: old, createdAt: old, status: { type: 'idle' } };
-  const rows = [
-    { ...base, id: 'old' }, { ...base, id: 'recent', updatedAt: Math.floor(now / 1000) },
-    { ...base, id: 'named', name: 'Parser cleanup' }, { ...base, id: 'running', status: { type: 'active' } },
-    { ...base, id: 'unknown', status: { type: 'unknown' } }, { ...base, id: 'other', cwd: '/tmp/project-b' },
-    { ...base, id: 'tree' }, { ...base, id: 'child', parentThreadId: 'tree' },
-    { ...base, id: 'placeholder', name: 'Untitled conversation' },
-  ];
-  const values = { [SESSION_MANAGER_ID_KEY]: 'manager' }, changed = [];
-  const store = { read: () => ({ ...values }), async set(key, value) { values[key] = value; } };
-  const client = {
-    async listThreads() { return { data: rows.map(row => ({ ...row })), nextCursor: null }; },
-    async readThreadMetadata(id) { return { ...rows.find(row => row.id === id) }; },
-    async renameThread(id, body, guard) { const row = rows.find(row => row.id === id); await guard(row); row.name = body.name; changed.push(['rename', id]); },
-    async archiveThread(id, body, guard) { await guard(rows.find(row => row.id === id)); changed.push(['archive', id]); },
-  };
-  const agent = await startSessionManagerAgent({ client, store }); t.after(() => agent.close());
-  const capability = agent.scope('manager');
-  const call = (name, id, extra = {}, token = capability, thread = 'manager') => handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { sessionId: id, ...extra }, _meta: { threadId: thread } } }, { socketPath: agent.path, capability: token });
-  assert.equal((await call('session_rename', 'old', { name: 'Task' })).result.isError, true, 'no project scope');
-  const end = agent.beginReview('manager', '/tmp/project-a');
-  for (const id of ['named', 'running', 'unknown', 'other', 'child', 'missing', 'manager']) {
-    assert.equal((await call('session_rename', id, { name: 'Task' })).result.isError, true, id);
-  }
-  assert.equal((await call('session_rename', 'old', { name: 'Task' }, 'forged')).result.isError, true);
-  const unsigned = await handleSessionManagerMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'session_rename', arguments: { sessionId: 'old', name: 'Task' }, _meta: { threadId: 'manager' } } }, { socketPath: agent.path });
-  assert.equal(unsigned.result.isError, true);
-  assert.equal((await call('session_rename', 'old', { name: 'Task' }, capability, 'ordinary')).result.isError, true);
-  assert.equal((await call('session_rename', 'old', { name: 'Task', sessionIds: ['old'] })).result.isError, true);
-  assert.equal((await call('session_rename', 'old', { name: 'Task' })).result.isError, undefined);
-  assert.equal((await call('session_rename', 'recent', { name: 'Parser tests' })).result.isError, undefined);
-  assert.equal((await call('session_archive', 'recent')).result.isError, true, 'there is no archive tool');
-  assert.equal((await call('session_rename', 'placeholder', { name: 'Notes' })).result.isError, undefined);
-  end();
-  assert.equal((await call('session_rename', 'tree', { name: 'Late' })).result.isError, true, 'expired review');
-  assert.deepEqual(changed, [['rename', 'old'], ['rename', 'recent'], ['rename', 'placeholder']]);
-  const actions = JSON.parse(values[SESSION_MANAGER_ACTIONS_KEY]);
-  assert.equal(actions.old[0].action, 'rename');
-  assert.equal(actions.old[0].status, 'done');
-  assert.ok(actions.old[0].reason);
-});
-
-
-test('A101 meaningful workflow titles and archived paths are never renamed', () => {
-  const { eligibility } = sessionManagerAgent, now = Date.now();
-  const base = { cwd: '/tmp/a101-project', status: { type: 'notLoaded' }, createdAt: (now - 8 * 86400000) / 1000 };
-  assert.equal(eligibility({ ...base, name: ' ', workflowTaskTitle: 'Parser' }, base.cwd, now).canRename, false);
-  assert.equal(eligibility({ ...base, name: 'Untitled', workflowTitle: 'Parser' }, base.cwd, now).canRename, false);
-  assert.equal(eligibility({ ...base, name: 'New chat' }, base.cwd, now).canRename, true);
-  assert.equal(eligibility({ ...base, path: '/tmp/elpis/archived_sessions/rollout.jsonl' }, base.cwd, now).canRename, false);
-});
-
-test('A101 project comparison resolves real directory aliases without including a neighbour', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'a101-project-path-'));
-  const cwd = path.join(root, 'project'); await fs.mkdir(cwd);
-  const alias = path.join(root, 'alias'); await fs.symlink(cwd, alias);
-  const values = { [sessionManagerAgent.SESSION_MANAGER_ID_KEY]: CREATED };
-  const agent = await sessionManagerAgent.startSessionManagerAgent({ client: {}, store: { read: () => values } });
-  t.after(() => agent.close()); agent.scope(CREATED);
-  const end = agent.beginReview(CREATED, `${alias}/`);
-  const base = { cwd: `${alias}/../alias/`, status: { type: 'idle' } };
-  assert.equal(sessionManagerAgent.eligibility(base, cwd).canRename, true);
-  assert.equal(sessionManagerAgent.eligibility({ ...base, cwd: path.join(root, 'project-other') }, cwd).canRename, false);
-  end();
-});
-
-test('A101 a failed reason write prevents the native action', async () => {
-  const { handleTool, SESSION_MANAGER_ID_KEY } = sessionManagerAgent;
-  const row = { id: ROOT, cwd: '/tmp/a101-journal-project', name: null, status: { type: 'idle' } };
-  let changed = false;
-  const client = { listThreads: async () => ({ data: [row] }), readThreadMetadata: async () => row,
-    renameThread: async () => { changed = true; } };
-  const store = { read: () => ({ [SESSION_MANAGER_ID_KEY]: CREATED }), set: async () => { throw Error('journal unavailable'); } };
-  await assert.rejects(handleTool('session_rename', { sessionId: ROOT, name: 'Parser' }, { client, store, managerThreadId: CREATED, project: () => row.cwd }), /journal unavailable/);
-  assert.equal(changed, false);
-});
-
-test('A101 guard rechecks runtime state immediately before a native mutation', async () => {
-  const { client, socket, threads } = fixture(); await client.initialize();
-  let checked = 0;
-  try {
-    threads.get(ROOT).status = { type: 'active' };
-    const guard = async row => { checked++; assert.equal(row.status.type, 'active'); throw Error('running'); };
-    await assert.rejects(client.renameThread(ROOT, { name: 'Task' }, guard), /running/);
-    await assert.rejects(client.archiveThread(ROOT, {}, guard), /running/);
-    assert.equal(checked, 2);
-    assert.equal(socket.sent.some(row => ['thread/name/set', 'thread/archive'].includes(row.method)), false);
-  } finally { client.close(); }
-});
-
-
-test('A101 archived view sorts all pages by actual archive date and retains reasons', async t => {
+test('A101 archived view sorts all pages by actual archive date and keeps why each was archived', async t => {
   const { client, threads } = fixture();
   threads.set(FORK, { id: FORK, source: 'cli', cwd: os.tmpdir(), name: 'Other task', status: { type: 'idle' } }); await client.initialize();
   t.after(() => client.close());
-  await client.archiveThread(ROOT, {}, undefined, { reason: 'Old unnamed session; inactive more than 7 days' });
+  await client.archiveThread(ROOT, {});
   await client.archiveThread(FORK, {});
   const result = await client.listArchivedThreads({ limit: 1 });
   assert.equal(result.data[0].id, FORK);
@@ -2475,7 +2217,7 @@ test('A101 archived view sorts all pages by actual archive date and retains reas
   assert.ok(result.data[0].archivedAt > 0);
   const second = await client.listArchivedThreads({ limit: 1, cursor: result.nextCursor });
   assert.equal(second.data[0].id, ROOT);
-  assert.match(second.data[0].archiveReason, /7 days/);
+  assert.equal(second.data[0].archiveReason, 'Archived by you.');
 });
 
 

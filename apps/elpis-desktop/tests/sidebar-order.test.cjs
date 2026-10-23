@@ -23,41 +23,6 @@ function open(chats, storage = {}, extra = {}) {
 }
 const attention = unread => ({ 'elpis-chat-attention-v1': JSON.stringify({ unread, plans: {} }) });
 
-test('A100: the Session Manager is one switch above Pinned and Recents, outside the scroller, even in search; its chat is never listed', async () => {
-  const f = await open([chat('chat-a', 50), chat('manager', 1)], { 'elpis-session-manager-v1': 'manager', 'elpis-pinned-chats-v1': '["manager","chat-a"]' });
-  const { page } = f;
-  try {
-    const toggle = page.getByRole('switch', { name: 'Session Manager', exact: true });
-    assert.equal(await row(page, 'manager').count(), 0, 'the manager chat is not listed');
-    assert.equal(await toggle.getAttribute('aria-checked'), 'true');
-    assert.equal(await toggle.evaluate(node => !!node.closest('.thread-list')), false);
-    assert.equal(await toggle.evaluate(node => !!(node.compareDocumentPosition(document.querySelector('section[aria-label="Pinned"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), true);
-    assert.equal(await toggle.evaluate(node => {
-      const row = node.closest('.thread-row'), box = row.getBoundingClientRect(), label = row.querySelector('.thread-title').getBoundingClientRect(), mark = node.getBoundingClientRect();
-      return label.top >= box.top && label.bottom <= box.bottom && mark.right <= box.right && label.right <= mark.left;
-    }), true, 'label and switch fit inside the row');
-    await page.getByRole('textbox', { name: 'Search conversations' }).fill('manager');
-    assert.equal(await row(page, 'manager').count(), 0);
-    assert.equal(await toggle.isVisible(), true);
-    await page.getByRole('textbox', { name: 'Search conversations' }).fill('');
-    await toggle.click();
-    await eventually(async () => assert.equal(await toggle.getAttribute('aria-checked'), 'false'));
-    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('elpis-preferences-v1'))).sessionManager, false, 'the choice is saved');
-    assert.equal(f.posts.filter(post => post.path === '/api/threads').length, 0, 'the switch never opens or creates a chat');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-for (const count of [1, 20, 200]) for (const mode of ['idle', 'only-unseen', 'mixed']) test(`A102: ${count} chats, ${mode}, saved unseen replies precede seen recency`, async () => {
-  const chats = Array.from({ length: count }, (_, i) => chat(i ? `chat-${i}` : 'chat-a', count - i));
-  const unread = chats.filter((_, i) => mode === 'only-unseen' || mode === 'mixed' && i % 3 === 2).map(chat => chat.id);
-  const f = await open(chats, attention(unread));
-  try {
-    await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), [...chats.filter(chat => unread.includes(chat.id)), ...chats.filter(chat => !unread.includes(chat.id))].map(chat => chat.id)));
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
 test('A102: bridge recency changes reorder idle chats outside interaction; equal timestamps keep their place', async () => {
   const chats = [chat('chat-a', 10), chat('chat-b', 30), chat('chat-c', 30)];
   const f = await open(chats);
@@ -67,16 +32,12 @@ test('A102: bridge recency changes reorder idle chats outside interaction; equal
   } finally { await f.close(); }
 });
 
-test('A100: a manager registered by another window leaves the list; a matching name alone is ordinary', async () => {
-  const f = await open([chat('chat-a', 20), { ...chat('chat-b', 10), name: 'Session Manager' }]);
+// Masih, 23 Oct: the Session Manager was deleted. A chat it once used, and any chat named like it, lists as an ordinary chat.
+test('a chat the removed Session Manager used is listed like any other', async () => {
+  const f = await open([chat('chat-a', 20), { ...chat('chat-b', 10), name: 'Session Manager' }], { 'elpis-session-manager-v1': 'chat-b' });
   try {
-    assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a', 'chat-b'], 'names do not identify the dedicated manager');
-    await f.page.evaluate(() => {
-      localStorage.setItem('elpis-session-manager-v1', 'chat-b');
-      dispatchEvent(new StorageEvent('storage', { key: 'elpis-session-manager-v1', newValue: 'chat-b' }));
-    });
-    await eventually(async () => assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a']));
-    assert.equal(await row(f.page, 'chat-b').count(), 0, 'the manager chat is not listed anywhere');
+    assert.deepEqual(await ids(section(f.page, 'Recents')), ['chat-a', 'chat-b']);
+    assert.equal(await f.page.getByRole('switch', { name: 'Session Manager', exact: true }).count(), 0, 'no Session Manager switch');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
