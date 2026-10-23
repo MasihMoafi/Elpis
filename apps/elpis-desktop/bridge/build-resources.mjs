@@ -17,6 +17,3 @@ await fs.copyFile(new URL('../../../codex-rs/skills/src/assets/personal/SKILL.md
 // Excalidraw's bundled fonts stay local, including during whole-drawing PNG export.
 await fs.cp(new URL('../node_modules/@excalidraw/excalidraw/dist/prod/fonts/', import.meta.url), new URL('../public/love-spot-assets/fonts/', import.meta.url), { recursive: true });
 
-// The board and chat use the same portrait source.
-const { FACE_DATA_URL } = createRequire(import.meta.url)('./matilda-face.cjs');
-await fs.writeFile(new URL('../public/matilda-face.webp', import.meta.url), Buffer.from(FACE_DATA_URL.split(',')[1], 'base64'));

@@ -23,6 +23,8 @@ import { ReplyPreview } from "@/components/message-reply";
 import { messageDomId, readReply } from "@/lib/message-reply";
 import { questionReplies, questionReplyText } from "@/lib/question-reply";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
+// Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
+import { FACE_DATA_URL } from "@/bridge/matilda-face.cjs";
 
 const object = (value: unknown): Record<string,unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value: unknown) => typeof value === "string" ? value : "";
@@ -128,7 +130,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
     const actions:MessageAction[]=item.text?[...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}>{speaker==="Matilda"&&<img src="/matilda-face.webp" alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;

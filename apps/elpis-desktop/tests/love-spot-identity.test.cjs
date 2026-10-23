@@ -48,6 +48,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     const portrait = page.locator('.message.agent img[alt="Matilda"]');
     await portrait.waitFor();
     assert.equal(await portrait.evaluate(image => image.complete && image.naturalWidth > 0), true);
+    assert.match(await portrait.getAttribute('src'), /^data:image\/webp;base64,/, 'the face is part of the page, never a request that can fail');
     assert.equal(await page.locator('.message.agent .speaker').textContent(), 'Matilda');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
