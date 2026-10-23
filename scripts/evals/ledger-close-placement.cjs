@@ -276,6 +276,8 @@ async function check({ binary, output, phase, smoke }, width, light) {
   }
   fs.writeFileSync(path.join(output, `${label}.json`), JSON.stringify(result, null, 2) + '\n');
   console.log(JSON.stringify({ case: label, layout: result.layoutAssertion, positiveMouseCells: result.positiveMouseCells, modelRequests: result.modelRequests, errors: result.errors.length }));
+  // The output folder is a 3 GB artifact; the log alone must say what went wrong.
+  for (const error of result.errors) console.log(`  ${label} error: ${String(error).split('\n').slice(0, 4).join(' | ')}`);
   return result;
 }
 
