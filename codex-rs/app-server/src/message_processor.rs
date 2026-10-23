@@ -1543,6 +1543,9 @@ impl MessageProcessor {
             ClientRequest::ThreadLoadedList { params, .. } => {
                 self.thread_processor.thread_loaded_list(params).await
             }
+            ClientRequest::ThreadRegister { params, .. } => {
+                self.thread_processor.thread_register(params).await
+            }
             ClientRequest::ThreadRead { params, .. } => {
                 self.thread_processor.thread_read(&request_id, params).await
             }
