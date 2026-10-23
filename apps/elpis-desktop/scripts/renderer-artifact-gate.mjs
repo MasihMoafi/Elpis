@@ -304,6 +304,11 @@ export const retainedUpdates = {
       "approval": "6c55175a10129526a7b1fcb3f92c55b529fcea14",
       "reason": "Love Spot, Masih 23 Oct: \"remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda.\" The native window has no Talk button or panel: a captured voice note on the board is what Matilda answers, on the board, and the voice control still has to fit the window."
     },
+    "tests/startup-archive.test.cjs": {
+      "blob": "60c97c8eeffa14c48ae79451aa01019dc252b37f",
+      "approval": "abd017f5d131e3382a3bda673f52e728418178d8",
+      "reason": "Voice, 23 Oct: the composer asks GET /api/voice for whether a call is possible; this strict fixture reports any unknown request as a failure, so it answers that one (no call here)."
+    },
     "tests/view-errors.test.cjs": {
       "blob": "3aa697bf47386452b99868dae38662643f8d08fe",
       "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
