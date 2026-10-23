@@ -335,14 +335,6 @@ const ITEMS: &[Item] = &[
         hint: "Choose the maintenance model in pruner settings.",
     },
     Item {
-        section: 2,
-        name: "Context Ledger",
-        scope: "this chat",
-        key: None,
-        action: Action::Shortcut(SlashCommand::Dashboard),
-        hint: "Inspect admitted context and maintenance evidence.",
-    },
-    Item {
         section: 3,
         name: "MCP tools",
         scope: "new chats",
@@ -485,14 +477,6 @@ const ITEMS: &[Item] = &[
         key: None,
         action: Action::Shortcut(SlashCommand::Tui),
         hint: "Choose the mode for the next launch.",
-    },
-    Item {
-        section: 4,
-        name: "Ledger width",
-        scope: "terminal",
-        key: None,
-        action: Action::Shortcut(SlashCommand::Dashboard),
-        hint: "Open the Ledger, then drag its divider to resize it.",
     },
     Item {
         section: 5,

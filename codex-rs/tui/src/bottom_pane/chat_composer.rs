@@ -9311,7 +9311,6 @@ mod tests {
             ("/res", "resume"),
             ("/age", "agent"),
             ("/con", "context"),
-            ("/dash", "dashboard"),
             ("/mem", "memory-model"),
         ] {
             let (tx, _rx) = unbounded_channel::<AppEvent>();

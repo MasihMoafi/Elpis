@@ -557,8 +557,8 @@ async fn picking_antigravity_lists_only_antigravity_models() {
 }
 
 /// Positive: picking an Antigravity model changes the model as a Claude subscription row does,
-/// switches no provider, and the status card, the dashboard and the provider list then name
-/// Antigravity. Negative: before the pick, none of them does.
+/// switches no provider, and the status card and the provider list then name Antigravity.
+/// Negative: before the pick, none of them does.
 #[tokio::test]
 async fn picking_an_antigravity_model_selects_it_with_provider_antigravity() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -576,10 +576,6 @@ async fn picking_an_antigravity_model_selects_it_with_provider_antigravity() {
     };
     let before = status_text(&mut chat);
     assert!(!before.contains("Antigravity"), "{before}");
-    assert_eq!(
-        chat.dashboard_models().chat.provider.as_deref(),
-        Some("openai")
-    );
 
     chat.open_elpis_provider_models(AGY_PROVIDER.to_string(), Ok(Vec::new()));
     std::iter::from_fn(|| rx.try_recv().ok()).for_each(drop);
@@ -610,10 +606,6 @@ async fn picking_an_antigravity_model_selects_it_with_provider_antigravity() {
 
     // The App applies the model change.
     chat.set_model(AGY_MODEL);
-    assert_eq!(
-        chat.dashboard_models().chat.provider.as_deref(),
-        Some(AGY_PROVIDER)
-    );
     let after = status_text(&mut chat);
     let provider_line = after
         .lines()
@@ -680,4 +672,36 @@ async fn a_switched_model_without_effort_levels_offers_nothing() {
 
     assert!(!chat.bottom_pane.has_active_view());
     assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn a_claude_subscription_model_shows_claude_as_its_provider() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.model_provider_id = "openrouter".to_string();
+    chat.thread_id = Some(ThreadId::new());
+    let status_text = |chat: &mut ChatWidget| {
+        lines_to_single_string(
+            &chat
+                .status_output_cell(
+                    /*refreshing_rate_limits*/ false, /*request_id*/ None,
+                )
+                .display_lines(/*width*/ 120),
+        )
+    };
+
+    chat.set_model("claude/opus");
+    assert_eq!(chat.displayed_chat_provider(), "Claude subscription");
+    assert!(
+        status_text(&mut chat).contains("Claude subscription"),
+        "{}",
+        status_text(&mut chat)
+    );
+    // The configured provider still drives /model and the key checks.
+    assert_eq!(chat.config.model_provider_id, "openrouter");
+
+    chat.set_model("apodex/x");
+    assert_eq!(chat.displayed_chat_provider(), "openrouter");
+    let text = status_text(&mut chat);
+    assert!(!text.contains("Claude subscription"), "{text}");
+    assert!(text.contains("openrouter"), "{text}");
 }

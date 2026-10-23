@@ -27,9 +27,8 @@ const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off|log]";
 const PRUNER_MODEL_LOADING_VIEW_ID: &str = "pruner-model-loading";
 const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
-/// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads. The
-/// dashboard's Models tab saves through it too. `role_provider` is the provider a bare id runs
-/// on when the choice names none.
+/// Saves a `/pruner-model` choice to `pruner.json` and returns how the choice reads.
+/// `role_provider` is the provider a bare id runs on when the choice names none.
 pub(crate) fn save_pruner_choice(
     home: &Path,
     choice: &BackgroundModelChoice,

@@ -332,14 +332,13 @@ mod tests {
         assert_eq!(
             commands,
             // Elpis: the commands Elpis hides or leaves unlisted never reach a side conversation's
-            // popup, and /context and /dashboard are the two Elpis commands that work there.
+            // popup, and /context is the one Elpis command that works there.
             vec![
                 SlashCommand::Ide,
                 SlashCommand::Copy,
                 SlashCommand::Diff,
                 SlashCommand::Usage,
                 SlashCommand::Context,
-                SlashCommand::Dashboard,
             ]
         );
     }

@@ -15,10 +15,6 @@ mod loading;
 #[path = "agents_overview_selection.rs"]
 mod selection;
 
-#[path = "agents_overview_dashboard.rs"]
-mod dashboard;
-pub(super) use dashboard::model_label;
-
 use super::agents_overview_view::AgentsOverviewGroup;
 use super::agents_overview_view::AgentsOverviewRow;
 use super::agents_overview_view::AgentsOverviewView;
@@ -37,6 +33,19 @@ use codex_protocol::protocol::SubAgentSource;
 
 pub(crate) const AGENTS_OVERVIEW_VIEW_ID: &str = "agents-overview";
 pub(super) const HUMAN_STEER_ID_PREFIX: &str = "agent-center-steer-";
+
+/// `Model · effort`, without repeating an effort the model's name already carries.
+pub(super) fn model_label(
+    name: &str,
+    effort: Option<&codex_protocol::openai_models::ReasoningEffort>,
+) -> String {
+    match effort.map(codex_protocol::openai_models::ReasoningEffort::as_str) {
+        Some(effort) if !name.to_ascii_lowercase().contains(&format!("({effort})")) => {
+            format!("{name} · {effort}")
+        }
+        _ => name.to_string(),
+    }
+}
 
 #[derive(Default)]
 pub(super) struct AgentsOverviewState {
@@ -305,17 +314,6 @@ impl App {
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
         else {
-            // With this list closed, the dashboard's Agents map still follows the agents.
-            if crate::dashboard_server::is_running() {
-                let threads = self
-                    .agents_overview
-                    .threads
-                    .values()
-                    .flatten()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                self.publish_dashboard_agents(&threads);
-            }
             return;
         };
         let selected_thread_id = self
@@ -447,8 +445,6 @@ impl App {
                 }
             }
         }
-        self.publish_dashboard_agents(&threads);
-
         self.agents_overview
             .view_state
             .lock()

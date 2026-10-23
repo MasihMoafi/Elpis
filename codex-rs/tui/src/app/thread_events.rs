@@ -295,7 +295,7 @@ impl ThreadEventStore {
                 | ServerNotification::CommandExecOutputDelta(_)
                 | ServerNotification::ProcessOutputDelta(_)
                 | ServerNotification::ProcessExited(_)
-                // Elpis: the dashboard's per-turn timing and cost are live-only.
+                // Elpis: per-turn timing and cost are live-only and have no replay.
                 | ServerNotification::TurnActivityUpdated(_)
                 | ServerNotification::TurnCostUpdated(_)
         ) {

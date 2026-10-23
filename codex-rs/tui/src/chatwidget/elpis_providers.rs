@@ -20,11 +20,11 @@ pub(super) const ELPIS_PROVIDER_MODELS_VIEW_ID: &str = "elpis-provider-models";
 /// provider list closing and the model list opening.
 pub(super) const ELPIS_PROVIDER_LOADING_VIEW_ID: &str = "elpis-provider-loading";
 
-/// The pickers' and the dashboard's id for the Claude subscription.
+/// The pickers' id for the Claude subscription.
 pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
 pub(super) const ANTIGRAVITY_PROVIDER_ID: &str = "antigravity";
 
-/// The providers the pickers and dashboard offer first, in this order. Configured vendors
+/// The providers the pickers offer first, in this order. Configured vendors
 /// follow; other built-ins (Gemini, Ollama, LM Studio, Bedrock) appear only while active.
 const LISTED_PROVIDERS: [&str; 5] = [
     codex_model_provider_info::OPENAI_PROVIDER_ID,
@@ -41,12 +41,10 @@ const LISTED_PROVIDERS: [&str; 5] = [
 /// answer chat turns only.
 pub(crate) struct BridgedProvider {
     model_prefix: &'static str,
-    /// The pickers' and the dashboard's id.
+    /// The pickers' id.
     pub(crate) id: &'static str,
     /// How Elpis names it as a provider.
     pub(crate) name: &'static str,
-    /// Its name at the start of a sentence.
-    pub(crate) subject: &'static str,
     /// What it takes for it to answer, as the picker says it.
     credential: &'static str,
     /// How Elpis reaches it, as the picker says it.
@@ -64,7 +62,6 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         model_prefix: "claude/",
         id: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
         name: "Claude subscription",
-        subject: "The Claude subscription",
         credential: "your Claude sign-in",
         route: "Claude Code, through the Elpis Claude bridge",
         answers: "Claude Code answers; this conversation and its provider stay.",
@@ -75,7 +72,6 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         model_prefix: "agy/",
         id: ANTIGRAVITY_PROVIDER_ID,
         name: "Antigravity",
-        subject: "Antigravity",
         credential: "your Antigravity sign-in",
         route: "the Antigravity CLI (agy), through the Elpis Claude bridge",
         answers: "Antigravity answers; this conversation and its provider stay.",
@@ -202,9 +198,6 @@ pub(crate) enum ElpisProviderEvent {
     },
     /// Continue this conversation on `provider_id` with `model`.
     Switch { provider_id: String, model: String },
-    /// Use a bridged subscription's `model` (a Claude subscription or an Antigravity model) for
-    /// this conversation, as the `/model` picker does: the provider and the conversation stay.
-    UseClaudeModel { model: String },
 }
 
 fn send(tx: &AppEventSender, event: ElpisProviderEvent) {
@@ -251,7 +244,7 @@ pub(crate) async fn load_elpis_provider_models(
     Ok(presets)
 }
 
-/// How the pickers and the dashboard name a provider.
+/// How the pickers name a provider.
 pub(crate) fn elpis_provider_display_name(
     provider_id: &str,
     provider: Option<&ModelProviderInfo>,
@@ -273,18 +266,9 @@ pub(crate) fn elpis_provider_display_name(
         .unwrap_or_else(|| provider_id.to_string())
 }
 
-/// The configured providers "Change provider…" and the dashboard's API keys offer, as
-/// `(id, name)`, with [`LISTED_PROVIDERS`] first.
-pub(crate) fn elpis_picker_providers(
-    providers: &std::collections::HashMap<String, ModelProviderInfo>,
-    active: &str,
-) -> Vec<(String, String)> {
-    elpis_chat_model_providers(providers, active, /*catalog*/ &[])
-}
-
 /// [`LISTED_PROVIDERS`] in order, including subscriptions whose models `catalog` carries;
 /// then configured vendors by id and any other active built-in, each exactly once.
-pub(crate) fn elpis_chat_model_providers(
+fn elpis_chat_model_providers(
     providers: &std::collections::HashMap<String, ModelProviderInfo>,
     active: &str,
     catalog: &[ModelPreset],
@@ -327,6 +311,17 @@ pub(crate) fn elpis_lists_from_app_server(provider_id: &str, provider: &ModelPro
 }
 
 impl ChatWidget {
+    /// The provider a person sees for the chat model. A bridged subscription's model (Claude
+    /// subscription, Antigravity) is served by the bridge, so it shows as that subscription;
+    /// `config.model_provider_id` stays the configured provider because `/model` and the key
+    /// checks read it.
+    pub(crate) fn displayed_chat_provider(&self) -> &str {
+        match bridged_provider_of_model(self.current_model()) {
+            Some(bridged) => bridged.name,
+            None => self.config.model_provider_id.as_str(),
+        }
+    }
+
     fn elpis_provider(&self, provider_id: &str) -> Option<&ModelProviderInfo> {
         self.config.model_providers.get(provider_id)
     }

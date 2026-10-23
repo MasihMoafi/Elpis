@@ -260,61 +260,59 @@ while cursor < len(fields):
 PY
 }
 
-new_fixture dashboard
-run_selector --changed codex-rs/tui/src/dashboard_server.rs
+new_fixture context-usage
+run_selector --changed codex-rs/tui/src/chatwidget/context_usage.rs
 assert_status 0
-assert_output 'Elpis verification: surfaces=dashboard,memory'
-assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage,core-elpis-context,tui-context-ledger,tui-manual-memory,app-server-memory-recall,core-memory-dir-bounds,core-memory-permission-profile'
-assert_call_count 9
+assert_output 'Elpis verification: surfaces=memory'
+assert_output 'Elpis verification: commands=fmt-check,tui-context-usage,core-elpis-context,tui-context-ledger,tui-manual-memory,app-server-memory-recall,core-memory-dir-bounds,core-memory-permission-profile'
+assert_call_count 8
 assert_call_at 0 fmt --all --check
-assert_call_at 1 test -p codex-tui --lib --locked dashboard
-assert_call_at 2 test -p codex-tui --lib --locked context_usage
-assert_call_at 3 test -p codex-core --lib --locked elpis_context
-assert_call_at 4 test -p codex-tui --lib context_ledger --locked
-assert_call_at 5 test -p codex-tui --lib --locked manual_memory_
-assert_call_at 6 test -p codex-app-server --test all --locked memory_recall
-assert_call_at 7 test -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
-assert_call_at 8 test -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
+assert_call_at 1 test -p codex-tui --lib --locked context_usage
+assert_call_at 2 test -p codex-core --lib --locked elpis_context
+assert_call_at 3 test -p codex-tui --lib context_ledger --locked
+assert_call_at 4 test -p codex-tui --lib --locked manual_memory_
+assert_call_at 5 test -p codex-app-server --test all --locked memory_recall
+assert_call_at 6 test -p codex-core --lib --locked memory_dir_is_readable_without_creating_or_widening_writes
+assert_call_at 7 test -p codex-core --lib --locked permission_profile_override_keeps_memories_root_out_of_legacy_projection
 assert_all_cargo_env
 
 new_fixture memory
 run_selector --surface memory
 assert_status 0
 assert_output 'Elpis verification: surfaces=memory'
-assert_output 'Elpis verification: commands=fmt-check,tui-dashboard,tui-context-usage,core-elpis-context,tui-context-ledger,tui-manual-memory,app-server-memory-recall,core-memory-dir-bounds,core-memory-permission-profile'
-assert_call_count 9
+assert_output 'Elpis verification: commands=fmt-check,tui-context-usage,core-elpis-context,tui-context-ledger,tui-manual-memory,app-server-memory-recall,core-memory-dir-bounds,core-memory-permission-profile'
+assert_call_count 8
 assert_argv_occurrences 1 test -p codex-core --lib --locked elpis_context
 assert_argv_occurrences 1 test -p codex-app-server --test all --locked memory_recall
 assert_argv_occurrences 1 test -p codex-tui --lib --locked manual_memory_
 assert_argv_occurrences 1 test -p codex-tui --lib context_ledger --locked
-assert_argv_occurrences 1 test -p codex-tui --lib --locked dashboard
 assert_argv_occurrences 1 test -p codex-tui --lib --locked context_usage
 
 # Explicit surfaces are a stable manifest-order union; repetition and a changed
 # path do not duplicate shared commands or trigger the mixed-path fallback.
 new_fixture explicit-union
-run_selector --surface tui --surface dashboard --surface tui
+run_selector --surface tui --surface memory --surface tui
 assert_status 0
-assert_output 'Elpis verification: surfaces=dashboard,tui'
+assert_output 'Elpis verification: surfaces=tui,memory'
 assert_not_output 'surfaces=full'
 explicit_commands=$(output_header commands)
 assert_argv_occurrences 1 fmt --all --check
 
-run_selector --surface dashboard --surface tui
+run_selector --surface memory --surface tui
 assert_status 0
 [[ $(output_header commands) == "$explicit_commands" ]] ||
     fail "surface order changed the selected command union"
 
-run_selector --changed codex-rs/tui/src/bottom_pane/mod.rs --surface dashboard
+run_selector --changed codex-rs/tui/src/bottom_pane/mod.rs --surface memory
 assert_status 0
 [[ $(output_header commands) == "$explicit_commands" ]] ||
     fail "path plus explicit surface did not match the explicit union"
 
 run_selector \
-    --changed codex-rs/tui/src/dashboard_server.rs \
-    --changed codex-rs/tui/src/dashboard_server.rs
+    --changed codex-rs/tui/src/chatwidget/context_usage.rs \
+    --changed codex-rs/tui/src/chatwidget/context_usage.rs
 assert_status 0
-assert_output 'Elpis verification: surfaces=dashboard,memory'
+assert_output 'Elpis verification: surfaces=memory'
 
 # Unknown, safety-owned, and mixed focused paths conservatively choose full.
 for full_path in \
@@ -337,13 +335,6 @@ run_selector \
 assert_status 0
 assert_output 'Elpis verification: surfaces=tui,memory'
 
-new_fixture mixed-focused
-run_selector \
-    --changed codex-rs/tui/src/dashboard_server.rs \
-    --changed codex-rs/tui/src/app.rs
-assert_status 0
-assert_output 'Elpis verification: surfaces=full'
-
 new_fixture mixed-manual-memory
 run_selector \
     --changed codex-rs/core/src/elpis_context.rs \
@@ -354,7 +345,7 @@ assert_output 'Elpis verification: surfaces=full'
 new_fixture complete-a4-selects-full
 run_selector \
     --changed codex-rs/tui/src/chatwidget/context_ledger.rs \
-    --changed codex-rs/tui/src/dashboard_server_tests.rs \
+    --changed codex-rs/tui/src/chatwidget/context_usage.rs \
     --changed docs/context.md \
     --changed tools/verify-elpis/surfaces.toml \
     --changed tests/verify-elpis/test_verify_elpis.sh
@@ -367,10 +358,7 @@ precedence_paths=(
     'codex-rs/core/src/elpis_context.rs|context-compaction,memory'
     'codex-rs/core/src/agents_md_manager.rs|context-compaction,memory'
     'codex-rs/app-server/src/extensions.rs|app-server,memory'
-    'codex-rs/tui/src/dashboard_server.rs|dashboard,memory'
-    'codex-rs/tui/src/dashboard_server_tests.rs|dashboard,memory'
-    'codex-rs/tui/src/dashboard_assets/index.html|dashboard,memory'
-    'codex-rs/tui/src/chatwidget/context_usage.rs|dashboard,memory'
+    'codex-rs/tui/src/chatwidget/context_usage.rs|memory'
     'codex-rs/tui/src/chatwidget/context_ledger.rs|context-compaction,memory'
     'codex-rs/tui/src/chatwidget/tests/context_ledger.rs|context-compaction,memory'
     'codex-rs/tui/src/app.rs|tui,memory'
@@ -477,7 +465,7 @@ done
 new_fixture multiple-summaries
 replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
-    'name = "docs"\ncommands = ["tui-dashboard"]'
+    'name = "docs"\ncommands = ["tui-context-usage"]'
 SELECTOR_ENV=(
     $'FAKE_CARGO_OUTPUT=test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s'
 )
@@ -487,29 +475,29 @@ assert_status 0
 new_fixture spoofed-positive-summary
 replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
-    'name = "docs"\ncommands = ["tui-dashboard"]'
+    'name = "docs"\ncommands = ["tui-context-usage"]'
 SELECTOR_ENV=(
     $'FAKE_CARGO_OUTPUT=application output: test result: ok. 1 passed\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
 )
 run_selector --surface docs
 [[ $RUN_STATUS -ne 0 ]] || fail "ordinary output spoofed a positive test-harness summary"
-assert_output 'test command tui-dashboard produced no positive test result'
+assert_output 'test command tui-context-usage produced no positive test result'
 
 new_fixture suffix-spoofed-positive-summary
 replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
-    'name = "docs"\ncommands = ["tui-dashboard"]'
+    'name = "docs"\ncommands = ["tui-context-usage"]'
 SELECTOR_ENV=(
     $'FAKE_CARGO_OUTPUT=test result: ok. 1 passed (application text, not a harness summary)\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s'
 )
 run_selector --surface docs
 [[ $RUN_STATUS -ne 0 ]] || fail "line-start application output spoofed a positive test-harness summary"
-assert_output 'test command tui-dashboard produced no positive test result'
+assert_output 'test command tui-context-usage produced no positive test result'
 
 new_fixture cargo-failure
 replace_manifest \
     'name = "docs"\ncommands = ["diff-check"]' \
-    'name = "docs"\ncommands = ["tui-dashboard"]'
+    'name = "docs"\ncommands = ["tui-context-usage"]'
 SELECTOR_ENV=('FAKE_CARGO_FAIL_SUBCOMMAND=test' 'FAKE_CARGO_STATUS=17')
 run_selector --surface docs
 [[ $RUN_STATUS -ne 0 ]] || fail "non-zero Cargo status was accepted"
@@ -531,7 +519,7 @@ assert_call_at 0 test -p codex-tui --lib --locked --no-run
 new_fixture absolute-target
 custom_target="$FIXTURE/shared target"
 SELECTOR_ENV=("ELPIS_CARGO_TARGET_DIR=$custom_target")
-run_selector --surface dashboard
+run_selector --surface memory
 assert_status 0
 assert_output "Elpis verification: target=$custom_target"
 assert_all_cargo_env "$custom_target"
@@ -553,9 +541,9 @@ assert_failure_before_cargo
 
 new_fixture targetless-test-command
 replace_manifest \
-    'argv = ["test", "-p", "codex-tui", "--lib", "--locked", "dashboard"]' \
-    'argv = ["test", "-p", "codex-tui", "--locked", "dashboard"]'
-run_selector --surface dashboard
+    'argv = ["test", "-p", "codex-tui", "--lib", "--locked", "context_usage"]' \
+    'argv = ["test", "-p", "codex-tui", "--locked", "context_usage"]'
+run_selector --surface memory
 assert_failure_before_cargo
 
 new_fixture malformed-toml
@@ -572,12 +560,12 @@ assert_not_output 'Traceback'
 
 new_fixture relative-target
 SELECTOR_ENV=('ELPIS_CARGO_TARGET_DIR=relative/target')
-run_selector --surface dashboard
+run_selector --surface memory
 assert_failure_before_cargo
 
 new_fixture unwritable-target
 SELECTOR_ENV=('ELPIS_CARGO_TARGET_DIR=/proc/elpis-selector-unwritable')
-run_selector --surface dashboard
+run_selector --surface memory
 assert_failure_before_cargo
 
 new_fixture arbitrary-shell

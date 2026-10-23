@@ -4,9 +4,8 @@
 //! decides about them lives here: the descriptions, the dispatch flags and the dispatch itself.
 //! Upstream files reach this module through one-line seams marked `Elpis:`.
 //!
-//! `/yolo`, `/agent`, `/add`, `/context`, `/memory-model`, `/prune`, `/smart-prune`,
-//! `/pruner-model` and `/dashboard` work in this build (the pruning commands live in
-//! `elpis_prune_commands.rs`). `/force-prune` needs the rest of the Elpis context engine: it is
+//! `/yolo`, `/agent`, `/add`, `/context`, `/memory-model`, `/prune`, `/smart-prune` and
+//! `/pruner-model` work in this build (the pruning commands live in `elpis_prune_commands.rs`). `/force-prune` needs the rest of the Elpis context engine: it is
 //! listed with its v0.3.0 description and, when run, says plainly that it arrives in a later
 //! Elpis build. It sends nothing to the model or the app server.
 //!
@@ -34,7 +33,6 @@ use crate::elpis_app_event::ElpisAppEvent;
 use crate::elpis_background_model::BackgroundModelChoice;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::PlainHistoryCell;
-use crate::history_cell::WebHyperlinkHistoryCell;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use crate::slash_command::SlashCommand;
 use ratatui::text::Line;
@@ -52,7 +50,6 @@ macro_rules! elpis_slash_commands {
             | $crate::slash_command::SlashCommand::SmartPrune
             | $crate::slash_command::SlashCommand::ForcePrune
             | $crate::slash_command::SlashCommand::Agent
-            | $crate::slash_command::SlashCommand::Dashboard
             | $crate::slash_command::SlashCommand::Add
             | $crate::slash_command::SlashCommand::Context
             | $crate::slash_command::SlashCommand::Rag
@@ -81,9 +78,6 @@ pub(crate) fn description(cmd: SlashCommand) -> &'static str {
             "force a prune down to a target of remaining context: /force-prune <1-100>"
         }
         SlashCommand::Agent => "switch the active agent thread",
-        SlashCommand::Dashboard => {
-            "show the current context window, admitted sources, and pruning evidence"
-        }
         SlashCommand::Add => "add a file to the Context Ledger: /add <path>",
         SlashCommand::Context => {
             "show context usage as a grid, by category, with checkpoints and system files"
@@ -184,7 +178,7 @@ pub(crate) fn supports_inline_args(cmd: SlashCommand) -> bool {
 }
 
 pub(crate) fn available_in_side_conversation(cmd: SlashCommand) -> bool {
-    matches!(cmd, SlashCommand::Dashboard | SlashCommand::Context)
+    matches!(cmd, SlashCommand::Context)
 }
 
 pub(super) fn rag_command_message(args: &str) -> String {
@@ -200,7 +194,6 @@ pub(crate) fn available_during_task(cmd: SlashCommand) -> bool {
             | SlashCommand::MemoryModel
             | SlashCommand::Yolo
             | SlashCommand::Agent
-            | SlashCommand::Dashboard
             | SlashCommand::Context
             | SlashCommand::Personal
     )
@@ -263,11 +256,6 @@ impl ChatWidget {
                 Box::new(PlainHistoryCell::new(vec!["/usage".magenta().into()]));
             *header = usage;
         }
-        let evidence = self.local_evidence_lines();
-        if !evidence.is_empty() {
-            card.parts
-                .push(Box::new(WebHyperlinkHistoryCell::new(evidence)));
-        }
         self.app_event_tx
             .send(AppEvent::Elpis(ElpisAppEvent::OpenUsage(Box::new(card))));
         if let Some(request_id) = request_id {
@@ -299,7 +287,6 @@ impl ChatWidget {
             SlashCommand::Effort => self.open_effort_popup(),
             SlashCommand::Context => self.request_fresh_context_usage_report(),
             SlashCommand::MemoryModel => self.open_background_model_popup(),
-            SlashCommand::Dashboard => self.open_dashboard(),
             _ => {
                 self.add_info_message(
                     format!(

@@ -340,15 +340,12 @@ mod model_popups;
 mod elpis_providers;
 // Elpis: `/effort`.
 mod elpis_effort;
-pub(crate) use self::elpis_providers::BridgedProvider;
 #[cfg(test)]
 pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
 pub(crate) use self::elpis_providers::bridged_provider;
 pub(crate) use self::elpis_providers::bridged_provider_of_model;
-pub(crate) use self::elpis_providers::elpis_chat_model_providers;
 pub(crate) use self::elpis_providers::elpis_lists_from_app_server;
-pub(crate) use self::elpis_providers::elpis_picker_providers;
 pub(crate) use self::elpis_providers::is_bridged_model;
 pub(crate) use self::elpis_providers::load_elpis_provider_models;
 pub(crate) use self::elpis_providers::set_elpis_catalog_provider;
@@ -399,8 +396,6 @@ pub(crate) use realtime::tests::commit_realtime_history_events;
 mod reasoning_shortcuts;
 use self::realtime::RealtimeConversationUiState;
 mod rendering;
-// Elpis: the Context Ledger's category shares, the dashboard and the local evidence links.
-mod elpis_dashboard;
 mod replay;
 mod review;
 mod review_popups;
@@ -599,8 +594,6 @@ pub(crate) struct ChatWidget {
     smart_prune_synced: bool,
     smart_prune_log_request: Option<uuid::Uuid>,
     last_prune_saved_tokens: Option<u64>,
-    // Elpis: the dashboard's Activity tab and whether `/dashboard` has been opened.
-    dashboard: elpis_dashboard::DashboardWidgetState,
     token_usage_pending: bool,
     // Status and polling use account usage reads; response streams may identify meters differently.
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,

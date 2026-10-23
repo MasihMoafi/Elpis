@@ -90,7 +90,7 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::TurnStarted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::HookStarted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::TurnCompleted(notification) => Some(notification.thread_id.as_str()),
-        // Elpis: the dashboard's per-turn timing and cost.
+        // Elpis: per-turn timing and cost.
         ServerNotification::TurnActivityUpdated(notification) => {
             Some(notification.thread_id.as_str())
         }

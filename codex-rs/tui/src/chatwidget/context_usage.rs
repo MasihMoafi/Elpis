@@ -97,7 +97,6 @@ pub(super) struct CategoryUsage {
     pub(super) color: Color,
 }
 
-// Elpis: shared with the dashboard (elpis_dashboard.rs).
 #[derive(Clone, Debug)]
 pub(super) struct ContextUsageSnapshot {
     pub(super) model: String,
@@ -145,7 +144,7 @@ impl ContextUsageHistoryCell {
 }
 
 /// Convert the latest core-built request snapshot into the one category list
-/// shared by `/context`, the dashboard, and the persistent Context Ledger.
+/// shared by `/context` and the persistent Context Ledger.
 pub(super) fn run_built_context_categories(
     attribution: &codex_app_server_protocol::ThreadContextAttribution,
 ) -> Vec<CategoryUsage> {
@@ -292,6 +291,17 @@ impl HistoryCell for ContextUsageHistoryCell {
 }
 
 impl ChatWidget {
+    /// Keep the latest request's category shares. An update that carries none (a replay, or a
+    /// request built before this process started) keeps the last known shares.
+    pub(super) fn apply_context_attribution(
+        &mut self,
+        attribution: Option<codex_app_server_protocol::ThreadContextAttribution>,
+    ) {
+        if let Some(attribution) = attribution {
+            self.context_attribution = Some(attribution);
+        }
+    }
+
     pub(super) fn context_usage_snapshot(
         &self,
         totals: &ContextUsageTranscriptTotals,
@@ -470,12 +480,6 @@ impl ChatWidget {
                 .not_dim()
                 .into(),
             );
-        }
-        // Elpis: local evidence the dashboard server opens as readable reports.
-        let evidence_lines = self.local_evidence_lines();
-        if !evidence_lines.is_empty() {
-            after_chart.push(Line::default());
-            after_chart.extend(evidence_lines);
         }
         ContextUsageHistoryCell {
             before_chart,
