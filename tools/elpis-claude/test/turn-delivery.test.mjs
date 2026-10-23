@@ -366,7 +366,30 @@ test("A37: Claude's report on a background job that ends after its reply opens a
   assert.ok(read.data.some(e => e.item.text === "The background build finished."), "the report is saved in the chat");
   const next = await f.client.send(f.id, { text: "thanks" });
   await until(() => f.ended(next.turn.id), "the chat takes the next message");
-  assert.ok(!f.agent().some(e => e.method === "session/new" && e.params._meta && e !== f.agent().find(x => x.method === "session/new" && x.params._meta)), "the same Claude session goes on");
+  assert.equal(new Set(f.agent().filter(e => e.method === "session/prompt").map(e => e.params.sessionId)).size, 1, "the same Claude session goes on");
+});
+
+test("a dropped connection retries on its own until Claude answers, without an ACP error", { timeout: 20000 }, async t => {
+  const f = await fixture(t, { ELPIS_RECONNECT_MS: "300" }, { prepare: (root, env) => { env.FAKE_ACP_OFFLINE = path.join(root, "offline"); fs.writeFileSync(env.FAKE_ACP_OFFLINE, ""); } });
+  const { turn } = await f.client.send(f.id, { text: "hello" });
+  await until(() => f.ended(turn.id), "the dropped turn ends");
+  assert.match(f.ended(turn.id).params.turn.error.message, /^Connection lost\. Retrying/);
+  assert.doesNotMatch(f.ended(turn.id).params.turn.error.message, /ACP/);
+  await until(() => f.agent().filter(e => e.method === "session/prompt").length >= 3, "it keeps retrying while offline");
+  fs.unlinkSync(f.env.FAKE_ACP_OFFLINE);
+  await until(() => f.events.some(e => e.method === "turn/completed" && e.params.threadId === f.id && e.params.turn.status === "completed"), "a retry gets through once online");
+  assert.match(f.agent().filter(e => e.method === "session/prompt").at(-1).params.prompt[0].text, /connection dropped/i);
+});
+
+test("sending a message while offline retries at once, in place of the timed retry", { timeout: 20000 }, async t => {
+  const f = await fixture(t, { ELPIS_RECONNECT_MS: "60000" }, { prepare: (root, env) => { env.FAKE_ACP_OFFLINE = path.join(root, "offline"); fs.writeFileSync(env.FAKE_ACP_OFFLINE, ""); } });
+  const { turn } = await f.client.send(f.id, { text: "hello" });
+  await until(() => f.ended(turn.id), "the dropped turn ends");
+  fs.unlinkSync(f.env.FAKE_ACP_OFFLINE);
+  const next = await f.client.send(f.id, { text: "are you there?" });
+  await until(() => f.ended(next.turn.id), "the message is answered");
+  assert.equal(f.ended(next.turn.id).params.turn.status, "completed");
+  assert.equal(f.agent().filter(e => e.method === "session/prompt").length, 2, "no timed retry on top");
 });
 
 test("a completed chat survives a graceful bridge restart with several turns in order", { timeout: 20000 }, async t => {
