@@ -995,7 +995,7 @@ export default function Home() {
   }
   /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
    * running turn too, and the composer shows the mode the engine reports. A new chat's mode goes in its thread/start. */
-  const permissionsLocked = !ready || busy || projectChanging || changingPermissions;
+  const permissionsLocked = !ready || (busy && !selected) || projectChanging || changingPermissions;
   const choosePermissions = (next: PermissionMode) => selected ? void changePermissions(selected.id, next) : setNewMode(next);
   /** Shift+Tab in the message box, as in Claude Code: Ask for approval, then Approve for me, then Plan mode, then back.
    * Full access and Bypass are chosen from the menu only; Shift+Tab from them returns to Ask for approval. */

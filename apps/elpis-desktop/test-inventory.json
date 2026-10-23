@@ -70,6 +70,7 @@
     "bridge/git.test.mjs",
     "bridge/recorded-changes.test.mjs",
     "bridge/github-connector.test.mjs",
+    "bridge/helper-desktop.test.mjs",
     "bridge/improve.test.mjs",
     "bridge/love-agents.test.mjs",
     "bridge/love-interview.test.mjs",
