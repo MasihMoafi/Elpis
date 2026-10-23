@@ -189,9 +189,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "cfd25d0654fbd7cc75d76a47268e3c5e49dce851",
-      "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
+      "blob": "20ec102db6751099b08e53e80deef8a82415701a",
+      "approval": "4cdc16bf9539acfbf771110f35840336c01e85f0",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). 23 Oct, Masih: add the voice picker in Settings exactly like the ChatGPT app screenshot. Open Advanced: transcription before the existing fallback and model writes; every assertion is retained."
     },
     "tests/settings-write.test.cjs": {
       "blob": "09f90ee692006240e183eb49d99051431d05de7b",
