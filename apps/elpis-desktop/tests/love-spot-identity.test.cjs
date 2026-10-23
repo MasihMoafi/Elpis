@@ -10,6 +10,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     { id: 'critic', name: 'Love Spot · Critic', agentNickname: 'Elpis' },
     { id: 'reviewer', name: 'Love Spot · Reviewer' },
     { id: 'ordinary', name: 'Project chat' },
+    { id: 'matilda', name: 'Love Spot' },
     { id: 'nickname', name: 'Review cache', agentNickname: 'Cache reviewer' },
   ].map(thread => ({ ...thread, modelProvider: 'openai', model: 'gpt-6-luna', status: { type: 'idle' }, desktopAccess: { writable: false, reason: 'Fixture' } }));
   const clients = new Set();
@@ -27,7 +28,7 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     }
     try {
       const file = path.join(process.env.ELPIS_TEST_OUT || path.join(__dirname, '../out'), url.pathname === '/' ? 'index.html' : url.pathname);
-      res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html');
+      res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : file.endsWith('.webp') ? 'image/webp' : 'text/html');
       res.end(await fs.readFile(file));
     } catch { res.statusCode = 404; res.end(); }
   });
@@ -43,9 +44,19 @@ test('Love Spot conversations show their agent names and use the blood-red app i
       assert.equal(await page.locator('.message.agent .speaker').textContent(), speaker);
       assert.match(await page.locator('.thread-meta').textContent(), new RegExp(speaker));
     }
+    await page.locator('.thread-row[data-thread-id="matilda"] .thread-link').click();
+    const portrait = page.locator('.message.agent img[alt="Matilda"]');
+    await portrait.waitFor();
+    assert.equal(await portrait.evaluate(image => image.complete && image.naturalWidth > 0), true);
+    assert.equal(await page.locator('.message.agent .speaker').textContent(), 'Matilda');
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
+      await page.screenshot({ path: `/tmp/matilda-chat-shots/matilda-${theme}.png` });
+    }
     await page.locator('.thread-row[data-thread-id="ordinary"] .thread-link').click();
     await page.locator('.message.agent').waitFor();
     assert.equal(await page.locator('.message.agent .speaker').count(), 0);
+    assert.equal(await page.locator('.message.agent img[alt="Matilda"]').count(), 0);
     await page.locator('.thread-row[data-thread-id="critic"] .thread-link').click();
     const icon = page.locator('[data-nav-page="loveSpot"] svg');
     const output = process.env.ELPIS_IDENTITY_SCREENSHOTS || '/tmp/lovespot-identity';

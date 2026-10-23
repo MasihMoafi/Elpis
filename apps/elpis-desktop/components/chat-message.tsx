@@ -128,7 +128,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
     const actions:MessageAction[]=item.text?[...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={menuActions(actions)} area={<article className="message agent" id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}>{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined}/>}>{speaker==="Matilda"&&<img src="/matilda-face.webp" alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<MarkdownText text={item.text||""}/>{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;
@@ -168,6 +168,6 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   }
   if(item.type==="contextCompaction")return <div className="context-event">Context compacted</div>;
   if(item.type==="enteredReviewMode")return <div className="context-event">{`Review started${typeof item.review==="string"&&item.review?`: ${item.review}`:""}`}</div>;
-  if(item.type==="exitedReviewMode")return <article className="message agent"><MarkdownText text={typeof item.review==="string"?item.review:""}/></article>;
+  if(item.type==="exitedReviewMode")return <article className={speaker==="Matilda"?"message agent flow-root":"message agent"}><MarkdownText text={typeof item.review==="string"?item.review:""}/></article>;
   return <Activity label={readable(item.type)}><details className="step-input"><DisclosureSummary>Recorded details</DisclosureSummary><TextOutput value={item}/></details></Activity>;
 }

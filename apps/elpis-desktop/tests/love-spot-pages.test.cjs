@@ -209,3 +209,31 @@ test('an unreadable page list is reported in Love Spot, and the rest of the app 
     assert.deepEqual(crashes, [], 'one malformed reply must not take the whole app down');
   } finally { await f.close(); }
 });
+
+for (const colorScheme of ['light', 'dark']) test(`board Style closes and reopens; Delete stays beside its icon (${colorScheme})`, async () => {
+  const f = await loveSpotFixture({ colorScheme });
+  try {
+    await f.open(f.page);
+    await f.draw(f.page);
+    await f.waitFor(s => s.elements.some(e => e.type === 'rectangle' && !e.isDeleted), 'rectangle must save');
+    for (const width of [1440, 760]) {
+      await f.page.setViewportSize({ width, height: 960 });
+      const style = f.page.getByRole('button', { name: 'Drawing style', exact: true });
+      const properties = f.page.locator('.selected-shape-actions .Island, .App-mobile-menu');
+      await style.click();
+      assert.equal(await style.getAttribute('aria-pressed'), 'false');
+      assert.equal(await properties.isVisible(), false);
+      await style.click(); await properties.waitFor({ state: 'visible' });
+      const aligned = await f.page.getByRole('button', { name: 'Delete current page', exact: true }).evaluate(button => {
+        const svg = button.querySelector('svg').getBoundingClientRect();
+        const text = [...button.querySelectorAll('*')].flatMap(e => [...e.childNodes]).find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim() === 'Delete');
+        const range = document.createRange(); range.selectNodeContents(text); const label = range.getBoundingClientRect();
+        return label.left >= svg.right && Math.abs(label.top + label.height / 2 - svg.top - svg.height / 2) < 4;
+      });
+      assert.equal(aligned, true, 'Delete text must sit horizontally beside its icon');
+      await f.page.screenshot({ path: `/tmp/matilda-chat-shots/board-style-${colorScheme}-${width}.png` });
+    }
+    assert.equal((await f.scene()).elements.filter(e => e.type === 'rectangle' && !e.isDeleted).length, 1);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

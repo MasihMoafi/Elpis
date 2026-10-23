@@ -76,6 +76,7 @@ export function taskFromPath(path: unknown) {
 }
 /** Love Spot records the card's name in the conversation title. */
 export function agentName(thread?: Thread | null): string {
+  if (thread?.name === "Love Spot") return "Matilda";
   return thread?.name?.match(/^Love Spot · (.+)$/u)?.[1]?.trim() || thread?.agentNickname?.trim() || "";
 }
 /** How the terminal names a helper, "Plato [worker]" (tui/src/multi_agents.rs), so the app shows the same agent. */

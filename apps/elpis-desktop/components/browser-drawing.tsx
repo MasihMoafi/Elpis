@@ -5,8 +5,9 @@ import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Excalidraw, MainMenu, convertToExcalidrawElements, exportToCanvas, getCommonBounds, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type { BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
+import { useDrawingStyle } from "@/components/drawing-style";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import type { AttachToChat } from "@/components/browser-annotations";
 import { holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
@@ -24,32 +25,23 @@ function backgroundScene(shot: string, width: number, height: number): { element
   return { elements, files: { [fileId]: { id: fileId, mimeType: "image/jpeg", dataURL: shot as BinaryFiles[string]["dataURL"], created: Date.now() } } };
 }
 
-const TABBABLE = 'a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])';
-const tabbable = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(element => !(element as HTMLButtonElement).disabled && element.tabIndex >= 0 && element.getClientRects().length > 0);
-
 const marks = (elements: readonly ExcalidrawElement[]) => elements.filter(element => !element.isDeleted && element.id !== BACKGROUND);
 
 /** The page screenshot under Excalidraw's own editor: draw on it, then add the marked picture and its address to the composer. */
-export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, onAdded }: { draft: DrawingDraft; dark: boolean; onAttach: AttachToChat; onClose: () => void; onAdded: () => void }) {
+export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, onAdded, onChat }: { draft: DrawingDraft; dark: boolean; onAttach: AttachToChat; onClose: () => void; onAdded: () => void; onChat: () => void }) {
   const [draft] = useState(() => ({ ...given, ...(given.elements ? {} : backgroundScene(given.shot, given.width, given.height)) }) as DrawingDraft & { elements: readonly ExcalidrawElement[]; files: BinaryFiles });
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
   const [marked, setMarked] = useState(() => marks(draft.elements).length > 0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
+  const { notice: noticeStyle, button: styleButton, className: styleClassName } = useDrawingStyle(editor);
   const scene = useRef<DrawingDraft>(draft);
   const root = useRef<HTMLDivElement>(null);
   const first = useRef<ExcalidrawElement>(draft.elements.find(element => element.id === BACKGROUND)!);
 
-  // The window is modal: focus starts inside it, Tab wraps within it, and focus that lands on the page underneath is brought back.
-  // The discard question is its own dialog with its own focus handling, so it is left alone while it is open.
-  useEffect(() => {
-    const element = root.current; if (!element) return;
-    const inside = (target: EventTarget | null) => target instanceof Node && (element.contains(target) || !!(target instanceof Element && target.closest('[role="alertdialog"]')));
-    const pull = () => { if (!asking && !inside(document.activeElement)) (tabbable(element)[0] ?? element).focus(); };
-    pull(); document.addEventListener("focusin", pull);
-    return () => document.removeEventListener("focusin", pull);
-  }, [asking]);
+  // Drawing belongs to the browser panel; the adjacent chat and its composer stay reachable.
+  useEffect(() => { root.current?.focus(); }, []);
   // Excalidraw restores initialData after publishing its API. Fitting before that restore is overwritten.
   useEffect(() => {
     if (!editor) return;
@@ -66,7 +58,8 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
   }, [editor]);
 
   // The unsent drawing is held until it is added or discarded, so closing the panel never loses it.
-  const changed = useCallback((elements: readonly ExcalidrawElement[], _state: unknown, files: BinaryFiles) => {
+  const changed = useCallback((elements: readonly ExcalidrawElement[], state: AppState, files: BinaryFiles) => {
+    noticeStyle(state);
     const all = editor?.getSceneElementsIncludingDeleted() ?? elements;
     const shot = all.find(element => element.id === BACKGROUND), origin = first.current;
     // The screenshot is a fixed backdrop: restore it if anything (unlock all, clear canvas) moved or removed it.
@@ -76,7 +69,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
     scene.current = { ...scene.current, elements: all, files: { ...files } };
     holdDrawing(scene.current);
     setMarked(marks(all).length > 0);
-  }, [editor]);
+  }, [editor, noticeStyle]);
 
   const close = () => { holdDrawing(null); onClose(); };
   const cancel = () => { if (busy) return; if (marked) setAsking(true); else close(); };
@@ -102,32 +95,26 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
     finally { setBusy(false); }
   }
 
-  return <div ref={root} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Draw on the page" className="browser-drawing absolute inset-0 z-10 flex flex-col bg-background text-foreground outline-none"
+  return <div ref={root} tabIndex={-1} role="dialog" aria-label="Draw on the page" className="browser-drawing absolute inset-0 z-10 flex flex-col bg-background text-foreground outline-none"
     onKeyDownCapture={event => {
-      if (event.key === "Tab" && !asking && root.current) {
-        const stops = tabbable(root.current), index = stops.indexOf(document.activeElement as HTMLElement);
-        if (stops.length) {
-          event.preventDefault(); event.stopPropagation();
-          stops[index < 0 ? (event.shiftKey ? stops.length - 1 : 0) : (index + (event.shiftKey ? -1 : 1) + stops.length) % stops.length].focus();
-        }
-        return;
-      }
       if (event.key !== "Escape" || asking) return;
       const state = editor?.getAppState();
       // Escape belongs to the editor while it has a tool, a selection, a text box or a menu open.
       if (!state || state.activeTool.type !== "selection" || state.editingTextElement || state.openDialog || state.openPopup || state.openMenu || Object.keys(state.selectedElementIds).length) return;
       event.preventDefault(); event.stopPropagation(); cancel();
     }}>
-    <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2">
+    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold">Draw on the page</h2>
         <p className="truncate text-xs text-muted-foreground" title={draft.url}>{draft.title ? `${draft.title} · ` : ""}{draft.url}</p>
       </div>
       {error && <p role="alert" className="max-w-[40%] text-xs text-destructive">{error}</p>}
+      {styleButton}
+      <Button type="button" variant="ghost" size="sm" disabled={busy} title="Return to chat and keep this drawing for Resume" onClick={() => { holdDrawing(scene.current); onChat(); }}>Chat</Button>
       <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={busy}>Cancel</Button>
       <Button type="button" size="sm" onClick={() => void add()} disabled={!marked || busy} title={marked ? "Add the marked picture and the page address to your message" : "Draw something first"}>{busy ? "Adding…" : "Add to message"}</Button>
     </header>
-    <div className="browser-drawing-editor relative min-h-0 flex-1">
+    <div className={`browser-drawing-editor relative min-h-0 flex-1 ${styleClassName}`}>
       <Excalidraw initialData={{ elements: draft.elements, files: draft.files, appState: { collaborators: new Map() } }} excalidrawAPI={setEditor} onChange={changed}
         theme={dark ? "dark" : "light"} handleKeyboardGlobally={false} autoFocus
         UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false, clearCanvas: false, changeViewBackgroundColor: false } }}>

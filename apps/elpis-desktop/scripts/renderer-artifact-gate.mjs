@@ -24,6 +24,16 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+  "tests/browser-drawing.test.cjs": {
+    "blob": "5f4d6ee90df5f3ee5bf57e866bca10ce595787b6",
+    "approval": "0864860125d66b628ca4f0f88896cadb09af0e50",
+    "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks."
+  },
+  "tests/love-spot-identity.test.cjs": {
+    "blob": "22c1869b9fbbdad68d1f5a461f7b2b9225514b3f",
+    "approval": "0864860125d66b628ca4f0f88896cadb09af0e50",
+    "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks."
+  },
     "tests/code-opens.test.cjs": {
       "blob": "eeb0761006b96eb06f2032ff8abb4bd7ab54cbaa",
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
@@ -114,11 +124,6 @@ export const retainedUpdates = {
       "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
       "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed."
     },
-    "tests/browser-drawing.test.cjs": {
-      "blob": "4282b57ba27181f3ad642d668316c2f9e7e5c61c",
-      "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
-      "reason": "S21, Masih 22 Oct: \"when you click on it the browser goes away and a new page opens, can't we use the same draw in the same page with the brower unmoved?\" The drawing fills the browser panel it opened from instead of the whole window; every other drawing assertion is unchanged. Annotation note, Masih 22 Oct: \"when we anotate and send it shows the browser note to the user. it shouldn't .\" The drawing context note is no longer shown as a chip; it is still sent (a3b057c0f)."
-    },
     "tests/composer-corner.test.cjs": {
       "blob": "d77e771f90a41d538ad3deee2a22ac52f62cc7de",
       "approval": "3b472fffa5c8b9158766709a6367f08a5f350b94",
@@ -170,9 +175,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
     },
     "tests/love-spot-pages.test.cjs": {
-      "blob": "0729c64c5a02e0a14deb8dc705970016f6950101",
-      "approval": "31f17b33e067ff531c9c68263c893b7795e52fcd",
-      "reason": "OBSRM, Masih 21 Oct 22:45: \"remove it; remove the observability page - keep its logo icon as it looks good. the rest, remove.\" Navigation checks stay. Love Spot, Masih 23 Oct: \"I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda. Her face must show next to her replies.\" Her reply and face now land on the board after he draws, so this test counts what he drew, not her love-* elements."
+      "blob": "d478e47c506ccdb2d3faf79fcfd049013f196fd4",
+      "approval": "835ac6ebc12dd2667c7e32fce29bc23c74a36858",
+      "reason": "Masih, handwritten Love Spot board, 23 October 2026: “The Delete must be aligned with its icon” horizontally; asks to close the properties panel in the other Excalidraw view too. Keep page creation, deletion, recovery and storage checks; add the shared Style and horizontal icon-label journey in both themes."
     },
     "tests/love-spot-live.test.cjs": {
       "blob": "c7604087c6f6b2dcc22a3c31afeb98d1b332d98f",

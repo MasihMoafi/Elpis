@@ -8,6 +8,7 @@ import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExc
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
+import { useDrawingStyle } from "@/components/drawing-style";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -53,6 +54,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const [saveStatus, setSaveStatus] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
+  const { notice: noticeStyle, button: styleButton, className: styleClassName } = useDrawingStyle(editor);
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
   const [settings, setSettings] = useState<ProviderSettings | null>(null), [whoOpen, setWhoOpen] = useState(false);
@@ -310,6 +312,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     send: (text, persona) => sendWithBoard(async revision => { await api("/love-spot/talk", { text, persona, revision, ...(pick.model ? { model: pick.model, ...(pickedProvider ? { provider: pickedProvider } : {}) } : {}) }); }) });
 
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
+    noticeStyle(appState);
     const before = latest.current;
     // onChange contains only live elements. Persist the API's tombstones too, or a stale
     // writer would resurrect a shape the user just deleted.
@@ -334,7 +337,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     }
     if (!remote.current && endedEdit) queueMicrotask(() => void saveLatest.current?.());
     if (drawingChanged) schedulePicture();
-  }, [editor, matilda, receive, save, schedulePicture]);
+  }, [editor, matilda, receive, save, schedulePicture, noticeStyle]);
 
   async function chooseScreenshot(id: string, action: "place" | "dismiss") {
     if (choosing) return;
@@ -397,13 +400,14 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           </DropdownMenuContent>
         </DropdownMenu>
         <Button variant="outline" size="sm" disabled={!editor || pageBusy} onClick={() => void changePage("new")}><Plus aria-hidden="true" />New page</Button>
-        <Button variant="ghost" size="sm" aria-label="Delete current page" title="Delete current page" disabled={!editor || pageBusy || !page} onClick={() => setPageToDelete(page?.name)}><Trash2 aria-hidden="true" />Delete</Button>
+        <Button variant="ghost" size="sm" aria-label="Delete current page" title="Delete current page" disabled={!editor || pageBusy || !page} onClick={() => setPageToDelete(page?.name)}><span className="inline-flex flex-row items-center gap-1"><Trash2 aria-hidden="true" />Delete</span></Button>
         {renaming && <form className="flex items-center gap-1" onSubmit={event => { event.preventDefault(); void changePage("rename", pageName.trim()); }}>
           <Input autoFocus aria-label="Page name" value={pageName} maxLength={100} className="max-w-48" onChange={event => setPageName(event.target.value)} onKeyDown={event => { if (event.key === "Escape") setRenaming(false); }} />
           <Button variant="outline" size="sm" type="submit" disabled={pageBusy || !pageName.trim()}>Save</Button>
           <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
         </form>}
       </div>
+      {styleButton}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
@@ -437,7 +441,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     </section>}
     <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} pick={pick} fallback={settings?.main.model ?? ""} models={models} choices={choices} onSave={(persona, chosen) => { matilda.keep(persona); setPick(chosen); keepModel(chosen); }} />
     {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
-    <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
+    <div className="love-spot-content"><div className={`love-spot-editor ${styleClassName}`} ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {
       const id = event.dataTransfer.getData(screenshotDrag);

@@ -62,7 +62,7 @@ export function browserTabActions(browser: Browser, tab: BrowserTab, close: () =
 /** The page area of the side panel: address bar and the native page view placed over the viewport. `covered` hides the
  * page while something else is on top of it; `onAttach` gives annotations and screenshots to the chat's composer;
  * `imagesAllowed` is false for text-only models. */
-export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true, cwd = "" }: { browser: Browser; covered: boolean; onAttach?: AttachToChat; imagesAllowed?: boolean; cwd?: string }) {
+export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true, cwd = "", onReturnToChat }: { browser: Browser; covered: boolean; onAttach?: AttachToChat; imagesAllowed?: boolean; cwd?: string; onReturnToChat?: () => void }) {
   const { api, state, command } = browser;
   const [notice, setNotice] = useState("");
   const [edit, setEdit] = useState<{ tab: string; value: string } | null>(null);
@@ -159,6 +159,7 @@ export function BrowserPanel({ browser, covered, onAttach, imagesAllowed = true,
     <AnnotationDock browser={browser} onAttach={onAttach} imagesAllowed={imagesAllowed} />
     {drawing && onAttach && <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="Draw on the page" className="absolute inset-0 z-10 grid place-items-center bg-background text-sm text-muted-foreground"><p role="status">Opening the drawing tools…</p></div>}>
       <BrowserDrawing draft={drawing} dark={document.documentElement.classList.contains("dark")} onAttach={onAttach}
+        onChat={() => { setDrawing(null); setHeld(!!heldDrawing()); onReturnToChat?.(); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[aria-label="Message Elpis"]')?.focus()); }}
         onClose={() => { setDrawing(null); setHeld(!!heldDrawing()); requestAnimationFrame(() => drawButton.current?.focus()); }} onAdded={() => { setDrawing(null); setHeld(false); setNotice("Drawing added to your message"); }} />
     </Suspense>}
   </section>;

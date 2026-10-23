@@ -9,7 +9,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { guardDesktopStore } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const staticOut = path.join(__dirname, '../out');
+const staticOut = process.env.ELPIS_TEST_OUT || path.join(__dirname, '../out');
 const shots = process.env.ELPIS_SHOTS;
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHsKbOQAAAABJRU5ErkJggg==', 'base64');
 
@@ -283,44 +283,39 @@ test('drawing stays below the desktop title bar and fits the whole captured page
   assert.deepEqual(f.errors, []);
 });
 
-// Focus is checked on the real element: inside the drawing dialog, or (for the discard question) its own alert dialog.
-const focusedInside = page => page.evaluate(() => { const a = document.activeElement; return !!a && !!(a.closest('[role=dialog][aria-label="Draw on the page"]') || a.closest('[role=alertdialog]')); });
-const focusLabel = page => page.evaluate(() => { const a = document.activeElement; return a ? `${a.tagName}:${a.getAttribute('aria-label') || a.textContent?.trim().slice(0, 30) || a.className}` : 'none'; });
-
-test('keyboard focus starts in the drawing, stays there through Tab, Shift+Tab and Excalidraw menus, and returns to Draw on close', async t => {
+// Masih, 23 Oct: Style cannot close and drawing prevents returning to chat.
+test('Style closes without losing marks and Chat pauses drawing for a lossless Resume', async t => {
   const f = await fixture(t), { page } = f;
-  const draw = page.getByRole('button', { name: 'Draw on this page' });
-  await draw.focus(); await draw.press('Enter');
-  await dialog(page).waitFor(); await page.locator('.excalidraw canvas.interactive').first().waitFor();
-  await eventually(async () => assert.equal(await focusedInside(page), true, `initial focus: ${await focusLabel(page)}`));
-  const seen = new Set();
-  for (let i = 0; i < 60; i++) { await page.keyboard.press(i < 30 ? 'Tab' : 'Shift+Tab'); assert.equal(await focusedInside(page), true, `focus escaped on press ${i}: ${await focusLabel(page)}`); seen.add(await focusLabel(page)); }
-  assert.ok(seen.size > 5, `Tab really moves through the editor's controls (${seen.size} stops)`);
-  assert.ok([...seen].some(label => /Add to message|Cancel/.test(label)), 'and through the dialog\'s own buttons');
-  // An open Excalidraw menu keeps focus too.
-  await page.getByTestId('main-menu-trigger').click(); await page.getByTestId('dropdown-menu').waitFor();
-  for (let i = 0; i < 12; i++) { await page.keyboard.press(i % 2 ? 'Shift+Tab' : 'Tab'); assert.equal(await focusedInside(page), true, `focus escaped from the menu on press ${i}: ${await focusLabel(page)}`); }
-  // In the browser panel's width Excalidraw uses its phone layout, whose menu Escape does not close; its button does.
-  await page.keyboard.press('Escape');
-  if (await page.getByTestId('dropdown-menu').count()) await page.getByTestId('main-menu-trigger').click();
-  await page.getByTestId('dropdown-menu').waitFor({ state: 'detached' });
-  assert.equal(await dialog(page).count(), 1, 'Escape closed only the menu');
-  // The discard question takes focus and gives it back.
-  await page.locator('label:has([data-testid="toolbar-rectangle"])').click();
-  const area = await page.locator('.excalidraw canvas.interactive').first().boundingBox();
-  await page.mouse.move(area.x + 400, area.y + 300); await page.mouse.down(); await page.mouse.move(area.x + 500, area.y + 380, { steps: 5 }); await page.mouse.up();
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click(); await page.getByRole('alertdialog').waitFor();
-  assert.equal(await focusedInside(page), true, 'the discard question holds focus');
-  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+  const area = await open(f);
+  await draw(page, 'rectangle', { x: area.x + area.width / 2 - 60, y: area.y + area.height / 2 - 40 }, { x: area.x + area.width / 2 + 60, y: area.y + area.height / 2 + 40 });
+  const style = page.getByRole('button', { name: 'Drawing style', exact: true });
+  const properties = page.locator('.selected-shape-actions .Island, .App-mobile-menu');
+  for (const width of [1320, 760]) {
+    await page.setViewportSize({ width, height: 860 });
+    assert.equal(await style.getAttribute('aria-pressed'), 'true');
+    await style.click();
+    assert.equal(await style.getAttribute('aria-pressed'), 'false');
+    assert.equal(await properties.isVisible(), false);
+    assert.equal(await page.getByRole('button', { name: 'Add to message' }).isEnabled(), true);
+    await style.click();
+    await properties.waitFor({ state: 'visible' });
+    await f.shoot(`style-on-${width}`);
+  }
+  await page.setViewportSize({ width: 1320, height: 860 });
+  const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+  await input.click(); await input.fill('Still here with you.');
+  assert.equal(await input.evaluate(element => element === document.activeElement), true);
+  await dialog(page).getByRole('button', { name: 'Chat', exact: true }).press('Enter');
   await dialog(page).waitFor({ state: 'detached' });
-  await eventually(async () => assert.equal(await draw.evaluate(element => element === document.activeElement), true, `Draw regains focus: ${await focusLabel(page)}`));
+  assert.equal(await input.inputValue(), 'Still here with you.');
+  assert.equal(await input.evaluate(element => element === document.activeElement), true);
+  await page.getByRole('button', { name: 'Show side panel' }).click();
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await dialog(page).waitFor();
+  assert.equal((await f.log()).filter(item => item === 'screenshot').length, 1);
+  assert.equal(await page.getByRole('button', { name: 'Add to message' }).isEnabled(), true);
+  await page.getByRole('button', { name: 'Add to message' }).click();
+  await chips(page).getByText('Page drawing.jpg').waitFor();
+  await f.shoot('style-chat-resume');
   assert.deepEqual(f.errors, []);
-
-  // After a successful add the chat's composer, not the hidden page or the button, has the cursor.
-  await open(f);
-  await page.locator('label:has([data-testid="toolbar-rectangle"])').click();
-  const again = await page.locator('.excalidraw canvas.interactive').first().boundingBox();
-  await page.mouse.move(again.x + 400, again.y + 300); await page.mouse.down(); await page.mouse.move(again.x + 500, again.y + 380, { steps: 5 }); await page.mouse.up();
-  await page.getByRole('button', { name: 'Add to message' }).click(); await dialog(page).waitFor({ state: 'detached' });
-  await eventually(async () => assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Message Elpis'));
 });

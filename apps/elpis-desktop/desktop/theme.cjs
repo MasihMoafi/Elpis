@@ -11,7 +11,7 @@ const COLOR = /^(?:#[0-9a-f]{6}|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)
 function registerTheme({ host, ipcMain, nativeTheme, titleBar, browser, onDark }) {
   const report = (event, dark, details) => {
     if (event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame || host.isDestroyed()) return;
-    onDark(dark === true); host.setTitleBarOverlay(titleBar[dark === true ? 'dark' : 'light']);
+    onDark?.(dark === true); host.setTitleBarOverlay(titleBar[dark === true ? 'dark' : 'light']);
     if (CHOICES.includes(details?.source)) nativeTheme.themeSource = details.source;
     if (typeof details?.background === 'string' && COLOR.test(details.background)) browser.setBackground(details.background);
   };

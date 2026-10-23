@@ -9,12 +9,12 @@ const vm = require('node:vm');
 
 const TITLE_BAR = { dark: { color: '#0d0e11' }, light: { color: '#f2f2f1' } };
 
-function setup() {
+function setup({ reportDark = true } = {}) {
   const { registerTheme } = require('./theme.cjs');
   const listeners = new Map(), mainFrame = {}, webContents = { mainFrame }, overlays = [], backgrounds = [], darks = [];
   const nativeTheme = { themeSource: 'system' }, host = { webContents, isDestroyed: () => false, setTitleBarOverlay: value => overlays.push(value) };
   const dispose = registerTheme({ host, ipcMain: { on: (name, fn) => listeners.set(name, fn), removeListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); } },
-    nativeTheme, titleBar: TITLE_BAR, browser: { setBackground: color => backgrounds.push(color) }, onDark: dark => darks.push(dark) });
+    nativeTheme, titleBar: TITLE_BAR, browser: { setBackground: color => backgrounds.push(color) }, ...(reportDark ? { onDark: dark => darks.push(dark) } : {}) });
   const report = (...args) => listeners.get('elpis:theme')({ sender: webContents, senderFrame: mainFrame }, ...args);
   return { listeners, report, nativeTheme, overlays, backgrounds, darks, dispose, webContents, mainFrame };
 }
@@ -70,4 +70,12 @@ test('the page\'s setTheme sends the dark flag, the choice and the background ov
   api.setTheme(true, { source: 'dark', background: 'rgb(10, 11, 13)', extra: 'dropped' });
   api.setTheme(false);
   assert.deepEqual(JSON.parse(JSON.stringify(sent)), [['elpis:theme', true, { source: 'dark', background: 'rgb(10, 11, 13)' }], ['elpis:theme', false, {}]]);
+});
+
+test('a preview without a theme observer still updates the window and browser', () => {
+  const t = setup({ reportDark: false });
+  t.report(true, { source: 'dark', background: '#0d0e11' });
+  assert.deepEqual(t.overlays, [TITLE_BAR.dark]);
+  assert.deepEqual(t.backgrounds, ['#0d0e11']);
+  assert.equal(t.nativeTheme.themeSource, 'dark');
 });
