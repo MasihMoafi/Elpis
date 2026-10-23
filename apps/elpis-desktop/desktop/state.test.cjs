@@ -10,6 +10,17 @@ const { EventEmitter } = require('node:events');
 const vm = require('node:vm');
 const { spawn } = require('node:child_process');
 
+test('a saved workspace holding a setting this version no longer knows still opens and keeps it', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-old-key-')), 'workspace.json');
+  fs.writeFileSync(file, JSON.stringify({ 'elpis-theme': 'dark', 'elpis-love-bars': '{"tools":{"x":1,"y":2}}' }));
+  const store = createStateStore(file);
+  assert.equal(store.snapshot().error, undefined, 'it opens');
+  await store.set('elpis-theme', 'light');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8'))['elpis-love-bars'], '{"tools":{"x":1,"y":2}}', 'and the old setting stays in the file');
+  fs.writeFileSync(file, JSON.stringify({ 'elpis-theme': 3 }));
+  assert.match(createStateStore(file).snapshot().error, /Could not read saved Elpis workspace/, 'a value that is not text is still corruption');
+});
+
 test('prompt bookmarks survive reopening the desktop store', async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-prompt-bookmarks-')), 'workspace.json');
   const key = 'elpis:prompt-rail-bookmarks:chat-1';

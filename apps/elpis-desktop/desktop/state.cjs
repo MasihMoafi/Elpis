@@ -27,7 +27,8 @@ function createStateStore(file) {
     const raw = fs.readFileSync(file, 'utf8');
     if (Buffer.byteLength(raw) > 8 * 1024 * 1024) throw Error('too large');
     values = JSON.parse(raw);
-    if (!values || Array.isArray(values) || typeof values !== 'object' || Object.entries(values).some(([key, value]) => !allowed(key) || typeof value !== 'string')) throw Error('invalid state');
+    if (!values || Array.isArray(values) || typeof values !== 'object' || Object.values(values).some(value => typeof value !== 'string')) throw Error('invalid state');
+    // A setting this version no longer knows is kept in the file and ignored: it must never stop the app from opening (23 Oct: removing two old Love Spot keys made every saved workspace unreadable). Writes are still limited to `allowed` keys.
   } catch (cause) {
     if (cause.code !== 'ENOENT') error = 'Could not read saved Elpis workspace. The original file has been preserved.';
   }
