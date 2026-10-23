@@ -29,18 +29,8 @@ pub(crate) enum ElpisAppEvent {
     },
     SavePrunerModel(codex_app_server_protocol::PrunerWriteParams),
     PrunerModelSaved(Result<codex_app_server_protocol::PrunerReadResponse, String>),
-    // The dashboard (app/elpis_events.rs).
     /// The root thread's latest work graph, fetched in the background when `/agent` opened.
     WorkGraphLoaded(Result<Option<codex_app_server_protocol::WorkGraphSummary>, String>),
-
-    /// `/dashboard`: publish the current state, start the loopback server and open the page.
-    OpenDashboard,
-
-    /// Republish the dashboard's state. The checkpoint count needs the App-owned transcript.
-    RefreshDashboard,
-
-    /// Refresh descendants for the dashboard's live Agents map.
-    RefreshDashboardAgents,
 
     /// Bare `/usage`: show the session card as an overlay Escape closes.
     OpenUsage(Box<dyn crate::history_cell::HistoryCell>),

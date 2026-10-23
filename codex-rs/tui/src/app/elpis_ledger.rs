@@ -3,8 +3,8 @@
 //!
 //! Copied from v0.3.0 `app.rs` (the coordinator types), `app/background_requests.rs` (loader
 //! and workers) and `app/event_dispatch.rs` (the event arms). Stage 1 leaves out what needs
-//! the Elpis context engine: the dashboard, holding a submission until an admission write
-//! lands, and refreshing after the agent saves a memory.
+//! the Elpis context engine: holding a submission until an admission write lands, and
+//! refreshing after the agent saves a memory.
 
 use super::*;
 use crate::chatwidget::elpis_memory_dir;
@@ -701,10 +701,7 @@ impl App {
             | ElpisAppEvent::PrunerSettingsLoaded { .. }
             | ElpisAppEvent::SavePrunerModel(_)
             | ElpisAppEvent::PrunerModelSaved(_)
-            | ElpisAppEvent::OpenDashboard
             | ElpisAppEvent::WorkGraphLoaded(_)
-            | ElpisAppEvent::RefreshDashboard
-            | ElpisAppEvent::RefreshDashboardAgents
             | ElpisAppEvent::LoadSmartPruneLog(_, _)
             | ElpisAppEvent::SmartPruneLogLoaded(_, _, _)
             | ElpisAppEvent::OpenSmartPruneRecord(_)

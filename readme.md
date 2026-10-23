@@ -33,7 +33,7 @@ The October 10 candidate restores the inherited Codex `/review` and `/worktree` 
 - The responding agent explicitly saves durable knowledge and the workspace checkpoint through a guarded local tool. Saving and admission are separate choices.
 - `/compact` accepts a pressure threshold or custom instructions. Experimental Smart Prune and reasoning expiry limit disposable context.
 - `/model` and `--provider` select providers; the local gateway supports Anthropic, Gemini and OpenRouter paths alongside OpenAI.
-- `/dashboard` and `/usage` expose local session information. Subscription price remains unavailable.
+- `/usage` exposes local session information. Subscription price remains unavailable.
 - Elpis identity, composer queuing, chosen skills and permission controls surround the selected model.
 
 No model weights, retrieval engine or speech engine are bundled. External capabilities come through tools or explicitly registered integrations.

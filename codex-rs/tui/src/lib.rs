@@ -101,8 +101,6 @@ pub(crate) use codex_app_server_client::legacy_core;
 
 pub(crate) use worktree_startup::ManagedTuiWorktree;
 
-// Elpis: the dashboard's Activity tab.
-mod activity_state;
 mod additional_dirs;
 mod analytics;
 mod app;
@@ -133,8 +131,6 @@ mod color;
 mod config_update;
 mod copy_input_guard;
 pub(crate) mod custom_terminal;
-// Elpis: the `/dashboard` page's loopback server.
-mod dashboard_server;
 mod daybreak;
 // Elpis: Elpis-owned app events.
 mod elpis_app_event;

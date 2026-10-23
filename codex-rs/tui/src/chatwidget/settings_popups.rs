@@ -37,15 +37,6 @@ impl ChatWidget {
             format!("{} enabled", self.config.features.enabled_features().len()),
         );
         local_values.insert(
-            "Context Ledger",
-            if self.thread_id().is_some() {
-                "active"
-            } else {
-                "unavailable"
-            }
-            .to_string(),
-        );
-        local_values.insert(
             "Pruner model",
             crate::legacy_core::pruner_settings::PrunerSettings::load(
                 self.config.codex_home.as_path(),
@@ -103,13 +94,6 @@ impl ChatWidget {
                 "inline"
             }
             .to_string(),
-        );
-        local_values.insert(
-            "Ledger width",
-            self.local_settings
-                .tui
-                .context_ledger_width
-                .map_or_else(|| "automatic".to_string(), |width| width.to_string()),
         );
         local_values.insert(
             "Status line",

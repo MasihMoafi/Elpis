@@ -15,11 +15,6 @@ kind = "cargo"
 mode = "check"
 argv = ["check", "--workspace", "--all-targets", "--exclude", "codex-sandboxing"]
 
-[commands.tui-dashboard]
-kind = "cargo"
-mode = "test"
-argv = ["test", "-p", "codex-tui", "--lib", "--locked", "dashboard"]
-
 [commands.tui-context-usage]
 kind = "cargo"
 mode = "test"
@@ -205,10 +200,6 @@ name = "docs"
 commands = ["diff-check"]
 
 [[surfaces]]
-name = "dashboard"
-commands = ["fmt-check", "tui-dashboard", "tui-context-usage"]
-
-[[surfaces]]
 name = "tui"
 commands = [
     "fmt-check",
@@ -271,7 +262,6 @@ commands = [
     "core-memory-permission-profile",
     "tui-manual-memory",
     "tui-context-ledger",
-    "tui-dashboard",
     "tui-context-usage",
 ]
 
@@ -281,7 +271,6 @@ commands = [
     "diff-check",
     "fmt-check",
     "workspace-check",
-    "tui-dashboard",
     "tui-context-usage",
     "tui-launcher",
     "tui-branding",
@@ -430,20 +419,8 @@ glob = "codex-rs/app-server/tests/suite/v2/memory_recall.rs"
 surfaces = ["memory"]
 
 [[path_rules]]
-glob = "codex-rs/tui/src/dashboard_server.rs"
-surfaces = ["memory", "dashboard"]
-
-[[path_rules]]
-glob = "codex-rs/tui/src/dashboard_server_tests.rs"
-surfaces = ["memory", "dashboard"]
-
-[[path_rules]]
-glob = "codex-rs/tui/src/dashboard_assets/**"
-surfaces = ["memory", "dashboard"]
-
-[[path_rules]]
 glob = "codex-rs/tui/src/chatwidget/context_usage.rs"
-surfaces = ["memory", "dashboard"]
+surfaces = ["memory"]
 
 [[path_rules]]
 glob = "codex-rs/tui/src/chatwidget/context_ledger.rs"

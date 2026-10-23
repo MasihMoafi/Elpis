@@ -202,7 +202,6 @@ if not isinstance(surfaces, list) or not surfaces:
     fail("surfaces must be a non-empty array of tables")
 expected_surface_order = [
     "docs",
-    "dashboard",
     "tui",
     "context-compaction",
     "app-server",

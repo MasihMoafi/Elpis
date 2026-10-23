@@ -3295,18 +3295,6 @@ async fn agents_overview_seeds_loaded_threads_when_recent_listing_is_unavailable
                     )),
                 )
                 .await;
-                // A dashboard started by another test also consumes status updates.
-                // Allow its targeted refresh without permitting another history scan.
-                if let Some(expected_id) = app.agents_overview.request_id {
-                    let Some(AppEvent::AgentsOverviewThreadsLoaded { request_id, result }) =
-                        tokio::time::timeout(Duration::from_secs(10), rx.recv()).await?
-                    else {
-                        panic!("expected status refresh result")
-                    };
-                    assert_eq!(request_id, expected_id);
-                    assert!(result.is_ok(), "status refresh failed: {result:?}");
-                    app.apply_agents_overview_thread_refresh(&app_server, request_id, result);
-                }
                 assert!(app.agents_overview.request_id.is_none());
                 assert_eq!(history_requests(), before_status_change);
                 assert_eq!(

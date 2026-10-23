@@ -60,7 +60,6 @@ impl ChatWidget {
                 self.set_token_info(Some(token_usage_info_from_app_server(
                     notification.token_usage,
                 )));
-                self.request_dashboard_refresh(); // Elpis
             }
             // Elpis: Smart Prune state for the Context Ledger (elpis_ledger_glue.rs).
             ServerNotification::ThreadSmartPruneUpdated(notification) => {
@@ -100,11 +99,6 @@ impl ChatWidget {
                         &notification.turn.id,
                         MisalignmentTurnSource::ServerNotification,
                     );
-                    // Elpis: the dashboard's Activity tab.
-                    self.on_turn_started_activity(
-                        notification.turn.id.clone(),
-                        notification.turn.started_at,
-                    );
                 }
                 self.turn_lifecycle.last_turn_id = Some(notification.turn.id);
                 self.last_non_retry_error = None;
@@ -120,17 +114,6 @@ impl ChatWidget {
                 }
                 self.restore_realtime_transcripts_before_turn(&notification.turn.id);
                 self.handle_turn_completed_notification(notification, replay_kind);
-            }
-            // Elpis: the dashboard's per-turn timing and cost state, live only.
-            ServerNotification::TurnActivityUpdated(notification) => {
-                if replay_kind.is_none() {
-                    self.on_turn_activity_updated(notification);
-                }
-            }
-            ServerNotification::TurnCostUpdated(notification) => {
-                if replay_kind.is_none() {
-                    self.on_turn_cost_updated(notification);
-                }
             }
             ServerNotification::ItemStarted(notification) => {
                 self.handle_item_started_notification(notification, replay_kind);
@@ -416,7 +399,10 @@ impl ChatWidget {
             | ServerNotification::WindowsSandboxSetupCompleted(_)
             | ServerNotification::AccountLoginCompleted(_)
             | ServerNotification::ProjectChanged(_)
-            | ServerNotification::ThreadProjectUpdated(_) => {}
+            | ServerNotification::ThreadProjectUpdated(_)
+            // Elpis: per-turn timing and cost have no consumer in the TUI.
+            | ServerNotification::TurnActivityUpdated(_)
+            | ServerNotification::TurnCostUpdated(_) => {}
             ServerNotification::ContextCompacted(_) => {}
         }
         // Tool and hook activity can recreate a hidden row with its default

@@ -1439,58 +1439,18 @@ async fn overview_names_models_from_the_catalog() {
     assert!(!rendered.contains("claude/opus"), "{rendered}");
 }
 
-/// Elpis: the dashboard's Agents map gets each top-level task in the list's order with the
-/// helpers it started beneath it; hiding a task hides its helpers too.
-#[tokio::test]
-async fn dashboard_agents_follow_the_list_with_helpers_under_their_task() {
-    let mut app = make_test_app().await;
-    let [root, helper, other] = [1, 2, 3].map(ThreadId::from_u128);
-    let threads = [
-        overview_thread(
-            helper,
-            Some(root),
-            "Draft the note",
-            ThreadStatus::Active {
-                active_flags: vec![ThreadActiveFlag::WaitingOnApproval],
-            },
-        ),
-        overview_thread(
-            other,
-            /*parent_thread_id*/ None,
-            "Review yesterday's changes",
-            ThreadStatus::Idle,
-        ),
-        overview_thread(
-            root,
-            /*parent_thread_id*/ None,
-            "Coordinate the release",
-            ThreadStatus::Idle,
-        ),
-    ];
-    let shape = |app: &App| {
-        app.dashboard_agents(&threads)
-            .into_iter()
-            .map(|agent| (agent.id, agent.parent_id, agent.status_label))
-            .collect::<Vec<_>>()
-    };
-    // The helper needs input, so its task is listed first.
+#[test]
+fn model_label_adds_the_effort_unless_the_name_already_has_it() {
+    use codex_protocol::openai_models::ReasoningEffort;
     assert_eq!(
-        shape(&app),
-        vec![
-            (root.to_string(), None, "Ready".to_string()),
-            (
-                helper.to_string(),
-                Some(root.to_string()),
-                "Needs input".to_string(),
-            ),
-            (other.to_string(), None, "Ready".to_string()),
-        ]
+        model_label("GPT-6.1-Sol", Some(&ReasoningEffort::High)),
+        "GPT-6.1-Sol · high"
     );
-    app.agents_overview.hidden_threads.insert(root);
     assert_eq!(
-        shape(&app),
-        vec![(other.to_string(), None, "Ready".to_string())]
+        model_label("Gemini Flash (high)", Some(&ReasoningEffort::High)),
+        "Gemini Flash (high)"
     );
+    assert_eq!(model_label("GPT-6.1-Sol", /*effort*/ None), "GPT-6.1-Sol");
 }
 
 #[tokio::test]

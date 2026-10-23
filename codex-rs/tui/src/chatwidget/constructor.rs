@@ -156,7 +156,6 @@ impl ChatWidget {
             smart_prune_synced: false,
             smart_prune_log_request: None,
             last_prune_saved_tokens: None,
-            dashboard: Default::default(), // Elpis
             token_usage_pending: false,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),
             refreshing_status_outputs: Vec::new(),

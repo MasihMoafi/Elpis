@@ -78,7 +78,6 @@ pub enum SlashCommand {
     Usage,
     Context,   // Elpis: Context Ledger
     Config,
-    Dashboard, // Elpis
     DebugConfig,
     Title,
     Statusline,

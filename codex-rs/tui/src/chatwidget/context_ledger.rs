@@ -1059,18 +1059,16 @@ impl ChatWidget {
                     ),
                     muted,
                 )));
-                // Elpis: the attempt's audit record opens as a readable report.
-                if let Some(path) = attempt.audit_path.as_deref().and_then(|path| {
-                    super::elpis_dashboard::smart_prune_attempt_evidence_path(
-                        self.config.codex_home.as_path(),
-                        path,
-                    )
-                }) && let Some(destination) = crate::dashboard_server::evidence_url(
-                    self.config.codex_home.as_path(),
-                    "Smart Prune attempt",
-                    &path,
-                ) {
-                    source_links.push((lines.len(), destination));
+                // Elpis: the attempt's audit record opens as a file, like a source row.
+                if let Some(destination) = attempt
+                    .audit_path
+                    .as_deref()
+                    .and_then(|path| {
+                        smart_prune_attempt_evidence_path(self.config.codex_home.as_path(), path)
+                    })
+                    .and_then(|path| url::Url::from_file_path(path).ok())
+                {
+                    source_links.push((lines.len(), destination.to_string()));
                     lines.push(Line::from(Span::styled(
                         "Read attempt evidence",
                         crate::elpis_motion::accent_style().underlined(),
@@ -2425,6 +2423,30 @@ impl ChatWidget {
     }
 }
 
+/// A Smart Prune attempt record under `<home>/logs/smart-prune/attempts/<name>.json`, and
+/// nothing else.
+fn smart_prune_attempt_evidence_path(
+    codex_home: &std::path::Path,
+    audit_path: &str,
+) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+
+    let relative = std::path::Path::new(audit_path);
+    let mut components = relative.components();
+    let valid = matches!(components.next(), Some(Component::Normal(part)) if part == "smart-prune")
+        && matches!(components.next(), Some(Component::Normal(part)) if part == "attempts")
+        && matches!(components.next(), Some(Component::Normal(leaf)) if !leaf.is_empty())
+        && components.next().is_none();
+    if !valid {
+        return None;
+    }
+    let path = codex_home.join("logs").join(relative);
+    if path.extension().is_none_or(|extension| extension != "json") {
+        return None;
+    }
+    path.is_file().then_some(path)
+}
+
 fn is_manual_memory_source(
     source: &crate::legacy_core::elpis_context::ContinuitySource,
     manual_memory_path: Option<&std::path::Path>,
@@ -2594,6 +2616,32 @@ fn format_duration_ms(milliseconds: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_smart_prune_attempt_records_become_evidence() {
+        let home = tempfile::tempdir().expect("temp home");
+        let attempts = home.path().join("logs/smart-prune/attempts");
+        std::fs::create_dir_all(&attempts).expect("attempts dir");
+        std::fs::write(attempts.join("a1.json"), "{}").expect("attempt record");
+        std::fs::write(home.path().join("config.toml"), "").expect("config");
+
+        assert_eq!(
+            smart_prune_attempt_evidence_path(home.path(), "smart-prune/attempts/a1.json"),
+            Some(attempts.join("a1.json"))
+        );
+        for escaping in [
+            "../config.toml",
+            "smart-prune/attempts/../../../config.toml",
+            "smart-prune/admissions/a1.json",
+            "/etc/passwd",
+        ] {
+            assert_eq!(
+                smart_prune_attempt_evidence_path(home.path(), escaping),
+                None,
+                "{escaping}"
+            );
+        }
+    }
 
     #[test]
     fn ledger_sections_and_admitted_states_have_distinct_roles() {

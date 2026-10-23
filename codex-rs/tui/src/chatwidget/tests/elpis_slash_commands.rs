@@ -17,7 +17,7 @@ const NOT_IN_THIS_BUILD: &str =
 
 /// The commands that wait for the rest of the Elpis context engine. `/prune`, `/smart-prune`
 /// and `/pruner-model` work (tests/elpis_smart_prune.rs); `/memory-model` saves the
-/// background model; `/dashboard` works (elpis_dashboard.rs).
+/// background model.
 const LATER_BUILD: [SlashCommand; 1] = [SlashCommand::ForcePrune];
 
 #[tokio::test]
@@ -132,10 +132,6 @@ fn elpis_commands_are_listed_in_their_v030_order_with_v030_descriptions() {
             "context",
             Some("show context usage as a grid, by category, with checkpoints and system files"),
         ),
-        (
-            "dashboard",
-            Some("show the current context window, admitted sources, and pruning evidence"),
-        ),
     ];
     let mut last_index = 0;
     for (name, description) in expected {
@@ -158,7 +154,7 @@ fn hand_selected_slash_command_set_adds_approved_review_and_worktree() {
         "hotkeys", "settings", "add", "skills", "personal", "hooks", "review", "rename", "new", "resume", "fork", "worktree",
         // Masih, 16 Oct 2026: open the TUI's chat in the desktop app.
         "app", "init", "compact", "prune", "smart-prune", "force-prune", "plan", "voice", "goal",
-        "agent", "copy", "diff", "usage", "context", "config", "dashboard", "theme", "mcp", "rag", "quit",
+        "agent", "copy", "diff", "usage", "context", "config", "theme", "mcp", "rag", "quit",
         "clear", "subagents",
     ];
     if cfg!(target_os = "android") {
@@ -194,7 +190,6 @@ fn typed_elpis_names_reach_elpis_commands_and_upstream_names_stay_upstream() {
         ("prune", SlashCommand::Prune),
         ("smart-prune", SlashCommand::SmartPrune),
         ("force-prune", SlashCommand::ForcePrune),
-        ("dashboard", SlashCommand::Dashboard),
         ("add", SlashCommand::Add),
         ("context", SlashCommand::Context),
         ("rag", SlashCommand::Rag),
@@ -461,7 +456,7 @@ fn commands_v030_removed_stay_hidden_and_other_unlisted_commands_leave_the_popup
         assert_eq!(find_builtin_command(name, flags), Some(cmd), "/{name}");
     }
     // Selected commands remain listed, including the desktop handoff.
-    for name in ["model", "compact", "context", "dashboard", "app"] {
+    for name in ["model", "compact", "context", "app"] {
         assert!(listed.contains(&name), "/{name} is missing");
     }
     assert_eq!(find_builtin_command("app", flags), Some(SlashCommand::App));

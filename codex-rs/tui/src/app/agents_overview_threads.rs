@@ -334,11 +334,10 @@ impl App {
         &mut self,
         app_server: &AppServerSession,
     ) {
-        if (self
+        if self
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_none()
-            && !crate::dashboard_server::is_running())
             || (!self.agents_overview.initialized && self.agents_overview.request_id.is_none())
         {
             return;
@@ -352,7 +351,6 @@ impl App {
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_some();
         if !visible
-            && !crate::dashboard_server::is_running()
             && (self.agents_overview.initialized
                 || matches!(self.app_server_target, AppServerTarget::Embedded))
         {
