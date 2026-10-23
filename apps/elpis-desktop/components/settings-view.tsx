@@ -11,13 +11,14 @@ import { GeneralSettings } from "@/components/settings/general-settings";
 import { AboutSettings } from "@/components/settings/about-settings";
 import { GitSettings, WorktreeSettings } from "@/components/settings/git-settings";
 import { HooksSettings } from "@/components/settings/hooks-settings";
+import { ImportSettings } from "@/components/settings/import-settings";
 import { NotificationSettings } from "@/components/settings/notification-settings";
 import { PersonalizationSettings } from "@/components/settings/personalization-settings";
 import { ShortcutSettings } from "@/components/settings/shortcut-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
 import { VoiceSettings } from "@/components/settings/voice-settings";
 import { ArrowLeft } from "lucide-react";
-import { ModelsIcon, ArchiveIcon, BellIcon, BranchIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { ModelsIcon, ArchiveIcon, BellIcon, BranchIcon, ChatIcon, ContextIcon, FileEditIcon, FolderIcon, KeyboardIcon, MicIcon, PersonIcon, SettingsIcon, ThemeIcon, ToolIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { SearchField } from "@/components/ui/search-field";
@@ -46,6 +47,7 @@ const TABS = [
   { id: "appearance", label: "Appearance", group: "app", scope: "this device", Icon: ThemeIcon, words: "theme dark light system colour color" },
   { id: "shortcuts", label: "Keyboard shortcuts", group: "app", scope: "this device", Icon: KeyboardIcon, words: "keys hotkeys" },
   { id: "usage", label: "Usage & limits", group: "app", scope: "this device", Icon: ContextIcon, words: "limits plan quota" },
+  { id: "import", label: "Import chats", group: "app", scope: "this device", Icon: ChatIcon, words: "import claude code codex cloudroom bring chats history sessions" },
   { id: "archived", label: "Archived chats", group: "app", scope: "this device", Icon: ArchiveIcon, words: "archive restore delete" },
   { id: "about", label: "About", group: "app", scope: "this device", Icon: ContextIcon, words: "version commit update restart releases notes community" },
 ] as const;
@@ -62,13 +64,13 @@ type Props = {
   active?: boolean; threadId?: string;
   accountRefresh: number; onProvidersChanged?: () => Promise<void> | void;
   theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void;
-  onUnarchived: (thread: Thread) => void; onDeleteThread: (thread: Thread) => Promise<void>; onBack?: () => void;
+  onUnarchived: (thread: Thread) => void; onImported?: () => void; onDeleteThread: (thread: Thread) => Promise<void>; onBack?: () => void;
   onCustomize?: () => void;
   onChatContext?: () => void;
   onChatPermissions?: () => void; onChatModel?: () => void; modelChangeReason?: string; currentModel?: string | null; currentPermission?: string | null;
 };
 
-export function SettingsView({ initialTab = "providers", navigationKey = 0, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onDeleteThread, onBack, onCustomize, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
+export function SettingsView({ initialTab = "providers", navigationKey = 0, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onImported, onDeleteThread, onBack, onCustomize, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
   const preferences = usePreferences();
   const [orderError, setOrderError] = useState("");
   const groups = arrange(SECTIONS, preferences.settingsSectionOrder.split(","));
@@ -153,6 +155,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;
       case "configuration": return <ConfigurationSettings />;
+      case "import": return <ImportSettings onImported={onImported} />;
       case "archived": return <ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} />;
     }
   };

@@ -12,6 +12,7 @@ import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
 import { createVoice } from './voice.mjs';
+import { createImportChats } from './import-chats.mjs';
 import { ATTACHMENT_BODY_LIMIT, AttachmentError, PDF_BODY_LIMIT, extractPdf } from './attachments.mjs';
 import { createTrash } from './trash.mjs';
 import { smartPruneDetail } from './smart-prune.mjs';
@@ -28,7 +29,7 @@ const COOKIE = 'elpis_desktop';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 const same = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const ERROR_CAUSES = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError']);
-const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot']);
+const ERROR_AREAS = new Set(['session', 'health', 'models', 'threads', 'settings', 'providers', 'approvals', 'workflows', 'files', 'file', 'folders', 'repository', 'tools', 'context', 'customize', 'mcp', 'hooks', 'events', 'dev-servers', 'love-spot', 'import-chats']);
 /** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request. */
 function requestDiagnostics(home) {
   const directory = path.join(home, 'logs'), file = path.join(directory, 'desktop-requests.jsonl');
@@ -131,6 +132,7 @@ export async function startDesktopServer(options = {}) {
   };
   const transcription = createTranscription({ definition: () => client.transcriptionDefinition(), environment: () => client.transcriptionEnvironment() });
   const voice = createVoice(client);
+  const importChats = createImportChats({ client, ledgerFile: path.join(options.elpisHome ?? elpisHome(), 'desktop-chat-imports.json'), ...(options.codexHome ? { codexHome: options.codexHome } : {}) });
   const event = value => {
     const bytes = `event: ${value.type}\ndata: ${JSON.stringify(value.data)}\n\n`;
     for (const response of listeners) {
@@ -223,6 +225,8 @@ export async function startDesktopServer(options = {}) {
           });
           response.on('close', () => { stop(); loveStreams.delete(response); }); return;
         }
+        if (url.pathname === '/api/import-chats' && method === 'GET') return json(response, 200, await importChats.list());
+        if (url.pathname === '/api/import-chats' && method === 'POST') return json(response, 200, await importChats.run(await body(request)));
         if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
         if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);

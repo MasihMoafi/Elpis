@@ -77,7 +77,7 @@ const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileCh
 const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/updated']);
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
-const READ_RPCS = new Set(['initialize','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
+const READ_RPCS = new Set(['initialize','externalAgentConfig/detect','externalAgentConfig/import/readHistories','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval and
  * sandbox settings. Bypass is the engine's built-in `:bypass-permissions` profile: Full access plus no
@@ -138,7 +138,7 @@ function modeOf(result) {
 }
 /** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
 const WHOLE_TURNS = 'whole-turns:';
-const EXPLAINED = new Set(['thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
+const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
 /** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
 const SUBAGENT_POLICY = {
@@ -1310,6 +1310,28 @@ export class DesktopClient extends EventEmitter {
   }
   /** Renames a chat in Elpis; every client shows the stored name. */
   /** ChatGPT's "Fork chat from here": a new chat with this one's history through `lastTurnId`. */
+  /** The Claude Code chats the engine would import: its own detection (the last 30 days, up to 50, none already imported). */
+  async externalSessions() {
+    const result = await this.#rpc('externalAgentConfig/detect', { includeHome: true, source: 'claude' });
+    return (result.items ?? []).filter(item => item.itemType === 'SESSIONS').flatMap(item => (item.details?.sessions ?? []).map(({ path, cwd, title }) => ({ path, cwd, title })));
+  }
+  /** Imports Claude Code chats as Elpis chats and resolves when the engine has finished them: { imported, skipped: [reasons] }. */
+  async importExternalSessions(sessions) {
+    if (!Array.isArray(sessions) || !sessions.length) return { imported: 0, skipped: [] };
+    const { importId } = await this.#rpc('externalAgentConfig/import', { source: 'claude', migrationItems: [{ itemType: 'SESSIONS', description: 'Claude Code chats', cwd: null, details: { sessions } }] });
+    for (let wait = 0; wait < 600; wait++) {
+      const { data = [] } = await this.#rpc('externalAgentConfig/import/readHistories');
+      const done = data.find(item => item.importId === importId);
+      if (done) return { imported: done.successes.length, skipped: done.failures.map(failure => failure.message) };
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    throw new BridgeError('The import is taking longer than expected. It carries on in the background; look again in a minute.', 504);
+  }
+  /** A Codex chat copied into Elpis as a new chat of its own, from its saved rollout file. */
+  async importRollout(rollout) {
+    text(rollout, 'rollout', 4096);
+    return (await this.#rpc('thread/fork', { threadId: '', path: rollout })).thread;
+  }
   async forkThread(id, body) {
     object(body, ['lastTurnId', 'lastItemId']);
     const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);

@@ -3,7 +3,7 @@ const { chooseOption, controlValue, optionsCut, openSettings } = require('./cont
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
-const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats', 'About'];
+const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Import chats', 'Archived chats', 'About'];
 
 test('settings pages appear in order and each control writes only its own backing setting', async () => {
   let version = 1;
@@ -25,6 +25,7 @@ test('settings pages appear in order and each control writes only its own backin
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/settings') { if (req.method === 'POST') { Object.assign(options, body.options); version++; } return json(settings()); }
     if (url.pathname === '/api/mcp') { if (req.method === 'POST') version++; return json(mcp()); }
+    if (url.pathname === '/api/import-chats') return json({ days: 30, atATime: 50, sources: [] });
     if (url.pathname === '/api/tools/transcription') return json({ available: true, backend: 'openrouter', label: 'OpenRouter' });
     if (url.pathname === '/api/hooks') { if (req.method === 'POST') hooks = { ...hooks, version: 'h2', hooks: hooks.hooks.map(hook => ({ ...hook, ...(body.trust ? { trust: 'trusted' } : { enabled: body.enabled }) })) }; return json(hooks); }
     if (url.pathname === '/api/providers') return json({ openai: { auth: { state: 'signedOut' }, usage: [], usageError: null }, claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [], local: [] });

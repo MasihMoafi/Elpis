@@ -14,11 +14,11 @@ const REPLIES = {
   'a server error': { status: 500, body: JSON.stringify({ error: { message: MESSAGE } }) },
 };
 /** What the views read, apart from the thread list and the model catalogue the app needs to start. */
-const PATHS = new Set(['/api/settings', '/api/customize', '/api/mcp', '/api/hooks', '/api/providers', '/api/providers/settings', '/api/tools/transcription', '/api/tools/rag',
+const PATHS = new Set(['/api/settings', '/api/customize', '/api/mcp', '/api/hooks', '/api/providers', '/api/providers/settings', '/api/tools/transcription', '/api/tools/rag', '/api/import-chats',
   '/api/context/switches', '/api/workflows', '/api/folders', '/api/repository', '/api/files', '/api/threads/chat-a/context', '/api/threads/chat-a/git']);
 const LISTS = ['ancestorThreadId', 'searchTerm', 'archived'];
 const isBad = url => PATHS.has(url.pathname) || (url.pathname === '/api/threads' && LISTS.some(key => url.searchParams.has(key)));
-const SETTINGS_PAGES = ['General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Voice', 'Personalization', 'Usage & limits', 'Archived chats', 'Models & accounts', 'MCP servers', 'Git', 'Worktrees', 'Hooks', 'Configuration'];
+const SETTINGS_PAGES = ['General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Voice', 'Personalization', 'Usage & limits', 'Import chats', 'Archived chats', 'Models & accounts', 'MCP servers', 'Git', 'Worktrees', 'Hooks', 'Configuration'];
 
 async function using(reply, run, { bad = isBad, size = {} } = {}) {
   const f = await fixture({ width: 1280, height: 800, ...size });
