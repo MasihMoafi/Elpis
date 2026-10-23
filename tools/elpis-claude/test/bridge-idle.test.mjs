@@ -212,11 +212,13 @@ if (process.argv.includes("--elpis-local-bridge")) {
     assert.equal(JSON.parse(fs.readFileSync(f.env.ACP_BRIDGE_STORE)).chat.plan.plan[0].step, "preserved plan");
   });
 
-  test("a terminal from a different bundle joins the attached running one with that bundle's engine", async t => {
+  test("a terminal from a different bundle joins the busy running one with that bundle's engine, which then hands over", async t => {
     const f = await setup(t, {}, process.env.ELPIS_IDLE_OLD_BUNDLE ?? source); const second = f.bundle("b");
     // As the desktop and the shell launcher both start it: with NODE_USE_ENV_PROXY=1.
     assert.equal((await f.launch(f.first, { NODE_USE_ENV_PROXY: "1" })).exitCode, 0); const c = await f.connect();
-    const running = JSON.parse(fs.readFileSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge", fs.readdirSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge"))[0], "state.json")));
+    await c.call("fixture/turn", { delay: 8000 });
+    const stateFile = path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge", fs.readdirSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge"))[0], "state.json");
+    const running = JSON.parse(fs.readFileSync(stateFile));
     const result = await f.launch(second, { NODE_USE_ENV_PROXY: "1" });
     assert.equal(result.exitCode, 0, result.errors);
     assert.deepEqual(result.output.trim().split("\n").slice(1), [`engine ${running.engine}`], "the launcher names the running installation's engine");
@@ -225,8 +227,14 @@ if (process.argv.includes("--elpis-local-bridge")) {
     const wrong = path.join(f.root, "wrong-engine"); fs.writeFileSync(wrong, "#!/bin/sh\necho WRONG_ENGINE; exit 3\n", { mode: 0o755 });
     const terminal = await f.launch(second, { ELPIS_ENGINE_BIN: wrong }, true);
     assert.equal(terminal.exitCode, 0, terminal.errors); assert.doesNotMatch(terminal.output, /WRONG_ENGINE/); assert.match(terminal.output, /preserve this answer/);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge", fs.readdirSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge"))[0], "state.json"))).pid, running.pid, "the running bridge is kept");
+    assert.equal(JSON.parse(fs.readFileSync(stateFile)).pid, running.pid, "the running bridge is kept while it works");
     assert.ok((await c.call("thread/list", {})).result.data.length);
+    // Its turn done, it stops and starts the newer bundle; the client reconnects to that one.
+    const state = () => { try { return JSON.parse(fs.readFileSync(stateFile)); } catch { return {}; } };
+    await until(() => state().pid && state().pid !== running.pid, "the newer bundle takes over", 25000);
+    assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mjs")));
+    assert.notEqual(c.ws.readyState, WebSocket.OPEN, "the old bridge's clients were disconnected");
+    assert.equal((await (await f.connect()).call("thread/read", { threadId: "chat", includeTurns: true })).result.thread.turns[0].items[0].text, "preserve this answer");
   });
 
   test("configuration differences alone keep the existing refusal", async t => {
