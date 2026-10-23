@@ -170,8 +170,14 @@ export const retainedUpdates = {
       "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
     },
     "tests/love-spot-pages.test.cjs": {
-      "blob": "c33b24f4ffa59627206f31ab417b5d4038361fa8",
-      ...pageRemovalApproval
+      "blob": "0729c64c5a02e0a14deb8dc705970016f6950101",
+      "approval": "31f17b33e067ff531c9c68263c893b7795e52fcd",
+      "reason": "OBSRM, Masih 21 Oct 22:45: \"remove it; remove the observability page - keep its logo icon as it looks good. the rest, remove.\" Navigation checks stay. Love Spot, Masih 23 Oct: \"I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda. Her face must show next to her replies.\" Her reply and face now land on the board after he draws, so this test counts what he drew, not her love-* elements."
+    },
+    "tests/love-spot-live.test.cjs": {
+      "blob": "c7604087c6f6b2dcc22a3c31afeb98d1b332d98f",
+      "approval": "31f17b33e067ff531c9c68263c893b7795e52fcd",
+      "reason": "Love Spot, Masih 23 Oct: \"I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda. Her face must show next to her replies.\" Her reply and face now land on the board after he draws, so this test counts what he drew, not her love-* elements."
     },
     "tests/navigation-drafts.test.cjs": {
       "blob": "ad6820b974ced60ccec52acf2fdf60f3481f42d3",
