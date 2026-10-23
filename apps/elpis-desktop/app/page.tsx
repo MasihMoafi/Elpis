@@ -504,6 +504,17 @@ export default function Home() {
     setLiveError(previous => without(previous, id));
   }, [select, upsertThread]);
 
+  // A chat's recent history is read while the pointer rests on its row, so the click shows it at once and its own
+  // fresh read only refreshes it (Masih, 23 Oct: "When I click on them it takes a second to load them").
+  const prefetching = useRef(new Set<string>());
+  const prefetchThread = useCallback((thread: Thread) => {
+    if (transcripts.current.has(thread.id) || prefetching.current.has(thread.id)) return;
+    prefetching.current.add(thread.id);
+    api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`)
+      .then(result => { if (Array.isArray(result.data) && !transcripts.current.has(thread.id)) transcripts.current.set(thread.id, { entries: [...result.data].reverse(), cursor: result.nextCursor }); })
+      .catch(() => {}) // The click reads it again and reports a failure.
+      .finally(() => prefetching.current.delete(thread.id));
+  }, []);
   const loadThread = useCallback(async (thread: Thread) => {
     markRead(thread.id);
     // A chat that is already open in another tab brings that tab forward instead of opening twice.
@@ -1711,7 +1722,7 @@ export default function Home() {
       }}><ChevronRight size={13} viewBox="4 4 16 16" className={expanded[thread.id] ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
-      <button data-slot="chat-row" className="thread-link" onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
+      <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title">{name}</span>
         {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}

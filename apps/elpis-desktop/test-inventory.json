@@ -253,6 +253,7 @@
     "tests/chat-to-edge.test.cjs",
     "tests/made-chats.test.cjs",
     "tests/busy-retry.test.cjs",
+    "tests/chat-prefetch.test.cjs",
     "tests/profile.test.cjs",
     "tests/arrow-selects.test.cjs",
     "tests/plugin-app-catalogs.test.cjs",
