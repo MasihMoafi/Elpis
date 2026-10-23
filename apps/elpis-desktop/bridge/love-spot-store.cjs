@@ -9,6 +9,8 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { newer } = require('./love-spot-order.cjs');
 const { paintElements, paintingSize } = require('./love-spot-painting.cjs');
+const { FACE_DATA_URL } = require('./matilda-face.cjs');
+const FACE = 96, FACE_SIDE = FACE + 12;
 const exec = promisify(execFile);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const fail = (message, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
@@ -323,7 +325,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return (await fs.readFile(path.join(directory, 'view.png'))).toString('base64');
     });
   }
-  /** Writes the reply as a blue note, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. */
+  /** Writes the reply as a blue note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. Face, note and painting are one group. */
   async function reply(turnId, text, agentColor, page, shapes = []) {
     const note = typeof text === 'string' && text.trim() !== '';
     if (!note && !shapes.length) return;
@@ -348,23 +350,27 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
         return wrapped.length ? wrapped : [''];
       });
       const noteHeight = note ? Math.max(1, lines.length) * 28 : 0, painted = paintingSize(shapes), gap = note && shapes.length ? 24 : 0;
-      const width = Math.max(note ? 480 : 0, painted.width), height = noteHeight + gap + painted.height;
+      const width = FACE_SIDE + Math.max(note ? 480 : 0, painted.width), height = Math.max(FACE, noteHeight + gap + painted.height);
       const bounds = e => {
         const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
         return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height / 2 - h / 2, width: w, height: h };
       };
       const a = anchor ? bounds(anchor) : { x: 0, y: -40, height: 0 };
-      const x = a.x; let y = a.y + a.height + 40;
+      const x = a.x, group = `love-reply-group-${turnId}`; let y = a.y + a.height + 40;
       for (;;) {
         const hits = live.map(bounds).filter(e => x < e.x + e.width + 24 && x + width + 24 > e.x && y < e.y + e.height + 24 && y + height + 24 > e.y);
         if (!hits.length) break;
         y = Math.max(...hits.map(e => e.y + e.height)) + 40;
       }
-      const element = !note ? null : { id, type: 'text', x, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#1971c2', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
-        strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
-        isDeleted: false, boundElements: null, updated: Date.now(), link: null, locked: false, fontSize: 20, fontFamily: 3, text: lines.join('\n'),
+      const now = Date.now(), file = { id: 'matilda-face', dataURL: FACE_DATA_URL, mimeType: 'image/webp', created: now, lastRetrieved: now };
+      const face = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
+        strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0, isDeleted: false, boundElements: null,
+        updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };
+      const element = !note ? null : { id, type: 'text', x: x + FACE_SIDE, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#1971c2', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
+        strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
+        isDeleted: false, boundElements: null, updated: now, link: null, locked: false, fontSize: 20, fontFamily: 3, text: lines.join('\n'),
         originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.4 };
-      await persist(merge(scene, { elements: [...(element ? [element] : []), ...paintElements(shapes, { x, y: y + noteHeight + gap }, turnId)] }));
+      await persist(merge(scene, { elements: [face, ...(element ? [element] : []), ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group)], files: { [file.id]: file } }));
     });
   }
   async function names(dir) { try { return await fs.readdir(dir); } catch (e) { if (e.code === 'ENOENT') return []; throw e; } }

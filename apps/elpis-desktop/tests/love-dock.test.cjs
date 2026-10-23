@@ -17,7 +17,7 @@ const transcriber = `const fs=require('node:fs');require('node:readline').create
     result={content:[{type:'text',text:JSON.stringify({success:ok,text:fs.readFileSync(process.env.AUDIO_REPLY,'utf8')})}]};}
   console.log(JSON.stringify({jsonrpc:'2.0',id:m.id,result})); });`;
 
-test('native Love Spot is one full drawing window: pages, green pen, captured voice note and Talk', {
+test('native Love Spot is one full drawing window: pages, green pen, captured voice note and Matilda answering', {
   skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a -s "-screen 0 1600x1100x24"', timeout: 180000,
 }, async () => {
   let config;
@@ -50,8 +50,8 @@ test('native Love Spot is one full drawing window: pages, green pen, captured vo
     assert.equal(await page.locator('.nav-list, .composer, .workspace-header').count(), 0);
     const box = await page.locator('.love-spot').boundingBox(), viewport = page.viewportSize() || await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
     assert.ok(Math.abs(box.width - viewport.width) <= 2 && box.height >= viewport.height - 38, JSON.stringify({ box, viewport }));
-    for (const control of [page.getByRole('button', { name: 'Talk', exact: true }), page.getByRole('group', { name: 'Voice note', exact: true })]) {
-      const bounds = await control.boundingBox(); assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= viewport.width + 1, 'voice and Talk fit inside the window');
+    {
+      const bounds = await page.getByRole('group', { name: 'Voice note', exact: true }).boundingBox(); assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= viewport.width + 1, 'voice fits inside the window');
     }
     await electron.evaluate(async () => { await Promise.all([global.sessionWindows.openLoveSpot(), global.sessionWindows.openLoveSpot()]); });
     assert.equal(electron.windows().length, 1, 'relaunch focuses the existing drawing');
@@ -91,15 +91,10 @@ test('native Love Spot is one full drawing window: pages, green pen, captured vo
     assert.equal((await f.scene()).elements.find(e => e.text === 'A captured voice note').strokeColor, '#2f9e44');
     await fs.writeFile(reply, ''); await record(note);
     await note.getByRole('status').filter({ hasText: 'No speech was recognized' }).waitFor();
-    assert.equal((await f.scene()).elements.filter(e => !e.isDeleted).length, 1, 'empty recognition adds nothing');
-    await fs.writeFile(reply, 'Speak to the agent');
-    await page.getByRole('button', { name: 'Talk', exact: true }).click();
-    const talk = page.getByRole('region', { name: 'Love Spot Talk', exact: true }); await record(talk);
-    await page.waitForFunction(() => document.querySelector('.love-spot-talk textarea').value === 'Speak to the agent');
-    assert.equal(f.turns.length, 0, 'dictation must not send a turn');
-    await talk.getByRole('button', { name: 'Send', exact: true }).click();
-    await talk.getByText('I am here with you.', { exact: true }).waitFor();
-    assert.equal(f.turns.length, 1); assert.match(f.turns[0].text, /Speak to the agent/);
+    assert.equal((await f.scene()).elements.filter(e => !e.isDeleted && !e.id.startsWith('love-')).length, 1, 'empty recognition adds nothing');
+    await fs.writeFile(reply, 'Speak to the agent'); await record(note);
+    await f.waitFor(s => s.elements.some(e => e.text === 'Speak to the agent'), 'second captured note did not reach the drawing', 15000);
+    await f.waitFor(s => s.elements.some(e => e.id.startsWith('love-reply-') && !e.isDeleted) && f.turns.some(turn => /Speak to the agent/.test(turn.text)), 'Matilda did not answer on the board', 20000);
     const captures = (await fs.readFile(check, 'utf8')).trim().split('\n').map(JSON.parse);
     assert.equal(captures.length, 3); assert.ok(captures.every(c => c.ok), JSON.stringify(captures));
     await electron.evaluate(async () => { await global.sessionWindows.open(); });

@@ -87,6 +87,26 @@ test('a painting without a note is still drawn once; a broken or oversized block
   f.finish('turn-3', 'completed', `Many.\n\n\`\`\`excalidraw\n${JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ type: 'rectangle', x: i, y: i })))}\n\`\`\``); await f.talk.idle();
   scene = (await f.store.read()).scene; assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-3-')).length, 60, 'at most 60 shapes');
 });
+test('her face sits beside every reply as one image of one file, moves with the note and the painting, and stays clear of the board', async t => {
+  const f = await fixture(t);
+  await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 })] });
+  await f.talk.send({ text: 'Hi', model: 'text' }); f.finish('turn-1', 'completed', `Here.\n\n\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``); await f.talk.idle();
+  await f.talk.send({ text: 'Again', model: 'text' }); f.finish('turn-2', 'completed', 'Still here.'); f.finish('turn-2', 'completed', 'Still here.'); await f.talk.idle();
+  const { scene } = await f.store.read(), live = scene.elements.filter(e => !e.isDeleted);
+  const faces = live.filter(e => e.type === 'image'), notes = ['turn-1', 'turn-2'].map(id => live.find(e => e.id === `love-reply-${id}`));
+  assert.deepEqual(faces.map(e => e.id), ['love-face-turn-1', 'love-face-turn-2'], 'one face per reply, once, though the turn finished twice');
+  assert.equal(Object.keys(scene.files).length, 1, 'one file for every face'); assert.equal(faces[0].fileId, faces[1].fileId);
+  assert.match(scene.files[faces[0].fileId].dataURL, /^data:image\/webp;base64,/);
+  faces.forEach((face, i) => {
+    assert.ok(face.x + face.width <= notes[i].x, 'the face is to the left of her note'); assert.ok(Math.abs(face.y - notes[i].y) <= 8, 'level with the first line');
+    assert.ok(face.groupIds.includes(`love-reply-group-turn-${i + 1}`) && notes[i].groupIds.includes(`love-reply-group-turn-${i + 1}`), 'face and note move as one');
+  });
+  assert.ok(live.filter(e => e.id.startsWith('love-paint-turn-1-')).every(e => e.groupIds.includes('love-reply-group-turn-1') && e.x >= notes[0].x), 'her painting joins the group, under the note');
+  const unit = e => e.groupIds?.at(-1) ?? e.id;
+  for (const a of live) for (const b of live) if (a.id < b.id && unit(a) !== unit(b)) assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, `${a.id} and ${b.id} overlap`);
+  const painting = live.filter(e => e.id.startsWith('love-paint-')); await f.talk.send({ text: 'Third', model: 'text' }); f.finish('turn-3', 'completed', ''); await f.talk.idle();
+  assert.equal((await f.store.read()).scene.elements.filter(e => e.type === 'image').length, 2, 'an empty reply has no face'); assert.ok(painting.length);
+});
 test('replies are blue, unsigned, collision-free, idempotent and saved without a UI subscriber', async t => {
   const f = await fixture(t);
   await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 }), note('block', 'Obstacle', '#e03131', { x: 20, y: 100, width: 500, height: 500 })] });
@@ -140,7 +160,7 @@ test('a recorded user item replaces the provisional prompt and only the final an
   f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id: 'turn-1', status: 'completed', items: [] } } } });
   await f.talk.idle();
   assert.equal((await f.talk.read()).entries.filter(e => e.item.type === 'userMessage').length, 1);
-  assert.deepEqual((await f.store.read()).scene.elements.map(e => e.originalText), ['The answer']);
+  assert.deepEqual((await f.store.read()).scene.elements.filter(e => e.type === 'text').map(e => e.originalText), ['The answer']);
 });
 
 test('a reply started on another page stays in Talk and does not write onto the newly selected page', async t => {

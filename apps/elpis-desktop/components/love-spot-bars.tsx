@@ -10,7 +10,7 @@ const MARGIN = 8, GAP = 6, STEP = 24, HANDLE = 24;
 /** The board's controls that stay where they are: the main menu, the help button, the shape properties and the library panel. */
 const FIXED = ".App-menu_top__left, .layer-ui__wrapper__footer-right, .App-menu__left, .sidebar";
 
-/** The bars the person can move, each found in Excalidraw's own layout, wide or narrow (a small window or Talk makes it narrow). */
+/** The bars the person can move, each found in Excalidraw's own layout, wide or narrow (a small window makes it narrow). */
 const BARS = [
   { id: "tools", label: "Move tools", find: (board: HTMLElement) => board.querySelector<HTMLElement>(".App-toolbar")?.closest("section") ?? null },
   { id: "extras", label: "Move lock and hand", find: (board: HTMLElement) => board.querySelector<HTMLElement>(".mobile-misc-tools-container") },
@@ -35,7 +35,7 @@ const saved = (): Offsets => {
   return offsets;
 };
 
-/** Excalidraw centres its tool bar at the top of the board and keeps its other bars in fixed corners, so with Talk open or in a narrow
+/** Excalidraw centres its tool bar at the top of the board and keeps its other bars in fixed corners, so in a narrow
  * window they sit on one another or spill past an edge. Each bar has this handle, a 3 by 3 grid of dots to the right of the bar: it
  * moves the bar anywhere in the board, by mouse or arrow keys, and the bar stops against the other controls and bars instead of
  * covering them. The place is kept; double-click or Home puts the bar back where Excalidraw puts it. */

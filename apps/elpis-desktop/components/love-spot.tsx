@@ -3,7 +3,7 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Heart, Plus, Trash2, X } from "lucide-react";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
@@ -12,13 +12,14 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
-import { LoveSpotTalk, type LoveSpotQuote } from "@/components/love-spot-talk";
+import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { MovableBars } from "@/components/love-spot-bars";
-import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
+import { api, chatProvider, unreadable, type ProviderSettings } from "@/lib/api";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
-import { MASIH_PEN, agentColor, lightFiles, lightImage } from "@/lib/love-spot";
+import { MASIH_PEN, lightFiles, lightImage } from "@/lib/love-spot";
+import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
@@ -54,11 +55,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
-  const [talk, setTalk] = useState(false), [quote, setQuote] = useState<LoveSpotQuote>();
-  const [boardBusy, setBoardBusy] = useState(false), [talkDictating, setTalkDictating] = useState(false);
-  const [models, setModels] = useState<Model[]>([]), [settings, setSettings] = useState<ProviderSettings | null>(null);
-  const [model, setModel] = useState(""), [choiceId, setChoiceId] = useState("");
-  const [menu, setMenu] = useState<{ x: number; y: number; text: string }>();
+  const [settings, setSettings] = useState<ProviderSettings | null>(null), [whoOpen, setWhoOpen] = useState(false);
   const [screenshots, setScreenshots] = useState<Screenshot[]>([]), [choosing, setChoosing] = useState(false);
   const [page, setPage] = useState<BoardPage>(), [pages, setPages] = useState<PageList["pages"]>([]), [pagesError, setPagesError] = useState("");
   const [pageToDelete, setPageToDelete] = useState<string>();
@@ -89,27 +86,20 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
 
   useEffect(() => {
     let active = true;
-    Promise.all([api<{ data: Model[] }>("/models"), api<ProviderSettings>("/settings")]).then(([catalog, config]) => {
-      if (!Array.isArray(catalog.data) || catalog.data.some(item => !item || typeof item.model !== "string") || !config.main
-        || (config.providers !== undefined && !Array.isArray(config.providers))) throw unreadable("Love Spot model settings");
-      if (active) { setModels(catalog.data); setSettings(config); setModel(config.main.model || catalog.data[0]?.model || ""); }
+    api<ProviderSettings>("/settings").then(config => {
+      if (!config.main || (config.providers !== undefined && !Array.isArray(config.providers))) throw unreadable("Love Spot settings");
+      if (active) setSettings(config);
     }).catch(report);
     return () => { active = false; };
   }, [report]);
-  const choices = providerChoices(models, settings);
-  const provider = chatProvider(model, choices.find(c => c.id === choiceId)?.provider, settings?.main.provider);
+  const provider = chatProvider(settings?.main.model, undefined, settings?.main.provider);
 
   useEffect(() => {
     if (!editor || !boardArea.current) return;
-    if (talk) editor.updateScene({ appState: { selectedElementIds: {} } });
-    let frame = 0;
-    const observer = new ResizeObserver(() => {
-      editor.refresh(); cancelAnimationFrame(frame);
-      if (talk) frame = requestAnimationFrame(() => editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.7, maxZoom: 1 }));
-    });
+    const observer = new ResizeObserver(() => editor.refresh());
     observer.observe(boardArea.current);
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [editor, talk]);
+    return () => observer.disconnect();
+  }, [editor]);
 
   useEffect(() => {
     let active = true;
@@ -169,7 +159,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           { ...editor.getAppState(), ...data.scene.appState, selectedElementIds: {}, collaborators: new Map() });
       } finally { remote.current = false; }
       latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
-      setQuote(undefined); setRenaming(false);
+      setRenaming(false);
       editor.scrollToContent(editor.getSceneElements(), { fitToViewport: true, viewportZoomFactor: 0.9, maxZoom: 1 });
       if (hasRecovery || art || Object.keys(data.scene.files).length) queueMicrotask(() => void saveLatest.current?.());
       return;
@@ -293,6 +283,25 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); saveLatest.current?.(true, true); };
   }, []);
 
+  const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>) => {
+    clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
+    // Keep capture and dispatch in the save queue. A simultaneous save must
+    // wait until Matilda accepts the picture before changing its revision.
+    const work = saving.current.then(async () => {
+      if (!editor) throw new Error("The board is still opening. Try again in a moment.");
+      const data = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
+      receive(data); await savePicture(data); await send(data.revision);
+    });
+    saving.current = work.then(() => {}, () => {});
+    return work;
+  }, [editor, receive]);
+
+  // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
+  const matilda = useMatilda({ ready: !!editor && !!settings, onError: setError,
+    writing: () => !!editorRef.current?.getAppState().editingTextElement || !!document.querySelector("textarea.excalidraw-wysiwyg"),
+    told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
+    send: (text, persona) => sendWithBoard(async revision => { await api("/love-spot/talk", { text, persona, revision }); }) });
+
   const changed = useCallback((elements: readonly ExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
     const before = latest.current;
     // onChange contains only live elements. Persist the API's tombstones too, or a stale
@@ -312,25 +321,13 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
     const drawingChanged = before && (filesChanged || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
     if (!remote.current && drawingChanged) {
+      matilda.notice(noticed(before.elements, all));
       setSaveStatus("Unsaved");
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
     }
     if (!remote.current && endedEdit) queueMicrotask(() => void saveLatest.current?.());
     if (drawingChanged) schedulePicture();
-  }, [editor, receive, save, schedulePicture]);
-
-  const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>) => {
-    clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
-    // Keep capture and dispatch in the save queue. A simultaneous save must
-    // wait until Talk accepts the picture before changing its revision.
-    const work = saving.current.then(async () => {
-      if (!editor) throw new Error("The board is still opening. Try again in a moment.");
-      const data = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
-      receive(data); await savePicture(data); await send(data.revision);
-    });
-    saving.current = work.then(() => {}, () => {});
-    return work;
-  }, [editor, receive]);
+  }, [editor, matilda, receive, save, schedulePicture]);
 
   async function chooseScreenshot(id: string, action: "place" | "dismiss") {
     if (choosing) return;
@@ -400,8 +397,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
         </form>}
       </div>
-      <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings || talkDictating} onBusy={setBoardBusy} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
-      <Button variant="outline" size="sm" aria-expanded={talk} onClick={() => setTalk(value => !value)}>Talk</Button>
+      <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
+      {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
     </div>;
   return <section className="love-spot" aria-label="Love Spot">
@@ -431,18 +428,13 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         <Button variant="outline" size="icon-xs" className="love-spot-screenshot-dismiss" aria-label={`Dismiss ${shot.name}`} title={`Dismiss ${shot.name}`} disabled={choosing} onClick={() => void chooseScreenshot(shot.id, "dismiss")}><X aria-hidden="true" /></Button>
       </li>)}</ul>
     </section>}
+    <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} onSave={matilda.keep} />
     {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
     <div className="love-spot-content"><div className="love-spot-editor" ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {
       const id = event.dataTransfer.getData(screenshotDrag);
       if (id) { event.preventDefault(); event.stopPropagation(); void chooseScreenshot(id, "place"); }
-    }} onContextMenuCapture={event => {
-      if (!editor || !(event.target instanceof HTMLCanvasElement)) return;
-      const p = viewportCoordsToSceneCoords({ clientX: event.clientX, clientY: event.clientY }, editor.getAppState());
-      const note = [...editor.getSceneElements()].reverse().find(e => e.type === "text" && !agentColor(e.strokeColor) && p.x >= e.x && p.x <= e.x + e.width && p.y >= e.y && p.y <= e.y + e.height);
-      if (note?.type !== "text") return;
-      event.preventDefault(); event.stopPropagation(); setMenu({ x: event.clientX, y: event.clientY, text: note.originalText || note.text });
     }}>
       {initial && <MovableBars board={boardArea} />}
       {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"}>
@@ -457,19 +449,12 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           <MainMenu.DefaultItems.Help />
           <MainMenu.DefaultItems.ClearCanvas />
           <MainMenu.Separator />
+          <MainMenu.Item icon={<Heart size={16} aria-hidden="true" />} onSelect={() => setWhoOpen(true)}>Who Matilda is…</MainMenu.Item>
           <MainMenu.DefaultItems.ToggleTheme />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
         </MainMenu>
       </Excalidraw> : !error && <p role="status">Opening Love Spot…</p>}
     </div>
-    <div className="love-spot-panels" hidden={!talk}>
-      <LoveSpotTalk open={talk} onClose={() => setTalk(false)} quote={quote} model={model} choiceId={choiceId} choices={choices} models={models}
-        onModel={value => { setModel(value.model); setChoiceId(value.choiceId); }} provider={provider} disabled={!editor || !settings || !model || boardBusy} onDictating={setTalkDictating} sendWithBoard={sendWithBoard} />
     </div>
-    </div>
-    {menu && <DropdownMenu open onOpenChange={open => { if (!open) setMenu(undefined); }}>
-      <DropdownMenuTrigger aria-label="Note actions" className="love-spot-menu-anchor" style={{ left: menu.x, top: menu.y }} />
-      <DropdownMenuContent align="start"><DropdownMenuItem onClick={() => { setQuote({ id: Date.now(), text: menu.text }); setTalk(true); setMenu(undefined); }}>Ask about this note</DropdownMenuItem></DropdownMenuContent>
-    </DropdownMenu>}
   </section>;
 }

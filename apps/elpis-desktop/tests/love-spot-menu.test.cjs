@@ -16,8 +16,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot shows no GitHub, Fo
     assert.ok(await menu.getByText(/Help/).count() > 0 && await menu.getByText(/Reset the canvas/i).count() > 0, 'the rest of the menu stays');
     await f.page.keyboard.press('Escape');
     assert.equal(await board.locator('.sidebar-trigger__label-element').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).length), 0, 'no Library button is shown');
-    await f.page.setViewportSize({ width: 1000, height: 760 });
-    await f.page.getByRole('button', { name: 'Talk', exact: true }).click();
+    await f.page.setViewportSize({ width: 860, height: 760 });
     await board.locator('.mobile-misc-tools-container').waitFor();
     assert.equal(await board.locator('.sidebar-trigger__label-element').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).length), 0, 'nor in the narrow layout');
     assert.deepEqual(f.errors, []);

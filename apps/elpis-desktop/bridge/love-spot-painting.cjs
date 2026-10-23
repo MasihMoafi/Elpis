@@ -58,14 +58,14 @@ function paintingSize(shapes) {
   return { width: Math.ceil(Math.max(...shapes.map(shape => left(shape) + shape.width)) - minX), height: Math.ceil(Math.max(...shapes.map(shape => top(shape) + shape.height)) - minY) };
 }
 
-/** Excalidraw elements for the shapes, with the painting's top left corner at `origin`, grouped so it moves as one. */
-function paintElements(shapes, origin, turnId, now = Date.now()) {
+/** Excalidraw elements for the shapes, with the painting's top left corner at `origin`, grouped so it moves as one (and inside `outer`, if given). */
+function paintElements(shapes, origin, turnId, outer, now = Date.now()) {
   if (!shapes.length) return [];
   const minX = Math.min(...shapes.map(left)), minY = Math.min(...shapes.map(top)), group = `love-paint-${turnId}`;
   return shapes.map((shape, index) => {
     const base = { id: `love-paint-${turnId}-${index}`, type: shape.type, x: origin.x + shape.x - minX, y: origin.y + shape.y - minY, width: shape.width, height: shape.height, angle: 0,
       strokeColor: shape.strokeColor, backgroundColor: shape.backgroundColor, fillStyle: 'solid', strokeWidth: shape.strokeWidth, strokeStyle: 'solid', roughness: 1, opacity: 100,
-      groupIds: [group], frameId: null, roundness: shape.type === 'rectangle' || shape.type === 'diamond' ? { type: 3 } : null, seed: 1 + index, version: 1, versionNonce: index,
+      groupIds: outer ? [group, outer] : [group], frameId: null, roundness: shape.type === 'rectangle' || shape.type === 'diamond' ? { type: 3 } : null, seed: 1 + index, version: 1, versionNonce: index,
       isDeleted: false, boundElements: null, updated: now, link: null, locked: false };
     if (shape.type === 'text') return { ...base, fontSize: shape.fontSize, fontFamily: 5, text: shape.text, originalText: shape.text, textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: true, lineHeight: 1.25 };
     if (shape.type === 'line' || shape.type === 'arrow') return { ...base, points: shape.points, lastCommittedPoint: null, startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: shape.type === 'arrow' ? 'arrow' : null };

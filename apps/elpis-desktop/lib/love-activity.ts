@@ -12,7 +12,7 @@ export function loveActivity(elements: unknown): AgentActivity[] {
     const last = Array.isArray(messages) ? messages.filter(m => m && m.role === "assistant" && typeof m.text === "string").at(-1)?.text ?? "" : "";
     return [{ id: e.id, name: agent.name, ...(typeof agent.threadId === "string" ? { threadId: agent.threadId } : {}), reply: JSON.stringify([typeof agent.output === "string" ? agent.output : "", last, typeof agent.interview?.proposal === "string" ? agent.interview.proposal : ""]) }];
   });
-  // Talk replies become board notes even when the Talk panel is closed.
+  // Her replies become board notes even when Love Spot is not open.
   const replies = elements.filter((element: unknown) => {
     if (!element || typeof element !== "object") return false;
     const e = element as { id?: unknown; type?: string; isDeleted?: boolean };

@@ -89,31 +89,28 @@ try {
     assert.ok(i < 100, 'The test did not place its secret on the board');
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  await page.getByRole('button', { name: 'Talk', exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Love Spot Talk', exact: true });
-  if (voiceCommand) {
-    await record(panel);
-    await page.waitForFunction(() => /read the secret phrase/i.test(document.querySelector('.love-spot-talk textarea')?.value || ''), null, { timeout: 60000 });
-    assert.equal(submitted, undefined, 'voice remains an editable draft until Send');
-  } else await panel.getByRole('textbox', { name: 'Message Matilda' }).fill('Read our secret phrase from the board. Reply with only that entire phrase, without its introductory words. Do not use tools.');
-  await panel.getByRole('button', { name: 'Send', exact: true }).click();
+  // There is no chat box: with a voice note the board already holds the question; otherwise it is a second note, and she answers what is written there.
+  if (!voiceCommand) {
+    await page.mouse.click(bounds.x + 400, bounds.y + 430); await page.keyboard.press('t'); await page.mouse.click(bounds.x + 400, bounds.y + 430);
+    await page.keyboard.type('Read our secret phrase from the board. Reply with only that entire phrase, without its introductory words. Do not use tools.'); await page.keyboard.press('Escape');
+  }
   let scene;
   for (let i = 0; i < 180; i++) {
     scene = JSON.parse(await fs.readFile(path.join(directory, 'scene.excalidraw'), 'utf8'));
     if (scene.elements.some(e => e.id.startsWith('love-reply-'))) break;
-    const alerts = await panel.getByRole('alert').allTextContents();
+    const alerts = await page.getByRole('alert').allTextContents();
     if (alerts.length) throw Error(alerts.join('\n'));
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
   const reply = scene.elements.find(e => e.id.startsWith('love-reply-'));
   assert.ok(reply, 'No agent reply was placed on the board'); assert.ok(reply.originalText.includes(secret), 'The reply did not recall the board-only secret');
   assert.equal(reply.strokeColor, '#1971c2'); assert.equal(submitted.model, 'gpt-6-luna'); assert.equal(submitted.image, true); assert.ok(submitted.notes.includes(secret));
-  await panel.getByText(reply.originalText, { exact: true }).waitFor();
+  assert.ok(scene.elements.some(e => e.id.startsWith('love-face-') && e.type === 'image' && !e.isDeleted && e.x < reply.x), 'Her face is not beside her reply');
   if (!voiceCommand) await page.locator(`aside [data-thread-id="${submitted.threadId}"] .thread-title`).filter({ hasText: 'Love Spot' }).waitFor();
   assert.deepEqual(errors, []);
   await page.screenshot({ path: path.join(evidence, 'live.png') });
   await fs.writeFile(path.join(evidence, 'result.json'), JSON.stringify({ passed: true, capturedVoice: !!voiceCommand, recordMs, root, submitted, reply: reply.originalText, colour: reply.strokeColor, errors, consoleErrors }, null, 2));
-  process.stdout.write(`PASS: gpt-6-luna received the board text and PNG and replied on the board. Evidence: ${evidence}\n`);
+  process.stdout.write(`PASS: gpt-6-luna received what was written on the board and its PNG and replied on the board, beside her face. Evidence: ${evidence}\n`);
 } catch (cause) {
   failure = cause;
   await fs.writeFile(path.join(evidence, 'last-request.json'), JSON.stringify(submitted ?? null, null, 2));

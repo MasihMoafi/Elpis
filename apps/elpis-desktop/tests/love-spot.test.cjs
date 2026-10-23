@@ -112,7 +112,7 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
           const range = document.createRange(); range.selectNodeContents(node);
           const r = range.getBoundingClientRect(); return { text: node.textContent, left: r.left, right: r.right };
         });
-        return { sidebar: box('.app-shell > .sidebar'), title: box('.workspace-header h1'), tools: box('.love-spot-tools'), editor: box('.love-spot-editor'), controls: ['.love-spot-pages', '.love-spot-tools > [role="group"]', '.love-spot-tools > button'].map(box), text, scrollX, shellScroll: document.querySelector('.app-shell').scrollLeft, scrollWidth: document.documentElement.scrollWidth };
+        return { sidebar: box('.app-shell > .sidebar'), title: box('.workspace-header h1'), tools: box('.love-spot-tools'), editor: box('.love-spot-editor'), controls: ['.love-spot-pages', '.love-spot-tools > [role="group"]'].map(box), text, scrollX, shellScroll: document.querySelector('.app-shell').scrollLeft, scrollWidth: document.documentElement.scrollWidth };
       });
       measurements.push({ width, ...bounds });
       await page.screenshot({ path: path.join(output, `${process.env.LOVE_CONFIRM_PHASE || 'current'}-${colorScheme}-${width}.png`) });

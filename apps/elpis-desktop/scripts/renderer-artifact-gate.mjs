@@ -293,11 +293,6 @@ export const retainedUpdates = {
       "approval": "a3b057c0f416e4f4328248ae86f8c1ad5a7a2f93",
       "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f)."
     },
-    "tests/love-spot-talk.test.cjs": {
-      "blob": "7e83be784a26a459c6a0d23bc9c8b497f1c5c9cb",
-      "approval": "eb5b22a019929bf466620657cc1bb5ee0ad2a068",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 22 Oct, Masih: \"16) fix it. 17) fix it ASAP.\" and \"Make a .. this shape that they use when you can move an item next to it.\" The sidebar chat says its origin once, Talk leaves room for a message's hover buttons, and the tool bar slides by a grip. Then, Masih 22 Oct: \"I wanted to be able to move it anywhere not just horizontally. And it shouldn't interfere with the other ones either.\" and \"when I have one function somewhere I want the exact same function elsewhere.\" The sideways-slide test first sends the bar down off the controls it sits on in a narrow board; two tests are added for free movement and for the shared handle on every bar. Then, Masih 22 Oct: \"the drap and drop ..s shouldn't be on top it but to its right - and there should be another row of ... so it's 3*3.\" The handle now sits beside the bar, so the narrow-board step checks it is not on a tool. Then, Masih 22 Oct: \"Make her the default agent in the love-spot, like my lover.\" The Talk agent is Matilda, so the textbox is named Message Matilda."
-    },
     "tests/view-errors.test.cjs": {
       "blob": "b61d6fa7059a657594a381f58ab8b2e6ce705fce",
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
@@ -309,8 +304,11 @@ export const retainedUpdates = {
 // Love Spot agents section removed (Masih, 22 Oct: "I said remove the agents section in love spot; it's still there.", a3b057c0f): its two test files go.
 // The standalone Love Spot sync (Masih, 22 Oct: "Fix those loose-ends. delete them if we don't need them."): Love Spot lives inside Elpis, the sync tool and its test failed since before that day, so both go.
 // These page-only regressions and their fixture are retired; all other baseline tests remain mandatory.
+// The Talk panel (Masih, 23 Oct: "remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda."): its test file is
+// split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit) and tests/love-spot-bars.test.cjs (the movable bars); the
+// Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
