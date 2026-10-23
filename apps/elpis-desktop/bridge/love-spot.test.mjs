@@ -547,6 +547,18 @@ test('Love Spot watcher does not reread an unchanged drawing and delivers extern
   assert.equal(reads, settled + 1, 'one changed file needs one read');
 });
 
+test('the page list is in one stable order, newest number first, whatever was edited last', async t => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.directory, 'pages'), { recursive: true });
+  for (const [index, name] of ['Page 8', 'Page 12', 'Page 9', 'Page 11', 'Page 10'].entries()) {
+    const file = path.join(f.directory, 'pages', `${name}.excalidraw`);
+    await fs.writeFile(file, JSON.stringify({ elements: [], files: {} }));
+    await fs.utimes(file, new Date(2026, 9, 22, 8, index), new Date(2026, 9, 22, 8, index)); // touched in an order unlike their numbers
+  }
+  const names = (await (await f.request('/pages')).json()).pages.map(page => page.name).filter(name => name.startsWith('Page '));
+  assert.deepEqual(names, ['Page 12', 'Page 11', 'Page 10', 'Page 9', 'Page 8']);
+});
+
 test('Love Spot pages discover archives, preserve drawings, rename, and reject delayed saves across switches', async t => {
   const f = await fixture(t), first = await f.save({ elements: [element('original')], files: {} });
   await fs.mkdir(path.join(f.directory, 'pages'), { recursive: true });

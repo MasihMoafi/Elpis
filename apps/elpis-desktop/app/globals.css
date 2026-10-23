@@ -246,8 +246,6 @@ button:disabled { cursor:not-allowed; }
 :root:not(.dark) .stop-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
-.voice-control { display:flex; align-items:center; gap:4px; min-width:0; flex-wrap:wrap; }
-.voice-error { font-size:var(--text-small); color:var(--destructive); max-width:220px; overflow-wrap:anywhere; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
 .dictation-error { color:var(--destructive); }
 .composer textarea { border:0; box-shadow:none; background:transparent; min-height:44px; max-height:240px; resize:none; font-size:0.90625rem; padding:2px 0; }

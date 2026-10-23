@@ -24,7 +24,7 @@ test('voice controls release the microphone after denial, cancelled startup, mut
       window.RTCPeerConnection = class {
         iceGatheringState = 'complete'; connectionState = 'new'; localDescription = null;
         constructor() { window.voiceTest.peers.push(this); }
-        addTrack() {} createDataChannel() {} async createOffer() { return { type: 'offer', sdp: 'v=0\r\ntest offer' }; }
+        addTrack() {} createDataChannel() { const channel = {}; window.voiceTest.channel = channel; return channel; } async createOffer() { return { type: 'offer', sdp: 'v=0\r\ntest offer' }; }
         async setLocalDescription(value) { this.localDescription = value; }
         async setRemoteDescription() { this.connectionState = 'connected'; this.onconnectionstatechange?.(); }
         close() { this.connectionState = 'closed'; }
@@ -42,6 +42,16 @@ test('voice controls release the microphone after denial, cancelled startup, mut
     assert.equal(f.posts.filter(row => row.path === '/api/voice').length, 0, 'late microphone access must not create a call');
     await page.evaluate(() => { window.voiceTest.mode = 'allow'; });
     await start.click();
+    const status = page.getByRole('status').filter({ hasText: /Listening|Hearing you|Working on it|Speaking|Muted/ });
+    await status.filter({ hasText: 'Listening' }).waitFor();
+    const said = type => page.evaluate(type => window.voiceTest.channel.onmessage({ data: JSON.stringify({ type }) }), type);
+    await said('input_transcript.added'); await status.filter({ hasText: 'Hearing you' }).waitFor();
+    await said('delegation.created'); await status.filter({ hasText: 'Working on it' }).waitFor();
+    await said('output_transcript.added'); await status.filter({ hasText: 'Speaking' }).waitFor();
+    await status.filter({ hasText: 'Listening' }).waitFor({ timeout: 4000 });
+    // Masih, 23 Oct: icons "shouldn't misconfigure ... with size": the call's buttons are the size of dictation's and share its row.
+    const sizes = await page.evaluate(() => ['Mute microphone', 'End voice chat'].map(name => { const b = document.querySelector(`button[aria-label="${name}"]`).getBoundingClientRect(), d = document.querySelector('button[aria-label^="Dictate"], button[aria-label*="ictat"]')?.getBoundingClientRect(); return { name, w: b.width, h: b.height, dw: d?.width, dh: d?.height, top: b.top, dtop: d?.top }; }));
+    for (const s of sizes) { assert.ok(s.dw, 'dictation button found'); assert.equal(Math.round(s.w), Math.round(s.dw), `${s.name} has the width of dictation's button`); assert.equal(Math.round(s.h), Math.round(s.dh), `${s.name} has its height`); assert.ok(Math.abs(s.top - s.dtop) <= 2, `${s.name} sits on dictation's row`); }
     await page.getByRole('button', { name: 'Mute microphone', exact: true }).click();
     assert.equal(await page.evaluate(() => window.voiceTest.tracks.at(-1).enabled), false);
     await page.getByRole('button', { name: 'Unmute microphone', exact: true }).click();

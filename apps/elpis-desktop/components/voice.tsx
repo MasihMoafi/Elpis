@@ -13,6 +13,10 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
   const [available, setAvailable] = useState(false);
   const [phase, setPhase] = useState<"idle" | "connecting" | "listening">("idle");
   const [muted, setMuted] = useState(false);
+  // What the call is doing right now, from the events the call sends: "Listening" alone cannot tell whether it hears the person or is about to answer.
+  const [activity, setActivity] = useState<"" | "hearing" | "working" | "speaking">("");
+  const quiet = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const note = (next: "hearing" | "working" | "speaking") => { setActivity(next); clearTimeout(quiet.current); quiet.current = setTimeout(() => setActivity(""), 2500); };
   const [error, setError] = useState("");
   const call = useRef<Call | null>(null);
   const busyCallback = useRef(onBusy); busyCallback.current = onBusy;
@@ -24,6 +28,7 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       if (current.peer) { current.peer.onconnectionstatechange = null; current.peer.ontrack = null; current.peer.close(); }
       if (current.audio) { current.audio.pause(); current.audio.srcObject = null; }
     }
+    clearTimeout(quiet.current); setActivity("");
     setPhase("idle"); setMuted(false); setError(message); busyCallback.current(false);
   }
   useEffect(() => {
@@ -47,7 +52,14 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       const peer = new RTCPeerConnection(); current.peer = peer;
       stream.getTracks().forEach(track => peer.addTrack(track, stream));
       // Codex's realtime peer expects an events data channel alongside the audio tracks.
-      peer.createDataChannel("oai-events");
+      const events = peer.createDataChannel("oai-events");
+      if (events) events.onmessage = message => {
+        try {
+          const { type } = JSON.parse(String(message.data)) as { type?: string };
+          if (call.current !== current) return;
+          if (type === "input_transcript.added") note("hearing"); else if (type === "delegation.created") note("working"); else if (type === "output_transcript.added") note("speaking");
+        } catch { /* An event that is not JSON changes nothing. */ }
+      };
       const audio = new Audio(); current.audio = audio; audio.autoplay = true;
       peer.ontrack = event => {
         audio.srcObject = new MediaStream([event.track]);
@@ -97,12 +109,16 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
   }
   if (!available) return null;
   const active = phase !== "idle";
-  return <div className="voice-control">
-    {!active ? <Button type="button" size="icon" variant="ghost" disabled={disabled} aria-label="Start voice chat" title="Voice: talk with Elpis" onClick={() => void start()}><AudioLines size={18} /></Button> : <>
-      <span role="status" className="text-sm text-muted-foreground">{phase === "connecting" ? "Connecting…" : muted ? "Muted" : "Listening"}</span>
-      {phase === "listening" && <Button type="button" size="icon" variant="ghost" aria-label={muted ? "Unmute microphone" : "Mute microphone"} title={muted ? "Unmute microphone" : "Mute microphone"} onClick={() => { const next = !muted; call.current?.stream?.getAudioTracks().forEach(track => { track.enabled = !next; }); setMuted(next); }}>{muted ? <MicOff size={17} /> : <Mic size={17} />}</Button>}
-      <Button type="button" size="icon" variant="ghost" aria-label="End voice chat" title="End voice chat" onClick={() => end()}><PhoneOff size={18} /></Button>
-    </>}
-    {error && <span role="alert" className="voice-error">{error}</span>}
+  // The same row, buttons and status as dictation, because it is the same kind of control.
+  const status = phase === "connecting" ? "Connecting…" : muted ? "Muted" : activity === "speaking" ? "Speaking" : activity === "working" ? "Working on it" : activity === "hearing" ? "Hearing you" : "Listening";
+  return <div className="dictation-control">
+    <div className="dictation-buttons">
+      {!active ? <Button type="button" size="icon" variant="ghost" disabled={disabled} aria-label="Start voice chat" title="Voice: talk with Elpis" onClick={() => void start()}><AudioLines size={17} /></Button> : <>
+        {phase === "listening" && <Button type="button" size="icon" variant="ghost" aria-label={muted ? "Unmute microphone" : "Mute microphone"} title={muted ? "Unmute microphone" : "Mute microphone"} onClick={() => { const next = !muted; call.current?.stream?.getAudioTracks().forEach(track => { track.enabled = !next; }); setMuted(next); }}>{muted ? <MicOff size={17} /> : <Mic size={17} />}</Button>}
+        <Button type="button" size="icon" variant="ghost" aria-label="End voice chat" title="End voice chat" onClick={() => end()}><PhoneOff size={17} /></Button>
+      </>}
+    </div>
+    {active && <span role="status" className="dictation-status">{status}</span>}
+    {error && <span role="alert" className="dictation-status dictation-error">{error}</span>}
   </div>;
 }

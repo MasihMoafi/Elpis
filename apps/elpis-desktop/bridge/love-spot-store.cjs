@@ -249,7 +249,8 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
     }
     const modified = await fs.stat(sceneFile).then(s => s.mtimeMs).catch(e => { if (e.code === 'ENOENT') return Date.now(); throw e; });
     listed.set(current.scene.page.name, { name: current.scene.page.name, modified });
-    return { current: current.scene.page, pages: [...listed.values()].sort((a, b) => b.modified - a.modified || a.name.localeCompare(b.name)) };
+    return { current: current.scene.page, // Page 13 before Page 12 before Page 9: the order never depends on which page was touched last, which the person cannot see (Masih, 23 Oct: "the order of these don't make any sense").
+    pages: [...listed.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })) };
   }
   async function changePage(input) {
     if (!record(input) || !['new', 'switch', 'rename', 'delete'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
