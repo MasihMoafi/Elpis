@@ -1327,11 +1327,6 @@ export class DesktopClient extends EventEmitter {
     }
     throw new BridgeError('The import is taking longer than expected. It carries on in the background; look again in a minute.', 504);
   }
-  /** A Codex chat copied into Elpis as a new chat of its own, from its saved rollout file. */
-  async importRollout(rollout) {
-    text(rollout, 'rollout', 4096);
-    return (await this.#rpc('thread/fork', { threadId: '', path: rollout })).thread;
-  }
   async forkThread(id, body) {
     object(body, ['lastTurnId', 'lastItemId']);
     const lastTurnId = body.lastTurnId === undefined ? undefined : text(body.lastTurnId, 'turn ID', 200);
