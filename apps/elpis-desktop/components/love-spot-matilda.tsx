@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { api } from "@/lib/api";
 import { PARTNER, keepPersona, savedPersona } from "@/lib/matilda";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
@@ -17,36 +18,35 @@ export function useMatilda({ ready, writing, told, send, onError }: {
   const latest = useRef({ ready, writing, told, send, onError, persona });
   latest.current = { ready, writing, told, send, onError, persona };
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
+  const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** Asks the bridge whether she is still writing, once a second while she is: no stream stays open, because each window's streams share the browser's six connections. */
+  const ask = useCallback(async () => {
+    try {
+      const state = await api<{ busy?: boolean; error?: string }>("/love-spot/talk");
+      busy.current = !!state.busy; setReplying(busy.current);
+      // An error left from an earlier visit is not news.
+      if (said.current !== null && state.error && state.error !== said.current) latest.current.onError(state.error);
+      said.current = state.error ?? "";
+      if (busy.current) asking.current = setTimeout(ask, 1000);
+    } catch { /* The next look asks again. */ }
+  }, []);
   const look = useCallback(async () => {
     if (!ids.current.size) return;
     const now = latest.current;
     if (!now.ready || now.writing() || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
     const text = now.told(ids.current); ids.current = new Set();
     if (!text) return;
-    working.current = true;
-    try { await now.send(text, now.persona.trim() || PARTNER); }
+    working.current = true; said.current = "";
+    try { await now.send(text, now.persona.trim() || PARTNER); clearTimeout(asking.current); ask(); }
     catch (cause) { now.onError(cause instanceof Error ? cause.message : "Matilda could not answer."); }
     finally { working.current = false; }
-  }, []);
+  }, [ask]);
   const notice = useCallback((found: string[]) => {
     if (!found.length) return;
     for (const id of found) ids.current.add(id);
     clearTimeout(timer.current); timer.current = setTimeout(look, QUIET);
   }, [look]);
-  useEffect(() => {
-    let first = true, said = "";
-    const events = new EventSource("/api/love-spot/talk/events");
-    events.onmessage = event => {
-      try {
-        const state: { busy?: boolean; error?: string } = JSON.parse(event.data);
-        busy.current = !!state.busy; setReplying(busy.current);
-        // An error left from an earlier visit is not news.
-        if (!first && state.error && state.error !== said) latest.current.onError(state.error);
-        said = state.error ?? ""; first = false;
-      } catch { /* The next message carries the whole state. */ }
-    };
-    return () => { events.close(); clearTimeout(timer.current); };
-  }, []);
+  useEffect(() => { ask(); return () => { clearTimeout(timer.current); clearTimeout(asking.current); }; }, [ask]);
   return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice };
 }
 
