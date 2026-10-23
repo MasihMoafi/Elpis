@@ -298,7 +298,6 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
 
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
   const matilda = useMatilda({ ready: !!editor && !!settings, onError: setError,
-    writing: () => !!editorRef.current?.getAppState().editingTextElement || !!document.querySelector("textarea.excalidraw-wysiwyg"),
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona) => sendWithBoard(async revision => { await api("/love-spot/talk", { text, persona, revision }); }) });
 

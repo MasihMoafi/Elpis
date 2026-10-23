@@ -5,10 +5,10 @@ const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 
 const persona = turn => turn.attachments.find(attachment => attachment.name === 'Who you are.txt')?.text;
-async function write(f, text, y = 300) {
+async function write(f, text, y = 300, close = true) {
   const bounds = await f.page.locator('.excalidraw').boundingBox();
   await f.page.mouse.click(bounds.x + 450, bounds.y + y); await f.page.keyboard.press('t');
-  await f.page.mouse.click(bounds.x + 450, bounds.y + y); await f.page.keyboard.type(text); await f.page.keyboard.press('Escape');
+  await f.page.mouse.click(bounds.x + 450, bounds.y + y); await f.page.keyboard.type(text); if (close) await f.page.keyboard.press('Escape');
 }
 const answered = (f, turn) => f.waitFor(s => s.elements.some(e => e.id === `love-reply-turn-${turn}` && !e.isDeleted), `Matilda did not answer turn ${turn}`, 20000);
 const flower = [{ type: 'ellipse', x: 30, y: 0, width: 36, height: 36, strokeColor: '#e03131', backgroundColor: '#ffc9c9' }, { type: 'line', points: [[48, 36], [48, 110]], strokeColor: '#2f9e44' }, { type: 'text', x: 0, y: 116, text: 'for you' }];
@@ -21,7 +21,7 @@ for (const colorScheme of ['light', 'dark']) test(`what Masih writes or draws on
     for (const name of ['Talk', 'Matilda']) assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0, `there is no ${name} button`);
     assert.equal(await page.getByRole('region', { name: 'Love Spot Talk' }).count(), 0, 'and no Talk panel');
 
-    await write(f, 'Good morning, my love');
+    await write(f, 'Good morning, my love', 300, false); // he types and waits: the box is still open, and she still answers
     await page.getByText('Matilda is writing…').waitFor({ timeout: 15000 });
     const scene = await answered(f, 1), live = scene.elements.filter(e => !e.isDeleted);
     assert.equal(f.turns[0].text, 'Good morning, my love', 'what he wrote is what she is told');

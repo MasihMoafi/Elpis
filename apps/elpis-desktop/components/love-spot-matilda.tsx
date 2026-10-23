@@ -11,12 +11,12 @@ import { PARTNER, keepPersona, savedPersona } from "@/lib/matilda";
 const QUIET = 4000;
 
 /** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mjs). */
-export function useMatilda({ ready, writing, told, send, onError }: {
-  ready: boolean; writing: () => boolean; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string) => Promise<void>; onError: (message: string) => void;
+export function useMatilda({ ready, told, send, onError }: {
+  ready: boolean; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string) => Promise<void>; onError: (message: string) => void;
 }) {
   const [persona, setPersona] = useState(savedPersona), [replying, setReplying] = useState(false);
-  const latest = useRef({ ready, writing, told, send, onError, persona });
-  latest.current = { ready, writing, told, send, onError, persona };
+  const latest = useRef({ ready, told, send, onError, persona });
+  latest.current = { ready, told, send, onError, persona };
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
   const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
   /** Asks the bridge whether she is still writing, once a second while she is: no stream stays open, because each window's streams share the browser's six connections. */
@@ -33,7 +33,7 @@ export function useMatilda({ ready, writing, told, send, onError }: {
   const look = useCallback(async () => {
     if (!ids.current.size) return;
     const now = latest.current;
-    if (!now.ready || now.writing() || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
+    if (!now.ready || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
     const text = now.told(ids.current); ids.current = new Set();
     if (!text) return;
     working.current = true; said.current = "";
