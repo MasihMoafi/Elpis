@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { selectPaneContent } from "@/lib/pane-select";
 import { api } from "@/lib/api";
 import { readPersonalizationDraft, writePersonalizationDraft, type PersonalizationDraft } from "@/lib/personalization-drafts";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,7 @@ export function FileSettings({ kind, label }: { kind: "instructions" | "memory";
       <div className="settings-field-stack">
         <Segmented label={`${label} view`} value={mode} options={[{ value: "edit", label: "Edit" }, { value: "preview", label: "Preview" }]} onChange={setMode} disabled={!saved} />
         {mode === "preview"
-          ? <div aria-label={`${label} preview`} className="max-h-80 min-h-28 overflow-auto border border-border p-3 text-sm">{text.trim() ? <MarkdownText text={text} /> : <p className="text-muted-foreground">{missing ? "Not created yet. Switch to Edit and save to create it." : "Nothing written yet."}</p>}</div>
+          ? <div aria-label={`${label} preview`} tabIndex={-1} onKeyDown={selectPaneContent} className="max-h-80 min-h-28 overflow-auto border border-border p-3 text-sm outline-none">{text.trim() ? <MarkdownText text={text} /> : <p className="text-muted-foreground">{missing ? "Not created yet. Switch to Edit and save to create it." : "Nothing written yet."}</p>}</div>
           : <Textarea aria-label={label} data-settings-file className="max-h-80 min-h-28 font-mono" disabled={pending || !saved} placeholder={missing ? "Not created yet. Write here and press Save to create it." : undefined} value={text} onChange={event => {
             setError(""); setNotice("");
             journal(event.target.value === saved?.content ? null : { content: event.target.value, version: draft?.version ?? saved!.version });

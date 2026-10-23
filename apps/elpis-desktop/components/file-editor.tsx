@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { selectPaneContent } from "@/lib/pane-select";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { common, createLowlight } from "lowlight";
 import type { Element, ElementContent, Root } from "hast";
@@ -118,13 +119,14 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
   const closeFind = () => { setFind(null); area.current?.focus(); };
   const step = (by: number) => setFind(old => old && { ...old, at: (found.length ? mod(old.at, found.length) : 0) + by });
   const keys = (event: KeyboardEvent) => {
+    selectPaneContent(event);
     const ctrl = event.ctrlKey || event.metaKey;
     if (ctrl && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "f") { event.preventDefault(); openFind(); }
     else if (ctrl && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") { event.preventDefault(); onSave(); }
     else if (event.key === "Escape" && find) { event.preventDefault(); closeFind(); }
   };
   const width = `${String(lines.length).length}ch`;
-  return <div className={`fe${coloured ? " fe-coloured" : ""}`} data-wrap={softWrap || undefined} onKeyDown={keys}>
+  return <div className={`fe${coloured ? " fe-coloured" : ""}`} data-wrap={softWrap || undefined} tabIndex={-1} onKeyDown={keys}>
     {find && <div className="fe-find" role="search" aria-label="Find in file">
       <SearchField ref={undefined} className="fe-find-field">
         <input ref={field} type="text" aria-label="Find in file" placeholder="Find in file…" value={find.query} spellCheck={false} autoComplete="off"
@@ -145,7 +147,7 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
           const pieces = byLine.get(index) ?? NO_PIECES;
           return <Line key={index} text={text} hit={first > 0 && index + 1 >= first && index + 1 <= last} pieces={pieces} current={pieces === NO_PIECES ? -1 : current} colours={coloured?.[index]} />;
         })}</div></div>
-        <textarea ref={area} className="fe-text" aria-label={label} value={value} wrap={softWrap ? "soft" : "off"} dir="ltr" spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
+        <textarea ref={area} className="fe-text" data-pane-content aria-label={label} value={value} wrap={softWrap ? "soft" : "off"} dir="ltr" spellCheck={false} autoCapitalize="off" autoComplete="off" autoCorrect="off"
           onChange={event => onChange(event.target.value)} onScroll={sync} />
       </div>
     </div>

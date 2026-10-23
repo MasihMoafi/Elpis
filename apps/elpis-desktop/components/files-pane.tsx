@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { selectPaneContent } from "@/lib/pane-select";
 import { PanelLeft, PanelLeftClose, RefreshCw, Undo2 } from "lucide-react";
 import { MoreMenu, type MenuAction } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
@@ -32,7 +33,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   if (!doc || doc.status === "loading") body = <p className="files-note" role="status">Reading the file…</p>;
   else if (doc.status === "error") body = <p className="files-note files-error" role="alert">{doc.message}</p>;
   else if (doc.status === "ready") body = markdown && !source
-    ? <article className="file-markdown" aria-label={`Preview of ${file.path}`}><MarkdownText text={doc.text} file={fileScope(cwd, file.path)} /></article>
+    ? <article className="file-markdown" tabIndex={-1} onKeyDown={selectPaneContent} aria-label={`Preview of ${file.path}`}><MarkdownText text={doc.text} file={fileScope(cwd, file.path)} /></article>
     : <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} />;
   else if (doc.status === "image") body = <div className="file-image"><img src={doc.src} alt={nameOf(file.path)} /></div>;
   else if (doc.status === "pdf") body = <iframe className="file-pdf" title={`Preview of ${file.path}`} src={doc.src} />;

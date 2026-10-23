@@ -243,6 +243,7 @@
     "tests/sidebar-settings-button.test.cjs",
     "tests/hidden-pages.test.cjs",
     "tests/import-chats.test.cjs",
+    "tests/pane-select-all.test.cjs",
     "tests/features-order.test.cjs",
     "tests/personalization-files.test.cjs",
     "tests/shortcut-recorder.test.cjs",
