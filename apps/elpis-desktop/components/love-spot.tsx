@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
+import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { keepModel, savedModel } from "@/lib/matilda";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
@@ -96,8 +97,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
     return () => { active = false; };
   }, [report]);
   const provider = chatProvider(settings?.main.model, undefined, settings?.main.provider);
-  // Her chat keeps the connection it started on, so only that connection's models are offered.
-  const choices = providerChoices(models, settings).filter(choice => !choice.provider || choice.provider === settings?.main.provider);
+  // Any connected model: a model from another connection starts her a new chat (bridge/love-spot-talk.mjs).
+  const choices = providerChoices(models, settings);
   const pickedProvider = choices.find(choice => choice.id === pick.choiceId)?.provider;
 
   useEffect(() => {
@@ -407,6 +408,8 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
         </form>}
       </div>
+      {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
+      <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
@@ -438,7 +441,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
         <Button variant="outline" size="icon-xs" className="love-spot-screenshot-dismiss" aria-label={`Dismiss ${shot.name}`} title={`Dismiss ${shot.name}`} disabled={choosing} onClick={() => void chooseScreenshot(shot.id, "dismiss")}><X aria-hidden="true" /></Button>
       </li>)}</ul>
     </section>}
-    <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} pick={pick} fallback={settings?.main.model ?? ""} models={models} choices={choices} onSave={(persona, chosen) => { matilda.keep(persona); setPick(chosen); keepModel(chosen); }} />
+    <MatildaWho open={whoOpen} onOpenChange={setWhoOpen} persona={matilda.persona} onSave={persona => matilda.keep(persona)} />
     {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
     <div className="love-spot-content"><div className={`love-spot-editor ${styleClassName}`} ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }

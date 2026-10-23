@@ -101,6 +101,10 @@ export function createLoveSpotTalk({ client, store }) {
         const attachments = [{ id: 'love-spot-notes', name: 'Love Spot notes.txt', type: 'text', mimeType: 'text/plain', text: `Current Love Spot board notes (by colour):\n${JSON.stringify(notes)}` }];
         if (body.persona) attachments.push({ id: 'love-spot-persona', name: 'Who you are.txt', type: 'text', mimeType: 'text/plain', text: body.persona });
         if (selected?.inputModalities?.includes('image')) attachments.push({ id: 'love-spot-picture', name: 'view.png', type: 'image', mimeType: 'image/png', dataUrl: `data:image/png;base64,${await store.boardPicture(body.revision)}` });
+        // Masih, 23 Oct: "I can't change her model!" A chat keeps its provider, so a model from another connection starts her a
+        // new Love Spot chat; the board, which is where you talk, stays as it is.
+        const provider = body.provider ?? settings.main.provider;
+        if (threadId && thread && provider && thread.modelProvider && provider !== thread.modelProvider) { stale = threadId; threadId = null; thread = null; entries = []; }
         if (!threadId) {
           threadId = await store.chat(async cwd => {
             const made = await client.createThread({ cwd, name: 'Love Spot', model, ...(body.provider ? { provider: body.provider } : {}), instructions: INSTRUCTIONS });
@@ -108,7 +112,6 @@ export function createLoveSpotTalk({ client, store }) {
           }, stale);
           if (!thread) thread = (await client.readThread(threadId)).thread;
         }
-        if (body.provider && body.provider !== thread.modelProvider) throw new BridgeError('Choose a model from the Love Spot chat’s connection.', 400);
         // Masih, 23 Oct: "set her thinking to low so it be faster, and set her to /fast as well". Fast is asked for once per
         // chat; a model or account without it still answers, at normal speed.
         if (!fastAsked.has(threadId)) {

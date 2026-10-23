@@ -199,3 +199,17 @@ test('Matilda thinks at low effort and her chat asks for Fast once; a model with
   await g.talk.send({ text: 'Hello', model: 'text' });
   assert.equal(g.sent.length, 1, 'a refused Fast does not stop the message');
 });
+
+// Masih, 23 Oct: "I can't change her model!" A model from another connection starts her a new chat instead of being refused.
+test('a model from another connection starts Matilda a new chat; one from the same connection keeps hers', async t => {
+  const f = await fixture(t);
+  // Engine threads name their connection.
+  f.client.createThread = async value => { f.created.push(value); return { thread: { id: 'chat', ...value, modelProvider: value.provider ?? 'openai' } }; };
+  await f.talk.send({ text: 'Hello', model: 'text' }); f.finish(); await f.talk.idle();
+  await f.talk.send({ text: 'Same connection', model: 'text', provider: 'openai' }); f.finish('turn-2'); await f.talk.idle();
+  assert.equal(f.created.length, 1, 'the same connection keeps her chat');
+  await f.talk.send({ text: 'Now on Claude', model: 'claude/sonnet', provider: 'anthropic' });
+  assert.equal(f.created.length, 2);
+  assert.equal(f.created[1].provider, 'anthropic');
+  assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['Hello', 'text'], ['Same connection', 'text'], ['Now on Claude', 'claude/sonnet']]);
+});

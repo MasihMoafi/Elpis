@@ -4,9 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { ModelPicker } from "@/components/model-picker";
-import { api, type Model, type ProviderChoice } from "@/lib/api";
-import { PROTOCOL, keepPersona, savedPersona, type ModelPick } from "@/lib/matilda";
+import { api } from "@/lib/api";
+import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
 const QUIET = 4000;
@@ -51,24 +50,20 @@ export function useMatilda({ ready, told, send, onError }: {
   return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice };
 }
 
-/** Who Matilda is: the person writes her the protocol she works by, and chooses the model she runs on; both go with everything she is told. */
-export function MatildaWho({ open, onOpenChange, persona, pick, fallback, models, choices, onSave }: {
-  open: boolean; onOpenChange: (open: boolean) => void; persona: string; pick: ModelPick; fallback: string; models: Model[]; choices: ProviderChoice[]; onSave: (persona: string, pick: ModelPick) => void;
+/** Who Matilda is: the person writes her the protocol she works by; it goes with everything she is told. Her model is on the Love Spot bar. */
+export function MatildaWho({ open, onOpenChange, persona, onSave }: {
+  open: boolean; onOpenChange: (open: boolean) => void; persona: string; onSave: (persona: string) => void;
 }) {
-  const [draft, setDraft] = useState(persona), [chosen, setChosen] = useState(pick);
-  useEffect(() => { if (open) { setDraft(persona); setChosen(pick); } }, [open, persona, pick]);
+  const [draft, setDraft] = useState(persona);
+  useEffect(() => { if (open) setDraft(persona); }, [open, persona]);
   return <AlertDialog open={open} onOpenChange={onOpenChange}>
     <AlertDialogContent role="dialog">
       <AlertDialogHeader><AlertDialogTitle>Who Matilda is</AlertDialogTitle><AlertDialogDescription>She follows this protocol in everything she answers. Write her the method of any profession you like.</AlertDialogDescription></AlertDialogHeader>
       <Textarea aria-label="Who Matilda is" rows={8} value={draft} onChange={event => setDraft(event.target.value)} autoFocus />
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <span>Model <span className="text-muted-foreground">{chosen.model ? "" : `(Settings: ${fallback || "none chosen"})`}</span></span>
-        <ModelPicker choices={choices} models={models} model={chosen.model || fallback} choiceId={chosen.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => setChosen(value)} />
-      </div>
       <AlertDialogFooter>
         <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button variant="outline" disabled={draft === PROTOCOL && !chosen.model} onClick={() => { setDraft(PROTOCOL); setChosen({ model: "", choiceId: "" }); }}>Back to her usual way</Button>
-        <Button disabled={!draft.trim()} onClick={() => { onSave(draft, chosen); onOpenChange(false); }}>Save</Button>
+        <Button variant="outline" disabled={draft === PROTOCOL} onClick={() => setDraft(PROTOCOL)}>Back to her usual way</Button>
+        <Button disabled={!draft.trim()} onClick={() => { onSave(draft); onOpenChange(false); }}>Save</Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>;
