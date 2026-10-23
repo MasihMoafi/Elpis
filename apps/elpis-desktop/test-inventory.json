@@ -80,6 +80,7 @@
     "bridge/love-spot-talk.test.mjs",
     "bridge/love-spot.test.mjs",
     "bridge/provider-models.test.mjs",
+    "bridge/read-aloud.test.mjs",
     "bridge/request-diagnostics.test.mjs",
     "bridge/rewind-history.test.mjs",
     "bridge/rewind-snapshots.test.mjs",
