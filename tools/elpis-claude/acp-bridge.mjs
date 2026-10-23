@@ -202,6 +202,10 @@ const agentOf = (model) => (typeof model === "string" ? AGENTS.find((a) => model
 const signedOutModel = (model) => agentOf(model)?.signedOut?.() === true;
 const refuseSignedOut = (agent) => { if (agent?.signedOut?.()) throw Object.assign(new Error(SIGNED_OUT_MESSAGE), { signedOut: true }); };
 const acpErrorMessage = (e) => (e?.signedOut ? e.message : `Claude (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
+// A dropped or timed-out connection is no error to show: the chat retries on its own (any message retries at once).
+const RECONNECT_MS = Number(process.env.ELPIS_RECONNECT_MS) || 180_000;
+const connectionDropped = (e) => /API Error/.test(e?.message ?? "") && /connection|timed? ?out|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network/i.test(e.message);
+const RECONNECT_NOTE = `Connection lost. Retrying in ${RECONNECT_MS >= 60_000 ? `${RECONNECT_MS / 60_000} minutes` : `${RECONNECT_MS / 1000} seconds`}; send a message to retry now.`;
 async function readJson(path) { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(path, "utf8")); } catch { return null; } }
 async function writeJson(path, value) {
   const { mkdir, writeFile, rename } = await import("node:fs/promises");
@@ -1244,6 +1248,7 @@ wss.on("connection", (ws) => {
   // The engine's own chats and helpers get the delegate tool while the Subagents switch is on (A37).
   const withAgents = async (params) => { if (params && await subagentsAllowed(params.cwd)) params.config = { ...params.config, ...engineAgentsConfig() }; };
   const activeTurns = new BusyMap(); // thread id -> its running Claude or Antigravity turn
+  const reconnects = new Map(); // thread id -> the timer of its retry after a dropped connection
   const pendingMirrors = new Map(); // native history copies do not own the provider's turn status
   const engineTurns = new BusyMap(); // thread id -> its running engine turn
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
@@ -1811,6 +1816,8 @@ wss.on("connection", (ws) => {
 
   async function claudeTurn(req) {
     const { threadId, input = [] } = req.params;
+    clearTimeout(reconnects.get(threadId));
+    reconnects.delete(threadId);
     const turnId = randomUUID();
     const turn = { id: turnId, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null };
     if (req.id !== undefined) toTui({ id: req.id, result: req.kind === "review" ? { turn, reviewThreadId: threadId } : { turn } });
@@ -2201,8 +2208,14 @@ wss.on("connection", (ws) => {
       }
     } catch (e) {
       status = "failed";
-      error = { message: acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
+      const dropped = connectionDropped(e) && !compacting;
+      error = { message: dropped ? RECONNECT_NOTE : acpErrorMessage(e), codexErrorInfo: null, additionalDetails: null };
       log(`turn error ${JSON.stringify(e)}`);
+      if (dropped) reconnects.set(threadId, setTimeout(() => {
+        reconnects.delete(threadId);
+        if (activeTurns.has(threadId) || deletedThreads.has(threadId) || !claudeModel.has(threadId)) return;
+        void claudeTurn({ kind: "queued", params: { threadId, input: [{ type: "text", text: "The connection dropped before you could answer. Continue where you left off.", text_elements: [] }] } });
+      }, RECONNECT_MS));
     }
     turnState.stopRecordWatch?.();
     sessionReady(null);

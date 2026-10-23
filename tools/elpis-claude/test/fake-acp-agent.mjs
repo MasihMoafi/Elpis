@@ -2,7 +2,8 @@
 // A scripted ACP agent built on the official SDK, for tests of ACP clients. No model calls.
 // Environment: FAKE_ACP_LOG (every request and notification it receives, as JSON lines), FAKE_ACP_NAME (its name in
 // answers), FAKE_ACP_MODELS (comma-separated values of a `model` config option it offers), FAKE_ACP_BACKGROUND_RELEASE
-// (a file whose creation finishes a "[background]" prompt's job).
+// (a file whose creation finishes a "[background]" prompt's job), FAKE_ACP_OFFLINE (while this file exists, every prompt
+// fails as Claude Code does when the connection drops).
 // A prompt is answered `<name>(<model>) answered: <prompt text>` after a progress message and a tool call; markers in
 // the prompt change that: [permission] asks permission first, [hang] waits for session/cancel, [ignore-cancel] never
 // ends, [crash] exits with code 5, [empty] answers nothing, [commentary-only] answers only Elpis commentary,
@@ -10,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Readable, Writable } from "node:stream";
-import { agent, ndJsonStream } from "@agentclientprotocol/sdk";
+import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 
 const name = process.env.FAKE_ACP_NAME ?? "fake";
 const models = (process.env.FAKE_ACP_MODELS ?? "").split(",").filter(Boolean);
@@ -70,6 +71,10 @@ const app = agent({ name: "fake-acp-agent" })
     s.rejectToolSteers = text.includes("[tool-race]") || text.includes("[tool-gap]");
     const say = (update) => client.notify("session/update", { sessionId: params.sessionId, update });
     const chunk = (messageId, body, meta) => say({ sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text: body }, ...(meta ? { _meta: meta } : {}) });
+    if (process.env.FAKE_ACP_OFFLINE && fs.existsSync(process.env.FAKE_ACP_OFFLINE)) {
+      s.running = false;
+      throw new RequestError(-32603, "Internal error: API Error: Connection dropped (ECONNRESET)", { errorKind: "server_error" });
+    }
     if (text.includes("[crash]")) { process.stderr.write("fake agent crashed on purpose\n"); await pause(10); process.exit(5); }
     if (text.includes("[refuse]")) return { stopReason: "refusal" };
     if (text.includes("[empty]")) return { stopReason: "end_turn" };
