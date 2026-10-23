@@ -43,7 +43,8 @@
     "tests/love-spot-events.test.mjs",
     "tests/agent-label.test.mjs",
     "tests/personalization-drafts.test.cjs",
-    "tests/pre-install-cleanup.test.mjs"
+    "tests/pre-install-cleanup.test.mjs",
+    "tests/voice-handoff.test.cjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",

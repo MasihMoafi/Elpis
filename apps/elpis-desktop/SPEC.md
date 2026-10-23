@@ -88,3 +88,20 @@ Status: implemented locally; portrait, Style/Chat/Resume and voice lifecycle jou
 - H4: A preview without an onDark callback can report a theme without a main-process exception; the native overlay and browser background still follow the theme.
 
 Status: the cat was deleted using the editor’s Delete action, with all 16 tombstones verified in the saved board and the surrounding reply preserved. The no-cats preference is saved. Shared Style and Delete alignment pass in wide/narrow views and both themes; seven native theme tests pass. Build and typecheck pass, peak CPU 60°C. The refreshed preview is open on the real shared board and chat; a native theme report no longer logs the onDark error. The main installation is unchanged.
+
+## Voice choices and private handoffs — 23 October 2026
+
+- V1: Standalone internal voice-handoff envelopes never appear as chat messages,
+  recalled prompts or exported conversation; typed explanations mentioning the
+  tag and ordinary messages remain visible. Verify live and restored history.
+- V2: Voice is a saved dropdown using the actual active protocol’s native catalog.
+  Reject unsupported choices before starting a call; retain the native default.
+  The chosen voice reaches native start and survives reload and chat switching.
+- V3: Keep permission denial, Mute, End, navigation and subscription-only guards.
+  A call already open keeps its voice; the Settings row says the next call uses the choice.
+- V4: Other voice providers require a working authenticated route. Never present
+  a catalog from another protocol or an unconnected provider as usable.
+
+Status (23 Oct, p-1d): V1 and V2 built. The choice is Settings → Voice → Voice chat, saved as `realtime.voice` and sent
+with each call; bridge/bridge.test.mjs and tests/voice-handoff.test.cjs cover them, and each fails without its fix.
+V4 is not built: which other provider (ElevenLabs, Gemini) waits on Masih.

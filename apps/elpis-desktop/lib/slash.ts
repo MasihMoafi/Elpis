@@ -1,3 +1,4 @@
+import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
 import type { Entry, Item } from "./api";
 
 /** "/name some arguments" as typed in the composer; null for a bare name, a leading space, or text that is not a command. */
@@ -6,7 +7,7 @@ export function splitCommand(text: string): { name: string; args: string } | nul
   return match ? { name: match[1].toLowerCase(), args: match[2] } : null;
 }
 
-const messageText = (item: Item) => item.type === "userMessage"
+const messageText = (item: Item) => isVoiceHandoff(item) ? "" : item.type === "userMessage"
   ? (item.content ?? []).map(part => part.type === "text" ? part.text ?? "" : "").join("")
   : item.type === "agentMessage" ? item.text ?? "" : "";
 

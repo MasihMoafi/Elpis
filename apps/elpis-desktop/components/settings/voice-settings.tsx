@@ -49,7 +49,32 @@ function WhisperTypeSettings({ server, save, disabled = false }: { server: Pick<
   </form>;
 }
 
-/** Settings → Voice: dictation status and route, backed by the whispertype MCP server. */
+type Speaking = { available: boolean; voices?: string[]; voice?: string };
+const named = (voice: string) => voice.charAt(0).toUpperCase() + voice.slice(1);
+
+/** The voice a voice chat speaks in: the voices the ChatGPT connection offers, saved as Elpis's `realtime.voice` and used from the next call
+ * (Masih, 23 Oct: "make it configurable, the voice that is"). Without a ChatGPT sign-in there is nothing to choose, and the row says so. */
+function VoiceChoice() {
+  const [speaking, setSpeaking] = useState<Speaking | null>(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [saved, setSaved] = useState(false);
+  useEffect(() => { api<Speaking>("/voice").then(setSpeaking, e => setError(message(e))); }, []);
+  async function choose(voice: string) {
+    setBusy(true); setError(""); setSaved(false);
+    try { setSpeaking(await api<Speaking>("/voice/choice", { voice })); setSaved(true); }
+    catch (e) { setError(message(e)); } finally { setBusy(false); }
+  }
+  const voices = speaking?.available ? speaking.voices ?? [] : [];
+  return <SettingsGroup title="Voice chat">
+    <SettingRow title="Voice" description={speaking && !speaking.available ? "Voice chat uses your ChatGPT sign-in. Sign in under Settings → Connections to choose its voice." : "The voice Elpis speaks in during a voice chat, from your ChatGPT connection. A call already open keeps its voice; the next one uses this."}>
+      <OptionSelect aria-label="Voice chat voice" className="settings-choice" value={speaking?.voice ?? ""} disabled={busy || !voices.length} onChange={e => void choose(e.target.value)}>
+        {voices.length ? voices.map(voice => <option key={voice} value={voice}>{named(voice)}</option>) : <option value="">{speaking ? "Unavailable" : "Reading…"}</option>}
+      </OptionSelect>
+    </SettingRow>
+    {(error || saved) && <SettingsActions feedback={error ? <SettingsNotice tone="alert">{error}</SettingsNotice> : <SettingsNotice>Voice saved.</SettingsNotice>} />}
+  </SettingsGroup>;
+}
+
+/** Settings → Voice: the voice chat's voice, then dictation status and route, backed by the whispertype MCP server. */
 export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
   const [config, setConfig] = useState<VoiceConfig | null>(null);
   const [route, setRoute] = useState<Route | null>(null);
@@ -69,6 +94,7 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
     <SettingsHeader title="Voice" description="Dictate into the composer with the microphone button. A chat transcribes with its own provider: ChatGPT chats with the ChatGPT sign-in, Google Gemini chats with the Gemini API key, OpenRouter chats with the model below. Recordings are limited to two minutes or 8 MB." />
     {error && <SettingsNotice tone="alert">Could not read voice settings: {error}</SettingsNotice>}
     {!config && !error && <SettingsNotice>Reading voice settings…</SettingsNotice>}
+    <VoiceChoice />
     {config && <SettingsGroup title="Dictation">
       <SettingRow title="Status" description={route?.available ? "WhisperType is enabled. The first dictation checks that it runs." : route?.reason ?? "Status not reported."}>
         <span className={`settings-badge ${route?.available ? "ok" : "warn"}`}>{route?.available ? "Configured" : "Unavailable"}</span>

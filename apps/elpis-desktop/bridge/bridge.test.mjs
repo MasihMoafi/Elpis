@@ -842,16 +842,19 @@ test('provider history cursors fit the HTTP query and stay bound to their chat (
 test('live voice delivers SDP privately and ends the native call when its window disconnects', async t => {
   const { client, socket } = fixture(); await client.initialize();
   const nativeSend = socket.send;
-  let stopCount = 0, startRequest, holdStart = false, finishStart, chatgpt = true;
+  let stopCount = 0, startRequest, holdStart = false, finishStart, chatgpt = true, savedVoice;
   socket.send = raw => {
     const request = JSON.parse(raw);
+    const answer = result => queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
+    if (request.method === 'config/read') { answer({ config: { realtime: savedVoice ? { voice: savedVoice } : undefined } }); return; }
+    if (request.method === 'config/batchWrite') { socket.sent.push(request); savedVoice = request.params.edits[0].value; answer({}); return; }
     if (request.method === 'account/read' && !chatgpt) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result: { account: { type: 'apiKey' } } }))); return; }
     if (!request.method?.startsWith('thread/realtime/')) return nativeSend(raw);
     socket.sent.push(request);
     if (request.method === 'thread/realtime/start') startRequest = request;
     if (request.method === 'thread/realtime/stop') stopCount++;
     const reply = () => {
-      socket.emit('message', JSON.stringify({ id: request.id, result: request.method.endsWith('listVoices') ? { v1: ['juniper'], defaultV1: 'juniper' } : {} }));
+      socket.emit('message', JSON.stringify({ id: request.id, result: request.method.endsWith('listVoices') ? { voices: { v1: ['cove', 'juniper'], v2: ['alloy'], defaultV1: 'cove', defaultV2: 'alloy' } } : {} }));
       if (request.method.endsWith('/start')) socket.emit('message', JSON.stringify({ method: 'thread/realtime/sdp', params: { threadId: ROOT, sdp: 'v=0\r\nanswer' } }));
     };
     if (holdStart && request.method.endsWith('/start')) finishStart = reply; else queueMicrotask(reply);
@@ -861,7 +864,16 @@ test('live voice delivers SDP privately and ends the native call when its window
   const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
   const headers = { Origin: origin, Cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
   const post = (body, signal) => fetch(origin + '/api/voice', { method: 'POST', headers, body: JSON.stringify(body), signal });
+  const catalog = await (await fetch(origin + '/api/voice', { headers })).json();
+  assert.deepEqual(catalog, { available: true, voices: ['cove', 'juniper'], voice: 'cove' }, 'no saved choice: the native default');
+  const choose = voice => fetch(origin + '/api/voice/choice', { method: 'POST', headers, body: JSON.stringify({ voice }) });
   assert.equal((await post({ threadId: 'invalid', sdp: 'v=0\r\noffer' })).status, 400);
+  const unsupported = await choose('alloy'); // a voice of another protocol version
+  assert.equal(unsupported.status, 400); assert.match(await unsupported.text(), /Choose one of the listed voices/);
+  assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0, 'an unlisted voice is never saved');
+  assert.deepEqual(await (await choose('juniper')).json(), { available: true, voices: ['cove', 'juniper'], voice: 'juniper' });
+  assert.deepEqual(socket.sent.find(row => row.method === 'config/batchWrite').params.edits, [{ keyPath: 'realtime.voice', value: 'juniper', mergeStrategy: 'replace' }]);
+  assert.equal(socket.sent.filter(row => row.method === 'thread/realtime/start').length, 0);
   const abort = new AbortController();
   const response = await post({ threadId: ROOT, sdp: 'v=0\r\noffer' }, abort.signal);
   assert.equal(response.status, 200);
@@ -871,6 +883,7 @@ test('live voice delivers SDP privately and ends the native call when its window
   assert.doesNotMatch(received, /PRIVATE CONFIG SECRET|auth|token/);
   assert.equal(JSON.parse(received.trim()).sdp, 'v=0\r\nanswer');
   assert.equal(startRequest.params.transport.type, 'webrtc');
+  assert.equal(startRequest.params.voice, 'juniper', 'the call speaks in the saved voice');
   assert.equal((await post({ threadId: ROOT, sdp: 'v=0\r\noffer' })).status, 409);
   abort.abort(); await reader.cancel().catch(() => {});
   const deadline = Date.now() + 2000;

@@ -1,3 +1,4 @@
+import voiceHandoff from './voice-handoff.cjs';
 import { fastServiceTier } from '../lib/service-tier.mjs';
 import { legacyInterview, interviewTurns } from './love-interview.mjs';
 import { EventEmitter } from 'node:events';
@@ -26,6 +27,7 @@ import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
 import { CustomizePage } from './customize-page.mjs';
 import { BridgeError, object, text, threadId } from './validate.mjs';
+const { isVoiceHandoff } = voiceHandoff;
 const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
@@ -557,7 +559,7 @@ export class DesktopClient extends EventEmitter {
       const page = await this.readThread(id, cursor ? { cursor, limit: 100 } : { limit: 100 });
       for (const { turnId, item } of page.data) {
         if (typeof turnId !== 'string') continue;
-        if (item?.type === 'userMessage') {
+        if (item?.type === 'userMessage' && !isVoiceHandoff(item)) {
           const text = Array.isArray(item.content) ? item.content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') : '';
           prompts.set(turnId, { itemId: item.id, text: Array.from(text.trim()).slice(0, 200).join('') });
         } else if (item?.type === 'agentMessage') {
@@ -867,19 +869,31 @@ export class DesktopClient extends EventEmitter {
     return { reset: true };
   }
   // Private subprocess configuration. HTTP responses expose only the selected route, never this object.
+  /** Whether voice can start, the voices it can speak in and the one chosen. Elpis's calls use realtime V3, which speaks the
+   * first ("v1") list; the choice is saved as `realtime.voice` in Elpis's config (Masih, 23 Oct: "make it configurable, the voice"). */
   async voiceStatus() {
     const account = await this.#rpc('account/read', { refreshToken: false });
     if (account?.account?.type !== 'chatgpt') return { available: false };
-    await this.#rpc('thread/realtime/listVoices', {});
-    return { available: true };
+    const [{ voices }, read] = await Promise.all([this.#rpc('thread/realtime/listVoices', {}), this.#rpc('config/read', { includeLayers: false })]);
+    const saved = read.config?.realtime?.voice;
+    return { available: true, voices: voices.v1, voice: voices.v1.includes(saved) ? saved : voices.defaultV1 };
+  }
+  async setVoice(body) {
+    object(body, ['voice']); text(body.voice, 'voice', 40);
+    const status = await this.voiceStatus();
+    if (!status.available) throw new BridgeError('Voice needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
+    if (!status.voices.includes(body.voice)) throw new BridgeError('Choose one of the listed voices.', 400);
+    await this.#rpc('config/batchWrite', { edits: [{ keyPath: 'realtime.voice', value: body.voice, mergeStrategy: 'replace' }], reloadUserConfig: true });
+    return this.voiceStatus();
   }
   async startVoice(id, sdp) {
     threadId(id); text(sdp, 'voice offer', 64000);
-    if (!(await this.voiceStatus()).available) throw new BridgeError('Voice needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
+    const status = await this.voiceStatus();
+    if (!status.available) throw new BridgeError('Voice needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
     const thread = await this.readThreadMetadata(id);
     if (thread.modelProvider !== 'openai' || /^(?:claude|agy)\//.test(thread.model ?? '')) throw new BridgeError('Voice is available in Codex chats using your ChatGPT connection.', 403);
     await this.#attach(id);
-    return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', transport: { type: 'webrtc', sdp } });
+    return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', voice: status.voice, transport: { type: 'webrtc', sdp } });
   }
   async stopVoice(id) {
     return this.#rpc('thread/realtime/stop', { threadId: threadId(id) });

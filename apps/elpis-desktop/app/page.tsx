@@ -69,6 +69,7 @@ import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
 import { Dictation } from "@/components/dictation";
+import { isVoiceHandoff } from "@/bridge/voice-handoff.cjs";
 import { Voice } from "@/components/voice";
 import { chooseProject, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { BranchChip } from "@/components/branch-chip";
@@ -770,7 +771,7 @@ export default function Home() {
     for (const id of relatedIds) api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=1`).then(result => setRelated(prev => ({ ...prev, [id]: result.thread }))).catch(() => {});
   }, [relatedIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownScope = selected?.id ?? newDraftKey.current;
-  const shownEntries = useMemo(() => withSubmittedMessages(entries, submissions, shownScope), [entries, submissions, shownScope]);
+  const shownEntries = useMemo(() => withSubmittedMessages(entries, submissions, shownScope).filter(entry => !isVoiceHandoff(entry.item)), [entries, submissions, shownScope]);
   useEffect(() => { setSubmissions(previous => rememberSubmittedMessages(entries, previous, selected?.id ?? newDraftKey.current)); }, [entries, selected?.id, submissions]);
   useEffect(() => { const element = scroll.current; if (!element) return; if (restoreScroll.current) { const previous = restoreScroll.current; restoreScroll.current = null; element.scrollTop = previous.top + element.scrollHeight - previous.height; } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight }); }, [entries, submissions, selected?.id]);
 

@@ -230,6 +230,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/voice/report' && method === 'POST') return json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
         if (url.pathname === '/api/voice' && method === 'GET') return json(response, 200, await client.voiceStatus());
         if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
+        if (url.pathname === '/api/voice/choice' && method === 'POST') return json(response, 200, await client.setVoice(await body(request)));
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
         if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
