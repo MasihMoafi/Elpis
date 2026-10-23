@@ -884,6 +884,7 @@ test('live voice delivers SDP privately and ends the native call when its window
   assert.equal(JSON.parse(received.trim()).sdp, 'v=0\r\nanswer');
   assert.equal(startRequest.params.transport.type, 'webrtc');
   assert.equal(startRequest.params.voice, 'juniper', 'the call speaks in the saved voice');
+  assert.equal(startRequest.params.initialItems[0].role, 'developer', 'voice receives the current Elpis execution context');
   assert.equal((await post({ threadId: ROOT, sdp: 'v=0\r\noffer' })).status, 409);
   abort.abort(); await reader.cancel().catch(() => {});
   const deadline = Date.now() + 2000;

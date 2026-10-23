@@ -1,7 +1,45 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
+const { openSettings } = require('./controls.cjs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 async function eventually(check, ms = 4000) { const end = Date.now() + ms; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } }
+
+for (const colorScheme of ['light', 'dark']) test(`Settings → Voice saves a catalog choice and keeps handoffs private (${colorScheme})`, async () => {
+  let voice = 'cove';
+  const handoff = '<realtime_delegation><input>Internal voice request</input><transcript_delta>private handoff</transcript_delta></realtime_delegation>';
+  const f = await fixture({ colorScheme, chat: [['voice', handoff, 'A normal reply.'], ['typed', 'Keep my typed message.', 'Another reply.']], routes: {
+    '/api/voice': () => ({ available: true, voices: ['cove', 'arbor'], voice }),
+    '/api/voice/choice': body => { voice = body.voice; return { available: true, voices: ['cove', 'arbor'], voice }; },
+    '/api/mcp': () => ({ version: '1', write: { available: true }, servers: [{ name: 'whispertype', enabled: true, whispertype: { backend: 'local', model: null } }] }),
+    '/api/tools/transcription': () => ({ available: true, label: 'Local WhisperType' }),
+  } });
+  try {
+    const { page } = f;
+    await f.open('chat-a');
+    assert.equal(await page.locator('.message.user').count(), 1);
+    await page.getByText('Keep my typed message.', { exact: true }).waitFor();
+    await openSettings(page, 'Voice');
+    const choice = page.getByRole('combobox', { name: 'Voice chat voice', exact: true });
+    await choice.click(); await page.getByRole('option', { name: 'Arbor', exact: true }).click();
+    await page.getByText('Voice saved.', { exact: true }).waitFor();
+    assert.equal(f.posts.find(row => row.path === '/api/voice/choice').body.voice, 'arbor');
+    await page.reload();
+    await openSettings(page, 'Voice');
+    await page.getByRole('combobox', { name: 'Voice chat voice' }).filter({ hasText: 'Arbor' }).waitFor();
+    assert.equal(await page.getByRole('textbox', { name: 'OpenRouter transcription model', exact: true }).isVisible(), false);
+    for (const width of [1262, 760]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const bounds = await choice.boundingBox(); assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width);
+      if (process.env.ELPIS_VOICE_SHOTS) {
+        await fs.mkdir(process.env.ELPIS_VOICE_SHOTS, { recursive: true });
+        await page.screenshot({ path: path.join(process.env.ELPIS_VOICE_SHOTS, `voice-${colorScheme}-${width}.png`) });
+      }
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 test('voice controls release the microphone after denial, cancelled startup, mute, End and navigation', async () => {
   const streams = new Set();

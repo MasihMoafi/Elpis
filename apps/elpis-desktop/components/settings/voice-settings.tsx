@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { api, unreadable } from "@/lib/api";
 import { SettingRow, SettingsActions, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 
@@ -65,7 +66,7 @@ function VoiceChoice() {
   }
   const voices = speaking?.available ? speaking.voices ?? [] : [];
   return <SettingsGroup title="Voice chat">
-    <SettingRow title="Voice" description={speaking && !speaking.available ? "Voice chat uses your ChatGPT sign-in. Sign in under Settings → Connections to choose its voice." : "The voice Elpis speaks in during a voice chat, from your ChatGPT connection. A call already open keeps its voice; the next one uses this."}>
+    <SettingRow title="Voice" description={speaking && !speaking.available ? "Connect ChatGPT under Settings → Connections to choose a voice." : "Choose the voice Elpis uses for new voice chats."}>
       <OptionSelect aria-label="Voice chat voice" className="settings-choice" value={speaking?.voice ?? ""} disabled={busy || !voices.length} onChange={e => void choose(e.target.value)}>
         {voices.length ? voices.map(voice => <option key={voice} value={voice}>{named(voice)}</option>) : <option value="">{speaking ? "Unavailable" : "Reading…"}</option>}
       </OptionSelect>
@@ -91,7 +92,7 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
     catch (e) { await load(); throw e; }
   }
   return <div aria-label="Voice">
-    <SettingsHeader title="Voice" description="Dictate into the composer with the microphone button. A chat transcribes with its own provider: ChatGPT chats with the ChatGPT sign-in, Google Gemini chats with the Gemini API key, OpenRouter chats with the model below. Recordings are limited to two minutes or 8 MB." />
+    <SettingsHeader title="Voice" />
     {error && <SettingsNotice tone="alert">Could not read voice settings: {error}</SettingsNotice>}
     {!config && !error && <SettingsNotice>Reading voice settings…</SettingsNotice>}
     <VoiceChoice />
@@ -99,9 +100,8 @@ export function VoiceSettings({ onOpenMcp }: { onOpenMcp: () => void }) {
       <SettingRow title="Status" description={route?.available ? "WhisperType is enabled. The first dictation checks that it runs." : route?.reason ?? "Status not reported."}>
         <span className={`settings-badge ${route?.available ? "ok" : "warn"}`}>{route?.available ? "Configured" : "Unavailable"}</span>
       </SettingRow>
-      {server ? <WhisperTypeSettings server={server} disabled={!config.write?.available} save={save} />
+      {server ? <details><DisclosureSummary className="cursor-pointer px-4 py-3 text-sm text-muted-foreground">Advanced: transcription</DisclosureSummary><WhisperTypeSettings server={server} disabled={!config.write?.available} save={save} /></details>
         : <SettingRow title="WhisperType server" description="Dictation uses the whispertype MCP server. Add it under MCP servers."><Button variant="outline" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
-      {server && <SettingRow title="API keys" description="WhisperType's keys are managed with its MCP server."><Button variant="outline" onClick={onOpenMcp}>Open MCP servers</Button></SettingRow>}
     </SettingsGroup>}
   </div>;
 }

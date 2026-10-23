@@ -151,6 +151,7 @@ try {
   // The route is chosen in Settings → Voice; this chat's provider has no transcription of its own, so the fallback speaks.
   await openSettings(page);
   await page.getByRole('tab', { name: 'Voice', exact: true }).click();
+  await page.getByText('Advanced: transcription', { exact: true }).click();
   await page.getByLabel('Fallback transcription engine', { exact: true }).click();
   await page.getByRole('option', { name: 'Local WhisperType', exact: true }).waitFor();
   await shot('07-transcription-choice.png');

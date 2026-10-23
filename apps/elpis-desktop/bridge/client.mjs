@@ -893,7 +893,9 @@ export class DesktopClient extends EventEmitter {
     const thread = await this.readThreadMetadata(id);
     if (thread.modelProvider !== 'openai' || /^(?:claude|agy)\//.test(thread.model ?? '')) throw new BridgeError('Voice is available in Codex chats using your ChatGPT connection.', 403);
     await this.#attach(id);
-    return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', voice: status.voice, transport: { type: 'webrtc', sdp } });
+    return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', voice: status.voice,
+      initialItems: [{ role: 'developer', text: 'You are Elpis. Voice and typed requests use the same Elpis agent and its tools, under this chat’s permissions. Delegate actions and questions about available tools to that agent before answering. Describe only the connections it verifies; never invent email or other account access. Speak naturally and keep internal handoff details out of the conversation.' }],
+      transport: { type: 'webrtc', sdp } });
   }
   async stopVoice(id) {
     return this.#rpc('thread/realtime/stop', { threadId: threadId(id) });

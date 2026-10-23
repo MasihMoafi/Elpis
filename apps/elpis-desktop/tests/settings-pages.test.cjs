@@ -94,6 +94,7 @@ test('settings pages appear in order and each control writes only its own backin
     // Voice: one OpenRouter model row and one fallback row, saved together through the MCP config writer.
     panel = await open('Voice');
     await panel.getByText('Configured', { exact: true }).waitFor();
+    await panel.getByText('Advanced: transcription', { exact: true }).click();
     assert.deepEqual(await panel.getByRole('form', { name: 'Transcription settings' }).locator('.settings-row-title').allInnerTexts(), ['OpenRouter transcription model', 'Fallback transcription']);
     assert.equal(await panel.getByLabel('Transcription engine', { exact: true }).count(), 0, 'the old engine row is gone');
     await chooseOption(panel.getByLabel('Fallback transcription engine', { exact: true }), 'local');

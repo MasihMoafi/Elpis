@@ -94,11 +94,15 @@ Status: the cat was deleted using the editor’s Delete action, with all 16 tomb
 - V1: Standalone internal voice-handoff envelopes never appear as chat messages,
   recalled prompts or exported conversation; typed explanations mentioning the
   tag and ordinary messages remain visible. Verify live and restored history.
-- V2: Voice is a saved dropdown using the actual active protocol’s native catalog.
+- V2: Settings → Voice follows Masih’s ChatGPT screenshot: one clear Voice chat
+  row, saved dropdown, and technical transcription options under Advanced.
+  The dropdown uses the actual active protocol’s native catalog.
   Reject unsupported choices before starting a call; retain the native default.
   The chosen voice reaches native start and survives reload and chat switching.
 - V3: Keep permission denial, Mute, End, navigation and subscription-only guards.
   A call already open keeps its voice; the Settings row says the next call uses the choice.
+- V5: The realtime speaker delegates tool requests and capability checks to the
+  same Elpis agent as typed messages; it claims only verified account access.
 - V4: Other voice providers require a working authenticated route. Never present
   a catalog from another protocol or an unconnected provider as usable.
 
