@@ -35,7 +35,7 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
-  const { notice: noticeStyle, button: styleButton, className: styleClassName } = useDrawingStyle(editor);
+  const { notice: noticeStyle, topRight: styleTopRight, className: styleClassName } = useDrawingStyle(editor);
   const scene = useRef<DrawingDraft>(draft);
   const root = useRef<HTMLDivElement>(null);
   const first = useRef<ExcalidrawElement>(draft.elements.find(element => element.id === BACKGROUND)!);
@@ -109,14 +109,13 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
         <p className="truncate text-xs text-muted-foreground" title={draft.url}>{draft.title ? `${draft.title} · ` : ""}{draft.url}</p>
       </div>
       {error && <p role="alert" className="max-w-[40%] text-xs text-destructive">{error}</p>}
-      {styleButton}
       <Button type="button" variant="ghost" size="sm" disabled={busy} title="Return to chat and keep this drawing for Resume" onClick={() => { holdDrawing(scene.current); onChat(); }}>Chat</Button>
       <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={busy}>Cancel</Button>
       <Button type="button" size="sm" onClick={() => void add()} disabled={!marked || busy} title={marked ? "Add the marked picture and the page address to your message" : "Draw something first"}>{busy ? "Adding…" : "Add to message"}</Button>
     </header>
     <div className={`browser-drawing-editor relative min-h-0 flex-1 ${styleClassName}`}>
       <Excalidraw initialData={{ elements: draft.elements, files: draft.files, appState: { collaborators: new Map() } }} excalidrawAPI={setEditor} onChange={changed}
-        theme={dark ? "dark" : "light"} handleKeyboardGlobally={false} autoFocus
+        theme={dark ? "dark" : "light"} handleKeyboardGlobally={false} autoFocus renderTopRightUI={styleTopRight}
         UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false, clearCanvas: false, changeViewBackgroundColor: false } }}>
         {/* Without the default menu's file actions and its links to other sites. */}
         <MainMenu><MainMenu.DefaultItems.SearchMenu /><MainMenu.DefaultItems.Help /></MainMenu>

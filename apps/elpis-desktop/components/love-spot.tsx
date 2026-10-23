@@ -54,7 +54,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
   const [saveStatus, setSaveStatus] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
-  const { notice: noticeStyle, button: styleButton, className: styleClassName } = useDrawingStyle(editor);
+  const { notice: noticeStyle, topRight: styleTopRight, className: styleClassName } = useDrawingStyle(editor);
   const editorRef = useRef<ExcalidrawImperativeAPI | undefined>(undefined);
   const ready = useCallback((value: ExcalidrawImperativeAPI) => { editorRef.current = value; setEditor(value); }, []);
   const [settings, setSettings] = useState<ProviderSettings | null>(null), [whoOpen, setWhoOpen] = useState(false);
@@ -407,7 +407,6 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
           <Button variant="ghost" size="sm" type="button" onClick={() => setRenaming(false)}>Cancel</Button>
         </form>}
       </div>
-      {styleButton}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}
@@ -447,7 +446,7 @@ export default function LoveSpot({ dark, cwd, onOpenChat, toolbarHost }: { dark:
       const id = event.dataTransfer.getData(screenshotDrag);
       if (id) { event.preventDefault(); event.stopPropagation(); void chooseScreenshot(id, "place"); }
     }}>
-      {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"}>
+      {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"} renderTopRightUI={styleTopRight}>
         {/* Excalidraw's own menu without its links to GitHub, X and Discord and without live collaboration. */}
         <MainMenu>
           <MainMenu.DefaultItems.LoadScene />

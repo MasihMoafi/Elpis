@@ -220,6 +220,7 @@ for (const colorScheme of ['light', 'dark']) test(`board Style closes and reopen
       await f.page.setViewportSize({ width, height: 960 });
       const style = f.page.getByRole('button', { name: 'Drawing style', exact: true });
       const properties = f.page.locator('.selected-shape-actions .Island, .App-mobile-menu');
+      assert.equal(await style.evaluate(button => !!button.closest('.excalidraw')), true, 'the style button sits in the drawing itself');
       await style.click();
       assert.equal(await style.getAttribute('aria-pressed'), 'false');
       assert.equal(await properties.isVisible(), false);

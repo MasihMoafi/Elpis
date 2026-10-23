@@ -292,12 +292,25 @@ test('Style closes without losing marks and Chat pauses drawing for a lossless R
   const properties = page.locator('.selected-shape-actions .Island, .App-mobile-menu');
   for (const width of [1320, 760]) {
     await page.setViewportSize({ width, height: 860 });
-    assert.equal(await style.getAttribute('aria-pressed'), 'true');
-    await style.click();
-    assert.equal(await style.getAttribute('aria-pressed'), 'false');
-    assert.equal(await properties.isVisible(), false);
+    // Excalidraw's narrow layout keeps its own palette button in its bottom bar.
+    // Excalidraw redraws its layout for a new size only on its next render: a window resize event gives it one.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => { window.dispatchEvent(new Event('resize')); resolve(); })));
+    await page.waitForFunction(() => {
+      const editor = document.querySelector('.excalidraw'), narrow = editor.classList.contains('excalidraw--mobile');
+      return narrow === editor.getBoundingClientRect().width < 730 && narrow === !document.querySelector('[aria-label="Drawing style"]');
+    });
+    const narrow = await page.locator('.excalidraw--mobile').count() > 0;
+    const toggle = narrow ? page.getByRole('button', { name: 'Edit', exact: true }) : style;
+    assert.equal(await style.count(), narrow ? 0 : 1);
+    if (!narrow) {
+      assert.equal(await style.getAttribute('aria-pressed'), 'true');
+      assert.equal(await style.evaluate(button => !!button.closest('.excalidraw')), true, 'the style button sits in the drawing itself');
+    } else if (!await properties.isVisible()) { await toggle.click(); await properties.waitFor({ state: 'visible' }); }
+    await toggle.click();
+    if (!narrow) assert.equal(await style.getAttribute('aria-pressed'), 'false');
+    await properties.waitFor({ state: 'hidden', timeout: 2000 });
     assert.equal(await page.getByRole('button', { name: 'Add to message' }).isEnabled(), true);
-    await style.click();
+    await toggle.click();
     await properties.waitFor({ state: 'visible' });
     await f.shoot(`style-on-${width}`);
   }
