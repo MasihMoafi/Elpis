@@ -5,12 +5,12 @@ const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 
 const CWD = '/tmp/pane-select-project';
-const FILES = { 'src/a.txt': 'alpha line one\nbeta line two\ngamma line three\n', 'README.md': '# Heading\n\nA paragraph of the readme.\n' };
+const FILES = { 'src/a.txt': 'alpha line one\nbeta line two\ngamma line three\n', 'docs/guide.md': '# Heading\n\nA paragraph of the guide.\n' };
 const norm = text => text.replace(/\s+/g, ' ').trim();
 const OTHERS = /Where is it|All green|New chat/;
 
 test('Ctrl+A selects only the open file, only the preview, and only the composer text', async () => {
-  const f = await fixture({ cwd: CWD, chat: [['pane', 'Where is it?', 'In `src/a.txt` and `README.md`.'], ['tail', 'Ready', 'All green.']], routes: {
+  const f = await fixture({ cwd: CWD, chat: [['pane', 'Where is it?', 'In `src/a.txt` and `docs/guide.md`.'], ['tail', 'Ready', 'All green.']], routes: {
     '/api/files/dir': () => ({ data: [] }),
     '/api/file': (_body, url) => { const content = FILES[url.searchParams.get('path')]; return { content, size: content.length, mtimeMs: 1 }; },
   } });
@@ -27,9 +27,9 @@ test('Ctrl+A selects only the open file, only the preview, and only the composer
     assert.equal(file.tag, 'TEXTAREA', 'the file is what has the focus and the selection'); assert.equal(file.all, true, 'all of the file is selected');
     assert.doesNotMatch(file.page, OTHERS, 'nothing of the chat or the sidebar is selected with it');
 
-    await link('README.md').click();
-    const preview = page.getByRole('article', { name: 'Preview of README.md' }); await preview.waitFor();
-    await preview.getByText('A paragraph of the readme.').click();
+    await link('docs/guide.md').click();
+    const preview = page.getByRole('article', { name: 'Preview of docs/guide.md' }); await preview.waitFor();
+    await preview.getByText('A paragraph of the guide.').click();
     await page.keyboard.press('Control+a');
     const markdown = await page.evaluate(() => ({ selected: getSelection().toString(), preview: document.querySelector('article.file-markdown').textContent }));
     assert.equal(norm(markdown.selected), norm(markdown.preview), 'exactly the preview is selected');
