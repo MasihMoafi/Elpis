@@ -36,7 +36,7 @@ test('ReorderItem preserves agent indentation when a context menu supplies its o
   }
 });
 
-for (const theme of ['light', 'dark']) test(`A70/R29: Settings matches the approved solid chat drag, motion, drop line and native events (${theme})`, async () => {
+for (const theme of ['light', 'dark']) test(`A70/R29: chats, the sidebar and projects share one solid drag, motion, drop line and native events (${theme})`, async () => {
   const f = await fixture({ height: 1100, storage: { 'elpis-theme': theme, ...projectStorage } });
   try {
     await compare(f.page, { shots: process.env.ELPIS_A70_SHOTS && path.join(process.env.ELPIS_A70_SHOTS, theme) });
@@ -96,7 +96,7 @@ test('A70/R29: chats inside Projects share chat feedback, keyboard boundaries an
   } finally { await f.close(); }
 });
 
-test('A70/R29: a refused chat save retains its order, as Settings does', async () => {
+test('A70/R29: a refused chat save retains its order', async () => {
   const f = await fixture({ height: 1100 });
   try {
     const rows = f.page.locator('aside.sidebar section[aria-label="Recents"] .thread-row');

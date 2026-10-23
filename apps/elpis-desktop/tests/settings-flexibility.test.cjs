@@ -1,59 +1,33 @@
-// CI renderer + mock bridge: regression checks; acceptance uses settings-flexibility.runtime.cjs.
+// CI renderer + mock bridge: Settings keeps one standard order, its model overview and its shortcuts.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 const { openSettings } = require('./controls.cjs');
-const { crossGroup, layout, group } = require('./settings-flexibility-check.cjs');
+const { layout } = require('./settings-flexibility-check.cjs');
 const { controlValue } = require('./controls.cjs');
 const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
   providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} },
   memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, write: { available: true } };
 const routes = { '/api/settings': () => settings };
 
-for (const theme of ['light', 'dark']) test(`SETTINGS: cross-group drag, empty group, cancel and reload (${theme})`, async () => {
-  const f = await fixture({ height: 1080, routes, storage: { 'elpis-theme': theme } });
-  try {
-    await crossGroup(f.page, { theme, shots: process.env.ELPIS_SETTINGS_SHOTS });
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-for (const [name, settingsPageGroups] of [
-  ['valid move mixed with unknown pages, unknown groups and missing ids', JSON.stringify({ general: 'context', obsolete: 'app', voice: 'removed-group' })],
-  ['malformed membership', '{broken'],
-  ['wrong membership type', JSON.stringify(['app'])],
-]) test(`SETTINGS: saved layout loads with ${name}`, async () => {
-  const valid = name.startsWith('valid');
+// Masih, 23 Oct: the section titles "wouldn't make sense if I could just change the order"; "Don't make users change them".
+test('SETTINGS: one standard order that cannot be dragged or moved, and an order saved by an older version is ignored', async () => {
+  const fresh = await fixture({ height: 1080, routes });
+  let standard;
+  try { await openSettings(fresh.page); standard = await layout(fresh.page); } finally { await fresh.close(); }
+  assert.equal(standard[0].name, 'Models & accounts');
+  assert.equal(new Set(standard.flatMap(item => item.pages)).size, standard.flatMap(item => item.pages).length);
   const f = await fixture({ height: 1080, routes, storage: { 'elpis-preferences-v1': JSON.stringify({
-    settingsSectionOrder: 'unknown,context,context', settingsPageOrder: 'obsolete,general,general', settingsPageGroups,
+    settingsSectionOrder: 'advanced,app,models,permissions,context,connections', settingsPageOrder: 'about,general', settingsPageGroups: JSON.stringify({ general: 'advanced' }),
   }) } });
   try {
     await openSettings(f.page);
-    const actual = await layout(f.page), ids = actual.flatMap(item => item.pages);
-    assert.equal(actual[0].name, 'Context & maintenance');
-    assert.equal(actual.length, 6);
-    assert.equal(ids.length, 15);
-    assert.equal(new Set(ids).size, 15);
-    assert.ok(!(ids.some(id => id.includes('obsolete'))));
-    const destination = group(f.page, valid ? 'Context & maintenance' : 'App & terminal');
-    assert.ok((await destination.getByRole('tab').allTextContents()).includes('General'), 'known page membership loads; invalid data falls back');
-    await f.page.reload(); await openSettings(f.page);
-    assert.deepEqual(await layout(f.page), actual);
+    assert.deepEqual(await layout(f.page), standard);
+    const nav = f.page.getByRole('navigation', { name: 'Settings navigation' });
+    assert.equal(await nav.locator('[draggable="true"]').count(), 0, 'nothing in Settings can be dragged');
+    await nav.getByRole('tab', { name: 'General' }).focus(); await f.page.keyboard.press('Alt+ArrowUp');
+    assert.deepEqual(await layout(f.page), standard, 'Alt+Up moves nothing');
     assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('SETTINGS: failed cross-group persistence preserves membership and explains why', async () => {
-  const f = await fixture({ height: 1080, routes });
-  try {
-    await openSettings(f.page);
-    const before = await layout(f.page);
-    await f.page.evaluate(() => { window.elpisDesktop.storage.setItem = () => { throw Error('SETTINGS storage refused'); }; });
-    const { drag } = require('./settings-reorder-check.cjs');
-    const { pageRow } = require('./settings-flexibility-check.cjs');
-    await drag(f.page, pageRow(f.page, 'Personalization'), pageRow(f.page, 'General'));
-    await f.page.getByRole('alert').filter({ hasText: 'Could not save Settings order: SETTINGS storage refused' }).waitFor();
-    assert.deepEqual(await layout(f.page), before);
   } finally { await f.close(); }
 });
 
@@ -93,23 +67,6 @@ test('SETTINGS: overview model edits in place and catalog-backed models allow a 
     await f.page.getByRole('alert').filter({ hasText: 'Settings changed elsewhere' }).waitFor();
     assert.equal(await draft.inputValue(), 'keep-this-draft', 'a rejected save preserves the custom model draft');
     assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('SETTINGS: keyboard movement crosses groups, keeps focus and survives reload', async () => {
-  const f = await fixture({ height: 1080, routes });
-  try {
-    await openSettings(f.page);
-    const { pageRow } = require('./settings-flexibility-check.cjs');
-    const firstAppPage = pageRow(f.page, 'General');
-    await firstAppPage.focus(); await f.page.keyboard.press('Alt+ArrowUp');
-    assert.deepEqual((await group(f.page, 'Connections & coding').getByRole('tab').allTextContents()).slice(-2), ['General', 'Hooks']);
-    await f.page.waitForFunction(() => document.activeElement?.id === 'settings-tab-general');
-    await pageRow(f.page, 'About').focus(); await f.page.keyboard.press('Alt+ArrowDown');
-    assert.deepEqual(await group(f.page, 'Advanced').getByRole('tab').allTextContents(), ['About'], 'keyboard movement also reaches an empty group');
-    const expected = await layout(f.page);
-    await f.page.reload(); await openSettings(f.page);
-    assert.deepEqual(await layout(f.page), expected);
   } finally { await f.close(); }
 });
 
