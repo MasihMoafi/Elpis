@@ -56,7 +56,7 @@ working=false, response rows=30, 80x12
 working=false, response rows=1, 80x9
 • Done.                                                                        │
                                                                                ┃
-  Worked for 1s • 12:00                                                        ┃
+  Worked for [duration] • [completion time]                                                        ┃
 
 
 › Ask Elpis to do anything
