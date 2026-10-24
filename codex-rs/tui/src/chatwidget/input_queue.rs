@@ -72,14 +72,16 @@ impl InputQueueState {
             .any(|message| matches!(message.delivery, MessageDelivery::Unconfirmed(_)))
     }
 
-    /// The next queued input is a bare `/compact` (with or without instructions).
+    /// The next queued input is a `/compact` that compacts (alone or with guidance), not a
+    /// pressure setting such as `/compact 30`, which compacts nothing now.
     pub(super) fn next_queued_input_is_compact(&self) -> bool {
         self.rejected_steers_queue.is_empty()
             && self.queued_user_messages.front().is_some_and(|queued| {
                 queued.action == crate::bottom_pane::QueuedInputAction::ParseSlash
                     && crate::bottom_pane::prompt_args::parse_slash_name(&queued.user_message.text)
-                        .is_some_and(|(name, _, _)| {
+                        .is_some_and(|(name, args, _)| {
                             name == crate::slash_command::SlashCommand::Compact.command()
+                                && !super::elpis_commands::is_pressure_compaction_arg(args)
                         })
             })
     }
