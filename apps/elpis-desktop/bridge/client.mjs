@@ -194,7 +194,7 @@ export class DesktopClient extends EventEmitter {
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
-    this.#spawnLinks = new SpawnLinks(spawnLinksFile); this.#appHome = appHome;
+    this.#spawnLinks = new SpawnLinks(spawnLinksFile, { home: path.dirname(spawnLinksFile), appHome }); this.#appHome = appHome;
     this.#githubConnector = githubConnector;
     this.#customize = new CustomizePage({ rpc: (method, params) => this.#rpc(method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
       githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: elpisHome });
@@ -519,6 +519,14 @@ export class DesktopClient extends EventEmitter {
       }
     }
     // The engine relates a chat only to the agents it spawned itself; add the chats made by create_thread.
+    if (!options.archived && !options.ancestorThreadId && !options.searchTerm) {
+      await this.#spawnLinks.recover(result.data, cursor => this.#rpc('thread/list', { limit: 100, cursor, modelProviders: [], sourceKinds: SOURCE_KINDS })).catch(() => {});
+      // The creator may be on an older history page. Its children still need their real row here.
+      for (const child of [...result.data]) {
+        const maker = this.#spawnLinks.thread(this.#spawnLinks.makerOf(child.id));
+        if (maker && !result.data.some(thread => thread.id === maker.id)) result.data.push(maker);
+      }
+    }
     if (options.ancestorThreadId && !options.cursor && !options.archived) for (const id of this.#spawnLinks.madeBy(options.ancestorThreadId)) {
       if (result.data.some(thread => thread.id === id)) continue;
       const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false }).catch(() => ({}));
