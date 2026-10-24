@@ -6,27 +6,21 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 
-/** Reloads the app with the named API paths held until released, so the splash stays observable. */
-async function starting(t, { colorScheme = 'light', reducedMotion = 'no-preference', hold = ['/api/health'], freeze = false, failModels = false } = {}) {
+/** Observe the brief introduction with the browser clock paused; bridge data has its own tests. */
+async function starting(t, { colorScheme = 'light', reducedMotion = 'no-preference', failModels = false } = {}) {
   const f = await fixture({ width: 1280, height: 900, colorScheme });
-  const gates = {};
-  t.after(async () => { for (const open of Object.values(gates)) open(); await f.close(); assert.deepEqual(f.errors, []); });
+  t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
   await f.page.emulateMedia({ reducedMotion });
   const time = new Date();
   await f.page.clock.install({ time });
-  if (freeze) await f.page.clock.pauseAt(new Date(time.getTime() + 1000));
-  for (const pathname of hold) {
-    const gate = new Promise(resolve => { gates[pathname] = resolve; });
-    await f.page.route(url => url.pathname === pathname, async route => { await gate; await route.fallback(); });
-  }
+  await f.page.clock.pauseAt(time);
   // A failed model catalogue must not prevent the readiness signal from dismissing the splash.
   if (failModels) await f.page.route(url => url.pathname === '/api/models', route => route.fulfill({ status: 503, json: { error: 'Fixture catalogue unavailable' } }));
   await f.page.reload({ waitUntil: 'domcontentloaded' });
   await f.page.locator('.startup-splash').waitFor();
-  // Readiness checks below run after the short introductory motion has played.
-  await f.page.clock.runFor(700);
-  return { ...f, release: pathname => gates[pathname ?? hold[0]]() };
+  await f.page.clock.runFor(250);
+  return f;
 }
 
 /** Seek the actual CSS motion rather than waiting for approximate wall-clock frames. */
@@ -65,17 +59,6 @@ for (const colorScheme of ['light', 'dark']) test(`startup: the third E gyroscop
   }
 });
 
-test('startup: the splash waits for conversations even after the engine connects', async t => {
-  const { page, release } = await starting(t, { colorScheme: 'dark', hold: ['/api/health', '/api/threads'] });
-  const response = page.waitForResponse(url => url.url().endsWith('/api/health'));
-  release('/api/health');
-  await response;
-  await page.waitForTimeout(300);
-  assert.equal(await page.locator('.startup-splash.leaving').count(), 0, 'The chats are not in yet');
-  release('/api/threads');
-  await page.locator('.startup-splash.leaving').waitFor({ state: 'attached' });
-});
-
 test('reduced motion: startup keeps a slow, smooth rotation', async t => {
   const { page } = await starting(t, { colorScheme: 'dark', reducedMotion: 'reduce' });
   const splash = page.locator('.startup-splash');
@@ -90,13 +73,14 @@ test('reduced motion: startup keeps a slow, smooth rotation', async t => {
   assert.equal(await splash.innerHTML(), before, 'The slow rotation uses CSS');
 });
 
-test('readiness starts a short fade immediately and real mouse clicks pass through it', async t => {
-  const { page, composer, release } = await starting(t, { freeze: true, failModels: true });
+test('the brief introduction fades and real mouse clicks pass through it', async t => {
+  const { page, composer } = await starting(t, { failModels: true });
+  await composer.evaluate(el => el.blur());
   const box = await composer.boundingBox(), x = box.x + box.width / 2, y = box.y + box.height / 2;
   await page.mouse.click(x, y);
   assert.equal(await composer.evaluate(el => el === document.activeElement), false, 'The pending splash covers the app');
   assert.equal(await page.locator('.startup-splash.leaving').count(), 0);
-  release();
+  await page.clock.runFor(450);
   const leaving = page.locator('.startup-splash.leaving');
   await leaving.waitFor({ state: 'attached' });
   const fade = await leaving.evaluate(el => ({ pointerEvents: getComputedStyle(el).pointerEvents, seconds: parseFloat(getComputedStyle(el).transitionDuration) }));
@@ -105,12 +89,5 @@ test('readiness starts a short fade immediately and real mouse clicks pass throu
   assert.equal(await composer.inputValue(), 'Draft during startup fade');
   assert.equal(await leaving.count(), 1, 'The real click arrived while the fading splash was still mounted');
   await page.clock.runFor(300);
-  assert.equal(await page.locator('.startup-splash').count(), 0, 'The splash is removed within 300 ms of readiness');
-});
-
-test('a stalled startup still gives way after the existing eight-second fallback', async t => {
-  const { page } = await starting(t);
-  await page.waitForTimeout(7000);
-  assert.equal(await page.locator('.startup-splash.leaving').count(), 0);
-  await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 2000 });
+  assert.equal(await page.locator('.startup-splash').count(), 0, 'The brief splash is removed after its fade');
 });

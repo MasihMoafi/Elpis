@@ -285,6 +285,7 @@ export default function Home() {
   const newDraftKey = useRef("new");
   const [fileNotice, setFileNotice] = useState("");
   const [connected, setConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState("Connecting to Elpis…");
   const [ready, setReady] = useState(false);
   useEffect(() => {
     if (ready && connected && document.activeElement === document.body) composerRef.current?.focus();
@@ -578,18 +579,22 @@ export default function Home() {
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => {
-    let disposed = false; let events: EventSource | undefined; let wasConnected = false; let recovery = 0;
-    function disconnected() { wasConnected = false; recovery++; setConnected(false); setApprovals([]); }
-    async function reconnect() {
+    let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;
+    function disconnected() { wasConnected = false; recovery++; setConnected(false); setConnectionStatus("Elpis is disconnected. Waiting to reconnect…"); setApprovals([]); }
+    async function reconnect(initial = false) {
       const attempt = ++recovery, thread = selectedRef.current, requestId = request.current;
       const ids = new Set(tabsRef.current.tabs.flatMap(tab => tab.threadId ? [tab.threadId] : []));
       if (thread) ids.add(thread.id);
+      // loadThread already restores the shown chat; the first connection only resumes other tabs.
+      if (initial && thread) ids.delete(thread.id);
       const current = () => !disposed && attempt === recovery;
-      setAccountRefresh(value => value + 1);
-      void refreshModels();
+      if (!initial) {
+        setAccountRefresh(value => value + 1);
+        void refreshModels();
+        void refreshThreads().catch(error => { if (current()) setError(String(error)); });
+        void reloadSettings().catch(() => null);
+      }
       // A list page can omit open chats or fail; each tab still needs its own authoritative turn state.
-      void refreshThreads().catch(error => { if (current()) setError(String(error)); });
-      void reloadSettings().catch(() => null);
       await Promise.all([...ids].map(async id => {
         const open = () => current() && !hidden.current.has(id) && (selectedRef.current?.id === id || tabsRef.current.tabs.some(tab => tab.threadId === id));
         const turnRevision = turnRevisions.current[id];
@@ -613,23 +618,30 @@ export default function Home() {
     async function initialize() {
       try {
         await sessionReady();
-        // The first stream subscription also catches anything that ended between the initial reads and listening.
-        const health = await api<{ connected: boolean }>("/health"); if (disposed) return; setConnected(health.connected);
-        void refreshModels();
-        await refreshThreads();
-        await reloadSettings().catch(() => null); if (disposed) return;
+        if (disposed) return;
         setReady(true);
+        // No data read gates navigation or the live connection. A busy bridge fills each part as it arrives.
+        void api<{ connected: boolean }>("/health").then(health => {
+          if (disposed || receivedConnection) return;
+          setConnected(health.connected);
+          if (!health.connected) setConnectionStatus("Elpis is disconnected. Waiting to reconnect…");
+        }).catch(() => { if (!disposed && !receivedConnection) disconnected(); });
+        void refreshModels();
+        void refreshThreads().catch(error => { if (!disposed) setError(String(error)); });
+        void reloadSettings().catch(() => null);
         // The chat of the shown tab comes back; without saved tabs, the last chat does.
         const launch = new URLSearchParams(location.search);
         const last = launch.has("session") ? launch.get("session") : restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
-        if (last && !selectedRef.current && request.current === 0) await loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
+        if (last && !selectedRef.current && request.current === 0) void loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
         events = new EventSource("/api/events");
         events.addEventListener("sideChat", event => window.dispatchEvent(new CustomEvent("elpis:side-chat", { detail: JSON.parse(event.data) })));
         events.addEventListener("connection", event => {
+          if (disposed) return;
+          const first = !receivedConnection; receivedConnection = true;
           const available = Boolean(JSON.parse(event.data).connected);
           if (!available) { disconnected(); return; }
           const recovered = !wasConnected; wasConnected = true; setConnected(true);
-          if (recovered) void reconnect();
+          if (recovered) void reconnect(first);
         });
         events.onerror = disconnected;
         events.addEventListener("message", event => {
@@ -710,7 +722,7 @@ export default function Home() {
         events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
         events.addEventListener("unsupportedApproval", event => { const { method } = JSON.parse(event.data); setError(`Elpis requested an unsupported approval (${method}). Update the app to answer this request.`); });
         events.addEventListener("account", event => { setAccountRefresh(n => n + 1); if (changesModelCatalog(JSON.parse(event.data).method)) void refreshModels(); });
-      } catch (e) { if (!disposed) setError(String(e)); }
+      } catch (e) { if (!disposed) { disconnected(); setError(String(e)); } }
     }
     initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };
   }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread]);
@@ -1911,7 +1923,7 @@ export default function Home() {
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
-    {desktop && <StartupSplash done={ready && connected} />}
+    {desktop && <StartupSplash />}
     <ProjectDialog projects={projects} editing={projectEdit} folders={projectEdit !== undefined ? [cwd, ...ordinaryThreads.map(thread => thread.cwd ?? "")] : []} description={newProjectFor ? `${newProjectFor.length} chats will move into this project. Their working folders stay as they are.` : undefined} onClose={() => { setProjectEdit(undefined); setNewProjectFor(null); }} onSave={newProjectFor ? saveProjectFromChats : saveProject} />
     <MoveChatDialog name={projectMove ? projectMove.length === 1 ? title(projectMove[0]) : `${projectMove.length} selected chats` : null} count={projectMove?.length} projects={projects} currentId={projectMove ? new Set(projectMove.map(chat => projectChats[chat.id] ?? null)).size === 1 ? projectChats[projectMove[0].id] ?? null : undefined : null} onMove={id => projectMove ? assignProject(projectMove.map(chat => chat.id), id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
     <PutUnderDialog chats={nestTargets} candidates={nestTargets ? ordinaryThreads.filter(thread => canNest(nestTargets.map(chat => chat.id), thread.id)) : []} onPutUnder={parent => nestChats((nestTargets ?? []).map(chat => chat.id), parent)} onClose={() => setNestTargets(null)} />
@@ -2006,7 +2018,6 @@ export default function Home() {
       {catalogLoading && !catalogError && !models.length && <p className="px-4 py-2 text-sm text-muted-foreground" role="status">Loading models…</p>}
       {selected && runtimeNotices[selected.id] && <div className="error-banner" role="alert"><span>{runtimeNotices[selected.id]}</span><Button variant="ghost" size="icon-sm" aria-label="Dismiss conversation error" onClick={() => setRuntimeNotices(prev => without(prev, selected.id))}><X size={15} /></Button></div>}
       {selected && (recoveredEdit || recoveryAttachments.length > 0) && <div className="error-banner"><details className="min-w-0 w-full"><DisclosureSummary>Recover unsent message</DisclosureSummary><pre className="whitespace-pre-wrap break-words py-2" dir="auto">{recoveredEdit}</pre>{recoveryAttachments.length > 0 && <p>Files: {recoveryAttachments.map(part => part.name).join(", ")}</p>}<div className="flex flex-wrap items-center gap-2">{recoveredEdit && <CopyButton label="Copy unsent message" text={() => recoveredEdit} />}<Button variant="outline" size="sm" disabled={!!text.trim() || attachments.length > 0} title={text.trim() || attachments.length ? "Keep or clear your current draft before restoring this message." : undefined} onClick={() => { saveDraft(`recovery-${selected.id}`, ""); saveAttachments(`recovery-${selected.id}`, []); editDraft(recoveredEdit); setAttachments(recoveryAttachments); saveAttachments(selected.id, recoveryAttachments); }}>Use in composer</Button>{(!!text.trim() || attachments.length > 0) && <span>Your current draft is kept. Save it, or clear it to restore the unsent message.</span>}</div></details></div>}
-      {!connected && ready && <div className="error-banner" role="status">Reconnecting to Elpis… Your draft is saved.</div>}
       {outsideChatApprovals.length > 0 && pendingInputOpen && <section id="pending-input-panel" aria-label="Pending input" className="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") { setPendingInputOpen(false); pendingInputButton.current?.focus(); } }}>
         <div className="pending-panel-heading"><div><h2>Needs input</h2><p>{outsideChatApprovals.length} {outsideChatApprovals.length === 1 ? "request" : "requests"} waiting for you</p></div><Button variant="ghost" size="icon-sm" aria-label="Close pending input" onClick={() => { setPendingInputOpen(false); pendingInputButton.current?.focus(); }}><X size={16}/></Button></div>
         <div className="pending-request-list">{outsideChatApprovals.map(approval => {
@@ -2051,6 +2062,7 @@ export default function Home() {
           {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
+          {(!ready || !connected) && <p role="status" className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{connectionStatus}</p>}
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
           {readOnlyRun ? <div className="mx-auto flex w-full max-w-[var(--transcript-width,740px)] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground" role="status">
             <p>{AGENT_RUN_NOTICE}</p>

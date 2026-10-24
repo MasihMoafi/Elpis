@@ -278,6 +278,7 @@
     "tests/slash-commands.test.cjs",
     "tests/startup-archive.test.cjs",
     "tests/startup-splash.test.cjs",
+    "tests/startup-responsive.test.cjs",
     "tests/step-sentences.test.cjs",
     "tests/tabs.test.cjs",
     "tests/task-list.test.cjs",

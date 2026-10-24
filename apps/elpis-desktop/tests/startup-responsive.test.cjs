@@ -1,0 +1,46 @@
+// A busy bridge must never hide local navigation or prevent a connected user drafting.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const { fixture } = require('./parity-fixture.cjs');
+
+for (const pending of ['threads', 'settings', 'health', 'restored chat', 'unreachable', 'rejected']) test(`startup opens within two seconds with ${pending} pending`, async t => {
+  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme: pending === 'unreachable' ? 'light' : 'dark' });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  t.after(async () => { release(); await f.close(); assert.deepEqual(f.errors, []); });
+  const held = pending === 'threads' ? '/api/threads' : pending === 'settings' ? '/api/settings' : pending === 'restored chat' ? '/api/threads/chat-a' : '/api/health';
+  const requested = [];
+  await f.page.route('**/api/**', async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    requested.push(pathname);
+    if (pending === 'rejected' && pathname === '/api/health') return route.fulfill({ status: 503, json: { error: 'Bridge unavailable' } });
+    if (pending === 'rejected' && pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: 'event: connection\ndata: {"connected":false}\n\n' });
+    if (pathname === held || (pending === 'unreachable' && pathname === '/api/events')) await gate;
+    await route.fallback();
+  });
+  await f.page.goto(new URL(pending === 'restored chat' ? '/?session=chat-a' : '/', f.page.url()).href, { waitUntil: 'domcontentloaded' });
+  await f.page.locator('.startup-splash').waitFor({ state: 'visible' });
+  await f.page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 2000 });
+  if (pending === 'unreachable' || pending === 'rejected') {
+    assert.equal(await f.composer.isDisabled(), true, 'A missing connection must not permit sending');
+    await f.page.getByRole('status').filter({ hasText: /Connecting to Elpis|Elpis is disconnected/ }).waitFor();
+  } else {
+    await f.composer.fill('Draft while data loads', { timeout: 1000 });
+    assert.equal(await f.composer.inputValue(), 'Draft while data loads');
+  }
+  if (process.env.ELPIS_BOOT_SHOTS && ['threads', 'unreachable'].includes(pending)) {
+    await fs.mkdir(process.env.ELPIS_BOOT_SHOTS, { recursive: true });
+    await f.page.screenshot({ path: `${process.env.ELPIS_BOOT_SHOTS}/boot-${pending === 'threads' ? 'dark-loading' : 'light-offline'}.png` });
+  }
+  await f.page.getByRole('button', { name: 'Settings', exact: true }).click({ timeout: 1000 });
+  await f.page.getByRole('heading', { name: 'General', exact: true }).waitFor();
+  assert.ok(requested.includes(held) || pending === 'health', 'The blocked data request was reached');
+  release();
+  await f.page.getByRole('button', { name: 'Back to app', exact: true }).click();
+  await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().waitFor();
+  if (pending === 'threads') {
+    await f.open('chat-a');
+    assert.equal(await f.shown(), 'chat-a', 'Conversations arrive and open after the delay');
+  }
+});
