@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
@@ -8,7 +9,7 @@ import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { startDesktopServer } from './server.mjs';
 
 test('live Matilda carries board/persona context and saves growing speech once; mute and hang-up reject later output', async t => {
-  const directory = await fs.mkdtemp(path.join(process.env.HOME, '.cache/elpis-briefs/cc/lovevoice-unit-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-unit-'));
   const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(); client.voiceStatus = async () => ({ available: true });
   const talk = createLoveSpotTalk({ client, store });
@@ -44,7 +45,7 @@ test('live Matilda carries board/persona context and saves growing speech once; 
 });
 
 test('the live microphone endpoint starts the saved subscription voice with context and refuses muted/invalid requests', async t => {
-  const root = await fs.mkdtemp(path.join(process.env.HOME, '.cache/elpis-briefs/cc/lovevoice-http-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-http-'));
   const client = new EventEmitter(), starts = [];
   Object.assign(client, { connected: true, pendingApprovals: [], close() {}, voiceStatus: async () => ({ available: true }),
     createSpeechThread: async () => ({ id: 'speech', voice: 'juniper' }),
