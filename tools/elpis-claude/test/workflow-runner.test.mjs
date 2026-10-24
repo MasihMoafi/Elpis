@@ -1,4 +1,4 @@
-// The workflow runner's rules (SPEC W1–W7) against a scripted executor: every hook, the journal and its resume,
+// The workflow runner's rules (SPEC WR1–WR7) against a scripted executor: every hook, the journal and its resume,
 // retries, limits, budget, the opt-in check and the end notice. The bridge and the real engine are covered by
 // workflow-bridge.test.mjs and workflow-engine.runtime.mjs.
 import assert from "node:assert/strict";
@@ -51,7 +51,7 @@ async function run(r, script, extra = {}) {
 const META = `export const meta = { name: 'test', description: 'a test run', phases: [{ title: 'One' }, { title: 'Two' }] }\n`;
 const journal = (dir) => fs.readFileSync(path.join(dir, "journal.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
 
-test("meta must be a pure literal with a name and a description (W2)", () => {
+test("meta must be a pure literal with a name and a description (WR2)", () => {
   assert.deepEqual(parseScript(`// lead\nexport const meta = { name: 'a', description: "b", phases: [{ title: \`T\`, detail: 'x' }], n: -1.5, ok: true, no: null }\nreturn 1`).meta,
     { name: "a", description: "b", phases: [{ title: "T", detail: "x" }], n: -1.5, ok: true, no: null });
   for (const bad of ["{ name: NAME, description: 'd' }", "{ name: 'a', description: f() }", "{ ...base, name: 'a', description: 'd' }",
@@ -62,7 +62,7 @@ test("meta must be a pure literal with a name and a description (W2)", () => {
   assert.throws(() => parseScript(`const x = 1\nexport const meta = { name: 'a', description: 'd' }`), /must begin/);
 });
 
-test("a TypeScript or broken script fails the launch, not later (W2)", async () => {
+test("a TypeScript or broken script fails the launch, not later (WR2)", async () => {
   const r = runner(executor());
   await assert.rejects(r.start({ script: `export const meta = { name: 'x' }` }), /description/);
   const { run: done } = await run(r, `${META}const a: string = 'x'\nreturn a`);
@@ -70,7 +70,7 @@ test("a TypeScript or broken script fails the launch, not later (W2)", async () 
   assert.match(done.error, /does not parse|TypeScript|Unexpected/);
 });
 
-test("Date.now(), Math.random() and new Date() are refused; dated values through args work (W2)", async () => {
+test("Date.now(), Math.random() and new Date() are refused; dated values through args work (WR2)", async () => {
   const r = runner(executor());
   for (const call of ["Date.now()", "Math.random()", "new Date()", "Date()"]) {
     const { run: done } = await run(r, `${META}return ${call}`);
@@ -81,7 +81,7 @@ test("Date.now(), Math.random() and new Date() are refused; dated values through
   assert.deepEqual(ok.result, { year: 1970, isArray: true, max: 3 });
 });
 
-test("agent() returns its final text, runs as a helper chat on the starting chat's model, and is journaled (W2, W4)", async () => {
+test("agent() returns its final text, runs as a helper chat on the starting chat's model, and is journaled (WR2, WR4)", async () => {
   const ex = executor();
   const r = runner(ex);
   const { started, run: done } = await run(r, `${META}phase('One')\nconst a = await agent('say hi', { label: 'greeter' })\nlog('got ' + a)\nreturn a`);
@@ -106,7 +106,7 @@ test("agent() returns its final text, runs as a helper chat on the starting chat
   assert.equal(fs.readFileSync(started.scriptPath, "utf8").startsWith("export const meta"), true);
 });
 
-test("parallel() is a barrier; a throwing thunk gives null and the call never rejects (W2)", async () => {
+test("parallel() is a barrier; a throwing thunk gives null and the call never rejects (WR2)", async () => {
   const ex = executor({ delay: (p) => (p === "slow" ? 120 : 5) });
   const r = runner(ex);
   const { run: done } = await run(r, `${META}const out = await parallel([() => agent('fast'), () => agent('slow'), () => { throw new Error('boom') }])\nawait agent('after')\nreturn out`);
@@ -115,7 +115,7 @@ test("parallel() is a barrier; a throwing thunk gives null and the call never re
   assert.match(done.scriptErrors?.[0]?.message ?? r.read(done.id).scriptErrors[0].message, /boom/);
 });
 
-test("pipeline() has no barrier between stages; a throwing stage drops that item to null (W2)", async () => {
+test("pipeline() has no barrier between stages; a throwing stage drops that item to null (WR2)", async () => {
   const ex = executor({ delay: (p) => (p === "s1 B" ? 150 : 5) });
   const r = runner(ex);
   const { run: done } = await run(r, `${META}return await pipeline(['A', 'B', 'C'],
@@ -125,7 +125,7 @@ test("pipeline() has no barrier between stages; a throwing stage drops that item
   assert.ok(ex.events.indexOf("start s2 A 0 after done: s1 A") < ex.events.indexOf("end s1 B"), ex.events.join(", "));
 });
 
-test("a failing agent is retried with backoff, then null; the run still finishes (W3)", async () => {
+test("a failing agent is retried with backoff, then null; the run still finishes (WR3)", async () => {
   const ex = executor({ answer: (p) => { if (p === "flaky") throw new Error("ECONNRESET"); return `done: ${p}`; } });
   const r = runner(ex);
   let tries = 0;
@@ -144,7 +144,7 @@ test("a failing agent is retried with backoff, then null; the run still finishes
   assert.equal(r2.read(second.id).agents[0].attempts, 2);
 });
 
-test("schema answers are validated, mismatches are asked again, and a third mismatch gives null (W2)", async () => {
+test("schema answers are validated, mismatches are asked again, and a third mismatch gives null (WR2)", async () => {
   const SCHEMA = { type: "object", properties: { n: { type: "integer" }, note: { type: "string" } }, required: ["n"] };
   const ex = executor({
     answer: (p, k) => p === "good" ? (k === 1 ? "not json" : { n: 2, note: null }) : p === "bad" ? { n: "two" } : { n: 1 },
@@ -164,7 +164,7 @@ test("schema answers are validated, mismatches are asked again, and a third mism
   assert.match(unsatisfiable.result, /unsatisfiable: required missing/);
 });
 
-test("concurrency is capped and the rest queue; agent and item limits throw (W2)", async () => {
+test("concurrency is capped and the rest queue; agent and item limits throw (WR2)", async () => {
   const ex = executor({ delay: () => 20 });
   const r = runner(ex, home(), { concurrency: 3, maxAgents: 12, maxItems: 10 });
   const { run: done } = await run(r, `${META}const out = await parallel(Array.from({ length: 10 }, (_, i) => () => agent('job ' + i)))
@@ -181,7 +181,7 @@ test("concurrency is capped and the rest queue; agent and item limits throw (W2)
   assert.equal(ex.turns.length, 12);
 });
 
-test("budget is a hard ceiling: spent counts output tokens and agent() throws once it is reached (W2)", async () => {
+test("budget is a hard ceiling: spent counts output tokens and agent() throws once it is reached (WR2)", async () => {
   const ex = executor();
   const r = runner(ex);
   const { run: done } = await run(r, `${META}const seen = [budget.total, budget.spent(), budget.remaining()]
@@ -196,7 +196,7 @@ test("budget is a hard ceiling: spent counts output tokens and agent() throws on
   assert.deepEqual(open.result, [null, null], "Infinity is not JSON; no budget means no ceiling");
 });
 
-test("resumeFromRunId: same script and args are fully cached; an edited call and everything after it run live (W4)", async () => {
+test("resumeFromRunId: same script and args are fully cached; an edited call and everything after it run live (WR4)", async () => {
   const ex = executor();
   const h = home();
   const r = runner(ex, h);
@@ -218,7 +218,7 @@ test("resumeFromRunId: same script and args are fully cached; an edited call and
   assert.deepEqual(four.result, three.result);
 });
 
-test("a restarted runtime resumes a running run from its journal without re-running finished agents (W3)", async () => {
+test("a restarted runtime resumes a running run from its journal without re-running finished agents (WR3)", async () => {
   const h = home();
   const ex1 = executor({ delay: (p) => (p.startsWith("slow") ? 10_000 : 5) });
   const r1 = runner(ex1, h);
@@ -244,7 +244,7 @@ test("a restarted runtime resumes a running run from its journal without re-runn
   assert.equal(r2.recover().length, 0, "a finished run is not resumed again");
 });
 
-test("a run owned by a live runtime is left alone; stop ends a run and resume continues it in place (W3, W7)", async () => {
+test("a run owned by a live runtime is left alone; stop ends a run and resume continues it in place (WR3, WR7)", async () => {
   const h = home();
   const ex = executor({ delay: (p) => (p === "long" ? 10_000 : 5) });
   const r = runner(ex, h);
@@ -265,7 +265,7 @@ test("a run owned by a live runtime is left alone; stop ends a run and resume co
   assert.deepEqual(quick.turns.map((t) => t.prompt), ["long"], "the finished agent is cached");
 });
 
-test("skip makes one running agent return null (W7)", async () => {
+test("skip makes one running agent return null (WR7)", async () => {
   const ex = executor({ delay: (p) => (p === "stuck" ? 10_000 : 5) });
   const r = runner(ex);
   const { runId } = await r.start({ script: `${META}return [await agent('stuck'), await agent('next')]`, cwd: os.tmpdir() });
@@ -277,7 +277,7 @@ test("skip makes one running agent return null (W7)", async () => {
   assert.equal(r.read(runId).agents[0].state, "skipped");
 });
 
-test("workflow() runs a saved workflow inline, one level deep (W2)", async () => {
+test("workflow() runs a saved workflow inline, one level deep (WR2)", async () => {
   const h = home();
   fs.mkdirSync(path.join(h, "workflows"), { recursive: true });
   fs.writeFileSync(path.join(h, "workflows", "child.js"), `export const meta = { name: 'child', description: 'c', phases: [{ title: 'Inner' }] }\nphase('Inner')\nconst x = await agent('child ' + args.n)\nlet nested = null\ntry { await workflow('child', {}) } catch (e) { nested = e.message }\nreturn { x, nested }`);
@@ -293,7 +293,7 @@ test("workflow() runs a saved workflow inline, one level deep (W2)", async () =>
   assert.match(unknown.error, /Unknown workflow nope/);
 });
 
-test("isolation: 'worktree' gives an agent its own git worktree, removed when unchanged (W2)", async () => {
+test("isolation: 'worktree' gives an agent its own git worktree, removed when unchanged (WR2)", async () => {
   const repo = home();
   execFileSync("git", ["init", "-q", repo]);
   execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]);
@@ -310,7 +310,7 @@ test("isolation: 'worktree' gives an agent its own git worktree, removed when un
   assert.match(done.result[1], /Changes left in worktree/);
 });
 
-test("the opt-in check: the person's own words, never an autonomous notice (W6)", () => {
+test("the opt-in check: the person's own words, never an autonomous notice (WR6)", () => {
   for (const yes of ["ultracode: audit the repo", "Please use a workflow to review this", "run a workflow over every file", "Can you fan out agents to check each module?", "use the workflow tool"]) {
     assert.equal(personAskedForWorkflow([yes]), true, yes);
   }
@@ -319,7 +319,7 @@ test("the opt-in check: the person's own words, never an autonomous notice (W6)"
   }
 });
 
-test("the end notice carries the run id, status, the return value and the script path (W5)", async () => {
+test("the end notice carries the run id, status, the return value and the script path (WR5)", async () => {
   const r = runner(executor());
   const { run: done } = await run(r, `${META}return { found: 3 }`);
   assert.equal(done.notice.state, "pending");
@@ -332,7 +332,7 @@ test("the end notice carries the run id, status, the return value and the script
   assert.match(noticeText(failed), /<status>failed<\/status>[\s\S]*nope/);
 });
 
-test("list and read give the app what it shows: phases, agents with state, chat and elapsed time, logs, result (W7)", async () => {
+test("list and read give the app what it shows: phases, agents with state, chat and elapsed time, logs, result (WR7)", async () => {
   const ex = executor({ delay: () => 15 });
   const r = runner(ex);
   const updates = [];
