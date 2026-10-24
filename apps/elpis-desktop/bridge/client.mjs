@@ -1637,6 +1637,24 @@ export class DesktopClient extends EventEmitter {
       return { serviceTier };
     });
   }
+  /** Saves a chat's reasoning effort the moment it is picked, so later turns and a restart keep it (the engine records
+   * it; the Claude bridge stores it). A running native turn takes it now; a Claude turn from its next request. */
+  async setEffort(id, body) {
+    object(body, ['effort']);
+    const effort = this.#effort(body.effort);
+    if (!effort) throw new BridgeError('Choose a reasoning effort offered by the model');
+    return this.#mutate(id, async () => {
+      const thread = await this.#current(id);
+      if (!thread.desktopAccess.writable) throw new BridgeError("Only this agent's parent can change its effort.", 409);
+      await this.#rpc('thread/settings/update', { threadId: id, effort });
+      if (thread.status?.type === 'active' && !/^(?:claude|agy)\//.test(thread.model ?? '')) {
+        const turnId = (await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' })).data?.find(turn => turn.status === 'inProgress')?.id;
+        // A turn that ended meanwhile needs nothing: the next one starts with the saved effort.
+        if (turnId) await this.#rpc('turn/settings/update', { threadId: id, turnId, effort }).catch(() => {});
+      }
+      return { reasoningEffort: effort };
+    });
+  }
   async setPermissions(id, body) {
     object(body, ['permissions']);
     const mode = permissionMode(body.permissions);
@@ -1698,15 +1716,12 @@ export class DesktopClient extends EventEmitter {
     }
   }
   async steer(id, body, { fallback = true } = {}) {
-    object(body, ['text', 'expectedTurnId', 'attachments', 'mentions', 'effort']);
+    object(body, ['text', 'expectedTurnId', 'attachments', 'mentions']);
     const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments, body.mentions);
     const params = { threadId: id, expectedTurnId: text(body.expectedTurnId, 'turn ID', 200), input };
-    const effort = this.#effort(body.effort);
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Wait for this agent to finish; a message then continues it in a new conversation.', 409);
-      // A Claude or Antigravity turn takes an effort chosen while it runs from its next request (tools/elpis-claude).
-      if (effort && effort !== thread.reasoningEffort && /^(?:claude|agy)\//.test(thread.model ?? '')) await this.#rpc('thread/settings/update', { threadId: id, effort });
       try { return await this.#rpc('turn/steer', params); }
       catch (error) {
         // The turn the app saw has ended or another replaced it: the message joins the running

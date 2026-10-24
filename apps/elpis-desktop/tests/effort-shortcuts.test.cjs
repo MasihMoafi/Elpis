@@ -28,25 +28,38 @@ test('Shift+Up/Down steps reasoning effort from the model default, clamps at the
   } finally { await f.close(); }
 });
 
-test('effort shortcut changes the next turn of an existing chat and keeps the manual selector in sync', async () => {
+test('an effort picked in an existing chat is saved at once, survives a reload, and a refused save puts the old one back', async () => {
   const thread = { id: 'chat-a', name: 'Effort chat', cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', reasoningEffort: 'medium', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
+  let refuse = false;
   const f = await fixture({ routes: { ...routes,
     '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [thread], nextCursor: null }),
     '/api/threads/chat-a': () => ({ thread, data: [], nextCursor: null }),
     '/api/threads/chat-a/resume': () => ({ thread, activeTurnId: null }),
+    // As the bridge: the engine keeps the chat's effort.
+    '/api/threads/chat-a/effort': body => refuse ? { __http: 409, error: 'Elpis refused that effort.' } : (thread.reasoningEffort = body.effort, { reasoningEffort: body.effort }),
   } }), { page } = f;
+  const saved = () => f.posts.filter(post => post.path === '/api/threads/chat-a/effort').map(post => post.body.effort);
+  const open = async () => { await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().click(); await page.getByLabel('Reasoning effort', { exact: true }).waitFor(); };
   try {
-    await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().click();
+    await open();
     const effort = page.getByLabel('Reasoning effort', { exact: true });
-    await chooseOption(effort, 'low');
     const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+    await chooseOption(effort, 'low');
     await input.fill('Use the selected effort'); await input.press('Shift+ArrowUp');
     assert.equal(await controlValue(effort), 'medium');
     await input.press('Shift+ArrowUp'); assert.equal(await controlValue(effort), 'high');
+    for (let tries = 0; saved().length < 3 && tries < 50; tries++) await page.waitForTimeout(20);
+    assert.deepEqual(saved(), ['low', 'medium', 'high'], 'menu and shortcut each save the pick at once');
+    await page.reload(); await open();
+    assert.equal(await controlValue(page.getByLabel('Reasoning effort', { exact: true })), 'high', 'the pick survives a restart');
+    await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).fill('Go');
     await page.getByRole('button', { name: 'Send message', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('textarea[aria-label="Message Elpis"]')?.value === '');
-    const sent = f.posts.find(post => post.path === '/api/threads/chat-a/turns');
-    assert.ok(sent); assert.equal(sent.body.effort, 'high');
+    assert.equal('effort' in f.posts.find(post => post.path === '/api/threads/chat-a/turns').body, false, 'the chat already holds it');
+    refuse = true;
+    await chooseOption(page.getByLabel('Reasoning effort', { exact: true }), 'xhigh');
+    await page.getByText('Elpis refused that effort.').waitFor();
+    assert.equal(await controlValue(page.getByLabel('Reasoning effort', { exact: true })), 'high', 'a refused pick is not shown as saved');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

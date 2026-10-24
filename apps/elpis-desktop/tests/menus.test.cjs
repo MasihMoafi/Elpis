@@ -99,7 +99,7 @@ test('an OpenRouter chat without a transcription model says where to set it; the
   await page.getByRole('status').filter({ hasText: 'Set the OpenRouter transcription model in Settings → Voice.' }).waitFor();
 }, { WHISPERTYPE_BACKEND: 'local' }));
 
-test('existing chat keeps both pending model and effort, and sends the visible choices together', () => fixture(async ({ page, calls }) => {
+test('existing chat keeps the pending model for its next message and saves a picked effort at once', () => fixture(async ({ page, calls }) => {
   await page.locator('.thread-row[data-thread-id="existing"] .thread-link').click();
   await page.getByLabel('Model', { exact: true }).click();
   await page.getByRole('option').filter({ hasText: 'GPT-5.5' }).click();
@@ -110,8 +110,9 @@ test('existing chat keeps both pending model and effort, and sends the visible c
   await page.getByLabel('Message Elpis').fill('Keep the model and effort together.');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('textarea[aria-label="Message Elpis"]').value === '');
+  assert.deepEqual(calls.filter(call => call.method === 'POST' && call.path === '/api/threads/existing/effort').map(call => call.data), [{ effort: 'high' }]);
   const turn = calls.find(call => call.method === 'POST' && call.path === '/api/threads/existing/turns');
-  assert.deepEqual(turn.data, {text:'Keep the model and effort together.',model:'gpt-5.5',effort:'high'});
+  assert.deepEqual(turn.data, {text:'Keep the model and effort together.',model:'gpt-5.5'});
 }));
 
 const { fixture: parityFixture } = require('./parity-fixture.cjs');

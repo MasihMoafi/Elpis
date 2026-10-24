@@ -111,7 +111,7 @@ const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerT
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "settings";
-type NextTurn = { model?: string; effort?: string; plan?: boolean };
+type NextTurn = { model?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
@@ -811,7 +811,7 @@ export default function Home() {
   const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
   const dictationProvider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
   const turnEfforts = effortsOf(turnModel || providerSettings?.main.model, models);
-  const turnEffort = selected ? pending?.effort ?? selected.reasoningEffort ?? "" : effort;
+  const turnEffort = selected ? selected.reasoningEffort ?? "" : effort;
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
@@ -1025,12 +1025,21 @@ export default function Home() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setChangingPermissions(false); }
   }
+  /** A chat's effort is saved the moment it is picked (menu, /effort, Shift+Up/Down): later turns, a restart and a
+   * running turn take it. "Default" is not a saved level, so it changes nothing here. */
+  async function saveEffort(id: string, value: string) {
+    const before = settingsOf.current[id]?.reasoningEffort ?? (selectedRef.current?.id === id ? selectedRef.current.reasoningEffort : null) ?? null;
+    if (!value || value === before) return;
+    const apply = (reasoningEffort: string | null) => { settingsOf.current[id] = { ...settingsOf.current[id], reasoningEffort }; patchThread(id, { reasoningEffort }); };
+    apply(value); setError("");
+    try { await api(`/threads/${encodeURIComponent(id)}/effort`, { effort: value }); }
+    catch (e) { apply(before); setError(e instanceof Error ? e.message : String(e)); }
+  }
   function setOverride(id: string, patch: NextTurn) {
     const thread = selectedRef.current; if (!thread) return;
     setNextTurn(prev => {
       const merged = { ...prev[id], ...patch };
       if (merged.model === (thread.model ?? undefined)) delete merged.model;
-      if (merged.effort === (thread.reasoningEffort ?? undefined) || merged.effort === "") delete merged.effort;
       if (merged.plan === (threadPlans[id] ?? false)) delete merged.plan;
       return Object.keys(merged).length ? { ...prev, [id]: merged } : without(prev, id);
     });
@@ -1078,10 +1087,10 @@ export default function Home() {
         setThreads(prev => [thread!, ...prev]);
         if (projectId) await assignProject(thread.id, projectId);
       }
-      const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
+      const used: (NextTurn & { effort?: string }) | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
       const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
       if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
-        const steered = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached, ...(used?.effort ? { effort: used.effort } : {}) });
+        const steered = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
         // The turn shown as running had ended, so the message started a new one.
         if (steered.turn?.id) {
           updateSubmission({ turnId: steered.turn.id, newTurn: true });
@@ -1105,7 +1114,7 @@ export default function Home() {
         if (used?.plan !== undefined) { setThreadPlans(prev => ({ ...prev, [result.thread?.id || thread!.id]: used.plan! })); if (!selected) setNewPlan(false); }
         if (selected && used) {
           setNextTurn(prev => without(prev, selected.id));
-          const effective = { ...settingsOf.current[thread.id], ...(used.model ? { model: used.model } : {}), ...(used.effort ? { reasoningEffort: used.effort } : {}) };
+          const effective = { ...settingsOf.current[thread.id], ...(used.model ? { model: used.model } : {}) };
           settingsOf.current[thread.id] = effective; patchThread(thread.id, effective);
         }
         if (result.thread) {
@@ -1185,7 +1194,7 @@ export default function Home() {
     const stale = new Set(entries.slice(Math.max(index, 0)).map(entry => entry.turnId));
     const overrides = retryModel ? { ...nextTurn[thread.id], model: retryModel } : nextTurn[thread.id];
     const sendReplacement = () => api<{ turn?: { id: string }; rewound?: boolean; sendError?: string }>(`/threads/${encodeURIComponent(thread.id)}/revert`, { beforeTurnId: turnId, text: replacement,
-      ...(overrides?.model ? { model: overrides.model } : {}), ...(overrides?.effort ? { effort: overrides.effort } : {}) });
+      ...(overrides?.model ? { model: overrides.model } : {}) });
     const result = editKey ? await submitDraft(editKey, sendReplacement) : await sendReplacement();
     if (result.rewound && result.sendError) {
       saveDraft(`recovery-${thread.id}`, replacement);
@@ -1366,7 +1375,7 @@ export default function Home() {
     if (!level) { openComposerControl("Reasoning effort"); return; }
     const match = turnEfforts.find(item => item.toLowerCase() === level.toLowerCase());
     if (!match) { setSlashNotice(`${modelLabel(turnModel || providerSettings?.main.model, models)} does not offer the reasoning effort “${level}”. It offers: ${turnEfforts.join(", ")}.`); return; }
-    if (selected) setOverride(selected.id, { effort: match }); else setEffort(match);
+    if (selected) void saveEffort(selected.id, match); else setEffort(match);
   };
   const stepEffort = (by: -1 | 1) => {
     const configured = turnModel || providerSettings?.main.model;
@@ -1983,7 +1992,7 @@ export default function Home() {
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
-              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? setOverride(selected.id, { effort: e.target.value }) : setEffort(e.target.value)} disabled={!ready || busy}>
+              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || busy}>
                 <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}

@@ -146,11 +146,12 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       }
       case 'turn/start': threads.get(request.params.threadId).status = { type: 'active' }; result = { turn: { id: 'new-turn', status: 'inProgress', items: [] } }; break;
       case 'turn/steer': result = { turnId: request.params.expectedTurnId }; break;
+      case 'turn/settings/update': result = { status: 'applied' }; break;
       case 'thread/settings/update': {
         // As the engine: the request only queues the change; the applied settings follow in
         // thread/settings/updated, and only when they changed.
         const p = request.params, before = JSON.stringify(engineSettings.get(p.threadId) ?? null);
-        const applied = p.cwd ? { ...engineSettings.get(p.threadId), cwd: p.cwd } : { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? { type: 'dangerFullAccess' } : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
+        const applied = p.cwd ? { ...engineSettings.get(p.threadId), cwd: p.cwd } : p.effort ? { ...engineSettings.get(p.threadId), reasoningEffort: p.effort } : { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? { type: 'dangerFullAccess' } : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
         if (p.cwd) threads.get(p.threadId).cwd = p.cwd;
         engineSettings.set(p.threadId, applied); result = {};
         if (JSON.stringify(applied) !== before) setTimeout(() => socket.emit('message', JSON.stringify({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { ...applied, model: threads.get(p.threadId).model ?? MODEL } } })), 5);
@@ -674,19 +675,28 @@ for (const found of [true, false]) test(`fork recovers a stale turn only through
   } finally { client.close(); }
 });
 
-test('effort chosen while a Claude turn runs travels with the next message; a native chat keeps its turn settings', async () => {
+test('an effort picked in a chat is saved at once; a running native turn takes it now, a Claude turn through its bridge', async () => {
   const { client, socket, threads } = fixture(); await client.initialize(); await client.models();
   await client.createThread({ model: MODEL });
   await client.send(CREATED, { text: 'Do the task', model: MODEL });
-  await client.steer(CREATED, { text: 'Native', expectedTurnId: 'new-turn', effort: 'high' });
-  assert.equal(socket.sent.filter(row => row.method === 'thread/settings/update' && row.params.effort).length, 0, 'a native turn is not reconfigured mid-turn');
-  Object.assign(threads.get(CREATED), { model: 'claude/opus', reasoningEffort: 'high' });
-  await client.steer(CREATED, { text: 'Same effort', expectedTurnId: 'new-turn', effort: 'high' });
-  assert.equal(socket.sent.filter(row => row.method === 'thread/settings/update' && row.params.effort).length, 0, 'an unchanged effort sends nothing');
-  await client.steer(CREATED, { text: 'Think harder', expectedTurnId: 'new-turn', effort: 'xhigh' });
-  const update = socket.sent.findIndex(row => row.method === 'thread/settings/update' && row.params.effort === 'xhigh');
-  assert.ok(update >= 0, 'the new effort reaches the Claude bridge');
-  assert.ok(update < socket.sent.findLastIndex(row => row.method === 'turn/steer'), 'before the message that follows it');
+  const sent = method => socket.sent.filter(row => row.method === method).map(row => row.params);
+  assert.deepEqual(await client.setEffort(CREATED, { effort: 'xhigh' }), { reasoningEffort: 'xhigh' });
+  assert.deepEqual(sent('thread/settings/update').at(-1), { threadId: CREATED, effort: 'xhigh' }, 'later turns and a restart keep it');
+  assert.deepEqual(sent('turn/settings/update'), [{ threadId: CREATED, turnId: 'running-turn', effort: 'xhigh' }], 'the running turn takes it');
+  // A Claude turn is not the engine's: the bridge applies the saved effort to it.
+  Object.assign(threads.get(CREATED), { model: 'claude/opus' });
+  await client.setEffort(CREATED, { effort: 'low' });
+  assert.deepEqual(sent('thread/settings/update').at(-1), { threadId: CREATED, effort: 'low' });
+  assert.equal(sent('turn/settings/update').length, 1);
+  // An idle chat only saves it.
+  Object.assign(threads.get(CREATED), { model: MODEL, status: { type: 'idle' } });
+  await client.setEffort(CREATED, { effort: 'medium' });
+  assert.equal(sent('turn/settings/update').length, 1);
+  const before = socket.sent.length;
+  await assert.rejects(client.setEffort(CREATED, { effort: 'very high' }), /reasoning effort/);
+  await assert.rejects(client.setEffort(CREATED, {}), /reasoning effort/);
+  await assert.rejects(client.setEffort(CHILD, { effort: 'high' }), /parent/);
+  assert.equal(socket.sent.slice(before).some(row => row.method.endsWith('settings/update')), false, 'a refused effort changes nothing');
   client.close();
 });
 

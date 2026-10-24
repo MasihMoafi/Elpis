@@ -150,11 +150,12 @@ for(const action of ['Send now','Remove from queue'])test(`queued follow-up ${ac
  await composer.fill('Waiting instruction');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();await queue.getByRole('button',{name:action,exact:true}).click();await queue.waitFor({state:'detached'});await page.waitForTimeout(180);assert.equal(await focused(),true);
 }));
 
-test('a queued turn uses the model, effort and Plan mode selected with its message',()=>fixture(async({page,composer,open,emit,posts})=>{
+test('a queued turn uses the model and Plan mode selected with its message; the effort is saved to the chat at once',()=>fixture(async({page,composer,open,emit,posts})=>{
  await open();await openSettings(page);await page.getByRole('radio',{name:'Queue',exact:true}).click();await page.getByRole('button',{name:'Back to app',exact:true}).click();emit('turn/started',{threadId:'ux-chat',turn:{id:'running'}});await page.getByRole('button',{name:'Stop response',exact:true}).waitFor();
  await chooseOption(page.getByLabel('Model',{exact:true}),'sol-fast');await chooseOption(page.getByLabel('Reasoning effort',{exact:true}),'high');await page.getByRole('button',{name:'Add files and more',exact:true}).click();await page.getByRole('menuitem',{name:/Plan mode/}).click();
  await composer.fill('Use these queued choices');await composer.press('Enter');const queue=page.getByRole('list',{name:'Queued follow-ups'});await queue.waitFor();emit('turn/completed',{threadId:'ux-chat',turn:{id:'running',status:'completed'}});await queue.waitFor({state:'detached'});await page.waitForTimeout(180);
- assert.deepEqual(posts.filter(p=>p.path.endsWith('/turns')).map(p=>p.data),[{text:'Use these queued choices',model:'sol-fast',effort:'high',mode:'plan'}]);
+ assert.deepEqual(posts.filter(p=>p.path.endsWith('/effort')).map(p=>p.data),[{effort:'high'}]);
+ assert.deepEqual(posts.filter(p=>p.path.endsWith('/turns')).map(p=>p.data),[{text:'Use these queued choices',model:'sol-fast',mode:'plan'}]);
 }));
 
 test('small sidebar section labels have readable contrast in both themes',()=>fixture(async({page})=>{
