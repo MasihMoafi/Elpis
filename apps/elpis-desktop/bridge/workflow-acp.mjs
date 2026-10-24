@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BridgeError } from './client.mjs';
+import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
@@ -50,6 +50,7 @@ export function validateWorkflow(tasks, roundLimit) {
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
   onPermission, onSession, onEnd } = {}) {
   const records = new Map(), active = new Map();
+  const controls = new Map(), progressTimers = new Map();
   let loaded;
   const load = () => loaded ??= (async () => {
     await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
@@ -71,6 +72,22 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       await fs.writeFile(temp, snapshot, { mode: 0o600 }); await fs.rename(temp, file);
     });
     saving = pending; return pending;
+  };
+  const progress = (record, task, update) => {
+    const entries = task.progress ??= [], at = Date.now();
+    if (['agent_message_chunk', 'agent_thought_chunk'].includes(update?.sessionUpdate) && update.content?.type === 'text') {
+      const last = entries.at(-1), kind = update.sessionUpdate === 'agent_thought_chunk' ? 'thinking' : 'text';
+      if (last?.kind === kind && last.messageId === update.messageId) { last.text = (last.text + update.content.text).slice(-8000); last.at = at; }
+      else entries.push({ kind, messageId: update.messageId, text: update.content.text.slice(-8000), at });
+    } else if (['tool_call', 'tool_call_update'].includes(update?.sessionUpdate)) {
+      let entry = entries.find(row => row.kind === 'tool' && row.id === update.toolCallId);
+      if (!entry) entries.push(entry = { kind: 'tool', id: update.toolCallId });
+      Object.assign(entry, { at, ...(update.title ? { title: String(update.title).slice(0, 1000) } : {}), ...(update.status ? { status: update.status } : {}) });
+    } else return;
+    if (entries.length > 80) entries.splice(0, entries.length - 80);
+    if (!progressTimers.has(record.id)) progressTimers.set(record.id, setTimeout(() => {
+      progressTimers.delete(record.id); void save(record).catch(error => { record.persistenceError = error.message; });
+    }, 200));
   };
   async function execute(record, root, controller) {
     let isolation;
@@ -106,6 +123,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
               onPermission: request => onPermission?.(record, task, request, permissionScope.signal),
               onSession: id => { task.assignedThreadId = spec.elpis ? id : null; task.sessionId = id; onSession?.(record, task, id); void save(record).catch(() => {}); },
+              onUpdate: update => progress(record, task, update),
+              onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
             });
             if (task.kind === 'verify') {
               let verdict;
@@ -118,6 +137,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             task.status = controller.signal.aborted ? 'cancelled' : 'failed'; task.failureReason = error.message;
           }
           permissionScope.abort();
+          controls.delete(`${record.id}:${task.id}`);
           await save(record);
         };
         while (record.tasks.some(t => !ended.has(t.status))) {
@@ -145,6 +165,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     finally {
       record.tasks.forEach(task => { if (!ended.has(task.status)) task.status = record.status === 'cancelled' ? 'cancelled' : 'blocked'; });
       record.endedAt = Date.now();
+      clearTimeout(progressTimers.get(record.id)); progressTimers.delete(record.id);
       if (isolation) record.worktrees = isolation.paths();
       const completed = { ...record }; record.status = 'running';
       try { await save(completed); }
@@ -180,6 +201,22 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       return { graphId: record.id, threadId: params.rootThreadId, turnId: record.id };
     },
     cancel(rootThreadId) { const controller = active.get(rootThreadId); if (!controller) return false; controller.abort(); return true; },
+    async steer(id, taskId, input) {
+      await load();
+      const record = records.get(id);
+      if (!record) throw new BridgeError('Workflow not found', 404);
+      const task = record.tasks.find(task => task.id === taskId);
+      if (!task) throw new BridgeError('Workflow node not found', 404);
+      const message = { id: input.id === undefined ? randomUUID() : text(input.id, 'message ID', 100), text: text(input.text, 'message', 16000), status: 'pending', at: Date.now(), round: record.round };
+      const previous = task.messages?.find(entry => entry.id === message.id);
+      if (previous) { if (previous.text !== message.text) throw new BridgeError('Message ID already used', 409); return { message: structuredClone(previous) }; }
+      const control = controls.get(`${record.id}:${task.id}`);
+      if (record.status !== 'running' || task.status !== 'running' || !control) throw new BridgeError('This workflow node is not running or is still starting', 409);
+      if ((task.messages?.length ?? 0) >= 100) throw new BridgeError('This node has reached its message limit', 409);
+      (task.messages ??= []).push(message); await save(record);
+      void control.steer(message.text).then(result => { message.status = 'delivered'; message.delivery = result.delivery; }, error => { message.status = 'failed'; message.error = error.message; }).then(() => save(records.get(id))).catch(error => { record.persistenceError = error.message; });
+      return { message: structuredClone(message) };
+    },
     /** Records how a run's next stage goes (`next`: its chat, run, status, whether its report was delivered). */
     async note(id, patch) {
       await load(); const record = records.get(id);

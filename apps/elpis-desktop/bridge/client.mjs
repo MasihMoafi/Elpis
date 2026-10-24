@@ -1202,6 +1202,16 @@ export class DesktopClient extends EventEmitter {
     const native = await this.#rpc('workGraph/list', {rootThreadId:id});
     return { data: [...(native.data ?? []), ...await this.#workflowRuns.list(id)] };
   }
+  async workflowRun(id) {
+    threadId(id);
+    const run = (await this.#workflowRuns.list()).find(record => record.id === id);
+    if (!run) throw new BridgeError('Workflow not found', 404);
+    return { run };
+  }
+  async steerWorkflow(id, taskId, body) {
+    threadId(id); text(taskId, 'workflow node', 100); object(body, ['id', 'text']);
+    return this.#workflowRuns.steer(id, taskId, body);
+  }
   /** One stage's tasks, checked as the scheduler takes them. */
   #workflowTasks(tasks) {
     if(!Array.isArray(tasks)||tasks.length<1||tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');

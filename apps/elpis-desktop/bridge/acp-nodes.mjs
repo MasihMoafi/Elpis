@@ -113,7 +113,7 @@ class AcpProcess {
  *   reason than end_turn, gives no answer, is cancelled or times out, or its process ends early.
  */
 export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {}) {
-  const { cwd, signal, timeoutMs = 300000, graceMs = 2000, onUpdate, onPermission, onSession, onSpawn } = options;
+  const { cwd, signal, timeoutMs = 300000, graceMs = 2000, onUpdate, onPermission, onSession, onSpawn, onControl } = options;
   const name = spec?.name || 'The agent';
   if (typeof spec?.command !== 'string' || !spec.command) throw new BridgeError(`${name} has no ACP command`, 500);
   if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new BridgeError('Working folder must be absolute');
@@ -121,12 +121,20 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
   if (signal?.aborted) throw new BridgeError(`${name} was cancelled`, 409);
 
   const answer = new Answer(), waiting = new Set();
+  const tools = new Set(), idle = new Set();
+  const wake = () => { for (const resolve of idle) resolve(); idle.clear(); };
   let sessionId = null, prompting = false, stopped = null, rejectStop;
   const stopping = new Promise((_, reject) => { rejectStop = reject; });
   stopping.catch(() => {});
   const node = new AcpProcess(spec, cwd, {
     onNotification(method, params) {
       if (method !== 'session/update' || !sessionId || params?.sessionId !== sessionId) return;
+      const update = params.update;
+      if (['tool_call', 'tool_call_update'].includes(update?.sessionUpdate) && update.toolCallId) {
+        if (['completed', 'failed'].includes(update.status)) tools.delete(update.toolCallId);
+        else if (update.sessionUpdate === 'tool_call' || ['pending', 'in_progress'].includes(update.status)) tools.add(update.toolCallId);
+        if (!tools.size) wake();
+      }
       answer.add(params.update);
       try { onUpdate?.(params.update); } catch {}
     },
@@ -153,6 +161,7 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
   const stop = error => {
     if (stopped) return;
     stopped = error;
+    wake();
     for (const cancel of waiting) cancel();
     if (sessionId && prompting) node.notify('session/cancel', { sessionId });
     rejectStop(error);
@@ -187,8 +196,21 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     }
     if (stopped) throw stopped;
     prompting = true;
-    const result = await node.call('session/prompt', { sessionId, prompt: [{ type: 'text', text }] });
-    prompting = false;
+    let sending = Promise.resolve();
+    onControl?.({ steer(message) {
+      const sent = sending.catch(() => {}).then(async () => {
+        // An idle notification is a wake-up only: another tool may start in the same transport read.
+        while (tools.size && prompting && !stopped && !node.gone) await new Promise(resolve => idle.add(resolve));
+        if (stopped || !prompting || node.gone) throw new BridgeError(`${name} is not running`, 409);
+        const result = await Promise.race([node.call('_session/steering', { sessionId, prompt: [{ type: 'text', text: message }], _meta: { steering: { idleBehavior: 'promptRequired' } } }), stopping, node.ended.then(error => { throw error; })]);
+        if (!['injected', 'queued'].includes(result?.outcome)) throw new BridgeError(`${name} ended before the message could be delivered`, 409);
+        return { delivery: result?._meta?.delivery ?? 'currentTurn' };
+      });
+      sending = sent; return sent;
+    } });
+    let result;
+    try { result = await node.call('session/prompt', { sessionId, prompt: [{ type: 'text', text }] }); }
+    finally { prompting = false; wake(); }
     if (stopped) throw stopped;
     if (result?.stopReason !== 'end_turn') throw new BridgeError(`${name} stopped: ${result?.stopReason ?? 'without a reason'}`, 502);
     const final = answer.text;
@@ -204,6 +226,7 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     if (stopped) { await Promise.race([work.catch(() => {}), node.ended, new Promise(resolve => setTimeout(resolve, graceMs).unref())]); throw stopped; }
     throw error;
   } finally {
+    prompting = false; wake();
     clearTimeout(timer);
     signal?.removeEventListener('abort', abort);
     await node.close(stopped ? 0 : graceMs);

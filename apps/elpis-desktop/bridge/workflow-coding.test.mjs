@@ -62,3 +62,30 @@ test('isolated nodes with the same scope run concurrently in different branches;
     assert.equal(f.log('queued').length, 0);
   }
 });
+
+test('live ACP progress survives reload; steering waits for tools and records delivery; ended nodes refuse messages', { timeout: 20000 }, async t => {
+  const env = { live: {} }, g = fixture(t, { env });
+  const release = path.join(g.home, 'release-tool'), finish = path.join(g.home, 'finish');
+  Object.assign(env.live, { FAKE_ACP_TOOL_RELEASE: release, FAKE_ACP_RELEASE: finish });
+  const run = await g.start([task('live', { instruction: '[tool-flight] [wait]' })]);
+  await until(() => g.log('live'), log => log.some(row => row.toolStarted));
+  const running = await g.record(run.graphId);
+  assert.ok(running.tasks[0].progress?.some(row => row.text?.includes('Thinking about it.')), 'live text is available before completion');
+  assert.ok(running.tasks[0].progress.some(row => row.title === 'Read notes' && row.status === 'in_progress'));
+  const accepted = await g.runs.steer(run.graphId, 'live', { id: 'message-1', text: 'Include planted steering evidence.' });
+  assert.equal(accepted.message.status, 'pending');
+  await pause(80); assert.equal(g.log('live').some(row => row.method === '_session/steering'), false, 'a foreground tool is never interrupted');
+  fs.writeFileSync(release, 'release');
+  await until(() => g.record(run.graphId), record => record.tasks[0].messages?.[0]?.status === 'delivered');
+  const duplicate = await g.runs.steer(run.graphId, 'live', { id: 'message-1', text: 'Include planted steering evidence.' });
+  assert.equal(duplicate.message.status, 'delivered');
+  assert.equal(g.log('live').filter(row => row.method === '_session/steering').length, 1, 'retries do not deliver twice');
+  fs.writeFileSync(finish, 'finish');
+  const completed = await g.finished(run.graphId); assert.match(completed.tasks[0].result.summary, /planted steering evidence/);
+  await assert.rejects(g.runs.steer(run.graphId, 'live', { text: 'Too late' }), /not running/i);
+  const restored = createWorkflowRuns({ stateDir: path.join(g.home, 'state') });
+  const saved = (await restored.list())[0];
+  assert.deepEqual(saved.tasks[0].progress, completed.tasks[0].progress);
+  assert.deepEqual(saved.tasks[0].messages, completed.tasks[0].messages);
+  await assert.rejects(restored.steer('missing', 'live', { text: 'No such run' }), /not found/i);
+});
