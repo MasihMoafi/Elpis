@@ -14,12 +14,13 @@ import test from 'node:test';
 import { setTimeout as pause } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { createTestTempDir, removeTestTempDir } from './temp-root.cjs';
 
 // ELPIS_TEST_TOOLS: the runtime under test (default this checkout's); the stand-in model is always this checkout's.
 const tools = path.resolve(process.env.ELPIS_TEST_TOOLS || fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url)));
 const fixtures = fileURLToPath(new URL('../../../tools/elpis-claude/test/', import.meta.url));
 const ENGINE = process.env.ELPIS_ENGINE_BIN ?? path.join(os.homedir(), '.local/bin/elpis-next');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-wfrun-'));
+const root = createTestTempDir(path.join(os.tmpdir(), 'e2e-wfrun-'));
 const home = path.join(root, 'elpis'), work = path.join(root, 'work'), run = path.join(root, 'run'), mockDir = path.join(root, 'mock');
 for (const d of [home, work, run, mockDir]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
 const socketPath = path.join(run, 'bridge.sock');
@@ -118,7 +119,7 @@ async function noticeReply(c, threadId, runId) {
   return until(`the notice of ${runId} reaches its chat`, async () => { const t = await lastTurn(c, threadId); const r = replyOf(t); return t?.status === 'completed' && r.startsWith(`NOTICE RECEIVED ${runId}`) ? r : null; });
 }
 
-test.after(async () => { await killAll(); mock.kill('SIGKILL'); });
+test.after(async () => { await killAll(); mock.kill('SIGKILL'); removeTestTempDir(root); });
 
 test('workflows run to the end from a chat whose person asked, with the Subagents switch off (WR1–WR7)', { timeout: 300_000 }, async (t) => {
   await startBridge();
