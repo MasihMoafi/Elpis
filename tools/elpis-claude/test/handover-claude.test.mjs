@@ -12,6 +12,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { startToken } from "../shared-runtime.mjs";
+import mockProvider from "../../../scripts/lib/mock-provider.js";
 import WebSocket from "ws";
 
 const { DesktopClient } = await import(new URL("../../../apps/elpis-desktop/bridge/client.mjs", import.meta.url));
@@ -34,9 +35,12 @@ async function fixture(t) {
   const [first, second] = [bundle("a"), bundle("b")];
   const agentLog = path.join(root, "agent.jsonl"), release = path.join(root, "release");
   fs.mkdirSync(path.join(root, "elpis"));
+  // A124_ENGINE=/absolute/native/binary runs the real engine, kept offline: it must never call a model here.
+  const carrier = new mockProvider.Provider(); await carrier.start(); t.after(() => carrier.close());
+  fs.writeFileSync(path.join(root, "elpis", "config.toml"), `model="gpt-5.5"\nmodel_provider="carrier"\nmodel_catalog_json=${JSON.stringify(path.resolve(source, "../../codex-rs/models-manager/models.json"))}\n[features]\ncode_mode=false\n[model_providers.carrier]\nname="offline carrier"\nbase_url=${JSON.stringify(carrier.url)}\nwire_api="responses"\nrequires_openai_auth=false\nrequest_max_retries=0\nstream_max_retries=0\n`);
   const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: path.join(root, "elpis"), CODEX_HOME: path.join(root, "elpis"), CODEX_AUTH_HOME: root,
     XDG_RUNTIME_DIR: root, XDG_CONFIG_HOME: root, TMPDIR: root, ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
-    ELPIS_ENGINE_BIN: path.join(source, "test/fake-app-server.mjs"), ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
+    ELPIS_ENGINE_BIN: process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mjs"), ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mjs"),
     ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"), FAKE_ENGINE_STATE: path.join(root, "native.json"),
     FAKE_ACP_LOG: agentLog, FAKE_ACP_MODELS: "sonnet", FAKE_ACP_NAME: "Claude", FAKE_ACP_RELEASE: release };
   const launch = async (dir) => {
