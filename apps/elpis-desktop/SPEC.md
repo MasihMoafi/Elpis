@@ -185,3 +185,7 @@ Masih: “update it then; and send your messages in a different color; maybe bla
 ## 24 October — Matilda voice playback
 
 Masih: “I couldn't and can't hear your voice.” Reproduced: connected peer and advancing playback receive zero-energy audio. Check actual non-silent speech before claiming success. Use the native speech operation and expose the same Read aloud control on Matilda chat replies. Preserve microphone-free playback and cancellation.
+
+## Automatic Matilda chat voice — 24 October 2026
+
+Masih: “I wanted you to play as you write me ... do that voice fix too for me.” New live Matilda chat replies start the existing sentence-based voice stream automatically before completion. No historical replay, commentary reading, delta restarts or duplicate live-call audio. Respect Voice off; Stop works during streaming. Test no-click playback, mute, one start per turn, and actual non-silent audio before completion.

@@ -130,3 +130,37 @@ test('Matilda and ordinary chat replies both offer Read aloud and send the displ
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('Matilda automatically speaks new live prose once before completion, respects mute, and can stop while writing', async () => {
+  for (const enabled of [true, false]) {
+    let loaded = false; const streams = new Set();
+    const f = await fixture({ threads: [{ id: 'chat-a', name: 'Love Spot', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }], routes: {
+      '/api/love-spot/talk': () => { loaded = true; return { thread: { id: 'chat-a' } }; },
+      '/api/love-spot/voice/settings': () => ({ enabled, available: true }),
+      '/api/love-spot/voice': (_body, _url, response) => { response.writeHead(200, { 'Content-Type': 'application/x-ndjson' }); response.write(JSON.stringify({ type: 'session', id: 'automatic-speech' }) + '\n'); streams.add(response); response.on('close', () => streams.delete(response)); },
+    } });
+    try {
+      const { page } = f; await f.open('chat-a'); await eventually(() => assert.equal(loaded, true));
+      const requests = () => f.posts.filter(row => row.path === '/api/love-spot/voice');
+      assert.equal(requests().length, 0, 'history is not replayed');
+      const emit = (method, params) => f.emit('message', { method, params: { threadId: 'chat-a', turnId: 'new-turn', ...params } });
+      emit('turn/started', { turn: { id: 'new-turn' } });
+      emit('item/started', { item: { id: 'thinking', type: 'agentMessage', phase: 'commentary', text: '' } });
+      emit('item/agentMessage/delta', { itemId: 'thinking', delta: 'Checking things.' });
+      await page.getByText('Checking things.', { exact: true }).waitFor(); assert.equal(requests().length, 0, 'commentary stays quiet');
+      emit('item/started', { item: { id: 'live-reply', type: 'agentMessage', phase: 'final_answer', text: '' } });
+      emit('item/agentMessage/delta', { itemId: 'live-reply', delta: 'Hello Masih. ' });
+      const reply = page.locator('.message.agent').filter({ hasText: 'Hello Masih.' });
+      await reply.waitFor();
+      if (enabled) {
+        await eventually(() => assert.equal(requests().length, 1), 8000);
+        await reply.hover(); await reply.getByRole('button', { name: 'Stop', exact: true }).click();
+      }
+      emit('item/agentMessage/delta', { itemId: 'live-reply', delta: 'Still here.' });
+      await page.getByText('Hello Masih. Still here.', { exact: true }).waitFor();
+      emit('turn/completed', { turn: { id: 'new-turn', status: 'completed', items: [{ id: 'live-reply', type: 'agentMessage', phase: 'final_answer', text: 'Hello Masih. Still here.' }] } });
+      assert.equal(requests().length, enabled ? 1 : 0, 'deltas, Stop and completion never restart speech; muted turns stay quiet');
+      assert.deepEqual(f.errors, []);
+    } finally { for (const stream of streams) stream.end(); await f.close(); }
+  }
+});
