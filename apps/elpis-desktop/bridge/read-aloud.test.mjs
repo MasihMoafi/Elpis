@@ -34,7 +34,7 @@ async function fixture(t) {
   const controls = [];
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-read-aloud-'));
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
-  const state = { account: 'chatgpt', provider: 'openai', voice: 'juniper', holdStart: false, failAppend: false, holdCleanup: false, busy: false };
+  const state = { account: 'chatgpt', provider: 'openai', voice: 'juniper', configModel: 'gpt-6.1-sol', listed: ['claude/opus', 'gpt-6.1-luna'], holdStart: false, failAppend: false, holdCleanup: false, busy: false };
   const notify = (method, params) => {
     if (method === 'turn/completed' && params.threadId === CHAT) state.busy = false;
     socket.emit('message', JSON.stringify({ method, params }));
@@ -45,7 +45,8 @@ async function fixture(t) {
     const answer = result => socket.emit('message', JSON.stringify({ id: request.id, result }));
     queueMicrotask(() => {
       if (request.method === 'account/read') return answer({ account: { type: state.account } });
-      if (request.method === 'config/read') return answer({ config: { realtime: { voice: state.voice } } });
+      if (request.method === 'config/read') return answer({ config: { realtime: { voice: state.voice }, model: state.configModel, model_provider: 'openai' } });
+      if (request.method === 'model/list') return answer({ data: state.listed.map(model => ({ id: model, model })), nextCursor: null });
       if (request.method === 'thread/realtime/listVoices') return answer({ voices: { v1: ['cove', 'juniper'], defaultV1: 'cove' } });
       if (request.method === 'thread/read') {
         answer({ thread: { id: CHAT, model: state.model ?? (state.provider === 'openai' ? 'gpt-5' : 'claude/sonnet'), modelProvider: state.provider, status: { type: state.busy ? 'active' : 'idle' } } });
@@ -269,7 +270,7 @@ test('Claude and Antigravity read aloud use a private native speech thread and s
     const session = await next(); assert.equal(session.type, 'session');
     assert.equal((await next()).type, 'sdp');
     const created = f.methods('thread/start')[0].params;
-    assert.equal(created.model, 'gpt-5'); assert.equal(created.modelProvider, 'openai'); assert.equal(created.ephemeral, true);
+    assert.equal(created.model, 'gpt-6.1-sol', 'the configured default, a model the engine lists'); assert.equal(created.modelProvider, 'openai'); assert.equal(created.ephemeral, true);
     await f.post('voice/read-aloud/ready', { id: session.id });
     await until(() => f.methods('thread/realtime/appendSpeech').length === 1);
     assert.equal(f.methods('thread/realtime/appendSpeech')[0].params.threadId, SPEECH);
@@ -291,7 +292,7 @@ test('Claude and Antigravity voice handoffs queue ordinary turns and speak only 
     assert.equal((await next()).type, 'sdp');
     const started = f.methods('thread/realtime/start')[0].params;
     assert.equal(started.threadId, SPEECH); assert.equal(started.clientManagedHandoffs, true);
-    assert.equal(f.methods('thread/start')[0].params.model, 'gpt-5');
+    assert.equal(f.methods('thread/start')[0].params.model, 'gpt-6.1-sol');
     const handoff = (id, input, threadId = SPEECH) => f.notify('thread/realtime/itemAdded', { threadId, item: { type: 'handoff_request', handoff_id: id, item_id: `item-${id}`, input_transcript: input, active_transcript: 'Private transcript context' } });
     handoff('wrong-thread', 'Ignore this', CHAT);
     handoff('empty', '  ');
@@ -375,4 +376,16 @@ test('bridged voice retires pending handoffs and late speech on stop, disconnect
     assert.equal(f.methods('thread/realtime/appendSpeech').length, outcome === 'append failure' ? 1 : 0);
     assert.equal(f.methods('turn/interrupt').length, 0, 'ending voice does not interrupt the selected chat');
   });
+});
+
+test('a Claude chat\'s speech thread names a model the engine lists, never a missing one', async t => {
+  const f = await fixture(t); Object.assign(f.state, { provider: 'openai', model: 'claude/opus' });
+  // A Claude default in the config: the first native model listed instead.
+  f.state.configModel = 'claude/sonnet';
+  await f.client.createSpeechThread(CHAT);
+  assert.equal(f.methods('thread/start').at(-1).params.model, 'gpt-6.1-luna');
+  // No native model anywhere: say so, and create nothing.
+  const none = await fixture(t); Object.assign(none.state, { provider: 'openai', model: 'claude/opus', configModel: 'claude/sonnet', listed: ['claude/opus'] });
+  await assert.rejects(none.client.createSpeechThread(CHAT), /ChatGPT model/);
+  assert.equal(none.methods('thread/start').length, 0);
 });

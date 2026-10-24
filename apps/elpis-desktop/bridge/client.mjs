@@ -918,12 +918,15 @@ export class DesktopClient extends EventEmitter {
     return this.#rpc('thread/realtime/stop', { threadId: threadId(id) });
   }
   async createSpeechThread(id) {
-    const status = await this.voiceStatus({ strict: true });
+    const [status, thread, read] = await Promise.all([this.voiceStatus({ strict: true }), this.readThreadMetadata(id), this.#rpc('config/read', { includeLayers: false })]);
     if (!status.available) throw new BridgeError('Read aloud needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
-    const thread = await this.readThreadMetadata(id);
-    const native = thread.modelProvider === 'openai' && !/^(?:claude|agy)\//.test(thread.model ?? '');
-    const model = native ? thread.model : 'gpt-5';
-    if (!model) throw new BridgeError('This chat has no native model for Read aloud.', 400);
+    // The thread only hosts the voice, yet it names a model the engine lists: the chat's own, else the configured
+    // default, else the first ChatGPT model listed.
+    const isNative = model => typeof model === 'string' && !!model && !/^(?:claude|agy)\//.test(model);
+    const model = thread.modelProvider === 'openai' && isNative(thread.model) ? thread.model
+      : (read.config?.model_provider ?? 'openai') === 'openai' && isNative(read.config?.model) ? read.config.model
+      : (await this.#modelList({ limit: 100, includeHidden: false })).data?.find(item => isNative(item.model))?.model;
+    if (!model) throw new BridgeError('Read aloud needs a ChatGPT model. Choose one under Settings → Models & accounts.', 400);
     const result = await this.sideRpc('thread/start', { model, modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only' });
     if (result.thread?.ephemeral !== true || result.thread?.id === id) throw new BridgeError('Elpis did not create a private speech thread.', 502);
     return { id: threadId(result.thread.id), voice: status.voice };
