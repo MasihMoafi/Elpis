@@ -340,6 +340,7 @@
   "opt-in": [
     "tests/context-ledger.runtime.mjs",
     "tests/tui-engine.runtime.mjs",
+    "tests/missing-earlier-chat.runtime.mjs",
     "tests/polish.runtime.cjs",
     "tests/sidebar-archive-delete.runtime.mjs",
     "tests/chat-basics.runtime.mjs",

@@ -549,6 +549,9 @@ pub struct ItemPage {
     pub next_cursor: Option<String>,
     /// Opaque cursor for fetching in the opposite direction.
     pub backwards_cursor: Option<String>,
+    /// An earlier rollout this history continues is gone; the items are the history that remains.
+    #[serde(default)]
+    pub earliest_history_missing: bool,
 }
 
 /// Parameters for reading a bounded mixed thread timeline.

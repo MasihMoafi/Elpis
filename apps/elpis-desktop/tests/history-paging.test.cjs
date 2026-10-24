@@ -62,3 +62,48 @@ for (const colorScheme of ['light', 'dark']) {
     } finally { await f.close(); }
   });
 }
+
+for (const colorScheme of ['light', 'dark']) {
+  test(`a chat whose earliest part is missing says so where its history begins · ${colorScheme}`, async () => {
+    // His rust-obsidian chat (24 Oct): the engine opens what remains and marks every page (earliestHistoryMissing).
+    const chat = Array.from({ length: 12 }, (_, index) => [`t${index}`, `Remaining prompt ${index}`, `Remaining reply ${index}`]);
+    const entries = chat.flatMap(([turnId, prompt, reply]) => [
+      { turnId, item: { id: `u-${turnId}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] } },
+      { turnId, item: { id: `a-${turnId}`, type: 'agentMessage', text: reply } },
+    ]);
+    const page = (id, missing) => (_body, url) => {
+      const cursor = Number(url.searchParams.get('cursor') ?? 0), data = [...entries].reverse().slice(cursor, cursor + 10);
+      return { thread: { id, name: id, cwd: '/history', model: 'gpt-5.5' }, data, nextCursor: cursor + data.length < entries.length ? String(cursor + data.length) : null, ...(missing ? { earliestHistoryMissing: true } : {}) };
+    };
+    const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, chat, routes: { '/api/threads/chat-a': page('chat-a', true) } });
+    try {
+      await f.open('chat-a');
+      const note = f.page.getByRole('note').filter({ hasText: 'The earliest part of this chat is missing' });
+      const earlier = f.page.getByRole('button', { name: 'Load earlier messages', exact: true });
+      await earlier.waitFor();
+      assert.equal(await note.count(), 0, 'not before the start of what remains is shown');
+      while (await earlier.count()) { await earlier.click(); await f.page.waitForFunction(() => !document.querySelector('.load-earlier-messages:disabled')); }
+      await note.waitFor();
+      assert.equal(await note.count(), 1);
+      const [noteTop, firstTop] = await Promise.all([note.boundingBox(), f.page.getByText('Remaining prompt 0', { exact: true }).boundingBox()]);
+      assert.ok(noteTop.y < firstTop.y, 'the note sits above the first message that remains');
+      await note.scrollIntoViewIfNeeded();
+      const shots = path.join(process.env.HOME, '.cache/elpis-shots');
+      await fs.mkdir(shots, { recursive: true });
+      await f.page.screenshot({ path: path.join(shots, `history-missing-earlier-${colorScheme}.png`) });
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  });
+}
+
+test('a complete chat shows no missing-history note', async () => {
+  const chat = [['t0', 'Whole prompt', 'Whole reply']];
+  const entries = [{ turnId: 't0', item: { id: 'u-t0', type: 'userMessage', content: [{ type: 'text', text: 'Whole prompt' }] } }, { turnId: 't0', item: { id: 'a-t0', type: 'agentMessage', text: 'Whole reply' } }];
+  const f = await fixture({ desktop: true, width: 1440, height: 900, chat, routes: { '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Whole', cwd: '/history', model: 'gpt-5.5' }, data: [...entries].reverse(), nextCursor: null }) } });
+  try {
+    await f.open('chat-a');
+    await f.page.getByText('Whole reply', { exact: true }).waitFor();
+    assert.equal(await f.page.getByText('The earliest part of this chat is missing').count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

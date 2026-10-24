@@ -469,6 +469,7 @@ fn thread_items_list_round_trips() {
             }],
             next_cursor: None,
             backwards_cursor: Some("cursor_0".to_string()),
+            earliest_history_missing: false,
         };
         let value = serde_json::to_value(&response).expect("serialize response");
         assert_eq!(
@@ -489,6 +490,23 @@ fn thread_items_list_round_trips() {
             response
         );
     }
+
+    // Elpis: a page of a chat whose earliest part is missing says so; a complete one omits it.
+    let missing = ThreadItemsListResponse {
+        data: Vec::new(),
+        next_cursor: None,
+        backwards_cursor: None,
+        earliest_history_missing: true,
+    };
+    let value = serde_json::to_value(&missing).expect("serialize response");
+    assert_eq!(
+        value,
+        json!({"data": [], "nextCursor": null, "backwardsCursor": null, "earliestHistoryMissing": true})
+    );
+    assert_eq!(
+        serde_json::from_value::<ThreadItemsListResponse>(value).expect("deserialize response"),
+        missing
+    );
 
     let params_without_turn = ThreadItemsListParams {
         thread_id: "thr_123".to_string(),

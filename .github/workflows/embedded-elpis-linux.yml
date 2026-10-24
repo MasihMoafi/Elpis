@@ -361,7 +361,9 @@ jobs:
             recompute_token_usage record_initial_history_seeds_token_info_from_rollout
           # A chat whose earlier rollout is gone still opens (24 Oct, his rust-obsidian chat).
           cargo test --profile dev-small --locked -p codex-thread-store --lib -- \
-            rollout_lineage model_context
+            rollout_lineage model_context list_items_reads_what_remains list_items_pages_whole_thread
+          # Its history pages say the earliest part is missing (the desktop's note).
+          cargo test --profile dev-small --locked -p codex-app-server-protocol --lib -- thread_items_list_round_trips
       - name: Context and session integration tests
         if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
         working-directory: codex-rs

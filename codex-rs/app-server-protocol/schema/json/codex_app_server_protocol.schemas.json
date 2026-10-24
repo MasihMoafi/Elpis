@@ -23556,6 +23556,10 @@
             },
             "type": "array"
           },
+          "earliestHistoryMissing": {
+            "description": "Elpis: the earliest part of this thread's history is missing (an earlier rollout it continues was deleted), so these items are the history that remains.",
+            "type": "boolean"
+          },
           "nextCursor": {
             "description": "Opaque cursor to pass to the next call to continue after the last item. if None, there are no more items to return.",
             "type": [
