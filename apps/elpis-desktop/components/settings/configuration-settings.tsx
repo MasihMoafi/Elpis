@@ -6,18 +6,15 @@ import { Switch } from "@/components/ui/switch";
 import { FileRefLink } from "@/components/file-ref";
 import { api } from "@/lib/api";
 import { editable, reloadSettings, saveOptions, saveSettings, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
-import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
+import { Choice, SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
+import { PERMISSION_MODES } from "@/components/composer-controls";
 import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
 
 const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; values: { value: string; label: string }[] }[] = [
   { name: "reasoningEffort", title: "Default reasoning effort", description: "Reasoning effort for new chats in the app and terminal, on models that support it. The model menu changes the current chat separately.", values: [
     { value: "none", label: "None" }, { value: "minimal", label: "Minimal" }, { value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }, { value: "xhigh", label: "Extra high" }, { value: "max", label: "Max" }, { value: "ultra", label: "Ultra" }, { value: "persistent", label: "Persistent" }] },
-  { name: "approvalPolicy", title: "Default approval policy", description: "When new chats ask for approval before running commands. The composer’s permissions menu changes it per chat.", values: [
-    { value: "untrusted", label: "Ask unless a rule allows it" }, { value: "on-request", label: "Ask when needed" }, { value: "never", label: "Never ask" }] },
-  { name: "sandboxMode", title: "Default sandbox", description: "How much new chats can do when running commands. The composer’s permissions menu changes it per chat.", values: [
-    { value: "read-only", label: "Read only" }, { value: "workspace-write", label: "Write in workspace" }, { value: "danger-full-access", label: "Full access" }] },
   { name: "webSearch", title: "Web search", description: "Choose how Elpis accesses the web.", values: [
     { value: "disabled", label: "Off" }, { value: "cached", label: "Cached" }, { value: "indexed", label: "Indexed" }, { value: "live", label: "Live" }] },
   { name: "verbosity", title: "Output detail", description: "Choose how much detail Elpis includes in responses, on models that support it.", values: [
@@ -35,12 +32,26 @@ function ConfigFile() {
   </SettingRow>;
 }
 
+/** The composer's modes as presets, as Codex's /permissions offers them: one choice saves approval policy, reviewer and
+ * sandbox together. Full access is the default when the config names none; Bypass permissions is chosen per chat. */
+function DefaultPermissions({ settings, disabled, onSave }: { settings: ElpisSettings; disabled: boolean; onSave: (mode: string) => void }) {
+  const value = settings.options?.defaultPermissions ?? "full";
+  const options: { value: string; label: string; disabled?: boolean }[] = PERMISSION_MODES.filter(mode => mode.id !== "bypass").map(mode => ({ value: mode.id, label: mode.label }));
+  if (!options.some(option => option.value === value)) options.push({ value, label: "Custom (set in the config file)", disabled: true });
+  const current = PERMISSION_MODES.find(mode => mode.id === value);
+  return <SettingRow title="Default permissions" description={`${current ? `${current.description}. ` : ""}New chats, agents and workflows start with this; the terminal reads it too. The composer’s permissions menu changes one chat, and Bypass permissions is chosen there.`}>
+    <Choice label="Default permissions" value={value} options={options} disabled={disabled} onChange={next => { if (next !== value) onSave(next); }} />
+  </SettingRow>;
+}
+
 function ConfigOptionsGroup({ settings }: { settings: ElpisSettings }) {
   const saver = useSaver();
   const writable = editable(settings);
   return <SettingsGroup title="Defaults for new chats" description={writable ? "Saved in the Elpis config. Changes apply to new conversations." : settings.write.reason}>
+    <DefaultPermissions settings={settings} disabled={!writable || saver.pending !== null}
+      onSave={mode => void saver.run("defaultPermissions", () => saveOptions(settings, { defaultPermissions: mode }), "Default permissions saved. Applies to new chats.")} />
     {OPTIONS.map(option => <ConfigChoice key={option.name} settings={settings} {...option} disabled={!writable || saver.pending !== null}
-      allowed={option.name === "approvalPolicy" ? settings.managed?.allowedApprovalPolicies : option.name === "sandboxMode" ? settings.managed?.allowedSandboxModes : option.name === "webSearch" ? settings.managed?.allowedWebSearchModes : null}
+      allowed={option.name === "webSearch" ? settings.managed?.allowedWebSearchModes : null}
       onSave={patch => void saver.run(option.name, () => saveOptions(settings, patch), `${option.title} saved. Applies to new conversations.`)} />)}
     {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
   </SettingsGroup>;

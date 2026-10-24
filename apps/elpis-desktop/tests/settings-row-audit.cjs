@@ -7,7 +7,7 @@ const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP ser
 const SECTIONS = ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal', 'Advanced'];
 const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
   smartPrune: { enabled: true, explicitOverride: { available: true, model: null, provider: null, version: 'p1' } }, memory: { enabled: false, generate: null, use: null, skipExternalContext: null, extractionModel: null, consolidationModel: null },
-  options: { approvalPolicy: 'on-request', sandboxMode: null, webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: null, developerInstructions: null, projectRootMarkers: null, worktreeRoot: null },
+  options: { defaultPermissions: 'full', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: null, developerInstructions: null, projectRootMarkers: null, worktreeRoot: null },
   managed: { allowedApprovalPolicies: null, allowedSandboxModes: ['read-only', 'workspace-write'] }, write: { available: true } };
 
 async function settingsFixture(theme = 'light', extra = {}) {

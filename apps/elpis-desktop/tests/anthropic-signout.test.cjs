@@ -29,7 +29,7 @@ test('Anthropic card: Sign out and Sign in change only Elpis; usage and the mode
   const providerSettings = { version: 'p', configPath: '/tmp/config.toml', write: { available: true }, managed: { modelProvider: null }, providers: [] };
   const settings = { version: 'v1', main: { model: 'luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
     smartPrune: { enabled: null, explicitOverride: { available: false, reason: 'Not available' } }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null },
-    options: { approvalPolicy: 'on-request', sandboxMode: 'workspace-write' }, managed: {}, write: { available: true } };
+    options: { defaultPermissions: 'ask' }, managed: {}, write: { available: true } };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };

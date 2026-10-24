@@ -10,7 +10,8 @@ import path from 'node:path';
 import { ragMessage } from './rag-command.mjs';
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition, providerSettingsSnapshot, providerEdits, privateConfigFile } from './provider-settings.mjs';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mjs';
-import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot } from './elpis-features.mjs';
+import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
+import { settingsSnapshot, userConfigVersion, tokenUsageSnapshot, contextLedger, restoredTokenUsage, rolloutShares, contextSwitchesSnapshot, CONTEXT_SWITCH_KEYS, smartPruneSnapshot, providersSnapshot, mcpSnapshot, optionEdits, hooksSnapshot, defaultPermissionMode } from './elpis-features.mjs';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { providerModels } from './provider-models.mjs';
 import { attachmentInput, recordedMedia } from './attachments.mjs';
@@ -91,9 +92,7 @@ const readRpc = (method, params) => READ_RPCS.has(method) || ['thread/goal/get',
  * because a reopened chat gets back its last profile id; a sandbox chosen alone fell back to the config's. */
 const BYPASS_PROFILE = ':bypass-permissions';
 const PERMISSIONS = {
-  ask: { approvalPolicy: 'on-request', approvalsReviewer: 'user', permissions: ':workspace' },
-  auto: { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', permissions: ':workspace' },
-  full: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' },
+  ...Object.fromEntries(Object.entries(PERMISSION_PRESETS).map(([mode, preset]) => [mode, { approvalPolicy: preset.approval, approvalsReviewer: preset.reviewer, permissions: PROFILES[preset.sandbox] }])),
   bypass: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: BYPASS_PROFILE },
 };
 function permissionMode(value) {
@@ -1365,7 +1364,9 @@ export class DesktopClient extends EventEmitter {
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
     if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
-    const permissions = permissionMode(body.permissions);
+    // A chat started without a mode gets the default one explicitly (Settings > Default permissions; Full access when
+    // the config names no approval policy), so the engine's own fallback, which asks, never decides it.
+    const permissions = permissionMode(body.permissions) ?? await this.#defaultPermissions(body.cwd);
     const name = body.name === undefined ? undefined : text(body.name, 'agent name', 120).trim();
     const ownInstructions = body.instructions === undefined ? undefined : text(body.instructions, 'agent instructions', 32000);
     if (body.cwd !== undefined && !path.isAbsolute(text(body.cwd, 'working directory', 4096))) throw new BridgeError('Working directory must be absolute');
@@ -1396,7 +1397,12 @@ export class DesktopClient extends EventEmitter {
     this.#browserConfig?.bind?.(browserSession, result.thread.id);
     this.#owned.add(result.thread.id);
     if (name) { await this.#rpc('thread/name/set', { threadId: result.thread.id, name }); result.thread.name = name; }
-    return { ...result, thread: this.#decorate(result.thread), ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
+    return { ...result, thread: this.#decorate(result.thread), permissions: modeOf(result), ...(made ? { worktree: { path: made.root, branch: made.branch } } : {}) };
+  }
+  /** The default mode for a new chat in `cwd`, or nothing when the config combines its settings in another way. */
+  async #defaultPermissions(cwd) {
+    const mode = defaultPermissionMode(await this.#rpc('config/read', { includeLayers: true, ...(typeof cwd === 'string' && path.isAbsolute(cwd) ? { cwd } : {}) }));
+    return Object.hasOwn(PERMISSIONS, mode) ? mode : undefined;
   }
   /** After a chat is archived or deleted: its worktree, when it has one that no open chat still works in, is removed if
    * nothing in it is uncommitted, and kept otherwise (bridge/git.mjs releaseChatWorktree). */

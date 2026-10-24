@@ -114,6 +114,7 @@ function engine({ failStart = false } = {}) {
     const p = request.params;
     switch (request.method) {
       case 'initialize': return reply({ result: {} });
+      case 'config/read': return reply({ result: { config: {}, layers: [] } });
       case 'thread/start': {
         if (failStart) return reply({ error: { code: -32600, message: 'cannot start the chat' } });
         const thread = { id: CHAT, cwd: p.cwd, status: { type: 'idle' }, source: 'appServer' }; threads.set(CHAT, thread); return reply({ result: { thread } });

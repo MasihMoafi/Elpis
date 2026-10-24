@@ -14,7 +14,7 @@ test('every Settings page uses shared rows and consistent computed sizing in lig
         await visit(app.page, name, section);
         if (!section && ['Configuration', 'General'].includes(name)) {
           const panel = app.page.getByRole('tabpanel', { name, exact: true });
-          await chooseOption(panel.getByLabel(name === 'General' ? 'Speed' : 'Default approval policy', { exact: true }), name === 'General' ? 'fast' : 'never');
+          await chooseOption(panel.getByLabel(name === 'General' ? 'Speed' : 'Default permissions', { exact: true }), name === 'General' ? 'fast' : 'ask');
           await panel.getByRole('status').filter({ hasText: 'saved' }).waitFor();
         }
         const measurement = await app.page.evaluate(measureRows);

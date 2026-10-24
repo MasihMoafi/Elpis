@@ -809,9 +809,10 @@ export default function Home() {
     }).catch(() => {});
     return () => { disposed = true; };
   }, [selected?.id, activeTurn]);
-  // A new chat runs with the configured defaults until a mode is chosen, so the button shows those.
-  const configuredMode: PermissionMode = providerSettings?.options?.approvalPolicy !== "never" ? "ask"
-    : providerSettings.options.sandboxMode === "bypass-permissions" ? "bypass" : providerSettings.options.sandboxMode === "danger-full-access" ? "full" : "ask";
+  // A new chat starts in Settings' default permissions (Full access unless the config names an approval policy) until a
+  // mode is chosen, so the button shows that; a config that matches no preset shows Ask.
+  const defaultMode = providerSettings?.options?.defaultPermissions;
+  const configuredMode: PermissionMode = defaultMode === "auto" || defaultMode === "full" ? defaultMode : "ask";
   const permissionMode: PermissionMode = selected ? threadModes[selected.id] ?? "ask" : newMode ?? configuredMode;
   const planMode = selected ? nextTurn[selected.id]?.plan ?? threadPlans[selected.id] ?? false : newPlan;
   // The last finished turn's proposed plan, while the chat is still in Plan mode and it is unanswered.
@@ -1052,6 +1053,8 @@ export default function Home() {
     else if (permissionMode === "auto") { choosePermissions("ask"); setPlan(true); }
     else choosePermissions(permissionMode === "ask" ? "auto" : "ask");
   }
+  /** A new chat shows the mode the engine started it in. */
+  const noteStartedMode = (id: string, mode: PermissionMode | null | undefined) => { if (mode) setThreadModes(prev => ({ ...prev, [id]: mode })); };
   async function changePermissions(id: string, mode: PermissionMode) {
     setChangingPermissions(true); setError("");
     try {
@@ -1112,8 +1115,8 @@ export default function Home() {
     try {
       let thread = selected;
       if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
-        thread = result.thread; errorThreadId = thread.id; if (newMode) setThreadModes(prev => ({ ...prev, [result.thread.id]: newMode }));
+        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}), ...(newWorktree ? { worktree: true } : {}) });
+        thread = result.thread; errorThreadId = thread.id; noteStartedMode(result.thread.id, result.permissions ?? newMode);
         updateSubmission({ scope: thread.id });
         await browser.adoptSession(browserDraft, thread.id);
         saveDraft(thread.id, originalRequest === request.current ? textRef.current : sentText);
@@ -1183,8 +1186,8 @@ export default function Home() {
     const originalId = thread?.id || newDraftKey.current, browserDraft = `draft:${tabsRef.current.activeId}`;
     try {
       if (!thread) {
-        const result = await api<{ thread: Thread }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
-        thread = result.thread; upsertThread(thread);
+        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", { ...(newMode ? { permissions: newMode } : {}), ...(model.trim() ? { model: model.trim() } : {}), ...(newChoice?.provider ? { provider: newChoice.provider } : {}), ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}) });
+        thread = result.thread; upsertThread(thread); noteStartedMode(thread.id, result.permissions ?? newMode);
         await browser.adoptSession(browserDraft, thread.id);
         if (request.current === originalRequest) { saveDraft(originalId, ""); saveDraft(thread.id, command); shellCreated.current = thread.id; select(thread); }
       }

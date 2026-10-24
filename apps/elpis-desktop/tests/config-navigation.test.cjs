@@ -6,7 +6,7 @@ const { chooseOption } = require('./controls.cjs');
 const sections = ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal', 'Advanced'];
 const settings = () => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
   smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: { enabled: false, generate: false, use: false, extractionModel: null, consolidationModel: null },
-  options: { approvalPolicy: 'on-request', sandboxMode: 'workspace-write' }, write: { available: true, reason: '' } });
+  options: { defaultPermissions: 'ask' }, write: { available: true, reason: '' } });
 
 test('/config opens six sections; a named section ignores case; an unknown name shows the list', async () => {
   const f = await fixture({ routes: { '/api/settings': settings } });

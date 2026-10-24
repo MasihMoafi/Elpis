@@ -9,7 +9,7 @@ export type Background = { model: string | null; provider: string | null };
 export type Memory = { enabled?: boolean | null; generate: boolean | null; use: boolean | null; skipExternalContext?: boolean | null; extractionModel: string | null; consolidationModel: string | null };
 export type ConfigOptions = {
   reasoningEffort?: string | null;
-  approvalPolicy: string | null; sandboxMode: string | null; webSearch: string | null; verbosity: string | null;
+  defaultPermissions: string | null; webSearch: string | null; verbosity: string | null;
   reasoningSummary: string | null; serviceTier: string | null; developerInstructions: string | null;
   projectRootMarkers: string[] | null; worktreeRoot: string | null;
 };

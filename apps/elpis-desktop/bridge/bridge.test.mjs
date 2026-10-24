@@ -1159,7 +1159,7 @@ test('custom API models are validated under the selected native provider for cre
   await assert.rejects(client.createThread({ model: 'fixture/custom-model' }), /current Elpis model list/);
   assert.equal(socket.sent.filter(row => row.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'fixture/custom-model' });
-  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local' });
+  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' }, 'a new chat starts in the default mode, Full access');
   // Reflect the native thread/read route rather than trusting the renderer's selection.
   threads.get(CREATED).modelProvider = 'local'; threads.get(CREATED).model = 'fixture/custom-model';
   await client.send(CREATED, { text: 'follow-up', model: 'fixture/custom-model' });
@@ -1505,7 +1505,7 @@ test('settings expose supported fields; providers require configured identity an
   await assert.rejects(client.createThread({ provider: 'local' }), /model for this provider/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'remote-model' });
-  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local' });
+  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
   requirementsRead.requirements = { modelProvider: 'openai', modelProviders: { local: { name: 'Managed', api_key: 'PRIVATE CONFIG SECRET' } } };
   await assert.rejects(client.createThread({ provider: 'local', model: 'remote-model' }), /restricted/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 1);
@@ -1753,13 +1753,12 @@ test('settings pages read and write only listed native options, respecting manag
   Object.assign(configRead.config, { approval_policy: { granular: { sandbox_approval: true } }, sandbox_mode: 'workspace-write', service_tier: 'priority', developer_instructions: 'Be brief.', project_root_markers: ['.git', '.hg'], desktop: { 'git-worktree-root': '/work/trees' } });
   configRead.config.features.memories = true; configRead.config.memories.disable_on_external_context = true;
   const settings = await client.settings();
-  assert.deepEqual(settings.options, { reasoningEffort: null, approvalPolicy: 'granular', sandboxMode: 'workspace-write', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: 'fast', developerInstructions: 'Be brief.', projectRootMarkers: ['.git', '.hg'], worktreeRoot: '/work/trees' });
+  assert.deepEqual(settings.options, { reasoningEffort: null, defaultPermissions: 'custom', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: 'fast', developerInstructions: 'Be brief.', projectRootMarkers: ['.git', '.hg'], worktreeRoot: '/work/trees' });
   assert.equal(settings.memory.enabled, true); assert.equal(settings.memory.skipExternalContext, true);
-  await client.saveSettings({ version: 'user-version', options: { approvalPolicy: 'never', webSearch: null, developerInstructions: '  ', projectRootMarkers: [' .git ', 'package.json'], worktreeRoot: '/tmp/trees' }, memory: { enabled: false, skipExternalContext: false } });
+  await client.saveSettings({ version: 'user-version', options: { webSearch: null, developerInstructions: '  ', projectRootMarkers: [' .git ', 'package.json'], worktreeRoot: '/tmp/trees' }, memory: { enabled: false, skipExternalContext: false } });
   assert.deepEqual(socket.sent.findLast(row => row.method === 'config/batchWrite').params, { expectedVersion: 'user-version', reloadUserConfig: false, edits: [
     { keyPath: 'features.memories', value: false, mergeStrategy: 'replace' },
     { keyPath: 'memories.disable_on_external_context', value: false, mergeStrategy: 'replace' },
-    { keyPath: 'approval_policy', value: 'never', mergeStrategy: 'replace' },
     { keyPath: 'web_search', value: null, mergeStrategy: 'replace' },
     { keyPath: 'developer_instructions', value: null, mergeStrategy: 'replace' },
     { keyPath: 'project_root_markers', value: ['.git', 'package.json'], mergeStrategy: 'replace' },
@@ -1768,39 +1767,61 @@ test('settings pages read and write only listed native options, respecting manag
   const writes = () => socket.sent.filter(row => row.method === 'config/batchWrite').length;
   const before = writes();
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { model: 'other' } }), /Unsupported setting/);
-  await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'everything' } }), /listed values/);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'everything' } }), /listed values/);
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { worktreeRoot: 'relative/trees' } }), /absolute folder/);
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: ['../up'] } }), /without slashes/);
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: [] } }), /one to sixteen/);
   requirementsRead.requirements = { allowedSandboxModes: ['read-only'] };
-  await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'danger-full-access' } }), error => error.status === 403 && /managed/.test(error.message));
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error.status === 403 && /managed/.test(error.message));
   assert.equal(writes(), before, 'refused options write nothing');
   client.close();
 });
 
-test('the default sandbox reads and writes the permission profile when the config selects one', async () => {
+test('a chat started without a mode gets the default one explicitly, so the engine fallback (asking) never decides it', async () => {
+  const { client, socket, configRead } = fixture(); await client.initialize();
+  const started = async (body = {}) => { await client.createThread(body); const { approvalPolicy, approvalsReviewer, permissions } = socket.sent.findLast(row => row.method === 'thread/start').params; return { approvalPolicy, approvalsReviewer, permissions }; };
+  Object.assign(configRead.config, { default_permissions: ':danger-full-access' });
+  assert.deepEqual(await started(), { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
+  assert.deepEqual(await started({ cwd: '/tmp/project' }), { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
+  assert.equal(socket.sent.findLast(row => row.method === 'config/read').params.cwd, '/tmp/project', 'the project folder\'s own config layers count');
+  configRead.config.approval_policy = 'on-request'; configRead.config.default_permissions = ':workspace';
+  assert.deepEqual(await started(), { approvalPolicy: 'on-request', approvalsReviewer: 'user', permissions: ':workspace' });
+  assert.deepEqual(await started({ permissions: 'bypass' }), { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions' }, 'a chosen mode wins');
+  configRead.config.default_permissions = ':read-only';
+  assert.deepEqual(await started(), { approvalPolicy: undefined, approvalsReviewer: undefined, permissions: undefined }, 'a custom config is left to the engine');
+  client.close();
+});
+
+test('default permissions: Full access when the config names no approval policy; each preset saves approval, reviewer and sandbox together', async () => {
   const { client, socket, configRead } = fixture(); await client.initialize();
   const user = configRead.layers[0];
-  const save = async sandboxMode => { await client.saveSettings({ version: 'user-version', options: { sandboxMode } }); return socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits; };
-  // As Masih's config: the engine prefers a layer's default_permissions to its sandbox_mode.
-  Object.assign(configRead.config, { default_permissions: ':workspace', sandbox_mode: 'read-only' }); Object.assign(user.config, { default_permissions: ':workspace', sandbox_mode: 'read-only' });
-  assert.equal((await client.settings()).options.sandboxMode, 'workspace-write');
-  assert.deepEqual(await save('danger-full-access'), [{ keyPath: 'default_permissions', value: ':danger-full-access', mergeStrategy: 'replace' }]);
-  assert.deepEqual(await save('read-only'), [{ keyPath: 'default_permissions', value: ':read-only', mergeStrategy: 'replace' }]);
-  assert.deepEqual(await save(null), [{ keyPath: 'default_permissions', value: null, mergeStrategy: 'replace' }]);
-  configRead.config.default_permissions = ':danger-full-access';
-  assert.equal((await client.settings()).options.sandboxMode, 'danger-full-access');
-  // Bypass permissions as the default is reported as itself, but Settings cannot choose it.
+  const mode = async () => (await client.settings()).options.defaultPermissions;
+  const save = async defaultPermissions => { await client.saveSettings({ version: 'user-version', options: { defaultPermissions } }); return socket.sent.findLast(row => row.method === 'config/batchWrite').params.edits; };
+  // As Masih's config: a full-access profile and no approval policy. The engine alone would ask (on-request).
+  Object.assign(configRead.config, { default_permissions: ':danger-full-access', approvals_reviewer: 'user' }); user.config.default_permissions = ':danger-full-access';
+  assert.equal(await mode(), 'full');
+  configRead.config.default_permissions = user.config.default_permissions = ':workspace';
+  assert.equal(await mode(), 'full', 'no approval policy is the Elpis default, Full access');
+  configRead.config.approval_policy = 'on-request';
+  assert.equal(await mode(), 'ask');
+  configRead.config.approvals_reviewer = 'auto_review';
+  assert.equal(await mode(), 'auto');
+  Object.assign(configRead.config, { approval_policy: 'never', default_permissions: ':danger-full-access' });
+  assert.equal(await mode(), 'full');
   configRead.config.default_permissions = ':bypass-permissions';
-  assert.equal((await client.settings()).options.sandboxMode, 'bypass-permissions');
-  await assert.rejects(client.saveSettings({ version: 'user-version', options: { sandboxMode: 'bypass-permissions' } }), /listed values/);
-  // A named profile from the config file is not one of the built-in choices.
-  configRead.config.default_permissions = user.config.default_permissions = 'dev';
-  assert.equal((await client.settings()).options.sandboxMode, 'custom');
+  assert.equal(await mode(), 'custom', 'Bypass is per chat, never a Settings preset');
+  configRead.config.default_permissions = ':read-only';
+  assert.equal(await mode(), 'custom');
+  const preset = (approval, reviewer, key, sandbox) => [{ keyPath: 'approval_policy', value: approval, mergeStrategy: 'replace' }, { keyPath: 'approvals_reviewer', value: reviewer, mergeStrategy: 'replace' }, { keyPath: key, value: sandbox, mergeStrategy: 'replace' }];
+  assert.deepEqual(await save('full'), preset('never', 'user', 'default_permissions', ':danger-full-access'));
+  assert.deepEqual(await save('ask'), preset('on-request', 'user', 'default_permissions', ':workspace'));
+  assert.deepEqual(await save('auto'), preset('on-request', 'auto_review', 'default_permissions', ':workspace'));
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'bypass' } }), /listed values/);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: null } }), /listed values/);
   // A config without profiles keeps the legacy key.
-  delete configRead.config.default_permissions; delete user.config.default_permissions;
-  assert.equal((await client.settings()).options.sandboxMode, 'read-only');
-  assert.deepEqual(await save('danger-full-access'), [{ keyPath: 'sandbox_mode', value: 'danger-full-access', mergeStrategy: 'replace' }]);
+  delete configRead.config.default_permissions; delete user.config.default_permissions; Object.assign(configRead.config, { sandbox_mode: 'workspace-write', approval_policy: 'on-request', approvals_reviewer: 'user' }); user.config.sandbox_mode = 'workspace-write';
+  assert.equal(await mode(), 'ask');
+  assert.deepEqual(await save('full'), preset('never', 'user', 'sandbox_mode', 'danger-full-access'));
   client.close();
 });
 

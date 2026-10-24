@@ -61,7 +61,7 @@ test('read disconnect reports an interrupted read while writes retain unknown-de
   });};
   const reader=new DesktopClient(socket);try{await assert.rejects(reader.models(),error=>/closed while reading/.test(error.message)&&!/outcome.*unknown/.test(error.message));assert.equal(socket.sent.length,1);}finally{reader.close();}
   const writeSocket=new EventEmitter();writeSocket.sent=[];writeSocket.close=()=>{};
-  writeSocket.send=wire=>{const message=JSON.parse(wire);writeSocket.sent.push(message);queueMicrotask(()=>{if(message.method==='model/list')writeSocket.emit('message',JSON.stringify({id:message.id,result:{data:[{model:'test-model'}]}}));else if(message.method==='thread/start')writeSocket.emit('close');});};
+  writeSocket.send=wire=>{const message=JSON.parse(wire);writeSocket.sent.push(message);queueMicrotask(()=>{if(message.method==='config/read'){writeSocket.emit('message',JSON.stringify({id:message.id,result:{config:{},layers:[]}}));return;}if(message.method==='model/list')writeSocket.emit('message',JSON.stringify({id:message.id,result:{data:[{model:'test-model'}]}}));else if(message.method==='thread/start')writeSocket.emit('close');});};
   const writer=new DesktopClient(writeSocket);try{await writer.models();await assert.rejects(writer.createThread({model:'test-model'}),/outcome is unknown/);assert.equal(writeSocket.sent.filter(message=>message.method==='thread/start').length,1);}finally{writer.close();}
 });
 

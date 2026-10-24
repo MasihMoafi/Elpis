@@ -12,20 +12,20 @@ export type PermissionMode = "ask" | "auto" | "full" | "bypass";
 
 /** ChatGPT's three approval modes plus Elpis's Bypass permissions; the bridge maps each to Elpis
  * approval and sandbox settings. */
-const MODES: { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: typeof AskIcon }[] = [
+export const PERMISSION_MODES: { id: PermissionMode; label: string; /** What the button says when room is short. */ short: string; description: string; Icon: typeof AskIcon }[] = [
   { id: "ask", label: "Ask for approval", short: "Ask", description: "Always ask to edit files outside the workspace and to use the internet", Icon: AskIcon },
   { id: "auto", label: "Approve for me", short: "Auto", description: "Only ask for actions a reviewer judges potentially unsafe", Icon: AutoApproveIcon },
   { id: "full", label: "Full access", short: "Full", description: "Unrestricted access to the internet and any file on this computer", Icon: FullAccessIcon },
   { id: "bypass", label: "Bypass permissions", short: "Bypass", description: "Run anything without asking, even commands Elpis would otherwise refuse", Icon: BypassIcon },
 ];
 /** A mode's name, as the permissions menu words it. */
-export const permissionLabel = (mode: PermissionMode) => (MODES.find(item => item.id === mode) ?? MODES[0]).label;
+export const permissionLabel = (mode: PermissionMode) => (PERMISSION_MODES.find(item => item.id === mode) ?? PERMISSION_MODES[0]).label;
 /** Bypass permissions is root access: red wherever it is offered or active. `!` outranks the pill's own colour. */
 const dangerous = (id: PermissionMode) => id === "bypass" ? "text-destructive!" : "";
 
 export function PermissionsMenu({ mode, disabled, onChange }: { mode: PermissionMode; disabled?: boolean; onChange: (mode: PermissionMode) => void }) {
   const [confirming, setConfirming] = useState(false);
-  const current = MODES.find(item => item.id === mode) ?? MODES[0];
+  const current = PERMISSION_MODES.find(item => item.id === mode) ?? PERMISSION_MODES[0];
   return <>
     <DropdownMenu>
       <DropdownMenuTrigger data-slot="composer-chip" className={`composer-pill permissions-${mode} ${dangerous(mode)}`} disabled={disabled} aria-label="Change permissions" aria-description={current.label} title={`${current.label}. Change permissions (Shift+Tab in the message box cycles Ask, Approve for me and Plan)`}>
@@ -33,7 +33,7 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
         <p className="hud-menu-title">How should Elpis's actions be approved?</p>
-        {MODES.map(item => <DropdownMenuItem key={item.id} onClick={() => item.id === "bypass" && mode !== "bypass" ? setConfirming(true) : onChange(item.id)} className={`hud-menu-item ${dangerous(item.id)}`}>
+        {PERMISSION_MODES.map(item => <DropdownMenuItem key={item.id} onClick={() => item.id === "bypass" && mode !== "bypass" ? setConfirming(true) : onChange(item.id)} className={`hud-menu-item ${dangerous(item.id)}`}>
           <item.Icon aria-hidden="true" className={dangerous(item.id)} />
           <span className="grid gap-0.5"><span>{item.label}</span><small>{item.description}</small></span>
           {item.id === mode && <Check className="ml-auto" aria-label="Current" />}

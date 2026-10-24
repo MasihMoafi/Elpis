@@ -41,7 +41,10 @@ if (role) {
     if (msg.id === undefined) return;
     let result = {};
     if (role === "engine") {
-      if (msg.method === "thread/resume") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] }, model: "gpt-test", approvalPolicy: "on-request", approvalsReviewer: process.env.APPROVAL_REVIEWER, sandbox: { type: "workspaceWrite" } };
+      // Full access is what a new chat gets by default (apps/elpis-desktop bridge/client.mjs createThread).
+      if (msg.method === "thread/resume") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] }, model: "gpt-test", ...(process.env.APPROVAL_FULL === "1"
+        ? { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: ":danger-full-access" } }
+        : { approvalPolicy: "on-request", approvalsReviewer: process.env.APPROVAL_REVIEWER, sandbox: { type: "workspaceWrite" } }) };
       if (msg.method === "thread/read") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] } };
       if (msg.method === "thread/turns/list") result = { data: [], nextCursor: null };
       if (msg.method === "thread/approval/review") {
@@ -63,7 +66,7 @@ if (role) {
     send({ id: msg.id, result });
   });
 } else {
-  for (const label of ["approved", "denied", "error", "malformed", "plan", "manual", "agy-approved", "agy-denied", "agy-error"]) {
+  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "agy-approved", "agy-denied", "agy-error"]) {
     const agy = label.startsWith("agy-"), scenario = label.replace(/^agy-/, "");
     test(`bridged permission review: ${label}`, { timeout: 15000 }, async t => {
       const root = createTestTempDir(path.join(os.tmpdir(), "elpis-approval-"));
@@ -82,7 +85,7 @@ if (role) {
         env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
           ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: adapter, ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: log,
           ELPIS_NO_AGY: agy ? "" : "1", AGY_BIN: agyBin, AGY_DEFAULT_MODEL: "fixture", ACP_BRIDGE_NO_AGENTS: "1", PORT: "0", APPROVAL_TRACE: trace,
-          APPROVAL_REVIEWER: scenario === "manual" ? "user" : "auto_review", APPROVAL_PLAN: scenario === "plan" ? "1" : "0",
+          APPROVAL_REVIEWER: scenario === "manual" ? "user" : "auto_review", APPROVAL_PLAN: scenario === "plan" ? "1" : "0", APPROVAL_FULL: scenario === "full" ? "1" : "0",
           APPROVAL_DECISION: scenario === "malformed" ? "unexpected" : scenario },
       });
       let stderr = "", socket;
@@ -117,8 +120,8 @@ if (role) {
       await until(() => records().some(row => agy ? row.role === "agy" && row.selection : row.role === "acp" && row.id === "permission" && row.result), "permission result");
       const rows = records(), review = rows.filter(row => row.method === "thread/approval/review");
       const asks = seen.filter(row => row.method === "item/commandExecution/requestApproval");
-      assert.equal(review.length, ["plan", "manual"].includes(scenario) ? 0 : 1);
-      assert.equal(asks.length, ["approved", "denied"].includes(scenario) ? 0 : 1);
+      assert.equal(review.length, ["plan", "manual", "full"].includes(scenario) ? 0 : 1);
+      assert.equal(asks.length, ["approved", "denied", "full"].includes(scenario) ? 0 : 1, "Full access never asks the person");
       if (agy) assert.equal(rows.find(row => row.role === "agy" && row.selection).selection.allowed, scenario !== "denied");
       else {
         const selection = rows.find(row => row.role === "acp" && row.id === "permission" && row.result).result.outcome;
@@ -127,7 +130,8 @@ if (role) {
       if (review.length) assert.deepEqual(review[0].params, { threadId: "chat", command: "echo review-fixture", cwd: root, reason: `${agy ? "Gemini" : "Claude"} wants to run: echo review-fixture` });
       if (scenario === "error") assert.match(asks[0].params.reason, /review fixture unavailable/);
       if (scenario === "denied") assert.ok(seen.some(row => row.method === "item/agentMessage/delta" && row.params.delta.includes("fixture guardian rationale")));
-      if (!agy) assert.ok(rows.some(row => row.method === "session/set_mode" && row.params.modeId === (scenario === "manual" ? "acceptEdits" : "auto")));
+      // Full access is Claude Code's bypassPermissions (it has no sandbox of its own to keep).
+      if (!agy) assert.ok(rows.some(row => row.method === "session/set_mode" && row.params.modeId === ({ manual: "acceptEdits", full: "bypassPermissions" }[scenario] ?? "auto")));
     });
   }
 }

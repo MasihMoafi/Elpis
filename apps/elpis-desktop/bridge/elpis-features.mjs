@@ -1,4 +1,5 @@
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mjs';
+import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -15,8 +16,7 @@ const numericFields = (value, keys) => value && typeof value === 'object'
 // native serde spellings; null removes the key so Elpis uses its own default.
 export const CONFIG_OPTIONS = {
   reasoningEffort: { keyPath: 'model_reasoning_effort', values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'persistent'] },
-  approvalPolicy: { keyPath: 'approval_policy', values: ['untrusted', 'on-request', 'never'] },
-  sandboxMode: { keyPath: 'sandbox_mode', values: ['read-only', 'workspace-write', 'danger-full-access'] },
+  defaultPermissions: { keyPath: 'approval_policy', values: ['ask', 'auto', 'full'] },
   webSearch: { keyPath: 'web_search', values: ['disabled', 'cached', 'indexed', 'live'] },
   verbosity: { keyPath: 'model_verbosity', values: ['low', 'medium', 'high'] },
   reasoningSummary: { keyPath: 'model_reasoning_summary', values: ['auto', 'concise', 'detailed', 'none'] },
@@ -27,9 +27,6 @@ export const CONFIG_OPTIONS = {
   automaticPruning: { keyPath: 'features.automatic_context_pruning', values: [true, false] },
 };
 const configValue = (config, keyPath) => keyPath.split('.').reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
-/** The built-in permission profiles by the sandbox each one is (codex-rs/protocol/src/models.rs). Bypass
- * permissions is reported so a chat is not shown as Ask; Settings cannot select it (not in CONFIG_OPTIONS). */
-const PROFILES = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access', 'bypass-permissions': ':bypass-permissions' };
 /** Whether the engine takes the default sandbox from `default_permissions`, as
  * codex-rs/core/src/config/mod.rs resolve_permission_config_syntax decides: the highest layer naming either key
  * wins, and within a layer `default_permissions` wins over `sandbox_mode`. */
@@ -37,14 +34,24 @@ function usesPermissionProfiles(read) {
   const layer = (read?.layers ?? []).find(layer => layer?.config?.default_permissions != null || layer?.config?.sandbox_mode != null);
   return layer ? layer.config.default_permissions != null : read?.config?.default_permissions != null;
 }
-function optionSnapshot(config, profiles) {
+/** New chats' mode: the preset the config names, Full access when it names no approval policy (Masih, 24 Oct: "default
+ * permission be full access"), or `custom` for any other combination, which new chats then take from the config. */
+function defaultPermissions(config, profiles) {
   const approval = config.approval_policy;
-  const tier = string(config.service_tier);
+  if (approval == null) return 'full';
   const profile = string(config.default_permissions);
+  const sandbox = !profiles ? string(config.sandbox_mode) : profile && Object.keys(PROFILES).find(mode => PROFILES[mode] === profile);
+  const reviewer = config.approvals_reviewer === 'guardian_subagent' ? 'auto_review' : config.approvals_reviewer ?? 'user';
+  return Object.keys(PERMISSION_PRESETS).find(mode => { const preset = PERMISSION_PRESETS[mode];
+    return preset.approval === approval && preset.sandbox === sandbox && (mode === 'full' || preset.reviewer === reviewer); }) ?? 'custom';
+}
+/** The mode new chats start in, from a config/read (with layers): `ask`, `auto` or `full`, or `custom`. */
+export const defaultPermissionMode = read => defaultPermissions(read?.config ?? {}, usesPermissionProfiles(read));
+function optionSnapshot(config, profiles) {
+  const tier = string(config.service_tier);
   return {
     reasoningEffort: string(config.model_reasoning_effort),
-    approvalPolicy: typeof approval === 'string' ? approval : approval && typeof approval === 'object' ? 'granular' : null,
-    sandboxMode: !profiles ? string(config.sandbox_mode) : profile && (Object.keys(PROFILES).find(mode => PROFILES[mode] === profile) ?? 'custom'), webSearch: string(config.web_search),
+    defaultPermissions: defaultPermissions(config, profiles), webSearch: string(config.web_search),
     verbosity: string(config.model_verbosity), reasoningSummary: string(config.model_reasoning_summary),
     serviceTier: tier === 'priority' ? 'fast' : tier,
     developerInstructions: string(config.developer_instructions),
@@ -52,16 +59,25 @@ function optionSnapshot(config, profiles) {
     worktreeRoot: string(configValue(config, 'desktop.git-worktree-root')),
   };
 }
-/** Native edits for the submitted options; rejects anything outside CONFIG_OPTIONS or managed policy. With
- * `profiles`, the default sandbox is saved as the built-in permission profile the engine reads instead. */
+/** Native edits for the submitted options; rejects anything outside CONFIG_OPTIONS or managed policy. Default
+ * permissions write approval policy, reviewer and sandbox together; with `profiles`, the sandbox is saved as the
+ * built-in permission profile the engine reads instead of `sandbox_mode`. */
 export function optionEdits(input, managed = {}, profiles = false) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !Object.hasOwn(CONFIG_OPTIONS, key))) throw new Error('Unsupported setting');
-  return Object.entries(input).map(([name, value]) => {
+  return Object.entries(input).flatMap(([name, value]) => {
     const option = CONFIG_OPTIONS[name];
+    if (name === 'defaultPermissions') {
+      const preset = PERMISSION_PRESETS[value];
+      if (!option.values.includes(value) || !preset) throw new Error('Choose one of the listed values');
+      if ((Array.isArray(managed.allowedApprovalPolicies) && !managed.allowedApprovalPolicies.includes(preset.approval))
+        || (Array.isArray(managed.allowedSandboxModes) && !managed.allowedSandboxModes.includes(preset.sandbox))) throw new Error('This choice is restricted by managed settings');
+      return [{ keyPath: 'approval_policy', value: preset.approval, mergeStrategy: 'replace' }, { keyPath: 'approvals_reviewer', value: preset.reviewer, mergeStrategy: 'replace' },
+        profiles ? { keyPath: 'default_permissions', value: PROFILES[preset.sandbox], mergeStrategy: 'replace' } : { keyPath: 'sandbox_mode', value: preset.sandbox, mergeStrategy: 'replace' }];
+    }
     if (value !== null) {
       if (option.values) {
         if (!option.values.includes(value)) throw new Error('Choose one of the listed values');
-        const allowed = name === 'approvalPolicy' ? managed.allowedApprovalPolicies : name === 'sandboxMode' ? managed.allowedSandboxModes : name === 'webSearch' ? managed.allowedWebSearchModes : null;
+        const allowed = name === 'webSearch' ? managed.allowedWebSearchModes : null;
         if (Array.isArray(allowed) && !allowed.includes(value)) throw new Error('This choice is restricted by managed settings');
       } else if (option.text) {
         if (typeof value !== 'string' || value.length > option.text) throw new Error('Instructions are too long');
@@ -75,7 +91,6 @@ export function optionEdits(input, managed = {}, profiles = false) {
         if (value !== null && !value.startsWith('/')) throw new Error('Give an absolute folder path');
       }
     }
-    if (name === 'sandboxMode' && profiles) return { keyPath: 'default_permissions', value: value && PROFILES[value], mergeStrategy: 'replace' };
     return { keyPath: option.keyPath, value, mergeStrategy: 'replace' };
   });
 }
