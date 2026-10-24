@@ -17,7 +17,7 @@ const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
 
 /** All session windows use one bridge URL and one workspace store. No window owns the engine. */
-function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }) {
+function createSessionWindows({ electron, url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates, mayClose, quitting = () => false, onDark, onClosed, onFocused }) {
   const { BrowserWindow, WebContentsView, session, ipcMain: globalIpc, Menu, clipboard, shell, dialog, nativeTheme } = electron;
   const windows = new Set();
   const savedText = new WeakSet();
@@ -65,6 +65,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const disposeThreads = threads.attach({ host: window, origin, ipcMain });
     const disposeNewChats = newChats.attach({ host: window, origin, ipcMain });
     const disposeQuickEntry = quickEntry?.attach({ host: window, origin, ipcMain }) ?? (() => {});
+    const disposeScreenshotPopup = screenshotPopup?.attach({ host: window, origin, ipcMain }) ?? (() => {});
     const disposeUpdates = updates?.attach({ host: window, origin, ipcMain }) ?? (() => {});
     // The app's theme colours the window buttons, Quick Entry, the browser's pages and nativeTheme; only the app's own page may report it.
     const host = window;
@@ -101,7 +102,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const dispose = () => {
       if (disposed) return; disposed = true;
       ipcMain.removeHandler('elpis:session-window');
-      detachContextMenu(); disposeImprove(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeUpdates(); disposeState(); browser.dispose(); disposeTheme();
+      detachContextMenu(); disposeImprove(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeScreenshotPopup(); disposeUpdates(); disposeState(); browser.dispose(); disposeTheme();
     };
     let flushingText = false;
     window.on('close', event => {

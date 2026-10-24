@@ -51,4 +51,5 @@ declare global { interface Window { elpisDesktop?:{improve?:{capture:(bounds:{x:
   editors?:()=>Promise<{id:string;name:string}[]>;openInEditor?:(target:string,editor:string,line?:number)=>Promise<void>;openFolder?:(folder:string)=>Promise<void>;terminal?:DesktopTerminal;onOpenThread?:(callback:(threadId:string)=>void)=>()=>void;
   /** A new chat from Quick Entry (sent with its text) or the tray's New chat (empty). */
   openSessionWindow?:(threadId?:string)=>Promise<void>;
-  onNewChat?:(callback:(text:string)=>void)=>()=>void; quickEntry?:DesktopQuickEntry; updates?:DesktopUpdates} } }
+  onNewChat?:(callback:(text:string)=>void)=>()=>void;
+  screenshotPopup?:{show:(shot:{id:string;name:string;dataURL:string})=>void; onOpen:(callback:(id:string)=>void)=>()=>void}; quickEntry?:DesktopQuickEntry; updates?:DesktopUpdates} } }

@@ -414,19 +414,26 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
   async function chooseScreenshot(choice) {
     if (!record(choice)) throw fail('Invalid screenshot choice');
     const { id, action } = choice;
-    if (typeof id !== 'string' || !['place', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
+    if (typeof id !== 'string' || !['place', 'page', 'dismiss'].includes(action)) throw fail('Invalid screenshot choice');
     const shot = pending.get(id);
     if (!shot) throw fail('This screenshot has already left the tray.', 404);
+    // The screenshot thumbnail's click (desktop/screenshot-popup.cjs): the screenshot alone on a new page, named after its file, to draw on.
+    if (action === 'page') {
+      const base = shot.name.replace(/\.png$/i, '').replace(/[/\\\x00-\x1f]/g, ' ').trim().slice(0, 90) || 'Screenshot', listed = await names(pages);
+      let name = base, suffix = 2;
+      while (listed.includes(`${name}.excalidraw`) || (await read()).scene.page.name === name) name = `${base} ${suffix++}`;
+      await changePage({ action: 'new', name });
+    }
     await locked(async () => {
       const choices = await screenshotChoices();
       if (choices.has(id)) { pending.delete(id); publishScreenshots(); throw fail('This screenshot has already left the tray.', 404); }
-      if (action === 'place' && !await importScreenshot(shot.name, shot.bytes, choice.dataURL)) throw fail('Invalid screenshot');
+      if (action !== 'dismiss' && !await importScreenshot(shot.name, shot.bytes, choice.dataURL)) throw fail('Invalid screenshot');
       choices.add(id);
       await atomic(choicesFile, JSON.stringify([...choices]));
     });
     pending.delete(id);
     publishScreenshots();
-    return action === 'place' ? read() : { dismissed: true };
+    return action === 'dismiss' ? { dismissed: true } : read();
   }
   async function tick() {
     if (running || closed) return;

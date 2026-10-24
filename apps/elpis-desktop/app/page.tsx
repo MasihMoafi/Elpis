@@ -91,6 +91,7 @@ import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList, type TaskPlan } from "@/components/task-list";
 import { chatOrigin } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
+import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
@@ -999,6 +1000,11 @@ export default function Home() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   const show = (next: View) => { if (next !== "chat") side.toggleFull(false); if (next === "settings") { setSettingsVisited(true); setSettingsNavigation(value => value + 1); } setView(next); setSidebar(false); };
+  // A click on the screenshot thumbnail puts that screenshot alone on a new Love Spot page, then shows it (A239).
+  useScreenshotPopup(ready, id => {
+    void api("/love-spot/screenshots", { id, action: "page" }).then(() => show("loveSpot"))
+      .catch(cause => setError(cause instanceof Error ? cause.message : "The screenshot could not open in Love Spot."));
+  });
   const manageConnections = () => { setSettingsSection("providers"); show("settings"); };
   /** ChatGPT's "Fork chat from here": a new chat with the history through that turn, opened at once. */
   async function forkFrom(thread: Thread, lastTurnId: string, lastItemId?: string) {

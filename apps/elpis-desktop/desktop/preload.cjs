@@ -126,6 +126,11 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
   onOpenThread:callback=>handoff('elpis:open-thread',callback),
   // A new chat from Quick Entry, with the text to send, or from the tray's New chat, with none.
   onNewChat:callback=>handoff('elpis:new-chat',callback),
+  // The screenshot thumbnail (desktop/screenshot-popup.cjs): ask for one, and hear which screenshot its click opens.
+  screenshotPopup:{
+    show:shot=>ipcRenderer.send('elpis:screenshot-popup:request',{id:String(shot?.id??''),name:String(shot?.name??''),dataURL:String(shot?.dataURL??'')}),
+    onOpen:callback=>{const open=(_event,id)=>{if(typeof id==='string')callback(id);};ipcRenderer.on('elpis:screenshot-popup:open',open);return()=>ipcRenderer.removeListener('elpis:screenshot-popup:open',open);},
+  },
   // Settings → General → Quick Entry keyboard shortcut (desktop/quick-entry.cjs).
   quickEntry:{
     status:()=>ipcRenderer.invoke('elpis:quick-entry:status'),

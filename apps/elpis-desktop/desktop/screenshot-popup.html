@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- The screenshot thumbnail (desktop/screenshot-popup.cjs), as macOS shows one: a framed picture in the bottom-right corner
+     for a few seconds. A click opens it as a new Love Spot page; × or waiting closes it. The window is transparent. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <title>Elpis screenshot</title>
+  <style>
+    /* Elpis's card, text and border colours (app/globals.css); Love Spot's red. */
+    :root { --card:#fff; --foreground:#252524; --muted:#6b6b69; --border:color-mix(in oklch, #2f2f2e 13%, #fbfbfa); --love:#c8102e; color-scheme:light; }
+    :root.dark { --card:#111317; --foreground:#e6e0d3; --muted:#9c9587; --border:color-mix(in oklch, #f2a93b 20%, #191b20); --love:#ff5a6e; color-scheme:dark; }
+    html, body { margin:0; height:100%; background:transparent; overflow:hidden; }
+    /* The padding leaves room for the shadow that sets the card off any window behind it. */
+    body { display:flex; align-items:flex-end; justify-content:flex-end; box-sizing:border-box; padding:10px; font:13px/1.3 Inter, system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+    .shot { position:relative; box-sizing:border-box; width:100%; padding:6px 6px 0; background:var(--card); color:var(--foreground); border:1px solid var(--border);
+      border-radius:12px; box-shadow:0 6px 20px rgb(0 0 0 / .28); cursor:pointer; opacity:0; transform:translateX(24px); transition:opacity .18s ease, transform .18s ease; }
+    .shot.in { opacity:1; transform:none; }
+    .shot:focus-visible { outline:2px solid var(--love); outline-offset:-2px; }
+    img { display:block; width:100%; height:136px; object-fit:contain; border-radius:7px; background:color-mix(in oklch, var(--foreground) 6%, transparent); }
+    .hint { display:flex; align-items:center; gap:6px; padding:8px 4px 9px; color:var(--muted); }
+    .hint svg { flex:none; width:14px; height:14px; color:var(--love); }
+    .close { position:absolute; top:10px; right:10px; display:none; width:22px; height:22px; padding:0; border:1px solid var(--border); border-radius:50%;
+      background:var(--card); color:var(--foreground); font:14px/1 system-ui, sans-serif; cursor:pointer; }
+    .shot:hover .close { display:block; }
+  </style>
+</head>
+<body>
+  <div class="shot" role="button" tabindex="0" aria-label="Draw on this screenshot in Love Spot">
+    <img alt="">
+    <div class="hint"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.3 3 4.5 6.7 4.5c2.1 0 3.6 1.1 4.3 2.5h2c.7-1.4 2.2-2.5 4.3-2.5 3.7 0 5.8 3.8 4.3 7.3C19.5 16.4 12 21 12 21z"/></svg>Click to draw on it in Love Spot</div>
+    <button class="close" type="button" aria-label="Close">×</button>
+  </div>
+  <script>
+    const card = document.querySelector('.shot'), image = document.querySelector('img');
+    let timer, hovered = false;
+    // About six seconds, as macOS keeps its thumbnail; the pointer on it keeps it, and leaving gives three more.
+    const wait = ms => { clearTimeout(timer); timer = setTimeout(() => { if (!hovered) window.elpisScreenshot.dismiss(); }, ms); };
+    card.addEventListener('mouseenter', () => { hovered = true; clearTimeout(timer); });
+    card.addEventListener('mouseleave', () => { hovered = false; wait(3000); });
+    card.addEventListener('click', event => { if (!event.target.closest('.close')) window.elpisScreenshot.choose(); });
+    card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') window.elpisScreenshot.choose(); });
+    document.querySelector('.close').addEventListener('click', () => window.elpisScreenshot.dismiss());
+    window.elpisScreenshot.onShow(shot => {
+      document.documentElement.classList.toggle('dark', shot.dark);
+      image.src = shot.image; image.alt = shot.name;
+      card.classList.remove('in'); requestAnimationFrame(() => card.classList.add('in'));
+      wait(6000);
+    });
+  </script>
+</body>
+</html>

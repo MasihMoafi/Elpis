@@ -9,6 +9,7 @@ const { createStateStore } = require('./state.cjs');
 const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
 const { startQuickEntry } = require('./quick-entry.cjs');
+const { createScreenshotPopup } = require('./screenshot-popup.cjs');
 const { createSessionWindows, sessionWindowMenu } = require('./session-windows.cjs');
 const { enableWaylandIme } = require('./wayland-ime.cjs');
 const { createAppUpdates, executableLauncher } = require('./app-updates.cjs');
@@ -31,7 +32,7 @@ const confirmedClose = new WeakSet();
 let initialThread = openThreadArgument(process.argv);
 let primaryOpeners;
 let sessionWindows;
-let tray, quickEntry, darkTheme = true; // `tray` stays referenced so it is not collected.
+let tray, quickEntry, screenshotPopup, darkTheme = true; // `tray` stays referenced so it is not collected.
 // The Elpis website's mark: the window, the .desktop launcher and the tray.
 const ICON = path.join(__dirname, 'elpis-icon.png');
 // Settings → General → Close to tray, off by default: closing the window quits. On, it hides and the tray keeps Elpis.
@@ -86,7 +87,7 @@ async function prepareWindows() {
     } catch (error) { sleepBlocker?.dispose(); sleepBlocker = undefined; await browserAgentSocket.close(); browserAgentSocket = undefined; throw error; }
   }
   if (!sessionWindows) {
-    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, closeToTray, updates,
+    sessionWindows = createSessionWindows({ electron: require('electron'), url: server.url, store, browserAgentSocket, quickEntry, screenshotPopup, closeToTray, updates,
       mayClose, quitting: () => closing, onDark: dark => { darkTheme = dark; }, onClosed: host => { if (window === host) { window = [...sessionWindows.windows].find(host => !sessionWindows.openersFor(host)?.loveSpot); primaryOpeners = sessionWindows.openersFor(window); } },
       onFocused: (host, openers) => { if (!openers?.loveSpot) { window = host; primaryOpeners = openers; } } });
   }
@@ -130,7 +131,7 @@ async function quitApp(restartTarget) {
       closing = true;
       sleepBlocker?.dispose(); sleepBlocker = undefined;
       await Promise.all([server?.close(), browserAgentSocket?.close()]);
-      quickEntry?.dispose?.(); tray?.destroy();
+      quickEntry?.dispose?.(); screenshotPopup?.dispose?.(); tray?.destroy();
       // All editable text is saved. A page's beforeunload must not veto explicit Quit afterward.
       for (const host of hosts) if (!host.isDestroyed()) host.webContents.on('will-prevent-unload', event => event.preventDefault());
       if (pendingRestartTarget) app.relaunch({ execPath: pendingRestartTarget, args: loveSpotApp ? ['--love-spot-app'] : [] });
@@ -167,6 +168,7 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
     ]));
     if (loveSpotApp) return void await openWindow(true);
     const showWindow = () => void openWindow().catch(showStartupError);
+    screenshotPopup = createScreenshotPopup({ BrowserWindow, screen, ipcMain, dark: () => darkTheme });
     quickEntry = startQuickEntry({ app, globalShortcut, BrowserWindow, screen, ipcMain, dark: () => darkTheme,
       drafts: { read: () => store?.read()['elpis-draft-v1:quick-entry'] ?? '', save: text => store.set('elpis-draft-v1:quick-entry', text) },
       onSubmit: text => { void openWindow().then(() => primaryOpeners.newChats.queue(text)).catch(showStartupError); } });
