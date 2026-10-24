@@ -444,3 +444,20 @@ test("a read recovers the recorded final answer and end when Claude's live event
   await until(() => f.ended(hello.turn.id), "hello is answered in a fresh turn");
   assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item.text?.includes("answered: hello?")));
 });
+
+test("an effort picked while a Claude turn runs reaches that turn and survives a bridge restart", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const efforts = () => f.agent().filter(e => e.method === "session/set_config_option" && e.params.configId === "effort");
+  const { turn } = await f.client.send(f.id, { text: "[wait] think about it" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "the turn runs");
+  const session = f.agent().find(e => e.method === "session/prompt").params.sessionId;
+  const before = efforts().length;
+  await f.client.setEffort(f.id, { effort: "xhigh" });
+  await until(() => efforts().length > before, "the running session hears the new effort");
+  assert.deepEqual(efforts().at(-1).params, { sessionId: session, configId: "effort", value: "xhigh" });
+  await until(() => f.store()[f.id]?.effort === "xhigh", "the chat's effort is saved");
+  f.release();
+  await until(() => f.ended(turn.id), "the turn ends");
+  const after = await f.restart();
+  assert.equal((await after.client.resume(f.id, {})).thread.reasoningEffort, "xhigh", "a restarted bridge reports the saved effort");
+});

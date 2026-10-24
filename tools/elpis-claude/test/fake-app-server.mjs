@@ -173,6 +173,8 @@ function handle(msg, socket) {
     case "thread/turns/list": return reply({ data: threads.get(p.threadId).turns, nextCursor: null });
     case "thread/items/list": return reply({ data: [], nextCursor: null });
     case "thread/unsubscribe": return reply({});
+    // A provider chat's effort stays with the bridge; the engine only acknowledges the request.
+    case "thread/settings/update": return reply({});
     case "turn/steer": {
       const turn = turns.get(p.expectedTurnId);
       if (!turn) return error("no running turn");

@@ -29,6 +29,8 @@ const app = agent({ name: "fake-acp-agent" })
   .onRequest("session/set_config_option", ({ params }) => {
     log({ method: "session/set_config_option", params });
     const s = sessions.get(params.sessionId);
+    // As Claude Code: an effort applies at once, also to a running prompt.
+    if (params.configId === "effort") { s.effort = params.value; return { configOptions: [modelOption(s.model)] }; }
     if (params.configId !== "model" || !models.includes(params.value)) throw new Error(`unknown option ${params.configId}=${params.value}`);
     s.model = params.value;
     return { configOptions: [modelOption(s.model)] };

@@ -2809,11 +2809,13 @@ wss.on("connection", (ws) => {
         if (!pendingNativeRoutes.has(msg.id) && claudeModel.has(p.threadId) && p.collaborationMode.settings && !isBridged(p.collaborationMode.settings.model)) p.collaborationMode.settings.model = null;
       }
       if (!pendingNativeRoutes.has(msg.id) && p.effort && claudeModel.has(p.threadId)) {
-        claudeEffort.set(p.threadId, p.effort);
-        updateStore((st) => { st[p.threadId] = { ...st[p.threadId], effort: p.effort }; });
+        // Saved later in the store's queue, so it keeps its own copy: p.effort is cleared below for the engine.
+        const effort = p.effort;
+        claudeEffort.set(p.threadId, effort);
+        updateStore((st) => { st[p.threadId] = { ...st[p.threadId], effort }; });
         // A running turn takes the new effort from its next request, not only from the next turn.
         const running = activeTurns.get(p.threadId);
-        if (running?.acp && running.sessionId) running.acp.call("session/set_config_option", { sessionId: running.sessionId, configId: "effort", value: p.effort }).catch((e) => log(`effort ${p.effort}: ${e.message}`));
+        if (running?.acp && running.sessionId) running.acp.call("session/set_config_option", { sessionId: running.sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
         p.effort = null;
       }
       engine.stdin.write(JSON.stringify(msg) + "\n");
