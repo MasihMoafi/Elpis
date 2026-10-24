@@ -64,8 +64,9 @@ import { canBack, canForward, startHistory, step, visit, type History } from "@/
 import { DiffPanel, ReviewPanel, SessionPanel, type ReviewTarget } from "@/components/slash-panels";
 import { INIT_PROMPT } from "@/lib/init-prompt";
 import { conversationMarkdown, exportFileName, lastReply } from "@/lib/slash";
-import { replyAttachment, readReply } from "@/lib/message-reply";
+import { replyAttachment, readReply, withoutReplyAttachments } from "@/lib/message-reply";
 import { SelectionReply } from "@/components/message-reply";
+import { ImageReplyProvider, type ReplyImage } from "@/components/image-reply";
 import { openControl } from "@/lib/slash-focus";
 import { reloadSettings, saveSettings, useElpisSettings } from "@/lib/settings-store";
 import { UsagePanel } from "@/components/provider-usage";
@@ -101,7 +102,7 @@ import { Tab, TabStrip } from "@/components/tab-strip";
 import { activate, activeTab, addTab, closeTab, cycle, followChat, forgetChats, makeTab, readTabs, renameTabs, startTabs, tabFor, writeTabs, type ChatTab, type ChatTabs } from "@/lib/chat-tabs";
 import { readDraft, writeDraft } from "@/lib/drafts";
 import { AttachmentChips } from "@/components/attachment-chips";
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, fitAttachments, readAttachmentDraft, transferFiles, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, TEXT_ONLY_NOTICE, attachFiles, attachmentFromFile, fitAttachments, readAttachmentDraft, transferFiles, writeAttachmentDraft, type Attachment } from "@/lib/attachments";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { changesModelCatalog } from "@/lib/account-events";
 import { loadConversationPage } from "@/lib/conversation-page";
@@ -1330,18 +1331,42 @@ export default function Home() {
   const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
   function beginReply(entry: Entry, quote?: string) {
-    if (!selectedRef.current || readOnlyRun) return;
+    if (!selectedRef.current || readOnlyRun || readingFiles.current) return;
     const attachment = replyAttachment(entry, entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis", quote);
-    const fit = fitAttachments(attachmentsRef.current.filter(part => !readReply(part)), [attachment]);
+    const fit = fitAttachments(withoutReplyAttachments(attachmentsRef.current), [attachment]);
     if (fit.problems.length) { setFileNotice(fit.problems.join("\n")); return; }
     setShellMode(false); setAttachments(fit.kept); saveAttachments(selectedRef.current.id, fit.kept); setFileNotice(""); focusComposer();
   }
 
+  async function beginImageReply(entry: Entry, image: ReplyImage) {
+    const owner = selectedRef.current?.id;
+    if (!owner || readOnlyRun || readingFiles.current) return;
+    const speaker = entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis";
+    readingFiles.current = true; setAttaching(true); setFileNotice("");
+    try {
+      const response = await fetch(image.src, { credentials: "same-origin", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw Error("This image could not be attached. Try again after it loads.");
+      const blob = await response.blob();
+      const file = await attachmentFromFile(new File([blob], image.name, { type: blob.type }));
+      if (file.type !== "image") throw Error("This picture could not be read as an image.");
+      const attachment = replyAttachment(entry, speaker, undefined, image.name.slice(0, 500));
+      file.id = `reply-image-${attachment.id}`;
+      const fit = fitAttachments(withoutReplyAttachments(savedAttachments(owner)), [attachment, file]);
+      if (fit.problems.length) throw Error(fit.problems.join("\n"));
+      saveAttachments(owner, fit.kept);
+      if (selectedRef.current?.id === owner) { setShellMode(false); setAttachments(fit.kept); requestAnimationFrame(focusComposer); }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (selectedRef.current?.id === owner) setFileNotice(message);
+      else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
+    } finally { readingFiles.current = false; setAttaching(false); }
+  }
+
   // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
   // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
-  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply });
-  live.current = { openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply };
-  const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}>{selected && !readOnlyRun && <SelectionReply key={selected.id} onQuote={(reference, text) => { const entry = shownEntries.find(entry => entryKey(entry) === reference); if (entry) live.current.beginReply(entry, text); }} />}<Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} readAloud={!e.clientPending && (e.turnId !== activeTurn || e.completedAtMs !== undefined) && e.item.status !== "inProgress"} reference={entryKey(e)} onReply={selected && !readOnlyRun && !e.clientPending && (e.item.type === "userMessage" || e.item.type === "agentMessage") ? () => live.current.beginReply(e) : undefined} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={agentName(selected) || "Elpis"} onOpenThread={id => live.current.openById(id)}
+  const live = useRef({ openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply });
+  live.current = { openById, focusComposer, replaceFrom, forkFrom, setRewindTurn, setMessageEdits, setError, beginReply, beginImageReply };
+  const conversation = useMemo(() => <ViewBoundary label="The conversation" resetKey={selected?.id}>{selected && !readOnlyRun && <SelectionReply key={selected.id} onQuote={(reference, text) => { const entry = shownEntries.find(entry => entryKey(entry) === reference); if (entry) live.current.beginReply(entry, text); }} />}<Transcript entries={shownEntries} activeTurnId={activeTurn ?? null} wrapItem={(entry, node) => <ImageReplyProvider onReply={selected && !readOnlyRun && !entry.clientPending ? image => { void live.current.beginImageReply(entry, image); } : undefined}>{node}</ImageReplyProvider>} onViewChanges={desktop && selected ? side.openChanges : undefined} mediaOf={e => selected ? mediaUrl(selected.id, e) : undefined} renderItem={e => { const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]); return <ChatMessage key={e.clientKey ?? editKey} item={e.item} readAloud={!e.clientPending && (e.turnId !== activeTurn || e.completedAtMs !== undefined) && e.item.status !== "inProgress"} reference={entryKey(e)} onReply={selected && !readOnlyRun && !e.clientPending && (e.item.type === "userMessage" || e.item.type === "agentMessage") ? () => live.current.beginReply(e) : undefined} mediaBase={selected ? mediaUrl(selected.id, e) : undefined} threads={threads} speaker={agentName(selected) || "Elpis"} onOpenThread={id => live.current.openById(id)}
             editDraft={messageEdits[editKey]} editPending={!!pendingDrafts[editKey]} onEditDraftChange={value => { live.current.setMessageEdits(previous => value === null ? without(previous, editKey) : { ...previous, [editKey]: value }); if (value === null) live.current.focusComposer(); }}
             onEdit={!e.clientPending && replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed ? text => live.current.replaceFrom(e.turnId, text, editKey) : undefined}
             editBlockedReason={replaceable && e.item.type === "userMessage" && replacementOptions.get(e.turnId)?.allowed === false ? (replacementOptions.get(e.turnId) as { allowed: false; reason: string }).reason : undefined}
@@ -2074,7 +2099,7 @@ export default function Home() {
           </div> : <form className="composer" onSubmit={e => { e.preventDefault(); send(); }} onDragOver={e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }} onDrop={e => { const files = transferFiles(e.dataTransfer); if (files.length || e.dataTransfer.types.includes("Files")) { e.preventDefault(); void addFiles(files); } }}>
             {!shellMode && <><SlashMenu menu={slash} /><MentionMenu menu={mention} /></>}
             <input ref={filePickerRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" aria-label="Choose files" onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void addFiles(files); }} />
-            <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const removed = attachmentsRef.current.find(item => item.id === id), next = attachmentsRef.current.filter(item => item.id !== id && !(item.name === DRAWING_NOTE && removed?.name === "Page drawing.jpg")); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
+            <AttachmentChips attachments={attachments} disabled={busy || attaching} onRemove={id => { const removed = attachmentsRef.current.find(item => item.id === id), next = attachmentsRef.current.filter(item => item.id !== id && item.id !== `reply-image-${id}` && !(item.name === DRAWING_NOTE && removed?.name === "Page drawing.jpg")); setAttachments(next); saveAttachments(selectedRef.current?.id || newDraftKey.current, next); focusComposer(); }} />
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {shellMode && <p role="status" className="bash-mode-notice"><span className="composer-pill">bash</span><span>Bash mode. Press Escape to return to chat.</span></p>}
             {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CopyButton, MarkdownText } from "@/components/markdown-text";
 import { ImageThumb, fileKind } from "@/components/file-cards";
+import { ReplyableImage } from "@/components/image-reply";
 import { FilePathText } from "@/components/file-ref";
 import { ItemEdits } from "@/components/edit-rows";
 import { Step } from "@/components/step";
@@ -53,7 +54,7 @@ function RecordedAttachment({part,index,mediaBase}:{part:Record<string,unknown>;
   const safeBase = mediaBase?.startsWith("/api/threads/") && !/[?#\\]/.test(mediaBase) ? mediaBase : null;
   const source = kind ? (local && safeBase ? `${safeBase}/${index}` : inlineMediaUrl(url,kind)) : null;
   if (source && !failed) return <div className="space-y-1" title={text(part.path) || undefined}><span className="break-all text-xs text-muted-foreground">{label}</span>{kind === "image"
-    ? <img src={source} alt={label} loading="lazy" className="max-h-80 max-w-full rounded-md object-contain" onError={()=>setFailed(true)}/>
+    ? <ReplyableImage src={source} name={text(part.name) || label}><img src={source} alt={label} loading="lazy" className="max-h-80 max-w-full rounded-md object-contain" onError={()=>setFailed(true)}/></ReplyableImage>
     : <audio src={source} aria-label={label} controls preload="none" className="max-w-full" onError={()=>setFailed(true)}/>}</div>;
   return <div className="break-all" title={text(part.path) || undefined}>{label}{kind && <span className="text-xs text-muted-foreground">{failed ? " — Preview unavailable; the recorded file may have moved or its format could not be read." : /^https?:\/\//i.test(url) ? <> — <a href={url} target="_blank" rel="noreferrer noopener" className="underline">Open {kind}</a></> : " — Preview unavailable."}</span>}</div>;
 }

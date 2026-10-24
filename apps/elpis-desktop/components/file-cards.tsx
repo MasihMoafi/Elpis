@@ -8,6 +8,7 @@ import { useFileActions } from "@/components/file-actions";
 import { openRef, useHost } from "@/lib/files-pane";
 import { resolveRef } from "@/lib/file-refs";
 import { Button } from "@/components/ui/button";
+import { ReplyableImage } from "@/components/image-reply";
 
 /** What the agent looked at and made, as Claude's desktop app shows it (its "wiggle" file card and screenshot
  * thumbnail): a card per created file, its kind and extension under its name, with Open and Show in folder; an image
@@ -70,8 +71,8 @@ export function ImageThumb({ src, name, large = false }: { src: string; name: st
   const [failed, setFailed] = useState(false), view = useRef<HTMLDialogElement>(null);
   if (failed) return null;
   return <>
-    <img className={large ? "activity-image" : "activity-thumb"} src={src} alt={name} title="Click to view full size" loading="lazy" decoding="async"
-      onError={() => setFailed(true)} onClick={event => { event.preventDefault(); event.stopPropagation(); view.current?.showModal(); }} />
+    <ReplyableImage src={src} name={name}><img className={large ? "activity-image" : "activity-thumb"} src={src} alt={name} title="Click to view full size" loading="lazy" decoding="async"
+      onError={() => setFailed(true)} onClick={event => { event.preventDefault(); event.stopPropagation(); view.current?.showModal(); }} /></ReplyableImage>
     {typeof document !== "undefined" && createPortal(<dialog ref={view} className="image-view" aria-label={name} onClick={event => { event.stopPropagation(); event.currentTarget.close(); }}>
       <img src={src} alt={name} />
     </dialog>, document.body)}

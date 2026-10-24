@@ -5,7 +5,7 @@ import { Reply, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { messageDomId, type MessageReply } from "@/lib/message-reply";
 
-export function ReplyPreview({ reply, onRemove, disabled }: { reply: MessageReply; onRemove?: () => void; disabled?: boolean }) {
+export function ReplyPreview({ reply, image, onRemove, disabled }: { reply: MessageReply; image?: string; onRemove?: () => void; disabled?: boolean }) {
   const [missing, setMissing] = useState(false);
   function jump() {
     const target = document.getElementById(messageDomId(reply.reference));
@@ -17,6 +17,7 @@ export function ReplyPreview({ reply, onRemove, disabled }: { reply: MessageRepl
   return <div data-slot="reply-preview" className="flex min-w-0 gap-2 rounded-md border-s-2 border-primary bg-muted/30 px-3 py-2 text-start text-sm">
     <button data-slot="reply-quote" type="button" className="grid min-w-0 flex-1 gap-1 text-start" aria-label="Jump to original message" onClick={jump}>
       <span className="flex items-center gap-1.5 font-medium text-primary"><Reply size={14} aria-hidden="true" />Replying to {reply.speaker}</span>
+      {reply.image && image && <img src={image} alt={reply.image.name} className="h-16 max-w-32 rounded-sm object-contain" />}
       <span className="line-clamp-2 whitespace-pre-wrap break-words text-muted-foreground">{reply.text}</span>
       {missing && <span role="status" className="text-muted-foreground">The original message is no longer in this view.</span>}
     </button>

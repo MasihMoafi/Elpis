@@ -15,7 +15,8 @@ export function AttachmentChips({ attachments, disabled, onRemove }: { attachmen
   return <ul aria-label="Message attachments" className="flex flex-wrap gap-2 p-2">
     {attachments.filter(part => part.name !== DRAWING_NOTE).map(part => {
       const reply = readReply(part);
-      if (reply) return <li key={part.id} className="w-full min-w-0"><ReplyPreview reply={reply} disabled={disabled} onRemove={() => onRemove(part.id)} /></li>;
+      if (reply) { const image = attachments.find(image => image.id === `reply-image-${part.id}`); return <li key={part.id} className="w-full min-w-0"><ReplyPreview reply={reply} image={image?.type === "image" ? image.dataUrl : undefined} disabled={disabled} onRemove={() => onRemove(part.id)} /></li>; }
+      if (attachments.some(reply => part.id === `reply-image-${reply.id}` && readReply(reply))) return null;
       const { Icon, kind, ext } = fileKind(part.name), caption = part.type === "image" ? "Image" : kind;
       return <li key={part.id} data-slot="attachment-chip" className="flex h-14 min-w-0 max-w-full items-center gap-2 hud-cut border border-border bg-card text-card-foreground p-1.5 pr-1 text-sm">
         <span data-slot="attachment-thumb" className="grid size-11 shrink-0 place-items-center overflow-hidden hud-cut-sm bg-muted text-muted-foreground">

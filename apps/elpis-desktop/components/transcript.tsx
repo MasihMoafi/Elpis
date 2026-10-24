@@ -17,15 +17,16 @@ import { turnEdits } from "@/lib/diff";
  * collapsed into short activity lines, and once a turn ends everything before its final reply
  * folds into "Worked for …". `renderItem` draws one message or activity in full; `mediaOf` is where the bridge serves
  * an item's recorded pictures (lib/api.ts `mediaUrl`). */
-type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined };
+type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined; wrapItem?: (entry: Entry, node: ReactNode) => ReactNode };
 export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
+  const wrapped = { ...draw, renderItem: (entry: Entry) => draw.wrapItem ? draw.wrapItem(entry, draw.renderItem(entry)) : draw.renderItem(entry) };
   const turns = turnsOf(entries);
   return <>{turns.map((turn, index) => {
     const start = turn.entries[0]?.startedAtMs, before = turns[index - 1]?.entries.at(-1), end = before?.completedAtMs ?? before?.startedAtMs;
     const pause = typeof start === "number" && typeof end === "number" && (start - end >= HOUR || new Date(start).toDateString() !== new Date(end).toDateString());
     return <Fragment key={turn.clientKey ?? turn.id}>
       {pause && <div className="turn-time"><time dateTime={new Date(start).toISOString()}>{turnTime(start)}</time></div>}
-      <Turn turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...draw} />
+      <Turn turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...wrapped} />
     </Fragment>;
   })}
     {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <div className="turn-working" role="status"><LiveStep key={activeTurnId} label="Working" /></div>}
@@ -71,7 +72,7 @@ function createdFiles(entries: Entry[]): string[] {
   return [...made];
 }
 
-function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
+function Turn({ turn, active, onViewChanges, renderItem, mediaOf, wrapItem }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
   const [workOpen, setWorkOpen] = useState(false);
   const ordered = withPrunes(turn.entries);
   // Older Claude saves represented /compact as a prompt and a synthetic tool call.
@@ -104,9 +105,9 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: Turn
     {folded.length > 0 && <details className="worked-for" onToggle={event => { if (event.target === event.currentTarget) setWorkOpen(event.currentTarget.open); }}>
       {/* Without recorded times, ChatGPT's "41 previous messages" says what the fold holds. */}
       <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : `${folded.length} previous ${folded.length === 1 ? "message" : "messages"}`}</span></DisclosureSummary>
-      {workOpen && <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} /></div>}
+      {workOpen && <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} /></div>}
     </details>}
-    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} live={active} />
+    <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={active} />
     {!active && <CreatedFiles paths={createdFiles(work)} />}
     {!active && <TurnChanges items={work.map(entry => entry.item)} onViewChanges={onViewChanges} />}
     {/* One live line at a time: a running step shows its own; otherwise the turn says it is working. */}
@@ -115,11 +116,11 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: Turn
 }
 
 /** Replies stay as they are; each run of tool activity between them becomes one line. */
-function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]; live?: boolean } & Draw) {
+function Flow({ entries, renderItem, mediaOf, wrapItem, live = false }: { entries: Entry[]; live?: boolean } & Draw) {
   const blocks: ReactNode[] = [];
   let run: Entry[] = [];
   const flush = () => {
-    if (run.length) blocks.push(<ActivityGroup key={`group-${run[0].item.id}`} entries={run} renderItem={renderItem} mediaOf={mediaOf} live={live} />);
+    if (run.length) blocks.push(<ActivityGroup key={`group-${run[0].item.id}`} entries={run} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} live={live} />);
     run = [];
   };
   for (const entry of entries) {
@@ -138,7 +139,7 @@ function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]
 /** A run of tool activity as one muted row: what is running now, with its timer, or once finished what was done
  * ("Ran 2 commands (1 failed)") and the lines it added and removed ("+3 −1"), with the images it viewed as thumbnails, as
  * Claude's rows have them. Collapsed until opened by click, Enter or Space. */
-function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[]; live: boolean } & Draw) {
+function ActivityGroup({ entries, renderItem, mediaOf, wrapItem, live }: { entries: Entry[]; live: boolean } & Draw) {
   const [open, setOpen] = useState(false);
   const items = entries.filter(entry => entry.item.type !== "smartPrune").map(entry => entry.item);
   const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
@@ -153,7 +154,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
         ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
         : <span className="activity-group-label">{summaryParts(items).map((part, index) => <Fragment key={index}>{index > 0 && ", "}{part.text}{part.failed > 0 && <> <span className="activity-group-failed">({part.failed} failed)</span></>}</Fragment>)}</span>}
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
-      {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
+      {views.map(entry => { const image = <ImageThumb src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />; return <Fragment key={entry.item.id}>{wrapItem ? wrapItem(entry, image) : image}</Fragment>; })}
     </DisclosureSummary>
     {open && <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}<CollapseDetails label="Collapse tool calls" /></div>}
   </details>;

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { FileRefLink } from "@/components/file-ref";
 import { linkFilePaths, parseHref, resolveRef } from "@/lib/file-refs";
 import { fileAssetUrl, fileScope, useHost } from "@/lib/files-pane";
+import { ReplyableImage } from "@/components/image-reply";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -55,7 +56,7 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
   const url = scope ? fileAssetUrl(scope.cwd, scope.path) : ref ? undefined : src;
   const [failed, setFailed] = useState<string | null>(null);
   if (!url || failed === url) return <span className="text-muted-foreground">{alt || "Image"} (image unavailable)</span>;
-  return <img src={url} alt={alt || ""} loading="lazy" onError={() => setFailed(url)} />;
+  return <ReplyableImage src={url} name={alt || "Image"}><img src={url} alt={alt || ""} loading="lazy" onError={() => setFailed(url)} /></ReplyableImage>;
 }
 
 const directional = (tag: "p" | "ul" | "ol" | "blockquote" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "th" | "td") =>

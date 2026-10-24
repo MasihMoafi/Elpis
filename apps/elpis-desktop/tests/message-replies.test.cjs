@@ -5,7 +5,49 @@ const fs = require('node:fs');
 const path = require('node:path');
 const preview = page => page.locator('.composer [data-slot="reply-preview"]');
 const reply = async page => page.locator('.message.agent').first().getByRole('button', { name: 'Reply', exact: true }).click();
-async function using(options, run) { const f = await fixture(options); try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); } }
+async function using(options, run) { const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, ...options }); try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); } }
+const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
+test('an image that stops being readable adds no incomplete reply or image', () => using({ chat: [['picture', 'Make a logo', '![Logo](https://images.example/unavailable.png)'], ['tail', 'Ready?', 'Picture ready']] }, async f => {
+  const { page, composer } = f;
+  await page.route('https://images.example/**', route => route.request().resourceType() === 'image'
+    ? route.fulfill({ contentType: 'image/png', body: picture })
+    : route.fulfill({ status: 404, headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.reload(); await f.open('chat-a'); await composer.fill('Keep this draft');
+  await page.getByRole('button', { name: 'Reply to image: Logo', exact: true }).click();
+  await page.getByText('This image could not be attached. Try again after it loads.', { exact: true }).waitFor();
+  assert.equal(await preview(page).count(), 0); assert.equal(await page.locator('.composer img').count(), 0);
+  assert.equal(await composer.inputValue(), 'Keep this draft');
+}));
+for (const colorScheme of ['light', 'dark']) test(`reply to one picture sends that image, preserves the draft and cancels cleanly (${colorScheme})`, () => using({ colorScheme, chat: [['pictures', 'Make two logos', '![First logo](https://images.example/first.png)\n\n![Second logo](https://images.example/second.png)'], ['tail', 'Ready?', 'Pictures ready']] }, async f => {
+  const { page, composer } = f;
+  await page.route('https://images.example/**', route => route.fulfill({ contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: picture }));
+  await page.reload(); await f.open('chat-a');
+  await page.getByRole('img', { name: 'Second logo', exact: true }).waitFor();
+  await page.locator('input[aria-label="Choose files"]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Keep this file') });
+  await composer.fill('Keep my words');
+  await page.getByRole('button', { name: 'Reply to image: First logo', exact: true }).click();
+  await preview(page).getByRole('img', { name: 'First logo', exact: true }).waitFor();
+  await page.keyboard.type('!'); assert.equal(await composer.inputValue(), 'Keep my words!');
+  await page.getByRole('button', { name: 'Reply to image: Second logo', exact: true }).click();
+  await preview(page).getByRole('img', { name: 'Second logo', exact: true }).waitFor();
+  assert.equal(await preview(page).getByRole('img', { name: 'First logo', exact: true }).count(), 0);
+  await preview(page).getByRole('button', { name: 'Cancel reply', exact: true }).click();
+  assert.equal(await page.locator('.composer img').count(), 0, 'cancel removes the reply image');
+  assert.equal(await composer.inputValue(), 'Keep my words!');
+  assert.equal(await page.locator('.composer').getByText('notes.txt', { exact: true }).count(), 1);
+  await page.getByRole('button', { name: 'Reply to image: Second logo', exact: true }).click();
+  await preview(page).getByRole('img', { name: 'Second logo', exact: true }).waitFor();
+  await f.open('chat-b'); await f.open('chat-a'); await page.reload(); await f.open('chat-a');
+  await preview(page).getByRole('img', { name: 'Second logo', exact: true }).waitFor();
+  if (process.env.ELPIS_REPLY_SHOTS) { fs.mkdirSync(process.env.ELPIS_REPLY_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_REPLY_SHOTS, `image-reply-${colorScheme}.png`) }); }
+  await composer.press('Enter'); await page.waitForFunction(() => !document.querySelector('.composer [data-slot="reply-preview"]'));
+  const sent = f.posts.find(p => p.path === '/api/threads/chat-a/turns');
+  const images = sent.body.attachments.filter(part => part.type === 'image');
+  assert.equal(images.length, 1); assert.equal(images[0].dataUrl, `data:image/png;base64,${picture.toString('base64')}`);
+  assert.equal(images[0].name, 'Second logo');
+  assert.ok(sent.body.attachments.some(part => part.name === 'notes.txt'));
+  assert.ok(sent.body.attachments.some(part => part.type === 'text' && part.text.includes('Second logo') && part.text.includes('pictures')));
+}));
 for (const colorScheme of ['light', 'dark']) test(`reply quotes either author, preserves files and text, and can be cancelled (${colorScheme})`, () => using({ colorScheme }, async f => {
   const { page, composer } = f;
   await composer.fill('Keep this draft');
