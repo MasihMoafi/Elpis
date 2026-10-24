@@ -81,7 +81,7 @@ test('says so for a binary file or one over 512 KB, instead of sending it; refus
   await refused(readFile(root, path.join(outside, 'secret.txt')), 400, /outside/i);
   await refused(readFile(root, 'escape.txt'), 400, /outside/i);
   await refused(readFile(root, 'src'), 400, /file/i);
-  await refused(readFile(root, 'missing.ts'), 404, /file/i);
+  await refused(readFile(root, 'missing.ts'), 404, /No such file in .*: missing\.ts/);
   await refused(readFile(root, ''), 400, /path/i);
 });
 

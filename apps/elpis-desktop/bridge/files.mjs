@@ -57,7 +57,7 @@ async function inside(cwd, target, kind, root = false) {
   const rel = within(abs, base) ? path.relative(base, abs) : within(abs, top) ? path.relative(top, abs) : null;
   if (rel === null) throw outside(kind);
   let real, info;
-  try { real = await fs.realpath(abs); info = await fs.stat(real); } catch { throw new BridgeError(`This ${kind} is unavailable.`, 404); }
+  try { real = await fs.realpath(abs); info = await fs.stat(real); } catch { throw new BridgeError(`No such ${kind} in ${base}: ${rel.split(path.sep).join('/') || '.'}`, 404); }
   if (!within(real, top)) throw outside(kind);
   if (kind === 'file' ? !info.isFile() : !info.isDirectory()) throw new BridgeError(`Not a ${kind}.`);
   return { real, rel: rel.split(path.sep).join('/'), info };
