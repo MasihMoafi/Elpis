@@ -9,7 +9,7 @@ type Options = {
   order: (id: string) => readonly string[];
   onMove: (id: string, place: Place) => void | Promise<void>;
   canDrop?: (id: string, target: string) => boolean;
-  dropInto?: (id: string, target: string) => boolean;
+  dropInto?: (id: string, target: string) => boolean | "middle";
 };
 
 /** The chat list's native drag interaction. Lists own their membership and save transaction; every row shares
@@ -20,12 +20,16 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
   const clear = () => { dragging.current = null; setDrop(null); };
   const allowed = (id: string, target: string) => id !== target && canDrop(id, target);
   function targetProps(key: string, into = false) {
+    const markAt = (event: DragEvent<HTMLElement>): Mark => {
+      const box = event.currentTarget.getBoundingClientRect(), fraction = (event.clientY - box.top) / box.height;
+      const nest = dropInto(dragging.current!, key);
+      return into || nest === true || nest === "middle" && fraction > .25 && fraction < .75 ? "into" : fraction > .5 ? "after" : "before";
+    };
     const over = (event: DragEvent<HTMLElement>) => {
       const id = dragging.current;
       if (!id || !event.dataTransfer.types.includes(dragType) || !allowed(id, key)) return;
       event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move";
-      const box = event.currentTarget.getBoundingClientRect();
-      const mark = into || dropInto(id, key) ? "into" : event.clientY > box.top + box.height / 2 ? "after" : "before";
+      const mark = markAt(event);
       setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
     };
     return {
@@ -37,12 +41,12 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
         if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDrop(previous => previous?.id === key ? null : previous);
       },
       onDrop: (event: DragEvent<HTMLElement>) => {
-        const id = dragging.current, mark = drop?.id === key ? drop.mark : null;
+        const id = dragging.current, mark = id ? markAt(event) : null;
         const accept = !!id && event.dataTransfer.types.includes(dragType) && allowed(id, key);
         clear();
         if (!id || !accept) return;
         event.preventDefault(); event.stopPropagation();
-        onMove(id, { target: key, after: mark === "after", into: into || dropInto(id, key) });
+        onMove(id, { target: key, after: mark === "after", into: mark === "into" });
       },
     };
   }
@@ -65,7 +69,7 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
         const target = at < 0 ? undefined : ids[at + by];
         if (!target || !allowed(id, target)) return;
         const focused = document.activeElement;
-        const saved = onMove(id, { target, after: by > 0, into: dropInto(id, target) });
+        const saved = onMove(id, { target, after: by > 0, into: dropInto(id, target) === true });
         void Promise.resolve(saved).then(() => requestAnimationFrame(() => {
           if (focused instanceof HTMLElement && document.activeElement === document.body) {
             const next = focused.isConnected ? focused : focused.id ? document.getElementById(focused.id) : null;

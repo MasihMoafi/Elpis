@@ -20,7 +20,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
 import { useBookmarks, useChatAttention, usePins } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
-import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
+import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { configuredShortcuts, shortcutFor, shortcutHint } from "@/lib/shortcuts";
 import { CommandMenu, type CommandAction } from "@/components/command-menu";
 import { ImproveElpis } from "@/components/improve-elpis";
@@ -74,6 +74,7 @@ import { Voice } from "@/components/voice";
 import { ReadAloud } from "@/components/read-aloud";
 import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { chooseProject, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
+import { PutUnderDialog } from "@/components/put-under-dialog";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
@@ -170,7 +171,9 @@ export default function Home() {
   const [workflowProjectId, setWorkflowProjectId] = useState<string | null>(null);
   const [projectChats, setProjectChats] = useState<Record<string, string>>({});
   const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
-  const [projectMove, setProjectMove] = useState<Thread | null>(null);
+  const [projectMove, setProjectMove] = useState<Thread[] | null>(null);
+  const [newProjectFor, setNewProjectFor] = useState<Thread[] | null>(null);
+  const [nestTargets, setNestTargets] = useState<Thread[] | null>(null);
   const [projectChanging, setProjectChanging] = useState(false);
   const project = projects.find(item => item.id === projectId) ?? null;
   const workflowProject = project ?? projects.find(item => item.id === workflowProjectId) ?? null, workflowFolder = newChatFolder(cwd || workflowProject?.cwd || "") || undefined;
@@ -191,9 +194,10 @@ export default function Home() {
   useEffect(() => { setChatGroups(readGroups(appStorage())); }, []);
   function updateGroups(change: (state: ChatGroups) => ChatGroups) {
     const next = change(chatGroupsRef.current);
-    if (!writeGroups(next, appStorage())) { setError("Could not save chat groups on this device."); return; }
+    if (!writeGroups(next, appStorage())) { setError("Could not save chat groups on this device."); return false; }
     chatListOrder.release();
     chatGroupsRef.current = next; setChatGroups(next);
+    return true;
   }
   const [error, setError] = useState("");
   const { attention, setAttention, planTurns, markRead } = useChatAttention(planAnswered, setError);
@@ -910,11 +914,19 @@ export default function Home() {
     if (owner) { showTab(owner); return; }
     updateTabs(addTab(tabsRef.current, makeTab(thread.id, title(thread)))); void loadThread(thread);
   }
-  function assignProject(threadId: string, destination: string | null): Promise<void> {
+  function assignProject(threadIds: string | string[], destination: string | null, parentId?: string): Promise<void> {
     const saved = projectChatSave.current.catch(() => {}).then(async () => {
-      const next = { ...projectChatsRef.current };
-      if (destination) next[threadId] = destination; else delete next[threadId];
-      await saveProjectChats(next); projectChatsRef.current = next; setProjectChats(next);
+      const ids = new Set(typeof threadIds === "string" ? [threadIds] : threadIds);
+      if (parentId === undefined) for (const [child, parent] of Object.entries(chatGroupsRef.current.parents ?? {})) if (ids.has(parent)) ids.add(child);
+      const previous = projectChatsRef.current, next = { ...previous };
+      for (const id of ids) { if (destination) next[id] = destination; else delete next[id]; }
+      if (parentId && !canNest([...ids], parentId)) throw Error("Choose another top-level chat. Nesting is one level only.");
+      await saveProjectChats(next);
+      const state = chatGroupsRef.current;
+      const groups = parentId ? putChatsUnder(state, [...ids], parentId) : putChatsUnder(state, [...ids].filter(id => state.parents?.[id] && !ids.has(state.parents[id])), null);
+      if (!writeGroups(groups, appStorage())) { await saveProjectChats(previous); throw Error("Could not save chat placement on this device."); }
+      chatListOrder.release(); chatGroupsRef.current = groups; setChatGroups(groups);
+      projectChatsRef.current = next; setProjectChats(next); setMarked([]);
       if (destination) setCollapsedProjects(previous => ({ ...previous, [destination]: false }));
     });
     projectChatSave.current = saved; return saved;
@@ -930,6 +942,14 @@ export default function Home() {
     const known = projects.some(item => item.id === next.id), updated = known ? projects.map(item => item.id === next.id ? next : item) : [...projects, next];
     if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
     await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setWorkflowProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
+  }
+  function newProjectFrom(chats: Thread[]) { setNewProjectFor(chats); setProjectEdit(null); }
+  async function saveProjectFromChats(next: Project) {
+    const updated = [...projects, next];
+    await saveProjects(updated, projectId);
+    try { await assignProject((newProjectFor ?? []).map(chat => chat.id), next.id); }
+    catch (cause) { await saveProjects(projects, projectId); throw cause; }
+    setProjects(updated); setNewProjectFor(null);
   }
   /** "Add new project" in the sidebar and the project menu: one click opens the native folder chooser, as in the ChatGPT app.
    * A browser has no chooser, so it asks for the path instead. */
@@ -1537,6 +1557,10 @@ export default function Home() {
   const sortedChats = sortChats(threads.filter(thread => !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order);
   const chatListOrder = useChatListOrder(chatGroups.sortBy === "manual" ? sortedChats : prioritizeChats(sortedChats, thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
   const ordinaryThreads = chatListOrder.chats;
+  // Missing parents never hide chats (for example, when only part of history is loaded).
+  const ordinaryIds = useMemo(() => new Set(threads.filter(thread => !isAgent(thread) && !isAgentRun(thread)).map(thread => thread.id)), [threads]);
+  const displayParents = useMemo(() => Object.fromEntries(Object.entries(chatGroups.parents ?? {}).filter(([child, parent]) => ordinaryIds.has(child) && ordinaryIds.has(parent))), [chatGroups.parents, ordinaryIds]);
+  const displayParentIds = useMemo(() => new Set(Object.values(displayParents)), [displayParents]);
   const agentRuns = threads.filter(isAgentRun);
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
   const agentParents = new Set(threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []));
@@ -1551,7 +1575,7 @@ export default function Home() {
   // The engine's search matches letter case exactly; a listed chat's title and first message match in any case here.
   const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
-  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!!searchTerm || !t.parentThreadId || !searchedThreads.some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
+  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!!searchTerm || !displayParents[t.id] && (!t.parentThreadId || !searchedThreads.some(p => p.id === t.parentThreadId)))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results keep the search's order.
@@ -1569,7 +1593,7 @@ export default function Home() {
   const collectAgents = (id: string, seen = new Set<string>()) => {
     if (!expanded[id] || seen.has(id)) return;
     const next = new Set(seen).add(id);
-    for (const child of searchedThreads.filter(thread => thread.parentThreadId === id)) {
+    for (const child of searchedThreads.filter(thread => (thread.parentThreadId ?? displayParents[thread.id]) === id)) {
       inlineAgents.add(child.id); collectAgents(child.id, next);
     }
   };
@@ -1715,25 +1739,55 @@ export default function Home() {
       onMove: (groupId: string | null) => { updateGroups(state => moveChats(state, ids, groupId)); setMarked([]); },
       onNew: () => setNewGroupFor(ids) };
   }
+  const movingIds = (id: string) => marked.includes(id) ? marked : [id];
+  function canNest(ids: string[], parent: string) {
+    return ordinaryIds.has(parent) && ids.length > 0 && ids.every(id => ordinaryIds.has(id)) && putChatsUnder(chatGroupsRef.current, ids, parent) !== chatGroupsRef.current;
+  }
+  async function nestChats(ids: string[], parent: string) {
+    await assignProject(ids, projectChatsRef.current[parent] ?? null, parent);
+    setExpanded(previous => ({ ...previous, [parent]: true }));
+    if (!checkedChildren.current.has(parent)) void loadChildren(parent, undefined, false);
+  }
+  function organizationActions(thread: Thread) {
+    if (isAgent(thread) || isAgentRun(thread)) return {};
+    return { onMoveToProject: setProjectMove, onNewProject: newProjectFrom, onPutUnder: setNestTargets,
+      onTakeOut: movingIds(thread.id).some(id => displayParents[id]) ? (chats: Thread[]) => {
+        if (updateGroups(state => putChatsUnder(state, chats.map(chat => chat.id), null))) setMarked([]);
+      } : undefined };
+  }
   // Manual order: drag a chat onto another (or onto a group's heading, or Recents') or press Alt+Up/Down on it. Pinned chats
   // stay pinned and others stay unpinned; a drop in another section moves the chat there. The first move makes Sort by Manual.
-  const sectionOf = (id: string) => pins.includes(id) ? "pinned" : projectChats[id] ? `project:${projectChats[id]}` : chatGroups.groupBy === "custom" && chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? `group:${chatGroups.members[id]}` : "recents";
-  const sectionChats = (section: string) => section === "pinned" ? pinnedChats : section === "recents" ? recentChats : section.startsWith("project:") ? ordinaryThreads.filter(thread => !isAgent(thread) && !pins.includes(thread.id) && projectChats[thread.id] === section.slice(8)) : grouped?.groups.find(item => `group:${item.group.id}` === section)?.chats ?? [];
+  const sectionOf = (id: string) => displayParents[id] ? `under:${displayParents[id]}` : pins.includes(id) ? "pinned" : projectChats[id] ? `project:${projectChats[id]}` : chatGroups.groupBy === "custom" && chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? `group:${chatGroups.members[id]}` : "recents";
+  const sectionChats = (section: string) => section.startsWith("under:") ? ordinaryThreads.filter(thread => displayParents[thread.id] === section.slice(6)) : section === "pinned" ? pinnedChats : section === "recents" ? recentChats : section.startsWith("project:") ? ordinaryThreads.filter(thread => !isAgent(thread) && !displayParents[thread.id] && !pins.includes(thread.id) && projectChats[thread.id] === section.slice(8)) : grouped?.groups.find(item => `group:${item.group.id}` === section)?.chats ?? [];
   function placeDragged(id: string, section: string, place?: { target: string; after: boolean }) {
+    const moving = movingIds(id);
+    const inParent = section.startsWith("under:");
     const destination = section.startsWith("project:") ? section.slice(8) : null;
-    if (section !== "pinned" && (projectChatsRef.current[id] ?? null) !== destination) void assignProject(id, destination).catch(cause => setError(String(cause)));
     const ids = ordinaryThreads.filter(thread => !isAgent(thread)).map(thread => thread.id);
-    updateGroups(state => placeChat(state, place && place.target !== id ? move(ids, id, place) : ids, id, section === "pinned" || destination ? undefined : section === "recents" ? null : section.slice(6)));
+    const placeInList = () => updateGroups(state => {
+      let next = inParent ? state : putChatsUnder(state, moving, null), order = ids;
+      for (const movingId of place?.after ? [...moving].reverse() : moving) {
+        if (place && !moving.includes(place.target)) order = move(order, movingId, place);
+        next = placeChat(next, order, movingId, inParent || section === "pinned" || destination ? undefined : section === "recents" ? null : section.slice(6));
+      }
+      return next;
+    });
+    if (!inParent && section !== "pinned" && moving.some(id => (projectChatsRef.current[id] ?? null) !== destination)) return assignProject(moving, destination).then(placeInList).catch(cause => setError(String(cause)));
+    placeInList();
   }
   const chatReorder = useReorder({ dragType: CHAT_DRAG_TYPE,
     order: id => sectionChats(sectionOf(id)).map(thread => thread.id),
+    dropInto: (id, target) => canNest(movingIds(id), target) ? "middle" : false,
     canDrop: (id, target) => {
+      if (ordinaryIds.has(target) && movingIds(id).includes(target)) return false;
+      if (displayParents[target]) return !searchTerm && movingIds(id).every(source => displayParents[source] === displayParents[target]);
       const section = ordinaryThreads.some(thread => thread.id === target) ? sectionOf(target) : target;
       return !searchTerm && ordinaryThreads.some(thread => thread.id === id && !isAgent(thread)) &&
         (section === "pinned") === pins.includes(id) &&
         (section === "pinned" || section === "recents" || section.startsWith("group:") && chatGroups.groups.some(group => `group:${group.id}` === section) || section.startsWith("project:") && projects.some(project => `project:${project.id}` === section));
     },
     onMove: (id, place) => {
+      if (place.into && ordinaryIds.has(place.target)) { void nestChats(movingIds(id), place.target).catch(cause => setError(String(cause))); return; }
       const section = place.into ? place.target : sectionOf(place.target);
       if (!place.into) { placeDragged(id, section, place); return; }
       const others = sectionChats(section).filter(thread => thread.id !== id);
@@ -1751,22 +1805,23 @@ export default function Home() {
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
-    const canExpandAgents = !searchTerm && (agentParents.has(thread.id) || !!childCursors[thread.id]);
+    const hasAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
+    const canExpandAgents = !searchTerm && (hasAgents || displayParentIds.has(thread.id)), branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
       bookmarked={bookmarked} onBookmark={toggleBookmark}
-      onMoveToProject={!isAgent(thread) ? setProjectMove : undefined}
+      {...organizationActions(thread)}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
-      group={depth ? undefined : groupMenu(thread, marked.length > 1 && marked.includes(thread.id) ? marked : [thread.id])}
-      agents={!depth && !isAgent(thread) && canExpandAgents ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
+      group={depth ? undefined : groupMenu(thread, movingIds(thread.id))}
+      agents={!depth && !isAgent(thread) && hasAgents && !searchTerm ? { shown: preferences.showAgentRuns && agentRunsOpen, onToggle: () => {
         try { if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true }); }
         catch (cause) { setError(String(cause instanceof Error ? cause.message : cause)); return; }
         setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
       } } : undefined}
-      area={<ReorderItem reorder={chatReorder} itemId={thread.id} enabled={!depth && !isAgent(thread) && !searchTerm}
+      area={<ReorderItem reorder={chatReorder} itemId={thread.id} enabled={!isAgent(thread) && !searchTerm}
         render={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${depth * 14}px` } : undefined} />} />}>
       {menu => <>
-      {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} aria-expanded={!!expanded[thread.id]} title={`${expanded[thread.id] ? "Collapse" : "Expand"} agents in ${name}`} onClick={() => {
+      {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${expanded[thread.id] ? "Collapse" : "Expand"} ${branchName} in ${name}`} aria-expanded={!!expanded[thread.id]} title={`${expanded[thread.id] ? "Collapse" : "Expand"} ${branchName} in ${name}`} onClick={() => {
         if (expanded[thread.id]) setExpanded(previous => ({ ...previous, [thread.id]: false }));
         else { setExpanded(previous => ({ ...previous, [thread.id]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
       }}><ChevronRight size={13} viewBox="4 4 16 16" className={expanded[thread.id] ? "rotate-90" : undefined} /></Button>}
@@ -1791,7 +1846,7 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} onMoveToProject={!isAgent(thread) ? setProjectMove : undefined} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
@@ -1804,7 +1859,8 @@ export default function Home() {
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return searchedThreads.filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, next));
+    const children = searchedThreads.filter(c => (c.parentThreadId ?? displayParents[c.id]) === parentId);
+    return (displayParentIds.has(parentId) ? sortChats(children, chatGroups.sortBy, title, chatGroups.order) : children).map(child => threadBranch(child, depth, next));
   }
   function threadBranch(thread: Thread, depth = 0, seen = new Set<string>()) {
     return <div key={thread.id}>{threadRow(thread, depth)}{!searchTerm && expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
@@ -1856,8 +1912,9 @@ export default function Home() {
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash done={ready && connected} />}
-    <ProjectDialog projects={projects} editing={projectEdit} onClose={() => setProjectEdit(undefined)} onSave={saveProject} />
-    <MoveChatDialog name={projectMove ? title(projectMove) : null} projects={projects} currentId={projectMove ? projectChats[projectMove.id] ?? null : null} onMove={id => projectMove ? assignProject(projectMove.id, id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
+    <ProjectDialog projects={projects} editing={projectEdit} folders={projectEdit !== undefined ? [cwd, ...ordinaryThreads.map(thread => thread.cwd ?? "")] : []} description={newProjectFor ? `${newProjectFor.length} chats will move into this project. Their working folders stay as they are.` : undefined} onClose={() => { setProjectEdit(undefined); setNewProjectFor(null); }} onSave={newProjectFor ? saveProjectFromChats : saveProject} />
+    <MoveChatDialog name={projectMove ? projectMove.length === 1 ? title(projectMove[0]) : `${projectMove.length} selected chats` : null} count={projectMove?.length} projects={projects} currentId={projectMove ? new Set(projectMove.map(chat => projectChats[chat.id] ?? null)).size === 1 ? projectChats[projectMove[0].id] ?? null : undefined : null} onMove={id => projectMove ? assignProject(projectMove.map(chat => chat.id), id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
+    <PutUnderDialog chats={nestTargets} candidates={nestTargets ? ordinaryThreads.filter(thread => canNest(nestTargets.map(chat => chat.id), thread.id)) : []} onPutUnder={parent => nestChats((nestTargets ?? []).map(chat => chat.id), parent)} onClose={() => setNestTargets(null)} />
     <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
       onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
     <DeleteChatsDialog threads={deleteTargets} trash={trashChats} alwaysConfirm={deleteRunHistory} onClose={() => { setDeleteTargets(null); setDeleteRunHistory(false); }} />
@@ -1872,7 +1929,7 @@ export default function Home() {
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
-          {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && projectChats[t.id] === item.id && !pins.includes(t.id));
+          {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && !displayParents[t.id] && projectChats[t.id] === item.id && !pins.includes(t.id));
             return <SidebarGroup key={item.id} kind="project" dropProps={chatReorder.targetProps(`project:${item.id}`, true)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
               wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<ReorderItem reorder={projectReorder} itemId={item.id} render={area as React.ReactElement<React.HTMLAttributes<HTMLElement>>} />}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}

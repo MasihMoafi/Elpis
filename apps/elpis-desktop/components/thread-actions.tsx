@@ -15,7 +15,10 @@ import type { ChatGroup } from "@/lib/chat-groups";
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
 
 type Props = {
-  onMoveToProject?: (thread: Thread) => void;
+  onMoveToProject?: (threads: Thread[]) => void;
+  onNewProject?: (threads: Thread[]) => void;
+  onPutUnder?: (threads: Thread[]) => void;
+  onTakeOut?: (threads: Thread[]) => void;
   thread: Thread;
   /** Deletes after this menu's own confirmation. */
   onDelete?: (thread: Thread) => Promise<void>;
@@ -54,7 +57,7 @@ type Props = {
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, bookmarked, onBookmark, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject }: Props) {
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, bookmarked, onBookmark, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject, onNewProject, onPutUnder, onTakeOut }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -89,12 +92,18 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
     { id: "ungrouped", label: "Ungrouped", checked: group.current === null, run: () => group.onMove(null) },
     { id: "new-group", label: "New group…", icon: <FolderPlus size={14} />, separated: true, run: group.onNew },
   ] } : undefined;
-  const actions = (many ? [move, archive, remove] : [
+  const organization: (MenuAction | undefined)[] = [
+    move,
+    onPutUnder ? { id: "put-under", label: "Put under…", icon: <FolderInput size={14} />, run: () => onPutUnder(many ?? [thread]) } : undefined,
+    onTakeOut ? { id: "take-out", label: "Take out", run: () => onTakeOut(many ?? [thread]) } : undefined,
+    onMoveToProject ? { id: "project", label: "Move to project…", icon: <FolderInput size={14} />, run: () => onMoveToProject(many ?? [thread]) } : undefined,
+    onNewProject ? { id: "new-project", label: "New project from these…", icon: <FolderPlus size={14} />, run: () => onNewProject(many ?? [thread]) } : undefined,
+  ];
+  const actions = (many ? [...organization, archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
-    move,
-    onMoveToProject ? { id: "project", label: "Move to project…", icon: <FolderInput size={14} />, run: () => onMoveToProject(thread) } : undefined,
+    ...organization,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
       : { id: "read", label: attention.unread ? "Mark as read" : "Mark as unread", icon: attention.unread ? <Eye size={14} /> : <EyeOff size={14} />, hint: "U", run: attention.onToggleRead } : undefined,
     agents ? { id: "agents", label: agents.shown ? "Hide agents" : "Show agents", icon: <AgentsIcon size={14} />, run: agents.onToggle } : undefined,

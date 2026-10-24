@@ -11,7 +11,7 @@ export type GroupBy = "none" | "custom";
 export type SortBy = "recency" | "created" | "name" | "manual";
 /** `members`: chat id → group id; `collapsed`: groups drawn closed; `order`: chat ids in the person's order, which Pinned,
  * each group and Recents each show in turn (kept when another sort is chosen, used when "manual" is). */
-export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[] };
+export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[]; parents?: Record<string, string> };
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
@@ -39,11 +39,26 @@ export function readGroups(storage: Storage): ChatGroups {
   const members = Object.fromEntries(Object.entries(record(value.members) ? value.members : {}).filter((entry): entry is [string, string] => typeof entry[1] === "string" && known.has(entry[1])));
   const collapsed = [...new Set((Array.isArray(value.collapsed) ? value.collapsed : []).filter((id: unknown): id is string => typeof id === "string" && known.has(id)))];
   const order = [...new Set((Array.isArray(value.order) ? value.order : []).filter((id: unknown): id is string => typeof id === "string" && !!id))];
+  const savedParents = record(value.parents) ? value.parents : {};
+  const parents = Object.fromEntries(Object.entries(savedParents).filter((entry): entry is [string, string] => {
+    const [child, parent] = entry;
+    return !!child && typeof parent === "string" && !!parent && child !== parent && !savedParents[parent];
+  }));
   return {
     groups, members, collapsed, order,
+    ...(Object.keys(parents).length ? { parents } : {}),
     groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? value.groupBy as GroupBy : "none",
     sortBy: SORT_BY.includes(value.sortBy as SortBy) ? value.sortBy as SortBy : "recency",
   };
+}
+
+/** Display nesting only: a parent cannot itself be nested, and a chat with display children stays a root. */
+export function putChatsUnder(state: ChatGroups, ids: string[], parent: string | null): ChatGroups {
+  const parents = { ...state.parents };
+  if (parent && (parents[parent] || ids.includes(parent) || Object.values(parents).some(id => ids.includes(id)))) return state;
+  for (const id of ids) { if (parent) parents[id] = parent; else delete parents[id]; }
+  const { parents: _previous, ...rest } = state;
+  return Object.keys(parents).length ? { ...rest, parents } : rest;
 }
 
 /** False when the store refused it. */

@@ -189,3 +189,14 @@ Masih: “I couldn't and can't hear your voice.” Reproduced: connected peer an
 ## Automatic Matilda chat voice — 24 October 2026
 
 Masih: “I wanted you to play as you write me ... do that voice fix too for me.” New live Matilda chat replies start the existing sentence-based voice stream automatically before completion. No historical replay, commentary reading, delta restarts or duplicate live-call audio. Respect Voice off; Stop works during streaming. Test no-click playback, mute, one start per turn, and actual non-silent audio before completion.
+
+## Organize existing chats — 24 October 2026
+
+Masih: “put them in say car-scraper-pro chat; so they be its subagents (not really) in looks” and “make projects after the fact from the recent chats”. Uses R5/R23/R29/R34/R41/R57.
+
+| ID | Requirement | Acceptance check | Status |
+| --- | --- | --- | --- |
+| O1 | Put one or several marked chats under another chat through “Put under…” or a drop in the middle of its row; edge drops still reorder. Save the display relationship locally, use the existing agent row and parent chevron, allow one level and no cycles, and undo it through “Take out”. | Real clicks, keys and pointer drags nest six BoomDeal chats under car-scraper-pro, fold/unfold, reload and take out; reject self/cycle/deeper nesting, keep search flat and engine threads unchanged; inspect light/dark screenshots. | Mock-bridge UI verified; packaged acceptance pending |
+| O2 | “Move to project…” and “New project from these…” act on every marked chat, including running chats. Creating asks for a name and a known folder menu or folder chooser. Project chats leave Recents; cancel or failed persistence changes nothing. | Move a mixed selection to an existing/new project, reload and move back; verify one row per chat, unchanged engine folders, running status, cancellation and failed saves; inspect light/dark screenshots. | Mock-bridge UI verified; packaged acceptance pending |
+
+Evidence: `tests/chat-organize.test.cjs` (9 cases), retained sidebar/project checks (32 cases), build and TypeScript pass. Screenshots inspected: `~/.cache/elpis-shots/organize-{nested,project,project-dialog,put-under}-{light,dark}.png`. Full evidence and remaining limits: `~/.cache/elpis-briefs/cc/organize.progress.md`.
