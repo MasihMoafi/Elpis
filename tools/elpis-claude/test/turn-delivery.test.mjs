@@ -238,6 +238,26 @@ test("A128: Stop interrupts the slow tool and cancels waiting messages", { timeo
   assert.deepEqual(f.agent().filter(e => e.method === "session/prompt").map(e => e.params.prompt[0].text), ["[wait] [tool-flight] [tool-race] stop this", "after Stop"], "Stop must not silently restart with a waiting message");
 });
 
+test("A224/A255: /compact forced during a Claude reply stops the reply, then compacts the Claude session", { timeout: 20000 }, async t => {
+  // What the terminal does on an empty Enter with /compact queued: turn/interrupt, then thread/compact/start as
+  // soon as the interrupted turn has ended.
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "[hang] a long reply" });
+  await until(() => f.agent().some(e => e.method === "session/prompt"), "the reply is running");
+  await f.client.interrupt(f.id, { turnId: turn.id });
+  await until(() => f.ended(turn.id), "the reply stops");
+  assert.equal(f.ended(turn.id).params.turn.status, "interrupted");
+  await f.client.compact(f.id, { instructions: "keep the open questions" });
+  await until(() => f.agent().filter(e => e.method === "session/prompt").length === 2, "Claude is asked to compact");
+  const prompts = f.agent().filter(e => e.method === "session/prompt").map(e => e.params.prompt[0].text);
+  assert.deepEqual(prompts, ["[hang] a long reply", "/compact keep the open questions"], "Claude compacts its own session, not as a chat message");
+  const cancel = f.agent().findIndex(e => e.method === "session/cancel"), compact = f.agent().findLastIndex(e => e.method === "session/prompt");
+  assert.ok(cancel >= 0 && cancel < compact, "the reply is cancelled before the compaction starts");
+  await until(() => f.events.filter(e => e.method === "turn/completed").length === 2, "the compaction ends");
+  const engine = fs.readFileSync(f.env.FAKE_ENGINE_LOG, "utf8");
+  assert.ok(!engine.includes("thread/compact/start"), "a Claude chat's compaction never falls through to the engine");
+});
+
 test("A128: desktop reload while a tool has waiting messages keeps their order and answer", { timeout: 20000 }, async t => {
   const f = await fixture(t);
   const initial = "[wait] [tool-flight] [tool-race] reload this";
