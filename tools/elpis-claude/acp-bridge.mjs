@@ -1,12 +1,14 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { splitContext, splitTokens, transcriptReader } from "./context-split.mjs";
-import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
+import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime, createDrainServer, drainFile, probe, startToken, allowEngines } from "./shared-runtime.mjs";
+import { closeWhenQuiet, currentDrain, drainProxy, trackRequests } from "./handover.mjs";
+import { withFileLock } from "./file-lock.mjs";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
 import { ClaudeAccounts } from "./claude-accounts.mjs";
 import { recordedClaudeEnd } from "./claude-turn-record.mjs";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync, watch } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { readFile, mkdir } from "node:fs/promises";
 import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
 import { homedir } from "node:os";
@@ -524,6 +526,7 @@ async function stopBridge(successor) {
   if (stopping) return;
   stopping = true;
   clearTimeout(idleTimer);
+  if (draining) { draining.server.close(); try { if (JSON.parse(readFileSync(drainFile(), "utf8")).pid === process.pid) rmSync(drainFile(), { force: true }); } catch {} }
   stopBridgeListener();
   await storeChain;
   for (const c of contexts) c.close();
@@ -532,8 +535,55 @@ async function stopBridge(successor) {
   if (successor) spawn(process.execPath, [join(dirname(successor), "shared-runtime.mjs"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
   process.exit(0);
 }
+// A newer installation takes over while chats work (handover.mjs): this bridge gives it bridge.sock at once and keeps
+// only the chats working now, which the newer bridge reaches through this drain socket until each is done.
+let draining = null; // { threads, released, server }
+function busyThreads() { const ids = new Set(); for (const c of contexts) for (const id of c.busyThreads()) ids.add(id); return ids; }
+function writeDrain() {
+  const file = drainFile();
+  writeFileSync(`${file}.tmp`, JSON.stringify({ pid: process.pid, token: startToken(process.pid), sock: draining.server.sock, threads: [...draining.threads] }), { mode: 0o600 });
+  renameSync(`${file}.tmp`, file);
+}
+async function startDrain(successor) {
+  if (stopping || draining) return;
+  const launchSuccessor = () => spawn(process.execPath, [join(dirname(successor), "shared-runtime.mjs"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
+  if (![...contexts].some((c) => c.busy())) return void stopBridge(successor);
+  const server = createDrainServer();
+  server.wss.on("connection", (ws) => { ws.drainShadow = true; wss.emit("connection", ws); });
+  draining = { threads: busyThreads(), released: new Set(), server };
+  const started = Date.now();
+  await server.listening;
+  writeDrain();
+  log(`handing over to ${successor} while ${draining.threads.size} chats work`);
+  await stopBridgeListener(); allowEngines();
+  launchSuccessor();
+  for (let i = 0; i < 300 && !(await probe(process.env.ELPIS_BRIDGE_SOCKET)).ok; i++) await new Promise((r) => setTimeout(r, 100));
+  log(`the newer bridge answers after ${Date.now() - started} ms; moving the clients`);
+  // The delegate tool's connections never reconnect: they stay until their chats are done.
+  for (const ws of clients) if (!ws.drainShadow && !helperConns.has(ws)) closeWhenQuiet(ws, "Session backend changed");
+  checkDrain();
+}
+function checkDrain() {
+  if (!draining || stopping) return;
+  const now = busyThreads();
+  // Work a remaining delegate connection started meanwhile stays here too.
+  for (const id of now) if (!draining.released.has(id)) draining.threads.add(id);
+  let changed = false;
+  for (const id of [...draining.threads]) {
+    if (now.has(id)) continue;
+    draining.threads.delete(id); draining.released.add(id); changed = true;
+    log(`handing over: chat ${id} is done here`);
+    for (const ws of clients) if (ws.drainShadow) sendClient(ws, { method: "bridge/released", params: { threadId: id } });
+  }
+  if (changed) writeDrain();
+  // Its last events get a second to reach the newer bridge before this one exits.
+  if (!draining.threads.size && ![...contexts].some((c) => c.busy()) && !draining.exiting) {
+    draining.exiting = setTimeout(() => { draining.exiting = null; if (!draining.threads.size && ![...contexts].some((c) => c.busy())) void stopBridge(); else checkDrain(); }, 1000);
+  }
+}
 function checkIdle() {
   if (stopping) return;
+  checkDrain();
   for (const c of [...contexts]) c.releaseIfUnused();
   clearTimeout(idleTimer);
   if (!process.env.ELPIS_SHARED_BRIDGE || clients.size || [...contexts].some((c) => c.busy())) return;
@@ -543,20 +593,22 @@ function checkIdle() {
   }, 30_000);
 }
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => stopBridge());
-// A newer installation that joined this bridge left its bridge's path here (shared-runtime.mjs). Once no work
-// runs, this bridge stops and starts that one; the open terminals and the desktop app reconnect to it.
+// A newer installation that joined this bridge left its bridge's path here (shared-runtime.mjs). This bridge starts
+// that one and hands it every connection (startDrain); the open terminals and the desktop app reconnect to it.
 const successorFile = process.env.ELPIS_SHARED_BRIDGE && process.env.ELPIS_BRIDGE_SOCKET && join(dirname(process.env.ELPIS_BRIDGE_SOCKET), "successor");
 if (successorFile) setInterval(() => {
-  if (stopping || [...contexts].some((c) => c.busy())) return;
+  if (stopping || draining) return;
   let successor; try { successor = readFileSync(successorFile, "utf8").trim(); } catch { return; }
-  if (successor) void stopBridge(successor);
-}, 5000).unref();
+  if (successor) void startDrain(successor);
+}, 2000).unref();
 wss.on("connection", (ws) => {
   if (stopping) { ws.close(1012, "Session backend is stopping"); return; }
   clients.add(ws);
   clearTimeout(idleTimer);
   subscriptions.set(ws, new Set());
   ws.sendWire = ws.send.bind(ws);
+  const noteRequest = trackRequests(ws);
+  const handover = drainProxy(ws, log);
   ws.send = (line) => {
     let msg;
     try { msg = JSON.parse(String(line)); } catch { if (ws.readyState === 1) ws.sendWire(line); return; }
@@ -564,6 +616,9 @@ wss.on("connection", (ws) => {
     decorateThread(msg.result?.thread);
     decorateThread(msg.params?.thread);
     if (Array.isArray(msg.result?.data)) for (const t of msg.result.data) if (typeof t === "object") decorateThread(t);
+    // A chat still working in the bridge that handed over shows as working.
+    const old = Array.isArray(msg.result?.data) && currentDrain();
+    if (old) for (const t of msg.result.data) if (old.threads.has(t?.id)) t.status = { type: "active", activeFlags: [] };
     const owner = providerOwners.get(msg.params?.threadId);
     if (msg.method === "thread/status/changed" && owner) msg.params.status = owner.status();
     if (msg.method === "thread/settings/updated" && owner) {
@@ -670,6 +725,10 @@ wss.on("connection", (ws) => {
       || [...helperScope].some(([tid, h]) => threadSeen.has(h.parentThreadId) && providerOwners.get(tid)?.status().type === "active")
       || (ws.readyState === 1 && (pendingStart.size > 0 || pendingResume.size > 0 || engineReqs.size > 0))
       || [...forwarded.values()].some((r) => r.owner === ws),
+    // The chats behind busy(): a hand-over keeps them in this bridge until they are done.
+    busyThreads: () => [...activeTurns.keys(), ...engineTurns.keys(), ...structured.keys(),
+      ...[...helperScope].filter(([tid, h]) => threadSeen.has(h.parentThreadId) && providerOwners.get(tid)?.status().type === "active").flatMap(([tid, h]) => [tid, h.parentThreadId]),
+      ...[...relayed.values()].filter((r) => r.origin === ws).map((r) => r.threadId)],
     close: () => { cancelRelays(ws); engine.kill(); for (const a of acps.values()) a.kill(); },
     releaseIfUnused: () => {
       if (ws.readyState === 1 || context.busy() || [...relayed.values()].some((r) => r.origin === ws)
@@ -3058,8 +3117,13 @@ wss.on("connection", (ws) => {
   };
   engine.stdout.on("exit", engineExited);
   engine.once?.("exit", engineExited);
-  ws.on("message", handleMessage);
+  ws.on("message", (data) => {
+    let msg; try { msg = JSON.parse(String(data)); } catch {}
+    noteRequest(msg);
+    if (!handover.take(msg)) handleMessage(data);
+  });
   ws.on("close", async () => {
+    handover.close();
     clients.delete(ws); subscriptions.delete(ws);
     for (const relay of relayed.values()) relay.clients.delete(ws);
     for (const [id, route] of forwarded) if (route.client === ws) forwarded.delete(id);

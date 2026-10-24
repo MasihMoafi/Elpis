@@ -33,7 +33,9 @@ if (process.argv.includes("--elpis-local-bridge")) {
     process.stderr.write(text.slice(0, 12));
     setTimeout(() => process.stderr.write(text.slice(12) + "\n"), 20);
   }
-  const trace = msg => fs.appendFileSync(process.env.IDLE_TRACE, JSON.stringify(msg) + "\n");
+  const trace = msg => fs.appendFileSync(process.env.IDLE_TRACE, JSON.stringify({ ...msg, engine: process.pid }) + "\n");
+  // As the engine: a thread's turn events reach every connection subscribed to it.
+  const subscribers = new Set();
   const server = http.createServer();
   const wss = new WebSocketServer({ server });
   wss.on("connection", ws => ws.on("message", data => {
@@ -41,9 +43,12 @@ if (process.argv.includes("--elpis-local-bridge")) {
     trace(msg);
     const send = message => { if (ws.readyState === 1) ws.send(JSON.stringify(message)); };
     if (msg.id === undefined) return;
+    if (msg.method === "fixture/turn" || msg.method === "thread/resume") subscribers.add(ws);
     if (msg.method === "fixture/turn") {
       send({ method: "turn/started", params: { threadId: "chat", turn: { id: "running" } } });
-      setTimeout(() => send(ws.unsubscribed
+      if (msg.params.stream) { const timer = setInterval(() => { for (const peer of subscribers) if (peer.readyState === 1) peer.send(JSON.stringify({ method: "item/agentMessage/delta", params: { threadId: "chat", turnId: "running", itemId: "answer", delta: "word " } })); }, 200); setTimeout(() => clearInterval(timer), msg.params.delay); }
+      if (msg.params.stream) setTimeout(() => { for (const peer of subscribers) if (peer.readyState === 1) peer.send(JSON.stringify({ method: "turn/completed", params: { threadId: "chat", turn: { id: "running" } } })); }, msg.params.delay);
+      else setTimeout(() => send(ws.unsubscribed
         ? { method: "thread/closed", params: { threadId: "chat" } }
         : msg.params.statusOnly
         ? { method: "thread/status/changed", params: { threadId: "chat", status: { type: "idle" } } }
@@ -227,14 +232,45 @@ if (process.argv.includes("--elpis-local-bridge")) {
     const wrong = path.join(f.root, "wrong-engine"); fs.writeFileSync(wrong, "#!/bin/sh\necho WRONG_ENGINE; exit 3\n", { mode: 0o755 });
     const terminal = await f.launch(second, { ELPIS_ENGINE_BIN: wrong }, true);
     assert.equal(terminal.exitCode, 0, terminal.errors); assert.doesNotMatch(terminal.output, /WRONG_ENGINE/); assert.match(terminal.output, /preserve this answer/);
-    assert.equal(JSON.parse(fs.readFileSync(stateFile)).pid, running.pid, "the running bridge is kept while it works");
+    assert.equal(startToken(running.pid), running.token, "the running bridge is kept while it works");
     assert.ok((await c.call("thread/list", {})).result.data.length);
-    // Its turn done, it stops and starts the newer bundle; the client reconnects to that one.
+    // It gives the newer bundle new connections at once and its clients reconnect to that one.
     const state = () => { try { return JSON.parse(fs.readFileSync(stateFile)); } catch { return {}; } };
     await until(() => state().pid && state().pid !== running.pid && fs.existsSync(path.join(path.dirname(stateFile), "bridge.sock")), "the newer bundle takes over", 25000);
     assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mjs")));
-    assert.notEqual(c.ws.readyState, WebSocket.OPEN, "the old bridge's clients were disconnected");
+    await until(() => c.ws.readyState !== WebSocket.OPEN, "the old bridge's clients were disconnected");
     assert.equal((await (await f.connect()).call("thread/read", { threadId: "chat", includeTurns: true })).result.thread.turns[0].items[0].text, "preserve this answer");
+  });
+
+  test("a newer bundle takes over within seconds while a turn streams; the turn finishes on the old bridge and reaches the client", { timeout: 60000 }, async t => {
+    const f = await setup(t, {}, process.env.ELPIS_IDLE_OLD_BUNDLE ?? source); const second = f.bundle("b");
+    assert.equal((await f.launch(f.first)).exitCode, 0);
+    const c = await f.connect();
+    await c.call("thread/resume", { threadId: "chat" });
+    await c.call("fixture/turn", { delay: 12000, stream: true });
+    const dir = path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge", fs.readdirSync(path.join(f.env.XDG_RUNTIME_DIR, "elpis-bridge"))[0]);
+    const state = () => { try { return JSON.parse(fs.readFileSync(path.join(dir, "state.json"))); } catch { return {}; } };
+    const running = state(), alive = () => startToken(running.pid) === running.token;
+    const installedAt = Date.now();
+    assert.equal((await f.launch(second)).exitCode, 0); // the install: a launcher of the newer bundle
+    await until(() => state().pid && state().pid !== running.pid, "the newer bundle serves new connections while the turn runs", 10000);
+    t.diagnostic(`hand-over took ${Date.now() - installedAt} ms`);
+    assert.equal(state().script, fs.realpathSync(path.join(second, "acp-bridge.mjs")));
+    assert.ok(alive(), "the old bridge keeps running its turn");
+    await until(() => c.ws.readyState !== WebSocket.OPEN, "the old bridge's client is asked to reconnect");
+    // The reconnecting client follows the running chat through the newer bridge and gets the turn's end.
+    const d = await f.connect();
+    await d.call("thread/resume", { threadId: "chat" });
+    await until(() => d.frames.some(m => m.method === "item/agentMessage/delta"), "the turn keeps streaming to the reconnected client", 5000);
+    await until(() => d.frames.some(m => m.method === "turn/completed" && m.params.turn.id === "running"), "the turn's end reaches the client", 15000);
+    assert.equal(d.frames.filter(m => m.method === "turn/completed").length, 1, "its end arrives once");
+    await until(() => !alive(), "the old bridge exits once its turn is done", 10000);
+    // The chat now runs on the newer bridge's engine.
+    const e = await f.connect();
+    await e.call("thread/resume", { threadId: "chat" });
+    await e.call("fixture/turn", { delay: 50 });
+    const engines = new Set(f.records().filter(m => m.method === "fixture/turn").map(m => m.engine));
+    assert.equal(engines.size, 2, "the next turn runs on the newer engine");
   });
 
   test("configuration differences alone keep the existing refusal", async t => {

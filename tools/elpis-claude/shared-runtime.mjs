@@ -67,7 +67,7 @@ async function terminatePid(pid, token, ms = 5000) {
 // ---- sockets ------------------------------------------------------------------------------------
 
 // { ok: true } when something accepts connections at the path, else the connect error's code.
-function probe(sock, timeoutMs = 1000) {
+export function probe(sock, timeoutMs = 1000) {
   return new Promise((resolve) => {
     const socket = net.connect(sock);
     const done = (result) => { socket.destroy(); resolve(result); };
@@ -171,6 +171,20 @@ export function stopBridgeListener() {
   });
   if (aside) { try { if (fs.existsSync(sock)) fs.rmSync(aside, { force: true }); else fs.renameSync(aside, sock); } catch {} }
   return entry.closed;
+}
+// A bridge handing over gave up its listener but still serves the chats working in it, so its connections reach the
+// engine again.
+export function allowEngines() { stopped = false; }
+// A bridge handing over to a newer one (acp-bridge.mjs startDrain) serves that bridge here, for the chats still
+// running in it; drain.json names this socket and those chats.
+export const drainFile = () => path.join(path.dirname(process.env.ELPIS_BRIDGE_SOCKET), "drain.json");
+export function createDrainServer() {
+  const sock = path.join(path.dirname(process.env.ELPIS_BRIDGE_SOCKET), `drain-${process.pid}.sock`);
+  const server = http.createServer((req, res) => { res.statusCode = 426; res.end("WebSocket upgrade required\n"); });
+  const wss = new WebSocketServer({ server });
+  fs.rmSync(sock, { force: true });
+  const listening = new Promise((resolve, reject) => { server.once("error", reject); server.listen(sock, () => { fs.chmodSync(sock, 0o600); resolve(sock); }); });
+  return { wss, sock, listening, close: () => { try { server.close(); } catch {} fs.rmSync(sock, { force: true }); } };
 }
 export function bridgeUrl(wss) {
   const address = wss.address();
@@ -516,7 +530,7 @@ async function ensureBridge(rt, bridgeScript, identity) {
       if (state.identity !== identity.hash && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
       // Like the desktop app, a terminal joins the Elpis that is already running instead of refusing (19 Oct: every
       // install made while the app was open stopped `elpis` from starting). It uses that installation's engine, so the
-      // pair matches. The running bridge hands over to this installation once no work runs (acp-bridge.mjs).
+      // pair matches. The running bridge hands over to this installation within seconds; chats working then finish in it (acp-bridge.mjs startDrain).
       if (state.identity !== identity.hash && !config.length && usable(state.engine)) {
         fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
         return { engine: state.engine, running: state.script };
@@ -583,7 +597,7 @@ async function launcherMain(bridgeScript) {
   const release = await acquireLock(rt.lock);
   let joined;
   try { joined = await ensureBridge(rt, bridgeScript, identity); } finally { release(); }
-  if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over as soon as no chat is working.\n`);
+  if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over in a few seconds; chats working now finish first.\n`);
   await new Promise((resolve) => process.stdout.write(`unix://${rt.sock}\n${joined ? `engine ${joined.engine}\n` : ""}`, resolve));
 }
 
