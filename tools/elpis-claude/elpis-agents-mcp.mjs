@@ -45,7 +45,14 @@ async function modelCatalog() {
   return lines.join("\n") || "No models listed.";
 }
 
-const server = new McpServer({ name: "elpis-agents", version: "0.3.0" });
+// The engine hides every MCP tool behind tool_search for models that have it (GPT-5.5 and later); what a search can
+// find is listed by each server's instructions, so they name the workflow tool and when to load it (24 Oct review:
+// a chat on gpt-5.5 answered "ultracode: …" with no workflow tool in sight). Claude Code puts them in its prompt too.
+const WORKFLOW_TOOL = process.env.ELPIS_WORKFLOW_TOOL === "1" && Boolean(BRIDGE);
+const server = new McpServer({ name: "elpis-agents", version: "0.3.0" }, WORKFLOW_TOOL ? { instructions:
+  "Has the `workflow` tool: it runs a workflow, a JavaScript script that orchestrates many helper agents in the Elpis runtime until it finishes. " +
+  "Use it when the person's own message asks for a workflow: the keyword \"ultracode\", or words like \"use a workflow\", \"run a workflow\" or \"fan out agents\". " +
+  "If it is not among your tools, search for \"workflow\" first." } : undefined);
 
 // One entry per delegated thread this server has run: its active turn and what it produced.
 const runs = new Map();
@@ -286,7 +293,7 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
 // Workflows that run until they finish (SPEC WR1): the script runs in the Elpis runtime, not in this process, so it
 // continues after this chat's turn, the window or the app closes, and resumes after a restart. Opt-in, as in Claude
 // Code: the runtime starts it only when the person asked for a workflow in their own message.
-if (process.env.ELPIS_WORKFLOW_TOOL === "1" && BRIDGE) {
+if (WORKFLOW_TOOL) {
   server.registerTool(
     "workflow",
     {

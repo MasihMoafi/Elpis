@@ -2,10 +2,13 @@
 // It answers concurrent requests, deterministically by prompt, with structured output when the engine asks for it.
 //   node mock-responses.mjs <port> <dir>   (<dir>/scripts.json: { tag: { script, args } }; requests go to <dir>/requests.jsonl)
 // What it does, by the last user message:
-//   "... WF:<tag> ..."               calls the chat's workflow tool with scripts[tag] (whether or not the person asked)
+//   "... WF:<tag> ..."               calls the chat's workflow tool with scripts[tag] (whether or not the person asked); when the
+//                                    engine hides MCP tools behind tool_search (GPT-5.5 and later), it searches for "workflow"
+//                                    first, as such a model does, but only if tool_search's description tells it about workflows
 //   "<workflow-notification> ..."     answers "NOTICE RECEIVED <run-id> <status>: <result JSON>"
 //   a workflow agent's prompt         "ANSWER(<prompt>)", or a JSON object built from the schema; markers in the prompt:
-//       SLOWONCE:<ms>  waits that long the first time it sees that prompt;  FAILALWAYS  answers HTTP 500
+//       SLOWONCE:<ms>  waits that long the first time it sees that prompt;  FAILALWAYS  answers HTTP 500;
+//       WRITEFILE:<name>  first runs `printf changed > <name>` in its folder through the engine's exec_command
 //   after a tool call                 "TOOL SAID: <the tool's output>"
 import fs from "node:fs";
 import http from "node:http";
@@ -73,12 +76,22 @@ http.createServer((req, res) => {
       return;
     }
     const tag = /\bWF:([\w-]+)/.exec(prompt)?.[1];
+    // Tools a tool_search returned in this turn, as the engine hands them back.
+    const found = input.filter((i) => i?.type === "tool_search_output").flatMap((i) => i.tools ?? [])
+      .flatMap((t) => (t.type === "namespace" ? (t.tools ?? []).map((x) => ({ ...x, ns: t.name })) : [t]));
+    const search = (r.tools ?? []).find((t) => t.type === "tool_search");
+    if (tag && !agent && !workflowTool && !found.length && search && /workflow/i.test(search.description ?? "") && /ultracode/i.test(search.description ?? "")) {
+      record({ ...entry, kind: "search", tag });
+      reply(res, k, [{ type: "tool_search_call", call_id: `ts_${k}`, execution: "client", arguments: { query: "workflow", limit: 3 } }]);
+      return;
+    }
     if (tag && !agent) {
       const wf = scripts()[tag];
-      record({ ...entry, kind: "launch", tag, tool: workflowTool ? (workflowTool.ns ? `${workflowTool.ns}.${workflowTool.name}` : workflowTool.name) : null });
-      if (!workflowTool || !wf) { reply(res, k, [message(k, `NO WORKFLOW TOOL (${entry.tools.join(", ")})`)]); return; }
-      const call = { type: "function_call", id: `fc_${k}`, call_id: `call_${k}`, name: workflowTool.name, arguments: JSON.stringify({ script: wf.script, ...(wf.args !== undefined && { args: wf.args }) }) };
-      if (workflowTool.ns) call.namespace = workflowTool.ns;
+      const usable = workflowTool ?? found.find((t) => /workflow$/.test(t.name ?? ""));
+      record({ ...entry, kind: "launch", tag, tool: usable ? (usable.ns ? `${usable.ns}.${usable.name}` : usable.name) : null, searched: !workflowTool && Boolean(usable) });
+      if (!usable || !wf) { reply(res, k, [message(k, `NO WORKFLOW TOOL (${entry.tools.join(", ")})`)]); return; }
+      const call = { type: "function_call", id: `fc_${k}`, call_id: `call_${k}`, name: usable.name, arguments: JSON.stringify({ script: wf.script, ...(wf.args !== undefined && { args: wf.args }) }) };
+      if (usable.ns) call.namespace = usable.ns;
       reply(res, k, [call]);
       return;
     }
@@ -86,6 +99,11 @@ http.createServer((req, res) => {
     const times = (seen.get(key) ?? 0) + 1;
     seen.set(key, times);
     record({ ...entry, kind: agent ? "agent" : "chat", times });
+    const write = /WRITEFILE:([\w.-]+)/.exec(prompt)?.[1];
+    if (agent && write && tools.some((t) => t.name === "exec_command")) {
+      reply(res, k, [{ type: "function_call", id: `fc_${k}`, call_id: `call_${k}`, name: "exec_command", arguments: JSON.stringify({ cmd: `printf changed > ${write}` }) }]);
+      return;
+    }
     if (agent && /FAILALWAYS/.test(prompt)) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: { message: "mock failure", type: "server_error" } })); return; }
     const slow = /SLOWONCE:(\d+)/.exec(prompt);
     if (agent && slow && times === 1) await new Promise((r) => setTimeout(r, Number(slow[1])));
