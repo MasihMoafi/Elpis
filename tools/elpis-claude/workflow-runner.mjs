@@ -63,10 +63,10 @@ export function noticeText(run) {
   const agents = run.agents.length, failed = run.agents.filter((a) => a.state === "failed").length;
   const secs = Math.round(((run.endedAt ?? run.updatedAt) - run.createdAt) / 1000);
   const summary = run.status === "completed" ? `Workflow "${run.name}" completed: ${agents} agents${failed ? ` (${failed} returned null after retries)` : ""}, ${secs} s.`
-    : run.status === "stopped" ? `Workflow "${run.name}" was stopped by the person after ${agents} agents. Do not restart it unless they ask.`
+    : run.status === "stopped" ? `Workflow "${run.name}" was stopped by the person after ${agents} agents.`
       : `Workflow "${run.name}" failed: ${run.error}`;
   return [NOTICE_TAG, `<run-id>${run.id}</run-id>`, `<name>${run.name}</name>`, `<status>${run.status}</status>`, `<summary>${summary}</summary>`,
-    ...(result !== null ? [`<result>\n${result}\n</result>`] : []), `<script-path>${run.scriptPath}</script-path>`,
+    ...(result !== null ? [`<result>\n${result}\n</result>`] : []), ...(run.status === "stopped" ? ["Do not restart it unless the person asks."] : []), `<script-path>${run.scriptPath}</script-path>`,
     `<journal>${path.join(run.dir, "journal.jsonl")}</journal>`, "</workflow-notification>"].join("\n");
 }
 
