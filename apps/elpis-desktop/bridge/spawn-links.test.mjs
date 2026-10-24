@@ -203,3 +203,21 @@ test('a rewritten rollout retains its creator through the engine UUIDv7 creation
   assert.equal(await parentOf(f.client, child), MAKER, 'the original creation is before the rewritten metadata timestamp');
   assert.equal(await parentOf(f.client, OTHER), undefined);
 });
+
+test('the engine lists every chat without its source; a chat the person started is known by its rollout header', async t => {
+  // thread/list leaves threadSource out of every listed chat (codex-rs app-server thread_summary.rs), so on a real engine
+  // no listed chat was a possible creator and nothing was recovered.
+  const f = fixture(t), at = 1792827361, iso = seconds => new Date(seconds * 1000).toISOString();
+  await fs.mkdir(f.home, { recursive: true });
+  const header = (id, at, source) => JSON.stringify({ timestamp: iso(at), type: 'session_meta', payload: { id, ...(source ? { thread_source: source } : {}), base_instructions: { text: 'x'.repeat(100000) } } }) + '\n';
+  const made = JSON.stringify({ timestamp: iso(at + 3), type: 'response_item', payload: { type: 'function_call_output', output: JSON.stringify([CHILD, OTHER]) } }) + '\n';
+  const file = name => path.join(f.home, `${name}.jsonl`);
+  await fs.writeFile(file('maker'), header(MAKER, at - 100, 'user') + made);
+  await fs.writeFile(file('child'), header(CHILD, at));
+  await fs.writeFile(file('other'), header(OTHER, at, 'user'));
+  Object.assign(f.threads.get(MAKER), { threadSource: null, createdAt: at - 100, path: file('maker') });
+  Object.assign(f.threads.get(CHILD), { threadSource: null, createdAt: at, path: file('child') });
+  Object.assign(f.threads.get(OTHER), { threadSource: null, createdAt: at, path: file('other') });
+  assert.equal(await parentOf(f.client, CHILD), MAKER, 'the chat made by the person-started chat sits under it');
+  assert.equal(await parentOf(f.client, OTHER), undefined, 'a chat the person started is never put under another');
+});

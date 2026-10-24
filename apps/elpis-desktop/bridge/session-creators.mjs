@@ -13,12 +13,30 @@ const createdAt = thread => {
     ? Number.parseInt(thread.id.replaceAll('-', '').slice(0, 12), 16) / 1000 : saved;
   return Math.min(saved, original);
 };
+/** The rollout header's thread_source ("user" for a chat the person started), or null. Only the first line is read. */
+async function headerSource(file) {
+  let handle;
+  try {
+    handle = await fs.promises.open(file, 'r');
+    const chunks = [], chunk = Buffer.alloc(65536);
+    for (let size = 0; size < HEADER_LIMIT;) {
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, size);
+      if (!bytesRead) break;
+      const end = chunk.subarray(0, bytesRead).indexOf(10);
+      chunks.push(Buffer.from(chunk.subarray(0, end === -1 ? bytesRead : end))); size += bytesRead;
+      if (end !== -1) break;
+    }
+    const record = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return record.type === 'session_meta' && typeof record.payload?.thread_source === 'string' ? record.payload.thread_source : null;
+  } catch { return null; } finally { await handle?.close().catch(() => {}); }
+}
+const HEADER_LIMIT = 1 << 20;
 const readJson = async file => { try { return JSON.parse(await fs.promises.readFile(file, 'utf8')); } catch { return {}; } };
 
 /** Index timestamped ID references once, then only appended bytes. No transcript content is retained or written.
  * The small desktop-owned index survives restarts, including negative lookups. */
 export class SessionCreators {
-  #file; #home; #appHome; #scans; #catalog = new Map(); #store = {}; #storeKey;
+  #file; #home; #appHome; #scans; #catalog = new Map(); #store = {}; #storeKey; #sources = new Map();
   constructor(file, { home = path.dirname(file), appHome = os.homedir() } = {}) {
     this.#file = file; this.#home = home; this.#appHome = appHome;
   }
@@ -36,7 +54,13 @@ export class SessionCreators {
         cursors.add(cursor);
       } while (cursor);
     }
-    const threads = [...this.#catalog.values()];
+    // The engine lists chats without their source (thread_summary.rs sets none); a listed chat's rollout header has it.
+    const threads = await Promise.all([...this.#catalog.values()].map(async thread => {
+      if (typeof thread.threadSource === 'string' || typeof thread.path !== 'string' || !path.isAbsolute(thread.path)) return thread;
+      if (!this.#sources.has(thread.path)) this.#sources.set(thread.path, await headerSource(thread.path));
+      const threadSource = this.#sources.get(thread.path);
+      return threadSource ? { ...thread, threadSource } : thread;
+    }));
     const children = threads.filter(thread => !linked.has(thread.id) && thread.threadSource !== 'user' && !agentParentId(thread) && Number.isFinite(seconds(thread.createdAt)));
     if (!children.length) return [];
     this.#scans ??= (await readJson(this.#file)).scans ?? {};
