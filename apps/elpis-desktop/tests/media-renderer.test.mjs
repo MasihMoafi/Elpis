@@ -23,7 +23,7 @@ function load(file) {
   if (!target) throw new Error(`Missing local source: ${id}`);
   return load(target);
  }
- vm.runInNewContext(result,{require:imports,module,exports:module.exports,TextEncoder,TextDecoder,URL,console});return module.exports;
+ vm.runInNewContext(result,{require:imports,module,exports:module.exports,TextEncoder,TextDecoder,URL,btoa,console});return module.exports;
 }
 const {ChatMessage}=load(path.join(root,'components/chat-message.tsx'));
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
