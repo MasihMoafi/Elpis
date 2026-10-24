@@ -5,13 +5,13 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import readline from 'node:readline';
 import { createRequire } from 'node:module';
 import { performance } from 'node:perf_hooks';
 const root = process.env.ELPIS_SPEED_ROOT || path.join(os.homedir(), '.cache/elpis-briefs/cc');
-const source = fileURLToPath(new URL('..', import.meta.url));
+const source = process.env.ELPIS_SPEED_BRIDGE_SOURCE || fileURLToPath(new URL('..', import.meta.url));
 const require = createRequire(path.join(source, 'package.json'));
 const WebSocket = require('ws');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,6 +55,12 @@ if (process.argv.includes('app-server')) {
       ACP_BRIDGE_LOG: path.join(home, 'bridge.log'), PORT: '0', ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1' },
   });
   let stderr = ''; child.stderr.on('data', bytes => { stderr += bytes; });
+  t.after(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const stopped = once(child, 'exit'); child.kill('SIGTERM');
+    const timer = setTimeout(() => child.kill('SIGKILL'), 5000); timer.unref();
+    await stopped; clearTimeout(timer);
+  });
   const deadline = Date.now() + 15000;
   const log = path.join(home, 'bridge.log');
   while ((!fs.existsSync(log) || !/LISTENING/.test(fs.readFileSync(log, 'utf8'))) && Date.now() < deadline) await pause(20);
@@ -69,7 +75,8 @@ if (process.argv.includes('app-server')) {
     const id = ++sequence, timer = setTimeout(() => reject(Error(`Timeout: ${method}`)), 15000);
     pending.set(id, { resolve, timer }); socket.send(JSON.stringify({ id, method, params }));
   });
-  const cpu = () => { const stat = fs.readFileSync(`/proc/${child.pid}/stat`, 'utf8').split(') ')[1].split(' '); return (Number(stat[11]) + Number(stat[12])) * 10; };
+  const ticksPerSecond = Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }));
+  const cpu = () => { const stat = fs.readFileSync(`/proc/${child.pid}/stat`, 'utf8').split(') ')[1].split(' '); return (Number(stat[11]) + Number(stat[12])) * 1000 / ticksPerSecond; };
   const report = { label, bytes: fs.statSync(store).size, pid: child.pid, phases: {} };
   const phase = async (name, action) => { const at = performance.now(), before = cpu(); await action(); const ms = performance.now() - at; report.phases[name] = { ms, cpuMs: cpu() - before }; console.log(name, JSON.stringify(report.phases[name])); };
   try {
@@ -80,6 +87,10 @@ if (process.argv.includes('app-server')) {
     await phase('lists', async () => { for (let i = 0; i < 20; i++) await call('thread/list', { limit: 100 }); });
     await phase('deltas', () => call('fixture/deltas', { count: 1000 }));
     report.deltas = deltas;
+    await phase('saves', async () => {
+      for (let i = 0; i < 3; i++) await call('config/batchWrite', { edits: [{ keyPath: 'model', value: 'claude/haiku' }, { keyPath: 'model_reasoning_effort', value: i % 2 ? 'low' : 'high' }] });
+      await call('thread/items/list', { threadId: thread.id, limit: 1 }); // wait for queued saves to finish
+    });
     await phase('idle', () => pause(10_000));
     report.idleCpuPercent = report.phases.idle.cpuMs / report.phases.idle.ms * 100;
     assert.equal(deltas, 1000, 'all delta notifications are forwarded');
