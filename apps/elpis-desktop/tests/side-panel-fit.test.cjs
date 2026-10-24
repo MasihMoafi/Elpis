@@ -65,10 +65,10 @@ for (const colorScheme of ['light', 'dark']) {
       const side = page.getByRole('region', { name: 'Side panel', exact: true });
       const edge = page.getByRole('separator', { name: 'Resize side panel', exact: true });
       const before = await side.boundingBox(), box = await edge.boundingBox();
-      await dragDivider(page, edge, box.x + box.width / 2 + 64);
-      assert.ok(Math.abs((await side.boundingBox()).width - (before.width - 64)) <= 1, 'an interior drag resizes normally');
+      await dragDivider(page, edge, box.x + box.width / 2 - 64);
+      assert.ok(Math.abs((await side.boundingBox()).width - (before.width + 64)) <= 1, 'an interior drag resizes normally');
       await dragDivider(page, edge, 1260);
-      assert.equal(Math.round((await side.boundingBox()).width), 380, 'an interior release below minimum clamps without closing');
+      assert.equal(Math.round((await side.boundingBox()).width), 200, 'an interior release below minimum clamps without closing');
       const y = await dragDivider(page, edge, 1304, false);
       await page.mouse.move(1260, y);
       await page.mouse.up();
@@ -79,9 +79,9 @@ for (const colorScheme of ['light', 'dark']) {
       assert.equal(await side.isVisible(), true, 'a cancelled edge drag does not close');
       await edge.focus();
       await page.keyboard.press('ArrowLeft');
-      assert.equal(Math.round((await side.boundingBox()).width), 412, 'Left still widens by 32px');
+      assert.equal(Math.round((await side.boundingBox()).width), 232, 'Left still widens by 32px');
       await page.keyboard.press('ArrowRight');
-      assert.equal(Math.round((await side.boundingBox()).width), 380, 'Right still narrows by 32px');
+      assert.equal(Math.round((await side.boundingBox()).width), 200, 'Right still narrows by 32px');
       await dividerShot(page, `${colorScheme}-interior`);
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }

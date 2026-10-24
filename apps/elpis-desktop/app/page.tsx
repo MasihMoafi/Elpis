@@ -89,7 +89,7 @@ import { insertTranscript } from "@/lib/dictation";
 import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
 import { PersonalTip, usePersonal } from "@/components/personal-tip";
-import { SidePanel, useSidePanel } from "@/components/side-panel";
+import { SidePanel, sideMinWidth, useSidePanel } from "@/components/side-panel";
 import { SideChat, type SideRequest } from "@/components/side-chat";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { useSessionSplit } from "@/components/session-split";
@@ -225,6 +225,8 @@ export default function Home() {
   /** What a slash command has open above the composer, and the one-line answer of a command that only reports. */
   const [panel, setPanel] = useState<"status" | "review" | "diff" | null>(null);
   const [slashNotice, setSlashNotice] = useState("");
+  // /compact typed while the agent works runs when that turn finishes, as in the terminal.
+  const [queuedCompact, setQueuedCompact] = useState<{ threadId: string; guidance?: string } | null>(null);
   // A new chat in its own worktree (the Local/Worktree menu), and where an archived or deleted chat's worktree was kept.
   const [newWorktree, setNewWorktree] = useState(false), [worktreeNotice, setWorktreeNotice] = useState("");
   const noteKept = (text: string) => { if (text) setWorktreeNotice(previous => previous ? `${previous} ${text}` : text); };
@@ -1077,7 +1079,7 @@ export default function Home() {
       const used: NextTurn | undefined = selected ? pending : effort || newPlan ? { ...(effort ? { effort } : {}), ...(newPlan ? { plan: true } : {}) } : undefined;
       const turnOptions: FollowUpOptions = { ...(used?.model ? { model: used.model } : {}), ...(used?.effort ? { effort: used.effort } : {}), ...(used?.plan !== undefined ? { mode: used.plan ? "plan" : "default" } : {}) };
       if (activeTurn && !continues && queueFollowUp(thread.id, sentText, sentAttachments, { ...turnOptions, ...(sentMentions.length ? { mentions: sentMentions } : {}) }, followUp)) { /* queued until the running turn completes */ } else if (activeTurn && !continues) {
-        const steered = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached });
+        const steered = await api<{ turn?: { id: string } }>(`/threads/${encodeURIComponent(thread.id)}/steer`, { text: sentText, expectedTurnId: activeTurn, ...attached, ...(used?.effort ? { effort: used.effort } : {}) });
         // The turn shown as running had ended, so the message started a new one.
         if (steered.turn?.id) {
           updateSubmission({ turnId: steered.turn.id, newTurn: true });
@@ -1382,6 +1384,12 @@ export default function Home() {
     if (guidance && /^\d+(\.\d+)?%?$/.test(guidance)) { setSlashNotice("A number sets the terminal's pressure compaction, which this app does not save. Compact now, or add words to guide the summary."); return; }
     api(`/threads/${encodeURIComponent(thread.id)}/compact`, guidance ? { instructions: guidance } : {}).catch(e => setError(e instanceof Error ? e.message : String(e)));
   }
+  useEffect(() => {
+    if (!queuedCompact) return;
+    if (selected?.id !== queuedCompact.threadId) { setQueuedCompact(null); return; }
+    if (!idle) return;
+    setQueuedCompact(null); setSlashNotice(""); compactChat(selected, queuedCompact.guidance);
+  }, [queuedCompact, selected, idle]); // eslint-disable-line react-hooks/exhaustive-deps
   async function exportChat(thread: Thread) {
     try {
       const all: Entry[] = []; let cursor: string | null = null;
@@ -1457,7 +1465,10 @@ export default function Home() {
     { name: "resume", description: "resume a saved chat", run: focusSearch },
     { name: "fork", description: "fork the current chat", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
     { name: "init", description: "create an AGENTS.md file with instructions for Elpis", available: !continues && idle, run: () => void send(INIT_PROMPT) },
-    { name: "compact", description: "compact now, or add words to guide the summary", available: writable && idle, args: true, run: text => { if (selected) compactChat(selected, text); } },
+    { name: "compact", description: idle ? "compact now, or add words to guide the summary" : "compact when this turn finishes, or add words to guide the summary", available: writable, args: true, run: text => {
+      if (!selected) return;
+      if (idle) compactChat(selected, text); else { setQueuedCompact({ threadId: selected.id, guidance: text }); setSlashNotice("Compacts when Elpis finishes this turn."); }
+    } },
     { name: "prune", description: "turn Smart Prune on for new chats", available: idle, run: () => void turnSmartPruneOn() },
     { name: "plan", description: planMode ? "turn Plan mode off" : "turn Plan mode on", available: !busy, run: () => setPlan(!planMode) },
     { name: "agent", description: "switch the active agent thread", available: team.length > 0 && !panelShown, run: () => { setAgentsPanel(true); requestAnimationFrame(() => document.querySelector<HTMLElement>(".team-panel .team-row.active, .team-panel .team-row")?.focus()); } },
@@ -1863,7 +1874,7 @@ export default function Home() {
       </div>
       <ResizeEdge label="Resize sidebar" width={sidebarWidth} min={SIDEBAR.min} max={SIDEBAR.max} initial={SIDEBAR.initial} grows="right" onResize={resizeSidebar} onClose={() => showSidebar(false)} />
     </aside>
-    <main className="workspace" style={panelShown && !fullView && side.width ? { "--side-w": `clamp(380px, ${side.width}px, 70%)` } as CSSProperties : undefined}>
+    <main className="workspace" style={panelShown && !fullView ? { "--side-min": `${sideMinWidth(side.shown)}px`, ...(side.width ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` } : {}) } as CSSProperties : undefined}>
       <header className={`workspace-header${heading ? "" : " untitled"}`}>
         <ImproveElpis threadId={view === "chat" ? selected?.id : undefined} onChat={loadThread} />
         {outsideChatApprovals.length > 0 && <div className="pending-input-anchor"><Button ref={pendingInputButton} className="pending-input-trigger" variant="secondary" size="sm" aria-label={`Needs input (${outsideChatApprovals.length})`} aria-expanded={pendingInputOpen} aria-controls="pending-input-panel" onKeyDown={event => { if (event.key === "Escape") setPendingInputOpen(false); }} onClick={() => setPendingInputOpen(value => !value)}><span className="pending-count">{outsideChatApprovals.length}</span>Needs input<span className="pending-task-name">{title(threads.find(thread => thread.id === outsideChatApprovals[0].params.threadId) || outsideChatApprovals[0].thread || {id:outsideChatApprovals[0].params.threadId || "unreported"})}</span></Button></div>}

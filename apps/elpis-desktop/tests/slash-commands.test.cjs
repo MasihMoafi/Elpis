@@ -97,7 +97,7 @@ async function typesIntoComposer(page, composer, text) { await page.keyboard.typ
 
 const NEW_CHAT = ['/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/config', '/theme', '/mcp', '/rag'];
 const OPEN_CHAT = ['/btw', '/recap', '/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/config', '/theme', '/mcp', '/rag'];
-const RUNNING_TURN = OPEN_CHAT.filter(name => !['/review', '/init', '/compact', '/prune', '/fork', '/rag', '/export'].includes(name));
+const RUNNING_TURN = OPEN_CHAT.filter(name => !['/review', '/init', '/prune', '/fork', '/rag', '/export'].includes(name));
 
 test('"/" lists the terminal\'s commands the app can run, in its order: a new chat, an open chat, and one with a turn running', async () => {
   const { page, context, errors, composer, menu, openChat } = await open();
@@ -118,7 +118,7 @@ test('"/" lists the terminal\'s commands the app can run, in its order: a new ch
 
     emit('turn/started', { threadId: 'chat', turn: { id: 'running' } });
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
-    await composer.fill('/'); assert.deepEqual(await names(menu), RUNNING_TURN, 'commands that run the model or rewrite history wait for the turn');
+    await composer.fill('/'); assert.deepEqual(await names(menu), RUNNING_TURN, 'commands that run the model or rewrite history wait for the turn; /compact stays, to run when it ends');
     emit('turn/completed', { threadId: 'chat', turn: { id: 'running', status: 'completed' } });
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached' });
     await composer.fill(''); await composer.fill('/'); assert.deepEqual(await names(menu), OPEN_CHAT, 'and come back when it ends');
@@ -215,6 +215,23 @@ test('/compact compacts the open chat through the engine, with the guidance give
     await page.getByText(/pressure/i).first().waitFor();
     assert.equal(sentTo('/api/threads/chat/compact').length, 2, 'a number is the terminal\'s pressure setting, which this app does not save');
     assert.equal(turns().length, 0, 'compaction is not a message');
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
+// Masih, 24 Oct: "/compact isn't available in the app". Typed while the agent works, it waits for the turn, as in the terminal.
+test('/compact typed while a turn runs is not sent as a message; it compacts when the turn ends', async () => {
+  const { page, context, errors, openChat, run } = await open();
+  try {
+    await openChat();
+    emit('turn/started', { threadId: 'chat', turn: { id: 'running' } });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    await run('/compact keep the API names');
+    await page.getByText('Compacts when Elpis finishes this turn.', { exact: true }).waitFor();
+    assert.equal(sentTo('/api/threads/chat/compact').length, 0, 'nothing compacts mid-turn');
+    assert.equal(sentTo('/api/threads/chat/steer').length + turns().length, 0, 'the command is not sent to the agent');
+    emit('turn/completed', { threadId: 'chat', turn: { id: 'running', status: 'completed' } });
+    assert.deepEqual(await posted('/api/threads/chat/compact', 1), { instructions: 'keep the API names' });
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });

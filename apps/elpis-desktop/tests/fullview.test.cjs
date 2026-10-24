@@ -307,7 +307,7 @@ test('sizes and styles match the split view, and the light theme has only approv
   const look = () => page.evaluate(() => {
     const px = (selector, property) => { const element = document.querySelector(selector); return element ? getComputedStyle(element)[property] : null; };
     const size = selector => { const rectangle = document.querySelector(selector)?.getBoundingClientRect(); return rectangle ? [Math.round(rectangle.width), Math.round(rectangle.height)] : null; };
-    return { tab: size('.side-header .task-tab'), tabFont: px('.side-header .task-tab > button[role="tab"]', 'fontSize'), action: size('.side-action'), composer: px('.composer textarea', 'fontSize'), message: px('.message.agent', 'fontSize'), annotate: size('.browser-annotate')?.[1], user: px('.message.user', 'fontSize') };
+    return { tabHeight: size('.side-header .task-tab')?.[1], tabFont: px('.side-header .task-tab > button[role="tab"]', 'fontSize'), action: size('.side-action'), composer: px('.composer textarea', 'fontSize'), message: px('.message.agent', 'fontSize'), annotate: size('.browser-annotate')?.[1], user: px('.message.user', 'fontSize') };
   });
   const splitLook = await look();
   assert.deepEqual(await unapprovedOranges(page), [], 'light theme, split view: only approved logo accent');

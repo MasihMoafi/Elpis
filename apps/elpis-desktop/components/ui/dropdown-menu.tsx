@@ -27,12 +27,21 @@ function DropdownMenuContent({ className, align = "end", side, sideOffset = 4, a
   )
 }
 
-function DropdownMenuItem({ className, variant = "default", ...props }: MenuPrimitive.Item.Props & { variant?: "default" | "destructive" }) {
+function DropdownMenuItem({ className, variant = "default", onClick, ...props }: MenuPrimitive.Item.Props & { variant?: "default" | "destructive" }) {
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
       data-variant={variant}
       className={cn("hud-menu-item cursor-default text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-4", className)}
+      onClick={event => {
+        onClick?.(event);
+        // An action that moved focus (Reply puts it in the message box) keeps it: the item takes focus back after its click.
+        const target = document.activeElement;
+        if (target instanceof HTMLElement && target !== document.body && !target.closest('[role="menu"]')) requestAnimationFrame(() => {
+          const current = document.activeElement;
+          if (target.isConnected && (!current || current === document.body || current.closest('[role="menu"]'))) target.focus({ preventScroll: true });
+        });
+      }}
       {...props}
     />
   )

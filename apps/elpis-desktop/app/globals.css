@@ -162,9 +162,9 @@ button:disabled { cursor:not-allowed; }
 .workspace-notices { display:flex; flex-direction:column; flex-shrink:0; }
 /* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
  * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
- * The panel's width is half the area, or what its dragged edge set (`--side-w`, from app/page.tsx); 360px is MIN_WIDTH in side-panel.tsx. */
+ * The panel is as wide as the sidebar, or what its dragged edge set (`--side-w`, from app/page.tsx, floored at sideMinWidth in side-panel.tsx). */
 @media(min-width:761px) {
-  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, minmax(360px,50%)); grid-template-rows:auto auto minmax(0,1fr); }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))); grid-template-rows:auto auto minmax(0,1fr); }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-header { grid-column:1; grid-row:1; }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-notices { grid-column:1; grid-row:2; }
   .workspace-body.panel-open:not(.full-view) { display:contents; }
@@ -175,7 +175,7 @@ button:disabled { cursor:not-allowed; }
 }
 .workspace-content { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; container:workspace / inline-size; }
 /* The side panel: terminals and browser pages as tabs (components/side-panel.tsx). */
-.side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:50%; min-width:var(--side-min,360px); max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
+.side-panel { position:relative; display:flex; flex-direction:column; flex:0 0 auto; width:var(--sidebar-width,256px); min-width:var(--side-min,360px); max-width:70%; min-height:0; border-inline-start:1px solid var(--border); background:var(--background); }
 /* Draggable edges: the side panel's left edge, and the sidebar's right one (components/resize-edge.tsx). */
 .side-resize, .resize-edge { position:absolute; top:0; bottom:0; width:7px; cursor:col-resize; z-index:3; touch-action:none; }
 .side-resize { left:-4px; }

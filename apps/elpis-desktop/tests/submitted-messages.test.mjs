@@ -61,3 +61,14 @@ test('a message sent while the agent works shows right below the last message, n
   const fresh = { turnId: 'new', item: { id: 'early', type: 'agentMessage', text: 'Hi' } };
   assert.deepEqual(withSubmittedMessages([ask, work, fresh], [sent({ turnId: 'new', previousKeys: [entryKey(ask), entryKey(work)] })], 'chat').map(item => item.item.id), ['ask', 'work', 'local', 'early'], 'a new turn still opens with the message');
 });
+
+test('messages sent one after another while the agent works stay in the order sent, newest at the bottom (R2, R4)', () => {
+  const ask = entry('active', 'ask', 'Build it'), work = { turnId: 'active', item: { id: 'work', type: 'agentMessage', text: 'Working on it' } };
+  const shown = [entryKey(ask), entryKey(work)];
+  const first = sent({ key: 'first', turnId: 'active', newTurn: false, previousKeys: shown, content: submittedContent('First', []) });
+  const second = sent({ key: 'second', turnId: 'active', newTurn: false, previousKeys: shown, content: submittedContent('Second', []) });
+  const third = sent({ key: 'third', turnId: 'active', newTurn: false, previousKeys: shown, content: submittedContent('Third', []) });
+  assert.deepEqual(withSubmittedMessages([ask, work], [first, second, third], 'chat').map(item => item.item.id), ['ask', 'work', 'first', 'second', 'third']);
+  const recorded = entry('active', 'first-echo', 'First');
+  assert.deepEqual(withSubmittedMessages([ask, work, recorded], [first, second], 'chat').map(item => item.item.id), ['ask', 'work', 'first-echo', 'second'], 'a later one stays below an earlier one the engine has recorded');
+});

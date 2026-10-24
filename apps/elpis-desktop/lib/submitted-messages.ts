@@ -39,10 +39,11 @@ export function rememberSubmittedMessages(entries: Entry[], submissions: Submitt
 /** Overlay only this chat's submissions. Old identical prompts cannot consume a fresh submission. */
 export function withSubmittedMessages(entries: Entry[], submissions: SubmittedMessage[], scope: string): Entry[] {
   let result = entries;
-  const used = new Set<string>();
+  const used = new Set<string>(), earlier = new Set<string>();
   for (const sent of submissions) {
     if (sent.scope !== scope) continue;
     const found = matchingEntry(entries, sent, used);
+    earlier.add(sent.key);
     if (found) {
       used.add(entryKey(found));
       result = result.map(entry => entry === found ? { ...entry, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}) }
@@ -50,10 +51,10 @@ export function withSubmittedMessages(entries: Entry[], submissions: SubmittedMe
     } else if (!sent.failed && !sent.recorded) {
       const pending: Entry = { turnId: sent.turnId ?? sent.key, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}), clientPending: true, item: { id: sent.key, type: "userMessage", content: sent.content } };
       // A new turn opens with its message; a message sent into a running turn sits right below what was shown when it
-      // was sent (R2), so what the agent writes afterwards follows it.
+      // was sent, including the messages sent before it (R2, R4), so what the agent writes afterwards follows it.
       const seen = new Set(sent.previousKeys);
       const firstWork = sent.turnId && sent.newTurn ? result.findIndex(entry => entry.turnId === sent.turnId) : -1;
-      const afterShown = result.reduce((last, entry, index) => seen.has(entryKey(entry)) ? index + 1 : last, 0);
+      const afterShown = result.reduce((last, entry, index) => seen.has(entryKey(entry)) || (entry.clientKey !== undefined && entry.clientKey !== sent.key && earlier.has(entry.clientKey)) ? index + 1 : last, 0);
       const at = firstWork >= 0 ? firstWork : sent.newTurn ? result.length : afterShown;
       result = [...result.slice(0, at), pending, ...result.slice(at)];
       if (sent.newTurn && sent.turnId) result = result.map(entry => entry.turnId === sent.turnId ? { ...entry, clientTurnKey: sent.key } : entry);

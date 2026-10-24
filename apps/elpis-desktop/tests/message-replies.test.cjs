@@ -11,7 +11,9 @@ for (const colorScheme of ['light', 'dark']) test(`reply quotes either author, p
   await composer.fill('Keep this draft');
   await page.locator('input[aria-label="Choose files"]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Keep this file') });
   await reply(page); await preview(page).getByText('Replying to Elpis', { exact: true }).waitFor();
-  assert.equal(await composer.inputValue(), 'Keep this draft');
+  await page.keyboard.type(' and more');
+  assert.equal(await composer.inputValue(), 'Keep this draft and more', 'after Reply the cursor is in the message box, ready to type');
+  await composer.fill('Keep this draft');
   assert.match(await preview(page).innerText(), /parser/);
   await page.locator('.user-turn').first().getByRole('button', { name: 'Reply', exact: true }).click();
   await preview(page).getByText('Replying to You', { exact: true }).waitFor();
@@ -55,6 +57,7 @@ test('dragging a passage offers Quote selection and quotes only those words; sel
   const selected = await page.evaluate(() => getSelection().toString().trim()); assert.ok(selected.length > 2);
   await page.getByRole('button', { name: 'Quote selection', exact: true }).click();
   assert.equal(await preview(page).locator('.line-clamp-2').innerText(), selected);
+  await page.keyboard.type('Why?'); assert.equal(await composer.inputValue(), 'Why?', 'after Quote selection the cursor is in the message box'); await composer.fill('');
   await preview(page).getByRole('button', { name: 'Cancel reply' }).click();
   await composer.fill('Select this draft'); await composer.press('Control+a');
   assert.equal(await page.getByRole('button', { name: 'Quote selection', exact: true }).count(), 0);
@@ -79,4 +82,20 @@ test('a selection across messages offers no quote, and Escape dismisses the sele
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Quote selection', exact: true }).waitFor({ state: 'detached' });
   assert.equal(await preview(page).count(), 0);
+}));
+
+// Masih, 24 Oct: "after I quote the cursor must be in the chatbox so I could type immediately after". Older messages
+// keep Reply in their menus; a closing menu must not pull focus back to its button. Every menu path is checked.
+test('Reply from the … menu or the right-click menu leaves the cursor in the message box', () => using({}, async f => {
+  const { page, composer } = f;
+  const message = page.locator('.message.agent').first();
+  await message.hover(); await message.getByRole('button', { name: 'More message actions' }).click();
+  await page.getByRole('menuitem', { name: 'Reply' }).click(); await preview(page).waitFor();
+  await page.keyboard.type('From the menu');
+  assert.equal(await composer.inputValue(), 'From the menu');
+  await preview(page).getByRole('button', { name: 'Cancel reply' }).click(); await composer.fill('');
+  await page.locator('.user-turn').first().click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Reply' }).click(); await preview(page).waitFor();
+  await page.keyboard.type('From right-click');
+  assert.equal(await composer.inputValue(), 'From right-click');
 }));

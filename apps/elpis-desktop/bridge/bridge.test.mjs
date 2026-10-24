@@ -674,6 +674,22 @@ for (const found of [true, false]) test(`fork recovers a stale turn only through
   } finally { client.close(); }
 });
 
+test('effort chosen while a Claude turn runs travels with the next message; a native chat keeps its turn settings', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize(); await client.models();
+  await client.createThread({ model: MODEL });
+  await client.send(CREATED, { text: 'Do the task', model: MODEL });
+  await client.steer(CREATED, { text: 'Native', expectedTurnId: 'new-turn', effort: 'high' });
+  assert.equal(socket.sent.filter(row => row.method === 'thread/settings/update' && row.params.effort).length, 0, 'a native turn is not reconfigured mid-turn');
+  Object.assign(threads.get(CREATED), { model: 'claude/opus', reasoningEffort: 'high' });
+  await client.steer(CREATED, { text: 'Same effort', expectedTurnId: 'new-turn', effort: 'high' });
+  assert.equal(socket.sent.filter(row => row.method === 'thread/settings/update' && row.params.effort).length, 0, 'an unchanged effort sends nothing');
+  await client.steer(CREATED, { text: 'Think harder', expectedTurnId: 'new-turn', effort: 'xhigh' });
+  const update = socket.sent.findIndex(row => row.method === 'thread/settings/update' && row.params.effort === 'xhigh');
+  assert.ok(update >= 0, 'the new effort reaches the Claude bridge');
+  assert.ok(update < socket.sent.findLastIndex(row => row.method === 'turn/steer'), 'before the message that follows it');
+  client.close();
+});
+
 test('new roots send, steer and interrupt through typed protocol without overriding permissions', async () => {
   const { client, socket } = fixture(); await client.initialize(); await client.models();
   await assert.rejects(client.createThread({ model: 'invented' }), /model list/);

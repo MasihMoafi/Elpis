@@ -220,6 +220,10 @@ test('the side panel resizes from its left edge and a page that Electron opens b
   await page.mouse.move(edge.x + edge.width / 2, edge.y + 200); await page.mouse.down();
   await page.mouse.move(edge.x - 150, edge.y + 200, { steps: 5 }); await page.mouse.up();
   await eventually(async () => assert((await side.boundingBox()).width > before + 120));
+  await side.getByRole('button', { name: 'Close New tab tab' }).click();
+  await eventually(async () => assert.equal(await side.count(), 0), 'with its last page gone the panel closes instead of staying open empty');
+  await page.getByRole('button', { name: 'Show side panel' }).click();
+  await side.getByText('Nothing open here yet.').waitFor();
 }));
 
 test('many tabs scroll inside the strip; the + and the panel buttons stay in view', () => fixture(async ({ page, strip, names, shoot }) => {
