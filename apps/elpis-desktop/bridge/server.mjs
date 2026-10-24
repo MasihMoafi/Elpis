@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object } from './client.mjs';
+import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object, text } from './client.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
@@ -199,6 +199,11 @@ export async function startDesktopServer(options = {}) {
           return json(response, 200, state);
         }
         if (url.pathname === '/api/love-spot/voice' && method === 'POST') return await voice.start(await body(request), response, { source: await loveTalk.speech() });
+        if (url.pathname === '/api/love-spot/voice/call' && method === 'POST') {
+          const input = await body(request); object(input, ['sdp', 'persona']);
+          if (input.persona !== undefined) text(input.persona, 'persona', 4000);
+          return await voice.start({ sdp: input.sdp }, response, { conversation: await loveTalk.conversation(input.persona) });
+        }
         if (url.pathname === '/api/love-spot/talk/events' && method === 'GET') {
           // Load first so a failed resume still returns a useful HTTP error.
           await loveTalk.read();

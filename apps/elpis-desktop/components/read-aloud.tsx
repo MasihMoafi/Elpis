@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
 
-type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; session?: string; ready: boolean; complete: boolean; idle?: boolean; reply: string };
+type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string; ready: boolean; complete: boolean; idle?: boolean; reply: string };
 type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
 const KEEP_OPEN_MS = 60_000;
@@ -28,6 +28,8 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
       if (current.peer) { current.peer.ontrack = null; current.peer.onconnectionstatechange = null; current.peer.close(); }
       void current.silence?.close().catch(() => {});
       current.controller.abort(); if (current.timer) clearTimeout(current.timer);
+      if (current.monitor) clearInterval(current.monitor);
+      if (current.soundTimeout) clearTimeout(current.soundTimeout);
     }
     setActive(null);
   }
@@ -42,16 +44,45 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
     // A call kept open after a read takes this reply's text; it reads it as soon as it arrives.
     if (open?.idle && open.session && text !== undefined && enabled) {
       if (open.timer) clearTimeout(open.timer);
-      Object.assign(open, { idle: false, complete: false, timer: null, reply: id }); setError(null); setActive(id);
-      try { await api("/voice/read-aloud/more", { id: open.session, text }, open.controller.signal); return; }
+      Object.assign(open, { idle: false, complete: false, audible: false, draining: false, timer: null, reply: id }); setError(null); setActive(id);
+      try {
+        const rows = await open.peer?.getStats();
+        if (rows) for (const row of rows.values()) if (row.type === "inbound-rtp" && row.kind === "audio") open.energy = row.totalAudioEnergy ?? 0;
+        await api("/voice/read-aloud/more", { id: open.session, text }, open.controller.signal); return;
+      }
       catch { if (call.current !== open) return; /* The call had ended: start a new one below. */ }
     }
     stop(); setError(null);
     if (!enabled) { setError({ id, message: "Reconnect to Elpis before using Read aloud." }); return; }
-    const current: Playback = { controller: new AbortController(), peer: null, audio: null, silence: null, timer: null, ready: false, complete: false, reply: id };
+    const current: Playback = { controller: new AbortController(), peer: null, audio: null, silence: null, timer: null, monitor: null, soundTimeout: null, audible: false, draining: false, energy: 0, ready: false, complete: false, reply: id };
     call.current = current; setActive(id);
     // A call kept open after its reply ends quietly, as when another call takes the speaker.
     const fail = (message: string) => { if (call.current === current) { stop(); if (!current.idle) setError({ id: current.reply, message }); } };
+    const finish = () => {
+      if (!current.complete || !current.audible || current.draining) return;
+      current.draining = true;
+      current.timer = setTimeout(() => {
+        if (call.current !== current) return;
+        current.idle = true; setActive(null);
+        current.timer = setTimeout(() => { if (call.current === current) stop(); }, KEEP_OPEN_MS);
+      }, 1500);
+    };
+    // A transcript/append acknowledgement is not playback. Check sound and an advancing player only while awaiting it.
+    const watchPlayback = () => {
+      if (current.audible || current.monitor) return;
+      current.soundTimeout = setTimeout(() => fail("Voice returned no audible audio. Stop and try again."), 15000);
+      current.monitor = setInterval(() => {
+        void current.peer?.getStats().then(rows => {
+          if (call.current !== current || !current.audio || current.audio.paused || current.audio.currentTime <= 0) return;
+          const audible = [...rows.values()].some(row => row.type === "inbound-rtp" && row.kind === "audio" && (row.totalAudioEnergy ?? 0) > current.energy + 0.000001);
+          if (!audible) return;
+          current.audible = true;
+          if (current.monitor) clearInterval(current.monitor); current.monitor = null;
+          if (current.soundTimeout) clearTimeout(current.soundTimeout); current.soundTimeout = null;
+          finish();
+        }).catch(() => {});
+      }, 200);
+    };
     const ready = () => {
       if (call.current !== current || current.ready || !current.session || current.peer?.connectionState !== "connected") return;
       current.ready = true;
@@ -126,17 +157,13 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
             const event = JSON.parse(line) as { type: string; id?: string; sdp?: string; message?: string };
             if (event.type === "session") { current.session = event.id; ready(); }
             if (event.type === "sdp" && event.sdp) await peer.setRemoteDescription({ type: "answer", sdp: event.sdp });
-            if (event.type === "cue") cue();
+            if (event.type === "cue") { watchPlayback(); cue(); }
             if (event.type === "error") throw new Error(event.message || "Read aloud failed.");
             if (event.type === "stopped") stop();
             // The last transcript ends with its audio; a moment later the reply is done, and the call stays open a minute.
             if (event.type === "complete") {
               current.complete = true;
-              current.timer = setTimeout(() => {
-                if (call.current !== current) return;
-                current.idle = true; setActive(null);
-                current.timer = setTimeout(() => { if (call.current === current) stop(); }, KEEP_OPEN_MS);
-              }, 1500);
+              watchPlayback(); finish();
             }
             if (event.type === "ended") throw new Error("Read aloud ended. Try again explicitly.");
           }

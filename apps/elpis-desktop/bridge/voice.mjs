@@ -27,10 +27,10 @@ let owner;
 export function createVoice(client) {
   let call;
   async function close() { if (call) await call.stop(); }
-  async function start(input, response, { readAloud = false, source } = {}) {
+  async function start(input, response, { readAloud = false, source, conversation } = {}) {
     readAloud ||= !!source;
-    object(input, source ? ['sdp'] : readAloud ? ['threadId', 'sdp', 'text'] : ['threadId', 'sdp']);
-    const chatId = threadId(source?.threadId ?? input.threadId);
+    object(input, source || conversation ? ['sdp'] : readAloud ? ['threadId', 'sdp', 'text'] : ['threadId', 'sdp']);
+    const chatId = conversation ? undefined : threadId(source?.threadId ?? input.threadId);
     text(input.sdp, 'voice offer', 64000);
     if (readAloud && !source) text(input.text, 'speech text', 2_000_000);
     if (!input.sdp.startsWith('v=0\r\n') || !input.sdp.includes('\n')) throw new BridgeError('Invalid voice offer');
@@ -42,7 +42,7 @@ export function createVoice(client) {
     // A Read aloud call kept open after it finished speaking (its last words had two seconds to play) gives way.
     if (owner?.more && owner.complete && Date.now() - owner.completedAt > 2000) await owner.stop();
     if (owner) throw new BridgeError('Voice is already open. End that call first.', 409);
-    const current = { stopped: false, started: null, stopping: null, stop: null, id: randomUUID(), speech: null, ready: false, pending: false, finished: !source, complete: false, source };
+    const current = { stopped: false, started: null, stopping: null, stop: null, id: randomUUID(), speech: null, ready: false, pending: false, finished: !source, complete: false, source, conversation };
     const chunks = readAloud && !source ? speechChunks(input.text) : [];
     const handoffs = [], seenHandoffs = new Set();
     let relay, idleRevision = 0;
@@ -54,6 +54,7 @@ export function createVoice(client) {
       if (current.stopping) return current.stopping;
       current.stopped = true; clearTimeout(timeout); clearInterval(heartbeat);
       unsubscribe?.();
+      conversation?.close();
       client.off('event', onEvent);
       client.off('side', onSide);
       current.stopping = (async () => {
@@ -120,7 +121,9 @@ export function createVoice(client) {
       onEvent({ type: 'message', data: message });
       // app-server maps RealtimeEvent::HandoffRequested to this item notification.
       const item = params.item;
-      if (!readAloud && method === 'thread/realtime/itemAdded' && item?.type === 'handoff_request' && typeof item.handoff_id === 'string' && item.handoff_id && typeof item.input_transcript === 'string' && item.input_transcript.trim() && !seenHandoffs.has(item.handoff_id)) {
+      if (conversation && method === 'thread/realtime/itemAdded' && item?.type === 'handoff_request') return fail('Live voice requested a tool it cannot use. End the call and write the request on the board.');
+      if (conversation && /^thread\/realtime\/transcript\/(delta|done)$/.test(method)) { conversation.transcript(params); send({ type: 'transcript', role: params.role, ...(params.delta !== undefined ? { delta: params.delta } : { text: params.text }) }); }
+      if (!readAloud && !conversation && method === 'thread/realtime/itemAdded' && item?.type === 'handoff_request' && typeof item.handoff_id === 'string' && item.handoff_id && typeof item.input_transcript === 'string' && item.input_transcript.trim() && !seenHandoffs.has(item.handoff_id)) {
         seenHandoffs.add(item.handoff_id); handoffs.push(item.input_transcript); void relayNext();
       }
       if (method === 'thread/realtime/transcript/done' && params.role === 'assistant' && current.pending) { current.pending = false; append(); }
@@ -155,7 +158,17 @@ export function createVoice(client) {
     timeout = setTimeout(() => fail('Voice connection timed out. Try again.'), 30000).unref();
     heartbeat = setInterval(() => send({ type: 'ping' }), 15000).unref();
     if (readAloud) send({ type: 'session', id: current.id });
-    current.started = readAloud ? Promise.resolve().then(async () => {
+    current.started = conversation ? Promise.resolve().then(async () => {
+      if (current.stopped) return;
+      current.speech = await client.createSpeechThread();
+      if (current.stopped) return;
+      await client.startSpeechThread(current.speech, input.sdp, { conversation: conversation.context });
+      if (current.stopped) return;
+      unsubscribe = await conversation.watch(context => {
+        void client.updateSpeechContext(current.speech.id, context).catch(() => fail('Live voice could not read the updated board. End the call and start again.'));
+      }, fail);
+      if (current.stopped) unsubscribe();
+    }) : readAloud ? Promise.resolve().then(async () => {
       if (current.stopped) return;
       current.speech = await client.takeSpeechThread(chatId);
       if (current.stopped) return;
@@ -191,5 +204,5 @@ export function createVoice(client) {
     if (!call || call.stopped || !call.more || call.id !== input.id) throw new BridgeError('This Read aloud session has ended.', 409);
     call.more(input.text); return { ok: true };
   }
-  return { start, ready, more, close, closeStream: async () => { if (call?.source) await call.stop(); }, busy: () => !!call };
+  return { start, ready, more, close, closeStream: async () => { if (call?.source || call?.conversation) await call.stop(); }, busy: () => !!call };
 }

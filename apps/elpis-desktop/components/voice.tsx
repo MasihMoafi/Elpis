@@ -7,10 +7,10 @@ import { api, sessionReady } from "@/lib/api";
 
 type Heard = { events: Record<string, number>; bytes: number; packets: number; energy: number; mic: number; listened: boolean; began: number };
 type Call = { controller: AbortController; peer: RTCPeerConnection | null; stream: MediaStream | null; audio: HTMLAudioElement | null; timer: ReturnType<typeof setTimeout> | null; sampler: ReturnType<typeof setInterval> | null; heard: Heard };
-type VoiceEvent = { type: string; sdp?: string; message?: string };
+type VoiceEvent = { type: string; sdp?: string; message?: string; role?: string; text?: string; delta?: string };
 
 /** The streaming request owns the native call: aborting it ends voice even if this window disappears. */
-export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabled: boolean; onBusy: (busy: boolean) => void }) {
+export function Voice({ threadId, disabled, onBusy, persona }: { threadId: string; disabled: boolean; onBusy: (busy: boolean) => void; persona?: string }) {
   const [available, setAvailable] = useState(false);
   const [phase, setPhase] = useState<"idle" | "connecting" | "listening">("idle");
   const [muted, setMuted] = useState(false);
@@ -29,7 +29,7 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       if (current.sampler) clearInterval(current.sampler);
       const heard = current.heard; void api("/voice/report", { seconds: (Date.now() - heard.began) / 1000, listened: heard.listened, events: heard.events, inboundBytes: heard.bytes, inboundPackets: heard.packets, inboundEnergy: heard.energy, micEnergy: heard.mic, error: message }).catch(() => {});
       if (current.peer) { current.peer.onconnectionstatechange = null; current.peer.ontrack = null; current.peer.close(); }
-      if (current.audio) { current.audio.pause(); current.audio.srcObject = null; }
+      if (current.audio) { current.audio.muted = true; current.audio.pause(); current.audio.srcObject = null; }
     }
     clearTimeout(quiet.current); setActivity("");
     setPhase("idle"); setMuted(false); setError(message); busyCallback.current(false);
@@ -68,6 +68,7 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       };
       const audio = new Audio(); current.audio = audio; audio.autoplay = true;
       peer.ontrack = event => {
+        if (call.current !== current) { event.track.stop(); return; }
         audio.srcObject = new MediaStream([event.track]);
         void audio.play().catch(() => { if (call.current === current) end("Audio playback was blocked. Start voice again to allow it."); });
       };
@@ -94,7 +95,7 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
       });
       if (call.current !== current) return;
       await sessionReady();
-      const response = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId, sdp: peer.localDescription?.sdp }), signal: current.controller.signal });
+      const response = await fetch(persona === undefined ? "/api/voice" : "/api/love-spot/voice/call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(persona === undefined ? { threadId } : { persona }), sdp: peer.localDescription?.sdp }), signal: current.controller.signal });
       if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result?.error?.message || result?.error || "Voice could not start. Try again."); }
       if (!response.body) throw new Error("The voice connection closed.");
       const reader = response.body.getReader(), decoder = new TextDecoder(); let pending = "";
@@ -110,6 +111,17 @@ export function Voice({ threadId, disabled, onBusy }: { threadId: string; disabl
             const event = JSON.parse(line) as VoiceEvent;
             if (event.type === "sdp" && typeof event.sdp === "string") await peer.setRemoteDescription({ type: "answer", sdp: event.sdp });
             if (event.type === "error") throw new Error(event.message || "Voice disconnected.");
+            if (event.type === "transcript") {
+              if (event.role === "user") {
+                note("hearing");
+                if (current.timer) clearTimeout(current.timer); current.timer = null;
+                // V3 interleaves late user transcripts with the reply. The realtime peer owns barge-in cancellation.
+                if (event.text) {
+                  const energy = current.heard.energy;
+                  current.timer = setTimeout(() => { if (call.current === current && (audio.muted || audio.paused || current.heard.energy <= energy)) end("Matilda returned no audible reply. End voice and try again."); }, 15000);
+                }
+              } else if (event.role === "assistant") note("speaking");
+            }
             if (event.type === "ended") { if (call.current === current) end(); return; }
           }
         }

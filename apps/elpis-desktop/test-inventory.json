@@ -105,7 +105,8 @@
     "bridge/personal.test.mjs",
     "bridge/smart-prune.test.mjs",
     "bridge/workflow-acp.test.mjs",
-    "bridge/settings-files.test.mjs"
+    "bridge/settings-files.test.mjs",
+    "bridge/love-spot-voice.test.mjs"
   ],
   "desktop": [
     "desktop/app-updates.test.cjs",
@@ -325,7 +326,10 @@
     "tests/turn-time.test.cjs",
     "tests/sidebar-pages.test.cjs",
     "tests/settings2.test.cjs",
-    "tests/matilda.test.cjs"
+    "tests/matilda.test.cjs",
+    "tests/load-earlier.test.cjs",
+    "tests/sidebar-search.test.cjs",
+    "tests/love-spot-voice.test.cjs"
   ],
   "opt-in": [
     "tests/polish.runtime.cjs",

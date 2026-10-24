@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dictation } from "@/components/dictation";
+import { Voice } from "@/components/voice";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
 import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
@@ -61,6 +62,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const [voice, setVoice] = useState<MatildaVoice | null>(null), [voiceSaving, setVoiceSaving] = useState(false), [voiceError, setVoiceError] = useState("");
   const voiceEnabled = useRef(false);
   const voiceVersion = useRef(0);
+  const [calling, setCalling] = useState(false);
   const [initial, setInitial] = useState<ExcalidrawInitialDataState>();
   const [error, setError] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
@@ -326,7 +328,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   }, [editor, receive]);
 
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
-  const matilda = useMatilda({ ready: !!editor && !!settings, onError: setError,
+  const matilda = useMatilda({ ready: !!editor && !!settings && !calling, onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
     send: (text, persona) => sendWithBoard(async revision => {
       const version = voiceVersion.current;
@@ -423,6 +425,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     const point: { x: number; y: number; color: string } = JSON.parse(selection.text);
     const note = convertToExcalidrawElements([{ type: "text", x: point.x, y: point.y, text: text.trim(), strokeColor: point.color, fontSize: 20 }]);
     editor.updateScene({ elements: [...editor.getSceneElementsIncludingDeleted(), ...note] });
+    // updateScene's onChange arrives after this snapshot; explicitly admit the dictated notes before it can hide them.
+    matilda.notice(note.map(element => element.id));
     latest.current = snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current);
     save(true);
   }
@@ -454,8 +458,10 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
       <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
         <label className="flex items-center gap-2" title="Matilda speaks each reply in your ChatGPT voice. It may use your ChatGPT allowance."><span aria-hidden="true">{voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Voice<Switch aria-label="Voice" checked={!!voice?.enabled} disabled={!voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
+        <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
+        {calling && <span className="text-muted-foreground">Live voice uses ChatGPT</span>}
         {/* Only a reason or a problem is written out; on and off are the switch itself, so the bar stays one row (R6). */}
-        {(() => { const why = voiceSaving ? "Saving Voice…" : voiceError || speech?.error?.message || voice?.error || (!voice ? "" : !voice.available ? voice.reason : ""); return why ? <span className="text-muted-foreground" role="status">{why}</span> : null; })()}
+        {(() => { const why = voiceSaving ? "Saving Voice…" : voiceError || speech?.error?.message || voice?.error || (!voice ? "" : !voice.available ? voice.reason : !voice.enabled ? "Voice is off." : ""); return why ? <span className="text-muted-foreground" role="status">{why}</span> : null; })()}
       </div>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}

@@ -80,9 +80,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
     "tests/parity-fixture.cjs": {
-      "blob": "6eb06acbf86a0bbfd60a1995c7fa56ca21590e4b",
-      "approval": "81bcad8466ae9c8497cd85be70eeb235c99f2325",
-      "reason": "STARTUP, Masih 22 Oct: \"the third one without the hexagonal around it. The same background it is now.\" The start-up screen holds at least a moment, so the shared fixture waits for it to go before a test acts."
+      "blob": "6d85357f059f385a73fc55a30dcc1cf5d2c0979f",
+      "approval": "dc7256e1672e6b15164fa01e39a48fb13d9cd03e",
+      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion."
     },
     "tests/windows-split.test.cjs": {
       "blob": "f371968667c8d9a764f9a91471ffc955f75b2419",
