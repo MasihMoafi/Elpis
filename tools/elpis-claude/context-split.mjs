@@ -1,3 +1,4 @@
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 // How a bridged chat's context splits into the categories Elpis draws (/context, the Context
 // Ledger, the dashboard). The parts come from text length (about 4 characters a token); the
 // total is what the model reports.
@@ -104,4 +105,30 @@ export function transcriptTokens(jsonl) {
   closeReply();
   for (const k of Object.keys(t)) t[k] = Math.round(t[k]);
   return t;
+}
+
+/** transcriptTokens for a Claude transcript file, read cheaply: only from its last compaction (the counts ignore what
+ * precedes it), and at most once per `interval` while the file grows. A shorter file is a new one, read from the start. */
+export function transcriptReader({ now = Date.now, interval = 15000, onRead = () => {} } = {}) {
+  const seen = new Map(); // file -> { stamp, at, from, tokens }
+  const BOUNDARY = Buffer.from('"compact_boundary"');
+  return (file) => {
+    const { mtimeMs, size } = statSync(file), stamp = `${mtimeMs}:${size}`;
+    let entry = seen.get(file);
+    if (entry && (entry.stamp === stamp || now() - entry.at < interval)) return entry.tokens;
+    const from = entry && size >= entry.size ? entry.from : 0;
+    const buffer = Buffer.alloc(size - from), fd = openSync(file, "r");
+    try { readSync(fd, buffer, 0, buffer.length, from); } finally { closeSync(fd); }
+    onRead(buffer.length);
+    // The last line that is a compaction marker, not a message quoting the word.
+    let line = 0;
+    for (let mark = buffer.lastIndexOf(BOUNDARY); mark >= 0; mark = buffer.lastIndexOf(BOUNDARY, mark - 1)) {
+      const start = buffer.lastIndexOf(0x0a, mark) + 1, end = buffer.indexOf(0x0a, mark);
+      try { const d = JSON.parse(buffer.subarray(start, end < 0 ? buffer.length : end).toString("utf8")); if (d.type === "system" && d.subtype === "compact_boundary") { line = start; break; } } catch {}
+      if (mark === 0) break;
+    }
+    entry = { stamp, size, at: now(), from: from + line, tokens: transcriptTokens(buffer.subarray(line).toString("utf8")) };
+    seen.set(file, entry);
+    return entry.tokens;
+  };
 }

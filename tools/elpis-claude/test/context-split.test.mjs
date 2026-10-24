@@ -74,3 +74,28 @@ test("a request after a changed system prompt carries it as system", () => {
   assert.deepEqual([same.user, same.system], [400, 900]);
   assert.deepEqual([changed.user, changed.system], [200, 1100]);
 });
+
+// 24 Oct: the bridge re-read a 52 MB transcript on every change (about 165 MB/s, 118% CPU) and made the app slow.
+test("a growing transcript is read from its last compaction, at most once per interval, with the same counts", async () => {
+  const { transcriptReader } = await import("../context-split.mjs");
+  const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.homedir(), ".cache", "elpis-ctx-")), file = path.join(dir, "t.jsonl");
+  const reply = (id, n, text) => JSON.stringify({ type: "assistant", message: { id, usage: { input_tokens: n, output_tokens: 10 }, content: [{ type: "text", text }] } });
+  const user = (text) => JSON.stringify({ type: "user", message: { content: text } });
+  const old = Array.from({ length: 400 }, (_, i) => user("old ".repeat(200) + i)).join("\n");
+  fs.writeFileSync(file, `${old}\n${JSON.stringify({ type: "system", subtype: "compact_boundary" })}\n${user("hello there")}\n${reply("a", 500, "hi")}\n`);
+  let now = 0, bytes = 0;
+  const read = transcriptReader({ now: () => now, interval: 15000, onRead: (n) => { bytes += n; } });
+  assert.deepEqual(read(file), transcriptTokens(fs.readFileSync(file, "utf8")), "same counts as reading it all");
+  const first = bytes; bytes = 0;
+  fs.appendFileSync(file, `${user("a message quoting \"compact_boundary\" is not a compaction")}\n${user("more")}\n${reply("b", 900, "ok")}\n`);
+  const cached = read(file);
+  assert.equal(bytes, 0, "within the interval nothing is read again");
+  now = 16000;
+  assert.deepEqual(read(file), transcriptTokens(fs.readFileSync(file, "utf8")), "after it, the new counts");
+  assert.notDeepEqual(read(file), cached);
+  assert.ok(bytes < first / 10, `only what follows the compaction is read again (${bytes} of ${first} bytes)`);
+  fs.writeFileSync(file, `${user("fresh")}\n${reply("c", 100, "x")}\n`); now = 40000;
+  assert.deepEqual(read(file), transcriptTokens(fs.readFileSync(file, "utf8")), "a replaced, shorter file is read from the start");
+  (await import("node:child_process")).execFileSync("gio", ["trash", dir]);
+});

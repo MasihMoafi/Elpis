@@ -1,6 +1,6 @@
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
-import { splitContext, splitTokens, transcriptTokens } from "./context-split.mjs";
+import { splitContext, splitTokens, transcriptReader } from "./context-split.mjs";
 import { createBridgeServer, bridgeUrl, createEngine, stopBridgeListener, shutdownRuntime } from "./shared-runtime.mjs";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
 import { ClaudeAccounts } from "./claude-accounts.mjs";
@@ -758,7 +758,7 @@ wss.on("connection", (ws) => {
   // A Claude chat's parts come from Claude's own token counts in its Claude Code transcript, so
   // they hold after Elpis restarts and count the thinking Claude keeps in context. Other chats,
   // and a transcript not found, count text length as their turns stream.
-  const transcripts = new Map(); // transcript path -> { stamp, tokens }
+  const readTranscript = transcriptReader(); // the Context Ledger's split; cheap on a long transcript
   const transcriptOf = (threadId) => {
     const live = sessions.get(threadId);
     if (live?.agent !== "claude") return null;
@@ -798,10 +798,7 @@ wss.on("connection", (ws) => {
   const attribution = (threadId, used) => {
     const file = transcriptOf(threadId);
     if (file && existsSync(file)) {
-      const { mtimeMs, size } = statSync(file);
-      let seen = transcripts.get(file);
-      if (seen?.stamp !== `${mtimeMs}:${size}`) transcripts.set(file, seen = { stamp: `${mtimeMs}:${size}`, tokens: transcriptTokens(readFileSync(file, "utf8")) });
-      const t = seen.tokens;
+      const t = readTranscript(file);
       return splitTokens({ developerMessages: Math.round((devChars.get(threadId) ?? 0) / 4), userMessages: t.user, agentMessages: t.agent, reasoning: t.reasoning, toolCalls: t.toolCalls, toolResults: t.toolResults }, used);
     }
     return splitContext(ctxChars.get(threadId), devChars.get(threadId), used);
