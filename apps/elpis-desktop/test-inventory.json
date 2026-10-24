@@ -373,6 +373,7 @@
     "tests/settings2.runtime.cjs",
     "tests/sidebar-search.runtime.cjs",
     "tests/startup.runtime.cjs",
-    "tests/workflow-run.runtime.mjs"
+    "tests/workflow-run.runtime.mjs",
+    "tests/workflow-app.runtime.mjs"
   ]
 }
