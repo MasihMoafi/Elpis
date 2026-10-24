@@ -53,8 +53,10 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
     page = browser.contexts().flatMap(context => context.pages()).find(item => item.url().startsWith('http://127.0.0.1'));
     assert.ok(page, 'the packaged app opens its renderer'); page.setDefaultTimeout(15000);
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    // The first-run name question can come a moment after the startup screen; waiting for it (as tests/real-app.cjs does)
+    // keeps it from staying open over every later click when the machine is busy.
     const notNow = page.getByRole('button', { name: 'Not now', exact: true });
-    if (await notNow.isVisible().catch(() => false)) await notNow.click();
+    await notNow.waitFor({ timeout: 4000 }).then(() => notNow.click(), () => {});
     await page.locator(`.thread-row[data-thread-id="${ids.Mother}"]`).waitFor();
   };
   const stop = async () => { await browser?.close().catch(() => {}); if (home) await run(helper, ['stop', home]).catch(() => {}); };
