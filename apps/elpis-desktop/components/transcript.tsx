@@ -71,6 +71,7 @@ function createdFiles(entries: Entry[]): string[] {
 }
 
 function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
+  const [workOpen, setWorkOpen] = useState(false);
   const ordered = withPrunes(turn.entries);
   // The prompt that started the turn heads it; a message sent while it ran (a steer) stays where it was sent.
   const prompt = ordered.findIndex(entry => entry.item.type === "userMessage");
@@ -87,10 +88,10 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: Turn
   const visible = foldEnd > 0 ? work.slice(foldEnd) : work;
   return <section className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
     {users.map(renderItem)}
-    {folded.length > 0 && <details className="worked-for">
+    {folded.length > 0 && <details className="worked-for" onToggle={event => { if (event.target === event.currentTarget) setWorkOpen(event.currentTarget.open); }}>
       {/* Without recorded times, ChatGPT's "41 previous messages" says what the fold holds. */}
       <DisclosureSummary><span>{turn.entries.some(entry => typeof entry.startedAtMs === "number") ? workedFor(turn.entries) : `${folded.length} previous ${folded.length === 1 ? "message" : "messages"}`}</span></DisclosureSummary>
-      <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} /></div>
+      {workOpen && <div className="worked-for-body"><Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} /></div>}
     </details>}
     <Flow entries={visible} renderItem={renderItem} mediaOf={mediaOf} live={active} />
     {!active && <CreatedFiles paths={createdFiles(work)} />}
@@ -130,7 +131,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
   // A blank reasoning step says "no summary recorded" only when the group has no recorded reasoning to show.
   const recorded = items.some(item => item.type === "reasoning" && reasoningOf(item));
   const shown = recorded ? entries.filter(entry => entry.item.type !== "reasoning" || reasoningOf(entry.item)) : entries;
-  return <details className="activity-group" onToggle={event => setOpen(event.currentTarget.open)}>
+  return <details className="activity-group" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
     <DisclosureSummary aria-expanded={open}>
       {running
         ? <LiveStep key={running.item.id} label={stepLabel(running.item, true)} since={running.startedAtMs} />
@@ -138,7 +139,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, live }: { entries: Entry[
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
       {views.map(entry => <ImageThumb key={entry.item.id} src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />)}
     </DisclosureSummary>
-    <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}{open && <CollapseDetails label="Collapse tool calls" />}</div>
+    {open && <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}<CollapseDetails label="Collapse tool calls" /></div>}
   </details>;
 }
 

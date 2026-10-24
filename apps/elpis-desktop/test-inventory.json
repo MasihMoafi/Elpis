@@ -131,6 +131,7 @@
     "desktop/sleep-blocker.test.cjs"
   ],
   "ui": [
+    "tests/speed-chat.test.cjs",
     "tests/voice.test.cjs",
     "tests/polish.test.cjs",
     "tests/approved-working-mark.test.cjs",
