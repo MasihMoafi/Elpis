@@ -19,6 +19,7 @@ import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import { api } from "@/lib/api";
 import type { BrowserTab } from "@/lib/desktop";
 import { ResizeEdge } from "@/components/resize-edge";
+import { SIDEBAR } from "@/lib/use-appearance";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
 export type TerminalTab = { key: string; n: number; cwd: string; threadId?: string };
@@ -29,8 +30,9 @@ const CHANGES = "c:changes";
 const FILES = "f:files";
 const PRUNE = "p:prune";
 
-/** Narrower than this the browser toolbar could not keep its address field (components/browser-panel.tsx). */
-const MIN_WIDTH = 380;
+/** It opens as wide as the left sidebar and narrows as far as the sidebar can; a browser page needs 380px to keep its
+ * address field (components/browser-panel.tsx). */
+export const sideMinWidth = (shown: { kind: string } | null) => shown?.kind === "browser" ? 380 : SIDEBAR.min;
 
 /** What the side panel holds: terminals (kept here) and browser pages (kept by Electron, shown through `browser`).
  * The panel follows the browser: a page that opens or comes forward opens the panel on it, and the page stays
@@ -42,7 +44,7 @@ export function useSidePanel(browser: Browser) {
   const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false), [filesTab, setFilesTab] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
-  /** The panel's width in pixels once its edge has been dragged; until then it takes half the work area (app/globals.css). */
+  /** The panel's width in pixels once its edge has been dragged; until then it is as wide as the sidebar (app/globals.css). */
   const [width, setWidth] = useState<number | null>(null);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
@@ -55,6 +57,10 @@ export function useSidePanel(browser: Browser) {
     return terminal ? [{ key, kind: "terminal", terminal }] : page ? [{ key, kind: "browser", page }] : [];
   });
   const shown = items.find(item => item.key === active) ?? items.at(-1) ?? null;
+  // Opened empty only on request (its chooser); otherwise a panel whose last tab or page went away closes itself.
+  const [chooser, setChooser] = useState(false);
+  useEffect(() => { if (open && !items.length && !chooser) setOpen(false); }, [open, items.length, chooser]);
+  useEffect(() => { if (items.length) setChooser(false); }, [items.length]);
   const { visible, activeId } = browser.state ?? {}, command = browser.command;
 
   // A page that opens or comes forward in Electron (this window's "+", or the agent) opens the panel on it.
@@ -64,8 +70,8 @@ export function useSidePanel(browser: Browser) {
     setOpen(true); setActive(key);
     if (key.startsWith("b:")) void command("select", { id: key.slice(2) }); else if (visible) void command("hide");
   }, [command, visible]);
-  const closePanel = useCallback(() => { setOpen(false); setFull(false); if (visible) void command("hide"); }, [command, visible]);
-  const openPanel = useCallback(() => { setOpen(true); if (shown?.kind === "browser" && !visible) void command("select", { id: shown.page.id }); }, [command, visible, shown]);
+  const closePanel = useCallback(() => { setOpen(false); setChooser(false); setFull(false); if (visible) void command("hide"); }, [command, visible]);
+  const openPanel = useCallback(() => { setOpen(true); if (!shown) setChooser(true); if (shown?.kind === "browser" && !visible) void command("select", { id: shown.page.id }); }, [command, visible, shown]);
   /** Enters (or, given `false`, leaves) full view; with no argument it flips. Entering opens a closed panel and shows the chat as a card. */
   const toggleFull = useCallback((next = !full || !open) => {
     if (next) { setChatCollapsed(false); if (!open) openPanel(); }
@@ -160,10 +166,10 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
     } catch { openRef({ path: abs }, { asText: true }); }
   }) : undefined, [browserApi, command]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!panel.open) return null;
-  const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel;
+  const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel, minWidth = sideMinWidth(shown);
   const full = panel.full, floating = full ? panel.chatCollapsed ? "pill" : "card" : undefined;
-  return <section className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${MIN_WIDTH}px` } as CSSProperties}>
-    <ResizeEdge className="side-resize" label="Resize side panel" width={panel.width} min={MIN_WIDTH} initial={400} grows="left" step={32}
+  return <section className={`side-panel${full ? " full" : ""}`} data-float={floating} aria-label="Side panel" style={{ "--side-min": `${minWidth}px` } as CSSProperties}>
+    <ResizeEdge className="side-resize" label="Resize side panel" width={panel.width} min={minWidth} initial={SIDEBAR.initial} grows="left" step={32}
       onResize={panel.setWidth} onClose={panel.closePanel} onDraggingChange={setResizing} />
     <div className="side-header">
       <TabStrip label="Side panel tabs" activeKey={shown?.key ?? null} add={kinds.length > 0 && <DropdownMenu>

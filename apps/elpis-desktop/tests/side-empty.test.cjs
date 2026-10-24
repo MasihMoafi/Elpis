@@ -4,22 +4,22 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 
-test('empty side panel keeps all four buttons inside its minimum width', async () => {
+test('the side panel opens as wide as the left sidebar and keeps all four buttons inside its minimum width', async () => {
   const f = await fixture({ desktop: true, width: 1280, height: 800 });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
     await f.open('chat-a');
     await f.page.getByRole('button', { name: 'Show side panel', exact: true }).click();
     const panel = f.page.getByRole('region', { name: 'Side panel', exact: true });
-    const initial = await panel.boundingBox();
-    assert.ok(initial && initial.width > 380, 'panel starts wider than its minimum');
+    const initial = await panel.boundingBox(), sidebar = await f.page.locator('aside.sidebar').boundingBox();
+    assert.ok(initial && sidebar && Math.abs(initial.width - sidebar.width) <= 2, `panel opens as wide as the sidebar (${initial?.width} vs ${sidebar?.width})`);
     const resize = f.page.locator('.side-resize');
     await resize.focus();
-    const steps = Math.ceil((initial.width - 380) / 32) + 1;
+    const steps = Math.ceil((initial.width - 200) / 32) + 1;
     for (let step = 0; step < steps; step++) await resize.press('ArrowRight');
 
     const box = await panel.boundingBox();
-    assert.ok(box && Math.abs(box.width - 380) <= 1, 'real resize control reaches the 380px minimum');
+    assert.ok(box && Math.abs(box.width - 200) <= 1, 'real resize control reaches the 200px minimum');
     const buttons = panel.locator('.side-empty button');
     assert.equal(await buttons.count(), 4, 'empty panel offers all four actions');
     const overflowing = [];
