@@ -1,0 +1,74 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const { openCanvas } = require('./canvas-fixture.cjs');
+const { chooseOption, chooseTheme } = require('./controls.cjs');
+const agent = (id, x) => ({ id, type: 'agent', position: { x, y: 0 }, data: { title: id, instruction: `Task for ${id}`, model: null, provider: null, writeScopes: ['src'], acceptanceCriteria: ['Done'] } });
+
+test('edit a plain workflow agent: assign, replace and remove artwork without changing its task or neighbours', async () => {
+  const graph = { name: 'Characters', nodes: [agent('Veyra', 0), agent('Orin', 350)], edges: [{ id: 'Veyra->Orin', source: 'Veyra', target: 'Orin' }] };
+  const f = await openCanvas({ graph });
+  try {
+    const node = f.canvas.locator('.react-flow__node[data-id="Veyra"]');
+    await node.dblclick();
+    const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    const picker = panel.getByRole('combobox', { name: 'Character', exact: true });
+    await picker.waitFor();
+    assert.equal(await node.locator('.agent-portrait img').count(), 0);
+    await chooseOption(picker, 'researcher');
+    await node.locator('.agent-portrait img').waitFor();
+    const first = await node.locator('.agent-portrait img').getAttribute('src');
+    let saved = await f.saved();
+    const { character, ...data } = saved.nodes.find(n => n.id === 'Veyra').data;
+    assert.equal(character, 'researcher');
+    assert.deepEqual(data, graph.nodes[0].data);
+    assert.deepEqual(saved.nodes.find(n => n.id === 'Orin').data, graph.nodes[1].data);
+    assert.deepEqual(saved.nodes.find(n => n.id === 'Orin').position, graph.nodes[1].position);
+    assert.deepEqual(saved.edges, graph.edges);
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.canvas.waitFor(); await f.fit();
+    await node.locator('.agent-portrait img').waitFor();
+    assert.equal(await node.locator('.agent-portrait img').getAttribute('src'), first);
+    await node.dblclick();
+    await chooseOption(picker, 'builder');
+    assert.notEqual(await node.locator('.agent-portrait img').getAttribute('src'), first);
+    await fs.mkdir('/tmp/lovespot-workflow-characters', { recursive: true });
+    for (const theme of ['light', 'dark']) {
+      if ((await f.page.locator('html').evaluate(el => el.classList.contains('dark'))) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+      await f.page.waitForTimeout(350);
+      await f.page.screenshot({ path: `/tmp/lovespot-workflow-characters/${theme}.png` });
+    }
+    const upload = panel.getByLabel('Upload character', { exact: true });
+    await upload.setInputFiles({ name: 'bad.png', mimeType: 'image/png', buffer: Buffer.from('not an image') });
+    await f.canvas.getByRole('alert').filter({ hasText: 'could not be read' }).waitFor();
+    assert.equal((await f.saved()).nodes.find(n => n.id === 'Veyra').data.character, 'builder');
+    const png = Buffer.from(await f.page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 64; const context = canvas.getContext('2d'); context.fillStyle = '#f09225'; context.fillRect(0, 0, 16, 64); return canvas.toDataURL('image/png').split(',')[1]; }), 'base64');
+    await upload.setInputFiles({ name: 'my-character.png', mimeType: 'image/png', buffer: png });
+    await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')).nodes.some(n => n.id === 'Veyra' && n.data.characterImage));
+    const custom = (await f.saved()).nodes.find(n => n.id === 'Veyra').data.characterImage;
+    assert.equal(await node.locator('.agent-portrait img').getAttribute('src'), custom);
+    const artwork = await node.locator('.agent-portrait img').evaluate(image => { const actual = image.getBoundingClientRect(), box = image.parentElement.getBoundingClientRect(); return { fits: actual.width <= box.width && actual.height <= box.height, fit: getComputedStyle(image).objectFit }; });
+    assert.ok(artwork.fits, 'tall custom artwork stays inside its reserved card area');
+    assert.equal(artwork.fit, 'contain');
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.canvas.waitFor(); await f.fit();
+    await node.dblclick();
+    assert.equal(await node.locator('.agent-portrait img').getAttribute('src'), custom);
+    await upload.setInputFiles({ name: 'large.png', mimeType: 'image/png', buffer: Buffer.alloc(512 * 1024 + 1) });
+    await f.canvas.getByRole('alert').filter({ hasText: 'up to 512 KB' }).waitFor();
+    assert.equal((await f.saved()).nodes.find(n => n.id === 'Veyra').data.characterImage, custom);
+    await f.canvas.getByRole('button', { name: 'Dismiss', exact: true }).click();
+    const view = f.canvas.getByRole('radiogroup', { name: 'Workflows view', exact: true });
+    await view.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    const iso = f.canvas.locator('.iso-portrait');
+    await iso.waitFor();
+    assert.equal(await iso.getAttribute('href'), custom);
+    await f.page.screenshot({ path: '/tmp/lovespot-workflow-characters/isometric.png' });
+    await view.getByRole('radio', { name: 'Flat', exact: true }).click();
+    await node.dblclick();
+    await chooseOption(picker, '');
+    assert.equal(await node.locator('.agent-portrait img').count(), 0);
+    saved = await f.saved();
+    assert.equal(saved.nodes.find(n => n.id === 'Veyra').data.character, undefined);
+    assert.equal(saved.nodes.find(n => n.id === 'Veyra').data.characterImage, undefined);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

@@ -1,4 +1,4 @@
-declare global { interface Window { __elpisFlushLoveSpot?: () => Promise<boolean>; readonly __elpisHasUnsavedFiles?: boolean; __elpisFlushSettings?: () => boolean } }
+declare global { interface Window { __elpisFlushLoveSpot?: () => Promise<boolean>; readonly __elpisHasUnsavedFiles?: boolean; __elpisFlushWorkflow?: () => boolean; __elpisFlushSettings?: () => boolean } }
 /** A page that failed to load: desktop/browser-policy.cjs loadFailure. */
 export type BrowserFailure = { heading:string; summary:string; tips:string[]; code:string };
 export type BrowserTab = { id:string; url:string; title:string; loading:boolean; error:string|null; failure:BrowserFailure|null; security:"secure"|"insecure"|"local"|null; zoom:number; comments:number; canGoBack:boolean; canGoForward:boolean };

@@ -316,17 +316,6 @@ export const retainedUpdates = {
     }
   }
 };
-// WF-PETS-1: the spec commit records Masih's request authorizing these changed expectations.
-const petsApproval = {
-  approval: '46d95a77af23b63afde06db9e59d987bed61b395',
-  reason: 'WF-PETS-1, Masih: "minimalize and fix it"; SPEC W1–W8 removes the canvas/planner/guide. Preserve Lab and render-boundary regressions with pets and the standard fixture; retire obsolete Sources-panel cases.',
-};
-Object.assign(retainedUpdates[baselineCommit], {
-  'tests/workflow-provenance.test.cjs': { blob: '23d4a366cb79922b24641f7b7544a197b51acd5a', ...petsApproval },
-  'tests/view-boundaries.test.cjs': { blob: '9ddc478183c79f9c37e9e033111e0781dae0a6f9', ...petsApproval },
-  'tests/workflow-sources.test.cjs': { blob: 'bbd14eb257149ebb47176b0095e0d6105f7acccd', ...petsApproval },
-});
-
 // OBSRM: the pageRemovalApproval request also retires these page-only checks.
 // Love Spot agents section removed (Masih, 22 Oct: "I said remove the agents section in love spot; it's still there.", a3b057c0f): its two test files go.
 // The standalone Love Spot sync (Masih, 22 Oct: "Fix those loose-ends. delete them if we don't need them."): Love Spot lives inside Elpis, the sync tool and its test failed since before that day, so both go.
@@ -334,9 +323,8 @@ Object.assign(retainedUpdates[baselineCommit], {
 // The Talk panel (Masih, 23 Oct: "remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda."): its test file is
 // split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit); the
 // Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
-// WF-PETS-1: Masih: "minimalize and fix it"; SPEC W1–W8 replaces the old canvas, guide and planner.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs', 'tests/canvas-live.runtime.mjs', 'tests/canvas-fit.test.cjs', 'tests/canvas-fixture.cjs', 'tests/night-workflows.test.cjs', 'tests/agents-guide.test.cjs', 'tests/canvas-iso-father.test.cjs', 'tests/canvas-3d.test.cjs', 'tests/canvas-editing.test.cjs', 'tests/canvas-father.test.cjs', 'tests/canvas-iso.test.cjs', 'tests/canvas-delete-flow.test.mjs', 'tests/workflow-characters.test.cjs', 'tests/canvas-isolation.test.mjs', 'tests/workflows-wf1.test.cjs', 'tests/canvas-basics.test.cjs', 'tests/canvas-worktrees.test.cjs', 'tests/workflows-feedback.test.cjs', 'tests/canvas-store.test.cjs', 'tests/agents-iso.test.mjs', 'tests/workflows-wf1-real.cjs', 'tests/canvas.test.cjs', 'tests/canvas-controls.test.cjs', 'tests/canvas-settings.test.cjs', 'tests/canvas-run.test.cjs', 'tests/canvas-runlog.test.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';

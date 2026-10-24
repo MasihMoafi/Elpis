@@ -1,21 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseOption, chooseTheme } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
-
-// Lab regressions share the standard fixture; its current-board input is now a pet team.
-async function openTeam(options = {}) {
-  const f = await fixture({ ...options, storage: { 'elpis-workflow-draft-v1': JSON.stringify({ name: 'Team', nodes: [
-    { id: 'pet-a', type: 'pet', position: { x: 100, y: 100 }, data: { character: 'researcher', title: 'Researcher', instruction: 'Research the task.', model: null, editsFiles: false } },
-  ], edges: [] }) } });
-  await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
-  f.canvas = f.page.getByRole('region', { name: 'Workflows', exact: true });
-  f.agents = f.canvas.locator('.react-flow__node-pet');
-  f.saved = () => f.page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')));
-  return f;
-}
-
 
 test('Lab is the page after New chat, with history, command search and matching sidebar icons', async () => {
   const f = await fixture({ routes: { '/api/experiment-lab': () => ({ record: null }) } });
@@ -72,7 +60,7 @@ test('Lab is the page after New chat, with history, command search and matching 
 });
 
 test('Lab receives the current board even when navigation immediately follows an edit', async () => {
-  const f = await openTeam({ desktop: true });
+  const f = await openCanvas({ desktop: true });
   let request;
   await f.page.route('**/api/experiment-lab', route => {
     if (route.request().method() === 'POST') request = route.request().postDataJSON();
@@ -80,9 +68,7 @@ test('Lab receives the current board even when navigation immediately follows an
   });
   try {
     await f.agents.first().click();
-    await f.agents.first().getByRole('button', { name: 'Edit', exact: true }).click();
-    await f.page.getByRole('textbox', { name: 'Role prompt', exact: true }).fill('Fresh board instruction for the Lab');
-    await f.page.keyboard.press('Escape');
+    await f.canvas.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Fresh board instruction for the Lab');
     await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
     const lab = f.page.getByRole('region', { name: 'Lab', exact: true });
     await chooseOption(lab.getByRole('combobox', { name: 'Pattern', exact: true }), 'current');
@@ -96,8 +82,32 @@ test('Lab receives the current board even when navigation immediately follows an
   } finally { await f.close(); }
 });
 
+test('every starter opens its Sources in the side panel without replacing the board, including the unproven blank', async () => {
+  const f = await openCanvas();
+  try {
+    const before = await f.saved();
+    const sources = f.canvas.getByRole('link', { name: /^Sources for / });
+    assert.equal(await sources.count(), 10);
+    for (let index = 0; index < 10; index++) {
+      if (index === 4) { await sources.nth(index).focus(); await f.page.keyboard.press('Enter'); }
+      else await sources.nth(index).click();
+      const panel = f.canvas.getByRole('complementary', { name: 'Workflow sources', exact: true });
+      await panel.getByText('What is proven', { exact: true }).waitFor();
+      await panel.getByText('What is not', { exact: true }).waitFor();
+      assert.match(await panel.innerText(), /unproven|not validated|No direct evidence/i);
+      if (index === 4) {
+        assert.match(await panel.innerText(), /74.4/);
+        assert.equal(await panel.getByRole('link', { name: /Self-Consistency/ }).getAttribute('href'), 'https://arxiv.org/abs/2203.11171');
+      }
+      await panel.getByRole('button', { name: 'Back to patterns', exact: true }).click();
+    }
+    assert.deepEqual(await f.saved(), before);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('Lab runs the declared repeated comparison, restores evidence, exports, shows failures and stops a run', async () => {
-  const f = await openTeam({ desktop: true });
+  const f = await openCanvas({ desktop: true });
   let current = null; const requests = [];
   await f.page.route('**/api/experiment-lab**', async route => {
     const req = route.request();
@@ -149,8 +159,27 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
   } finally { await f.close(); }
 });
 
+test('Sources and Lab stay readable in light/dark at Masih’s window size', async () => {
+  const f = await openCanvas({ width: 1130, height: 660 });
+  await f.page.route('**/api/experiment-lab', route => route.fulfill({ json: { record: null } }));
+  try {
+    await fs.mkdir('/tmp/elpis-provenance-screens', { recursive: true });
+    for (const theme of ['light', 'dark']) {
+      if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+      await f.canvas.getByRole('link', { name: 'Sources for Voting', exact: true }).click();
+      await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/sources-${theme}.png` });
+      await f.canvas.getByRole('button', { name: 'Back to patterns', exact: true }).click();
+      await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
+      const lab = f.page.getByRole('region', { name: 'Lab', exact: true });
+      assert.equal(await lab.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+      await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/lab-${theme}.png` });
+      await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    }
+  } finally { await f.close(); }
+});
+
 test('Lab offers “Until the task finishes”, sends and restores the choice, and says where the run stands and what is next', async () => {
-  const f = await openTeam({ desktop: true, width: 1130, height: 660 });
+  const f = await openCanvas({ desktop: true, width: 1130, height: 660 });
   let current = null; const requests = [];
   const trial = (repetition, arm, passed) => ({ repetition, arm, passed, elapsedMs: 1000, tokens: 10, answer: passed ? '42' : '41', error: null, steps: [], endedAt: '2026-10-19T00:00:00Z' });
   await f.page.route('**/api/experiment-lab**', async route => {

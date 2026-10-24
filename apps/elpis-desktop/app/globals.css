@@ -928,6 +928,319 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .slash-name { flex-shrink:0; min-width:110px; font:500 0.78125rem/1.4 var(--mono); color:var(--foreground); }
 .slash-description { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 
+/* The agents canvas (components/agents-canvas.tsx): architectures on the left, agents as linked nodes in the middle,
+ * the selected agent on the right. Running is the context olive, done is success, failed is destructive. */
+.agents-canvas { container:agents-canvas / inline-size; flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 290px; grid-template-rows:auto minmax(0,1fr); border-top:1px solid var(--hairline); }
+.agents-canvas[data-panel="closed"] { grid-template-columns:minmax(0,1fr); }
+/* Dragging on the board never selects the page's text; fields keep their own selection. */
+.canvas-board { user-select:none; }
+.canvas-board :is(input, textarea, [contenteditable="true"]) { user-select:text; }
+/* The header fits any window: the name gives way first, then the controls wrap to a second row; nothing is cut off. */
+.canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
+.canvas-header > * { flex-shrink:0; }
+.canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
+.canvas-header > .canvas-run-control { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
+.canvas-run-control > button { flex:none; }
+.canvas-run-control .canvas-notice { flex:0 1 auto; min-width:0; margin:0; box-shadow:none; }
+.canvas-run-control .canvas-notice > span { overflow:visible; white-space:normal; overflow-wrap:anywhere; }
+.canvas-run-status { color:var(--muted-foreground); font-size:0.75rem; }
+@container agents-canvas (max-width:760px) {
+  .canvas-header > .canvas-name { flex-basis:140px; }
+  .canvas-toolbar .canvas-toolbar-keys { display:none; }
+  .canvas-board .canvas-minimap { display:none; }
+}
+.canvas-spacer { flex:1; }
+.canvas-chip { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 10px; border:1px solid var(--hairline); color:var(--muted-foreground); font-size:0.78125rem; font-variant-numeric:tabular-nums; }
+.canvas-chip select { height:26px; }
+.canvas-dot { width:8px; height:8px; border-radius:50%; background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 25%, transparent); }
+.canvas-dot[data-status="failed"], .canvas-dot[data-status="cancelled"] { background:var(--destructive); box-shadow:none; }
+.canvas-dot[data-status="succeeded"], .canvas-dot[data-status="completed"] { background:var(--success); box-shadow:none; }
+.canvas-template { display:grid; gap:3px; padding:9px 10px; border:1px solid transparent; background:transparent; color:var(--foreground); text-align:left; font-size:0.8125rem; cursor:pointer; }
+.canvas-template:hover { background:var(--hover); border-color:var(--hairline); }
+.canvas-template:focus-visible { outline:1.5px solid var(--ring); }
+.canvas-template small { color:var(--muted-foreground); font-size:0.75rem; line-height:1.35; }
+.canvas-toolbar { flex:none; display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:2px; padding:5px 8px; border-top:1px solid var(--hairline); background:var(--card); }
+.canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
+.canvas-toolbar-label { padding:0 6px 0 8px; line-height:1; color:var(--muted-foreground); }
+.canvas-toolbar-more { border-inline-start:1px solid var(--hairline); }
+.canvas-toolbar-keys { display:flex; gap:12px; margin-inline-start:10px; color:var(--muted-foreground); font-size:0.75rem; }
+.canvas-toolbar-keys > span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+.canvas-toolbar kbd, .quick-add kbd { padding:1px 5px; border:1px solid var(--hairline); font:0.6875rem/1.3 var(--mono); color:var(--muted-foreground); }
+/* Counts typed in the header (CountField): out of range is refused in a note under the field. */
+.canvas-count { position:relative; }
+.canvas-count input { width:46px; height:24px; padding:0 6px; border:1px solid var(--border); background:var(--background); color:var(--foreground); font:inherit; font-variant-numeric:tabular-nums; text-align:center; outline:none; }
+.canvas-count input:focus { border-color:var(--ring); }
+.canvas-count input[aria-invalid="true"] { border-color:var(--destructive); }
+.canvas-count-error { position:absolute; top:calc(100% + 6px); right:0; z-index:7; width:max-content; max-width:280px; padding:6px 9px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:0.75rem; line-height:1.35; box-shadow:var(--shadow); }
+/* Quick add (Ctrl+A, double-click, or a wire let go on the board): how many, which kind, then one model. */
+.quick-add { position:absolute; z-index:6; display:flex; flex-direction:column; gap:6px; width:min(340px, calc(100% - 16px)); overflow-y:auto; }
+.quick-add > * { flex:none; }
+.quick-add > .quick-add-list { flex:0 1 auto; min-height:60px; }
+.quick-add-title { display:flex; justify-content:space-between; gap:10px; }
+.quick-add-title span:last-child:not(:first-child) { text-transform:none; letter-spacing:0; font-family:inherit; font-size:0.71875rem; }
+.quick-add-field { height:34px; padding:0 10px; border:1px solid var(--border); background:var(--background); color:var(--foreground); font-size:0.8125rem; outline:none; }
+.quick-add-field:focus { border-color:var(--ring); }
+/* The command line and the prompts step grow with their lines (after .quick-add-field, whose one-line height they replace). */
+.quick-add-field.quick-add-tasks, .quick-add-field.quick-add-command { height:auto; padding:8px 10px; resize:vertical; font:inherit; font-size:0.8125rem; line-height:1.4; }
+.quick-add-field.quick-add-command { width:100%; min-height:36px; field-sizing:content; padding-block:7px; resize:none; }
+.quick-add-list { display:grid; gap:1px; max-height:300px; overflow:auto; }
+.quick-add-plan { display:flex; flex-wrap:wrap; gap:4px 6px; margin:0; padding:0 4px; font-size:0.75rem; color:var(--muted-foreground); }
+.quick-add-plan b { color:var(--foreground); font-weight:600; }
+.quick-add-plan span:not(:first-child)::before, .quick-add-plan b + span::before { content:"· "; }
+.quick-add-plan em { flex-basis:100%; font-style:normal; color:var(--destructive); }
+.quick-add-crumb { display:flex; justify-content:space-between; margin:2px 0 0; padding:0 4px; line-height:1.4; color:var(--muted-foreground); }
+.quick-add-more { margin-inline-start:auto; flex:none; color:var(--muted-foreground); }
+.quick-add-option { display:flex; align-items:center; gap:10px; padding:7px 8px; border:0; background:transparent; color:var(--foreground); text-align:left; font-size:0.8125rem; cursor:pointer; }
+.quick-add-option[aria-selected="true"], .quick-add-option[role="menuitem"]:focus { background:var(--hover); outline:none; }
+.quick-add-option kbd { margin-inline-start:auto; flex:none; }
+.quick-add-option .canvas-kind { flex:none; }
+.quick-add-note, .quick-add-help { margin:0; padding:0 4px; color:var(--muted-foreground); font-size:0.71875rem; line-height:1.35; }
+/* An agent's dashboard (Enter or double-click): what it is, its wiring, and its live work. */
+.agent-dashboard { position:absolute; z-index:7; top:16px; right:16px; display:grid; gap:12px; width:min(420px, calc(100% - 32px)); max-height:calc(100% - 32px); overflow:auto; padding:14px; border-left:3px solid var(--kind); }
+.agent-dashboard header { display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:start; }
+.agent-dashboard header strong { grid-column:1; font-size:0.9375rem; line-height:1.3; overflow-wrap:anywhere; }
+.agent-dashboard header > [data-slot="button"] { grid-column:2; grid-row:1 / span 2; }
+.agent-dashboard dl { display:grid; gap:7px; margin:0; }
+.agent-dashboard dl div { display:grid; grid-template-columns:84px 1fr; gap:10px; font-size:0.78125rem; line-height:1.4; }
+.agent-dashboard dt { color:var(--muted-foreground); }
+.agent-dashboard dd { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; }
+.agent-dashboard-live { display:grid; gap:6px; padding-top:10px; border-top:1px solid var(--hairline); font-size:0.78125rem; }
+.agent-dashboard-live p { margin:0; }
+.agent-dashboard-live .hud-menu-title { padding:0; }
+.agent-dashboard-live blockquote { margin:0; padding:8px 10px; max-height:180px; overflow:auto; border-left:2px solid var(--context); background:var(--hover); white-space:pre-wrap; overflow-wrap:anywhere; }
+.agent-dashboard > button { justify-self:start; }
+.canvas-templates { display:grid; gap:2px; }
+.canvas-template small.canvas-template-source { color:var(--muted-foreground); }
+/* The guide: Anthropic's and LangGraph's own advice on teams of agents. */
+/* Shared run instruments sit outside either board so they never cover nodes or editor controls. */
+.canvas-telemetry { flex:none; display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:8px 12px; border-bottom:1px solid var(--hairline); background:var(--card); }
+.canvas-hud { flex:none; display:grid; gap:0; padding-right:14px; border-right:1px solid var(--border); }
+.canvas-hud span { line-height:1.4; color:var(--muted-foreground); }
+.canvas-hud strong { font:600 2.25rem/1.25 var(--mono); font-variant-numeric:tabular-nums; color:var(--accent-text); }
+.canvas-inputs { flex-basis:100%; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:0.75rem; line-height:1.5; }
+.canvas-inputs b { color:var(--foreground); font-weight:600; }
+.canvas-log-panel { flex:none; min-width:0; padding:6px 12px; border-top:1px solid var(--hairline); background:var(--card); }
+.canvas-log-panel .hud-menu-title { margin:0 0 4px; }
+.canvas-log { display:grid; align-content:start; gap:2px; height:76px; overflow:auto; margin:0; padding:0; list-style:none; }
+.canvas-log li { min-width:0; border-left:3px solid var(--muted-foreground); }
+.canvas-log button { display:flex; align-items:baseline; gap:8px; width:100%; min-width:0; padding:3px 7px; border:0; background:transparent; color:var(--foreground); text-align:left; font-size:0.75rem; line-height:1.5; }
+.canvas-log button:hover { background:var(--hover); }
+.canvas-log button > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.canvas-log li[data-tone="start"] { border-left-color:var(--context); }
+.canvas-log li[data-tone="done"] { border-left-color:var(--success); }
+.canvas-log li[data-tone="fail"] { border-left-color:var(--destructive); }
+.canvas-log time { flex:none; font:0.6875rem/1.5 var(--mono); color:var(--muted-foreground); }
+.canvas-guide ul { display:grid; gap:8px; margin:0; padding:0 10px; list-style:none; }
+.canvas-guide a { color:var(--foreground); font-size:0.8125rem; font-weight:600; text-decoration:underline; text-decoration-color:var(--hairline); text-underline-offset:3px; }
+.canvas-guide a:hover { text-decoration-color:currentColor; }
+.canvas-guide small { display:block; margin-top:2px; color:var(--muted-foreground); font-size:0.75rem; line-height:1.35; }
+/* Which architecture is on the board, each one's shape (the Mother, then a column per wave), and the role-split caution. */
+.canvas-template[aria-current="true"] { border-color:var(--border); background:var(--hover); }
+.canvas-template-loaded { margin-inline-start:8px; line-height:1; color:var(--muted-foreground); vertical-align:2px; }
+.canvas-template small.canvas-template-caution { font-style:italic; }
+.canvas-shape { display:flex; align-items:center; gap:12px; padding:3px 0 1px; }
+.canvas-shape > span { position:relative; display:grid; gap:3px; }
+.canvas-shape > span + span::before { content:""; position:absolute; right:calc(100% + 2px); top:50%; width:8px; border-top:1px solid var(--muted-foreground); opacity:.6; }
+.canvas-mother-counts { display:flex; flex-wrap:wrap; gap:8px; }
+.canvas-side .canvas-count { display:flex; flex-wrap:wrap; height:auto; min-height:32px; padding-block:4px; }
+.canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); font:0.6875rem/1.4 var(--mono); }
+/* Run order: Kahn's waves, each with how it is doing. */
+.canvas-order { flex:1; min-width:130px; }
+.canvas-order .hud-menu-title { margin:0 0 4px; }
+.canvas-order ol { display:flex; gap:6px; overflow:auto; margin:0; padding:0; list-style:none; }
+.canvas-order li { flex:1 0 100px; min-width:0; max-width:240px; display:grid; gap:2px; padding:4px 8px; border-left:3px solid var(--hairline); color:var(--foreground); font-size:0.75rem; line-height:1.5; }
+.canvas-order li strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.canvas-order li span { line-height:1.6; color:var(--muted-foreground); }
+.canvas-order li[data-status="running"] { border-left-color:var(--context); background:color-mix(in oklab, var(--context) 14%, var(--card)); }
+.canvas-order li[data-status="succeeded"] { border-left-color:var(--success); }
+.canvas-order li[data-status="failed"] { border-left-color:var(--destructive); }
+.canvas-critical { display:grid; gap:2px; margin:6px 0 0; padding:6px 8px; border-left:2px solid var(--foreground); color:var(--foreground); font-size:0.78125rem; line-height:1.35; overflow-wrap:anywhere; cursor:default; }
+.canvas-critical span { line-height:1.6; color:var(--muted-foreground); }
+.canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:0.75rem; line-height:1.4; }
+[data-kind="mother"], [data-kind="father"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
+.dark [data-kind="agent"] { --kind:#ab84ff; }
+.canvas-board { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--background); }
+.canvas-board > .react-flow { flex:1 1 0; height:auto; min-height:0; }
+.canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
+/* Colour means state, as on Deus Ex's board: idle wires are a neutral grey in both themes, never the theme's gold. */
+.dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--foreground) 45%, transparent); }
+.canvas-board .react-flow__edge.canvas-edge-done .react-flow__edge-path { stroke:var(--success); }
+.canvas-board .react-flow__edge.canvas-edge-cut .react-flow__edge-path { stroke:var(--destructive); stroke-dasharray:3 5; }
+.canvas-board .react-flow__edge.canvas-edge-live .react-flow__edge-path { stroke:var(--context); }
+.canvas-board .react-flow__edge.canvas-edge-mother .react-flow__edge-path { stroke-dasharray:2 5; }
+/* Two agents working alongside: a plain dashed line, no direction. */
+.canvas-board .react-flow__edge.canvas-edge-alongside .react-flow__edge-path { stroke-dasharray:7 5; }
+/* Chevrons on every wire point the way the work flows; on a live wire they stream (FlowEdge). */
+.canvas-chevron { fill:none; stroke:var(--xy-edge-stroke); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.canvas-chevron[data-live] { stroke:var(--context); stroke-width:2; }
+.canvas-edge-done .canvas-chevron { stroke:var(--success); }
+.canvas-edge-cut .canvas-chevron { stroke:var(--destructive); }
+.canvas-board .react-flow__edge-path { stroke-width:1.6; }
+/* No group rectangle after a box selection (Fusion and Slate have none): it sat over the agents, took the next click and
+   dragged the whole group. Dragging any selected agent still moves them all. */
+.canvas-board .react-flow__nodesselection { display:none; }
+/* A wire is clickable (its menu inserts agents or removes it): it thickens under the pointer and while its menu is open. */
+.canvas-board .react-flow__edge { cursor:pointer; }
+.canvas-board .react-flow__edge:hover .react-flow__edge-path, .canvas-board .react-flow__edge.selected .react-flow__edge-path { stroke-width:2.6; }
+.canvas-board .react-flow__edge.selected .canvas-chevron { stroke:var(--xy-edge-stroke-selected); }
+.canvas-minimap { border:1px solid var(--hairline); border-radius:8px; overflow:hidden; }
+.agent-node { position:relative; display:grid; gap:3px; width:190px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:0.8125rem; }
+.react-flow__node.selected .agent-node { outline:1.5px dashed color-mix(in oklch, var(--foreground) 70%, transparent); outline-offset:4px; }
+.mother-node { border-left-width:5px; padding-right:14px; }
+.agent-node-kind { line-height:1; color:var(--muted-foreground); }
+.agent-node-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.9375rem; font-weight:600; line-height:1.3; }
+.agent-node-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:0.78125rem; }
+.agent-node-mark { position:absolute; top:10px; right:10px; display:grid; place-items:center; width:18px; height:18px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--border); }
+.agent-node[data-status="running"] { border-color:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 22%, transparent), var(--shadow); }
+.agent-node-mark[data-check="running"] { box-shadow:inset 0 0 0 2px var(--context); border-top-color:transparent; animation:canvas-spin 1s linear infinite; background:conic-gradient(var(--context) 0 25%, transparent 25%); -webkit-mask:radial-gradient(circle, transparent 5px, #000 5.5px); }
+.agent-node[data-status="succeeded"] { border-color:color-mix(in oklch, var(--success) 60%, var(--border)); }
+.agent-node-mark[data-check="succeeded"] { background:var(--success); color:var(--background); box-shadow:none; }
+.agent-node[data-status="failed"], .agent-node[data-status="blocked"] { border-color:var(--destructive); }
+.agent-node-mark[data-check="failed"], .agent-node-mark[data-check="blocked"] { background:var(--destructive); color:var(--background); box-shadow:none; }
+.agent-node[data-status="pending"], .agent-node[data-status="cancelled"] { opacity:.75; }
+@keyframes canvas-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
+/* Quick create: either + adds one successor linked only from this agent, shown on hover or focus. */
+.agent-node-plus { position:absolute; display:grid; place-items:center; width:24px; height:24px; padding:0; border:1.5px solid var(--kind); border-radius:50%; background:var(--card); color:var(--kind); cursor:pointer; opacity:0; transition:opacity .12s ease, transform .12s ease; }
+.agent-node-plus[data-side="right"] { top:50%; right:-46px; transform:translateY(-50%); }
+.agent-node-plus[data-side="bottom"] { left:50%; bottom:-27px; transform:translateX(-50%); }
+.agent-node-plus { z-index:2; pointer-events:none; }
+/* The hovered agent rises above its neighbours, so its + buttons never sit behind the agent below. React Flow sets each
+   node's z-index inline, so only !important can lift it (an external library's inline style). */
+.canvas-board .react-flow__node:hover { z-index:2000 !important; }
+.react-flow__node:hover .agent-node-plus, .react-flow__node.selected .agent-node-plus, .agent-node-plus:focus-visible { opacity:1; pointer-events:auto; }
+/* While an agent is hovered, an invisible bridge to its + buttons keeps the hover as the pointer crosses the gap; it
+   exists only then, so it never blocks a wire or the board. */
+.react-flow__node:hover .agent-node::before, .react-flow__node:hover .agent-node::after { content:""; position:absolute; }
+.react-flow__node:hover .agent-node::before { top:20%; bottom:20%; left:100%; width:48px; }
+.react-flow__node:hover .agent-node::after { left:30%; right:30%; top:100%; height:28px; }
+.agent-node-plus:hover { background:var(--kind); color:var(--card); }
+@media (prefers-reduced-motion:reduce) { .agent-node-plus { transition:none; } }
+/* An agent's dots: 12 px to see, 28 px to hit (an invisible ring around each), and they grow under the pointer. */
+.agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); transition:transform .12s ease; }
+.agent-node .react-flow__handle::after { content:""; position:absolute; inset:-9px; border-radius:50%; }
+.agent-node .react-flow__handle:hover { transform:scale(1.35); }
+@media (prefers-reduced-motion:reduce) { .agent-node .react-flow__handle { transition:none; } }
+/* A note for the user, never sent: dragged by its strip, written in below. */
+.canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }
+.canvas-note-grip { padding:6px 10px 0; line-height:1.4; color:#6b5f2a; cursor:grab; user-select:none; }
+.canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font:0.8125rem/1.4 inherit; resize:both; outline:none; }
+.dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
+.canvas-notice { flex:none; display:flex; align-items:center; gap:10px; margin:6px 12px; padding:8px 12px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:0.8125rem; box-shadow:var(--shadow); }
+.canvas-notice[data-tone="info"] { border-color:var(--border); }
+.canvas-side { display:flex; flex-direction:column; gap:10px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }
+.canvas-side .hud-menu-title { padding:2px 4px; }
+.canvas-side input { text-overflow:ellipsis; }
+.canvas-side [data-slot="select-trigger"] { width:100%; min-width:0; }
+.canvas-side [data-slot="select-trigger"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.canvas-side label, .canvas-folders { display:grid; gap:5px; color:var(--muted-foreground); font-size:0.75rem; }
+/* The folders an agent may write: chosen ones as chips, then a menu of the project's other folders. */
+.canvas-folders-chosen { display:flex; flex-wrap:wrap; gap:4px; }
+.canvas-folders .canvas-chip { height:26px; max-width:100%; gap:4px; padding:0 4px 0 8px; color:var(--foreground); font-family:var(--mono); font-size:0.75rem; }
+.canvas-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.canvas-folders .canvas-chip button { display:grid; place-items:center; width:18px; height:18px; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
+.canvas-folders .canvas-chip button:hover { background:var(--hover); color:var(--foreground); }
+.canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
+/* The isometric view (components/agents-iso.tsx), as Deus Ex's hacking screen: pedestals on a ground grid in one SVG,
+ * upright titles and chamfered controls in HTML over it. Colours come from the theme's tokens and the agent's --kind;
+ * state colours match the flat board's (done --success, live --context, cut --destructive). */
+.canvas-view { flex:none; }
+.iso-board { container:iso-board / inline-size; position:relative; flex:1 1 0; min-height:0; overflow:clip; outline:none; cursor:crosshair; touch-action:none; user-select:none; --iso-wire:var(--muted-foreground); }
+.dark .iso-board { --iso-wire:color-mix(in oklch, var(--foreground) 45%, transparent); background:radial-gradient(ellipse at 45% 40%, color-mix(in srgb, var(--gold) 7%, var(--accent-canvas)), var(--canvas) 70%); }
+.iso-board[data-panning] { cursor:grabbing; }
+.iso-board > svg { position:absolute; inset:0; width:100%; height:100%; }
+.iso-board :is(.iso-floor, .iso-grid, .iso-wire, .iso-wire-bed, .iso-chevron, .iso-ring, .iso-plate, .iso-focus, .iso-inlay, .iso-face-top) { vector-effect:non-scaling-stroke; }
+.iso-floor { fill:var(--recessed); stroke:var(--hairline); }
+.iso-grid { stroke:var(--hairline); stroke-width:1; pointer-events:none; }
+.dark .iso-floor { fill:color-mix(in srgb, var(--gold) 4%, var(--accent-surface)); stroke:color-mix(in oklch, var(--gold) 24%, transparent); }
+.dark .iso-grid { stroke:color-mix(in oklch, var(--gold) 11%, transparent); }
+.iso-glow { opacity:0; pointer-events:none; }
+.iso-glow[data-status="running"] { fill:var(--context); opacity:.5; animation:iso-pulse 1.6s ease-in-out infinite; }
+.iso-glow[data-status="succeeded"] { fill:var(--success); opacity:.35; }
+.iso-glow:is([data-status="failed"], [data-status="blocked"]) { fill:var(--destructive); opacity:.4; }
+@keyframes iso-pulse { 50% { opacity:.15; } }
+.iso-link { cursor:pointer; }
+.iso-wire-hit { fill:none; stroke:transparent; stroke-width:18; pointer-events:stroke; }
+.iso-link .iso-chevron { pointer-events:none; }
+.iso-world { transition:transform 250ms ease; }
+.iso-board[data-panning] .iso-world { transition:none; }
+.canvas-flow-edit { position:absolute; z-index:25; width:min(300px, calc(100% - 16px)); padding:8px; border:1px solid var(--hairline); border-radius:6px; background:var(--card); }
+.canvas-text-edit { width:100%; min-width:0; height:28px; font:inherit; }
+.iso-label:has(.canvas-text-edit) { width:176px; padding:3px; z-index:5; }
+.iso-flow-label { position:absolute; pointer-events:auto; max-width:176px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transform:translate(-50%, -100%); padding:2px 7px; border:1px solid var(--hairline); border-radius:4px; color:var(--foreground); background:var(--card); font-size:0.75rem; line-height:18px; cursor:text; }
+.iso-flow-leader { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; stroke:var(--muted-foreground); stroke-width:1; stroke-dasharray:2 3; }
+.canvas-flow-leader { fill:none; pointer-events:none; stroke:var(--xy-edge-stroke); stroke-width:1; stroke-dasharray:2 3; }
+.canvas-notice > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (prefers-reduced-motion: reduce) { .iso-world { transition:none; } }
+.iso-link[data-state="done"] { --iso-wire:var(--success); }
+.iso-link[data-state="live"] { --iso-wire:var(--context); }
+.iso-link[data-state="cut"] { --iso-wire:var(--destructive); }
+.iso-link[data-hot]:not([data-state]) { --iso-wire:var(--foreground); }
+.iso-wire { fill:none; stroke:var(--iso-wire); stroke-width:1.8; stroke-dasharray:7 5; stroke-linejoin:round; }
+.iso-wire-bed { fill:none; stroke:var(--iso-wire); stroke-width:6; stroke-linejoin:round; opacity:.13; }
+.iso-link:is([data-mother], [data-father]) .iso-wire { stroke-dasharray:2 5; }
+/* A two-way wire sets no order: a plain line, with no chevrons. */
+.iso-link[data-kind="alongside"] .iso-wire { stroke-dasharray:none; }
+.iso-link[data-state="cut"] .iso-wire { stroke-dasharray:3 5; }
+.iso-link[data-hot] .iso-wire { stroke-width:2.6; }
+.iso-link[data-hot] .iso-wire-bed { opacity:.24; }
+.iso-chevron { fill:none; stroke:var(--iso-wire); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transform:translate(var(--x), var(--y)); }
+.iso-chevron[data-live] { stroke-width:2.6; animation:iso-stream 1.8s linear infinite; }
+@keyframes iso-stream { from { transform:translate(var(--sx), var(--sy)); opacity:0; } 20%, 80% { opacity:1; } to { transform:translate(var(--ex), var(--ey)); opacity:0; } }
+.iso-node { cursor:pointer; outline:none; }
+.iso-node:is([data-status="pending"], [data-status="cancelled"]) { opacity:.75; }
+.iso-hit { fill:transparent; }
+.iso-plate, .iso-focus { fill:none; pointer-events:none; }
+.iso-node[aria-pressed="true"] .iso-plate { fill:color-mix(in oklab, var(--context) 14%, transparent); stroke:var(--context); stroke-width:1.5; stroke-dasharray:5 4; }
+.iso-node:focus-visible .iso-focus { stroke:var(--ring); stroke-width:2; }
+.iso-ring { fill:none; stroke:var(--border); stroke-width:1.5; stroke-dasharray:2 5; pointer-events:none; }
+.iso-ring[data-check="pending"] { stroke:var(--muted-foreground); }
+.iso-ring[data-check="running"] { stroke:var(--context); stroke-width:2; stroke-dasharray:10 6; animation:iso-turn 1.2s linear infinite; }
+.iso-ring[data-check="succeeded"] { stroke:var(--success); stroke-width:2.5; stroke-dasharray:none; }
+.iso-ring:is([data-check="failed"], [data-check="blocked"]) { stroke:var(--destructive); stroke-width:2.5; stroke-dasharray:none; }
+@keyframes iso-turn { to { stroke-dashoffset:-32; } }
+.iso-lift { transition:transform .15s ease; }
+.iso-node:is(:hover, [data-hot]) .iso-lift { transform:translateY(-4px); }
+.iso-core .iso-face-top { fill:color-mix(in oklch, var(--kind) 82%, var(--card)); }
+.iso-core .iso-face-left { fill:color-mix(in oklch, var(--kind) 76%, #000); }
+.iso-core .iso-face-right { fill:color-mix(in oklch, var(--kind) 56%, #000); }
+.iso-base .iso-face-top { fill:var(--card); stroke:var(--border); }
+.iso-base .iso-face-left { fill:color-mix(in oklch, var(--ink) 12%, var(--canvas)); }
+.iso-base .iso-face-right { fill:color-mix(in oklch, var(--ink) 22%, var(--canvas)); }
+.dark .iso-base .iso-face-top { stroke:color-mix(in oklch, var(--gold) 35%, transparent); }
+.dark .iso-base .iso-face-left { fill:color-mix(in srgb, var(--gold) 12%, #151515); }
+.dark .iso-base .iso-face-right { fill:color-mix(in srgb, var(--gold) 6%, #0f0f0f); }
+.iso-node[data-status="running"] .iso-core .iso-face-top { stroke:var(--context); stroke-width:2; }
+.iso-node[data-status="succeeded"] .iso-core .iso-face-top { stroke:var(--success); stroke-width:2; }
+.iso-node:is([data-status="failed"], [data-status="blocked"]) .iso-core .iso-face-top { stroke:var(--destructive); stroke-width:2; }
+.iso-inlay { fill:none; stroke:color-mix(in oklch, var(--kind) 40%, #fff); stroke-width:1; opacity:.75; pointer-events:none; }
+.iso-port { position:absolute; z-index:1; width:16px; height:16px; padding:0; transform:translate(-50%, -50%); border:2px solid var(--card); border-radius:50%; background:var(--kind, var(--context)); box-shadow:0 0 0 1px var(--border); cursor:crosshair; touch-action:none; }
+.iso-port:hover, .iso-port:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.iso-connection { fill:none; stroke:var(--context); stroke-width:2; stroke-dasharray:4 4; pointer-events:none; }
+.iso-labels { position:absolute; inset:0; pointer-events:none; }
+.iso-label { pointer-events:auto; cursor:pointer; position:absolute; display:flex; align-items:center; gap:6px; max-width:176px; padding:2px 8px 2px 3px; transform:translate(-50%, -100%); border:1px solid var(--hairline); border-radius:4px; background:color-mix(in oklab, var(--card) 88%, transparent); color:var(--foreground); font-size:0.8125rem; font-weight:600; line-height:18px; white-space:nowrap; }
+.iso-label > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.iso-label:is([data-kind="mother"], [data-kind="father"]) { padding-inline-start:8px; }
+.iso-label[data-short] { padding:2px; }
+.iso-label:is([data-hot], [data-selected]) { z-index:1; }
+.iso-label[data-hot] { border-color:var(--foreground); }
+.iso-label[data-selected] { border-color:var(--context); box-shadow:0 0 0 1px var(--context); }
+.iso-badge { flex:none; display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; border-radius:3px; background:var(--kind); color:var(--card); font:600 0.75rem/1 var(--mono); }
+/* The isometric HUD uses the same native border as the other cut controls and cards. */
+.iso-chamfer { --cut:7px; border:1px solid var(--hud-edge); background:var(--hud-face); }
+.iso-hud { position:absolute; z-index:2; bottom:12px; }
+.iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
+.iso-key { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:32px; height:30px; padding:0 10px; color:var(--foreground); font-size:0.78125rem; font-weight:500; cursor:pointer; }
+.iso-key:hover { background:var(--hud-face-hover); }
+.iso-key:focus-visible { outline:none; background:var(--ring); }
+.dark .iso-key { color:var(--gold); }
+.iso-keys b { color:var(--foreground); font-weight:500; }
+.iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; border-left-color:var(--kind, var(--border)); }
+.iso-status strong { min-width:0; overflow-wrap:anywhere; font-size:0.84375rem; font-weight:600; color:var(--foreground); }
+.iso-status small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.75rem; color:var(--muted-foreground); }
+@container iso-board (max-width:760px) { .iso-keys { display:none; } }
+@media (prefers-reduced-motion:reduce) { .iso-glow, .iso-ring, .iso-chevron { animation:none; } .iso-lift { transition:none; } }
+
 /* The browser toolbar never squeezes the address field (180px, above): as the panel narrows, Annotate and Draw become icons
  * and open-externally moves into the … menu. The panel's own floor (components/side-panel.tsx) keeps what is left enough. */
 .browser-panel { container:browser-panel / inline-size; }
@@ -1039,6 +1352,21 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-files li[data-included="true"] .context-file-state { color:var(--source-included); }
 .context-files-error { padding:8px 16px; overflow-wrap:anywhere; }
 .context-files-error [role="alert"] { color:var(--destructive); }
+
+/* Identity edges stay distinct; restrained tints keep secondary text readable in both themes. */
+.agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); padding-right:58px; }
+.agent-node[data-kind="agent"]:has(.agent-portrait) { width:230px; padding-right:78px; min-height:104px; }
+.agent-portrait { float:left; position:absolute; right:8px; top:30px; pointer-events:none; }
+.agent-portrait > div { width:64px; height:64px; }
+.dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 10%, var(--card)); }
+.iso-node[data-kind="agent"] { --kind:var(--agent-color); }
+.canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+.canvas-round-limit { position:absolute; bottom:48px; right:12px; z-index:3; display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--card); color:var(--foreground); border:1px solid var(--border); }
+/* Reuse the installed controls and theme: the offline desktop bundle has no daisyUI stylesheet. */
+.canvas-characters { position:relative; }
+.canvas-characters > summary { list-style:none; cursor:pointer; }
+.canvas-characters:not([open]) > .dropdown-content { display:none; }
+.canvas-characters > .dropdown-content { position:absolute; bottom:calc(100% + 8px); left:0; width:190px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
 
 /* Love Spot's brand color stays local to its navigation mark and drawing controls. */
 :root { --love-red:#8B1017; }

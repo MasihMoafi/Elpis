@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object } from './client.mjs';
+import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
 import { listFolders, projectDirectory } from './folders.mjs';
@@ -298,6 +299,7 @@ export async function startDesktopServer(options = {}) {
         }
         // Whether the project is a Git repository with a commit: the canvas asks for worktree isolation only then.
         if (url.pathname === '/api/repository' && method === 'GET') return json(response, 200, { repository: await isRepository(await projectDirectory(cwdOf(url))) });
+        if (url.pathname === '/api/canvas/plan' && method === 'POST') return json(response, 200, await planCanvas(client, await body(request)));
         if (url.pathname === '/api/experiment-lab') {
           if (method === 'GET') return json(response, 200, { record: await experimentLab.read(url.searchParams.get('id') || undefined), entries: await experimentLab.list() });
           const input = await body(request);
