@@ -206,3 +206,14 @@ Evidence: `tests/chat-organize.test.cjs` (9 cases), retained sidebar/project che
 
 ## Image replies — 24 October 2026
 Masih: "I like this, and I like to be able to reply to images directly." Reply beside an inline, uploaded or viewed picture selects that individual image and its source message, shows a thumbnail in the composer, focuses typing, and sends its bytes with the answer. Preserve drafts and other attachments; replacing/cancelling a reply replaces/removes only its own context and picture. Failed image reads show an error without adding incomplete context. Acceptance: select the second of two images, switch chats/reload, type immediately, send exact selected bytes; cancel preserves unrelated files; unavailable-image negative case. State: installed as gui-20261024-image-replies-f83bdbf78; production build/typecheck and 12 focused renderer checks passed. User restart and acceptance pending.
+
+## Workflow identity — 24 October 2026
+
+Masih: “I can't distinguish them … every workflow must have a unique name and even color and look okay?” Uses R5/R9/R20/R34/R45/R57.
+
+| ID | Requirement | Acceptance check | Status |
+| --- | --- | --- | --- |
+| WI1 | Persist unique workflow names and a fixed-palette colour; new/duplicated boards get a distinct name, duplicate renames show a reason beside the field, colour choices use a menu. The sidebar, page header and Mother card reuse one dot mark. | Real clicks rename/refuse/duplicate/recolour/reload; compare marks across all three owners in light/dark. | Mock-bridge UI verified; packaged acceptance pending |
+| WI2 | Each saved run appears once by its name and colour, with its step chats indented using the shared thread row. Running runs expand and keep their status mark; finished runs fold. Legacy “Workflows · X” titles derive their display from saved run/task metadata without engine renames. | Four runs with twelve legacy step chats show four distinguishable parent rows, nested step-only names, collapse/reload and no engine-name writes; inspect light/dark screenshots. | Mock-bridge UI verified; packaged acceptance pending |
+
+Evidence: `tests/workflow-identity.test.cjs` (6 cases), retained UI checks (24 cases), bridge title checks (2 cases), build and TypeScript pass. Includes same-root run separation, saved chat nesting, explicit step names, failed-save preservation and unblurred name drafts. Inspected screenshots: `~/.cache/elpis-shots/wfident-{sidebar-default,sidebar,identity,name-refused}-{light,dark}.png` and `wfident-identity-iso-dark.png`. Full verification and remaining limits: `~/.cache/elpis-briefs/cc/wfident.progress.md`.

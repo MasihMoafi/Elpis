@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { History, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, unreadable } from "@/lib/api";
+import { WorkflowMark } from "@/components/workflow-identity";
+import type { WorkflowCatalog } from "@/lib/workflow-identity";
 
 type WorkflowRun = { id: string; rootThreadId: string; name?: string; status: string; tasks?: { status: string }[] };
-export function WorkflowHistory({ revision, onOpenChat }: { revision?: string; onOpenChat: (id: string) => void }) {
+export function WorkflowHistory({ revision, onOpenChat, catalog }: { revision?: string; onOpenChat: (id: string) => void; catalog?: WorkflowCatalog }) {
   const [open, setOpen] = useState(false), [runs, setRuns] = useState<WorkflowRun[]>([]), [error, setError] = useState(""), [loading, setLoading] = useState(false);
   const refresh = useCallback(async () => {
     setLoading(true); setError("");
@@ -25,7 +27,7 @@ export function WorkflowHistory({ revision, onOpenChat }: { revision?: string; o
       {loading && <p role="status">Loading workflows…</p>}
       {error && <p role="alert">{error}</p>}
       {!loading && !error && !runs.length && <p>No workflows have run yet.</p>}
-      <ul>{runs.map(run => <li key={run.id}><div><strong>{run.name || "Workflow"}</strong><small>{run.status}{run.tasks ? ` · ${run.tasks.filter(task => task.status === "succeeded" || task.status === "completed").length}/${run.tasks.length} tasks complete` : ""}</small></div><Button variant="outline" size="xs" onClick={() => onOpenChat(run.rootThreadId)}>Open chat</Button></li>)}</ul>
+      <ul>{runs.map(run => <li key={run.id}><div><strong>{catalog?.identities[run.id] && <WorkflowMark identity={catalog.identities[run.id]} />}{catalog?.identities[run.id]?.name || run.name || "Workflow"}</strong><small>{run.status}{run.tasks ? ` · ${run.tasks.filter(task => task.status === "succeeded" || task.status === "completed").length}/${run.tasks.length} tasks complete` : ""}</small></div><Button variant="outline" size="xs" onClick={() => onOpenChat(run.rootThreadId)}>Open chat</Button></li>)}</ul>
     </section>}
   </div>;
 }

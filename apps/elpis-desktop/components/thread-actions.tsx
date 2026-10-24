@@ -25,6 +25,7 @@ type Props = {
   /** Hands Delete to the sidebar's shared confirmation instead, which also covers several selected chats. */
   onRequestDelete?: (thread: Thread) => void;
   onRename?: (thread: Thread, name: string) => Promise<void>;
+  renameDescription?: string;
   /** Archives this chat, or the selection it belongs to; reports its own failures, and the menu closes immediately. */
   onArchive?: (threads: Thread[]) => void;
   pinned?: boolean;
@@ -57,7 +58,7 @@ type Props = {
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, bookmarked, onBookmark, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject, onNewProject, onPutUnder, onTakeOut }: Props) {
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, renameDescription, onArchive, pinned, onPin, bookmarked, onBookmark, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject, onNewProject, onPutUnder, onTakeOut }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -120,7 +121,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Rename conversation</AlertDialogTitle>
-          <AlertDialogDescription>The new name is saved in Elpis and shown in every client.</AlertDialogDescription>
+          <AlertDialogDescription>{renameDescription ?? "The new name is saved in Elpis and shown in every client."}</AlertDialogDescription>
         </AlertDialogHeader>
         <form aria-label="Rename conversation" className="grid gap-4" onSubmit={event => { event.preventDefault(); if (name.trim()) void save(name.trim()); }}>
           <Input aria-label="Conversation name" maxLength={120} value={name} onChange={event => setName(event.target.value)} autoFocus />

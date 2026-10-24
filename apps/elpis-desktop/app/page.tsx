@@ -77,6 +77,8 @@ import { ReadAloud } from "@/components/read-aloud";
 import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { chooseProject, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
+import { WorkflowColourMenu, WorkflowMark } from "@/components/workflow-identity";
+import { useWorkflowCatalog, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { AccountRow } from "@/components/account-row";
@@ -696,6 +698,7 @@ export default function Home() {
             if (notice) setRuntimeNotices(prev => ({ ...prev, [threadId]: notice }));
           }
           if (method === "thread/status/changed" && params.status) patchThread(params.threadId, { status: params.status });
+          if ((method === "thread/started" || method === "thread/status/changed") && (params.thread?.name?.startsWith("Workflows · ") || threadsRef.current.some(thread => thread.id === params.threadId && thread.name?.startsWith("Workflows · ")))) window.dispatchEvent(new Event("elpis:workflow-history"));
           // The engine's word that a chat is no longer running ends its turn here too, even if that turn's own end was
           // missed (another window, a reconnect, a dropped stream), so a finished chat never keeps offering a follow-up.
           if (method === "thread/status/changed" && params.status && params.status.type !== "active") { turnRevisions.current[params.threadId] = (turnRevisions.current[params.threadId] ?? 0) + 1; setActiveTurns(prev => without(prev, params.threadId)); }
@@ -1597,13 +1600,34 @@ export default function Home() {
   useEffect(() => { if (shellCreated.current !== selected?.id || view !== "chat") setShellMode(false); shellCreated.current = null; setSideChat(null); }, [selected?.id, view]);
   useEffect(() => { if (text) setSlashNotice(""); }, [text]);
 
-  const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(threads, searchResults.data, hidden.current) : threads;
+  const workflowCatalog = useWorkflowCatalog(ready && connected);
+  const listedThreadIds = useMemo(() => new Set(threads.map(thread => thread.id)), [threads]);
+  const workflowRuns = useMemo(() => workflowCatalog.runs.filter(run => !hidden.current.has(run.rootThreadId) && (listedThreadIds.has(run.rootThreadId) || workflowMembers(run).some(member => listedThreadIds.has(member.threadId)))), [workflowCatalog.runs, listedThreadIds]);
+  const workflowRoots = useMemo(() => new Map([...workflowRuns].sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0)).map(run => [run.rootThreadId, run])), [workflowRuns]);
+  const workflowSteps = useMemo(() => new Map(workflowRuns.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id }] as const))), [workflowRuns]);
+  const sidebarThreads = useMemo(() => [...threads, ...[...workflowRoots.values()].filter(run => !threads.some(thread => thread.id === run.rootThreadId)).map(run => ({ id: run.rootThreadId, name: run.name, status: { type: run.status === "running" ? "active" : "idle" } } as Thread))], [threads, workflowRoots]);
+  const sidebarTitle = (thread: Thread) => {
+    const step = workflowSteps.get(thread.id), chosen = thread.name?.trim();
+    if (step) return chosen && !chosen.startsWith("Workflows · ") ? chosen : step.title;
+    return workflowCatalog.identities[workflowRoots.get(thread.id)?.id ?? ""]?.name ?? (chosen?.startsWith("Workflows · ") ? chosen.slice(12) : title(thread));
+  };
+  const sidebarParent = (thread: Thread) => workflowSteps.get(thread.id)?.parent ?? thread.parentThreadId ?? displayParents[thread.id];
+  const originOf = (thread: Thread) => workflowRoots.has(thread.id) || workflowSteps.has(thread.id) ? "Workflows" : chatOrigin(thread, loveActivity.threads);
+  const branchOpen = (id: string) => expanded[id] ?? (workflowRoots.get(id)?.status === "running");
+  const workflowOpen = (run: WorkflowRun) => expanded[`workflow:${run.id}`] ?? run.status === "running";
+  const previousRuns = useRef(new Map<string, string>());
+  useEffect(() => {
+    const ended = workflowCatalog.runs.filter(run => previousRuns.current.get(run.id) === "running" && run.status !== "running");
+    previousRuns.current = new Map(workflowCatalog.runs.map(run => [run.id, run.status]));
+    if (ended.length) setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) }));
+  }, [workflowCatalog.runs]);
+  const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(sidebarThreads, searchResults.data, hidden.current) : sidebarThreads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
   const unreadIds = new Set(attention.unread);
   const sidebarState = (thread: Thread) => agentState(thread, waitingIds, unreadIds);
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
   // Sorted lists show chats that need you or are working first; an order arranged by hand stays as arranged.
-  const sortedChats = sortChats(threads.filter(thread => !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order);
+  const sortedChats = sortChats(sidebarThreads.filter(thread => !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order);
   const chatListOrder = useChatListOrder(chatGroups.sortBy === "manual" ? sortedChats : prioritizeChats(sortedChats, thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
   const ordinaryThreads = chatListOrder.chats;
   // Missing parents never hide chats (for example, when only part of history is loaded).
@@ -1612,7 +1636,7 @@ export default function Home() {
   const displayParentIds = useMemo(() => new Set(Object.values(displayParents)), [displayParents]);
   const agentRuns = threads.filter(isAgentRun);
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));
-  const agentParents = new Set(threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []));
+  const agentParents = new Set([...threads.flatMap(thread => thread.parentThreadId ? [thread.parentThreadId] : []), ...workflowSteps.values()].map(value => typeof value === "string" ? value : value.parent));
   const runActions: MenuAction[] = [
     { id: "hide", label: "Hide Agent runs", run: () => {
       try { savePreferences({ showAgentRuns: false }); requestAnimationFrame(() => searchInput.current?.focus()); }
@@ -1624,8 +1648,8 @@ export default function Home() {
   // The engine's search matches letter case exactly; a listed chat's title and first message match in any case here.
   const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
-  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!!searchTerm || !displayParents[t.id] && (!t.parentThreadId || !searchedThreads.some(p => p.id === t.parentThreadId)))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
-  const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
+  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!!searchTerm || !sidebarParent(t) || !searchedThreads.some(p => p.id === sidebarParent(t)))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
+  const unlinked = filtered.filter(t => !workflowSteps.has(t.id) && isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results rank by how well each chat matches (lib/search-rank.ts).
   const rootIds = new Set(roots.map(thread => thread.id));
@@ -1634,20 +1658,21 @@ export default function Home() {
   const pinnedChats = searchTerm ? [] : listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = searchTerm ? listedRoots : listedRoots.filter(t => !pins.includes(t.id));
   const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
   const ungroupedChats = grouped ? grouped.ungrouped : unpinnedChats;
-  const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Love Spot");
-  const workflowChats = searchTerm || hiddenPages.includes("canvas") ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Workflows");
-  const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !chatOrigin(thread, loveActivity.threads));
+  const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => originOf(thread) === "Love Spot");
+  const workflowChats = searchTerm || hiddenPages.includes("canvas") ? [] : ungroupedChats.filter(thread => originOf(thread) === "Workflows");
+  const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !originOf(thread));
   const ordered = [...(collapsedSections.pinned && !searchTerm ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
   // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
   const inlineAgents = new Set<string>();
   const collectAgents = (id: string, seen = new Set<string>()) => {
-    if (!expanded[id] || seen.has(id)) return;
+    if (!branchOpen(id) || seen.has(id)) return;
     const next = new Set(seen).add(id);
-    for (const child of searchedThreads.filter(thread => (thread.parentThreadId ?? displayParents[thread.id]) === id)) {
+    for (const child of searchedThreads.filter(thread => sidebarParent(thread) === id)) {
       inlineAgents.add(child.id); collectAgents(child.id, next);
     }
   };
   for (const root of [...ordered, ...ordinaryThreads.filter(thread => !isAgent(thread) && projectChats[thread.id] && !collapsedProjects[projectChats[thread.id]] && !collapsedSections.projects && !pins.includes(thread.id))]) collectAgents(root.id);
+  for (const run of workflowRuns) if (workflowOpen(run) && !collapsedSections.workflows) for (const member of workflowMembers(run)) { inlineAgents.add(member.threadId); collectAgents(member.threadId); }
   const topLevelAgentRuns = agentRuns.filter(thread => !inlineAgents.has(thread.id) && (!thread.parentThreadId || !agentRunIds.has(thread.parentThreadId)));
   // Check newly visible agents once, so only agents with actual children get an expansion control.
   useEffect(() => {
@@ -1795,7 +1820,7 @@ export default function Home() {
   /** "Move to group" for these chats (the row's chat, or the selection it belongs to), as Claude's session menu has it.
    * Only top-level chats are grouped; an agent's chat stays under its parent. */
   function groupMenu(thread: Thread, ids: string[]) {
-    if (thread.parentThreadId || isAgentRun(thread)) return undefined;
+    if (thread.parentThreadId || workflowSteps.has(thread.id) || isAgentRun(thread)) return undefined;
     const known = (id: string) => chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? chatGroups.members[id] : null;
     const currents = new Set(ids.map(known));
     return { groups: chatGroups.groups, current: currents.size === 1 ? [...currents][0] : undefined,
@@ -1812,11 +1837,16 @@ export default function Home() {
     if (!checkedChildren.current.has(parent)) void loadChildren(parent, undefined, false);
   }
   function organizationActions(thread: Thread) {
-    if (isAgent(thread) || isAgentRun(thread)) return {};
+    if (isAgent(thread) || workflowSteps.has(thread.id) || isAgentRun(thread)) return {};
     return { onMoveToProject: setProjectMove, onNewProject: newProjectFrom, onPutUnder: setNestTargets,
       onTakeOut: movingIds(thread.id).some(id => displayParents[id]) ? (chats: Thread[]) => {
         if (updateGroups(state => putChatsUnder(state, chats.map(chat => chat.id), null))) setMarked([]);
       } : undefined };
+  }
+  async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
+    if (!runId) { await renameThread(thread, name); return; }
+    const problem = workflowCatalog.rename(runId, name);
+    if (problem) throw Error(problem);
   }
   // Manual order: drag a chat onto another (or onto a group's heading, or Recents') or press Alt+Up/Down on it. Pinned chats
   // stay pinned and others stay unpinned; a drop in another section moves the chat there. The first move makes Sort by Manual.
@@ -1863,15 +1893,18 @@ export default function Home() {
     if (edge && edge.id !== id) placeDragged(id, section, { target: edge.id, after: !top });
   }
   /** `inOrigin`: the row sits in the group named for its origin, so the origin is not written again beside its title. */
-  function threadRow(thread: Thread, depth = 0, inOrigin = false) {
-    const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
-    const origin = chatOrigin(thread, loveActivity.threads);
+  function threadRow(thread: Thread, depth = 0, inOrigin = false, recordedRun?: WorkflowRun) {
+    const run = recordedRun ?? workflowRoots.get(thread.id), identity = run ? workflowCatalog.identities[run.id] : undefined, name = identity?.name ?? sidebarTitle(thread);
+    const expandId = run ? `workflow:${run.id}` : thread.id, open = run ? workflowOpen(run) : branchOpen(thread.id);
+    const state = run ? run.status === "running" ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
+    const origin = workflowSteps.has(thread.id) ? null : chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     const hasAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
     const canExpandAgents = !searchTerm && (hasAgents || displayParentIds.has(thread.id)), branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
-    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveChats} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
+    return <ThreadActions key={thread.id} thread={{ ...thread, name }} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={(thread, name) => renameDisplayedThread(thread, name, identity?.id)} onArchive={archiveChats} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
       bookmarked={bookmarked} onBookmark={toggleBookmark}
+      renameDescription={identity ? "The workflow name is saved on this device." : undefined}
       {...organizationActions(thread)}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
@@ -1882,21 +1915,22 @@ export default function Home() {
         setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen); if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
       } } : undefined}
       area={<ReorderItem reorder={chatReorder} itemId={thread.id} enabled={!isAgent(thread) && !searchTerm}
-        render={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} style={depth ? { paddingLeft: `${depth * 14}px` } : undefined} />} />}>
+        render={<div className={`thread-row${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`} data-thread-id={thread.id} data-workflow-run={run?.id} style={depth ? { paddingLeft: `${depth * 14}px` } : undefined} />} />}>
       {menu => <>
-      {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${expanded[thread.id] ? "Collapse" : "Expand"} ${branchName} in ${name}`} aria-expanded={!!expanded[thread.id]} title={`${expanded[thread.id] ? "Collapse" : "Expand"} ${branchName} in ${name}`} onClick={() => {
-        if (expanded[thread.id]) setExpanded(previous => ({ ...previous, [thread.id]: false }));
-        else { setExpanded(previous => ({ ...previous, [thread.id]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
-      }}><ChevronRight size={13} viewBox="4 4 16 16" className={expanded[thread.id] ? "rotate-90" : undefined} /></Button>}
+      {canExpandAgents && <Button variant="ghost" size="icon-xs" aria-label={`${open ? "Collapse" : "Expand"} ${branchName} in ${name}`} aria-expanded={!!open} title={`${open ? "Collapse" : "Expand"} ${branchName} in ${name}`} onClick={() => {
+        if (open) setExpanded(previous => ({ ...previous, [expandId]: false }));
+        else { setExpanded(previous => ({ ...previous, [expandId]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
+      }}><ChevronRight size={13} viewBox="4 4 16 16" className={open ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <span className="thread-title">{name}</span>
-        {isAgentRun(thread) && thread.parentThreadId && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
+        <span className="thread-title" title={name}>{name}</span>
+        {isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
+      {identity && <WorkflowColourMenu identity={identity} catalog={workflowCatalog} label={`Colour for ${identity.name}`} onError={setError} />}
       <span className="row-hover-actions">
         {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
         <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
@@ -1909,24 +1943,26 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameThread} onArchive={archiveChats} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={{ ...thread, name: sidebarTitle(thread) }} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameDisplayedThread} renameDescription={workflowRoots.has(thread.id) ? "The workflow name is saved on this device." : undefined} onArchive={archiveChats} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
   /** One chat tab: its title and close button, the "…" on the shown one, and the chat's menu on right-click. */
   function chatTab(tab: ChatTab) {
     const shown = tab.id === tabs.activeId, thread = tab.threadId ? (shown && selected?.id === tab.threadId ? selected : find(tab.threadId)) : undefined;
-    const label = thread ? title(thread) : tab.threadId ? tab.title || "Chat" : "New chat";
-    return <Tab key={tab.id} chat icon={<ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
+    const label = thread ? sidebarTitle(thread) : tab.threadId ? tab.title || "Chat" : "New chat";
+    const identity = thread ? workflowCatalog.identities[workflowSteps.get(thread.id)?.runId ?? workflowRoots.get(thread.id)?.id ?? ""] : undefined;
+    return <Tab key={tab.id} chat icon={identity ? <WorkflowMark identity={identity} /> : <ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
       wrap={thread ? (area, content) => threadMenu(thread, area, content, shown) : undefined} onSelect={() => showTab(tab)} onClose={() => closeChatTab(tab.id)} />;
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    const children = searchedThreads.filter(c => (c.parentThreadId ?? displayParents[c.id]) === parentId);
+    const children = searchedThreads.filter(c => sidebarParent(c) === parentId);
     return (displayParentIds.has(parentId) ? sortChats(children, chatGroups.sortBy, title, chatGroups.order) : children).map(child => threadBranch(child, depth, next));
   }
   function threadBranch(thread: Thread, depth = 0, seen = new Set<string>()) {
-    return <div key={thread.id}>{threadRow(thread, depth)}{!searchTerm && expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
+    if (workflowRoots.has(thread.id)) return workflowBranches(thread, depth, seen);
+    return <div key={thread.id}>{threadRow(thread, depth)}{!searchTerm && branchOpen(thread.id) && descendants(thread.id, depth + 1, seen)}</div>;
   }
   function runDescendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
@@ -1934,6 +1970,15 @@ export default function Home() {
   }
   /** A listed chat and, when shown, its agents under it. */
   const chatRows = (thread: Thread) => threadBranch(thread);
+  function workflowBranches(thread: Thread, depth: number, seen: Set<string>): React.ReactNode {
+    if (seen.has(thread.id)) return null;
+    const next = new Set(seen).add(thread.id);
+    return workflowRuns.filter(run => run.rootThreadId === thread.id).map(run => {
+      const ids = new Set(workflowMembers(run).map(member => member.threadId));
+      const children = searchedThreads.filter(child => ids.has(child.id) || workflowRoots.get(thread.id)?.id === run.id && (child.parentThreadId === thread.id || displayParents[child.id] === thread.id) && !workflowSteps.has(child.id));
+      return <div key={run.id}>{threadRow(thread, depth, true, run)}{!searchTerm && workflowOpen(run) && children.map(child => threadBranch(child, depth + 1, next))}</div>;
+    });
+  }
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
    * closed group holding a chat that needs you says so, as Claude's does. */
   function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
@@ -1991,6 +2036,7 @@ export default function Home() {
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); focusComposer(); } }} />
       <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
+        {workflowCatalog.error && <p role="alert" className="px-2 text-xs text-destructive">{workflowCatalog.error}</p>}
         {!searchTerm && <section aria-label="Projects"><div className="section-label-row">{foldable("projects", "Projects")}<Button variant="ghost" size="icon-xs" aria-label="Add new project" title="Add new project: choose a folder" onClick={() => void addProject()}><PlusIcon size={13} /></Button></div>
           {!collapsedSections.projects && projects.map(item => { const open = !collapsedProjects[item.id], chats = ordinaryThreads.filter(t => !isAgent(t) && !displayParents[t.id] && projectChats[t.id] === item.id && !pins.includes(t.id));
             return <SidebarGroup key={item.id} kind="project" dropProps={chatReorder.targetProps(`project:${item.id}`, true)} name={item.name} title={item.cwd} icon={<FolderIcon size={14} />} open={open} active={project?.id === item.id} onToggle={() => setCollapsedProjects(prev => ({ ...prev, [item.id]: open }))}
@@ -2001,7 +2047,7 @@ export default function Home() {
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}
         {loveChats.length > 0 && <section role="group" aria-label="Love Spot"><div className="section-label-row">{foldable("love", "Love Spot")}</div>{!collapsedSections.love && loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
-        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}</div>{!collapsedSections.workflows && workflowChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
+        {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}</div>{!collapsedSections.workflows && workflowChats.map(chatRows)}</section>}
         {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && <section aria-label={searchTerm ? "Results" : "Recents"} {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}><div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>{searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents")}
           {!searchTerm && ordinaryUnread.length > 0 && <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>Mark all as read</Button>}
           {!searchTerm && <GroupAndSortMenu state={chatGroups} onChange={change => updateGroups(state => ({ ...state, ...change }))} />}</div>
@@ -2083,7 +2129,7 @@ export default function Home() {
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
-      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={workflowFolder} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}

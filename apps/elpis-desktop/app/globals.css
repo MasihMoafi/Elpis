@@ -800,6 +800,13 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row:has(.thread-dot[data-state="unread"]) .thread-title { font-weight:600; }
 .thread-subtitle { font-size:0.75rem; color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
+.thread-dot.workflow-mark { display:inline-block; margin:0 3px; border-color:var(--workflow-colour); background:var(--workflow-colour); vertical-align:middle; }
+.workflow-mark[data-colour="blue"] { --workflow-colour:light-dark(#2458b8,#8bb7ff); }
+.workflow-mark[data-colour="teal"] { --workflow-colour:light-dark(#146b67,#68d4c7); }
+.workflow-mark[data-colour="violet"] { --workflow-colour:light-dark(#6b44ac,#c1a0fa); }
+.workflow-mark[data-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
+.workflow-mark[data-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
+.workflow-mark[data-colour="amber"] { --workflow-colour:var(--brand-accent); }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }

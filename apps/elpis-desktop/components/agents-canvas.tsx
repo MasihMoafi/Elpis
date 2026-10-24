@@ -4,7 +4,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, ExternalLink, ListOrdered, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Copy, ExternalLink, ListOrdered, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import { MenuRow } from "@/components/ui/menu-row";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowHistory } from "@/components/workflow-history";
+import { WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
+import type { WorkflowCatalog, WorkflowIdentity } from "@/lib/workflow-identity";
 import { WorkflowSources } from "@/components/workflow-sources";
 import { summarize, workedFor } from "@/components/transcript";
 import { isoLayout } from "@/lib/iso";
@@ -36,7 +38,7 @@ type Listed = { data: { id: string; status: string; error?: string | null; next?
 type HandleEnd = "source" | "target";
 /** `clash` is the files of a merge clash that stopped the run on this agent (lib/canvas-isolation.ts). */
 type AgentNodeData = AgentData & { status?: TaskStatus; check?: TaskStatus; clash?: string[]; modelLabel?: string; wave?: number; onHandle?: (id: string, end: HandleEnd, event: ReactMouseEvent) => void; onQuick?: (id: string) => void };
-type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; onHandle?: AgentNodeData["onHandle"] };
+type MotherData = { run: "idle" | "running" | "finished"; children: number; limit: number; identity?: WorkflowIdentity; onHandle?: AgentNodeData["onHandle"] };
 const FINISHED = new Set(["succeeded", "failed", "cancelled", "completed"]);
 const lines = (text: string) => text.split("\n").map(line => line.trim()).filter(Boolean);
 /** What Elpis is asked when the user ran a team without writing a goal: keep what is drawn and set, and fill the rest. */
@@ -81,7 +83,7 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
 function MotherNode({ id, data }: NodeProps<Node<MotherData>>) {
   return <div className="agent-node mother-node" data-kind="mother" data-status={data.run === "running" ? "running" : undefined}
     title="The Mother is the run's chat: every agent is her child, she starts the ones that wait for no one, and every report comes back to her.">
-    <span className="agent-node-kind">Mother</span>
+    <span className="agent-node-kind">{data.identity && <WorkflowMark identity={data.identity} />}Mother</span>
     <strong className="agent-node-title">This run&rsquo;s chat</strong>
     <small className="agent-node-meta">{data.children} of {data.limit} agents · {data.run === "idle" ? "not run" : data.run}</small>
     <Handle type="source" position={Position.Right} title="Add agents she starts" onClick={event => data.onHandle?.(id, "source", event)} />
@@ -411,7 +413,7 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
-type Props = { models: Model[]; cwd?: string; dark: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode };
+type Props = { workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
 }
@@ -424,10 +426,23 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
+function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(initialGraph);
+  const identity = graph.workflowId ? workflowCatalog.identities[graph.workflowId] : undefined;
+  const previousIdentity = useRef<WorkflowIdentity | undefined>(undefined);
+  useEffect(() => {
+    const before = previousIdentity.current; previousIdentity.current = identity;
+    if (identity && before?.id === identity.id && before.name !== identity.name && graph.name === before.name) setGraph(current => ({ ...current, name: identity.name }));
+  }, [identity, graph.name]);
+  useEffect(() => {
+    if (!workflowCatalog.hydrated) return;
+    try {
+      const item = workflowCatalog.ensure(graph.workflowId || crypto.randomUUID(), graph.name);
+      if (graph.workflowId !== item.id || !identity) setGraph(current => ({ ...current, workflowId: item.id, name: item.name }));
+    } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); }
+  }, [workflowCatalog.hydrated, workflowCatalog.ensure, graph.workflowId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [sourceId, setSourceId] = useState<string | null>(null);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
@@ -462,6 +477,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const [patternCommand, setPatternCommand] = useState<string | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   const [run, setRun] = useState<Run | null>(null), [starting, setStarting] = useState(false);
+  useEffect(() => { if (run) void workflowCatalog.refresh(); }, [run?.graphId, run?.status, workflowCatalog.refresh]); // eslint-disable-line react-hooks/exhaustive-deps
   const startingRun = useRef(false);
   useEffect(() => {
     if (!run) return;
@@ -653,9 +669,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       } } satisfies FrameData }];
   });
   const nodes = useMemo<Node[]>(() => [...frames, ...nodesWithFather(graph.nodes.map(node => node.type === "mother"
-    ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle } satisfies MotherData }
+    ? { ...node, deletable: false, selected: selection.includes(MOTHER), data: { run: runState, children: agents.length, limit, onHandle, identity } satisfies MotherData }
     : { ...node, selected: selection.includes(node.id), data: node.type === "agent" ? { ...node.data, status: states[node.id]?.status, check: states[checkOf(node.id)]?.status, clash: clashes[node.id], modelLabel: modelLabel(node.data), wave: order.get(node.id), onHandle, onQuick } : { ...node.data, onText: setText } }),
-  )], [graph, renamingFrame, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  )], [graph, identity, renamingFrame, selection, states, clashes, models, order, runState, fatherState, limit, catalog.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const flowLabels = useMemo(() => flowLabelPositions(nodes.filter(node => node.type !== "frame"), graph.edges), [nodes, graph.edges]);
   const edges = useMemo<Edge[]>(() => [
     // The Mother's wires: she starts every agent of the first wave.
@@ -1305,9 +1321,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       const ready = executionGraph(planned, targets), built = runParts(ready);
       if ("error" in built) { setNotice(built.error); return; }
       setNotice(""); setUndoLoad(null); setStates({}); setClashes({}); setLog([]); said.current = {}; reports.current.clear(); followLog.current = true;
-      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: ready.name.slice(0, 120) || "Workflows",
+      const runIdentity = workflowCatalog.ensure(identity?.rootThreadId ? crypto.randomUUID() : graph.workflowId || crypto.randomUUID(), ready.name);
+      const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: runIdentity.name,
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
-      const result = await runPart(created.thread.id, ready.name || "Workflows", built.mother, built.father.length ? await fatherPart(built.father) : undefined);
+      const result = await runPart(created.thread.id, runIdentity.name, built.mother, built.father.length ? await fatherPart(built.father) : undefined);
+      workflowCatalog.attach(runIdentity.id, result.graphId, created.thread.id);
+      setGraph(current => ({ ...current, workflowId: result.graphId, name: runIdentity.name }));
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
     } catch (error) { setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
     finally { startingRun.current = false; setStarting(false); }
@@ -1321,8 +1340,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const scope = runTargets ? executionGraph(graph, runTargets).nodes.filter(node => node.type === "agent") : [];
   return <section className="agents-canvas" aria-label="Workflows" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
-      <WorkflowHistory revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} />
-      <Input aria-label="Graph name" className="canvas-name" value={graph.name} maxLength={120} onChange={event => setGraph(current => ({ ...current, name: event.target.value }))} />
+      <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} />
+      {identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
+      <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
@@ -1398,7 +1418,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         </section>}
         <p className="canvas-inputs" aria-label="Inputs needed" title={selected ? `${selected.data.title}: ${selectedInputText}` : "Select an agent to inspect its inputs"}>{selected ? <><b>{selected.data.title}: </b>{selectedInputText}</> : "Select an agent to inspect its inputs"}</p>
       </div>
-      {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
+      {iso ? <IsoBoard workflowIdentity={identity} graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
         canConnect={validConnection} inserting={insertWire}
         onReconnect={(edge, source, target) => { connectionCancelled.current = false; reconnect(edge, source, target); }}
         renamingFrame={renamingFrame} onFrameName={(id, title) => { if (title) { checkpoint(); setGraph(current => ({ ...current, frames: current.frames?.map(frame => frame.id === id ? { ...frame, title } : frame) })); } setRenamingFrame(null); focusBoard(); }} onNoteText={setText}

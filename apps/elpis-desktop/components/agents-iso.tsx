@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkflowMark } from "@/components/workflow-identity";
+import type { WorkflowIdentity } from "@/lib/workflow-identity";
 import { Segmented } from "@/components/settings/rows";
 import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
@@ -116,11 +118,11 @@ export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: bo
 
 /** `father`: the agents past the Mother's ten, which the Father runs (lib/canvas.ts `parents`). */
 export type IsoController = { fit: () => void; frame: () => void; cancelGesture: () => boolean; zoom: (factor: number) => void; reveal: (ids: string[]) => void; position: (client: Point) => Point; keepView: () => void };
-type Props = { inserting: string | null; canConnect: (source: string, target: string, ignored?: string | null, alongside?: boolean) => boolean; onReconnect: (edge: CanvasEdge, source: string, target: string) => void; renamingFrame: string | null; onFrameName: (id: string, title: string | null) => void; onNoteText: (id: string, text: string) => void; onMoveStart: (id: string, extract: boolean) => void; onMove: (id: string, dx: number, dy: number) => void; onMoveEnd: (shift: boolean, cancel?: boolean) => void; onMovePreview: (id: string) => void; modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string, kind?: CanvasEdge["kind"]) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
+type Props = { workflowIdentity?: WorkflowIdentity; inserting: string | null; canConnect: (source: string, target: string, ignored?: string | null, alongside?: boolean) => boolean; onReconnect: (edge: CanvasEdge, source: string, target: string) => void; renamingFrame: string | null; onFrameName: (id: string, title: string | null) => void; onNoteText: (id: string, text: string) => void; onMoveStart: (id: string, extract: boolean) => void; onMove: (id: string, dx: number, dy: number) => void; onMoveEnd: (shift: boolean, cancel?: boolean) => void; onMovePreview: (id: string) => void; modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string, kind?: CanvasEdge["kind"]) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
 /** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
  * (Shift adds), a double-click renames an agent and Enter opens Info, the arrows move between agents in run order.
  * The parent owns window/crossing selection in both views; middle-drag and scroll pan, Ctrl/Cmd+scroll zooms. */
-export function IsoBoard({ inserting, canConnect, onReconnect, renamingFrame, onFrameName, onNoteText, onMoveStart, onMove, onMoveEnd, onMovePreview, graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
+export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect, renamingFrame, onFrameName, onNoteText, onMoveStart, onMove, onMoveEnd, onMovePreview, graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
   const root = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, SVGGElement>());
   const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
   const wave = useMemo(() => waves(graph), [graph]);
@@ -262,7 +264,7 @@ export function IsoBoard({ inserting, canConnect, onReconnect, renamingFrame, on
     return { x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)), y: Math.max(labelHeight + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - LABEL.gap)) };
   };
   for (const place of [...places].sort((a, b) => Number(kept(b)) - Number(kept(a)))) {
-    const width = renaming === place.id ? LABEL.max : Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : 5));
+    const width = renaming === place.id ? LABEL.max : Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : place.kind === "mother" && workflowIdentity ? 20 : 5));
     const labelHeight = renaming === place.id ? 36 : LABEL.height;
     let at = labelAt(place, width, labelHeight), box = labelBox(at, width, labelHeight);
     if (place.id === hot || (selected.length === 1 && selected.includes(place.id)) || (!taken.some(other => meet(other, box)) && !places.some(other => other !== place && meet(block(other), box)))) full.add(place.id);
@@ -421,7 +423,7 @@ export function IsoBoard({ inserting, canConnect, onReconnect, renamingFrame, on
           onClick={event => { pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey); buttons.current.get(place.id)?.focus({ preventScroll: true }); }} onDoubleClick={() => rename(place.id)}
           onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }}
           onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}>
-          {renaming === place.id ? <CanvasTextEdit value={titleOf(place.id)} label="Rename agent" maxLength={256} onSave={title => { onRename(place.id, title); setRenaming(null); root.current?.focus(); }} onCancel={() => { setRenaming(null); root.current?.focus(); }} /> : <>{place.kind === "agent" && <b className="iso-badge">{wave.get(place.id) ?? "–"}</b>}{full.has(place.id) && <span title={titleOf(place.id)}>{titleOf(place.id)}</span>}</>}
+          {renaming === place.id ? <CanvasTextEdit value={titleOf(place.id)} label="Rename agent" maxLength={256} onSave={title => { onRename(place.id, title); setRenaming(null); root.current?.focus(); }} onCancel={() => { setRenaming(null); root.current?.focus(); }} /> : <>{place.kind === "mother" && workflowIdentity && <WorkflowMark identity={workflowIdentity} />}{place.kind === "agent" && <b className="iso-badge">{wave.get(place.id) ?? "–"}</b>}{full.has(place.id) && <span title={titleOf(place.id)}>{titleOf(place.id)}</span>}</>}
         </span>;
       })}
       {[
