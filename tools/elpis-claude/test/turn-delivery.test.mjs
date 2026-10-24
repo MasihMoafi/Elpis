@@ -103,6 +103,49 @@ async function fixture(t, extra = {}, { model = "claude/sonnet", prepare, connec
     ended: turnId => desktop.events.find(e => e.method === "turn/completed" && e.params.turn.id === turnId) };
 }
 
+test("Subagents Off denies shell agents in Claude session options and survives reconnect/restart; On restores access", { timeout: 20000 }, async t => {
+  const f = await fixture(t, {}, { prepare: (root, env) => {
+    env.FAKE_ENGINE_CONFIG = path.join(root, "config.json");
+    fs.writeFileSync(env.FAKE_ENGINE_CONFIG, JSON.stringify({ config: { features: { multi_agent: true } }, layers: [{ name: { type: "user" }, version: "v1" }] }));
+  } });
+  const turn = async client => {
+    const result = await client.send(f.id, { text: "Please do this work." });
+    await until(() => f.ended(result.turn.id), "the turn completes");
+    return f.agent().findLast(e => ["session/new", "session/load"].includes(e.method) && e.params._meta)?.params;
+  };
+  const on = await turn(f.client);
+  assert.equal(on._meta.claudeCode.options.disallowedTools, undefined, "On leaves shell launches and agent tools unchanged");
+  const current = await f.client.contextSwitches();
+  assert.equal(current.subagents, true);
+  assert.equal((await f.client.saveContextSwitches({ version: current.version, subagents: false })).subagents, false);
+  const off = await turn(f.client);
+  assert.equal(off.sessionId, f.store()[f.id].session, "the existing Claude session reloads with the changed restrictions");
+  const denied = off._meta.claudeCode.options.disallowedTools ?? [];
+  for (const cli of ["claude", "codex", "agy", "elpis", "gemini"]) {
+    assert.ok(denied.includes(`Bash(${cli}:*)`), `Off must deny ${cli} -p ... through Bash`);
+  }
+  assert.ok(denied.includes("mcp__elpis-agents__*"), "configured delegate MCP tools cannot bypass Off");
+  assert.match(off._meta.systemPrompt.append, /Subagents are disabled/);
+  assert.match(off._meta.systemPrompt.append, /shell/i);
+  assert.match(off._meta.systemPrompt.append, /claude.*codex.*agy.*elpis.*gemini/);
+  const reopened = await f.connect();
+  assert.equal((await reopened.client.contextSwitches()).subagents, false, "reopening a client reads the saved state");
+  const restarted = await f.restart();
+  assert.equal((await restarted.client.contextSwitches()).subagents, false, "the saved state survives a bridge/engine restart");
+  // f.ended follows the initial desktop; observe the restarted client for subsequent turns.
+  const afterRestart = await restarted.client.send(f.id, { text: "Continue after restart." });
+  await until(() => restarted.events.some(e => e.method === "turn/completed" && e.params.turn.id === afterRestart.turn.id), "the reopened turn completes");
+  const reloaded = f.agent().findLast(e => ["session/new", "session/load"].includes(e.method) && e.params._meta).params;
+  assert.deepEqual(reloaded._meta.claudeCode.options.disallowedTools, denied);
+  const saved = await restarted.client.contextSwitches();
+  assert.equal((await restarted.client.saveContextSwitches({ version: saved.version, subagents: true })).subagents, true);
+  const back = await restarted.client.send(f.id, { text: "Continue with Subagents On." });
+  await until(() => restarted.events.some(e => e.method === "turn/completed" && e.params.turn.id === back.turn.id), "the enabled turn completes");
+  const enabled = f.agent().findLast(e => ["session/new", "session/load"].includes(e.method) && e.params._meta).params;
+  assert.equal(enabled._meta.claudeCode.options.disallowedTools, undefined);
+  assert.doesNotMatch(enabled._meta.systemPrompt.append, /Subagents are disabled/);
+});
+
 for (const count of [1, 4]) test(`A128: ${count} messages during a tool survive the next tool starting before delivery`, { timeout: 20000 }, async t => {
   const f = await fixture(t);
   const initial = "[wait] [tool-flight] [tool-race] original";

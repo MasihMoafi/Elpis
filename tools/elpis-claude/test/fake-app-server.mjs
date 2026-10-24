@@ -146,7 +146,17 @@ function handle(msg, socket) {
   switch (msg.method) {
     case "initialize": log({ engineHome: process.env.ELPIS_HOME ?? null }); return reply({ userAgent: "fake-engine/0" });
     case "model/list": return reply({ data: [{ id: "luna-test", model: "luna-test", displayName: "Test GPT", supportedReasoningEfforts: [] }], nextCursor: null });
-    case "config/read": return reply({ config: { features: { multi_agent: false } } });
+    case "config/read": return reply(process.env.FAKE_ENGINE_CONFIG ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_CONFIG, "utf8")) : { config: { features: { multi_agent: false } } });
+    case "config/batchWrite": {
+      if (!process.env.FAKE_ENGINE_CONFIG) return reply({});
+      const read = JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_CONFIG, "utf8"));
+      for (const edit of p.edits) {
+        if (edit.keyPath === "features.multi_agent") read.config.features.multi_agent = edit.value;
+      }
+      read.layers[0].version += "-saved";
+      fs.writeFileSync(process.env.FAKE_ENGINE_CONFIG, JSON.stringify(read));
+      return reply({});
+    }
     case "thread/elpisInstructions/read": return reply({});
     case "thread/inject_items": if (process.env.FAKE_ENGINE_HOLD_INJECT) return; return reply({});
     case "thread/start": {

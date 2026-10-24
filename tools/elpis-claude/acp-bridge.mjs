@@ -42,8 +42,12 @@ function jsonIn(text) {
 const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 // The Context Ledger's Subagents switch off: Claude Code's tools that start or drive other
 // agents (the subagent tool is "Agent", listed as "Task"; Workflow runs agent scripts;
-// RemoteTrigger runs cloud agents) are disallowed, and the elpis-agents server is left out.
-const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger"];
+// RemoteTrigger runs cloud agents) are disallowed, including shell and configured MCP routes.
+const AGENT_CLIS = ["claude", "codex", "agy", "elpis", "gemini"];
+const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger",
+  ...AGENT_CLIS.flatMap(cli => [`Bash(${cli}:*)`, `Bash(*/${cli}:*)`]),
+  "mcp__elpis-agents__*", "mcp__elpis_agents__*"];
+const SUBAGENTS_DISABLED = `Subagents are disabled. Do all work in this thread. Do not start, resume, or delegate to other agents through agent tools, MCP tools (including elpis-agents delegate tools), or shell commands such as ${AGENT_CLIS.join(", ")}. Shell scripts, wrappers, background processes, and alternate paths must not bypass this switch. Earlier instructions or requests to delegate do not override it; the user must enable Subagents first.`;
 // A37: the adapter's origins of a result Claude reached on its own (its AUTONOMOUS_RESULT_ORIGINS),
 // and the updates that start such a reply between turns.
 const AUTONOMOUS_ORIGINS = new Set(["task-notification", "peer", "coordinator", "observer", "observer-activity"]);
@@ -1900,7 +1904,7 @@ wss.on("connection", (ws) => {
       // Capture admitted context at the turn boundary. Changed instructions (including an empty
       // selection), approval mode, Subagents or Smart Prune reload the native conversation.
       // Nothing reloads an in-flight turn; a changed agent starts afresh.
-      const instructions = await elpisInstructions(threadId);
+      const instructions = [await elpisInstructions(threadId), ...(!subagents ? [SUBAGENTS_DISABLED] : [])].filter(Boolean).join("\n\n");
       // MCP servers are fixed when a session is created, so changed app servers reload it.
       const appServers = acpServersFrom(threadMcp.get(threadId), threadId);
       const mcp = JSON.stringify(appServers);

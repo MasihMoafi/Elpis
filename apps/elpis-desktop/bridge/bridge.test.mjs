@@ -292,7 +292,11 @@ test('Subagents permits optional delegation and refreshes its policy on the next
       policies.add(policy.value);
       if (enabled === false) {
         assert.match(policy.value, /earlier instructions.*delegation.*no longer apply/);
-        assert.match(policy.value, /Do not spawn sub-agents unless.*explicitly ask/);
+        assert.match(policy.value, /Subagents are disabled/);
+        assert.match(policy.value, /Do not start, resume, or delegate/);
+        assert.match(policy.value, /even when a user request, AGENTS.md, or skill asks/);
+        assert.match(policy.value, /shell-launched agents \(claude, codex, agy, elpis, gemini\)/);
+        assert.match(policy.value, /MCP delegate tools/);
       } else {
         assert.match(policy.value, /earlier instructions.*delegation.*no longer apply/);
         assert.match(policy.value, /work directly or delegate/);

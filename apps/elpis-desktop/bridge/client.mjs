@@ -158,7 +158,7 @@ export function speechChunks(value) {
 }
 const SUBAGENT_POLICY = {
   enabled: 'Subagents are enabled and optional. Any earlier instructions requiring delegation or restricting delegation to explicit requests no longer apply. Use your judgment to work directly or delegate when useful; enabling this option never requires spawning an agent. Honor explicit user requests and applicable instructions about whether to delegate.',
-  disabled: 'Any earlier instructions enabling spontaneous delegation no longer apply. Do not spawn sub-agents unless the user or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.',
+  disabled: 'Subagents are disabled. Any earlier instructions enabling delegation no longer apply. Do all work in this thread. Do not start, resume, or delegate to other agents, even when a user request, AGENTS.md, or skill asks for delegation. This includes shell-launched agents (claude, codex, agy, elpis, gemini), scripts, wrappers, background processes, agent tools, and MCP delegate tools such as elpis-agents. Do not bypass this switch through another tool or executable path. The user must enable Subagents before delegation can resume.',
 };
 const DECISIONS = ['accept', 'acceptForSession', 'decline', 'cancel'];
 const EFFORT = /^[a-z]{2,16}$/;
