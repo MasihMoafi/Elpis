@@ -24,6 +24,7 @@ import "@/components/message-actions.css";
 import { ReplyPreview } from "@/components/message-reply";
 import { messageDomId, readReply } from "@/lib/message-reply";
 import { questionReplies, questionReplyText } from "@/lib/question-reply";
+import { noticeOf, type WorkflowNotice } from "@/lib/workflow-notice";
 import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
 // Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
 import { FACE_DATA_URL } from "@/bridge/matilda-face.cjs";
@@ -66,6 +67,14 @@ function TextOutput({value}:{value:unknown}) {
 function Activity({label,status,time,failed,children,open=false}:{label:string;status?:unknown;time?:number;failed?:boolean;children?:React.ReactNode;open?:boolean}) {
   const word=statusLabel(status),duration=stepDuration(time);
   return <Step open={open} title={<FilePathText text={label}/>} failed={failed??text(status)==="failed"} body={children} meta={(word||duration)?<>{word&&<span className={`step-status ${text(status)}`}>{word}</span>}{duration&&<span>{duration}</span>}</>:undefined}/>;
+}
+const NOTICE_OUTCOME: Record<string, string> = { completed: "finished", stopped: "was stopped", failed: "failed" };
+/** A workflow's end notice, as Claude Code shows a finished task: one step naming the run and its outcome, the result inside. */
+function WorkflowNoticeStep({notice}:{notice:WorkflowNotice}) {
+  return <Activity label={`Workflow ${notice.name} ${NOTICE_OUTCOME[notice.status] ?? "ended"}`} failed={notice.status==="failed"}>
+    {notice.summary&&<p className="step-note">{notice.summary}</p>}
+    <TextOutput value={notice.result}/>
+  </Activity>;
 }
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
@@ -118,6 +127,8 @@ function UserMessage({body,bodyContent,attachments,attachmentContent,copyText,on
 }
 export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit,onRegenerate,onFork,onRewind,time,editBlockedReason,editDraft,onEditDraftChange,editPending,mediaBase,activityLabel,onReply,reference,readAloud=false}:{readAloud?:boolean;onReply?:()=>void;reference?:string;item:Item;speaker?:string;threads?:Thread[];onOpenThread?:(id:string)=>void;onEdit?:(text:string)=>Promise<void>;onRegenerate?:()=>void;onFork?:()=>void;onRewind?:()=>void;time?:number;editBlockedReason?:string;editDraft?:string;onEditDraftChange?:(value:string|null)=>void;editPending?:boolean;mediaBase?:string;activityLabel?:string}) {
   const speech = useReadAloud();
+  const notice=noticeOf(item);
+  if(notice)return <WorkflowNoticeStep notice={notice}/>;
   if(item.type==="userMessage"){
     const content=list(item.content).map(object),attached=content.map((part,index)=>({part,index,file:fileAttachment(part)})).filter(({part,file})=>part.type!=="text" || file),attachments=attached.map(({part,file})=>file || attachmentLabel(part));
     const replies=attached.flatMap(({part,file})=>{const reply=file?readReply({name:file,type:"text",text:text(part.text).slice(`File: ${file}\n`.length)}):null;return reply?[reply]:[];});

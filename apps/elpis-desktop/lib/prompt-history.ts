@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Entry } from "@/lib/api";
+import { noticeOf } from "@/lib/workflow-notice";
 
 /** The message box's keyboard basics, as Claude's desktop app has them (read from its source): ↑/↓ step through the
  * messages you sent, Ctrl+R searches them, Esc Esc in an empty box edits the last one, and Esc stops the reply. */
@@ -13,11 +14,11 @@ export type PromptStatus =
   | { kind: "history"; index: number; total: number }
   | { kind: "search"; query: string; failed: boolean; matchIndex: number; total: number; showHints: boolean };
 
-/** The messages you sent in this chat, oldest first. Attached files are not part of what you typed. */
+/** The messages you sent in this chat, oldest first. Attached files are not part of what you typed, nor is a workflow's end notice. */
 export function promptsOf(entries: Entry[]): string[] {
   const prompts: string[] = [];
   for (const { item } of entries) {
-    if (item.type !== "userMessage") continue;
+    if (item.type !== "userMessage" || noticeOf(item)) continue;
     const typed = (item.content ?? []).filter(part => part.type === "text" && !attachedFile(part)).map(part => part.text ?? "").join("\n");
     if (typed.trim()) prompts.push(typed);
   }

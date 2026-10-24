@@ -45,7 +45,8 @@
     "tests/agent-label.test.mjs",
     "tests/personalization-drafts.test.cjs",
     "tests/pre-install-cleanup.test.mjs",
-    "tests/voice-handoff.test.cjs"
+    "tests/voice-handoff.test.cjs",
+    "tests/workflow-notice-parse.test.mjs"
   ],
   "bridge": [
     "tests/workflow-routing.mjs",
@@ -333,7 +334,8 @@
     "tests/matilda.test.cjs",
     "tests/load-earlier.test.cjs",
     "tests/sidebar-search.test.cjs",
-    "tests/love-spot-voice.test.cjs"
+    "tests/love-spot-voice.test.cjs",
+    "tests/workflow-notice.test.cjs"
   ],
   "opt-in": [
     "tests/context-ledger.runtime.mjs",
