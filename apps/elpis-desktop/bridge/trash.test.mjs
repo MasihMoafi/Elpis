@@ -124,3 +124,19 @@ test('a chat and its agent deleted together: the agent goes with its chat, and t
   const back = await trash.undo();
   assert.deepEqual([back.threads.map(thread => thread.id), back.restored], [['root'], ['root', 'agent']]);
 });
+
+test('a server that opens before the runtime deletes the earlier session’s chats once the runtime connects', async t => {
+  const file = await temp(), client = fakeClient(), listeners = new Set();
+  await fs.writeFile(file, JSON.stringify({ version: 1, entries: [{ ids: ['other'], archived: ['other'] }] }));
+  client.threads.get('other').archived = true; client.connected = false;
+  const deleteThread = client.deleteThread;
+  client.deleteThread = async id => { if (!client.connected) { client.calls.push(['refused', id]); throw Error('Elpis is disconnected'); } return deleteThread(id); };
+  client.on = (name, listen) => { if (name === 'event') listeners.add(listen); }; client.off = (name, listen) => listeners.delete(listen);
+  const app = await startDesktopServer({ client, trashFile: file }); t.after(() => app.close());
+  assert.equal(client.calls.some(call => call[0] === 'delete'), false, 'nothing can be deleted before the runtime is there');
+  client.connected = true; for (const listen of [...listeners]) listen({ type: 'connection', data: { connected: true } });
+  const saved = () => fs.readFile(file, 'utf8').then(text => JSON.parse(text).entries);
+  for (let n = 0; n < 100 && (await saved()).length; n++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(client.calls.filter(call => call[0] === 'delete'), [['delete', 'other']]);
+  assert.deepEqual(await saved(), []);
+});

@@ -69,3 +69,31 @@ test('read timeout reports a retryable view read and never silently retries it',
   const {EventEmitter}=await import('node:events');const socket=new EventEmitter();socket.sent=[];socket.close=()=>{};socket.send=wire=>socket.sent.push(JSON.parse(wire));
   const client=new DesktopClient(socket,{timeoutMs:20});try{await assert.rejects(client.models(),error=>/timed out while reading/.test(error.message)&&!/outcome.*unknown/.test(error.message));assert.equal(socket.sent.length,1);}finally{client.close();}
 });
+
+test('a runtime that is still starting, or missing, never holds the app: a background connection is ready at once and joins when the runtime arrives', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-late-runtime-'));
+  const socketPath = path.join(dir, 'runtime.sock');
+  const { createServer } = await import('node:http');
+  const server = createServer(), wss = new WebSocketServer({ server });
+  wss.on('connection', socket => socket.on('message', raw => {
+    const message = JSON.parse(String(raw));
+    if (message.id) socket.send(JSON.stringify({ id: message.id, result: message.method === 'model/list' ? { data: [{ id: 'late-model', model: 'late-model' }], nextCursor: null } : {} }));
+  }));
+  let client, attempts = 0, runtimeUp = false;
+  t.after(async () => { client?.close(); for (const socket of wss.clients) socket.terminate(); await new Promise(resolve => wss.close(resolve)); if (runtimeUp) await new Promise(resolve => server.close(resolve)); });
+  const beforeConnect = async () => { attempts++; if (!runtimeUp) throw new Error('Install Elpis before opening the app. The Elpis runtime executable could not be found.'); };
+  const started = Date.now();
+  client = await DesktopClient.connect({ socketPath, reconnectDelayMs: 20, beforeConnect, background: true });
+  assert.ok(Date.now() - started < 1000, 'the app does not wait for the runtime');
+  assert.equal(client.connected, false);
+  await assert.rejects(client.models(), /disconnected/i);
+  await until(() => attempts >= 2);
+  assert.match(client.connectionError, /could not be found/, 'the reason stays available while it retries');
+  const events = [];
+  client.on('event', event => { if (event.type === 'connection') events.push(event.data.connected); });
+  await new Promise(resolve => server.listen(socketPath, resolve)); fs.chmodSync(socketPath, 0o600); runtimeUp = true;
+  await until(() => client.connected);
+  assert.deepEqual(events, [true]);
+  assert.equal(client.connectionError, null);
+  assert.equal((await client.models()).data[0].model, 'late-model');
+});

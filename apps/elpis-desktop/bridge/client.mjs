@@ -184,7 +184,7 @@ export class DesktopClient extends EventEmitter {
   #settingsWaiters = new Map();
   #turnRevisions = new Map();
   #reportAttempts; #reportRetryMs;
-  #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0;
+  #disposed = false; #reconnecting = false; #retryTimer; #openSocket; #retryDelay; #retryAttempt = 0; #connectionError = null;
   #settingsConfirmMs;
   #browserConfig;
   #archiveHistory; #spawnLinks; #appHome;
@@ -228,6 +228,13 @@ export class DesktopClient extends EventEmitter {
       });
       return socket;
     };
+    // In the background the client exists at once and connects, and reconnects, on its own: the window never waits for
+    // a runtime that is still starting or missing, and shows it as connecting until it arrives.
+    if (options.background) {
+      const client = new DesktopClient({ on() {}, send() {}, terminate() {}, close() {} }, { ...options, openSocket });
+      client.#closed = true; void client.#reconnect();
+      return client;
+    }
     const client = new DesktopClient(await openSocket(), { ...options, openSocket });
     try { await client.initialize(); } catch (error) { client.close(); throw error; }
     return client;
@@ -237,6 +244,8 @@ export class DesktopClient extends EventEmitter {
     this.#socket.send(JSON.stringify({ method: 'initialized', params: {} })); this.#ready = true;
   }
   get connected() { return this.#ready && !this.#closed; }
+  /** Why the last connection attempt failed, while it is not connected. */
+  get connectionError() { return this.connected ? null : this.#connectionError; }
   hasLocalActivity() { return this.#mutating.size > 0 || this.#workflowRuns.busy(); }
   #browserOptions(id) {
     const config = this.#browserConfig ? (this.#browserConfig.forSession ? this.#browserConfig.forSession(id) : this.#browserConfig) : {};
@@ -271,9 +280,12 @@ export class DesktopClient extends EventEmitter {
       this.#socket = socket; this.#closed = false; this.#bind(socket);
       await this.initialize();
       if (!this.connected) return;
-      this.#retryAttempt = 0;
+      this.#retryAttempt = 0; this.#connectionError = null;
       this.emit('event', { type: 'connection', data: { connected: true } });
-    } catch {
+    } catch (error) {
+      const reason = String(error?.message || error);
+      if (reason !== this.#connectionError) console.warn('Elpis runtime connection failed:', reason.slice(0, 300));
+      this.#connectionError = reason;
       this.#disconnect();
     } finally {
       this.#reconnecting = false;

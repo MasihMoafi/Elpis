@@ -70,14 +70,16 @@ async function prepareWindows() {
     const { browserMcpConfig } = await import(pathToFileURL(path.join(__dirname, '../bridge/browser-mcp.mjs')).href);
     browserAgentSocket = await startBrowserAgentSocket({ connectionFile: path.join(app.getPath('userData'), 'browser-connection.json') });
     try {
-      const client = await DesktopClient.connect({ beforeConnect: ensureInstalledRuntime, browserConfig: {
+      // The window opens without waiting for the runtime (24 Oct: a runtime still starting kept the app closed for 20 s).
+      const client = await DesktopClient.connect({ background: true, beforeConnect: ensureInstalledRuntime, browserConfig: {
         forSession: id => browserMcpConfig(browserAgentSocket.path, undefined, browserAgentSocket.scope(id), browserAgentSocket.connectionFile),
         bind: (from, to) => browserAgentSocket.rebind(from, to),
         close: id => { browserAgentSocket.revoke(id); sessionWindows?.closeBrowser(id); },
       } });
       sleepBlocker = createSleepBlocker({ powerSaveBlocker, client, store });
       // A connected terminal may keep the previous bridge and engine alive after an install.
-      try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {}
+      const noteEngine = () => { try { updates.setRunningEngine(JSON.parse(fs.readFileSync(path.join(path.dirname(existingSocket()), 'state.json'), 'utf8')).engine); } catch {} };
+      client.on('event', event => { if (event.type === 'connection' && event.data.connected) noteEngine(); });
       // Chats deleted from the sidebar wait in this file until the app quits (Ctrl+Z brings them back until then).
       try { server = await startDesktopServer({ client, staticDir: path.join(__dirname, '../out'), trashFile: path.join(app.getPath('userData'), 'deleted-chats.json') }); }
       catch (error) { client.close(); throw error; }

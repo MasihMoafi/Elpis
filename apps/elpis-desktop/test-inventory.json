@@ -359,6 +359,7 @@
     "bridge/mcp.runtime.mjs",
     "tests/love-dock.test.cjs",
     "tests/settings2.runtime.cjs",
-    "tests/sidebar-search.runtime.cjs"
+    "tests/sidebar-search.runtime.cjs",
+    "tests/startup.runtime.cjs"
   ]
 }

@@ -93,7 +93,10 @@ function json(response, status, value) {
 export async function startDesktopServer(options = {}) {
   const client = options.client ?? await DesktopClient.connect({ socketPath: options.socketPath });
   const trash = await createTrash({ client, file: options.trashFile });
-  await trash.purge().catch(() => {});
+  // The last session's deleted chats go for good once the runtime is reachable, which may be after the window opened.
+  const purge = () => trash.purge().catch(() => {});
+  if (client.connected === false) client.on('event', function connected(value) { if (value.type === 'connection' && value.data.connected) { client.off('event', connected); void purge(); } });
+  else await purge();
   const staticDir = path.resolve(options.staticDir ?? fileURLToPath(new URL('../out', import.meta.url)));
   const capability = randomBytes(32).toString('hex');
   const session = randomBytes(32).toString('hex');
@@ -248,7 +251,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/voice/choice' && method === 'POST') return json(response, 200, await client.setVoice(await body(request)));
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);
-        if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected });
+        if (url.pathname === '/api/health' && method === 'GET') return json(response, 200, { connected: client.connected, ...(client.connectionError ? { error: client.connectionError } : {}) });
         if (url.pathname === '/api/improvements/source') {
           const store = await improvements();
           if (method === 'GET') return json(response, 200, await store.source());

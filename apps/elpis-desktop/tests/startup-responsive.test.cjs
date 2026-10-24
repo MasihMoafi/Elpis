@@ -44,3 +44,27 @@ for (const pending of ['threads', 'settings', 'health', 'restored chat', 'unreac
     assert.equal(await f.shown(), 'chat-a', 'Conversations arrive and open after the delay');
   }
 });
+
+// 24 Oct: the window now opens before the background service. Reads refused while it starts must not stay on screen as
+// errors once it is there; the connection line says what is happening meanwhile.
+test('a background service that arrives late leaves no disconnection errors behind', async t => {
+  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme: 'light' });
+  t.after(async () => { await f.close(); });
+  let up = false;
+  const refused = { status: 503, json: { error: 'Elpis is disconnected', code: 'ELPIS_RUNTIME_UNAVAILABLE', requestId: 'test-request' } };
+  await f.page.route('**/api/**', async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!up && pathname === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: 'retry: 200\nevent: connection\ndata: {"connected":false}\n\n' });
+    if (!up && pathname === '/api/health') return route.fulfill({ json: { connected: false } });
+    if (!up && ['/api/threads', '/api/models', '/api/settings'].includes(pathname)) return route.fulfill(refused);
+    await route.fallback();
+  });
+  await f.page.goto(new URL('/', f.page.url()).href, { waitUntil: 'domcontentloaded' });
+  await f.page.getByRole('status').filter({ hasText: /Connecting to Elpis|disconnected/ }).first().waitFor();
+  await f.page.waitForTimeout(800);
+  assert.deepEqual(await f.page.getByRole('alert').filter({ hasText: /ELPIS_RUNTIME_UNAVAILABLE/ }).allInnerTexts(), [], 'the connection line already says Elpis is not there yet');
+  up = true;
+  await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().waitFor({ timeout: 10000 });
+  await f.page.waitForTimeout(500);
+  assert.deepEqual(await f.page.getByRole('alert').filter({ hasText: /ELPIS_RUNTIME_UNAVAILABLE|disconnected/ }).allInnerTexts(), [], 'nothing stale remains once Elpis is there');
+});

@@ -10,9 +10,17 @@ const helper = process.env.ELPIS_E2E_APP_HELPER || path.join(process.env.HOME, '
 /** Starts the app; resolves once its window exists, with how long that took (app.sh checks once a second). */
 async function startApp({ app, port, seed, engine, profile, env = {} }) {
   const started = Date.now();
-  const { stdout } = await exec(helper, ['start', app, String(port), ...(seed ? [seed] : [])], { timeout: 90000,
-    env: { ...process.env, ELPIS_ENGINE_BIN: engine, ...(profile ? { ELPIS_DESKTOP_PROFILE: profile } : {}), ...env } });
-  const home = stdout.trim().split('\n').pop();
+  let home;
+  try {
+    ({ stdout: home } = await exec(helper, ['start', app, String(port), ...(seed ? [seed] : [])], { timeout: 240000,
+      env: { ...process.env, ELPIS_ENGINE_BIN: engine, ...(profile ? { ELPIS_DESKTOP_PROFILE: profile } : {}), ...env } }));
+  } catch (cause) {
+    // A copy whose window never came still holds its port: stop it, or the next start cannot open.
+    const left = /see (\/tmp\/e2e-[^/\s]+)\/app\.log/.exec(String(cause.stderr))?.[1];
+    if (left) await exec(helper, ['stop', left]).catch(() => {});
+    throw new Error(`The app window did not open: ${String(cause.stderr || cause.message).trim()}`);
+  }
+  home = home.trim().split('\n').pop();
   const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const page = browser.contexts().flatMap(context => context.pages()).find(page => page.url().startsWith('http://127.0.0.1'));
