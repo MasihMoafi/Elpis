@@ -219,9 +219,8 @@ export function sizedItem(item) {
   switch (item.type) {
     case 'message': return [{ system: 'systemInstructions', developer: 'developerMessages', user: 'userMessages', assistant: 'agentMessages' }[item.role] ?? 'unrecognizedItems', partsBytes(item.content)];
     case 'agent_message': return ['agentMessages', textBytes(item.author) + textBytes(item.recipient) + partsBytes(item.content)];
-    // Encrypted reasoning costs one token per 15.6 characters (core `encrypted_reasoning_tokens`), as bytes here.
-    case 'reasoning': return ['reasoning', typeof item.encrypted_content === 'string' ? Math.ceil(item.encrypted_content.length * 10 / 156) * 4 : 0];
-    case 'compaction': case 'context_compaction': return ['reasoning', typeof item.encrypted_content === 'string' ? Math.max(0, Math.floor(item.encrypted_content.length * 3 / 4) - 650) : 0];
+    // Encrypted model state: 1,287 characters of overhead, then a token per 14.14 (core `encrypted_reasoning_tokens`), as bytes here.
+    case 'reasoning': case 'compaction': case 'context_compaction': return ['reasoning', typeof item.encrypted_content === 'string' ? Math.ceil(Math.max(0, item.encrypted_content.length - 1287) * 100 / 1414) * 4 : 0];
     case 'function_call': case 'custom_tool_call': return ['toolCalls', call()];
     case 'local_shell_call': case 'web_search_call': return ['toolCalls', jsonBytes(item.action)];
     case 'tool_search_call': return ['toolCalls', jsonBytes(item.arguments)];
