@@ -814,7 +814,7 @@ wss.on("connection", (ws) => {
     await updateStore(st => {
       if (st[threadId]?.active?.turnId !== active.turnId) return;
       const { active: unused, ...rest } = st[threadId];
-      st[threadId] = { ...rest, turns: [...(rest.turns ?? []).filter(row => row.id !== turn.id), clipTurn(turn)].slice(-200) };
+      st[threadId] = { ...rest, turns: [...(rest.turns ?? []).filter(row => row.id !== turn.id), clipTurn(turn)] };
     });
     for (const item of turn.items) notify("item/completed", { threadId, turnId: turn.id, item });
     notify("turn/completed", { threadId, turn });
@@ -2251,7 +2251,7 @@ wss.on("connection", (ws) => {
     const completedAt = Math.floor(now() / 1000);
     {
       const record = clipTurn({ id: turnId, items: [...lead, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000, ...(lastClaudeMessageId && { claudeMessageId: lastClaudeMessageId }) });
-      await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record].slice(-200) }; });
+      await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record] }; });
     }
     if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });

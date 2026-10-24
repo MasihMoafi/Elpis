@@ -146,6 +146,36 @@ test("Subagents Off denies shell agents in Claude session options and survives r
   assert.doesNotMatch(enabled._meta.systemPrompt.append, /Subagents are disabled/);
 });
 
+for (const recover of [false, true]) test(`${recover ? 'recovering' : 'saving'} a new provider turn keeps history beyond 200 turns reachable`, { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  const store = f.store();
+  const turns = Array.from({ length: 205 }, (_, index) => ({ id: `earlier-${index}`, startedAt: index + 1, status: 'completed', items: [{ id: `prompt-${index}`, type: 'userMessage', content: [{ type: 'text', text: `Earlier prompt ${index}` }] }] }));
+  store[f.id] = { ...store[f.id], turns };
+  fs.writeFileSync(f.env.ACP_BRIDGE_STORE, JSON.stringify(store));
+  const { turn } = await f.client.send(f.id, { text: `${recover ? '[wait] [record-only] ' : ''}Continue the long chat` });
+  let reader = f.client;
+  if (recover) {
+    await until(() => f.agent().some(event => event.method === 'session/prompt'), 'the provider turn starts');
+    await f.freeze(); f.release();
+    await until(() => f.agent().some(event => event.ended), 'the provider records its answer');
+    assert.equal(f.ended(turn.id), undefined, 'the bridge has not received a live completion');
+    reader = (await f.restart({ crash: true })).client;
+    await reader.readThread(f.id);
+  } else await until(() => f.ended(turn.id), 'the new answer completes');
+  assert.equal(f.store()[f.id].turns.length, 206, 'saving must not discard the oldest turns');
+  const all = [], cursors = new Set();
+  let cursor;
+  do {
+    const page = await reader.readThread(f.id, { limit: 100, ...(cursor ? { cursor } : {}) });
+    all.push(...page.data);
+    cursor = page.nextCursor;
+    assert.ok(!cursor || !cursors.has(cursor), 'history continuation must advance');
+    cursors.add(cursor);
+  } while (cursor);
+  assert.equal(all.filter(entry => entry.item.id === 'prompt-0').length, 1, 'the first prompt remains reachable exactly once');
+  assert.equal(new Set(all.filter(entry => entry.item.type === 'userMessage').map(entry => entry.item.id)).size, 206);
+});
+
 for (const count of [1, 4]) test(`A128: ${count} messages during a tool survive the next tool starting before delivery`, { timeout: 20000 }, async t => {
   const f = await fixture(t);
   const initial = "[wait] [tool-flight] [tool-race] original";

@@ -47,6 +47,7 @@ export function turnTime(at: number, now = new Date()): string {
 type TurnEntries = { id: string; clientKey?: string; entries: Entry[] };
 /** Elpis's answer: its message, or the review that /review ends with. */
 const isReply = (item: Item) => item.type === "agentMessage" || item.type === "exitedReviewMode";
+const isCompaction = (item: Item) => item.type === "contextCompaction" || item.type === "commandExecution" && item.command === "Compact conversation" && item.status === "completed";
 
 function turnsOf(entries: Entry[]): TurnEntries[] {
   const turns: TurnEntries[] = [];
@@ -73,6 +74,17 @@ function createdFiles(entries: Entry[]): string[] {
 function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
   const [workOpen, setWorkOpen] = useState(false);
   const ordered = withPrunes(turn.entries);
+  // Older Claude saves represented /compact as a prompt and a synthetic tool call.
+  // Its summary changes the model's context, while the conversation remains intact.
+  const compact = ordered.find(entry => isCompaction(entry.item));
+  const compactOnly = compact && ordered.every(entry => {
+    if (entry === compact) return true;
+    if (entry.item.type === "agentMessage") return !entry.item.text;
+    return entry.item.type === "userMessage" && entry.item.content?.every(part => part.type === "text" && /^\/compact(?:\s|$)/.test(part.text ?? ""));
+  });
+  if (!active && compact && compactOnly) {
+    return <section className="turn" aria-label="Turn">{renderItem({ ...compact, item: { id: compact.item.id, type: "contextCompaction" } })}</section>;
+  }
   // The prompt that started the turn heads it; a message sent while it ran (a steer) stays where it was sent.
   const prompt = ordered.findIndex(entry => entry.item.type === "userMessage");
   const leading = prompt < 0 ? 0 : ordered.findIndex((entry, index) => index > prompt && entry.item.type !== "userMessage");
@@ -83,7 +95,8 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf }: { turn: Turn
   const finalReply = active ? -1 : plan >= 0 && (lastReply < 0 || plan < lastReply) ? plan : lastReply;
   // Work before the final answer folds away, but never past a message the person sent while it ran.
   const lastSent = findLastIndex(work.slice(0, Math.max(finalReply, 0)), entry => entry.item.type === "userMessage");
-  const foldEnd = lastSent >= 0 ? lastSent : finalReply;
+  const beforeCompaction = work.findIndex(entry => isCompaction(entry.item));
+  const foldEnd = Math.min(lastSent >= 0 ? lastSent : finalReply, beforeCompaction < 0 ? work.length : beforeCompaction);
   const folded = foldEnd > 0 ? work.slice(0, foldEnd) : [];
   const visible = foldEnd > 0 ? work.slice(foldEnd) : work;
   return <section className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
@@ -110,7 +123,10 @@ function Flow({ entries, renderItem, mediaOf, live = false }: { entries: Entry[]
     run = [];
   };
   for (const entry of entries) {
-    if (isReply(entry.item) || entry.item.type === "userMessage" || entry.item.type === "plan" || (entry.item.type === "commandExecution" && entry.item.source === "userShell")) {
+    if (isCompaction(entry.item)) {
+      flush();
+      blocks.push(<div key={entry.item.id}>{renderItem({ ...entry, item: { id: entry.item.id, type: "contextCompaction" } })}</div>);
+    } else if (isReply(entry.item) || entry.item.type === "userMessage" || entry.item.type === "plan" || (entry.item.type === "commandExecution" && entry.item.source === "userShell")) {
       flush();
       blocks.push(<div key={entry.item.id}>{renderItem(entry)}</div>);
     } else run.push(entry);

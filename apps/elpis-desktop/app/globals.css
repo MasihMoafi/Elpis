@@ -300,7 +300,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @media(min-width:761px) { @container workspace (width > 640px) {
   /* Reserve the full hit area and widest hover dash before the message column. */
   .workspace-body:not(.full-view) .chat-scroll-wrap:has(.prompt-rail) > .chat-scroll { padding-inline:calc(var(--prompt-rail-inset) + var(--prompt-rail-width) + var(--prompt-rail-gap)); }
-  .workspace-body:not(.full-view) .chat-scroll-wrap:has(.prompt-rail[data-indexed="true"]) .load-earlier-messages { display:none; }
 } }
 @media(max-width:760px) { .prompt-rail { display:none; } }
 @container workspace (max-width:640px) { .prompt-rail { display:none; } }

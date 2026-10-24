@@ -178,6 +178,7 @@
     "tests/chat-folder.test.cjs",
     "tests/chat-worktree.test.cjs",
     "tests/claude-chat.test.cjs",
+    "tests/history-paging.test.cjs",
     "tests/claude-composer.test.cjs",
     "tests/code-file-surfaces.test.cjs",
     "tests/code-opens.test.cjs",
