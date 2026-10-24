@@ -638,29 +638,40 @@ workflows.on("updated", (change) => {
   if (change.kind === "ended") checkIdle();
 });
 // WR5: the chat that started a run gets its notice as a new turn once it is free, and its model continues from it.
+// An archived chat (the engine's delete is an archive too) keeps its notice until it is back: nothing is lost, the chat
+// is not brought back by the notice, and the runtime does not keep trying (24 Oct review: it retried every 2 s for
+// ever and never went idle).
 const noticesDue = new Set();
+const errorText = (e) => e?.message ?? JSON.stringify(e);
 async function deliverNotice(run) {
   if (!run.parentThreadId || run.notice?.state !== "pending" || noticesDue.has(run.id) || stopping) return;
   noticesDue.add(run.id);
   const threadId = run.parentThreadId;
+  const later = (why) => { workflows.markNotice(run.id, { state: "pending", waiting: why }); log(`workflow ${run.id}: notice waits until chat ${threadId} is back (${why})`); };
   let conn = null;
   try {
     while (!stopping) {
       if (!conn || conn.closed) {
         conn = connectAppServer({ url: bridgeUrl(wss), name: "elpis-workflow-runner" });
         await conn.ready;
-        await conn.call("thread/resume", { threadId }).catch((e) => log(`workflow ${run.id}: notice: reopen ${threadId}: ${e?.message ?? JSON.stringify(e)}`));
+        const refused = await conn.call("thread/resume", { threadId }).then(() => null, (e) => e);
+        if (refused && /is archived/i.test(errorText(refused))) return later("archived");
+        if (refused && /not found/i.test(errorText(refused))) { workflows.markNotice(run.id, { state: "undeliverable", why: "the chat was deleted" }); return; }
+        if (refused) log(`workflow ${run.id}: notice: reopen ${threadId}: ${errorText(refused)}`);
       }
       const read = await conn.call("thread/read", { threadId, includeTurns: false }).catch((e) => ({ error: e }));
-      if (read.error && /not found/i.test(read.error.message ?? "")) { workflows.markNotice(run.id, { state: "undeliverable", why: "the chat was deleted" }); return; }
       if (read.thread?.status?.type === "active") { await new Promise((r) => setTimeout(r, 2000)); continue; }
-      const done = new Promise((resolve) => conn.listeners.add((m) => { if (m.method === "turn/completed" && m.params?.threadId === threadId) resolve(); }));
+      let answered;
+      const done = new Promise((resolve) => { answered = (m) => { if (m.method === "turn/completed" && m.params?.threadId === threadId) resolve(); }; conn.listeners.add(answered); });
       try {
         const started = await conn.call("turn/start", { threadId, input: [{ type: "text", text: noticeText(run), text_elements: [] }] });
-        workflows.markNotice(run.id, { state: "delivered", turnId: started?.turn?.id ?? null, at: now() });
+        workflows.markNotice(run.id, { state: "delivered", waiting: null, turnId: started?.turn?.id ?? null, at: now() });
         log(`workflow ${run.id}: notice delivered to ${threadId}`);
       } catch (e) {
-        log(`workflow ${run.id}: notice to ${threadId} waits: ${e?.message ?? JSON.stringify(e)}`);
+        conn.listeners.delete(answered);
+        log(`workflow ${run.id}: notice to ${threadId} waits: ${errorText(e)}`);
+        // Reopened next time, so a chat archived or deleted meanwhile is told apart from a busy one.
+        if (/not found|is archived/i.test(errorText(e))) { conn.close(); conn = null; }
         await new Promise((r) => setTimeout(r, 2000));
         continue;
       }
@@ -669,9 +680,13 @@ async function deliverNotice(run) {
       return;
     }
   } catch (e) {
-    log(`workflow ${run.id}: notice failed: ${e?.message ?? JSON.stringify(e)}`);
+    log(`workflow ${run.id}: notice failed: ${errorText(e)}`);
     setTimeout(() => { noticesDue.delete(run.id); void deliverNotice(run); }, 5000).unref();
   } finally { noticesDue.delete(run.id); conn?.close(); checkIdle(); }
+}
+// A chat that comes back from the archive gets the notices it missed.
+function chatBack(threadId) {
+  for (const summary of workflows.list({ parentThreadId: threadId })) if (summary.notice === "pending") { const run = workflows.pending(summary.id); if (run) void deliverNotice(run); }
 }
 workflows.on("ended", (run) => { void deliverNotice(run); });
 // After a restart, and while a handed-over runtime lets its runs go: runs nobody owns continue here.
@@ -1660,6 +1675,7 @@ wss.on("connection", (ws) => {
     }
     shareHelper(parsed);
     notePlan(parsed);
+    if (parsed?.method === "thread/unarchived" && parsed.params?.threadId) chatBack(parsed.params.threadId);
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
     if (parsed?.method && parsed.id !== undefined && ((helperConns.has(ws) && helperThreads.has(parsed.params?.threadId)) || providerOwners.get(parsed.params?.threadId)?.ws === ws)
       && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"), ws)) return;
