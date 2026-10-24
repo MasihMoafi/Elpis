@@ -42,8 +42,8 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
     for (const run of runs) {
       const root = row(page, run.rootThreadId);
       assert.equal(await root.locator('.thread-dot[data-state="working"]').count(), run.status === 'running' ? 1 : 0);
-      assert.equal(await row(page, run.tasks[0].assignedThreadId).count(), run.status === 'running' ? 1 : 0, 'finished runs start folded');
-      if (run.status !== 'running') await root.getByRole('button', { name: /^Expand / }).click();
+      assert.equal(await row(page, run.tasks[0].assignedThreadId).count(), 0, 'Masih, 24 Oct: all chats must already be collapsed every time');
+      await root.getByRole('button', { name: /^Expand / }).click();
     }
     assert.equal(await workflows(page).locator('.thread-row.child').count(), 12);
     for (const run of runs) for (const task of run.tasks) {
@@ -84,6 +84,7 @@ test('two runs in one root chat stay separate and never borrow one another’s s
     await old.getByRole('button', { name: /^Expand / }).click();
     assert.equal(await row(page, 'step-0-0').count(), 1);
     assert.equal(await row(page, 'review-old').locator('.thread-title').innerText(), 'Mother', 'saved review chat belongs under its run too');
+    await latest.getByRole('button', { name: /^Expand / }).click();
     await latest.getByRole('button', { name: /^Collapse / }).click();
     assert.equal(await row(page, 'step-1-0').count(), 0);
     assert.equal(await row(page, 'step-0-0').count(), 1, 'folding the latest run cannot hide a different run’s steps');
@@ -173,10 +174,17 @@ test('workflow names reject duplicates beside the field; colour and duplication 
 
 test('saved chat nesting keeps a workflow and its own collapse control visible', async () => {
   const saved = runs.map(run => run.id === 'run-2' ? { ...run, status: 'running' } : run);
-  const f = await open('light', saved, { 'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'chat-a': 'root-2' } }) }), { page } = f;
+  const f = await open('light', saved), { page } = f;
   try {
+    // Restore after the fixture's initial chat-a readiness check: chat-a is now hidden inside a folded parent.
+    await page.evaluate(() => localStorage.setItem('elpis-chat-groups-v1', JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'chat-a': 'root-2' } })));
+    await page.reload();
+    await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await row(page, 'root-2').getByRole('button', { name: /^Expand / }).click();
     await row(page, 'chat-a').waitFor();
     assert.equal(await row(page, 'chat-a').getAttribute('class').then(value => value.includes('child')), true);
+    assert.equal(await row(page, 'step-0-0').count(), 0, 'a nested workflow also starts folded');
+    await row(page, 'chat-a').getByRole('button', { name: /^Expand / }).click();
     await row(page, 'step-0-0').waitFor();
     await row(page, 'chat-a').getByRole('button', { name: /^Collapse / }).click();
     assert.equal(await row(page, 'step-0-0').count(), 0, 'the workflow controls only its own descendants');
@@ -191,6 +199,7 @@ test('saved chat nesting keeps a workflow and its own collapse control visible',
 test('a manually named step keeps its name while legacy names use recorded step titles', async () => {
   const f = await open('light', runs, {}, { 'step-0-0': 'Chosen step name' }), { page } = f;
   try {
+    await row(page, 'chat-a').getByRole('button', { name: /^Expand / }).click();
     await eventually(async () => assert.equal(await row(page, 'step-0-0').locator('.thread-title').innerText(), 'Chosen step name'));
     assert.equal(await row(page, 'step-0-1').locator('.thread-title').innerText(), 'Build');
     assert.equal(f.posts.some(post => /\/name$/.test(post.path)), false);

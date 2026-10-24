@@ -738,7 +738,7 @@ export default function Home() {
     initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };
   }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread]);
 
-  const loadChildren = useCallback(async (id: string, cursor?: string, expand = true) => {
+  const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
     checkedChildren.current.add(id);
     childPaging.current.add(id); setLoadingChildren(prev => ({ ...prev, [id]: true }));
@@ -1613,8 +1613,8 @@ export default function Home() {
   };
   const sidebarParent = (thread: Thread) => workflowSteps.get(thread.id)?.parent ?? thread.parentThreadId ?? displayParents[thread.id];
   const originOf = (thread: Thread) => workflowRoots.has(thread.id) || workflowSteps.has(thread.id) ? "Workflows" : chatOrigin(thread, loveActivity.threads);
-  const branchOpen = (id: string) => expanded[id] ?? (workflowRoots.get(id)?.status === "running");
-  const workflowOpen = (run: WorkflowRun) => expanded[`workflow:${run.id}`] ?? run.status === "running";
+  const branchOpen = (id: string) => expanded[id] ?? false;
+  const workflowOpen = (run: WorkflowRun) => expanded[`workflow:${run.id}`] ?? false;
   const previousRuns = useRef(new Map<string, string>());
   useEffect(() => {
     const ended = workflowCatalog.runs.filter(run => previousRuns.current.get(run.id) === "running" && run.status !== "running");
