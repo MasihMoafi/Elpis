@@ -124,6 +124,7 @@ impl ChatWidget {
             self.on_agent_reasoning_final();
         }
         self.input_queue.submit_pending_steers_after_interrupt = false;
+        self.input_queue.compact_after_interrupt = false;
         let sanitized_last_agent_message = last_agent_message.as_deref().map(|message| {
             parse_assistant_markdown(message, self.config.cwd.as_path()).visible_markdown
         });
