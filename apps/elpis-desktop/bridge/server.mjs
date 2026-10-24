@@ -420,20 +420,10 @@ export async function startDesktopServer(options = {}) {
   heartbeat.unref();
   return {
     url: `${origin}/#token=${capability}`,
+    /** Chats and their agents run in the background service, which outlives this window, so they keep running across
+     * an update restart; only work this process runs itself (voice, Love Spot, Lab, local workflow runs) waits. */
     async canRestart() {
-      const busy = () => voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || client.hasLocalActivity?.();
-      if (busy()) return false;
-      let cursor;
-      const seen = new Set();
-      do {
-        const page = await client.listThreads({ limit: 100, includeAgentRuns: true, ...(cursor ? { cursor } : {}) });
-        if (!Array.isArray(page?.data)) throw new BridgeError('Could not confirm that chats are idle. Keep Elpis open and retry.', 503);
-        if (page.data.some(thread => thread.status?.type === 'active')) return false;
-        cursor = page.nextCursor;
-        if (cursor && (seen.has(cursor) || seen.size >= 1000)) throw new BridgeError('Could not confirm that every chat is idle. Keep Elpis open and retry.', 503);
-        seen.add(cursor);
-      } while (cursor);
-      return !busy();
+      return !(voice.busy() || loveTalk.busy() || loveAgents.busy() || experimentLab.busy() || client.hasLocalActivity?.());
     },
     async close() {
       if (closed) return; closed = true; clearInterval(heartbeat);

@@ -1499,7 +1499,9 @@ export default function Home() {
   const unreadIds = new Set(attention.unread);
   const sidebarState = (thread: Thread) => agentState(thread, waitingIds, unreadIds);
   const needsYou = (thread: Thread) => sidebarState(thread) === "waiting" || !!attention.plans[thread.id];
-  const chatListOrder = useChatListOrder(prioritizeChats(sortChats(threads.filter(thread => !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order), thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
+  // Sorted lists show chats that need you or are working first; an order arranged by hand stays as arranged.
+  const sortedChats = sortChats(threads.filter(thread => !isAgentRun(thread)), chatGroups.sortBy, title, chatGroups.order);
+  const chatListOrder = useChatListOrder(chatGroups.sortBy === "manual" ? sortedChats : prioritizeChats(sortedChats, thread => needsYou(thread) ? "waiting" : sidebarState(thread)));
   const ordinaryThreads = chatListOrder.chats;
   const agentRuns = threads.filter(isAgentRun);
   const agentRunIds = new Set(agentRuns.map(thread => thread.id));

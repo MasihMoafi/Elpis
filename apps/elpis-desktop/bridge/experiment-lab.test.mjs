@@ -65,6 +65,9 @@ test('Restart blocks Lab admission and execution even when the engine reports no
     const cookie = session.headers.get('set-cookie').split(';')[0];
     const post = body => fetch(`${url.origin}/api/experiment-lab`, { method: 'POST', headers: { Origin: url.origin, 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body) });
     assert.equal(await app.canRestart(), true);
+    // 24 Oct: chats run in the background service, which outlives the window; a running chat no longer blocks the update.
+    client.listThreads = async () => ({ data: [{ id: 'busy-chat', status: { type: 'active' } }], nextCursor: null });
+    assert.equal(await app.canRestart(), true, 'a running chat keeps running across the restart');
     starting = post({ ...input(), repetitions: 1 });
     await admitting;
     assert.equal(await app.canRestart(), false, 'Lab is admitting a run before any model thread exists');

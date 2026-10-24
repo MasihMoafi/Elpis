@@ -109,7 +109,7 @@ async function quitApp(restartTarget) {
     const hosts = [...(sessionWindows?.windows ?? [])].filter(host => !host.isDestroyed());
     if (!hosts.every(host => mayClose(host))) return false;
     try {
-      if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('Wait for running chats and agents to finish before restarting.');
+      if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('Wait for the voice call, Love Spot, Lab or workflow run in this window to finish, then restart.');
       // Freeze input until every final draft is acknowledged. Failed saves restore editing below.
       await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('document.documentElement.inert = true; true')));
       const dirtyFiles = await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('("__elpisHasUnsavedFiles" in window) ? window.__elpisHasUnsavedFiles : false')));
@@ -123,7 +123,7 @@ async function quitApp(restartTarget) {
       await Promise.all(hosts.map(host => host.webContents.executeJavaScript?.('window.elpisDesktop?.storage?.flush?.() ?? true')));
       await sessionWindows?.flushBrowsers();
       await store?.flush();
-      if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('A chat or agent started while preparing the update. Wait for it to finish before restarting.');
+      if (pendingRestartTarget && server?.canRestart && !await server.canRestart()) throw Error('A voice call, Love Spot, Lab or workflow run started while preparing the update. Restart when it finishes.');
       if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
       closing = true;
       sleepBlocker?.dispose(); sleepBlocker = undefined;

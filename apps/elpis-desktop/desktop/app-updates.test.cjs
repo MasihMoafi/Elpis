@@ -97,28 +97,6 @@ test('quit can await fire-and-forget draft writes and a refused save stays block
 });
 
 
-test('restart checks all thread pages including agents and refuses unknown or cyclic results', async () => {
-  const { startDesktopServer } = await import('../bridge/server.mjs');
-  const base = path.join(os.homedir(), '.cache/elpis-tests');
-  const root = fs.mkdtempSync(path.join(base, 'app-restart-idle-'));
-  let active = true, calls = [], mode = 'valid';
-  const client = Object.assign(new EventEmitter(), { close() {}, listThreads: async request => {
-    calls.push(request);
-    if (mode === 'unknown') return {};
-    if (mode === 'cycle') return { data: [], nextCursor: 'same' };
-    return request.cursor ? { data: [{ status: { type: active ? 'active' : 'idle' } }], nextCursor: null } : { data: [], nextCursor: 'older' };
-  } });
-  const server = await startDesktopServer({ client, elpisHome: root, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'drawing'), screenshots: path.join(root, 'screenshots') } });
-  try {
-    assert.equal(await server.canRestart(), false); assert.equal(calls.length, 2);
-    assert.ok(calls.every(call => call.includeAgentRuns === true));
-    active = false; assert.equal(await server.canRestart(), true);
-    mode = 'unknown'; await assert.rejects(server.canRestart(), /confirm.*idle/);
-    mode = 'cycle'; await assert.rejects(server.canRestart(), /confirm.*idle/);
-  } finally { await server.close(); execFileSync('gio', ['trash', root]); }
-});
-
-
 test('a directory selected as launcher is refused before any app shutdown', async () => {
   const f = fixture();
   try {

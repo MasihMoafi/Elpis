@@ -98,7 +98,7 @@ for (const theme of ['light', 'dark']) {
   });
   test(`SETTINGS2: About shows installed identity, live updates, restart errors and notes (${theme})`, async t => {
     const { page: p } = await setup(t, theme);
-    await p.addInitScript(() => { window.elpisDesktop.updates = { status: async () => ({ available: false, restarting: false, error: null }), subscribe: callback => { window.__update = callback; return () => {}; }, restart: async () => { throw Error('Wait for running chats'); } }; });
+    await p.addInitScript(() => { window.elpisDesktop.updates = { status: async () => ({ available: false, restarting: false, error: null }), subscribe: callback => { window.__update = callback; return () => {}; }, restart: async () => { throw Error('Wait for the voice call'); } }; });
     await p.reload(); await openSettings(p);
     try {
       await visit(p, 'About'); await p.getByText('0.4.1', { exact: true }).waitFor();
@@ -106,7 +106,7 @@ for (const theme of ['light', 'dark']) {
       assert.match(await p.getByRole('link', { name: 'Release notes', exact: true }).getAttribute('href'), /releases/);
       await p.evaluate(() => window.__update({ available: true, restarting: false, error: null }));
       await p.getByRole('tabpanel').getByRole('button', { name: 'Update ready · Restart', exact: true }).click();
-      await p.getByRole('alert').filter({ hasText: 'Wait for running chats' }).waitFor();
+      await p.getByRole('alert').filter({ hasText: 'Wait for the voice call' }).waitFor();
       await shot(p, `about-${theme}`);
     } catch (error) { await shot(p, `before-about-${theme}`); throw error; }
   });
