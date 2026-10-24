@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { BridgeError, elpisHome, object, text } from './client.mjs';
 import { runtimeTools } from './runtime-paths.mjs';
 import { handoffText, runAcpNode } from './acp-nodes.mjs';
 import { interviewReply, INVALID_INTERVIEW_REPLY } from './love-interview.mjs';
+const require = createRequire(import.meta.url);
 
 // Excalidraw remains the source of truth: bound arrows, not a second edge store.
 export function agentGraph(elements, selected) {
@@ -85,8 +87,19 @@ export function loveNodeSpec(node, env = process.env) {
   const nodeBin = env.ELPIS_NODE_BIN || 'node';
   if (node.model.startsWith('claude/')) {
     const { tools } = installation(env);
+    const state = env.ACP_BRIDGE_STORE ? path.dirname(env.ACP_BRIDGE_STORE) : path.join(elpisHome(env), 'elpis-claude');
+    let accountEnv = {};
+    // Use the provider bridge's account owner; the index contains IDs, never credentials.
+    if (fs.existsSync(path.join(state, 'anthropic.json'))) {
+      const { isSignedOut, SIGNED_OUT_MESSAGE } = require(present(path.join(tools, 'anthropic-signout.mjs')));
+      if (isSignedOut(state)) throw new BridgeError(SIGNED_OUT_MESSAGE, 409);
+    }
+    if (fs.existsSync(path.join(state, 'claude-accounts.json'))) {
+      const { ClaudeAccounts } = require(present(path.join(tools, 'claude-accounts.mjs')));
+      accountEnv = new ClaudeAccounts({ home: os.homedir(), dir: state, defaultConfigDir: env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude') }).environment();
+    }
     return { ...base, command: nodeBin, args: [present(path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js'))],
-      env: { CLAUDE_CODE_EXECUTABLE: env.CLAUDE_CODE_EXECUTABLE || path.join(os.homedir(), '.local', 'bin', 'claude') }, model: node.model.slice('claude/'.length) };
+      env: { CLAUDE_CODE_EXECUTABLE: env.CLAUDE_CODE_EXECUTABLE || path.join(os.homedir(), '.local', 'bin', 'claude'), ...accountEnv }, model: node.model.slice('claude/'.length) };
   }
   if (node.model.startsWith('agy/')) return { ...base, command: nodeBin, args: [present(path.join(installation(env).tools, 'agy-acp.mjs'))], model: node.model.slice('agy/'.length) };
   const { engine, tools } = installation(env);

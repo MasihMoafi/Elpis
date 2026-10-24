@@ -65,6 +65,11 @@ const app = agent({ name: "fake-acp-agent" })
   })
   .onRequest("session/prompt", async ({ params, client }) => {
     log({ method: "session/prompt", params });
+    if (process.env.FAKE_ACP_EXPECT_ENV) {
+      for (const [key, value] of Object.entries(JSON.parse(process.env.FAKE_ACP_EXPECT_ENV))) {
+        if ((process.env[key] ?? null) !== value) throw new RequestError(-32603, `Wrong account environment: ${key}`);
+      }
+    }
     const s = sessions.get(params.sessionId);
     s.running = true;
     s.steers = [];
