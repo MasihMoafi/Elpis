@@ -8,7 +8,7 @@ import { messageDomId, type MessageReply } from "@/lib/message-reply";
 export function ReplyPreview({ reply, image, onRemove, disabled }: { reply: MessageReply; image?: string; onRemove?: () => void; disabled?: boolean }) {
   const [missing, setMissing] = useState(false);
   function jump() {
-    const target = document.getElementById(messageDomId(reply.reference));
+    const target = document.getElementById(messageDomId(reply.reference)) ?? document.querySelector<HTMLElement>(`[data-image-reference="${CSS.escape(reply.reference)}"]`);
     if (!target) { setMissing(true); return; }
     for (let parent = target.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true;
     target.focus({ preventScroll: true });

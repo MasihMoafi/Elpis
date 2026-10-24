@@ -1,12 +1,37 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture, CWD } = require('./parity-fixture.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const preview = page => page.locator('.composer [data-slot="reply-preview"]');
 const reply = async page => page.locator('.message.agent').first().getByRole('button', { name: 'Reply', exact: true }).click();
 async function using(options, run) { const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, ...options }); try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); } }
 const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=', 'base64');
+const firstPicture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMQiT2DFTEMLQkAyYpPQS+5mBEAAAAASUVORK5CYII=', 'base64');
+test('uploaded pictures and viewed-image thumbnails reply to their own source and bytes', () => using({ chat: [['image-turn', 'My picture', 'Pictures ready']], routes: {
+  '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Fix the parser', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }, nextCursor: null, data: [
+    { turnId: 'image-turn', item: { id: 'answer', type: 'agentMessage', text: 'Pictures ready' } },
+    { turnId: 'image-turn', item: { id: 'viewed', type: 'imageView', path: '/tmp/viewed.png' } },
+    { turnId: 'image-turn', item: { id: 'uploaded', type: 'userMessage', content: [{ type: 'text', text: 'My picture' }, { type: 'image', url: `data:image/png;base64,${firstPicture.toString('base64')}`, name: 'uploaded.png' }] } },
+  ] }),
+} }, async f => {
+  const { page, composer } = f;
+  await page.route('**/items/viewed/media/0', route => route.fulfill({ contentType: 'image/png', body: picture }));
+  await page.getByRole('button', { name: 'Reply to image: uploaded.png', exact: true }).click();
+  await preview(page).getByText('Replying to You', { exact: true }).waitFor();
+  assert.equal(await preview(page).getByRole('img', { name: 'uploaded.png' }).getAttribute('src'), `data:image/png;base64,${firstPicture.toString('base64')}`);
+  await preview(page).getByRole('button', { name: 'Cancel reply', exact: true }).click();
+  await page.locator('.worked-for > summary').click();
+  await page.getByRole('button', { name: 'Reply to image: viewed.png', exact: true }).click();
+  await preview(page).getByText('Replying to Elpis', { exact: true }).waitFor();
+  await preview(page).getByRole('button', { name: 'Jump to original message' }).click();
+  assert.match(await page.evaluate(() => document.activeElement.dataset.imageReference), /viewed/);
+  await composer.fill('This picture'); await composer.press('Enter');
+  await page.waitForFunction(() => !document.querySelector('.composer [data-slot="reply-preview"]'));
+  const sent = f.posts.find(p => p.path === '/api/threads/chat-a/turns');
+  assert.equal(sent.body.attachments.find(part => part.type === 'image').dataUrl, `data:image/png;base64,${picture.toString('base64')}`);
+  assert.ok(sent.body.attachments.some(part => part.type === 'text' && part.text.includes('viewed')));
+}));
 test('an image that stops being readable adds no incomplete reply or image', () => using({ chat: [['picture', 'Make a logo', '![Logo](https://images.example/unavailable.png)'], ['tail', 'Ready?', 'Picture ready']] }, async f => {
   const { page, composer } = f;
   await page.route('https://images.example/**', route => route.request().resourceType() === 'image'
@@ -20,7 +45,7 @@ test('an image that stops being readable adds no incomplete reply or image', () 
 }));
 for (const colorScheme of ['light', 'dark']) test(`reply to one picture sends that image, preserves the draft and cancels cleanly (${colorScheme})`, () => using({ colorScheme, chat: [['pictures', 'Make two logos', '![First logo](https://images.example/first.png)\n\n![Second logo](https://images.example/second.png)'], ['tail', 'Ready?', 'Pictures ready']] }, async f => {
   const { page, composer } = f;
-  await page.route('https://images.example/**', route => route.fulfill({ contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: picture }));
+  await page.route('https://images.example/**', route => route.fulfill({ contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: route.request().url().endsWith('/first.png') ? firstPicture : picture }));
   await page.reload(); await f.open('chat-a');
   await page.getByRole('img', { name: 'Second logo', exact: true }).waitFor();
   await page.locator('input[aria-label="Choose files"]').setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Keep this file') });
