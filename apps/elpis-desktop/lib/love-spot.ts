@@ -30,3 +30,13 @@ export async function lightFiles<T extends ImageFile>(elements: readonly { isDel
   const live = new Set(elements.filter(e => !e.isDeleted).map(e => e.fileId));
   return Object.fromEntries(await Promise.all(Object.entries(files).filter(([id]) => live.has(id)).map(async ([id, file]) => [id, await lightImage(file)])));
 }
+
+type Message = { id: string; type: string; isDeleted?: boolean; updated?: number; groupIds?: readonly string[]; containerId?: string | null };
+/** The newest written note on the board, his or hers, with the shapes it belongs to (her face, a text box): what opening Love Spot shows, as a chat opens at its last message. */
+export function latestMessage<T extends Message>(elements: readonly T[]): T[] {
+  const live = elements.filter(e => !e.isDeleted);
+  const latest = live.filter(e => e.type === "text").reduce<T | undefined>((best, e) => (e.updated ?? 0) > (best?.updated ?? -1) ? e : best, undefined);
+  if (!latest) return [];
+  const groups = new Set(latest.groupIds ?? []);
+  return live.filter(e => e === latest || e.id === latest.containerId || e.groupIds?.some(id => groups.has(id)));
+}

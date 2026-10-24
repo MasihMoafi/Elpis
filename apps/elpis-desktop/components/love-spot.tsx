@@ -23,7 +23,7 @@ import { keepModel, savedModel } from "@/lib/matilda";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
-import { MASIH_PEN, lightFiles, lightImage } from "@/lib/love-spot";
+import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spot";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
@@ -93,6 +93,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const mounted = useRef(true);
   const remote = useRef(false);
   const placingScreenshot = useRef<string>(undefined);
+  const opening = useRef<string[]>([]);
   const report = useCallback((e: unknown) => { if (mounted.current) setError(e instanceof Error ? e.message : "Love Spot could not save the drawing."); }, []);
   if (!journal.current && typeof window !== "undefined") journal.current = createTextJournal(report);
   // A page list that fails is shown in the Pages menu it belongs to; the shared message line is cleared by every save.
@@ -122,6 +123,19 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const pickedProvider = choices.find(choice => choice.id === pick.choiceId)?.provider;
 
   useEffect(() => {
+    if (!editor || !opening.current.length) return;
+    const ids = new Set(opening.current); opening.current = [];
+    // Excalidraw hands over its API before it has loaded the initial scene; wait (at most about a second) for the note to arrive.
+    let frame = 0, tries = 60;
+    const show = () => {
+      const target = editor.getSceneElements().filter(e => ids.has(e.id));
+      if (target.length) editor.scrollToContent(target, { fitToViewport: true, viewportZoomFactor: 0.8, maxZoom: 1 });
+      else if (--tries > 0) frame = requestAnimationFrame(show);
+    };
+    frame = requestAnimationFrame(show);
+    return () => cancelAnimationFrame(frame);
+  }, [editor]);
+  useEffect(() => {
     if (!editor || !boardArea.current) return;
     const observer = new ResizeObserver(() => editor.refresh());
     observer.observe(boardArea.current);
@@ -140,7 +154,11 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       journal.current!.acknowledge(data.scene.elements, data.scene.page);
       const recovered = journal.current!.recover(data.scene.elements, data.scene.page);
       const elements = restoreRemoteElements(recovered);
-      setInitial({ elements, files: data.scene.files, scrollToContent: true,
+      // Opening Love Spot shows the newest note, as a chat opens at its last message; a board without notes (a screenshot's page) fits everything.
+      // Read before restoring: index repair stamps every unindexed element (her replies) with the time of opening.
+      const note = latestMessage(recovered);
+      opening.current = (note.length ? note : recovered.filter(e => !e.isDeleted)).map(e => e.id);
+      setInitial({ elements, files: data.scene.files, scrollToContent: false,
         appState: { ...data.scene.appState, currentItemStrokeColor: MASIH_PEN, collaborators: new Map() } });
       recoveryPending.current = versions(recovered) !== versions(data.scene.elements);
       setError("");
