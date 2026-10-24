@@ -41,3 +41,34 @@ test('a search lists each matching chat, also one started from another or pinned
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 24 Oct: searching "main" listed "main" below chats that merely mention it. Results rank as Zed's file finder does:
+// the whole name, then its start, then a word's start, then anywhere in the name, then the chat's other text.
+test('search ranks the chat named exactly as typed first, then name starts, word starts, other name hits, then other text', async () => {
+  const ranked = [
+    chat('older-mention', 'Write the docs', { preview: 'merge into main later' }),
+    chat('inside', 'Domain notes'),
+    chat('word', 'Hermes main setup'),
+    chat('starts', 'Main branch cleanup'),
+    chat('chat-a', 'main'),
+  ];
+  const f = await fixture({ desktop: true, threads: ranked, routes: {
+    '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : ranked, nextCursor: null }),
+  } });
+  try {
+    const { page } = f;
+    const rows = () => page.locator('section[aria-label="Results"] .thread-row .thread-link .thread-title').allInnerTexts();
+    await page.getByRole('textbox', { name: 'Search conversations', exact: true }).fill('main');
+    await page.waitForTimeout(400);
+    assert.deepEqual(await rows(), ['main', 'Main branch cleanup', 'Hermes main setup', 'Domain notes', 'Write the docs']);
+    await page.getByRole('textbox', { name: 'Search conversations', exact: true }).fill('');
+    // The command menu (Ctrl+K) ranks chats the same way.
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Control+k');
+    await page.keyboard.type('main');
+    await page.waitForTimeout(400);
+    const menuChats = await page.getByRole('option').allInnerTexts();
+    assert.match(menuChats[0] ?? '', /^main/, 'the exact name leads the command menu too');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

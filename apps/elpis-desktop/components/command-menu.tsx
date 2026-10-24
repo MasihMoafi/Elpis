@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { api, isAgentRun, title, unreadable, type Thread } from "@/lib/api";
 import type { Project } from "@/lib/projects";
+import { rankBySearch } from "@/lib/search-rank";
 
 export type CommandAction = { id: string; name: string; keys?: string[]; run: () => void };
 type Command = CommandAction & { detail?: string };
@@ -43,7 +44,7 @@ export function CommandMenu({ threads, projects, actions, onThread, onProject, o
   threads = threads.filter(thread => !isAgentRun(thread));
   const found = new Map(threads.filter(thread => matches(`${title(thread)} ${thread.preview ?? ""} ${thread.cwd ?? ""} ${thread.agentNickname ?? ""}`)).map(thread => [thread.id, thread]));
   if (term && saved.query === term) for (const thread of saved.data) if (!isAgentRun(thread)) found.set(thread.id, thread);
-  const chats = term ? [...found.values()] : threads.filter(thread => !thread.parentThreadId).slice(0, 8);
+  const chats = term ? rankBySearch([...found.values()], term, title, thread => `${thread.preview ?? ""} ${thread.cwd ?? ""} ${thread.agentNickname ?? ""}`) : threads.filter(thread => !thread.parentThreadId).slice(0, 8);
   const chatRows: Command[] = chats.map(thread => ({ id: `chat:${thread.id}`, name: title(thread), detail: thread.cwd, run: () => onThread(thread) }));
   const groups: { name: string; icon: ComponentType<{ size?: number; "aria-hidden"?: boolean }>; rows: Command[] }[] = [
     ...(!term ? [{ name: "Recents", icon: ChatIcon, rows: chatRows }] : []),

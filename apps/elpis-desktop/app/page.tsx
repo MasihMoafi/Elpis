@@ -35,6 +35,7 @@ import { ContextUsage, OPEN_CONTEXT_EVENT } from "@/components/context-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
 import { StartupSplash } from "@/components/startup-splash";
+import { rankBySearch } from "@/lib/search-rank";
 import { AppUpdate } from "@/components/app-update";
 import { permissionLabel, PermissionsMenu, PlanPill, PlusMenu, SendOptionsMenu, type PermissionMode } from "@/components/composer-controls";
 import { CopyButton } from "@/components/markdown-text";
@@ -1592,10 +1593,11 @@ export default function Home() {
   const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!!searchTerm || !displayParents[t.id] && (!t.parentThreadId || !searchedThreads.some(p => p.id === t.parentThreadId)))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
-  // Search results keep the search's order.
+  // Search results rank by how well each chat matches (lib/search-rank.ts).
   const rootIds = new Set(roots.map(thread => thread.id));
-  const listedRoots = searchTerm ? roots : ordinaryThreads.filter(thread => rootIds.has(thread.id));
-  const pinnedChats = listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = listedRoots.filter(t => !pins.includes(t.id));
+  const listedRoots = searchTerm ? rankBySearch(roots, searchTerm, title, thread => `${thread.preview || ""} ${thread.agentNickname || ""} ${thread.cwd || ""}`) : ordinaryThreads.filter(thread => rootIds.has(thread.id));
+  // A search shows one ranked list: a pinned hit takes its rank among the others.
+  const pinnedChats = searchTerm ? [] : listedRoots.filter(t => pins.includes(t.id)), unpinnedChats = searchTerm ? listedRoots : listedRoots.filter(t => !pins.includes(t.id));
   const grouped = !searchTerm && chatGroups.groupBy === "custom" ? groupSections(unpinnedChats, chatGroups) : null;
   const ungroupedChats = grouped ? grouped.ungrouped : unpinnedChats;
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Love Spot");
