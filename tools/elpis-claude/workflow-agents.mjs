@@ -1,6 +1,7 @@
 // The workflow runner's agents as helper chats, started through the bridge exactly as the delegate tool starts
 // them (its "elpis-agents" connection): any model the bridge serves, below the chat that started the run, in that
-// chat's permissions (a Full Access chat's helpers get Full Access), never asking. Each agent has its own
+// chat's permissions (a Full Access chat's helpers get Full Access; in a chat that asks first, the bridge puts their
+// questions to that chat, and the agent waits for the answer). Each agent has its own
 // connection, so agents on one model run side by side; a connection that drops is a passing failure.
 import { connectAppServer } from "./app-server-connection.mjs";
 
