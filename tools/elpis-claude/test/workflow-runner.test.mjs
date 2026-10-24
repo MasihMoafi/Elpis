@@ -9,8 +9,11 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mjs";
 import { parseScript } from "../workflow-script.mjs";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mjs";
 
-const home = () => fs.mkdtempSync(path.join(os.tmpdir(), "wf-runner-"));
+const homes = [];
+const home = () => { const dir = createTestTempDir(path.join(os.tmpdir(), "wf-runner-")); homes.push(dir); return dir; };
+test.after(() => { for (const dir of homes) removeTestTempDir(dir); });
 const promptOf = (text) => text.split("\n\n").at(-1);
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   const t = setTimeout(resolve, ms);
@@ -308,6 +311,40 @@ test("isolation: 'worktree' gives an agent its own git worktree, removed when un
   assert.equal(fs.existsSync(cwds[0]), false, "an unchanged worktree is removed");
   assert.equal(fs.existsSync(path.join(cwds[1], "changed.txt")), true, "a changed one is kept");
   assert.match(done.result[1], /Changes left in worktree/);
+});
+
+test("a script reaches nothing outside its context: no process, file system or shell through any hook, promise, error or result (WR2)", async () => {
+  // Every function and object the script can get hold of is tried as a way into the runner's realm.
+  const r = runner(executor({ answer: (p) => { if (p === "boom") throw new Error("agent failed"); return p === "shape" ? { n: 1 } : `done: ${p}`; } }), home(), { retry: { attempts: 1, delays: [1] } });
+  const { run: done } = await run(r, `${META}
+const tries = {}
+const reach = (label, thing) => {
+  const seen = new Set(), queue = [thing]
+  while (queue.length) {
+    const value = queue.shift()
+    if ((typeof value !== 'object' && typeof value !== 'function') || value === null || seen.has(value)) continue
+    seen.add(value)
+    try { const p = value.constructor.constructor('return process')(); tries[label] = 'escaped: ' + typeof p.getBuiltinModule; return } catch {}
+    for (const key of Reflect.ownKeys(value)) { try { queue.push(value[key]) } catch {} }
+    queue.push(Object.getPrototypeOf(value))
+  }
+  tries[label] = 'blocked'
+}
+for (const name of ['agent', 'parallel', 'pipeline', 'phase', 'log', 'budget', 'workflow', 'args']) reach(name, globalThis[name])
+const text = agent('one')
+reach('agent promise', text)
+reach('agent text', await text)
+reach('structured answer', await agent('shape', { schema: { type: 'object', properties: { n: { type: 'integer' } } } }))
+reach('failed agent', await agent('boom'))
+reach('parallel result', await parallel([() => agent('two'), () => { throw new Error('thunk') }]))
+reach('pipeline result', await pipeline(['a'], (x) => agent(x)))
+for (const [label, call] of [['agent error', () => agent('')], ['limit error', () => parallel('no')], ['workflow error', () => workflow('missing-one')]]) {
+  try { await call() } catch (e) { reach(label, e) }
+}
+return tries`, { args: { list: [1, 2] } });
+  assert.equal(done.status, "completed", done.error);
+  assert.deepEqual(Object.entries(done.result).filter(([, v]) => v !== "blocked"), [], JSON.stringify(done.result));
+  assert.equal(Object.keys(done.result).length, 17, "every hook, value and error was tried");
 });
 
 test("the opt-in check: the person's own words, never an autonomous notice (WR6)", () => {

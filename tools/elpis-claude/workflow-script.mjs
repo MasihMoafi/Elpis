@@ -99,22 +99,92 @@ const GUARDS = `(() => {
   Math.random = () => refuse("Math.random()");
 })();`;
 
-// Compiles the body once; run(hooks) returns the body's promise. Values cross into the script through
-// `inside` (JSON copies made in the script's realm), so Array.isArray and instanceof behave there.
+// The hooks the script sees are made inside its own context, so nothing it can reach belongs to the runner's realm: a
+// runner function, promise or error there would hand it that realm's Function, and with it `process` (24 Oct review:
+// `log.constructor('return process')()` reached the bridge's file system and shell). The runner's side is `host`,
+// kept in a closure: every value crosses as a string or a number.
+//   host.agent(prompt, optsJSON, phase) -> Promise of JSON   host.workflow(refJSON, argsJSON) -> Promise of JSON
+//   host.post(kind, a, b) (phase, log, scriptError)          host.spent() -> number
+const HOOKS = `"use strict";
+(host, config, body) => {
+  const C = JSON.parse(config);
+  const own = (e) => {
+    let message = "Error", name = "Error";
+    try { message = String(e && e.message !== undefined ? e.message : e); name = String((e && e.name) || "Error"); } catch {}
+    const made = name === "TypeError" ? new TypeError(message) : name === "RangeError" ? new RangeError(message) : new Error(message);
+    if (made.name !== name) made.name = name;
+    return made;
+  };
+  const call = async (method, ...a) => {
+    let text;
+    try { text = await host[method](...a); } catch (e) { throw own(e); }
+    return typeof text === "string" ? JSON.parse(text) : null;
+  };
+  const why = (e) => { try { return String(e && e.message !== undefined ? e.message : e).slice(0, 300); } catch { return "error"; } };
+  const items = (list, what) => {
+    if (!Array.isArray(list)) throw new TypeError(what + " takes an array");
+    if (list.length > C.maxItems) throw new RangeError(what + " accepts at most " + C.maxItems + " items (got " + list.length + "); split the work into several calls");
+  };
+  let current = null;
+  const agent = async (prompt, opts) => {
+    if (typeof prompt !== "string" || !prompt.trim()) throw new TypeError("agent() needs a prompt (a non-empty string)");
+    let o;
+    try { o = JSON.stringify(opts === undefined ? {} : opts); } catch (e) { throw new TypeError("agent() options must be plain data: " + why(e)); }
+    const phase = opts && typeof opts === "object" && typeof opts.phase === "string" ? opts.phase : current;
+    return call("agent", prompt, o === undefined ? "null" : o, phase);
+  };
+  const parallel = async (thunks) => {
+    items(thunks, "parallel()");
+    const out = await Promise.all(thunks.map((t, i) => Promise.resolve().then(() => t()).catch((e) => { host.post("scriptError", "parallel() task " + i, why(e)); return null; })));
+    return out.map((v) => (v === undefined ? null : v));
+  };
+  const pipeline = async (list, ...stages) => {
+    items(list, "pipeline()");
+    if (stages.some((s) => typeof s !== "function")) throw new TypeError("pipeline() stages must be functions");
+    return Promise.all(list.map(async (item, index) => {
+      let value = item;
+      for (let n = 0; n < stages.length; n++) {
+        try { value = await stages[n](value, item, index); }
+        catch (e) { host.post("scriptError", "pipeline() item " + index + ", stage " + (n + 1), why(e)); return null; }
+      }
+      return value === undefined ? null : value;
+    }));
+  };
+  const phase = (title) => { current = String(title); host.post("phase", current); };
+  const log = (message) => { host.post("log", typeof message === "string" ? message : JSON.stringify(message)); };
+  const budget = Object.freeze({
+    total: C.budgetTotal,
+    spent: () => Number(host.spent()),
+    remaining: () => (C.budgetTotal === null ? Infinity : Math.max(0, C.budgetTotal - Number(host.spent()))),
+  });
+  const workflow = async (ref, args) => {
+    if (C.nested) throw new Error("workflow() nesting is one level only: a workflow run by workflow() cannot run another");
+    const target = ref && typeof ref === "object" ? { scriptPath: ref.scriptPath } : ref;
+    return call("workflow", JSON.stringify(target === undefined ? null : target), args === undefined ? undefined : JSON.stringify(args));
+  };
+  const hooks = { agent, parallel, pipeline, phase, log, budget, workflow, args: C.args === undefined ? undefined : JSON.parse(C.args) };
+  for (const name of Object.keys(hooks)) Object.defineProperty(globalThis, name, { value: hooks[name], writable: true, configurable: true });
+  return (async () => {
+    const value = await body();
+    try { return value === undefined ? "null" : JSON.stringify(value); }
+    catch (e) { throw new Error("The script's return value is not JSON: " + why(e)); }
+  })();
+}`;
+
+// Compiles the body once; run(host, config) returns a promise of the script's return value as JSON text.
+//   config: { args (JSON text or undefined), budgetTotal (number or null), maxItems, nested }
 export function compileScript(source, filename = "workflow.js") {
   const { meta, body } = parseScript(source);
   let code;
-  try { code = new vm.Script(`(async () => {\n${body}\n})()`, { filename, lineOffset: -1 }); }
+  try { code = new vm.Script(`(async () => {\n${body}\n})`, { filename, lineOffset: -1 }); }
   catch (e) { throw new ScriptError(`The script does not parse (plain JavaScript only, no TypeScript): ${e.message}`); }
   return {
     meta,
-    run(hooks) {
+    run(host, { args, budgetTotal = null, maxItems, nested = false } = {}) {
       const context = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } });
       vm.runInContext(GUARDS, context);
-      const json = vm.runInContext("JSON", context);
-      const inside = (value) => (value === undefined ? undefined : json.parse(JSON.stringify(value)));
-      for (const [name, value] of Object.entries(hooks(inside))) context[name] = value;
-      return code.runInContext(context);
+      const start = vm.runInContext(HOOKS, context);
+      return start(host, JSON.stringify({ args, budgetTotal: budgetTotal ?? null, maxItems, nested }), code.runInContext(context));
     },
   };
 }
