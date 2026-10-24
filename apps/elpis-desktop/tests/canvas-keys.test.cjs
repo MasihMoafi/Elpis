@@ -219,13 +219,16 @@ test('Alt+Shift+M toggles the minimap, with no response in menus or fields', asy
   } finally { await f.close(); }
 });
 
-test('Shift+F10 opens the active agent menu and shows the real command keys; menu keystrokes stay local', async () => {
+test('Shift+F10 opens the selection menu and shows the real command keys; menu keystrokes stay local', async () => {
   const f = await editing();
   try {
-    await pick(f, 'b'); await f.page.keyboard.press('Shift+F10'); const menu = f.canvas.getByRole('menu', { name: 'Agent B', exact: true }); await menu.waitFor();
+    // One agent's menu is the approved short one (canvas-basics pins it); the editing commands sit on a selection's menu.
+    await pick(f, 'b'); await f.page.keyboard.press('Shift+F10'); const single = f.canvas.getByRole('menu', { name: 'Agent B', exact: true }); await single.waitFor();
+    assert.equal(await single.getByRole('menuitem', { name: /^Mute/ }).count(), 0); await f.page.keyboard.press('Escape');
+    await pick(f, 'b'); await f.page.keyboard.press('Shift+ArrowRight'); await f.page.keyboard.press('Shift+F10'); const menu = f.canvas.getByRole('menu', { name: '2 agents', exact: true }); await menu.waitFor();
     for (const [label, key] of [['Mute', 'M'], ['Frame selection', 'Ctrl+G'], ['Cut', 'Ctrl+X'], ['Run selected', 'Ctrl+Shift+Enter']]) assert.match(await menu.getByRole('menuitem', { name: new RegExp(label) }).innerText(), new RegExp(key.replace(/[+]/g, '\\+')));
     const before = await f.saved(); await f.page.keyboard.press('m'); assert.deepEqual(geometry(await f.saved()), geometry(before)); await f.page.keyboard.press('Escape');
-    await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).focus(); await f.page.keyboard.press('Shift+F10'); assert.equal(await menu.count(), 0);
+    await pick(f, 'b'); await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).focus(); await f.page.keyboard.press('Shift+F10'); assert.equal(await single.count(), 0);
   } finally { await f.close(); }
 });
 
@@ -318,7 +321,7 @@ test('selected wire endpoints reconnect only on valid drops, Escape and blank dr
       const box = await endpoint.boundingBox(); await f.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await f.page.mouse.down();
       await f.page.mouse.move(destination.x, destination.y, { steps: 10 }); if (cancel) await f.page.keyboard.press('Escape'); await f.page.mouse.up();
     };
-    const d = await f.canvas.locator('.react-flow__node[data-id="d"] .react-flow__handle-target').boundingBox(), to = { x: d.x + d.width / 2, y: d.y + d.height / 2 };
+    const d = await f.canvas.locator('.react-flow__node[data-id="d"] .react-flow__handle.target').boundingBox(), to = { x: d.x + d.width / 2, y: d.y + d.height / 2 };
     await drag(to, true); assert.deepEqual((await f.saved()).edges, before.edges);
     const pane = await f.canvas.locator('.react-flow__pane').boundingBox(); await drag({ x: pane.x + 20, y: pane.y + 40 }); assert.deepEqual((await f.saved()).edges, before.edges); await f.agentCount(4, 'reconnect to blank never creates');
     await drag(to); assert.ok((await f.saved()).edges.some(e => e.source === 'a' && e.target === 'd'));
@@ -332,7 +335,7 @@ test('dragging either port onto blank board still adds exactly one connected age
   try {
     const before = await f.saved();
     const drop = async (end, cancel = false) => {
-      const handle = await f.canvas.locator(`.react-flow__node[data-id="d"] .react-flow__handle-${end}`).boundingBox();
+      const handle = await f.canvas.locator(`.react-flow__node[data-id="d"] .react-flow__handle.${end}`).boundingBox();
       const pane = await f.canvas.locator('.react-flow__pane').boundingBox();
       await f.page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await f.page.mouse.down();
       await f.page.mouse.move(pane.x + pane.width - 260, pane.y + pane.height - 150, { steps: 12 }); if (cancel) await f.page.keyboard.press('Escape'); await f.page.mouse.up();
@@ -378,7 +381,8 @@ test('flat and isometric views share new editing commands, frame names, note tex
       await f.page.keyboard.press('Control+f'); await f.canvas.getByRole('textbox', { name: 'Find agents', exact: true }).fill('C'); await f.page.keyboard.press('Enter');
       const selected = iso ? await f.canvas.locator('.iso-node[aria-pressed="true"]').getAttribute('data-id') : (await selectedIds(f))[0]; assert.equal(selected, 'c');
       assert.equal(await f.canvas.getByRole('textbox', { name: 'Note', exact: true }).inputValue(), 'Personal');
-      await node('a').dblclick(); await f.canvas.getByRole('dialog', { name: 'A info', exact: true }).waitFor(); await f.page.keyboard.press('Escape');
+      // Find centred C, which can leave A outside the board: show the whole graph before pointing at it.
+      await f.fit(); await node('a').dblclick(); await f.canvas.getByRole('dialog', { name: 'A info', exact: true }).waitFor(); await f.page.keyboard.press('Escape');
     }
   } finally { await f.close(); }
 });

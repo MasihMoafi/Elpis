@@ -1204,32 +1204,15 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         { label: "Add a note", keys: "Shift+S", take: () => { checkpoint(); addNote(iso ? isoController.current?.position(current.client) : flow.screenToFlowPosition(current.client)); } },
         ...(clip ? [{ label: `Paste ${describe(inClip, clip.nodes.length - inClip)}`, keys: "Ctrl+V", take: () => paste(flow.screenToFlowPosition(current.client)) }] : []),
         { label: "Arrange by run order", keys: "Shift+Alt+T", take: tidySelection },
-        { label: "Select all", keys: "Ctrl+A", take: () => setSelection(graph.nodes.filter(node => node.type !== "mother").map(node => node.id)) },
-        { label: "Invert selection", keys: "Ctrl+I", take: () => setSelection(graph.nodes.filter(node => node.type !== "mother" && !selection.includes(node.id)).map(node => node.id)) },
-        { label: "Lasso", keys: "L", take: () => setLasso(true) },
-        { label: "Find agents", keys: "Ctrl+F", take: () => { setFinding(""); setFindIndex(0); } },
-        { label: "Previous agent", keys: "Shift+Tab", take: focusPrevious },
-        { label: "Fit the view", keys: "Home", take: fitAll },
-        { label: "Fit selection", keys: "Period / F", take: frameView },
-        { label: "Zoom in", keys: "+", take: () => zoom(1.25) },
-        { label: "Zoom out", keys: "−", take: () => zoom(1 / 1.25) },
-        { label: "Reset zoom", keys: "0", take: () => zoom(0) },
-        { label: "Toggle minimap", keys: "Alt+Shift+M", take: toggleMinimap },
-        { label: "Run graph", keys: "Ctrl+Enter", take: () => void start() },
-        { label: "Undo", keys: "Ctrl+Z", take: undo },
-        { label: "Redo", keys: "Ctrl+Shift+Z", take: redo }] };
+        { label: "Fit the view", keys: "Home", take: fitAll }] };
     }
     const ids = current.ids, picked = graph.nodes.filter(node => ids.includes(node.id)), count = picked.filter(node => node.type === "agent").length;
     const removeThem = () => remove(ids);
     const editingItems: MenuItem[] = [
       ...(count ? [{ label: picked.some(node => node.type === "agent" && !node.data.muted) ? "Mute" : "Unmute", keys: "M", hint: "Muted agents are skipped in runs; the drawing stays", take: () => mute(ids) },
-        { label: "Select upstream", keys: "Shift+Left", take: () => setSelection(linkedIds(graph, ids, "upstream")) },
-        { label: "Select downstream", keys: "Shift+Right", take: () => setSelection(linkedIds(graph, ids, "downstream")) },
         { label: "Run selected", keys: "Ctrl+Shift+Enter", take: previewRun }] : []),
       { label: "Frame selection", keys: "Ctrl+G", take: () => frameSelection(ids) },
       ...(graph.frames?.some(frame => frame.nodeIds.some(id => ids.includes(id))) ? [{ label: "Ungroup", keys: "Ctrl+Shift+G", take: ungroup }] : []),
-      { label: "Tidy selection", keys: "Shift+Alt+T", take: tidySelection },
-      ...(["Left", "Right", "Up", "Down"] as const).map(direction => ({ label: `Nudge ${direction.toLowerCase()}`, keys: `Alt+${direction}`, hint: "One grid unit · Shift+Alt for ten", take: () => nudge(`Arrow${direction}`, 20) })),
       { label: "Cut", keys: "Ctrl+X", take: () => { copy(ids); remove(ids); } },
     ];
     if (picked.length === 1 && picked[0].type === "agent") {
@@ -1237,11 +1220,9 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       return { name: `Agent ${only.data.title || "Untitled"}`, title: "Agent", detail: only.data.title || "Untitled", onDelete: removeThem, items: [
         { label: "Info", keys: "Enter", take: () => setDashboardId(only.id) },
         { label: "Rename", keys: "F2", take: rename },
-        { label: "Add next agent", keys: "A", hint: "One connected successor", take: () => addAgent(undefined, { id: only.id, as: "target" }) },
-        { label: "Add agents after it", hint: "Choose their models and prompts; they wait for it", take: () => openAdder(current.client, { id: only.id, as: "target" }) },
+        { label: "Add agents after it", hint: "They wait for it", take: () => openAdder(current.client, { id: only.id, as: "target" }) },
         { label: "Duplicate", keys: "Ctrl+D", take: () => duplicate(ids) },
         { label: "Copy", keys: "Ctrl+C", take: () => copy(ids) },
-        ...editingItems,
         { label: "Delete, keep the flow", hint: "Reconnect its inputs and outputs across every link kind", keys: "Ctrl+Del", take: () => removeKeepingFlow(ids) },
         { label: "Delete", keys: "Delete", take: removeThem }] };
     }

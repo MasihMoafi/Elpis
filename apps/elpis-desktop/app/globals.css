@@ -940,8 +940,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-stroke polyline[data-tool="cut"] { fill:none; stroke:var(--destructive); stroke-width:2; }
 .canvas-gesture-hint { position:absolute; left:12px; top:12px; z-index:10; max-width:calc(100% - 24px); padding:6px 10px; border:1px solid var(--border); background:var(--card); color:var(--foreground); font-size:var(--text-small); pointer-events:none; }
 .canvas-search { top:12px; left:12px; max-height:calc(100% - 24px); }
-.canvas-frame { width:100%; height:100%; border:1px solid var(--border); background:color-mix(in oklab, var(--muted-foreground) 6%, transparent); }
-.agents-canvas .react-flow__node.react-flow__node-frame { pointer-events:none; }
+/* A frame never takes the clicks meant for the agents it holds; only its title does. React Flow sets pointer-events
+   inline on a draggable node, so only !important lets its node through (an external library's inline style). */
+.canvas-frame { width:100%; height:100%; border:1px solid var(--border); background:color-mix(in oklab, var(--muted-foreground) 6%, transparent); pointer-events:none; }
+.agents-canvas .react-flow__node.react-flow__node-frame { pointer-events:none !important; }
 .canvas-frame-title { min-height:30px; padding:6px 10px; overflow:hidden; color:var(--muted-foreground); font-size:var(--text-small); cursor:grab; pointer-events:auto; }
 .canvas-frame-title strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
 .agent-node[data-muted], .iso-node[data-muted] { opacity:.5; }
@@ -949,7 +951,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-frame { position:absolute; pointer-events:none; }
 .iso-frame .canvas-frame-title { pointer-events:auto; }
 .iso-note { position:absolute; }
-.iso-minimap { position:absolute; right:12px; top:12px; bottom:auto; width:150px; height:100px; border:1px solid var(--border); background:var(--card); cursor:crosshair; }
+.iso-board > .iso-minimap { position:absolute; inset:12px 12px auto auto; width:150px; height:100px; border:1px solid var(--border); background:var(--card); cursor:crosshair; }
 .iso-minimap circle { fill:var(--muted-foreground); }
 .iso-wire-end { border-color:var(--primary); }
 .iso-port[data-valid="true"] { outline:1px solid var(--primary); outline-offset:3px; }
@@ -1109,7 +1111,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-node { position:relative; display:grid; gap:3px; width:190px; padding:11px 34px 11px 14px; border:1px solid var(--border); border-left:3px solid var(--kind); background:var(--card); color:var(--foreground); box-shadow:var(--shadow); font-size:0.8125rem; }
 .react-flow__node.selected .agent-node { outline:1.5px dashed color-mix(in oklch, var(--foreground) 70%, transparent); outline-offset:4px; }
 .mother-node { border-left-width:5px; padding-right:14px; }
-.agent-node-kind { line-height:1; color:var(--muted-foreground); }
+.agent-node-kind { line-height:1; color:var(--muted-foreground); white-space:nowrap; }
 .agent-node-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.9375rem; font-weight:600; line-height:1.3; }
 .agent-node-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:0.78125rem; }
 .agent-node-mark { position:absolute; top:10px; right:10px; display:grid; place-items:center; width:18px; height:18px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--border); }
@@ -1380,10 +1382,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .context-files-error [role="alert"] { color:var(--destructive); }
 
 /* Identity edges stay distinct; restrained tints keep secondary text readable in both themes. */
-.agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); padding-right:58px; }
-.agent-node[data-kind="agent"]:has(.agent-portrait) { width:230px; padding-right:78px; min-height:104px; }
-.agent-portrait { float:left; position:absolute; right:8px; top:30px; pointer-events:none; }
-.agent-portrait > div { width:64px; height:64px; }
+.agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); }
 .dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 10%, var(--card)); }
 .iso-node[data-kind="agent"] { --kind:var(--agent-color); }
 .canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
