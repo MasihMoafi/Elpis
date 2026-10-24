@@ -91,6 +91,9 @@ if (process.argv.includes('app-server')) {
       for (let i = 0; i < 3; i++) await call('config/batchWrite', { edits: [{ keyPath: 'model', value: 'claude/haiku' }, { keyPath: 'model_reasoning_effort', value: i % 2 ? 'low' : 'high' }] });
       await call('thread/items/list', { threadId: thread.id, limit: 1 }); // wait for queued saves to finish
     });
+    const saved = JSON.parse(fs.readFileSync(store, 'utf8'));
+    assert.equal(saved[thread.id].turns.length, 600, 'metadata saves preserve the large transcript');
+    assert.equal(saved._default.effort, 'high', 'queued edits keep their order');
     await phase('idle', () => pause(10_000));
     report.idleCpuPercent = report.phases.idle.cpuMs / report.phases.idle.ms * 100;
     assert.equal(deltas, 1000, 'all delta notifications are forwarded');
@@ -112,6 +115,7 @@ if (process.argv.includes('app-server')) {
     await t.test('repeated read CPU budget', () => assert.ok(report.phases.reads.cpuMs < 500, `${report.phases.reads.cpuMs} ms CPU >= 500 ms`));
     await t.test('repeated item-page CPU budget', () => assert.ok(report.phases.pages.cpuMs < 1000, `${report.phases.pages.cpuMs} ms CPU >= 1000 ms`));
     await t.test('repeated list CPU budget', () => assert.ok(report.phases.lists.cpuMs < 500, `${report.phases.lists.cpuMs} ms CPU >= 500 ms`));
+    await t.test('queued metadata saves CPU budget', () => assert.ok(report.phases.saves.cpuMs < 1000, `${report.phases.saves.cpuMs} ms CPU >= 1000 ms`));
   } finally {
     socket.close(); child.kill('SIGTERM'); await once(child, 'exit');
     report.stderr = stderr;

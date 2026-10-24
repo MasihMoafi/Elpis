@@ -178,17 +178,34 @@ async function loadStoreSnapshot() {
   finally { if (storeRead?.promise === promise) storeRead = null; }
 }
 let storeChain = Promise.resolve();
+let pendingStoreUpdates = [];
 const deletingThreads = new Set();
 const deletedThreads = new Set();
 // Resolves true once saved, false if saving failed.
 function updateStore(fn) {
-  storeChain = storeChain.then(async () => {
-    const st = await readStore(); fn(st);
-    // Late plan/tool notifications cannot recreate a deleted transcript.
-    for (const tid of deletedThreads) { delete st[tid]; if (st._delegations) delete st._delegations[tid]; }
-    await saveStore(st); return true;
-  }).catch((e) => { if (!e.storeLoadError) log(`store: ${e.message}`); return false; });
-  return storeChain;
+  const updates = pendingStoreUpdates;
+  const saved = new Promise(resolve => updates.push({ fn, resolve }));
+  if (updates.length === 1) storeChain = storeChain.then(async () => {
+    let success = false;
+    try {
+      await withFileLock(STORE, async () => {
+        const st = await readStore();
+        // Edits arriving during the read share this transaction, in order. Edits
+        // arriving during the save get a new transaction behind this one.
+        pendingStoreUpdates = [];
+        for (const update of updates) update.fn(st);
+        // Late plan/tool notifications cannot recreate a deleted transcript.
+        for (const tid of deletedThreads) { delete st[tid]; if (st._delegations) delete st._delegations[tid]; }
+        await saveStore(st);
+      });
+      success = true;
+    } catch (e) { if (!e.storeLoadError) log(`store: ${e.message}`); }
+    finally {
+      if (pendingStoreUpdates === updates) pendingStoreUpdates = [];
+      for (const update of updates) update.resolve(success);
+    }
+  });
+  return saved;
 }
 const STATE_DIR = STORE.slice(0, STORE.lastIndexOf("/"));
 const claudeAccounts = new ClaudeAccounts({ home: HOME, dir: STATE_DIR, defaultConfigDir: process.env.CLAUDE_CONFIG_DIR ?? join(HOME, ".claude"), claudeBin: process.env.CLAUDE_CODE_EXECUTABLE ?? join(HOME, ".local/bin/claude") });
