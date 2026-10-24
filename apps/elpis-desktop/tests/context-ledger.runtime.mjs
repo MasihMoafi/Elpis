@@ -37,7 +37,8 @@ test('A225/A260: the desktop\'s Reasoning + compaction is the share of reasoning
   const box = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   await box.fill('work 6 on this'); await box.press('Enter');
   await page.locator('.chat-content').getByText(/^reply \d+$/).first().waitFor({ timeout: 120000 });
-  const truth = mock.state.last, used = truth.input + truth.output, share = truth.reasoning / used;
+  // The chat's last request (the title is asked for on the side).
+  const truth = mock.state.requests.filter(request => request.asked.startsWith('work')).at(-1).truth, used = truth.input + truth.output, share = truth.reasoning / used;
   await page.locator('.context-ring').click();
   const rows = page.locator('.context-ledger .context-ledger-row:not([data-category="free"])');
   await page.locator('.context-ledger .context-ledger-row[data-category="reasoning"]').waitFor();
