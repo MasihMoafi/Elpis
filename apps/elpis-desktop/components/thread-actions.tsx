@@ -25,8 +25,8 @@ type Props = {
   /** Hands Delete to the sidebar's shared confirmation instead, which also covers several selected chats. */
   onRequestDelete?: (thread: Thread) => void;
   onRename?: (thread: Thread, name: string) => Promise<void>;
-  /** Reports its own failures; the menu closes immediately. */
-  onArchive?: (thread: Thread) => Promise<void>;
+  /** Archives this chat, or the selection it belongs to; reports its own failures, and the menu closes immediately. */
+  onArchive?: (threads: Thread[]) => void;
   pinned?: boolean;
   onPin?: (thread: Thread) => void;
   bookmarked?: boolean;
@@ -86,7 +86,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
   };
   const many = selection && selection.length > 1 ? selection : null, suffix = many ? ` ${many.length} chats` : "";
   const remove: MenuAction | undefined = onRequestDelete || onDelete ? { id: "delete", label: `Delete${suffix}`, icon: <Trash2 size={14} />, hint: "D", destructive: true, run: () => onRequestDelete ? onRequestDelete(thread) : setDeleting([thread]) } : undefined;
-  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, hint: shortcutHint("archive"), run: () => { for (const chat of many ?? [thread]) void onArchive(chat); } } : undefined;
+  const archive: MenuAction | undefined = onArchive ? { id: "archive", label: `Archive${suffix}`, icon: <ArchiveIcon size={14} />, hint: shortcutHint("archive"), run: () => onArchive(many ?? [thread]) } : undefined;
   const move: MenuAction | undefined = group ? { id: "move", label: many ? `Move ${many.length} chats to group` : "Move to group", icon: <FolderInput size={14} />, run: () => {}, items: [
     ...group.groups.map(item => ({ id: `group:${item.id}`, label: item.name, checked: group.current === item.id, run: () => group.onMove(item.id) })),
     { id: "ungrouped", label: "Ungrouped", checked: group.current === null, run: () => group.onMove(null) },

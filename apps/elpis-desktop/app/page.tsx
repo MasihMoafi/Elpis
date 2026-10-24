@@ -1561,8 +1561,8 @@ export default function Home() {
     { name: "review", description: "review my current changes and find issues", available: writable && idle, args: true, run: text => { if (!selected) return; if (text) void startReview(selected, { type: "custom", instructions: text }); else setPanel("review"); } },
     { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(e instanceof Error ? e.message : String(e))); else setRenameRequest(true); } },
     { name: "new", description: "start a new chat during a conversation", run: newChat },
-    { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) void archiveThread(selected); } },
-    { name: "delete", description: "permanently delete this session", available: !!selected, run: () => { if (selected) setDeleteTargets([selected]); } },
+    { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) archiveChats([selected]); } },
+    { name: "delete", description: "permanently delete this session", available: !!selected, run: () => { if (selected) deleteChats([selected.id]); } },
     { name: "resume", description: "resume a saved chat", run: focusSearch },
     { name: "fork", description: "fork the current chat", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
     { name: "init", description: "create an AGENTS.md file with instructions for Elpis", available: !continues && idle, run: () => void send(INIT_PROMPT) },
@@ -1669,7 +1669,7 @@ export default function Home() {
     else if (id === "next-chat" && ordered.length) void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]);
     else if (id === "go-to-chat" && index !== undefined && ordered[index]) void loadThread(ordered[index]);
     else if (id === "rename" && selected) setRenameRequest(true);
-    else if (id === "archive" && selected) void archiveThread(selected);
+    else if (id === "archive") archiveChats(chosenChats());
     else if (id === "pin" && selected) togglePin(selected);
     else if ((id === "chat-to-top" || id === "chat-to-bottom") && selected) moveToEdge(selected.id, id === "chat-to-top");
     else if (id === "copy-folder" && (selected?.cwd || cwd)) void navigator.clipboard.writeText(selected?.cwd || cwd);
@@ -1690,11 +1690,23 @@ export default function Home() {
   const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
   /** Opens the shared delete confirmation for these chats. */
   const chatsOf = (ids: string[]) => ids.map(id => searchedThreads.find(thread => thread.id === id) ?? find(id)).filter((thread): thread is Thread => !!thread);
+  /** What Ctrl+Shift+A and the command menu act on: the chats selected in the sidebar, or else the open chat. */
+  const chosenChats = () => marked.length ? chatsOf(marked) : selected ? [selected] : [];
+  /** These chats and the chats put under them (Put under…): those go wherever their chat goes. */
+  const withNested = (ids: string[]) => [...new Set([...ids, ...Object.keys(displayParents).filter(id => ids.includes(displayParents[id]))])];
+  /** Archive, from a row's button, the menus, Ctrl+Shift+A and /archive: these chats with the chats put under them. An agent
+   * whose chat is archived too is left to go with it (bridge archiveThread), so it is not archived twice. */
+  function archiveChats(chats: Thread[]) {
+    const ids = withNested(chats.map(chat => chat.id)), all = [...chats, ...chatsOf(ids.filter(id => !chats.some(chat => chat.id === id)))];
+    const archiving = new Set(all.map(chat => chat.id));
+    const covered = (chat: Thread) => { for (let parent = chat.parentThreadId, depth = 0; parent && depth < 50; parent = find(parent)?.parentThreadId, depth++) if (archiving.has(parent)) return true; return false; };
+    for (const chat of all) if (!covered(chat)) void archiveThread(chat);
+  }
   /** Deletes these chats as one step Ctrl+Z undoes: after the shared confirmation, or at once when it is turned off.
    * `focusAt` is the sidebar row to focus afterwards, so Ctrl+Z reaches the app and not a text field. */
   function deleteChats(ids: string[], focusAt?: number) {
     setDeleteRunHistory(false);
-    const targets = chatsOf(ids);
+    const targets = chatsOf(withNested(ids));
     if (!targets.length) return;
     if (preferences.confirmDeleteChats) { setDeleteTargets(targets); return; }
     void trashChats(targets).then(() => { if (focusAt !== undefined) requestAnimationFrame(() => { const links = rowLinks(); (links[focusAt] ?? links.at(-1))?.focus(); }); }, e => setError(String(e instanceof Error ? e.message : e)));
@@ -1854,7 +1866,7 @@ export default function Home() {
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     const hasAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
     const canExpandAgents = !searchTerm && (hasAgents || displayParentIds.has(thread.id)), branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
-    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
+    return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveChats} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
       bookmarked={bookmarked} onBookmark={toggleBookmark}
       {...organizationActions(thread)}
       attention={attentionFor(thread.id)}
@@ -1884,7 +1896,7 @@ export default function Home() {
       <span className="row-hover-actions">
         {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
         <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
-        {!depth && <Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button>}
+        {!depth && <Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => archiveChats([thread])}><ArchiveIcon size={13} /></Button>}
       </span>
       {bookmarked && <span className="thread-bookmark" role="img" aria-label="Bookmarked" title="Bookmarked"><Bookmark size={13} fill="currentColor" aria-hidden="true" /></span>}
       {menu}
@@ -1893,7 +1905,7 @@ export default function Home() {
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, movingIds(thread.id))} selection={marked.includes(thread.id) ? chatsOf(marked) : undefined} onRequestDelete={() => deleteChats(movingIds(thread.id))} onRename={renameThread} onArchive={archiveChats} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} {...organizationActions(thread)} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);
@@ -1933,9 +1945,9 @@ export default function Home() {
   const chatState = selected ? agentState(selected, waitingIds) : "idle", floatState = activeTurn && chatState === "idle" ? "working" : chatState;
   const meta = selected ? [agentName(selected), selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null].filter(Boolean).join(" · ") : "";
   const shortcuts = configuredShortcuts(preferences);
-  const commandActions: CommandAction[] = ["new-chat", "search", "settings", "shortcuts", "sidebar", ...(desktop ? ["files", "full-view"] : []), ...(hasTerminal ? ["terminal"] : []), ...(selected ? ["rename", "pin", "archive"] : [])].filter(id => id !== "new-chat" || !projectChanging).map(id => {
+  const commandActions: CommandAction[] = ["new-chat", "search", "settings", "shortcuts", "sidebar", ...(desktop ? ["files", "full-view"] : []), ...(hasTerminal ? ["terminal"] : []), ...(selected ? ["rename", "pin"] : []), ...(selected || marked.length ? ["archive"] : [])].filter(id => id !== "new-chat" || !projectChanging).map(id => {
     const shortcut = shortcuts.find(item => item.id === id)!;
-    return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
+    return { id, name: id === "pin" ? `${pins.includes(selected!.id) ? "Unpin" : "Pin"} chat` : id === "archive" && marked.length > 1 ? `Archive ${marked.length} chats` : id === "shortcuts" ? "Keyboard shortcuts" : shortcut.label, keys: shortcut.keys, run: () => { if (id === "shortcuts") { shortcutsReturnFocus.current = commandReturnFocus.current; setShortcutsOpen(true); } else shortcutAction.current(id); } };
   });
   commandActions.push({ id: "improve-elpis", name: "Improve Elpis…", run: () => window.dispatchEvent(new CustomEvent("elpis:improve")) });
   // The sidebar's pages in the person's order (drag and drop, or Alt+Up/Down), saved with the preferences.
