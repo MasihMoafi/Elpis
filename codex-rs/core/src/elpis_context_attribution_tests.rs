@@ -92,3 +92,100 @@ fn nothing_is_reported_before_a_request_is_recorded() {
         Some(classify(&prompt(), &grown).agent_messages)
     );
 }
+
+fn reasoning(encrypted_len: usize) -> ResponseItem {
+    item(json!({
+        "type": "reasoning",
+        "summary": [],
+        "encrypted_content": "g".repeat(encrypted_len),
+    }))
+}
+
+/// Seeded lengths: the edges, then many spread across real reasoning sizes (1.5k to 60k).
+fn sampled_lengths() -> Vec<usize> {
+    let mut lengths = vec![0, 1, 155, 156, 157, 1_559, 1_560, 1_592, 4_096, 68_620];
+    let mut state: u64 = 0x5eed_2026_1024;
+    for _ in 0..500 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        lengths.push(usize::try_from(state >> 48).unwrap_or(0));
+    }
+    lengths
+}
+
+#[test]
+fn encrypted_reasoning_costs_one_token_per_fifteen_point_six_characters() {
+    assert_eq!(encrypted_reasoning_tokens(""), 0);
+    assert_eq!(encrypted_reasoning_tokens("g"), 1);
+    assert_eq!(encrypted_reasoning_tokens(&"g".repeat(156)), 10);
+    assert_eq!(encrypted_reasoning_tokens(&"g".repeat(1_560)), 100);
+    assert_eq!(encrypted_reasoning_tokens(&"g".repeat(156_000)), 10_000);
+}
+
+#[test]
+fn reasoning_is_counted_by_its_measured_cost_not_the_history_estimate() {
+    // A reasoning item of the median size in his chat (about 7.3k characters, about 430 tokens of
+    // reasoning reported by the provider).
+    let item = reasoning(7_287);
+    let snapshot = classify(&prompt(), std::slice::from_ref(&item));
+
+    assert_eq!(snapshot.reasoning, 468);
+    let history_estimate = u64::try_from(estimate_item_token_count(&item)).expect("positive");
+    assert_eq!(history_estimate, 1_204);
+    assert_eq!(
+        snapshot.estimated_total,
+        snapshot.system_instructions + snapshot.reasoning
+    );
+}
+
+#[test]
+fn reasoning_without_encrypted_content_weighs_nothing() {
+    let plain = item(json!({
+        "type": "reasoning",
+        "summary": [{"type": "summary_text", "text": "Plain summary text."}],
+    }));
+    assert_eq!(classify(&prompt(), &[plain]).reasoning, 0);
+}
+
+#[test]
+fn compaction_keeps_the_shared_history_estimate() {
+    let compaction = item(json!({
+        "type": "compaction",
+        "id": "c1",
+        "encrypted_content": "g".repeat(68_620),
+    }));
+    let expected = u64::try_from(estimate_item_token_count(&compaction)).expect("positive");
+    assert_eq!(classify(&prompt(), &[compaction]).reasoning, expected);
+}
+
+#[test]
+fn reasoning_estimate_rules_hold_for_any_length() {
+    let lengths = sampled_lengths();
+    for &len in &lengths {
+        let tokens = encrypted_reasoning_tokens(&"g".repeat(len));
+        let exact = len as f64 / 15.6;
+        // Rounded up, never by a whole token.
+        assert!(tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0, "{len}");
+        // Every real reasoning item is at least 1.5k characters; there the old estimate is larger.
+        if len >= 1_592 {
+            let old = u64::try_from(estimate_item_token_count(&reasoning(len))).expect("positive");
+            assert!(tokens < old, "{len}: {tokens} >= {old}");
+        }
+        // Classification adds exactly this and keeps the parts summing to the total.
+        let snapshot = classify(&prompt(), &[reasoning(len), message("user", "Next.")]);
+        assert_eq!(snapshot.reasoning, tokens);
+        assert_eq!(
+            snapshot.estimated_total,
+            snapshot.system_instructions + snapshot.user_messages + snapshot.reasoning
+        );
+    }
+    let mut sorted = lengths;
+    sorted.sort_unstable();
+    for pair in sorted.windows(2) {
+        assert!(
+            encrypted_reasoning_tokens(&"g".repeat(pair[0]))
+                <= encrypted_reasoning_tokens(&"g".repeat(pair[1]))
+        );
+    }
+}

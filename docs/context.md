@@ -549,6 +549,16 @@ retained items, not that the effort setting is 18%. The original reported 18%
 cannot be validated without its matching request snapshot. Provider-reported
 reasoning output tokens in `/usage` are a separate quantity.
 
+Encrypted reasoning is sized at one token per 15.6 characters of its
+`encrypted_content` (core `encrypted_reasoning_tokens`, mirrored by the desktop's
+transcript estimate). That rate was measured on 24 Oct 2026 over 4,511 consecutive
+gpt-6.1-sol requests: each character of a reply's encrypted reasoning grew the next
+request's input by 0.0641 tokens. The shared history estimate it replaces (decoded
+bytes minus 650, over four) counted about 2.6 times that, so a reasoning-heavy chat
+showed reasoning near half the window (232.1k of 475k) when about a third
+(~155k) was really there. Compaction items keep the shared estimate; their rate is
+not yet measured.
+
 ---
 
 ## 5. Systemic Inter-Dependencies
