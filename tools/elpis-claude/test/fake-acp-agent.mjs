@@ -19,6 +19,7 @@ const log = (entry) => { if (process.env.FAKE_ACP_LOG) fs.appendFileSync(process
 const sessions = new Map();
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const modelOption = (current) => ({ id: "model", name: "Model", type: "select", currentValue: current, options: models.map((value) => ({ value, name: value })) });
+const configOptions = (model) => [...(models.length ? [modelOption(model)] : []), ...(process.env.FAKE_ACP_EFFORTS ? [{ id: "effort", name: "Thinking", type: "select", currentValue: "low", options: process.env.FAKE_ACP_EFFORTS.split(",").map(value => ({ value, name: value })) }] : [])];
 
 const app = agent({ name: "fake-acp-agent" })
   .onRequest("initialize", ({ params }) => { log({ method: "initialize", params }); return { protocolVersion: 1, agentCapabilities: { loadSession: true }, agentInfo: { name: "fake-acp-agent", version: "0" } }; })
@@ -26,16 +27,16 @@ const app = agent({ name: "fake-acp-agent" })
     log({ method: "session/new", params });
     const sessionId = `${name}-session-${sessions.size + 1}`;
     sessions.set(sessionId, { cwd: params.cwd, model: models[0] ?? "default", cancelled: null, running: false, steers: [] });
-    return { sessionId, ...(models.length ? { configOptions: [modelOption(models[0])] } : {}) };
+    return { sessionId, ...(configOptions(models[0]).length ? { configOptions: configOptions(models[0]) } : {}) };
   })
   .onRequest("session/set_config_option", ({ params }) => {
     log({ method: "session/set_config_option", params });
     const s = sessions.get(params.sessionId);
     // As Claude Code: an effort applies at once, also to a running prompt.
-    if (params.configId === "effort") { s.effort = params.value; return { configOptions: [modelOption(s.model)] }; }
+    if (params.configId === "effort") { s.effort = params.value; return { configOptions: configOptions(s.model) }; }
     if (params.configId !== "model" || !models.includes(params.value)) throw new Error(`unknown option ${params.configId}=${params.value}`);
     s.model = params.value;
-    return { configOptions: [modelOption(s.model)] };
+    return { configOptions: configOptions(s.model) };
   })
   .onRequest("session/load", ({ params }) => {
     log({ method: "session/load", params });

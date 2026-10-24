@@ -169,12 +169,21 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     if (typeof session?.sessionId !== 'string' || !session.sessionId) throw new BridgeError(`${name} did not start a session`, 502);
     sessionId = session.sessionId;
     onSession?.(sessionId);
+    let configOptions = session.configOptions ?? [];
     if (spec.model) {
-      const option = (session.configOptions ?? []).find(item => item.id === 'model');
+      const option = configOptions.find(item => item.id === 'model');
       if (!option) throw new BridgeError(`${name} does not offer a model choice over ACP`, 400);
       const values = (option.options ?? []).flatMap(item => Array.isArray(item.options) ? item.options : [item]).map(item => item.value);
       if (!values.includes(spec.model)) throw new BridgeError(`${name} does not offer the model ${spec.model}`, 400);
-      await node.call('session/set_config_option', { sessionId, configId: 'model', value: spec.model });
+      const changed = await node.call('session/set_config_option', { sessionId, configId: 'model', value: spec.model });
+      configOptions = changed?.configOptions ?? configOptions;
+    }
+    // Elpis takes effort in its scoped workflow policy. Other ACP agents advertise it after model selection.
+    if (spec.reasoningEffort && !spec.elpis) {
+      const option = configOptions.find(item => item.id === 'effort');
+      const values = (option?.options ?? []).flatMap(item => Array.isArray(item.options) ? item.options : [item]).map(item => item.value);
+      if (!values.includes(spec.reasoningEffort)) throw new BridgeError(`${name} does not offer the effort ${spec.reasoningEffort} for this model`, 400);
+      await node.call('session/set_config_option', { sessionId, configId: 'effort', value: spec.reasoningEffort });
     }
     if (stopped) throw stopped;
     prompting = true;

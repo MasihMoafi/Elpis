@@ -51,6 +51,7 @@
     "tests/workflow-routing.mjs",
     "tests/workflow-titles.mjs",
     "bridge/acp-nodes.test.mjs",
+    "bridge/workflow-coding.test.mjs",
     "bridge/import-chats.test.mjs",
     "bridge/voice-report.test.mjs",
     "bridge/anthropic-signout.test.mjs",

@@ -89,6 +89,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             if (controller.signal.aborted) throw new BridgeError('Workflow cancelled', 409);
             task.status = 'running'; await save(record);
             const cwd = isolation ? await isolation.prepare(task, round, record.tasks) : root.cwd;
+            task.cwd = cwd;
+            if (isolation) task.worktree = isolation.paths().find(place => place.taskId === task.id && place.round === round);
             // An isolated task runs in its own worktree, where the agent folders are new again.
             for (const scope of task.writeScopes) await projectFolder(cwd, scope);
             const scopes = task.writeScopes;
@@ -96,6 +98,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               scopes.length ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
             const spec = nodeSpec({ name: task.title, prompt: instructions, model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' }, env);
+            if (task.reasoningEffort) spec.reasoningEffort = task.reasoningEffort;
             spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${task.title}`, workflow: { kind: task.kind, writeScopes: scopes, ...(task.reasoningEffort ? { reasoningEffort: task.reasoningEffort } : {}) } } };
             const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),
               ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];
@@ -122,7 +125,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             if (controller.signal.aborted) { task.status = 'cancelled'; continue; }
             if (task.dependsOn.some(id => ['failed', 'blocked', 'cancelled'].includes(byId.get(id).status))) { task.status = 'blocked'; continue; }
             if (running.size >= (record.maxConcurrency ?? 3) || !task.dependsOn.every(id => byId.get(id).status === 'succeeded')) continue;
-            if (record.tasks.some(other => running.has(other.id) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
+            if (!isolation && record.tasks.some(other => running.has(other.id) && task.writeScopes.some(a => other.writeScopes.some(b => a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))))) continue;
             const promise = run(task).finally(() => { running.delete(task.id); inflight.delete(promise); }); running.set(task.id, promise); inflight.add(promise);
           }
           if (running.size) await Promise.race(running.values());

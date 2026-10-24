@@ -73,6 +73,6 @@ export async function workflowWorktrees(project, id) {
       if (signal?.aborted) throw new BridgeError('Workflow cancelled before integration', 409);
       await git(source, ['merge', '--ff-only', '--no-edit', merged.branch]);
     },
-    paths() { return [...places.values()].map(({ root, branch }) => ({ path: root, branch })); },
+    paths() { return [...places].map(([key, { root, branch }]) => ({ path: root, branch, ...(key === 'integration' ? {} : { taskId: key.slice(0, key.lastIndexOf('-r')), round: Number(key.slice(key.lastIndexOf('-r') + 2)) }) })); },
   };
 }
