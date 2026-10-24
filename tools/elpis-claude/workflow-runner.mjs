@@ -405,7 +405,7 @@ export class WorkflowRunner extends EventEmitter {
         const { agentId, result } = hit.shift();
         const before = state.previous.get(agentId);
         const rec = { id: agentId, key, label, phase, group, state: "done", cached: true, threadId: before?.threadId ?? null, model: before?.model ?? null,
-          startedAt: before?.startedAt ?? null, endedAt: before?.endedAt ?? null, attempts: before?.attempts ?? 1, error: null, worktree: before?.worktree ?? null };
+          startedAt: before?.startedAt ?? null, endedAt: before?.endedAt ?? null, attempts: before?.attempts ?? 1, error: null, worktree: before?.worktree ?? null, worktreeBranch: before?.worktreeBranch ?? null };
         if (state.copy || !run.agents.some((a) => a.id === agentId)) run.agents.push(rec);
         if (state.copy) { this.#append(run, { type: "started", key, agentId, label, phase }); this.#append(run, { type: "result", key, agentId, result }); }
         this.#changed(run, { kind: "agent", agent: rec });
@@ -416,7 +416,7 @@ export class WorkflowRunner extends EventEmitter {
     const again = !state.copy ? cache?.unfinished.get(key)?.shift() : undefined;
     const before = again ? state.previous.get(again) : null;
     const rec = { id: again ?? `a${randomBytes(8).toString("hex")}`, key, label, phase, group, state: "queued", cached: false,
-      threadId: before?.threadId ?? null, model: null, startedAt: null, endedAt: null, attempts: 0, error: null, worktree: null, resumed: Boolean(again) };
+      threadId: before?.threadId ?? null, model: null, startedAt: null, endedAt: null, attempts: 0, error: null, worktree: null, worktreeBranch: null, resumed: Boolean(again) };
     run.agents.push(rec);
     this.#changed(run, { kind: "agent", agent: rec });
     await this.#acquire(live);
@@ -462,7 +462,7 @@ export class WorkflowRunner extends EventEmitter {
   // One agent: retried with backoff until its attempts run out; null after that.
   async #runAgent(run, rec, prompt, opts, signal) {
     let cwd = run.cwd;
-    if (opts.isolation === "worktree") rec.worktree = cwd = await this.#worktree(run, rec);
+    if (opts.isolation === "worktree") ({ top: rec.worktree, branch: rec.worktreeBranch, cwd } = await this.#worktree(run, rec));
     let value = null;
     try {
       for (let attempt = 1; ; attempt++) {
@@ -498,9 +498,9 @@ export class WorkflowRunner extends EventEmitter {
       }
     } finally {
       if (rec.threadId) try { this.#executor.close?.(rec.threadId); } catch {}
-      if (opts.isolation === "worktree" && rec.worktree) rec.worktree = await this.#dropWorktree(run, rec);
+      if (opts.isolation === "worktree" && rec.worktree && !(rec.worktree = await this.#dropWorktree(run, rec))) rec.worktreeBranch = null;
     }
-    if (typeof value === "string" && rec.worktree) value += `\n\n[Changes left in worktree ${rec.worktree}]`;
+    if (typeof value === "string" && rec.worktree) value += `\n\n[Changes left in worktree ${rec.worktree} on branch ${rec.worktreeBranch}]`;
     return value;
   }
 
@@ -535,28 +535,39 @@ export class WorkflowRunner extends EventEmitter {
     if (live) Atomics.store(new BigInt64Array(live.spent), 0, BigInt(run.spent));
   }
 
+  // The reference's isolation: a fresh worktree on its own branch per agent, removed with the branch when the agent
+  // changed nothing, kept with it otherwise. Where it started is saved beside it, so an agent resumed after a restart
+  // keeps its worktree, and one that committed before the restart is not taken for unchanged.
   async #worktree(run, rec) {
-    let top;
-    try { top = await git(run.cwd, ["rev-parse", "--show-toplevel"]); }
+    let repo;
+    try { repo = await git(run.cwd, ["rev-parse", "--show-toplevel"]); }
     catch { throw Object.assign(new Error("isolation: 'worktree' needs the run's folder to be in a git repository"), { terminal: true }); }
-    const sub = path.relative(top, run.cwd);
-    const where = path.join(run.dir, "worktrees", rec.id);
-    if (!fs.existsSync(where)) {
-      fs.mkdirSync(path.dirname(where), { recursive: true });
-      await git(top, ["worktree", "add", "--detach", where, "HEAD"]);
+    const top = path.join(run.dir, "worktrees", rec.id), file = `${top}.json`;
+    let made = readJson(file);
+    if (!made || !fs.existsSync(top)) {
+      made ??= { repo, branch: `elpis-workflow/${run.id.slice(3, 11)}/${rec.id}`, base: await git(repo, ["rev-parse", "HEAD"]) };
+      fs.mkdirSync(path.dirname(top), { recursive: true });
+      writeAtomic(file, JSON.stringify(made));
+      const exists = await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${made.branch}`]).then(() => true, () => false);
+      await git(repo, ["worktree", "add", ...(exists ? [top, made.branch] : ["-b", made.branch, top, made.base])]);
     }
-    rec.worktreeBase = await git(where, ["rev-parse", "HEAD"]);
-    return path.join(where, sub);
+    return { top, branch: made.branch, cwd: path.join(top, path.relative(repo, run.cwd)) };
   }
 
   async #dropWorktree(run, rec) {
+    const file = `${rec.worktree}.json`;
     try {
-      const top = await git(rec.worktree, ["rev-parse", "--show-toplevel"]);
-      const dirty = await git(top, ["status", "--porcelain"]);
-      const head = await git(top, ["rev-parse", "HEAD"]);
-      if (!dirty && head === rec.worktreeBase) { await git(top, ["worktree", "remove", "--force", top]); return null; }
-      this.#note(run, `${rec.label}: changes kept in worktree ${top}`);
-      return top;
+      const made = readJson(file);
+      const dirty = await git(rec.worktree, ["status", "--porcelain"]);
+      const head = await git(rec.worktree, ["rev-parse", "HEAD"]);
+      if (made && !dirty && head === made.base) {
+        await git(made.repo, ["worktree", "remove", "--force", rec.worktree]);
+        await git(made.repo, ["branch", "-D", made.branch]);
+        fs.rmSync(file, { force: true });
+        return null;
+      }
+      this.#note(run, `${rec.label}: changes kept in worktree ${rec.worktree} on branch ${rec.worktreeBranch}`);
+      return rec.worktree;
     } catch (e) { this.#log(`workflow ${run.id}: worktree cleanup: ${e.message}`); return rec.worktree; }
   }
 
