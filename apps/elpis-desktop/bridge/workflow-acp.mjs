@@ -238,7 +238,10 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!record) throw new BridgeError('Workflow not found', 404);
       const retryMother = record.status === 'failed' && record.mother?.status === 'failed' && record.review?.status === 'ready' && record.tasks.every(task => task.status === 'succeeded');
       if (record.status !== 'succeeded' && !retryMother) throw new BridgeError('Only a successful workflow can be merged', 409);
-      if (record.review?.status === 'merged') return { review: structuredClone(record.review) };
+      if (record.review?.status === 'merged') {
+        if (record.review.error) { delete record.review.error; await save(record); }
+        return { review: structuredClone(record.review) };
+      }
       if (record.review?.status !== 'ready') throw new BridgeError('This workflow has no changes ready to merge', 409);
       const source = record.review.source;
       if (mergingSources.has(source)) throw new BridgeError('A workflow merge is already running for this project', 409);

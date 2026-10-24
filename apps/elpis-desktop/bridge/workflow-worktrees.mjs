@@ -32,7 +32,7 @@ export async function mergeWorkflowReview(review, signal) {
   const merged = await checkWorkflowReview(review, signal);
   if (signal?.aborted) throw new BridgeError('Workflow cancelled before integration', 409);
   if (!merged) await git(review.source, ['merge', '--ff-only', '--no-edit', review.branch]);
-  return { ...review, status: 'merged', mergedAt: Date.now() };
+  return { ...review, error: undefined, status: 'merged', mergedAt: Date.now() };
 }
 
 /** Each task sees only committed prerequisites. All candidate commits combine in a separate worktree before a

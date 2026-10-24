@@ -68,7 +68,9 @@ test('Mother uses Claude Opus to approve the reviewed commit; a rejected review 
       // A temporary Mother failure can be retried without rerunning or changing the children's work.
       const before = f.log('writer').length;
       f.runnerOptions.nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE], model: 'opus', env: { FAKE_ACP_MODELS: 'opus', FAKE_ACP_EFFORTS: 'low', FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Rechecked passing candidate' }) } });
-      assert.equal((await f.restore().merge(run.graphId)).review.status, 'merged');
+      const retried = await f.restore().merge(run.graphId);
+      assert.equal(retried.review.status, 'merged');
+      assert.equal(retried.review.error, undefined, 'a successful retry clears the previous failure');
       assert.equal(f.log('writer').length, before);
     }
   }
