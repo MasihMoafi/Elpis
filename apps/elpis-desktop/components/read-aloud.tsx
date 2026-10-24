@@ -3,8 +3,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
 
-type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; session?: string; ready: boolean; complete: boolean };
-type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void };
+type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; session?: string; ready: boolean; complete: boolean; idle?: boolean; reply: string };
+type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
+/** After a read the call stays open this long, so the next Read aloud only sends its text. */
+const KEEP_OPEN_MS = 60_000;
 const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
@@ -12,7 +14,13 @@ export const useReadAloud = () => useContext(SpeechContext);
 export function ReadAloud({ threadId, enabled, children }: { threadId: string; enabled: boolean; children: ReactNode }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
-  const call = useRef<Playback | null>(null);
+  const call = useRef<Playback | null>(null), warmed = useRef("");
+  /** Once a chat's reply actions show, its speech thread is made ahead (bridge: warmSpeechThread). */
+  function warm() {
+    if (!enabled || warmed.current === threadId) return;
+    warmed.current = threadId;
+    void api("/voice/read-aloud/warm", { threadId }).catch(() => { warmed.current = ""; });
+  }
   function stop() {
     const current = call.current; call.current = null;
     if (current) {
@@ -30,11 +38,20 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
   useEffect(() => { if (!enabled) stop(); }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function play(id: string, text?: string) {
+    const open = call.current;
+    // A call kept open after a read takes this reply's text; it reads it as soon as it arrives.
+    if (open?.idle && open.session && text !== undefined && enabled) {
+      if (open.timer) clearTimeout(open.timer);
+      Object.assign(open, { idle: false, complete: false, timer: null, reply: id }); setError(null); setActive(id);
+      try { await api("/voice/read-aloud/more", { id: open.session, text }, open.controller.signal); return; }
+      catch { if (call.current !== open) return; /* The call had ended: start a new one below. */ }
+    }
     stop(); setError(null);
     if (!enabled) { setError({ id, message: "Reconnect to Elpis before using Read aloud." }); return; }
-    const current: Playback = { controller: new AbortController(), peer: null, audio: null, silence: null, timer: null, ready: false, complete: false };
+    const current: Playback = { controller: new AbortController(), peer: null, audio: null, silence: null, timer: null, ready: false, complete: false, reply: id };
     call.current = current; setActive(id);
-    const fail = (message: string) => { if (call.current === current) { stop(); setError({ id, message }); } };
+    // A call kept open after its reply ends quietly, as when another call takes the speaker.
+    const fail = (message: string) => { if (call.current === current) { stop(); if (!current.idle) setError({ id: current.reply, message }); } };
     const ready = () => {
       if (call.current !== current || current.ready || !current.session || current.peer?.connectionState !== "connected") return;
       current.ready = true;
@@ -49,16 +66,18 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
       const quiet = silence.createGain(); quiet.gain.value = 0;
       const source = silence.createOscillator(), sink = silence.createMediaStreamDestination();
       source.connect(quiet).connect(sink); source.start();
-      const cueResponse = await fetch("/read-aloud-cue.ogg", { signal: current.controller.signal });
-      if (!cueResponse.ok) throw new Error("The voice playback cue could not load.");
-      const cueBuffer = await silence.decodeAudioData(await cueResponse.arrayBuffer());
-      await silence.resume();
-      if (call.current !== current) return;
-      const cue = () => {
+      // The cue loads while the call is set up; it is first needed once the call is connected.
+      const cueBuffer = fetch("/read-aloud-cue.ogg", { signal: current.controller.signal }).then(async response => {
+        if (!response.ok) throw new Error("The voice playback cue could not load.");
+        return silence.decodeAudioData(await response.arrayBuffer());
+      });
+      cueBuffer.catch(() => {});
+      void silence.resume().catch(() => {});
+      const cue = () => void cueBuffer.then(buffer => {
         if (call.current !== current) return;
-        const trigger = silence.createBufferSource(); trigger.buffer = cueBuffer;
+        const trigger = silence.createBufferSource(); trigger.buffer = buffer;
         trigger.connect(sink); trigger.start();
-      };
+      }).catch(cause => fail(cause instanceof Error ? cause.message : "The voice playback cue could not load."));
       peer.addTransceiver(sink.stream.getAudioTracks()[0], { direction: "sendrecv" });
       const events = peer.createDataChannel("oai-events");
       events.onmessage = message => {
@@ -110,8 +129,15 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
             if (event.type === "cue") cue();
             if (event.type === "error") throw new Error(event.message || "Read aloud failed.");
             if (event.type === "stopped") stop();
-            // The last transcript ends with its audio; a moment later the player is done.
-            if (event.type === "complete") { current.complete = true; current.timer = setTimeout(() => { if (call.current === current) stop(); }, 1500); }
+            // The last transcript ends with its audio; a moment later the reply is done, and the call stays open a minute.
+            if (event.type === "complete") {
+              current.complete = true;
+              current.timer = setTimeout(() => {
+                if (call.current !== current) return;
+                current.idle = true; setActive(null);
+                current.timer = setTimeout(() => { if (call.current === current) stop(); }, KEEP_OPEN_MS);
+              }, 1500);
+            }
             if (event.type === "ended") throw new Error("Read aloud ended. Try again explicitly.");
           }
         }
@@ -119,5 +145,5 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
   }
-  return <SpeechContext.Provider value={{ active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={{ active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }

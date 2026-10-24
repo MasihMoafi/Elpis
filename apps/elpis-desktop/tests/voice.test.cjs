@@ -112,14 +112,16 @@ test('voice controls release the microphone after denial, cancelled startup, mut
   } finally { for (const stream of streams) stream.end(); await f.close(); }
 });
 
-test('Matilda and ordinary chat replies both offer Read aloud and send the displayed words', async () => {
+test('Matilda and ordinary chat replies both offer Read aloud, warm it once on first sight, and send the displayed words', async () => {
   const threads = [['chat-a', 'Love Spot'], ['chat-b', 'Other chat']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
   const f = await fixture({ threads, routes: { '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
   try {
     for (const id of ['chat-a', 'chat-b']) {
       await f.open(id);
       const reply = f.page.locator('.message.agent').last();
-      await reply.hover();
+      await reply.hover(); await f.page.locator('aside').hover(); await reply.hover();
+      // Showing a reply's actions makes the chat's speech thread ahead, once.
+      await eventually(() => assert.deepEqual(f.posts.filter(row => row.path === '/api/voice/read-aloud/warm').map(row => row.body.threadId).filter(chat => chat === id), [id]));
       const speak = reply.getByRole('button', { name: 'Read aloud', exact: true });
       await speak.waitFor();
       await speak.click();

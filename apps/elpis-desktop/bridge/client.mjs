@@ -945,6 +945,33 @@ export class DesktopClient extends EventEmitter {
     // Use the native speech channel; appendText only adds context to the live session.
     return this.#rpc('thread/realtime/appendSpeech', { threadId: id, text: value });
   }
+  /** A speech thread made ahead for one chat, when its replies' actions first show, so Read aloud there starts without
+   * waiting for one; the next Read aloud in that chat takes it. Another chat's warm thread is closed; an unused one
+   * closes after ten minutes. */
+  #warmSpeech = null;
+  warmSpeechThread(id) {
+    threadId(id);
+    if (this.#warmSpeech?.chatId !== id) {
+      this.#dropWarmSpeech();
+      const warm = this.#warmSpeech = { chatId: id, speech: this.createSpeechThread(id), timer: setTimeout(() => { if (this.#warmSpeech === warm) this.#dropWarmSpeech(); }, 600000) };
+      warm.timer.unref?.();
+      warm.speech.catch(() => { if (this.#warmSpeech === warm) { clearTimeout(warm.timer); this.#warmSpeech = null; } });
+    }
+    return this.#warmSpeech.speech.then(() => ({ ok: true }));
+  }
+  /** The chat's warm speech thread, or a new one. */
+  async takeSpeechThread(id) {
+    const warm = this.#warmSpeech;
+    if (warm?.chatId === id) {
+      this.#warmSpeech = null; clearTimeout(warm.timer);
+      try { return await warm.speech; } catch { /* Make a new one below. */ }
+    }
+    return this.createSpeechThread(id);
+  }
+  #dropWarmSpeech() {
+    const warm = this.#warmSpeech; this.#warmSpeech = null;
+    if (warm) { clearTimeout(warm.timer); warm.speech.then(speech => this.closeSpeechThread(speech.id)).catch(() => {}); }
+  }
   async closeSpeechThread(id) {
     try { await this.stopVoice(id); }
     finally { try { await this.sideRpc('thread/unsubscribe', { threadId: id }); } finally { this.#side.delete(id); } }

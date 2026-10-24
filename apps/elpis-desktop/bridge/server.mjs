@@ -238,6 +238,8 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/voice' && method === 'POST') return await voice.start(await body(request), response);
         if (url.pathname === '/api/voice/read-aloud' && method === 'POST') return await voice.start(await body(request, 8 * 1024 * 1024), response, { readAloud: true });
         if (url.pathname === '/api/voice/read-aloud/ready' && method === 'POST') return json(response, 200, voice.ready(await body(request)));
+        if (url.pathname === '/api/voice/read-aloud/more' && method === 'POST') return json(response, 200, voice.more(await body(request, 8 * 1024 * 1024)));
+        if (url.pathname === '/api/voice/read-aloud/warm' && method === 'POST') { const input = await body(request); object(input, ['threadId']); return json(response, 200, await client.warmSpeechThread(input.threadId)); }
         if (url.pathname === '/api/voice/choice' && method === 'POST') return json(response, 200, await client.setVoice(await body(request)));
         if (url.pathname === '/api/tools/transcription') return await transcription(request, response, json);
         if (url.pathname.startsWith('/api/tools/')) return await tools(request, response, url, json);

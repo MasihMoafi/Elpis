@@ -39,6 +39,8 @@ export function createVoice(client) {
       // The window sends generated silence, never the microphone: the voice model only runs while audio comes in.
       if (audio.length !== 1 || !/\r?\na=sendrecv(?:\r?\n|$)/.test(audio[0])) throw new BridgeError('Read aloud needs one two-way audio channel.');
     }
+    // A Read aloud call kept open after it finished speaking (its last words had two seconds to play) gives way.
+    if (owner?.more && owner.complete && Date.now() - owner.completedAt > 2000) await owner.stop();
     if (owner) throw new BridgeError('Voice is already open. End that call first.', 409);
     const current = { stopped: false, started: null, stopping: null, stop: null, id: randomUUID(), speech: null, ready: false, pending: false, finished: !source, complete: false, source };
     const chunks = readAloud && !source ? speechChunks(input.text) : [];
@@ -101,7 +103,7 @@ export function createVoice(client) {
       if (current.stopped || !current.ready || !current.speech || !current.startComplete || current.pending) return;
       if (!chunks.length) {
         clearTimeout(timeout);
-        if (readAloud && current.finished && !current.complete) { current.complete = true; send({ type: 'complete' }); }
+        if (readAloud && current.finished && !current.complete) { current.complete = true; current.completedAt = Date.now(); send({ type: 'complete' }); }
         if (!readAloud) void relayNext();
         return;
       }
@@ -110,6 +112,8 @@ export function createVoice(client) {
       void client.appendSpeech(current.speech.id, chunks.shift()).then(() => { if (readAloud) send({ type: 'cue' }); }).catch(() => fail('Read aloud delivery is uncertain. Stop and try again explicitly.'));
     };
     if (readAloud) current.readyForSpeech = () => { if (!current.ready) { current.ready = true; append(); } };
+    // An open call reads a further reply (the window keeps it open a minute after a read) without a new call.
+    if (readAloud && !source) current.more = value => { chunks.push(...speechChunks(value)); current.complete = false; append(); };
     const onSide = message => {
       const { method, params } = message;
       if (params?.threadId !== current.speech?.id || current.stopped) return;
@@ -153,7 +157,7 @@ export function createVoice(client) {
     if (readAloud) send({ type: 'session', id: current.id });
     current.started = readAloud ? Promise.resolve().then(async () => {
       if (current.stopped) return;
-      current.speech = await client.createSpeechThread(chatId);
+      current.speech = await client.takeSpeechThread(chatId);
       if (current.stopped) return;
       await client.startSpeechThread(current.speech, input.sdp);
       current.startComplete = true; append();
@@ -182,5 +186,10 @@ export function createVoice(client) {
     if (!call || call.stopped || !call.readyForSpeech || call.id !== input.id) throw new BridgeError('This Read aloud session has ended.', 409);
     call.readyForSpeech(); return { ok: true };
   }
-  return { start, ready, close, closeStream: async () => { if (call?.source) await call.stop(); }, busy: () => !!call };
+  function more(input) {
+    object(input, ['id', 'text']); text(input.id, 'speech session', 64); text(input.text, 'speech text', 2_000_000);
+    if (!call || call.stopped || !call.more || call.id !== input.id) throw new BridgeError('This Read aloud session has ended.', 409);
+    call.more(input.text); return { ok: true };
+  }
+  return { start, ready, more, close, closeStream: async () => { if (call?.source) await call.stop(); }, busy: () => !!call };
 }
