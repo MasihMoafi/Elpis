@@ -42,6 +42,8 @@ export function createVoice(client) {
     if (owner) throw new BridgeError('Voice is already open. End that call first.', 409);
     const current = { stopped: false, started: null, stopping: null, stop: null, id: randomUUID(), speech: null, ready: false, pending: false, finished: !source, complete: false, source };
     const chunks = readAloud && !source ? speechChunks(input.text) : [];
+    const handoffs = [], seenHandoffs = new Set();
+    let relay, idleRevision = 0;
     let unsubscribe;
     owner = call = current;
     const send = value => { if (!current.stopped && !response.destroyed) response.write(JSON.stringify(value) + '\n'); };
@@ -66,11 +68,41 @@ export function createVoice(client) {
     };
     current.stop = stop;
     const fail = message => { if (current.stopped) return; send({ type: 'error', message }); source?.fail(message); void stop(); };
+    const finishRelay = () => {
+      const turn = relay?.completed.get(relay.turnId);
+      if (!turn || current.stopped) return;
+      if (turn.status !== 'completed') return fail('The chat could not finish this voice request. Check its reply before trying again.');
+      const items = turn.items?.length ? turn.items : [...(relay.items.get(turn.id)?.values() ?? [])];
+      const reply = items.findLast(item => item.type === 'agentMessage' && (!item.phase || item.phase === 'final_answer'))?.text ?? '';
+      if (!reply.trim()) return fail('The chat finished without a reply to read aloud.');
+      relay = null; chunks.push(...speechChunks(reply)); append();
+    };
+    const relayNext = async () => {
+      if (current.stopped || !current.startComplete || !current.speech || relay || current.pending || chunks.length || !handoffs.length) return;
+      const pending = relay = { turnId: null, items: new Map(), completed: new Map() };
+      const revision = idleRevision;
+      try {
+        const thread = await client.readThreadMetadata(chatId);
+        if (current.stopped) return;
+        if (thread.status?.type === 'active') { relay = null; if (idleRevision !== revision) void relayNext(); return; }
+        const result = await client.send(chatId, { text: handoffs[0] });
+        if (current.stopped) return;
+        if (!result.turn?.id) return fail('The voice request was not confirmed. Check the chat before trying again.');
+        pending.turnId = result.turn.id; handoffs.shift(); finishRelay();
+      } catch (cause) {
+        if (current.stopped) return;
+        relay = null;
+        // A typed turn may have won the race; wait for it instead of steering it.
+        if (cause.status === 409 && cause.message === 'This conversation is running. Use Steer with its active turn ID.') { if (idleRevision !== revision) void relayNext(); return; }
+        fail(cause instanceof BridgeError && cause.status < 500 ? cause.message : 'The voice request could not be sent. Check the chat before trying again.');
+      }
+    };
     const append = () => {
       if (current.stopped || !current.ready || !current.speech || !current.startComplete || current.pending) return;
       if (!chunks.length) {
         clearTimeout(timeout);
-        if (current.finished && !current.complete) { current.complete = true; send({ type: 'complete' }); }
+        if (readAloud && current.finished && !current.complete) { current.complete = true; send({ type: 'complete' }); }
+        if (!readAloud) void relayNext();
         return;
       }
       current.pending = true;
@@ -82,29 +114,52 @@ export function createVoice(client) {
       const { method, params } = message;
       if (params?.threadId !== current.speech?.id || current.stopped) return;
       onEvent({ type: 'message', data: message });
+      // app-server maps RealtimeEvent::HandoffRequested to this item notification.
+      const item = params.item;
+      if (!readAloud && method === 'thread/realtime/itemAdded' && item?.type === 'handoff_request' && typeof item.handoff_id === 'string' && item.handoff_id && typeof item.input_transcript === 'string' && item.input_transcript.trim() && !seenHandoffs.has(item.handoff_id)) {
+        seenHandoffs.add(item.handoff_id); handoffs.push(item.input_transcript); void relayNext();
+      }
       if (method === 'thread/realtime/transcript/done' && params.role === 'assistant' && current.pending) { current.pending = false; append(); }
     };
     const onEvent = event => {
       if (event.type === 'connection' && !event.data?.connected) return fail('Elpis disconnected. Reconnect before starting voice again.');
       const { method, params } = event.data ?? {};
-      if (event.type !== 'message' || params?.threadId !== (readAloud ? current.speech?.id : chatId)) return;
+      if (current.stopped || event.type !== 'message') return;
+      if (!readAloud && current.speech && params?.threadId === chatId) {
+        if (method === 'turn/completed' || (method === 'thread/status/changed' && params.status?.type !== 'active')) idleRevision++;
+        const turnId = params.turnId ?? params.turn?.id;
+        // A fast provider can finish before turn/start returns its turn ID.
+        if (relay && (!relay.turnId || relay.turnId === turnId)) {
+          if (method === 'item/completed' && params.item?.type === 'agentMessage') {
+            if (!relay.items.has(turnId)) relay.items.set(turnId, new Map());
+            relay.items.get(turnId).set(params.item.id, params.item);
+          }
+          if (method === 'turn/completed') relay.completed.set(turnId, params.turn);
+          finishRelay();
+        }
+        if (method === 'turn/completed' || method === 'thread/status/changed') void relayNext();
+        if (method === 'thread/closed' || method === 'thread/deleted' || method === 'thread/archived') { send({ type: 'ended' }); void stop(); }
+      }
+      if (params?.threadId !== (current.speech?.id ?? chatId)) return;
       if (method === 'thread/realtime/sdp') { clearTimeout(timeout); send({ type: 'sdp', sdp: params.sdp }); }
       if (method === 'thread/realtime/error') fail('Voice could not connect. Check your ChatGPT connection and try again.');
       if (method === 'thread/realtime/closed' || method === 'thread/closed' || method === 'thread/deleted' || method === 'thread/archived') { send({ type: 'ended' }); void stop(); }
     };
     response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
     response.flushHeaders();
-    response.once('close', stop); client.on('event', onEvent); if (readAloud) client.on('side', onSide);
+    response.once('close', stop); client.on('event', onEvent); client.on('side', onSide);
     timeout = setTimeout(() => fail('Voice connection timed out. Try again.'), 30000).unref();
     heartbeat = setInterval(() => send({ type: 'ping' }), 15000).unref();
     if (readAloud) send({ type: 'session', id: current.id });
     current.started = readAloud ? Promise.resolve().then(async () => {
       if (current.stopped) return;
-      current.speech = await client.createSpeechThread(chatId, { independent: !!source });
+      current.speech = await client.createSpeechThread(chatId);
       if (current.stopped) return;
       await client.startSpeechThread(current.speech, input.sdp);
       current.startComplete = true; append();
-    }) : client.startVoice(chatId, input.sdp);
+    }) : client.startVoice(chatId, input.sdp, { onSpeech: speech => { current.speech = speech; } }).then(() => {
+      current.startComplete = true; current.ready = true; append();
+    });
     current.started.catch(error => fail(error instanceof BridgeError && error.status < 500 ? error.message : 'Voice could not start. Check your ChatGPT connection and try again.'));
     if (source) {
       try {

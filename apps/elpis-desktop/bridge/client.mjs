@@ -899,13 +899,20 @@ export class DesktopClient extends EventEmitter {
     await this.#rpc('config/batchWrite', { edits: [{ keyPath: 'realtime.voice', value: body.voice, mergeStrategy: 'replace' }], reloadUserConfig: true });
     return this.voiceStatus();
   }
-  async startVoice(id, sdp) {
+  async startVoice(id, sdp, { onSpeech } = {}) {
     threadId(id); text(sdp, 'voice offer', 64000);
     const status = await this.voiceStatus();
     if (!status.available) throw new BridgeError('Voice needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
     const thread = await this.readThreadMetadata(id);
-    if (thread.modelProvider !== 'openai' || /^(?:claude|agy)\//.test(thread.model ?? '')) throw new BridgeError('Voice is available in Codex chats using your ChatGPT connection.', 403);
     await this.#attach(id);
+    if (thread.modelProvider !== 'openai' || /^(?:claude|agy)\//.test(thread.model ?? '')) {
+      const speech = await this.createSpeechThread(id);
+      onSpeech?.(speech);
+      return this.#rpc('thread/realtime/start', { threadId: speech.id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', voice: speech.voice,
+        prompt: null, clientManagedHandoffs: true, includeStartupContext: false, delegationAckFiller: false,
+        initialItems: [{ role: 'developer', text: 'You are the voice for the selected Elpis chat. Delegate every user request, including conversational questions, to its agent. Wait for its supplied reply and read it exactly. Do not answer independently, invent results, or speak internal handoff details.' }],
+        transport: { type: 'webrtc', sdp } });
+    }
     return this.#rpc('thread/realtime/start', { threadId: id, version: 'v3', outputModality: 'audio', model: 'gpt-live-1.1-codex', voice: status.voice,
       initialItems: [{ role: 'developer', text: 'You are Elpis. Voice and typed requests use the same Elpis agent and its tools, under this chat’s permissions. Delegate actions and questions about available tools to that agent before answering. Describe only the connections it verifies; never invent email or other account access. Speak naturally and keep internal handoff details out of the conversation.' }],
       transport: { type: 'webrtc', sdp } });
@@ -913,12 +920,11 @@ export class DesktopClient extends EventEmitter {
   async stopVoice(id) {
     return this.#rpc('thread/realtime/stop', { threadId: threadId(id) });
   }
-  async createSpeechThread(id, { independent = false } = {}) {
+  async createSpeechThread(id) {
     const status = await this.voiceStatus({ strict: true });
     if (!status.available) throw new BridgeError('Read aloud needs a ChatGPT connection. Sign in under Settings → Connections.', 403);
     const thread = await this.readThreadMetadata(id);
     const native = thread.modelProvider === 'openai' && !/^(?:claude|agy)\//.test(thread.model ?? '');
-    if (!native && !independent) throw new BridgeError('Read aloud is available in ChatGPT Codex chats.', 403);
     const model = native ? thread.model : 'gpt-5';
     if (!model) throw new BridgeError('This chat has no native model for Read aloud.', 400);
     const result = await this.sideRpc('thread/start', { model, modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only' });

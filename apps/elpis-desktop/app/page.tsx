@@ -691,7 +691,7 @@ export default function Home() {
           if (itemKey) liveVersions.current.set(itemKey, ++liveRevision.current);
           setEntries(prev => {
             const merged = mergeLiveItem(prev, method, params, threadId);
-            return method === "item/completed" && params.item?.type === "agentMessage" && selectedRef.current?.modelProvider === "openai" && !/^(?:claude|agy)\//.test(selectedRef.current.model ?? "")
+            return method === "item/completed" && params.item?.type === "agentMessage"
               ? merged.map(entry => entry.turnId === params.turnId && entry.item.id === params.item.id ? { ...entry, completedAtMs: Date.now() } : entry)
               : merged;
           });
@@ -1922,7 +1922,7 @@ export default function Home() {
           {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
-          {selected?.modelProvider === "openai" && !/^(?:claude|agy)\//.test(selected.model ?? "") ? <ReadAloud key={selected.id} threadId={selected.id} enabled={connected}>{conversation}</ReadAloud> : conversation}
+          {selected ? <ReadAloud key={selected.id} threadId={selected.id} enabled={connected}>{conversation}</ReadAloud> : conversation}
           {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
@@ -1968,7 +1968,7 @@ export default function Home() {
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
               </OptionSelect>}
-              {ready && selected && dictationProvider === "openai" && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} onBusy={setVoiceBusy} />}
+              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} onBusy={setVoiceBusy} />}
               {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging || voiceBusy} onBusy={setDictating}
                 selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
                 onTranscript={(selection, transcript) => {
