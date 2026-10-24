@@ -21,8 +21,6 @@ import { api, providerChoices, type Entry, type Model, type ProviderSettings, ty
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
 import { filesText, mergeStops, runPayload, stopText, wantsIsolation } from "@/lib/canvas-isolation";
-import { agentPortrait, characters, MAX_CHARACTER_IMAGE_BYTES, type Character } from "@/lib/agent-characters";
-import { portraits } from "@/lib/love-characters";
 import { PATTERNS, WHOLE_PROJECT, applyPattern, agent, ownFolders, agentColor, CHECK_LABEL, COLUMN, DONE, FATHER, MOTHER, STATUS_LABEL, TASKS_PER_AGENT, waits, TEMPLATES, agentName, promptName, applyPlan, arrange, boardForPlan, checkOf, criticalPath, commandParts, shapeOf, makesLoop, maxAgents, newAgents, newId, parseCommand, parents, initialGraph, runParts, saveGraph, waves, withMother, type AgentData, type CanvasEdge, type CanvasGraph, type CanvasNode, type CatalogModel, type Command, type MotherSettings, type NoteData, type Plan, type RunTask, type TaskStatus } from "@/lib/canvas";
 
 /** A run: the Mother's part, and the Father's when the graph has more agents than she runs (lib/canvas.ts `parents`):
@@ -59,9 +57,8 @@ const OVERVIEW = { padding: 0.08, maxZoom: 1 };
  * its corner is its check: empty until it runs, turning while it runs, then a tick or a cross. Clicking a dot opens
  * the command bar to add agents on that side. */
 function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
-  const status = data.status ?? "idle", check = data.check ?? "idle", portrait = agentPortrait(data);
+  const status = data.status ?? "idle", check = data.check ?? "idle";
   return <div className="agent-node" data-kind="agent" data-status={status} style={{ "--agent-color": agentColor(id, data) } as CSSProperties}>
-    {portrait && <span className="avatar agent-portrait"><div><img src={portrait} alt="" className="size-full object-contain" /></div></span>}
     <Handle type="target" position={Position.Left} title="Add agents this one waits for" onClick={event => data.onHandle?.(id, "target", event)} />
     <span className="agent-node-kind">Agent{data.wave ? ` · wave ${data.wave}` : ""}</span>
     <strong className="agent-node-title" title={data.title || "Untitled"}>{data.title || "Untitled"}</strong>
@@ -417,7 +414,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(initialGraph);
-  const [uploadingCharacter, setUploadingCharacter] = useState(false);
   const [sourceId, setSourceId] = useState<string | null>(null);
   // What is selected is kept apart from the saved graph: a click picks one, Shift+click or Shift+drag several.
   const [selection, setSelection] = useState<string[]>([]), [dashboardId, setDashboardId] = useState<string | null>(null);
@@ -789,14 +785,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
   });
-  const addCharacter = (character: Character) => {
-    if (!room) { setNotice(`The graph is at its limit of ${limit} agents.`); return; }
-    checkpoint();
-    const made = agent(character.name, character.prompt, { character: character.id, model: "gpt-6-luna", provider: "openai" });
-    setGraph(current => ({ ...current, nodes: [...current.nodes, { ...made, position: place() }] }));
-    setSelection([]); reveal([made.id]);
-    board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
-  };
   const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, template: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
@@ -825,22 +813,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
   // Edits apply to every selected agent: one in the inspector, several together.
   const editEach = (change: (data: AgentData) => Partial<AgentData>) => setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.type === "agent" && chosen.some(item => item.id === node.id) ? { ...node, data: { ...node.data, ...change(node.data) } } : node) }));
   const edit = (patch: Partial<AgentData>) => editEach(() => patch);
-  const uploadCharacter = async (id: string, file: File) => {
-    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.size > MAX_CHARACTER_IMAGE_BYTES) { setNotice("Choose a PNG, JPG, WebP or GIF up to 512 KB."); return; }
-    setUploadingCharacter(true);
-    try {
-      const source = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("The character image could not be read."));
-        reader.onerror = () => reject(new Error("The character image could not be read."));
-        reader.readAsDataURL(file);
-      });
-      const image = new Image(); image.src = source; await image.decode();
-      setGraph(current => ({ ...current, nodes: current.nodes.map(node => node.id === id && node.type === "agent" ? { ...node, data: { ...node.data, character: undefined, characterImage: source } } : node) }));
-      setNotice("");
-    } catch { setNotice("The character image could not be read. Choose another image."); }
-    finally { setUploadingCharacter(false); }
-  };
   // Several agents share the folders they all may write; adding or removing one changes it for each.
   const commonFolders = chosen.reduce<string[]>((common, node, index) => index ? common.filter(folder => node.data.writeScopes.includes(folder)) : node.data.writeScopes, []);
   const setCommonFolders = (next: string[]) => editEach(data => ({ writeScopes: [...data.writeScopes.filter(folder => !commonFolders.includes(folder) || next.includes(folder)), ...next.filter(folder => !data.writeScopes.includes(folder))] }));
@@ -1184,14 +1156,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       <div className="canvas-toolbar" role="toolbar" aria-label="Add to Workflows">
         <span className="canvas-toolbar-label">Add</span>
         <Button variant="ghost" size="sm" aria-label="Add agent" title="An agent that writes: give it a prompt and the folders it may write; Elpis checks its work after it" onClick={() => addAgent()}><i className="canvas-kind" data-kind="agent" />Agent</Button>
-        <details className="dropdown dropdown-top canvas-characters">
-          <DisclosureSummary className={buttonVariants({ variant: "ghost", size: "sm", className: "btn btn-ghost btn-sm" })}>Characters</DisclosureSummary>
-          <div className="dropdown-content bg-base-100 text-base-content rounded-box shadow p-2 z-20 grid gap-1" role="group" aria-label="Character agents">
-            {characters.map(character => <Button key={character.id} variant="ghost" size="sm" className="btn btn-ghost btn-sm justify-start" aria-label={`Add ${character.name}`} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); addCharacter(character); }}>
-              <span className="avatar"><div className="w-7 h-7"><img src={portraits[character.id]} alt="" /></div></span>{character.name}
-            </Button>)}
-          </div>
-        </details>
         <Button variant="ghost" size="sm" onClick={() => addNote()}><StickyNote size={14} />Note</Button>
         <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; Tab opens it too">Command <kbd>Tab</kbd></Button>
         <Button variant="ghost" size="sm" aria-label="Arrange by run order" title="Arrange by run order and fit the view" onClick={tidy}><ListOrdered size={14} />Arrange</Button>
@@ -1226,12 +1190,6 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{order.get(selected.id) ? ` · wave ${order.get(selected.id)}` : ""}{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
-      <label>Character<OptionSelect aria-label="Character" value={selected.data.characterImage ? "custom" : selected.data.character ?? ""} disabled={uploadingCharacter} onChange={event => { if (event.target.value !== "custom") edit({ character: event.target.value || undefined, characterImage: undefined }); }}>
-        <option value="">No character</option>
-        {selected.data.characterImage && <option value="custom">Custom image</option>}
-        {characters.map(character => <option key={character.id} value={character.id}>{character.name}</option>)}
-      </OptionSelect></label>
-      <label>Upload character<Input type="file" aria-label="Upload character" className="file-input file-input-sm w-full" accept="image/png,image/jpeg,image/webp,image/gif" disabled={uploadingCharacter} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadCharacter(selected.id, file); }} /><span className="text-xs text-muted-foreground">PNG, JPG, WebP or GIF, up to 512 KB.</span></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
       <label>Provider<OptionSelect aria-label="Provider" value={canonicalProvider(selected.data.provider) ?? ""} onChange={event => {
         const provider = event.target.value || null, offered = catalog.filter(item => item.provider === provider);

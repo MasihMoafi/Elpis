@@ -6,7 +6,6 @@ import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { agentColor, CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
-import { agentPortrait } from "@/lib/agent-characters";
 import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, type IsoPlace, type Point } from "@/lib/iso";
 
 /** The agents canvas's second view (components/agents-canvas.tsx): the graph as Deus Ex's hacking screen, for
@@ -242,9 +241,8 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   // Each title stands upright above its pedestal. Where the graph is dense, a title that would cover another title or
   // another agent's block shows only its wave badge, until it is pointed at, focused or selected, or zoomed into room;
   // the Mother's and those always show in full.
-  const hasPortrait = (place: IsoPlace) => place.kind === "agent" && Boolean(agentPortrait(nodes.get(place.id)!.data as AgentData));
-  const anchor = (place: IsoPlace) => { const shape = shapeOf(place); return screen({ x: place.at.x, y: place.at.y - Math.max(shape.core / 2, hasPortrait(place) ? 52 : 0) - height(shape) }); };
-  const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = Math.max(shape.core * Math.cos(Math.PI / 6), hasPortrait(place) ? 33 : 0) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: screen({ x: place.at.x, y: place.at.y - shape.baseHeight }).y }; };
+  const anchor = (place: IsoPlace) => { const shape = shapeOf(place); return screen({ x: place.at.x, y: place.at.y - shape.core / 2 - height(shape) }); };
+  const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = shape.core * Math.cos(Math.PI / 6) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: screen({ x: place.at.x, y: place.at.y - shape.baseHeight }).y }; };
   const kept = (place: IsoPlace) => place.kind !== "agent" || place.id === hot || selected.includes(place.id);
   const full = new Set<string>(), taken: Box[] = [], labelPositions = new Map<string, Point>();
   const labelBox = (at: Point, width: number, labelHeight = LABEL.height): Box => ({ left: at.x - width / 2, top: at.y - labelHeight, right: at.x + width / 2, bottom: at.y });
@@ -353,7 +351,6 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
             <g className="iso-lift">
               <Prism className="iso-base" ground={place.ground} side={shape.base} bottom={0} top={shape.baseHeight} />
               <Prism className="iso-core" ground={place.ground} side={shape.core} bottom={shape.baseHeight} top={height(shape)} />
-              {place.kind === "agent" && agentPortrait(nodes.get(place.id)!.data as AgentData) && <image className="iso-portrait" href={agentPortrait(nodes.get(place.id)!.data as AgentData)} x={place.at.x - 33} y={place.at.y - height(shape) - 52} width={66} height={66} pointerEvents="none" />}
               <polygon className="iso-inlay" points={points(square(place.ground, shape.core * 0.5, height(shape)))} />
             </g>
           </g>;

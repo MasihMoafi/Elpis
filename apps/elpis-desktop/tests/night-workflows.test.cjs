@@ -63,17 +63,13 @@ test('ordinary agents retain distinct identity colors in both views', async () =
   } finally { await f.close(); }
 });
 
-test('Space applies numbered patterns to characters, preserves editable prompts, Escape and typing stay local', async () => {
+test('Space applies numbered patterns to agents, preserves editable prompts, Escape and typing stay local', async () => {
   const f = await openCanvas({ graph: { name: 'Character team', nodes: [], edges: [] } });
   try {
-    const names = ['Researcher', 'Reviewer', 'Builder', 'Tester', 'Writer', 'Critic'];
-    for (const name of names) {
-      await f.canvas.getByText('Characters', { exact: true }).click();
-      await f.canvas.getByRole('button', { name: `Add ${name}`, exact: true }).click();
-    }
-    await f.agentCount(6, 'all six presets'); await f.fit();
+    for (let i = 0; i < 6; i++) await f.canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
+    await f.agentCount(6, 'six agents'); await f.fit();
     const initial = await f.saved();
-    for (const n of initial.nodes.filter(n => n.type === 'agent')) assert.ok(n.data.instruction.startsWith('You are '));
+    const first = initial.nodes.find(n => n.type === 'agent');
     const command = async number => {
       await f.page.keyboard.press('Escape');
       await f.canvas.locator('.react-flow__pane, .iso-board').first().click({ position: { x: 20, y: 20 } });
@@ -84,11 +80,11 @@ test('Space applies numbered patterns to characters, preserves editable prompts,
     await command(1);
     let saved = await f.saved(); assert.equal(saved.edges.length, 5);
     assert.deepEqual(saved.nodes.filter(n => n.type === 'agent').map(n => n.data.instruction), initial.nodes.filter(n => n.type === 'agent').map(n => n.data.instruction));
-    await f.fit(); await f.node('Researcher').click();
+    await f.fit(); await f.node(first.data.title).click();
     const prompt = f.canvas.getByRole('textbox', { name: 'Prompt', exact: true });
     await prompt.fill('My editable character prompt'); await prompt.press('Space');
     assert.equal(await f.canvas.getByRole('textbox', { name: 'Workflow pattern', exact: true }).count(), 0);
-    assert.equal((await f.saved()).nodes.find(n => n.data.character === 'researcher').data.instruction, 'My editable character prompt ');
+    assert.equal((await f.saved()).nodes.find(n => n.id === first.id).data.instruction, 'My editable character prompt ');
     await command(2); assert.equal((await f.saved()).edges.length, 0);
     await command(3); assert.equal((await f.saved()).template, 'kahn');
     await command(4);
@@ -113,13 +109,8 @@ test('Space applies numbered patterns to characters, preserves editable prompts,
         if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme); await f.fit();
         const selector = iso ? '.iso-node[data-kind="agent"]' : '.agent-node[data-kind="agent"]';
         const colors = await f.canvas.locator(selector).evaluateAll(nodes => nodes.map(n => getComputedStyle(n).getPropertyValue('--agent-color').trim()));
-        assert.equal(new Set(colors).size, 6, `${iso}/${theme}: one color per character`);
-        assert.equal(await f.canvas.locator(iso ? '.iso-portrait' : '.agent-portrait').count(), 6);
-        if (iso) assert.deepEqual(await f.canvas.locator('.iso-portrait').evaluateAll(images => images.filter(image => {
-          const label = document.querySelector(`.iso-label[data-for="${image.closest('.iso-node').dataset.id}"]`);
-          const a = image.getBoundingClientRect(), b = label.getBoundingClientRect();
-          return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-        }).map(image => image.closest('.iso-node').dataset.id)), [], 'labels leave the character portraits visible');
+        assert.equal(new Set(colors).size, 6, `${iso}/${theme}: one color per agent`);
+        assert.equal(await f.canvas.locator('.iso-portrait, .agent-portrait').count(), 0, 'Workflows shows no character pictures');
         await f.page.screenshot({ path: `${shots}/${iso ? 'isometric' : 'flat'}-${theme}.png` });
       }
     }
