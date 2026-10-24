@@ -1549,7 +1549,14 @@ export class DesktopClient extends EventEmitter {
       const worktree = await this.#releaseWorktree(cwd);
       return { archived: true, ...(worktree ? { worktree } : {}) };
     });
-    for (const child of this.#spawnLinks.madeBy(id)) await this.archiveThread(child, {}).catch(() => {});
+    // The engine archives its own spawn tree with the chat (codex thread_archive_response). Archive everything else listed under
+    // the chat too (the chats it made with create_thread, anything the engine left), so deleting it leaves nothing behind.
+    for (let cursor; ;) {
+      const page = await this.listThreads({ ancestorThreadId: id, limit: 100, ...(cursor ? { cursor } : {}) }).catch(() => ({ data: [], nextCursor: null }));
+      for (const child of page.data) await this.archiveThread(child.id, {}).catch(() => {});
+      if (!page.nextCursor || page.nextCursor === cursor) break;
+      cursor = page.nextCursor;
+    }
     return archived;
   }
   async unarchiveThread(id, body) {

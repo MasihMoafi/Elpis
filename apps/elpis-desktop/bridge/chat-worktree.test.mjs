@@ -119,7 +119,7 @@ function engine({ failStart = false } = {}) {
         const thread = { id: CHAT, cwd: p.cwd, status: { type: 'idle' }, source: 'appServer' }; threads.set(CHAT, thread); return reply({ result: { thread } });
       }
       case 'thread/read': return reply({ result: { thread: structuredClone(threads.get(p.threadId)) } });
-      case 'thread/list': return reply({ result: { data: [...threads.values()].filter(thread => !!thread.archived === !!p.archived && (!p.cwd || thread.cwd === p.cwd)), nextCursor: null } });
+      case 'thread/list': return reply({ result: { data: [...threads.values()].filter(thread => !!thread.archived === !!p.archived && (!p.cwd || thread.cwd === p.cwd) && (!p.ancestorThreadId || thread.parentThreadId === p.ancestorThreadId)), nextCursor: null } });
       case 'thread/archive': threads.get(p.threadId).archived = true; return reply({ result: {} });
       case 'thread/unarchive': delete threads.get(p.threadId).archived; return reply({ result: { thread: structuredClone(threads.get(p.threadId)) } });
       case 'thread/delete': threads.delete(p.threadId); return reply({ result: {} });
