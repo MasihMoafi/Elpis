@@ -31,6 +31,7 @@ test('speech chunks preserve long ASCII, Persian and astral text below 900 engin
 });
 
 async function fixture(t) {
+  const controls = [];
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-read-aloud-'));
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
   const state = { account: 'chatgpt', provider: 'openai', voice: 'juniper', holdStart: false, failAppend: false, holdCleanup: false, busy: false };
@@ -62,7 +63,7 @@ async function fixture(t) {
         state.beforeTurnAnswer?.(turn);
         return answer({ turn });
       }
-      if (request.method === 'thread/realtime/appendText' && state.failAppend) return socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32000, message: 'fixture speech failure' } }));
+      if (request.method === 'thread/realtime/appendSpeech' && state.failAppend) return socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32000, message: 'fixture speech failure' } }));
       if (request.method === 'thread/unsubscribe' && state.holdCleanup) { state.finishCleanup = () => answer({}); return; }
       if (request.method === 'thread/realtime/start') {
         state.finishStart = () => { notify('thread/realtime/sdp', { threadId: request.params.threadId, sdp: 'v=0\r\nanswer' }); answer({}); };
@@ -97,7 +98,7 @@ async function fixture(t) {
     response.setHeader = (name, value) => headers.set(name.toLowerCase(), value);
     response.writeHead = (status, values = {}) => { response.status = status; for (const [name, value] of Object.entries(values)) response.setHeader(name, value); response.headersSent = true; response.emit('headers'); };
     response.flushHeaders = () => {};
-    response.write = line => { if (!response.destroyed) stream.enqueue(new TextEncoder().encode(line)); };
+    response.write = line => { controls.push(JSON.parse(line)); if (!response.destroyed) stream.enqueue(new TextEncoder().encode(line)); };
     response.end = line => { if (response.destroyed) return; if (line) response.write(line); response.destroyed = true; try { stream.close(); } catch {} response.emit('close'); };
     response.destroy = () => response.end();
     response.text = () => new Response(response.body).text();
@@ -117,11 +118,11 @@ async function fixture(t) {
     const reader = response.body.getReader(); let pending = '';
     const next = async () => {
       while (!pending.includes('\n')) { const row = await reader.read(); assert.equal(row.done, false); pending += new TextDecoder().decode(row.value); }
-      const index = pending.indexOf('\n'), line = pending.slice(0, index); pending = pending.slice(index + 1); return JSON.parse(line);
+      const index = pending.indexOf('\n'), line = pending.slice(0, index); pending = pending.slice(index + 1); const event = JSON.parse(line); return event.type === 'cue' ? next() : event;
     };
     return { controller, reader, next };
   };
-  return { state, notify, post, methods, open, app, socket, client };
+  return { state, notify, post, methods, open, app, socket, client, controls };
 }
 
 test('Matilda streams through the shared HTTP transport for native and Claude text; mute retires the speaker while text continues', async t => {
@@ -140,23 +141,23 @@ test('Matilda streams through the shared HTTP transport for native and Claude te
     const { controller, reader, next } = await f.open(null);
     const session = await next(); assert.equal(session.type, 'session');
     assert.equal((await next()).type, 'sdp');
-    assert.equal(f.methods('thread/realtime/appendText').length, 0);
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, 0);
     await f.post('voice/read-aloud/ready', { id: session.id });
-    await until(() => f.methods('thread/realtime/appendText').length === 1);
+    await until(() => f.methods('thread/realtime/appendSpeech').length === 1);
     assert.equal(f.methods('thread/realtime/start')[0].params.voice, 'juniper');
     assert.equal(f.methods('thread/start')[0].params.modelProvider, 'openai');
     event('item/agentMessage/delta', { itemId: 'note', delta: 'Second sentence. ' });
-    assert.equal(f.methods('thread/realtime/appendText').length, 1, 'RPC acknowledgement does not advance speech');
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, 1, 'RPC acknowledgement does not advance speech');
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'user' });
-    assert.equal(f.methods('thread/realtime/appendText').length, 1);
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, 1);
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
-    await until(() => f.methods('thread/realtime/appendText').length === 2);
-    assert.equal(f.methods('thread/realtime/appendText')[1].params.text, 'Read this aloud exactly, word for word, and say nothing else:\n\nSecond sentence. ');
+    await until(() => f.methods('thread/realtime/appendSpeech').length === 2);
+    assert.equal(f.methods('thread/realtime/appendSpeech')[1].params.text, 'Second sentence. ');
     const muted = await f.post('love-spot/voice/settings', { enabled: false }); assert.equal(muted.status, 200);
     assert.equal((await next()).type, 'stopped');
     event('item/agentMessage/delta', { itemId: 'note', delta: 'Still writing. ' });
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
-    assert.equal(f.methods('thread/realtime/appendText').length, 2);
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, 2);
     assert.equal((await f.post('love-spot/voice', { sdp: offer })).status, 409);
     assert.equal(f.methods('thread/start').length, 1);
     assert.equal(f.methods('thread/realtime/stop').length, 1);
@@ -171,7 +172,8 @@ test('read aloud uses the saved subscription voice in a private native thread an
   const { controller, reader, next } = await f.open(original);
   const session = await next(); assert.equal(session.type, 'session');
   const sdp = await next(); assert.equal(sdp.sdp, 'v=0\r\nanswer');
-  assert.equal(f.methods('thread/realtime/appendText').length, 0, 'wait for the connected peer');
+  assert.equal(f.methods('thread/realtime/appendSpeech').length, 0, 'wait for the connected peer');
+  assert.equal(f.controls.filter(e => e.type === 'cue').length, 0);
   const created = f.methods('thread/start')[0].params;
   assert.equal(created.ephemeral, true); assert.equal(created.modelProvider, 'openai'); assert.equal(created.model, 'gpt-5');
   const started = f.methods('thread/realtime/start')[0].params;
@@ -182,10 +184,11 @@ test('read aloud uses the saved subscription voice in a private native thread an
   assert.equal((await f.post('voice/read-aloud/ready', { id: session.id })).status, 200, 'a duplicate readiness message cannot advance the queue');
   const expected = native.speechChunks(original);
   for (let index = 0; index < expected.length; index++) {
-    await until(() => f.methods('thread/realtime/appendText').length === index + 1);
-    assert.deepEqual(f.methods('thread/realtime/appendText')[index].params, { threadId: SPEECH, role: 'user', text: `Read this aloud exactly, word for word, and say nothing else:\n\n${expected[index]}` });
+    await until(() => f.methods('thread/realtime/appendSpeech').length === index + 1);
+    assert.deepEqual(f.methods('thread/realtime/appendSpeech')[index].params, { threadId: SPEECH, text: expected[index] });
+    await until(() => f.controls.filter(e => e.type === 'cue').length === index + 1);
     f.notify('thread/realtime/transcript/done', { threadId: CHAT, role: 'assistant', text: 'unrelated' });
-    assert.equal(f.methods('thread/realtime/appendText').length, index + 1);
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, index + 1);
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant', text: expected[index] });
   }
   assert.equal((await next()).type, 'complete', 'completion is output generation, not proof of heard audio');
@@ -209,7 +212,7 @@ test('read aloud refuses signed-out, API-key, invalid voice and malformed reques
     assert.equal(response.status, 400);
   }
   assert.equal(f.methods('thread/realtime/start').length, 0);
-  assert.equal(f.methods('thread/realtime/appendText').length, 0);
+  assert.equal(f.methods('thread/realtime/appendSpeech').length, 0);
 });
 
 test('Stop during startup retires the late native session and never appends or restarts speech', async t => {
@@ -221,7 +224,7 @@ test('Stop during startup retires the late native session and never appends or r
   await until(() => f.methods('thread/realtime/stop').length === 1 && f.methods('thread/unsubscribe').length === 1);
   assert.equal((await f.post('voice/read-aloud/ready', { id: session.id })).status, 409);
   f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant', text: 'late' });
-  assert.equal(f.methods('thread/realtime/appendText').length, 0);
+  assert.equal(f.methods('thread/realtime/appendSpeech').length, 0);
 });
 
 test('speech failure and engine disconnect retire queued chunks without replaying uncertain speech', async t => {
@@ -229,12 +232,12 @@ test('speech failure and engine disconnect retire queued chunks without replayin
     const f = await fixture(t); f.state.failAppend = failAppend;
     const { next } = await f.open('Many words. '.repeat(1000)); const session = await next(); await next();
     await f.post('voice/read-aloud/ready', { id: session.id });
-    await until(() => f.methods('thread/realtime/appendText').length === 1);
+    await until(() => f.methods('thread/realtime/appendSpeech').length === 1);
     if (!failAppend) f.socket.emit('close');
     assert.equal((await next()).type, 'error');
     await until(() => f.socket.listenerCount('side') === 0);
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant', text: 'late output' });
-    assert.equal(f.methods('thread/realtime/appendText').length, 1);
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, 1);
     assert.equal((await f.post('voice/read-aloud/ready', { id: session.id })).status, 409);
     assert.equal(f.methods('turn/start').length, 0);
   });
@@ -268,9 +271,9 @@ test('Claude and Antigravity read aloud use a private native speech thread and s
     const created = f.methods('thread/start')[0].params;
     assert.equal(created.model, 'gpt-5'); assert.equal(created.modelProvider, 'openai'); assert.equal(created.ephemeral, true);
     await f.post('voice/read-aloud/ready', { id: session.id });
-    await until(() => f.methods('thread/realtime/appendText').length === 1);
-    assert.equal(f.methods('thread/realtime/appendText')[0].params.threadId, SPEECH);
-    assert.match(f.methods('thread/realtime/appendText')[0].params.text, /سلام from this chat\.$/);
+    await until(() => f.methods('thread/realtime/appendSpeech').length === 1);
+    assert.equal(f.methods('thread/realtime/appendSpeech')[0].params.threadId, SPEECH);
+    assert.match(f.methods('thread/realtime/appendSpeech')[0].params.text, /سلام from this chat\.$/);
     assert.equal(f.methods('turn/start').length, 0);
     controller.abort(); await reader.cancel().catch(() => {});
     await until(() => f.methods('thread/unsubscribe').length === 1);
@@ -308,10 +311,10 @@ test('Claude and Antigravity voice handoffs queue ordinary turns and speak only 
     f.notify('item/completed', { threadId: CHAT, turnId: 'voice-turn-1', item: { id: 'progress', type: 'agentMessage', phase: null, text: 'I will check the files.' } });
     f.notify('item/completed', { threadId: CHAT, turnId: 'voice-turn-1', item: { id: 'working', type: 'agentMessage', phase: 'commentary', text: 'Working' } });
     f.notify('item/completed', { threadId: CHAT, turnId: 'voice-turn-1', item: { id: 'reply', type: 'agentMessage', phase: 'final_answer', text: 'The selected agent replies.' } });
-    assert.equal(f.methods('thread/realtime/appendText').length, 0, 'item completion is not turn completion');
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, 0, 'item completion is not turn completion');
     f.notify('turn/completed', { threadId: CHAT, turn: { id: 'voice-turn-1', status: 'completed', items: [] } });
-    await until(() => f.methods('thread/realtime/appendText').length === 1);
-    assert.deepEqual(f.methods('thread/realtime/appendText')[0].params, { threadId: SPEECH, role: 'user', text: 'Read this aloud exactly, word for word, and say nothing else:\n\nThe selected agent replies.' });
+    await until(() => f.methods('thread/realtime/appendSpeech').length === 1);
+    assert.deepEqual(f.methods('thread/realtime/appendSpeech')[0].params, { threadId: SPEECH, text: 'The selected agent replies.' });
     assert.equal(f.methods('turn/start').length, 1, 'the next handoff waits for speech completion');
     f.notify('thread/realtime/transcript/done', { threadId: CHAT, role: 'assistant' });
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'user' });
@@ -321,12 +324,12 @@ test('Claude and Antigravity voice handoffs queue ordinary turns and speak only 
       f.notify('turn/completed', { threadId: CHAT, turn: { id: turn.id, status: 'completed', items: [{ id: 'progress', type: 'agentMessage', phase: null, text: 'Checking the files.' }, { id: 'fast', type: 'agentMessage', phase: null, text: secondReply }] } });
     };
     f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
-    await until(() => f.methods('thread/realtime/appendText').length === 2);
+    await until(() => f.methods('thread/realtime/appendSpeech').length === 2);
     assert.equal(f.methods('turn/start')[1].params.input[0].text, 'Second spoken request');
     let spoken = '', count = 1;
     while (spoken.length < secondReply.length) {
-      await until(() => f.methods('thread/realtime/appendText').length === count + 1);
-      const chunk = f.methods('thread/realtime/appendText')[count].params.text.slice('Read this aloud exactly, word for word, and say nothing else:\n\n'.length);
+      await until(() => f.methods('thread/realtime/appendSpeech').length === count + 1);
+      const chunk = f.methods('thread/realtime/appendSpeech')[count].params.text;
       assert.ok(Buffer.byteLength(chunk) <= 3596); spoken += chunk; count++;
       assert.equal(f.methods('turn/start').length, 2);
       f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
@@ -369,7 +372,7 @@ test('bridged voice retires pending handoffs and late speech on stop, disconnect
     handoff('late'); f.notify('thread/realtime/transcript/done', { threadId: SPEECH, role: 'assistant' });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(f.methods('turn/start').length, 1);
-    assert.equal(f.methods('thread/realtime/appendText').length, outcome === 'append failure' ? 1 : 0);
+    assert.equal(f.methods('thread/realtime/appendSpeech').length, outcome === 'append failure' ? 1 : 0);
     assert.equal(f.methods('turn/interrupt').length, 0, 'ending voice does not interrupt the selected chat');
   });
 });

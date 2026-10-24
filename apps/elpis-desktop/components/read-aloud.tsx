@@ -44,11 +44,21 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
     try {
       if (typeof RTCPeerConnection === "undefined") throw new Error("Read aloud is unavailable in this window.");
       const peer = new RTCPeerConnection(); current.peer = peer;
-      // Generated silence, not the microphone: the voice model only speaks while audio comes in (23 Oct live check).
+      // Generated input, never the microphone. A local cue asks the speech-driven model to read each supplied chunk.
       const silence = new AudioContext(); current.silence = silence;
       const quiet = silence.createGain(); quiet.gain.value = 0;
       const source = silence.createOscillator(), sink = silence.createMediaStreamDestination();
       source.connect(quiet).connect(sink); source.start();
+      const cueResponse = await fetch("/read-aloud-cue.ogg", { signal: current.controller.signal });
+      if (!cueResponse.ok) throw new Error("The voice playback cue could not load.");
+      const cueBuffer = await silence.decodeAudioData(await cueResponse.arrayBuffer());
+      await silence.resume();
+      if (call.current !== current) return;
+      const cue = () => {
+        if (call.current !== current) return;
+        const trigger = silence.createBufferSource(); trigger.buffer = cueBuffer;
+        trigger.connect(sink); trigger.start();
+      };
       peer.addTransceiver(sink.stream.getAudioTracks()[0], { direction: "sendrecv" });
       const events = peer.createDataChannel("oai-events");
       events.onmessage = message => {
@@ -97,6 +107,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
             const event = JSON.parse(line) as { type: string; id?: string; sdp?: string; message?: string };
             if (event.type === "session") { current.session = event.id; ready(); }
             if (event.type === "sdp" && event.sdp) await peer.setRemoteDescription({ type: "answer", sdp: event.sdp });
+            if (event.type === "cue") cue();
             if (event.type === "error") throw new Error(event.message || "Read aloud failed.");
             if (event.type === "stopped") stop();
             // The last transcript ends with its audio; a moment later the player is done.

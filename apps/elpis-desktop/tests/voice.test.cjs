@@ -111,3 +111,22 @@ test('voice controls release the microphone after denial, cancelled startup, mut
     assert.deepEqual(f.errors, []);
   } finally { for (const stream of streams) stream.end(); await f.close(); }
 });
+
+test('Matilda and ordinary chat replies both offer Read aloud and send the displayed words', async () => {
+  const threads = [['chat-a', 'Love Spot'], ['chat-b', 'Other chat']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
+  const f = await fixture({ threads, routes: { '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
+  try {
+    for (const id of ['chat-a', 'chat-b']) {
+      await f.open(id);
+      const reply = f.page.locator('.message.agent').last();
+      await reply.hover();
+      const speak = reply.getByRole('button', { name: 'Read aloud', exact: true });
+      await speak.waitFor();
+      await speak.click();
+      await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === id)));
+      const request = f.posts.find(row => row.path === '/api/voice/read-aloud' && row.body.threadId === id);
+      assert.equal(request.body.text, 'All green.');
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

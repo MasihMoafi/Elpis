@@ -181,3 +181,7 @@ Removed (R38, R57): Kahn's order, waves, critical path, the patterns panel, Moth
 ## 24 October — round avatar and black ink
 
 Masih: “update it then; and send your messages in a different color; maybe black and emojies red.” Install the circular avatar for board/chat; black assistant notes and red hearts, including earlier replies. Black user notes remain user-authored. Preserve custom images. Check the native reply path and rendered avatar, build one worker, install forward.
+
+## 24 October — Matilda voice playback
+
+Masih: “I couldn't and can't hear your voice.” Reproduced: connected peer and advancing playback receive zero-energy audio. Check actual non-silent speech before claiming success. Use the native speech operation and expose the same Read aloud control on Matilda chat replies. Preserve microphone-free playback and cancellation.

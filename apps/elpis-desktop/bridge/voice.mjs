@@ -107,7 +107,7 @@ export function createVoice(client) {
       }
       current.pending = true;
       clearTimeout(timeout); timeout = setTimeout(() => fail('Read aloud timed out waiting for speech. Retry explicitly.'), 300000).unref();
-      void client.appendSpeech(current.speech.id, chunks.shift()).catch(() => fail('Read aloud delivery is uncertain. Stop and try again explicitly.'));
+      void client.appendSpeech(current.speech.id, chunks.shift()).then(() => { if (readAloud) send({ type: 'cue' }); }).catch(() => fail('Read aloud delivery is uncertain. Stop and try again explicitly.'));
     };
     if (readAloud) current.readyForSpeech = () => { if (!current.ready) { current.ready = true; append(); } };
     const onSide = message => {
