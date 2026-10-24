@@ -95,9 +95,9 @@ export const retainedUpdates = {
       "reason": "SIDEBAR, Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good.\" Its row is a switch, not a chat, so the focus-ring check skips it. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/startup-splash.test.cjs": {
-      "blob": "37f7147778dc05d333f2c8ffb7536be4693ee60d",
-      "approval": "b8c8d51e4058b7ac06c78aa5a02c922d44c0ed62",
-      "reason": "STARTUP, Masih 22 Oct: \"the third one without the hexagonal around it. The same background it is now.\" The start-up screen is option 3 of the 20 Oct motion study, the E turning in depth, with no hexagons."
+      "blob": "e374436fc1bb7becd6726884bea1edfd2c81f77a",
+      "approval": "1de4129f742172ae62f0f63f5c3bd5d0a46374fe",
+      "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade."
     },
     "tests/controls.cjs": {
       "blob": "88c707e2a62524bbd4e6b2ce37d650ed556cba36",
