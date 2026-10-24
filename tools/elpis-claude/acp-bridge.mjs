@@ -571,9 +571,11 @@ wss.on("connection", (ws) => {
     if (!msg.method && openingReplies.delete(msg.id) && msg.result?.thread) subscriptions.get(recipient)?.add(msg.result.thread.id);
     if (route) { forwarded.delete(msg.id); sendClient(recipient, { ...msg, id: route.id }); }
     else if (owner?.ws === ws && msg.method && msg.id === undefined && !["thread/status/changed", "thread/name/updated", "thread/archived", "thread/closed", "thread/deleted", "thread/unarchived"].includes(msg.method)) {
-      for (const client of viewers(msg.params.threadId, true)) sendClient(client, msg);
-      // A helper's delegate server is not a viewer; it follows its helper too.
-      if (owner.nativeHelper) sendClient(ws, msg);
+      const recipients = new Set(viewers(msg.params.threadId, true));
+      // The delegate connection follows its helper even before subscribing. A thread/start
+      // reply also subscribes it, so combine the routes before sending each event once.
+      if (owner.nativeHelper) recipients.add(ws);
+      for (const client of recipients) sendClient(client, msg);
     } else sendClient(recipient, msg);
     // Hydration reaches the terminal before a pending question for that chat.
     if (msg.result?.thread) flushApprovals(recipient, msg.result.thread.id);

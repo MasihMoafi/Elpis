@@ -27,7 +27,10 @@ if (process.argv.includes('app-server')) {
   const timers = new Map();
   const file = id => path.join(process.env.HOME, `${id}.json`);
   const stored = id => fs.existsSync(file(id)) ? JSON.parse(fs.readFileSync(file(id), 'utf8')) : null;
-  const save = row => fs.writeFileSync(file(row.thread.id), JSON.stringify(row));
+  const save = row => {
+    fs.writeFileSync(file(row.thread.id) + '.pending', JSON.stringify(row));
+    fs.renameSync(file(row.thread.id) + '.pending', file(row.thread.id));
+  };
   const settings = (p, previous = {}) => {
     const profile = p.permissions ?? (p.sandbox && { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' }[p.sandbox]);
     const sandboxPolicy = profile ? { type: { ':read-only': 'readOnly', ':workspace': 'workspaceWrite', ':danger-full-access': 'dangerFullAccess' }[profile] } : p.sandboxPolicy ?? previous.sandboxPolicy;
@@ -79,7 +82,15 @@ if (process.argv.includes('app-server')) {
         row.thread.status = { type: 'active', activeFlags: [] }; row.thread.turns = [turn]; save(row);
         reply({ turn }); send({ method: 'turn/started', params: { threadId: p.threadId, turn } });
         let n = 0;
-        timers.set(p.threadId, setInterval(() => send({ method: 'item/agentMessage/delta', params: { threadId: p.threadId, turnId: turn.id, itemId: 'answer', delta: `LIVE ${++n}\n` } }), 40));
+        timers.set(p.threadId, setInterval(() => {
+          n++;
+          const params = { threadId: p.threadId, turnId: turn.id };
+          const item = { id: `command-${n}`, type: 'commandExecution', command: `printf ${n}`, status: 'completed', exitCode: 0, aggregatedOutput: `${n}\n`, commandActions: [], cwd: row.thread.cwd };
+          send({ method: 'item/started', params: { ...params, item: { ...item, status: 'inProgress' } } });
+          send({ method: 'item/completed', params: { ...params, item } });
+          // Equal consecutive deltas are distinct events; a transport fix must preserve both.
+          for (const delta of ['read ', 'read ', `LIVE ${n}\n`]) send({ method: 'item/agentMessage/delta', params: { ...params, itemId: 'answer', delta } });
+        }, 40));
         return;
       }
       case 'turn/interrupt': {
@@ -128,7 +139,8 @@ if (process.argv.includes('app-server')) {
     observer = new WebSocket(`ws+unix://${socketPath}:/`);
     await once(observer, 'open');
     const pending = new Map(); let seq = 0;
-    observer.on('message', data => { const msg = JSON.parse(String(data)); if (pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); } });
+    const observerEvents = [];
+    observer.on('message', data => { const msg = JSON.parse(String(data)); if (msg.method) observerEvents.push(msg); if (pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); } });
     const rpc = (method, params) => new Promise(resolve => { const id = ++seq; pending.set(id, resolve); observer.send(JSON.stringify({ id, method, params })); });
     await rpc('initialize', { clientInfo: { name: 'a166-parent' }, capabilities: { experimentalApi: true } });
     const parent = await rpc('thread/start', { model: 'claude/haiku', cwd: root, approvalPolicy: 'never', sandbox: 'danger-full-access' });
@@ -171,6 +183,31 @@ if (process.argv.includes('app-server')) {
       assert.equal(opened.status, 200, JSON.stringify(opened.body));
       assert.ok(opened.body.activeTurnId);
       await until(() => messages().some(msg => msg.method === 'item/agentMessage/delta' && msg.params?.threadId === id && msg.params.delta.includes('LIVE')), 'desktop SSE receives live helper items');
+    });
+    await t.test('delegate_status and the desktop receive each helper event once, preserving repeated words', async () => {
+      const streamed = await delegate(true);
+      assert.equal((await request(`/threads/${streamed}/resume`, {})).status, 200);
+      await until(() => messages().filter(msg => msg.method === 'item/agentMessage/delta' && msg.params?.threadId === streamed && msg.params.delta.includes('LIVE')).length >= 2, 'desktop receives two complete streamed batches');
+      const stopped = await mcp.callTool({ name: 'delegate_stop', arguments: { thread_id: streamed } });
+      assert.ok(!stopped.isError, JSON.stringify(stopped));
+      const status = await mcp.callTool({ name: 'delegate_status', arguments: { thread_id: streamed } });
+      assert.ok(!status.isError, JSON.stringify(status));
+      const report = status.content[0].text;
+      const answer = report.split('Answer:\n')[1];
+      assert.ok(answer, report);
+      const lines = answer.trim().split('\n');
+      for (const [index, line] of lines.entries()) assert.equal(line, `read read LIVE ${index + 1}`, 'each real delta is delivered once, even when adjacent deltas have identical text');
+      const commands = report.match(/Commands it ran: (.*)/)?.[1].split('; ');
+      assert.deepEqual(commands, lines.map((_, index) => `printf ${index + 1}`), 'each command is listed once');
+      await until(() => messages().some(msg => msg.method === 'turn/completed' && msg.params?.threadId === streamed), 'desktop sees the helper stop');
+      const events = messages().filter(msg => msg.params?.threadId === streamed);
+      const ticks = events.filter(msg => msg.method === 'item/agentMessage/delta' && msg.params.delta.startsWith('LIVE'));
+      assert.equal(new Set(ticks.map(msg => msg.params.delta)).size, ticks.length, 'desktop SSE never doubles a text piece');
+      for (const tick of ticks) {
+        const n = tick.params.delta.match(/\d+/)[0];
+        assert.equal(events.filter(msg => msg.method === 'item/completed' && msg.params.item?.id === `command-${n}`).length, 1, 'desktop receives one command completion');
+      }
+      assert.equal(observerEvents.filter(msg => msg.method === 'item/agentMessage/delta' && msg.params.threadId === streamed).length, 0, 'a parent observer that never opened the helper receives no helper transcript');
     });
     await t.test('permission changes are accepted and visible before completion', async () => {
       const opened = await request(`/threads/${id}/resume`, {});
