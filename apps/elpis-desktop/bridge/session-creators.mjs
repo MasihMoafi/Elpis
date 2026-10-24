@@ -66,11 +66,13 @@ export class SessionCreators {
             scan = { ino: stat.ino, offset: 0, refs: {} }; this.#scans[file] = scan;
           }
           if (scan.offset < stat.size && (scan.size !== stat.size || scan.mtime !== stat.mtimeMs)) {
-            let tail = Buffer.alloc(0);
+            let fragments = [], bytes = 0;
             for await (const chunk of fs.createReadStream(file, { start: scan.offset, end: stat.size - 1 })) {
-              tail = Buffer.concat([tail, chunk]); let start = 0, end;
-              while ((end = tail.indexOf(10, start)) !== -1) {
-                const line = tail.subarray(start, end).toString('utf8');
+              let start = 0, end;
+              while ((end = chunk.indexOf(10, start)) !== -1) {
+                const part = chunk.subarray(start, end);
+                // Large tool/compaction records span many chunks; join once per line, never once per chunk.
+                const line = (fragments.length ? Buffer.concat([...fragments, part], bytes + part.length) : part).toString('utf8');
                 const ids = line.match(IDS);
                 if (ids) try {
                   const record = JSON.parse(line), at = seconds(record.timestamp);
@@ -80,9 +82,9 @@ export class SessionCreators {
                     if (times.at(-1) !== at) times.push(at);
                   }
                 } catch { /* A partial or non-JSON line supplies no evidence. */ }
-                scan.offset += end + 1 - start; start = end + 1;
+                scan.offset += bytes + part.length + 1; start = end + 1; fragments = []; bytes = 0;
               }
-              tail = tail.subarray(start);
+              if (start < chunk.length) { const rest = chunk.subarray(start); fragments.push(rest); bytes += rest.length; }
             }
             changed = true;
           }

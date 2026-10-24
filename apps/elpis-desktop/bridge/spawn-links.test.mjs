@@ -154,7 +154,7 @@ test('new references scan only appended bytes and unchanged negative lookups sur
   const f = fixture(t), at = 1792827361;
   await fs.mkdir(f.home, { recursive: true });
   const transcript = path.join(f.home, 'incremental.jsonl');
-  const line = id => JSON.stringify({ timestamp: new Date((at + 10) * 1000).toISOString(), type: 'response_item', payload: { output: id } }) + '\n';
+  const line = id => JSON.stringify({ timestamp: new Date((at + 10) * 1000).toISOString(), type: 'response_item', payload: { output: id, text: 'مدرک'.repeat(20000) } }) + '\n';
   const first = line(CHILD), next = line(OTHER);
   await fs.writeFile(transcript, first);
   Object.assign(f.threads.get(MAKER), { threadSource: 'user', createdAt: at - 100, path: transcript });
