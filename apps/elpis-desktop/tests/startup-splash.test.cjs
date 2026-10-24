@@ -40,7 +40,8 @@ for (const colorScheme of ['light', 'dark']) test(`startup: the third E gyroscop
   assert.equal(await splash.locator('.splash-dial, .splash-ticks, .splash-arcs, .splash-hex, .splash-scope, .splash-sweep, .splash-boot-panel, .splash-boot, .splash-meter').count(), 0, 'No HUD parts remain');
   const ground = await splash.evaluate(el => ({ background: getComputedStyle(el).backgroundColor,
     before: getComputedStyle(el, '::before').backgroundImage, after: getComputedStyle(el, '::after').backgroundImage }));
-  assert.equal(ground.background, 'rgb(10, 11, 13)', 'The brand opening stays dark even when the app theme is light');
+  // Masih, 24 Oct: a dark opening before a light app is wrong; the opening follows the app's theme.
+  assert.equal(ground.background, colorScheme === 'dark' ? 'rgb(10, 11, 13)' : 'rgb(251, 251, 250)', `The opening follows the ${colorScheme} theme`);
   assert.doesNotMatch(ground.before + ground.after, /repeating-linear-gradient/, 'No HUD floor grid remains');
   const m = await frame(page, 0), mid = await frame(page, 240), e = await frame(page, 800), end = await frame(page, 2000);
   assert.notEqual(mid.logo, m.logo, 'The E starts turning in depth');

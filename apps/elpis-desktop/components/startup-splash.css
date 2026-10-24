@@ -1,10 +1,13 @@
 /* The third motion study's E turns in depth, without surrounding geometry. */
 .startup-splash {
   position:fixed; inset:0; z-index:100; display:grid; place-items:center; overflow:hidden;
-  background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark;
+  /* The app's own theme: light unless the saved choice, or System with a dark system, is dark. */
+  background-color:#fbfbfa; color:#252524; color-scheme:light;
   background-image:radial-gradient(ellipse at 50% 45%, #f2a6260d, transparent 60%);
   transition:opacity ease;
 }
+.startup-splash.splash-dark { background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark; }
+@media (prefers-color-scheme:dark) { .startup-splash:not(.splash-light) { background-color:#0a0b0d; color:#e6e0d3; color-scheme:dark; } }
 .startup-splash.leaving { opacity:0; pointer-events:none; }
 .splash-stage { position:relative; display:grid; justify-items:center; gap:24px; }
 .splash-gyro { display:grid; place-items:center; width:clamp(128px, 20vmin, 176px); perspective:500px; }
