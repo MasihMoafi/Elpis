@@ -177,3 +177,7 @@ Problem: a professional wants a small team of agents set up once, to hand it wor
 | W8 | The board and its pets survive a restart; an old saved board (Mother, notes, patterns) loads as its agents and arrows. | UI test with an old board. |
 
 Removed (R38, R57): Kahn's order, waves, critical path, the patterns panel, Mother and Father, the isometric view, auto-arrange, notes, the command bar, AutoCAD selection hints, the run planner. Later, for Masih to choose: a floating pet on the desktop outside Elpis; pixel-art pets; a Voice button on each pet; agents working on their own machine (Cloudroom: each agent its own Linux user and VM, with its history kept there).
+
+## 24 October — round avatar and black ink
+
+Masih: “update it then; and send your messages in a different color; maybe black and emojies red.” Install the circular avatar for board/chat; black assistant notes and red hearts, including earlier replies. Black user notes remain user-authored. Preserve custom images. Check the native reply path and rendered avatar, build one worker, install forward.

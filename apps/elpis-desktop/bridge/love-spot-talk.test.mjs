@@ -31,12 +31,15 @@ async function fixture(t, { refuseFast = false } = {}) {
 }
 test('Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models', async t => {
   const f = await fixture(t);
-  await f.store.save({ elements: [note('masih', 'Apricot'), note('agent', 'Blue thought', '#1971c2'), note('gone', 'Do not include', '#e03131', { isDeleted: true })] });
+  await f.store.save({ elements: [note('masih', 'Apricot'), note('agent', 'Blue thought', '#1971c2'), note('love-reply-saved', 'Black reply', '#000000'), note('user-black', 'Black user note', '#000000'), note('gone', 'Do not include', '#e03131', { isDeleted: true })] });
   const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
   await f.talk.send({ text: 'Hello', model: 'luna', revision });
   assert.equal(f.created.length, 1); assert.equal(f.created[0].name, 'Love Spot'); assert.equal(f.created[0].cwd, f.directory);
   const notes = f.sent[0].attachments.find(a => a.type === 'text').text;
   assert.match(notes, /Masih.*Apricot/s); assert.match(notes, /agent.*Blue thought/s); assert.doesNotMatch(notes, /Do not include/);
+  const attributed = JSON.parse(notes.split('\n')[1]);
+  assert.equal(attributed.find(n => n.text === 'Black reply').author, 'agent');
+  assert.equal(attributed.find(n => n.text === 'Black user note').author, 'Masih');
   assert.equal(f.sent[0].attachments.find(a => a.type === 'image').dataUrl, `data:image/png;base64,${PNG}`);
   f.finish(); await f.talk.idle();
   const current = await f.store.read(); await f.store.picture({ revision: current.revision, png: PNG });
@@ -98,7 +101,7 @@ test('her face sits beside every reply as one image of one file, moves with the 
   const faces = live.filter(e => e.type === 'image'), notes = ['turn-1', 'turn-2'].map(id => live.find(e => e.id === `love-reply-${id}`));
   assert.deepEqual(faces.map(e => e.id), ['love-face-turn-1', 'love-face-turn-2'], 'one face per reply, once, though the turn finished twice');
   assert.equal(Object.keys(scene.files).length, 1, 'one file for every face'); assert.equal(faces[0].fileId, faces[1].fileId);
-  assert.match(scene.files[faces[0].fileId].dataURL, /^data:image\/webp;base64,/);
+  assert.match(scene.files[faces[0].fileId].dataURL, /^data:image\/svg\+xml;base64,/);
   faces.forEach((face, i) => {
     assert.ok(face.x + face.width <= notes[i].x, 'the face is to the left of her note'); assert.ok(Math.abs(face.y - notes[i].y) <= 8, 'level with the first line');
     assert.ok(face.groupIds.includes(`love-reply-group-turn-${i + 1}`) && notes[i].groupIds.includes(`love-reply-group-turn-${i + 1}`), 'face and note move as one');
@@ -109,12 +112,12 @@ test('her face sits beside every reply as one image of one file, moves with the 
   const painting = live.filter(e => e.id.startsWith('love-paint-')); await f.talk.send({ text: 'Third', model: 'text' }); f.finish('turn-3', 'completed', ''); await f.talk.idle();
   assert.equal((await f.store.read()).scene.elements.filter(e => e.type === 'image').length, 2, 'an empty reply has no face'); assert.ok(painting.length);
 });
-test('replies are blue, unsigned, collision-free, idempotent and saved without a UI subscriber', async t => {
+test('replies are black with red hearts, unsigned, collision-free, idempotent and saved without a UI subscriber', async t => {
   const f = await fixture(t);
   await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 }), note('block', 'Obstacle', '#e03131', { x: 20, y: 100, width: 500, height: 500 })] });
-  await f.talk.send({ text: 'Hi', model: 'text' }); f.finish(); f.finish(); await f.talk.idle();
-  const scene = (await f.store.read()).scene, reply = scene.elements.find(e => e.text === 'Here with you.');
-  assert.ok(reply); assert.equal(reply.strokeColor, '#1864ab'); assert.equal(scene.elements.filter(e => e.text === reply.text).length, 1);
+  await f.talk.send({ text: 'Hi', model: 'text' }); f.finish('turn-1', 'completed', 'Here with you. 💙'); f.finish(); await f.talk.idle();
+  const scene = (await f.store.read()).scene, reply = scene.elements.find(e => e.text === 'Here with you. ❤️');
+  assert.ok(reply); assert.equal(reply.strokeColor, '#000000'); assert.equal(scene.elements.filter(e => e.text === reply.text).length, 1);
   for (const e of scene.elements.filter(e => e.id !== reply.id)) assert.ok(reply.x + reply.width <= e.x || e.x + e.width <= reply.x || reply.y + reply.height <= e.y || e.y + e.height <= reply.y);
 });
 test('empty, failed and interrupted replies add nothing; invalid messages and stale pictures fail before send', async t => {

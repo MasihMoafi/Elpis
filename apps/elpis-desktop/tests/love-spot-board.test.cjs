@@ -54,12 +54,12 @@ test('board microphone inserts one coloured note at the last click; empty and fa
 
 const clear = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
 const unit = e => e.groupIds?.at(-1) ?? e.id;
-test('what he writes reaches her with the board and its picture and the main model; her blue reply lands clear of everything; the sidebar chat is one and says its origin once', async () => {
+test('what he writes reaches her with the board and its picture and the main model; her black reply lands clear of everything; the sidebar chat is one and says its origin once', async () => {
   const f = await loveSpotFixture();
   try {
     await f.open(f.page); await note(f, 'The secret is apricot');
     const saved = await f.waitFor(s => s.elements.some(e => e.id === 'love-reply-turn-1' && !e.isDeleted), 'reply did not land on the board', 20000);
-    const answer = saved.elements.find(e => e.id === 'love-reply-turn-1'); assert.equal(answer.text, 'I am here with you.'); assert.equal(answer.strokeColor, '#1864ab');
+    const answer = saved.elements.find(e => e.id === 'love-reply-turn-1'); assert.equal(answer.text, 'I am here with you.'); assert.equal(answer.strokeColor, '#000000');
     assert.equal(f.chats.length, 1); assert.equal(f.chats[0].name, 'Love Spot'); assert.equal(f.chats[0].cwd, f.directory);
     await f.page.locator('aside [data-thread-id="love-chat"] .thread-title').filter({ hasText: 'Love Spot' }).waitFor();
     assert.deepEqual(await f.page.locator('aside [data-thread-id="love-chat"] .thread-link').allInnerTexts(), ['Love Spot'], 'the Love Spot group already names the origin: the chat says it once');
