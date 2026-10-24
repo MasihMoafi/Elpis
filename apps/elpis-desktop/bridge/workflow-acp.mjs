@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
-import { workflowWorktrees } from './workflow-worktrees.mjs';
+import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged } from './workflow-worktrees.mjs';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
 const writer = task => ['implement', 'fix'].includes(task.kind);
@@ -51,6 +51,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
   onPermission, onSession, onEnd } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map();
+  const mergingSources = new Set(), mergeControllers = new Map();
   let loaded;
   const load = () => loaded ??= (async () => {
     await fs.mkdir(stateDir, { recursive: true, mode: 0o700 });
@@ -84,11 +85,38 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!entry) entries.push(entry = { kind: 'tool', id: update.toolCallId });
       Object.assign(entry, { at, ...(update.title ? { title: String(update.title).slice(0, 1000) } : {}), ...(update.status ? { status: update.status } : {}) });
     } else return;
-    if (entries.length > 80) entries.splice(0, entries.length - 80);
+    let size = entries.reduce((total, entry) => total + (entry.text?.length ?? 0) + (entry.title?.length ?? 0), 0);
+    while (entries.length > 1 && (entries.length > 80 || size > 32000)) { const removed = entries.shift(); size -= (removed.text?.length ?? 0) + (removed.title?.length ?? 0); }
     if (!progressTimers.has(record.id)) progressTimers.set(record.id, setTimeout(() => {
       progressTimers.delete(record.id); void save(record).catch(error => { record.persistenceError = error.message; });
     }, 200));
   };
+  async function reviewAndMerge(record, signal) {
+    if (await checkWorkflowReview(record.review, signal)) { record.review = await mergeWorkflowReview(record.review, signal); return; }
+    const mother = record.mother = { id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: [] };
+    const permissionScope = new AbortController();
+    record.review.status = 'reviewing'; await save(record);
+    try {
+      const instructions = 'You are Mother, the workflow coordinator. Review the children’s candidate commits and focused test evidence. Read and run checks only; do not change files, commit, merge, delegate or push. Approve only if the requested task is complete and the checks pass. Return only JSON: {"passed":true or false,"summary":"observed evidence and any remaining failure"}.';
+      const spec = nodeSpec({ name: 'Mother', prompt: instructions, model: mother.model, provider: mother.provider }, env);
+      spec.reasoningEffort = mother.reasoningEffort;
+      spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: 'Workflows · Mother', workflow: { kind: 'verify', writeScopes: [], reasoningEffort: mother.reasoningEffort } } };
+      const result = await runAcpNode(spec, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, answer: task.result?.summary ?? task.failureReason ?? task.status })) }, {
+        cwd: record.review.path, signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
+        onUpdate: update => progress(record, mother, update),
+        onControl: control => controls.set(`${record.id}:mother`, control),
+        onSession: id => { mother.sessionId = id; onSession?.(record, mother, id); void save(record).catch(() => {}); },
+        onPermission: request => onPermission?.(record, mother, request, permissionScope.signal),
+      });
+      let verdict;
+      try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* malformed review cannot authorize a merge */ }
+      mother.result = { summary: result.answer, reviewedCommit: record.review.commit };
+      if (verdict?.passed !== true || typeof verdict.summary !== 'string' || !verdict.summary.trim()) throw new BridgeError(`Mother did not approve: ${verdict?.summary || 'no passing review with evidence'}`, 409);
+      if (await workflowCandidateChanged(record.review)) throw new BridgeError('Mother changed the candidate during review; nothing was merged', 409);
+      record.review = await mergeWorkflowReview(record.review, signal); mother.status = 'succeeded';
+    } catch (error) { mother.status = signal?.aborted ? 'cancelled' : 'failed'; mother.failureReason = error.message; record.review.status = 'ready'; record.review.error = error.message; throw error; }
+    finally { permissionScope.abort(); controls.delete(`${record.id}:mother`); clearTimeout(progressTimers.get(record.id)); progressTimers.delete(record.id); await save(record); }
+  }
   async function execute(record, root, controller) {
     let isolation;
     const inflight = new Set();
@@ -131,8 +159,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
               try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* invalid check cannot pass */ }
               if (verdict?.passed !== true || typeof verdict.summary !== 'string' || !verdict.summary.trim()) throw new BridgeError(`Check failed: ${verdict?.summary || 'the agent did not return a passing check with evidence'}`, 409);
             }
-            if (isolation) await isolation.complete(task, round);
-            answers.set(task.id, result.answer); task.result = { summary: result.answer }; task.status = 'succeeded';
+            const changes = isolation ? await isolation.complete(task, round) : {};
+            answers.set(task.id, result.answer); task.result = { summary: result.answer, ...changes }; task.status = 'succeeded';
           } catch (error) {
             task.status = controller.signal.aborted ? 'cancelled' : 'failed'; task.failureReason = error.message;
           }
@@ -156,7 +184,10 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       }
       let status = controller.signal.aborted ? 'cancelled' : record.tasks.every(t => t.status === 'succeeded') ? 'succeeded' : 'failed';
       if (status === 'failed') record.error = record.tasks.find(task => task.failureReason)?.failureReason;
-      if (status === 'succeeded' && isolation) await isolation.integrate(controller.signal);
+      if (status === 'succeeded' && isolation) {
+        record.review = await isolation.review(controller.signal);
+        if ((record.autoMerge || record.next) && record.review.status === 'ready') await reviewAndMerge(record, controller.signal);
+      }
       record.status = status;
     } catch (error) {
       const cancelled = controller.signal.aborted; controller.abort(); await Promise.allSettled(inflight);
@@ -177,10 +208,11 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     }
   }
   return {
-    busy: () => active.size > 0,
+    busy: () => active.size > 0 || mergingSources.size > 0,
     async list(rootThreadId) { await load(); return structuredClone([...records.values()].filter(r => rootThreadId === undefined || r.rootThreadId === rootThreadId)); },
     async start(params, root) {
       validateWorkflow(params.tasks, params.roundLimit); await load();
+      if (mergeControllers.has(params.rootThreadId)) throw new BridgeError('Mother is reviewing this workflow', 409);
       if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose a project folder before running a workflow');
       root = { ...root, cwd: await fs.realpath(root.cwd) };
       for (const task of params.tasks) for (const scope of task.writeScopes) await projectFolder(root.cwd, scope);
@@ -200,18 +232,35 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       void execute(record, root, controller).catch(error => console.error('Could not save ACP workflow state:', error.message));
       return { graphId: record.id, threadId: params.rootThreadId, turnId: record.id };
     },
-    cancel(rootThreadId) { const controller = active.get(rootThreadId); if (!controller) return false; controller.abort(); return true; },
+    cancel(rootThreadId) { const controller = active.get(rootThreadId) ?? mergeControllers.get(rootThreadId); if (!controller) return false; controller.abort(); return true; },
+    async merge(id) {
+      await load(); const record = records.get(id);
+      if (!record) throw new BridgeError('Workflow not found', 404);
+      const retryMother = record.status === 'failed' && record.mother?.status === 'failed' && record.review?.status === 'ready' && record.tasks.every(task => task.status === 'succeeded');
+      if (record.status !== 'succeeded' && !retryMother) throw new BridgeError('Only a successful workflow can be merged', 409);
+      if (record.review?.status === 'merged') return { review: structuredClone(record.review) };
+      if (record.review?.status !== 'ready') throw new BridgeError('This workflow has no changes ready to merge', 409);
+      const source = record.review.source;
+      if (mergingSources.has(source)) throw new BridgeError('A workflow merge is already running for this project', 409);
+      mergingSources.add(source);
+      const controller = new AbortController(); mergeControllers.set(record.rootThreadId, controller);
+      try {
+        await reviewAndMerge(record, controller.signal); record.status = 'succeeded'; delete record.error; await save(record);
+        return { review: structuredClone(record.review) };
+      } catch (error) { record.review.error = error.message; await save(record); throw error; }
+      finally { mergingSources.delete(source); mergeControllers.delete(record.rootThreadId); }
+    },
     async steer(id, taskId, input) {
       await load();
       const record = records.get(id);
       if (!record) throw new BridgeError('Workflow not found', 404);
-      const task = record.tasks.find(task => task.id === taskId);
+      const task = taskId === 'mother' ? record.mother : record.tasks.find(task => task.id === taskId);
       if (!task) throw new BridgeError('Workflow node not found', 404);
       const message = { id: input.id === undefined ? randomUUID() : text(input.id, 'message ID', 100), text: text(input.text, 'message', 16000), status: 'pending', at: Date.now(), round: record.round };
       const previous = task.messages?.find(entry => entry.id === message.id);
       if (previous) { if (previous.text !== message.text) throw new BridgeError('Message ID already used', 409); return { message: structuredClone(previous) }; }
       const control = controls.get(`${record.id}:${task.id}`);
-      if (record.status !== 'running' || task.status !== 'running' || !control) throw new BridgeError('This workflow node is not running or is still starting', 409);
+      if ((record.status !== 'running' && record.review?.status !== 'reviewing') || task.status !== 'running' || !control) throw new BridgeError('This workflow node is not running or is still starting', 409);
       if ((task.messages?.length ?? 0) >= 100) throw new BridgeError('This node has reached its message limit', 409);
       (task.messages ??= []).push(message); await save(record);
       void control.steer(message.text).then(result => { message.status = 'delivered'; message.delivery = result.delivery; }, error => { message.status = 'failed'; message.error = error.message; }).then(() => save(records.get(id))).catch(error => { record.persistenceError = error.message; });
@@ -223,6 +272,6 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!record?.next) return;
       record.next = { ...record.next, ...patch }; await save(record);
     },
-    close() { for (const controller of active.values()) controller.abort(); },
+    close() { for (const controller of [...active.values(), ...mergeControllers.values()]) controller.abort(); },
   };
 }

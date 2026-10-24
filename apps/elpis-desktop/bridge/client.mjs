@@ -22,6 +22,7 @@ import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
 import { createWorkflowRuns } from './workflow-acp.mjs';
+import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
 import { CustomizePage } from './customize-page.mjs';
@@ -1212,6 +1213,19 @@ export class DesktopClient extends EventEmitter {
     threadId(id); text(taskId, 'workflow node', 100); object(body, ['id', 'text']);
     return this.#workflowRuns.steer(id, taskId, body);
   }
+  async mergeWorkflow(id, body) {
+    threadId(id); object(body, []); return this.#workflowRuns.merge(id);
+  }
+  workflowPresets() { return { data: WORKFLOW_PRESETS }; }
+  async runWorkflowPreset(body) {
+    object(body, ['preset', 'goal', 'cwd']);
+    if (!path.isAbsolute(text(body.cwd, 'project folder', 4096))) throw new BridgeError('Choose a project folder');
+    const preset = workflowPreset(body.preset, body.goal);
+    await this.models();
+    for (const model of new Set([MOTHER_MODEL, ...preset.tasks.map(task => task.model)])) this.#model(model);
+    const created = await this.createThread({ cwd: body.cwd, model: MOTHER_MODEL, name: preset.name, agents: true, instructions: `You are Mother, the workflow coordinator. Goal: ${body.goal}. Review the children’s candidate commits and merge only after passing checks.` });
+    return this.#workflowRuns.start({ ...preset, rootThreadId: created.thread.id }, created.thread);
+  }
   /** One stage's tasks, checked as the scheduler takes them. */
   #workflowTasks(tasks) {
     if(!Array.isArray(tasks)||tasks.length<1||tasks.length>256)throw new BridgeError('A workflow must contain 1–256 tasks');
@@ -1302,7 +1316,7 @@ export class DesktopClient extends EventEmitter {
       const created=await this.createThread({...(mother.cwd?{cwd:mother.cwd}:{}),agents:true,name:next.thread.name,instructions:next.thread.instructions,
         ...(next.thread.model?{model:next.thread.model}:{}),...(next.thread.provider?{provider:next.thread.provider}:{})});
       const {thread:_thread,status:_status,...stage}=next;
-      const run=await this.#workflowRuns.start({...stage,rootThreadId:created.thread.id,report:{to:record.rootThreadId,from:record.id}},created.thread);
+      const run=await this.#workflowRuns.start({...stage,autoMerge:true,rootThreadId:created.thread.id,report:{to:record.rootThreadId,from:record.id}},created.thread);
       await this.#workflowRuns.note(from,{threadId:created.thread.id,graphId:run.graphId,status:'running'});
     }catch(error){await this.#workflowRuns.note(from,{status:'failed',error:String(error?.message??error).slice(0,500)}).catch(()=>{});}
   }
@@ -1326,7 +1340,8 @@ export class DesktopClient extends EventEmitter {
       differentProvider = body.provider !== settings.main.provider;
     }
     if (differentProvider) text(body.model, 'model for this provider', 200);
-    const model = await this.#providerModel(body.model, body.provider);
+    if (body.agents && body.model === undefined && !this.#models.has(MOTHER_MODEL)) await this.models();
+    const model = await this.#providerModel(body.model ?? (body.agents ? MOTHER_MODEL : undefined), body.provider);
     const instructions = [ownInstructions, await this.#githubConnector.instructions()].filter(Boolean).join('\n\n');
     // Claude's "Start with worktree": the chat works in its own worktree on a new branch; if it does not start, the
     // worktree goes again.

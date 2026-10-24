@@ -6,6 +6,9 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createWorkflowRuns } from './workflow-acp.mjs';
+import { DesktopClient } from './client.mjs';
+import { startDesktopServer } from './server.mjs';
+import { EventEmitter } from 'node:events';
 
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -20,15 +23,17 @@ function fixture(t, options = {}) {
   const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@elpis.local', ...args], { cwd, encoding: 'utf8' }).trim();
   git('init', '-q'); fs.mkdirSync(path.join(cwd, 'src')); fs.writeFileSync(path.join(cwd, 'src/seed'), 'base'); git('add', 'src/seed'); git('commit', '-qm', 'base');
   const log = id => { const file = path.join(home, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; };
-  const runs = createWorkflowRuns({ stateDir: path.join(home, 'state'), timeoutMs: 10000,
-    nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model,
-      env: { FAKE_ACP_NAME: `${node.provider ?? 'default'}-${node.name}`, FAKE_ACP_MODELS: 'm-fast,m-slow', FAKE_ACP_EFFORTS: 'low,high', FAKE_ACP_LOG: path.join(home, `${node.name}.jsonl`),
-        ...(options.env?.[node.name] ?? {}) } }), ...options.runner });
+  const runnerOptions = { stateDir: path.join(home, 'state'), timeoutMs: 10000,
+    nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model?.replace(/^(claude|agy)\//, ''),
+      env: { FAKE_ACP_NAME: `${node.provider ?? 'default'}-${node.name}`, FAKE_ACP_MODELS: 'm-fast,m-slow,opus,gpt-6.1-sol,gemini-4-argon-high', FAKE_ACP_EFFORTS: 'low,high', FAKE_ACP_LOG: path.join(home, `${node.name}.jsonl`),
+        ...(node.name === 'Mother' ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Reviewed the candidate diff and tests' }) } : {}),
+        ...(options.env?.[node.name] ?? {}) } }), ...options.runner };
+  const runs = createWorkflowRuns(runnerOptions);
   t.after(async () => { runs.close(); await until(() => runs.list(), list => list.every(record => record.status !== 'running')); execFileSync('gio', ['trash', home]); });
   const start = (tasks, extra = {}) => runs.start({ rootThreadId: 'root', name: 'Coding team', tasks, maxConcurrency: 2, ...extra }, { cwd, model: 'm-fast', modelProvider: 'openai' });
   const record = async id => (await runs.list()).find(record => record.id === id);
   const finished = id => until(() => record(id), record => record.status !== 'running');
-  return { home, cwd, git, log, runs, start, record, finished };
+  return { home, cwd, git, log, runs, start, record, finished, runnerOptions, restore: () => createWorkflowRuns(runnerOptions) };
 }
 
 test('node models and advertised effort are applied before prompting; unavailable effort fails before work', { timeout: 20000 }, async t => {
@@ -42,6 +47,78 @@ test('node models and advertised effort are applied before prompting; unavailabl
   assert.equal(result.tasks.find(task => task.id === 'unsupported').status, 'failed');
   assert.match(result.tasks.find(task => task.id === 'unsupported').failureReason, /effort.*xhigh/i);
   assert.equal(f.log('unsupported').some(row => row.method === 'session/prompt'), false);
+});
+
+test('Mother uses Claude Opus to approve the reviewed commit; a rejected review never merges', { timeout: 20000 }, async t => {
+  for (const mode of ['approve', 'reject', 'next-stage']) {
+    const approved = mode !== 'reject';
+    const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'mother review evidence\n' }) }, Mother: { FAKE_ACP_ANSWER: JSON.stringify({ passed: approved, summary: approved ? 'Observed passing checks' : 'Regression remains' }) } } });
+    const baseline = f.git('rev-parse', 'HEAD');
+    const run = await f.start([task('writer', { writeScopes: ['src'] })], { isolation: 'worktree', autoMerge: mode !== 'next-stage', ...(mode === 'next-stage' ? { next: { name: 'Next stage' } } : {}) });
+    const completed = await f.finished(run.graphId);
+    assert.equal(completed.mother.model, 'claude/opus');
+    assert.equal(f.log('Mother').find(row => row.method === 'session/set_config_option').params.value, 'opus');
+    assert.match(f.log('Mother').find(row => row.method === 'session/prompt').params.prompt[0].text, /candidate|commit/i);
+    if (approved) {
+      assert.equal(completed.status, 'succeeded', completed.error); assert.equal(completed.review.status, 'merged');
+      assert.equal(fs.readFileSync(path.join(f.cwd, 'src/result'), 'utf8'), 'mother review evidence\n');
+    } else {
+      assert.equal(completed.status, 'failed'); assert.match(completed.error, /Regression remains/);
+      assert.equal(f.git('rev-parse', 'HEAD'), baseline); assert.equal(fs.existsSync(path.join(f.cwd, 'src/result')), false);
+      // A temporary Mother failure can be retried without rerunning or changing the children's work.
+      const before = f.log('writer').length;
+      f.runnerOptions.nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE], model: 'opus', env: { FAKE_ACP_MODELS: 'opus', FAKE_ACP_EFFORTS: 'low', FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Rechecked passing candidate' }) } });
+      assert.equal((await f.restore().merge(run.graphId)).review.status, 'merged');
+      assert.equal(f.log('writer').length, before);
+    }
+  }
+});
+
+test('authenticated HTTP task workflows use Claude Mother by default, expose the run, and refuse invalid or late requests', { timeout: 20000 }, async t => {
+  const f = fixture(t, { env: {
+    Reproduce: { FAKE_ACP_WRITE: JSON.stringify({ file: 'tests/regression.txt', text: 'failing reproduction' }) },
+    Fix: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'fixed' }) },
+    Review: { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Independent passing regression' }) },
+  } });
+  const ROOT = '00000000-0000-0000-0000-000000000001', socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
+  const root = { id: ROOT, cwd: f.cwd, source: 'cli', model: 'm-fast', modelProvider: 'openai', status: { type: 'idle' } };
+  socket.send = raw => {
+    const message = JSON.parse(raw); socket.sent.push(message); if (!message.id) return;
+    const result = message.method === 'model/list' ? { data: ['m-fast', 'claude/opus', 'gpt-6.1-sol', 'agy/gemini-4-argon-high'].map(model => ({ id: model, model })) }
+      : message.method === 'thread/start' ? { thread: { ...root, model: message.params.model ?? root.model } }
+      : ['thread/read', 'thread/resume'].includes(message.method) ? { thread: root }
+      : ['workGraph/list', 'thread/list'].includes(message.method) ? { data: [] } : {};
+    queueMicrotask(() => socket.emit('message', JSON.stringify({ id: message.id, result })));
+  };
+  const client = new DesktopClient(socket, { appHome: f.home, archiveDirectory: path.join(f.home, 'archives'), rewindHome: path.join(f.home, 'rewind'), spawnLinksFile: path.join(f.home, 'spawns.json'), githubConnector: { instructions: async () => '' }, workflowOptions: f.runnerOptions });
+  await client.initialize();
+  const app = await startDesktopServer({ client, elpisHome: f.home, trashFile: path.join(f.home, 'trash.json'), loveSpot: { directory: path.join(f.home, 'drawing'), screenshots: path.join(f.home, 'screenshots') } });
+  try {
+    const launch = new URL(app.url), origin = launch.origin;
+    assert.equal((await fetch(`${origin}/api/workflows/presets`)).status, 401);
+    const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(launch.hash.slice(1)).get('token') }) });
+    const headers = { Origin: origin, Cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+    const request = (route, body) => fetch(`${origin}/api${route}`, { headers, ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
+    const presets = await (await request('/workflows/presets')).json();
+    assert.deepEqual(presets.data.map(preset => preset.name), ['Fix a bug', 'UI change']);
+    assert.ok(presets.data.every(preset => preset.steps.length === 4));
+    const invalid = await request('/workflows/presets', { preset: 'missing', goal: 'Tiny task', cwd: f.cwd }); assert.equal(invalid.status, 400);
+    assert.equal(socket.sent.some(message => message.method === 'thread/start'), false);
+    await client.createThread({ cwd: f.cwd, agents: true });
+    assert.equal(socket.sent.findLast(message => message.method === 'thread/start').params.model, 'claude/opus');
+    await client.createThread({ cwd: f.cwd });
+    assert.equal(socket.sent.findLast(message => message.method === 'thread/start').params.model, undefined, 'ordinary chats keep their default');
+    const response = await request('/workflows/presets', { preset: 'bug', goal: 'Tiny test and fix', cwd: f.cwd }); assert.equal(response.status, 200);
+    const started = await response.json();
+    const completed = await until(async () => (await (await request(`/workflows/${started.graphId}`)).json()).run, record => record.status !== 'running');
+    assert.equal(completed.status, 'succeeded', completed.error); assert.equal(completed.review.status, 'merged');
+    assert.deepEqual(completed.tasks.map(task => task.model), ['gpt-6.1-sol', 'gpt-6.1-sol', 'agy/gemini-4-argon-high']);
+    assert.equal(new Set(completed.tasks.map(task => task.cwd)).size, 3);
+    assert.equal(fs.readFileSync(path.join(f.cwd, 'src/result'), 'utf8'), 'fixed');
+    assert.equal((await request(`/workflows/${started.graphId}/nodes/fix/messages`, { text: 'Too late' })).status, 409);
+    assert.equal((await request(`/workflows/${started.graphId}/merge`, { unexpected: true })).status, 400);
+    assert.equal((await request('/workflows/11111111-1111-1111-1111-111111111111')).status, 404);
+  } finally { await app.close(); }
 });
 
 test('isolated nodes with the same scope run concurrently in different branches; shared-checkout nodes serialize', { timeout: 20000 }, async t => {
@@ -88,4 +165,34 @@ test('live ACP progress survives reload; steering waits for tools and records de
   assert.deepEqual(saved.tasks[0].progress, completed.tasks[0].progress);
   assert.deepEqual(saved.tasks[0].messages, completed.tasks[0].messages);
   await assert.rejects(restored.steer('missing', 'live', { text: 'No such run' }), /not found/i);
+});
+
+test('isolated results expose commits and diff; final review merges only a successful run into its unchanged clean source', { timeout: 20000 }, async t => {
+  for (const mode of ['merge', 'dirty', 'advanced', 'failed']) {
+    const f = fixture(t, { env: { writer: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/result', text: 'planted review evidence\n' }) }, check: { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Observed planted review evidence' }) } } });
+    const baseline = f.git('rev-parse', 'HEAD');
+    const started = await f.start([task('writer', { kind: 'implement', writeScopes: ['src'], ...(mode === 'failed' ? { instruction: '[crash]' } : {}) }), task('check', { kind: 'verify', dependsOn: ['writer'] })], { isolation: 'worktree' });
+    const result = await f.finished(started.graphId);
+    assert.equal(f.git('rev-parse', 'HEAD'), baseline, 'source never changes before review');
+    assert.equal(fs.existsSync(path.join(f.cwd, 'src/result')), false);
+    if (mode === 'failed') { await assert.rejects(f.runs.merge(started.graphId), /successful|succeeded/i); continue; }
+    assert.equal(result.review.status, 'ready');
+    const changes = result.tasks[0].result;
+    assert.match(changes.diff, /\+planted review evidence/); assert.match(changes.candidateCommit, /^[a-f0-9]{40}$/);
+    assert.ok(changes.commits.some(commit => commit.sha === changes.candidateCommit));
+    if (mode === 'dirty') fs.writeFileSync(path.join(f.cwd, 'src/seed'), 'user edit');
+    if (mode === 'advanced') { fs.writeFileSync(path.join(f.cwd, 'src/seed'), 'new commit'); f.git('add', 'src/seed'); f.git('commit', '-qm', 'source advanced'); }
+    // A restarted bridge can merge the persisted candidate, without rerunning any model.
+    const restored = f.restore();
+    if (mode !== 'merge') {
+      const head = f.git('rev-parse', 'HEAD');
+      await assert.rejects(restored.merge(started.graphId), /project changed|not merged/i);
+      assert.equal(f.git('rev-parse', 'HEAD'), head); assert.equal(fs.existsSync(path.join(f.cwd, 'src/result')), false);
+      assert.equal(fs.readFileSync(path.join(f.cwd, 'src/seed'), 'utf8'), mode === 'dirty' ? 'user edit' : 'new commit');
+    } else {
+      const merged = await restored.merge(started.graphId); assert.equal(merged.review.status, 'merged');
+      assert.equal(fs.readFileSync(path.join(f.cwd, 'src/result'), 'utf8'), 'planted review evidence\n');
+      const head = f.git('rev-parse', 'HEAD'); await restored.merge(started.graphId); assert.equal(f.git('rev-parse', 'HEAD'), head, 'merge retries are idempotent');
+    }
+  }
 });

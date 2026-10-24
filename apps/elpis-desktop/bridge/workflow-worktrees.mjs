@@ -15,6 +15,25 @@ const git = async (cwd, args) => {
 };
 const files = text => text.split('\0').filter(Boolean);
 const inScope = (name, scopes) => scopes.some(scope => scope === '.' || name === scope || name.startsWith(`${scope.replace(/\/$/, '')}/`));
+export async function workflowCandidateChanged(review) {
+  return await git(review.path, ['rev-parse', 'HEAD']) !== review.commit || Boolean(await git(review.path, ['status', '--porcelain']));
+}
+
+/** A saved review is sufficient to integrate after a bridge restart; no model is restarted. */
+export async function checkWorkflowReview(review, signal) {
+  const { source, base, branch, commit } = review;
+  if (signal?.aborted) throw new BridgeError('Workflow cancelled before integration', 409);
+  if (await git(source, ['rev-parse', branch]) !== commit) throw new BridgeError('Not merged: the reviewed candidate changed', 409);
+  const head = await git(source, ['rev-parse', 'HEAD']);
+  if (![base, commit].includes(head) || await git(source, ['status', '--porcelain'])) throw new BridgeError(`Not merged: the project changed during the run. Candidate worktrees are kept at ${review.path}.`, 409);
+  return head === commit;
+}
+export async function mergeWorkflowReview(review, signal) {
+  const merged = await checkWorkflowReview(review, signal);
+  if (signal?.aborted) throw new BridgeError('Workflow cancelled before integration', 409);
+  if (!merged) await git(review.source, ['merge', '--ff-only', '--no-edit', review.branch]);
+  return { ...review, status: 'merged', mergedAt: Date.now() };
+}
 
 /** Each task sees only committed prerequisites. All candidate commits combine in a separate worktree before a
  * guarded fast-forward touches the source checkout. Failed/conflicting candidates stay available for inspection. */
@@ -29,9 +48,6 @@ export async function workflowWorktrees(project, id) {
     const root = path.join(home, key), branch = `elpis/${id}/${key}`;
     await git(source, ['worktree', 'add', '-q', '--no-track', '-b', branch, root, base]);
     return { root, branch, cwd: path.join(root, relative), inherited: new Set() };
-  };
-  const clean = async () => {
-    if (await git(source, ['rev-parse', 'HEAD']) !== base || await git(source, ['status', '--porcelain'])) throw new BridgeError(`Not merged: the project changed during the run. Candidate worktrees are kept at ${home}.`, 409);
   };
   return {
     async prepare(task, round) {
@@ -58,20 +74,25 @@ export async function workflowWorktrees(project, id) {
       if (changed.some(name => !inScope(name, scopes))) throw new BridgeError(`“${task.title}” changed files outside its write scopes: ${changed.filter(name => !inScope(name, scopes)).join(', ')}. Kept at ${made.root}`, 409);
       // An agent may create a commit itself. Rebuild the candidate's own patch from its prerequisite HEAD, without
       // resetting any checkout or discarding files. This also prevents unrelated agent commits reaching the source.
-      if (!changed.length) return;
+      if (!changed.length) return { commits: [], diff: '', stat: '' };
+      const original = await git(made.root, ['log', '--format=%H %s', `${made.start}..HEAD`]);
       await git(made.root, ['add', '--', ...changed]);
       const tree = await git(made.root, ['write-tree']);
       const sha = await git(made.root, ['commit-tree', tree, '-p', made.start, '-m', `Workflows: ${task.title} (round ${round})`]);
+      await git(made.root, ['branch', `elpis/${id}/candidate-${key}`, sha]);
       commits.set(key, sha); made.inherited.add(key);
+      const diff = await git(made.root, ['diff', '--no-ext-diff', '--no-textconv', made.start, sha, '--']);
+      return { candidateCommit: sha, commits: [{ sha, subject: `Workflows: ${task.title} (round ${round})` }, ...original.split('\n').filter(Boolean).map(line => ({ sha: line.slice(0, 40), subject: line.slice(41) }))],
+        diff: diff.slice(0, 64000), diffTruncated: diff.length > 64000, stat: await git(made.root, ['diff', '--stat', made.start, sha, '--']) };
     },
-    async integrate(signal) {
-      if (!commits.size) return;
+    async review(signal) {
+      if (!commits.size) return { status: 'empty', source, base };
       const merged = await create('integration'); places.set('integration', merged);
       for (const sha of commits.values()) await git(merged.root, ['cherry-pick', '--no-gpg-sign', sha]);
       if (signal?.aborted) throw new BridgeError('Workflow cancelled before integration', 409);
-      await clean();
-      if (signal?.aborted) throw new BridgeError('Workflow cancelled before integration', 409);
-      await git(source, ['merge', '--ff-only', '--no-edit', merged.branch]);
+      const diff = await git(merged.root, ['diff', '--no-ext-diff', '--no-textconv', base, 'HEAD', '--']);
+      return { status: 'ready', source, base, branch: merged.branch, path: merged.root, commit: await git(merged.root, ['rev-parse', 'HEAD']),
+        diff: diff.slice(0, 128000), diffTruncated: diff.length > 128000, stat: await git(merged.root, ['diff', '--stat', base, 'HEAD', '--']) };
     },
     paths() { return [...places].map(([key, { root, branch }]) => ({ path: root, branch, ...(key === 'integration' ? {} : { taskId: key.slice(0, key.lastIndexOf('-r')), round: Number(key.slice(key.lastIndexOf('-r') + 2)) }) })); },
   };

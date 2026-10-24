@@ -25,7 +25,7 @@ function fixture(t, overrides = {}) {
   const threads = new Map([[ROOT, root]]);
   socket.send = raw => {
     const row = JSON.parse(raw); socket.sent.push(row); if (!row.id) return;
-    const result = row.method === 'model/list' ? { data: [{ id: 'm-fast', model: 'm-fast' }] }
+    const result = row.method === 'model/list' ? { data: [{ id: 'm-fast', model: 'm-fast' }, { id: 'claude/opus', model: 'claude/opus' }] }
       : row.method === 'thread/list' ? { data: [root], nextCursor: null }
       : row.method === 'thread/read' || row.method === 'thread/resume' ? { thread: threads.get(row.params.threadId) ?? root }
       : row.method === 'thread/start' ? (() => { const made = { ...root, id: FATHER, cwd: row.params.cwd ?? dir }; threads.set(FATHER, made); return { thread: made }; })()
@@ -39,7 +39,7 @@ function fixture(t, overrides = {}) {
     const p = path.join(dir, `${id}.jsonl`);
     return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   };
-  const client = new DesktopClient(socket, { rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.model }), ...overrides } });
+  const client = new DesktopClient(socket, { rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother' ? 'opus' : node.model }), ...overrides } });
   t.after(() => { client.close(); removeTestTempDir(tempRoot); });
   const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
   const finished = async id => {
@@ -267,11 +267,15 @@ test('isolated ACP writes reach their verifier, then the source; scope escape or
     if (mode === 'dirty') fs.writeFileSync(path.join(f.dir, 'src', 'seed'), 'user edit');
     const r = await f.run([a, check], { isolation: 'worktree' }); const g = await f.finished(r.graphId);
     if (mode === 'success') {
+      assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false, 'the candidate waits for Mother');
+      await f.client.mergeWorkflow(r.graphId, {});
       assert.equal(g.status, 'succeeded', g.error); assert.equal(fs.readFileSync(path.join(f.dir, 'src/result'), 'utf8'), 'workflow planted result');
       assert.notEqual(git('rev-parse', 'HEAD'), baseline);
       assert.equal(f.log('check').find(row => row.method === 'session/new').params.cwd.includes('-elpis/workflows/'), true);
     } else {
-      assert.equal(g.status, 'failed'); assert.equal(git('rev-parse', 'HEAD'), baseline); assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false);
+      if (mode === 'dirty') { assert.equal(g.status, 'succeeded'); await assert.rejects(f.client.mergeWorkflow(r.graphId, {}), /project changed/); }
+      else assert.equal(g.status, 'failed');
+      assert.equal(git('rev-parse', 'HEAD'), baseline); assert.equal(fs.existsSync(path.join(f.dir, 'src/result')), false);
       if (mode === 'dirty') assert.equal(fs.readFileSync(path.join(f.dir, 'src/seed'), 'utf8'), 'user edit');
     }
   }

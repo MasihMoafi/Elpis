@@ -341,10 +341,14 @@ export async function startDesktopServer(options = {}) {
           return json(response,200,await client.workflows(url.searchParams.get('threadId')));
         }
         if (url.pathname === '/api/workflows/run' && method === 'POST') return json(response,200,await client.runWorkflow(await body(request)));
+        if (url.pathname === '/api/workflows/presets' && method === 'GET') return json(response, 200, client.workflowPresets());
+        if (url.pathname === '/api/workflows/presets' && method === 'POST') return json(response, 200, await client.runWorkflowPreset(await body(request)));
         const workflowRun = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})$/i);
         if (workflowRun && method === 'GET') return json(response, 200, await client.workflowRun(workflowRun[1]));
         const workflowMessage = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/nodes\/([A-Za-z0-9_-]{1,100})\/messages$/i);
         if (workflowMessage && method === 'POST') return json(response, 200, await client.steerWorkflow(workflowMessage[1], workflowMessage[2], await body(request)));
+        const workflowMerge = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/merge$/i);
+        if (workflowMerge && method === 'POST') return json(response, 200, await client.mergeWorkflow(workflowMerge[1], await body(request)));
         // Sidebar deletion: archived now, Ctrl+Z brings back the newest, quitting deletes for good.
         if (url.pathname === '/api/trash' && method === 'POST') return json(response, 200, await trash.trash(object(await body(request), ['threadIds']).threadIds));
         if (url.pathname === '/api/trash/undo' && method === 'POST') { object(await body(request), []); return json(response, 200, await trash.undo()); }
