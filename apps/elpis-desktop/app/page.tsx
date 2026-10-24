@@ -50,6 +50,7 @@ import type { TerminalLaunch } from "@/components/terminal-view";
 import { SettingsView, type SettingsDestination } from "@/components/settings-view";
 import { configDestination } from "@/lib/config-sections";
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
+import { defaultFolds, readFolds, writeFolds, type SidebarFolds } from "@/lib/sidebar-folds";
 import { GroupActions, GroupAndSortMenu, GroupNameDialog, useChatListOrder } from "@/components/chat-groups";
 import { SectionToggle, SidebarGroup } from "@/components/sidebar-group";
 import { letterKey, MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
@@ -217,10 +218,15 @@ export default function Home() {
   const [marked, setMarked] = useState<string[]>([]);
   const markAnchor = useRef<string | null>(null);
   const threadList = useRef<HTMLDivElement>(null);
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  // Folded sections and projects stay as the person leaves them, across restarts (lib/sidebar-folds.ts).
+  const [folds, setFolds] = useState<SidebarFolds>(defaultFolds);
+  const foldsRef = useRef(folds);
+  useEffect(() => { foldsRef.current = readFolds(appStorage()); setFolds(foldsRef.current); }, []);
+  const changeFolds = (change: (folds: SidebarFolds) => SidebarFolds) => { const next = change(foldsRef.current); foldsRef.current = next; setFolds(next); writeFolds(next, appStorage()); };
+  const collapsedProjects = folds.projects, collapsedSections = folds.sections;
+  const setCollapsedProjects = (change: (projects: Record<string, boolean>) => Record<string, boolean>) => changeFolds(value => ({ ...value, projects: change(value.projects) }));
   /** The heading of a sidebar section: every one of them folds its list the same way. */
-  const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => setCollapsedSections(value => ({ ...value, [key]: !value[key] }))} />;
+  const foldable = (key: string, name: string) => <SectionToggle name={name} open={!collapsedSections[key]} onToggle={() => changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))} />;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const commandReturnFocus = useRef<HTMLElement | null>(null);

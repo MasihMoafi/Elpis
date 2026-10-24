@@ -13,6 +13,14 @@ const thread = (id, name, extra = {}) => ({ id, name, preview: name, cwd: CWD, m
 const run = { id: RUN, rootThreadId: ROOT, name: 'Sea poem', status: 'succeeded', startedAt: 100,
   tasks: STEPS.map((id, i) => ({ id: `step-${i}`, title: ['Write', 'Critique'][i], assignedThreadId: id, status: 'succeeded' })) };
 
+/** Workflows starts folded (sidebar-folds.ts); open it as the person does, once its runs are listed. */
+async function openWorkflows(page) {
+  const toggle = page.locator('aside.sidebar section[aria-label="Workflows"] .section-toggle');
+  await toggle.waitFor({ timeout: 5000 });
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'the Workflows section starts folded');
+  await toggle.click();
+}
+
 test('expanding a finished workflow follows its chat without a rejected request or an error banner', async () => {
   const { threadId } = await import(path.join(__dirname, '../bridge/validate.mjs'));
   const asked = [], rejected = [];
@@ -32,7 +40,7 @@ test('expanding a finished workflow follows its chat without a rejected request 
   const { page } = f;
   try {
     const sidebar = page.locator('aside.sidebar'), root = sidebar.locator(`.thread-row[data-thread-id="${ROOT}"]`);
-    await root.waitFor();
+    await openWorkflows(page); await root.waitFor();
     assert.equal(await sidebar.locator(`.thread-row[data-thread-id="${STEPS[0]}"]`).count(), 0, 'a finished workflow starts folded');
     await root.getByRole('button', { name: /^Expand / }).click();
     await sidebar.locator(`.thread-row[data-thread-id="${STEPS[0]}"]`).waitFor();

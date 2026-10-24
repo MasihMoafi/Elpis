@@ -204,6 +204,15 @@ Masih: “put them in say car-scraper-pro chat; so they be its subagents (not re
 
 Evidence: `tests/chat-organize.test.cjs` (9 cases), retained sidebar/project checks (32 cases), build and TypeScript pass. Screenshots inspected: `~/.cache/elpis-shots/organize-{nested,project,project-dialog,put-under}-{light,dark}.png`. Full evidence and remaining limits: `~/.cache/elpis-briefs/cc/organize.progress.md`.
 
+## Only main chats in the lists — 24 October 2026
+
+Masih: “in the chats show the mother only … the children should be hidden … for now, you can just hide them, not to clutter the place” and “workflow only be closed, collapsed, it's okay if it's there”.
+
+| ID | Requirement | Acceptance check | Status |
+| --- | --- | --- | --- |
+| OM1 | Projects, Pinned, Groups and Recents list only main chats. Agents, chats made by create_thread (linked, or recovered from the maker's transcript) and workflow helper chats sit folded under the chat that started them; opening a chat does not unfold it. Search still lists every matching chat, children too, in one flat list. | `tests/sidebar-organize.runtime.mjs` on the packaged app with the real engine. | Done |
+| OM2 | The Workflows section starts folded; each section's and project's fold is kept across restarts (`elpis-sidebar-folds-v1`). | Same test: folded on first start, folded after a restart, open after reopening and reloading. | Done |
+
 ## Image replies — 24 October 2026
 Masih: "I like this, and I like to be able to reply to images directly." Reply beside an inline, uploaded or viewed picture selects that individual image and its source message, shows a thumbnail in the composer, focuses typing, and sends its bytes with the answer. Preserve drafts and other attachments; replacing/cancelling a reply replaces/removes only its own context and picture. Failed image reads show an error without adding incomplete context. Acceptance: select the second of two images, switch chats/reload, type immediately, send exact selected bytes; cancel preserves unrelated files; unavailable-image negative case. State: installed as gui-20261024-image-replies-f83bdbf78; production build/typecheck and 12 focused renderer checks passed. User restart and acceptance pending.
 

@@ -54,6 +54,10 @@ for (const colorScheme of ['light', 'dark']) test(`creator history uses the shar
     const { page } = f, side = page.locator('aside.sidebar');
     const row = id => side.locator(`.thread-row[data-thread-id="${id}"]`);
     await row(maker).and(page.locator('.active')).waitFor();
+    // Workflows starts folded (sidebar-folds.ts); open it as the person does to reach the workflow family.
+    const workflows = side.locator('section[aria-label="Workflows"] .section-toggle');
+    await workflows.waitFor(); assert.equal(await workflows.getAttribute('aria-expanded'), 'false', 'the Workflows section starts folded');
+    await workflows.click();
     const families = [[maker, children], ['native', ['native-child']], ['manual', ['manual-child']], ['workflow', ['workflow-child']]];
     const shot = async state => { const directory = path.join(os.homedir(), '.cache/elpis-shots'); await fs.mkdir(directory, { recursive: true }); await page.screenshot({ path: path.join(directory, `creators-${colorScheme}-${state}.png`) }); };
     for (const [parent, kids] of families) {
