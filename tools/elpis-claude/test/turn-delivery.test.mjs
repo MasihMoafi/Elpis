@@ -461,3 +461,15 @@ test("an effort picked while a Claude turn runs reaches that turn and survives a
   const after = await f.restart();
   assert.equal((await after.client.resume(f.id, {})).thread.reasoningEffort, "xhigh", "a restarted bridge reports the saved effort");
 });
+
+// Only the real engine records and restores a chat's permissions: run with A124_ENGINE=/absolute/native/binary.
+for (const mode of ["full", "auto", "bypass", "ask"]) test(`a Claude chat set to ${mode} reopens in ${mode} after a bridge and engine restart`, { timeout: 30000, skip: !process.env.A124_ENGINE && "needs the real engine (A124_ENGINE)" }, async t => {
+  const f = await fixture(t);
+  const { turn } = await f.client.send(f.id, { text: "hello" });
+  await until(() => f.ended(turn.id), "the turn ends");
+  // From another mode, so the change is a real one.
+  await f.client.setPermissions(f.id, { permissions: mode === "full" ? "ask" : "full" });
+  assert.deepEqual(await f.client.setPermissions(f.id, { permissions: mode }), { permissions: mode });
+  const after = await f.restart();
+  assert.equal((await after.client.resume(f.id, {})).permissions, mode);
+});

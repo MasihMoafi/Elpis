@@ -80,14 +80,15 @@ const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/complet
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
 const READ_RPCS = new Set(['initialize','externalAgentConfig/detect','externalAgentConfig/import/readHistories','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
 const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
-/** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval and
- * sandbox settings. Bypass is the engine's built-in `:bypass-permissions` profile: Full access plus no
- * refusals (codex-rs/protocol/src/models.rs bypass_permissions_active); a profile id replaces the sandbox. */
+/** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval settings and
+ * the engine's built-in permission profiles. Bypass is `:bypass-permissions`: Full access plus no refusals
+ * (codex-rs/protocol/src/models.rs bypass_permissions_active). Each mode is a named profile, not a bare sandbox,
+ * because a reopened chat gets back its last profile id; a sandbox chosen alone fell back to the config's. */
 const BYPASS_PROFILE = ':bypass-permissions';
 const PERMISSIONS = {
-  ask: { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } },
-  auto: { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write', sandboxPolicy: { type: 'workspaceWrite' } },
-  full: { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access', sandboxPolicy: { type: 'dangerFullAccess' } },
+  ask: { approvalPolicy: 'on-request', approvalsReviewer: 'user', permissions: ':workspace' },
+  auto: { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', permissions: ':workspace' },
+  full: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' },
   bypass: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: BYPASS_PROFILE },
 };
 function permissionMode(value) {
@@ -123,12 +124,7 @@ function reviewTarget(value) {
     default: throw new BridgeError('Unknown review target');
   }
 }
-const permissionSetting = (mode, key) => {
-  const { approvalPolicy, approvalsReviewer, permissions } = PERMISSIONS[mode];
-  return { approvalPolicy, approvalsReviewer, ...(permissions ? { permissions } : { [key]: PERMISSIONS[mode][key] }) };
-};
-const threadPermissions = mode => mode ? permissionSetting(mode, 'sandbox') : {};
-const turnPermissions = mode => mode ? permissionSetting(mode, 'sandboxPolicy') : {};
+const permissionSetting = mode => mode ? { ...PERMISSIONS[mode] } : {};
 /** The mode a chat runs in, read back from its approval, sandbox and profile settings: a resume
  * result (`sandbox`) or the engine's thread/settings/updated (`sandboxPolicy`). */
 function modeOf(result) {
@@ -1256,7 +1252,7 @@ export class DesktopClient extends EventEmitter {
     let result;
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
-        ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...threadPermissions(permissions),
+        ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...permissionSetting(permissions),
         ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
     } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
@@ -1584,7 +1580,7 @@ export class DesktopClient extends EventEmitter {
       if (!thread.desktopAccess.writable && !body.continueAs) throw new BridgeError(`${AGENT_RUN_NOTICE}. Choose Continue here after it finishes (continued conversation name required).`, 409);
       if (!thread.desktopAccess.writable && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
       const model = await this.#providerModel(body.model, thread.modelProvider);
-      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...turnPermissions(permissions), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
+      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...permissionSetting(permissions), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();
@@ -1668,7 +1664,7 @@ export class DesktopClient extends EventEmitter {
       waiters.add(resolveApplied); this.#settingsWaiters.set(id, waiters);
       let timer;
       try {
-        await this.#rpc('thread/settings/update', { threadId: id, ...permissionSetting(mode, 'sandboxPolicy') });
+        await this.#rpc('thread/settings/update', { threadId: id, ...permissionSetting(mode) });
         // The engine publishes settings only when they change; an unchanged mode is read back instead.
         const settings = await Promise.race([applied, new Promise(resolve => { timer = setTimeout(resolve, this.#settingsConfirmMs, null); })])
           ?? await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });

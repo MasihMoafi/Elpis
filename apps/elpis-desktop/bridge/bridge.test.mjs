@@ -17,6 +17,8 @@ const CHILD = '00000000-0000-0000-0000-000000000002';
 const CREATED = '00000000-0000-0000-0000-000000000003';
 const MODEL = 'test-model';
 const FORK = '00000000-0000-0000-0000-000000000007';
+// The engine's built-in permission profiles and the sandbox each one runs.
+const PROFILE_SANDBOX = { ':workspace': { type: 'workspaceWrite' }, ':danger-full-access': { type: 'dangerFullAccess' }, ':bypass-permissions': { type: 'dangerFullAccess' } };
 
 test('A32 default effort uses the shared versioned writer and rejects invalid values', async () => {
   const { client, socket } = fixture(); await client.initialize();
@@ -151,7 +153,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         // As the engine: the request only queues the change; the applied settings follow in
         // thread/settings/updated, and only when they changed.
         const p = request.params, before = JSON.stringify(engineSettings.get(p.threadId) ?? null);
-        const applied = p.cwd ? { ...engineSettings.get(p.threadId), cwd: p.cwd } : p.effort ? { ...engineSettings.get(p.threadId), reasoningEffort: p.effort } : { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? { type: 'dangerFullAccess' } : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
+        const applied = p.cwd ? { ...engineSettings.get(p.threadId), cwd: p.cwd } : p.effort ? { ...engineSettings.get(p.threadId), reasoningEffort: p.effort } : { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.approvalsReviewer, sandboxPolicy: p.permissions ? PROFILE_SANDBOX[p.permissions] : p.sandboxPolicy, activePermissionProfile: p.permissions ? { id: p.permissions } : null };
         if (p.cwd) threads.get(p.threadId).cwd = p.cwd;
         engineSettings.set(p.threadId, applied); result = {};
         if (JSON.stringify(applied) !== before) setTimeout(() => socket.emit('message', JSON.stringify({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: { ...applied, model: threads.get(p.threadId).model ?? MODEL } } })), 5);
@@ -1925,11 +1927,12 @@ test('permission modes become Elpis approval and sandbox settings, and resume re
     threads.get(ROOT).status = { type: 'idle' };
     await client.send(ROOT, { text: 'go', permissions: 'full' });
     const full = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual([full.approvalPolicy, full.approvalsReviewer, full.sandboxPolicy], ['never', 'user', { type: 'dangerFullAccess' }]);
+    // Each mode is a named profile: the engine restores a profile id after a restart, not a bare sandbox.
+    assert.deepEqual([full.approvalPolicy, full.approvalsReviewer, full.permissions, 'sandboxPolicy' in full], ['never', 'user', ':danger-full-access', false]);
     threads.get(ROOT).status = { type: 'idle' };
     await client.send(ROOT, { text: 'again', permissions: 'auto' });
     const auto = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual([auto.approvalPolicy, auto.approvalsReviewer, auto.sandboxPolicy], ['on-request', 'auto_review', { type: 'workspaceWrite' }]);
+    assert.deepEqual([auto.approvalPolicy, auto.approvalsReviewer, auto.permissions, 'sandboxPolicy' in auto], ['on-request', 'auto_review', ':workspace', false]);
     threads.get(ROOT).status = { type: 'idle' };
     await client.send(ROOT, { text: 'plain' });
     const plain = socket.sent.findLast(message => message.method === 'turn/start').params;
@@ -1937,7 +1940,7 @@ test('permission modes become Elpis approval and sandbox settings, and resume re
     await assert.rejects(client.send(ROOT, { text: 'x', permissions: 'root' }), /permission mode/);
     await client.createThread({ permissions: 'ask' });
     const started = socket.sent.findLast(message => message.method === 'thread/start').params;
-    assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.sandbox], ['on-request', 'user', 'workspace-write']);
+    assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.permissions, 'sandbox' in started], ['on-request', 'user', ':workspace', false]);
   } finally { client.close(); }
 });
 
@@ -1974,11 +1977,11 @@ test('bypass permissions selects the engine profile, never a sandbox, and resume
     const started = socket.sent.findLast(message => message.method === 'thread/start').params;
     assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.permissions], ['never', 'user', ':bypass-permissions']);
     assert.equal('sandbox' in started, false);
-    // Leaving bypass for Full access sends the sandbox again, which drops the bypass profile.
+    // Leaving bypass for Full access selects the full-access profile, which replaces the bypass profile.
     threads.get(ROOT).status = { type: 'idle' };
     await client.send(ROOT, { text: 'calmer', permissions: 'full' });
     const full = socket.sent.findLast(message => message.method === 'turn/start').params;
-    assert.deepEqual([full.sandboxPolicy, 'permissions' in full], [{ type: 'dangerFullAccess' }, false]);
+    assert.deepEqual([full.permissions, 'sandboxPolicy' in full], [':danger-full-access', false]);
 
   } finally { client.close(); }
   // A chat reopens in the mode the engine reports; only the bypass profile reads as bypass.
@@ -2026,7 +2029,7 @@ test('changing a chat\'s permissions applies now through the engine settings and
     for (const id of [ROOT, BRIDGED]) {
       assert.deepEqual(await client.setPermissions(id, { permissions: 'full' }), { permissions: 'full' });
       const update = socket.sent.findLast(message => message.method === 'thread/settings/update').params;
-      assert.deepEqual(update, { threadId: id, approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' } });
+      assert.deepEqual(update, { threadId: id, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
       assert.equal(engineSettings.get(id).approvalPolicy, 'never', 'the engine holds the new mode');
       assert.equal(socket.sent.some(message => message.method === 'turn/start'), false, 'nothing waits for the next turn');
     }
