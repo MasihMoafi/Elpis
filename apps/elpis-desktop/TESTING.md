@@ -1,5 +1,15 @@
 # Desktop verification
 
+## Definition of done (Masih, 24 Oct: "make sure all the issues are fixed not just addressed and also end-2-end tested, unit-tested, all sort of tests … especially all features")
+
+Drawn from *AI-Native Software Engineering* ch. 8 and *Clean Code* ch. 9 (his books, ~/Desktop/books). An item is done only when all of these hold:
+
+1. **The end-to-end test bites.** A test drives the real packaged app and the real engine the way he would (clicks, keys, restarts) and checks what he sees. It fails on the build before the fix and passes after; both runs are recorded. A test written with the fix and never seen failing proves nothing ("tests are theater" when one agent writes code and tests).
+2. **Unit tests for the logic, property tests for its rules.** Every changed function has unit tests that assert behaviour, not lines walked or source text. Logic with a rule that must hold for any input (paging and ordering, list and tree building, journal and resume, archive then unarchive) gets property-based tests that try many inputs and the edges: empty, one, boundary, Unicode.
+3. **F.I.R.S.T.** Tests are fast, independent (one failure never cascades into the next), repeatable (no timing races: wait for states, never for luck; a busy machine must not fail them), self-validating (pass or fail, no log reading) and written first.
+4. **The whole gate is green.** `npx tsc --noEmit -p .`, `npm test` (fast, bridge, desktop and every UI file) and every opt-in runtime test the change touches, run on the integrated commit before any install.
+5. **A fresh adversarial review.** Before anything is installed, a reviewer that did not write the change (a fresh session, a different model where possible) reads the diff and its tests with the brief "assume it has bugs": wrong thing built against his words, missed edge cases, tests that would not catch a regression, leftovers (debug code, unused helpers), personal data in logs, docs (SPEC.md) not updated. What it finds is fixed and re-tested.
+
 `test-inventory.json` owns every app test exactly once: **fast** (helpers and component contracts), **bridge**, **desktop** (main/preload contracts), **ui** (browser journeys), or **opt-in** (native/engine). The gate scans app sources, including legacy files importing `node:test`; unassigned, duplicate and missing files fail before any tests run. Add new tests to the inventory.
 
 GitHub's desktop workflow now tests the exact exported renderer before uploading it. The artifact gate retains the UI tests and helpers from its committed baseline, plus the saved-workspace round-trip test, and runs candidate additions or changed tests too. The baseline reconstructs the deployed workspace reader, including both project-chat and Session Manager keys; it does not declare every existing feature accepted. Removing or weakening a candidate test cannot remove the retained regression. Each file must execute named cases, with no failures, skips, cancellations or todos. A timeout blocks the artifact.
