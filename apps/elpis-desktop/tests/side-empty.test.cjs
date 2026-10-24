@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 
-test('the side panel opens as wide as the left sidebar and keeps all four buttons inside its minimum width', async () => {
+test('the side panel opens as wide as the left sidebar and keeps all five buttons inside its minimum width', async () => {
   const f = await fixture({ desktop: true, width: 1280, height: 800 });
   try {
     await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
@@ -21,7 +21,7 @@ test('the side panel opens as wide as the left sidebar and keeps all four button
     const box = await panel.boundingBox();
     assert.ok(box && Math.abs(box.width - 200) <= 1, 'real resize control reaches the 200px minimum');
     const buttons = panel.locator('.side-empty button');
-    assert.equal(await buttons.count(), 4, 'empty panel offers all four actions');
+    assert.equal(await buttons.count(), 5, 'empty panel offers all five actions, including Context');
     const overflowing = [];
     for (const button of await buttons.all()) {
       const name = (await button.innerText()).trim();

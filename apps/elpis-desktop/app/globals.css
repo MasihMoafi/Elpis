@@ -1337,6 +1337,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* Context file groups follow the TUI Ledger: teal sections and olive admission states. */
 .context-files { --source-heading:#007c78; --source-included:#6e7d00; margin-top:8px; border-top:1px solid var(--hairline); }
+.context-panel { flex:1; min-height:0; min-width:0; overflow:auto; padding-bottom:16px; }
+.context-panel .context-files { margin-top:0; border-top:0; }
+.context-goal-objective { margin:0 0 8px; overflow-wrap:anywhere; }
+.context-goal-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .dark .context-files { --source-heading:#5bc8c0; --source-included:#bdce55; }
 .context-files section { padding:10px 16px 4px; }
 .context-files-heading { margin:0 0 8px; color:var(--source-heading); font-size:var(--text-small); font-weight:600; }

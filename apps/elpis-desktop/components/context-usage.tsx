@@ -32,6 +32,11 @@ export const TOGGLE_CONTEXT_EVENT = "elpis:toggle-context";
 /** Marks that button: pressing it is its own toggle, not a click outside the open breakdown. */
 export const CONTEXT_TOGGLE_ATTRIBUTE = "data-context-toggle";
 
+/** The right-hand Context tab shares the Ledger's file rows and their editor actions. */
+export function ContextPanel({ threadId }: { threadId?: string }) {
+  return <div className="context-panel">{threadId ? <ContextFiles key={threadId} threadId={threadId} session onOpenFile={() => {}} /> : <p className="context-ledger-note">Open a chat to see its goal and context.</p>}</div>;
+}
+
 // Numbers as the TUI's /context prints them: 980, 26.5k, 1.2m; shares to a tenth; the headline to a whole percent.
 const trim = (value: number) => value.toFixed(1).replace(/\.0$/, "");
 const tokens = (value: number) => value >= 1e6 ? `${trim(value / 1e6)}m` : value >= 1e3 ? `${trim(value / 1e3)}k` : String(value);

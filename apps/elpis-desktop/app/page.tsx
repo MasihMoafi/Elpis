@@ -630,6 +630,7 @@ export default function Home() {
         events.onerror = disconnected;
         events.addEventListener("message", event => {
           const { method, params } = JSON.parse(event.data);
+          if (method === "thread/goal/updated" || method === "thread/goal/cleared") window.dispatchEvent(new CustomEvent("elpis:goal-updated", { detail: { threadId: params.threadId } }));
           notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
           if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
@@ -1460,9 +1461,27 @@ export default function Home() {
     } catch (error) { setSlashNotice(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
+  async function chooseGoal(args?: string) {
+    const thread = selected;
+    if (!thread) return;
+    const condition = args?.trim();
+    setError("");
+    try {
+      const result = await api<{ goal?: { objective: string }; cleared?: boolean }>(`/threads/${encodeURIComponent(thread.id)}/goal`, condition ? condition === "clear" ? { clear: true } : { objective: condition } : undefined);
+      window.dispatchEvent(new CustomEvent("elpis:goal-updated", { detail: { threadId: thread.id } }));
+      if (selectedRef.current?.id !== thread.id) return;
+      setSlashNotice(condition === "clear" ? "Goal cleared." : result.goal?.objective ? `Goal: ${result.goal.objective}` : "No goal set.");
+      if (desktop) side.openContext();
+    } catch (cause) {
+      if (selectedRef.current?.id !== thread.id) return;
+      if (condition && !textRef.current) editDraft(`/goal ${condition}`);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
   const slashCommands: SlashCommand[] = [
     { name: "btw", description: "Ask a quick side question without adding to the session", available: !!selected, args: true, run: askSideQuestion },
     { name: "recap", description: "Summarize this conversation and its next step", available: !!selected && !readOnlyRun, run: recapConversation },
+    { name: "goal", description: "show, set or clear this chat’s goal: /goal [condition|clear]", available: !!selected && !readOnlyRun, args: true, run: args => void chooseGoal(args) },
     { name: "model", description: "choose what model and reasoning effort to use", available: !busy, run: () => openComposerControl("Model") },
     { name: "fast", description: "toggle OpenAI Fast speed: /fast [on|off]", available: !busy && !readOnlyRun, args: true, run: chooseFast },
     { name: "effort", description: "change how hard the model thinks: /effort [low|medium|high|…]", available: !busy && turnEfforts.length > 0, args: true, run: chooseEffort },

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { SmartPruneDetail } from "@/components/smart-prune";
 import { onPruneRequest, type PruneTarget } from "@/lib/smart-prune";
-import { Maximize2, Minimize2, Scissors, X } from "lucide-react";
+import { Maximize2, Minimize2, Scissors, X, ListTree } from "lucide-react";
+import { ContextPanel } from "@/components/context-usage";
 import { BrowserIcon, FileEditIcon, FolderIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -23,12 +24,13 @@ import { SIDEBAR } from "@/lib/use-appearance";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
 export type TerminalTab = { key: string; n: number; cwd: string; threadId?: string };
-type Item = { key: string; kind: "smartPrune"; target: PruneTarget } | { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab } | { key: string; kind: "changes" } | { key: string; kind: "files" };
+type Item = { key: string; kind: "smartPrune"; target: PruneTarget } | { key: string; kind: "terminal"; terminal: TerminalTab } | { key: string; kind: "browser"; page: BrowserTab } | { key: string; kind: "changes" } | { key: string; kind: "files" } | { key: string; kind: "context" };
 /** The Changes tab (components/changes-panel.tsx) is one tab for the open chat's folder, so it has one key. */
 const CHANGES = "c:changes";
 /** The Files tab (components/files-pane.tsx) is one tab too: the open chat's folder. */
 const FILES = "f:files";
 const PRUNE = "p:prune";
+const CONTEXT = "x:context";
 
 /** It opens as wide as the left sidebar and narrows as far as the sidebar can; a browser page needs 380px to keep its
  * address field (components/browser-panel.tsx). */
@@ -42,17 +44,19 @@ export function useSidePanel(browser: Browser) {
   const [open, setOpen] = useState(false);
   const [prune, setPrune] = useState<PruneTarget | null>(null);
   const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false), [filesTab, setFilesTab] = useState(false);
+  const [contextTab, setContextTab] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
   /** The panel's width in pixels once its edge has been dragged; until then it is as wide as the sidebar (app/globals.css). */
   const [width, setWidth] = useState<number | null>(null);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
-  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : []), ...(prune ? [PRUNE] : [])]);
+  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : []), ...(prune ? [PRUNE] : []), ...(contextTab ? [CONTEXT] : [])]);
   const items = order.current.flatMap((key): Item[] => {
     if (key === PRUNE && prune) return [{ key, kind: "smartPrune", target: prune }];
     if (key === CHANGES) return [{ key, kind: "changes" }];
     if (key === FILES) return [{ key, kind: "files" }];
+    if (key === CONTEXT) return [{ key, kind: "context" }];
     const terminal = key.startsWith("t:") && terminals.find(tab => `t:${tab.key}` === key), page = key.startsWith("b:") && pages.find(tab => `b:${tab.id}` === key);
     return terminal ? [{ key, kind: "terminal", terminal }] : page ? [{ key, kind: "browser", page }] : [];
   });
@@ -90,6 +94,7 @@ export function useSidePanel(browser: Browser) {
   const openChanges = useCallback(() => { setChanges(true); select(CHANGES); }, [select]);
   /** Shows the Files tab, opening it first when it is not there. A path clicked in a reply asks for it (lib/files-pane.ts). */
   const openFiles = useCallback(() => { setFilesTab(true); select(FILES); }, [select]);
+  const openContext = useCallback(() => { setContextTab(true); select(CONTEXT); }, [select]);
   useEffect(() => onRequest(openFiles), [openFiles]);
   const close = useCallback((key: string) => {
     const next = neighbour(order.current, key);
@@ -97,6 +102,7 @@ export function useSidePanel(browser: Browser) {
     if (key === PRUNE) setPrune(null);
     else if (key === CHANGES) setChanges(false);
     else if (key === FILES) setFilesTab(false);
+    else if (key === CONTEXT) setContextTab(false);
     else if (key.startsWith("t:")) { setTerminals(previous => previous.filter(tab => `t:${tab.key}` !== key)); endTerminal(key.slice(2)); }
     else void command("close", { id: key.slice(2) });
   }, [shown?.key, command, select]);
@@ -120,7 +126,7 @@ export function useSidePanel(browser: Browser) {
     if (seen.current !== null && presses !== seen.current) toggleFull();
     seen.current = presses;
   }, [presses, toggleFull]);
-  return { open, full, width, setWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, toggleFiles, toggleTerminal };
+  return { open, full, width, setWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, openContext, toggleFiles, toggleTerminal };
 }
 export type SidePanelState = ReturnType<typeof useSidePanel>;
 
@@ -130,6 +136,7 @@ function kindsOf(panel: SidePanelState, browser: Browser, hasTerminal: boolean, 
     ...(hasTerminal ? [{ id: "terminal", label: "Terminal", icon: <TerminalIcon size={14} />, run: () => panel.openTerminal(cwd) }] : []),
     ...(browser.api ? [{ id: "browser", label: "Browser tab", icon: <BrowserIcon size={14} />, run: panel.openPage }] : []),
     ...(hasChat ? [{ id: "changes", label: "Changes", icon: <FileEditIcon size={14} />, run: panel.openChanges }] : []),
+    ...(hasChat ? [{ id: "context", label: "Context", icon: <ListTree size={14} />, run: panel.openContext }] : []),
     ...(cwd ? [{ id: "files", label: "Files", icon: <FolderIcon size={14} />, run: panel.openFiles }] : []),
   ];
 }
@@ -183,6 +190,8 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           if (item.kind === "files") return <Tab key={item.key} icon={<FolderIcon size={14} />} label="Files" title="The files in this chat's folder" active={active} closeLabel="Close Files tab"
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
+          if (item.kind === "context") return <Tab key={item.key} icon={<ListTree size={14} />} label="Context" title="This chat's goal and context files" active={active} closeLabel="Close Context tab"
+            actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           if (item.kind === "terminal") return <Tab key={item.key} icon={<TerminalIcon size={14} />} label={item.terminal.n > 1 ? `Terminal ${item.terminal.n}` : "Terminal"} title={item.terminal.cwd} active={active}
             closeLabel={`Close Terminal ${item.terminal.n} tab`} actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           const { page } = item;
@@ -198,6 +207,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       {shown?.kind === "terminal" && <TerminalView termKey={shown.terminal.key} cwd={shown.terminal.cwd} dark={dark} launch={launch} />}
       {shown?.kind === "changes" && <ChangesPanel threadId={threadId} running={running} />}
       {shown?.kind === "files" && <FilesPane cwd={cwd} />}
+      {shown?.kind === "context" && <ContextPanel threadId={threadId} />}
       {shown?.kind === "browser" && <BrowserPanel onReturnToChat={panel.closePanel} browser={browser} cwd={cwd} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
     </ViewBoundary></div>

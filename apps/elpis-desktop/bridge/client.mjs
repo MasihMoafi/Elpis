@@ -25,6 +25,7 @@ import { createWorkflowRuns } from './workflow-acp.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
 import { CustomizePage } from './customize-page.mjs';
+import { sessionContextFiles } from './session-context.mjs';
 import { BridgeError, object, text, threadId } from './validate.mjs';
 const { isVoiceHandoff } = voiceHandoff;
 const string = value => typeof value === 'string' ? value : null;
@@ -66,6 +67,7 @@ export function existingSocket(explicit, env = process.env) {
 const NOTIFICATIONS = new Set([
   'thread/realtime/sdp', 'thread/realtime/started', 'thread/realtime/error', 'thread/realtime/closed',
   'thread/tokenUsage/updated', 'thread/smartPrune/updated',
+  'thread/goal/updated', 'thread/goal/cleared',
   'thread/started', 'thread/status/changed', 'thread/name/updated', 'thread/settings/updated',
   'thread/closed', 'thread/archived', 'thread/deleted', 'turn/started', 'turn/completed',
   'turn/aborted', 'turn/diff/updated', 'turn/plan/updated', 'item/started', 'item/completed',
@@ -79,7 +81,7 @@ const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
 const READ_RPCS = new Set(['initialize','externalAgentConfig/detect','externalAgentConfig/import/readHistories','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
-const readRpc = (method, params) => READ_RPCS.has(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
+const readRpc = (method, params) => READ_RPCS.has(method) || ['thread/goal/get', 'thread/contextFiles/list'].includes(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval settings and
  * the engine's built-in permission profiles. Bypass is `:bypass-permissions`: Full access plus no refusals
  * (codex-rs/protocol/src/models.rs bypass_permissions_active). Each mode is a named profile, not a bare sandbox,
@@ -311,7 +313,7 @@ export class DesktopClient extends EventEmitter {
         const contextFiles = pending.method === 'thread/contextFiles/list' || pending.method === 'thread/contextFiles/set';
         const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? '');
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
-        const detail = (workflow || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
+        const detail = (workflow || pending.method.startsWith('thread/goal/') || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
         const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
         error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
@@ -1052,6 +1054,48 @@ export class DesktopClient extends EventEmitter {
   async contextFiles(id) {
     threadId(id);
     return this.#rpc('thread/contextFiles/list', { threadId: id });
+  }
+  async goal(id) {
+    threadId(id);
+    return this.#rpc('thread/goal/get', { threadId: id });
+  }
+  async setGoal(id, input) {
+    threadId(id); object(input, ['objective', 'clear']);
+    if (input.clear !== undefined && (input.clear !== true || input.objective !== undefined)) throw new BridgeError('Choose a goal or clear it');
+    if (input.clear !== true) text(input.objective, 'goal', 32000);
+    return this.#mutate(id, async () => {
+      const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
+      if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+      if (!this.#decorate(thread).desktopAccess.writable) throw new BridgeError('Only this agent’s parent can change its goal.', 409);
+      return input.clear ? this.#rpc('thread/goal/clear', { threadId: id }) : this.#rpc('thread/goal/set', { threadId: id, objective: input.objective.trim(), status: 'active' });
+    });
+  }
+  async sessionContext(id) {
+    threadId(id);
+    const [{ thread }, sources, { goal }] = await Promise.all([
+      this.#rpc('thread/read', { threadId: id, includeTurns: false }), this.contextFiles(id), this.goal(id),
+    ]);
+    if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+    return { ...await sessionContextFiles(thread, sources.files), ...(sources.note ? { note: sources.note } : {}), goal, writable: this.#decorate(thread).desktopAccess.writable };
+  }
+  async createSessionIntent(id, input) {
+    threadId(id); object(input, []);
+    return this.#mutate(id, async () => {
+      const { thread } = await this.#rpc('thread/read', { threadId: id, includeTurns: false });
+      if (thread?.id !== id) throw new BridgeError('Elpis returned another thread', 502);
+      if (!this.#decorate(thread).desktopAccess.writable) throw new BridgeError('Only this agent’s parent can create its session intent.', 409);
+      if (typeof thread.cwd !== 'string' || !path.isAbsolute(thread.cwd)) throw new BridgeError('Open a project folder first.');
+      const file = path.join(await fs.promises.realpath(thread.cwd), 'ES.md');
+      let handle;
+      try {
+        handle = await fs.promises.open(file, 'wx', 0o600);
+        await handle.writeFile('# Session intent\n\n');
+      } catch (error) {
+        if (error.code === 'EEXIST') throw new BridgeError('ES.md already exists. Open it to edit the current intent.', 409);
+        throw error;
+      } finally { await handle?.close(); }
+      return { path: file };
+    });
   }
   async setContextFile(id, input) {
     threadId(id); object(input, ['path', 'included']);

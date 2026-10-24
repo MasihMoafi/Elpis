@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 const HOME = process.env.HOME;
 const LOG = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/bridge.log";
 const log = (s) => { try { appendLog(LOG, s); } catch {} };
-const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js", import.meta.url).pathname;
+const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./context-agent.mjs", import.meta.url).pathname;
 const CLAUDE = process.env.ELPIS_CLAUDE_PRUNE
   ? new URL("./claude-via-elpis", import.meta.url).pathname
   : process.env.CLAUDE_CODE_EXECUTABLE ?? `${HOME}/.local/bin/claude`;
@@ -368,11 +368,12 @@ class Acp {
     this.ready = this.call("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, subagents: {} } });
   }
   send(msg) { this.proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n"); }
-  call(method, params) {
+  call(method, params, timeoutMs = 0) {
     if (this.dead) return Promise.reject({ message: this.dead });
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
-      this.pending.set(id, { resolve, reject, method, sessionId: params?.sessionId });
+      const timer = timeoutMs ? setTimeout(() => { this.pending.delete(id); reject({ message: 'Reading Claude context files timed out.' }); }, timeoutMs) : undefined;
+      this.pending.set(id, { resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); }, method, sessionId: params?.sessionId });
       this.send({ id, method, params });
     });
   }
@@ -1061,6 +1062,32 @@ wss.on("connection", (ws) => {
       if (r.continuity?.trim()) parts.push(r.continuity.trim());
       return parts.join("\n\n");
     } catch (e) { throw new Error(`Could not read admitted Elpis instructions: ${e.message ?? JSON.stringify(e)}`); }
+  }
+  async function providerContextFiles(msg) {
+    try {
+      const { threadId } = msg.params;
+      const result = await engineCall(msg.method, msg.params);
+      await storeChain;
+      const entry = (await loadStore())[threadId];
+      const saved = entry?.contextFiles ?? [];
+      const live = sessions.get(threadId), agent = agentOf(claudeModel.get(threadId));
+      let files = saved, note;
+      if (agent?.key === 'claude' && live && !activeTurns.has(threadId)) {
+        try {
+          const native = await acps.get(agent.key).call('_elpis/contextFiles', { sessionId: live.id }, 4000);
+          const selected = entry?.contextSessionId === live.id ? saved.filter(file => file.group === 'skills') : [];
+          files = [...native.files.filter(file => typeof file.path === 'string' && file.path.startsWith('/')).map(file => ({ name: basename(file.path), path: file.path, estimatedTokens: file.estimatedTokens, group: /(?:^|\/)MEMORY\.md$/.test(file.path) ? 'durableMemory' : 'instructions', included: true, selectable: false, reason: 'Loaded by Claude' })), ...selected];
+          if (JSON.stringify(files) !== JSON.stringify(saved) || entry?.contextSessionId !== live.id) updateStore(st => {
+            if (sessions.get(threadId) !== live) return;
+            const current = st[threadId] ?? {};
+            const skills = current.contextSessionId === live.id ? (current.contextFiles ?? []).filter(file => file.group === 'skills') : [];
+            st[threadId] = { ...current, contextFiles: [...files.filter(file => file.group !== 'skills'), ...skills], contextSessionId: live.id };
+          });
+        } catch { note = 'Claude’s native context files could not be refreshed. Showing the last recorded list.'; }
+      } else if (agent?.key === 'claude' && !saved.length) note = 'Claude’s native context files appear after its first turn.';
+      const seen = new Set(result.files.map(file => file.path));
+      toTui({ id: msg.id, result: { ...result, files: [...result.files, ...files.filter(file => { if (seen.has(file.path)) return false; seen.add(file.path); return true; })], ...(note ? { note } : {}) } });
+    } catch (error) { toTui({ id: msg.id, error: { code: -32603, message: error.message ?? 'Could not read context files.' } }); }
   }
   // A fork of a Claude chat (/fork, /side, /btw) starts a fresh Claude session; the parent's
   // Claude turns up to the fork point live only in the store, under the parent, so the fork
@@ -2251,7 +2278,17 @@ wss.on("connection", (ws) => {
     const completedAt = Math.floor(now() / 1000);
     {
       const record = clipTurn({ id: turnId, items: [...lead, ...items], itemsView: "full", status, error, startedAt, startedAtMs: t0, completedAt, durationMs: (completedAt - startedAt) * 1000, ...(lastClaudeMessageId && { claudeMessageId: lastClaudeMessageId }) });
-      await updateStore((st) => { const { active, ...rest } = st[threadId] ?? {}; st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record] }; });
+      await updateStore((st) => {
+        const { active, ...rest } = st[threadId] ?? {}, sessionId = sessions.get(threadId)?.id;
+        const loaded = new Map((rest.contextSessionId === sessionId ? rest.contextFiles ?? [] : []).map(file => [file.path, file]));
+        for (const item of record.items) if (item.status === 'completed') for (const action of item.commandActions ?? []) {
+          if (action.type === 'read' && typeof action.path === 'string' && action.path.endsWith('/SKILL.md')) {
+            let bytes = 0; try { bytes = statSync(action.path).size; } catch {}
+            loaded.set(action.path, { name: basename(dirname(action.path)), path: action.path, group: 'skills', estimatedTokens: Math.ceil(bytes / 4), included: true, selectable: false, reason: 'Read by Claude in this session' });
+          }
+        }
+        st[threadId] = { ...rest, turns: [...(rest.turns ?? []), record], contextSessionId: sessionId, contextFiles: [...loaded.values()] };
+      });
     }
     if (activeTurns.get(threadId) === turnState) activeTurns.delete(threadId);
     notify("turn/completed", { threadId, turn: { id: turnId, items, itemsView: "summary", status, error, startedAt, completedAt, durationMs: (completedAt - startedAt) * 1000 } });
@@ -2980,6 +3017,7 @@ wss.on("connection", (ws) => {
       return;
     }
     if (/^thread\/goal\/(set|get|clear)$/.test(msg.method) && claudeModel.has(msg.params?.threadId)) { goalRequest(msg); return; }
+    if (/^thread\/contextFiles\/(list|set)$/.test(msg.method) && claudeModel.has(msg.params?.threadId)) { void providerContextFiles(msg); return; }
     if (/^thread\/queue\//.test(msg.method) && claudeModel.has(msg.params?.threadId)) { queueRequest(msg); return; }
     if (msg.method === "turn/interrupt" && activeTurns.has(msg.params?.threadId)) {
       const running = activeTurns.get(msg.params.threadId);

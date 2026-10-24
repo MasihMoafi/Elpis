@@ -360,6 +360,15 @@ export async function startDesktopServer(options = {}) {
           if (method === 'GET') return json(response, 200, await client.contextFiles(id));
           if (method === 'POST') return json(response, 200, await client.setContextFile(id, await body(request)));
         }
+        const sessionContext = url.pathname.match(/^\/api\/threads\/([^/]+)\/(goal|session-context|session-intent)$/);
+        if (sessionContext) {
+          const id = decodeURIComponent(sessionContext[1]), action = sessionContext[2];
+          if (action === 'goal' && method === 'GET') return json(response, 200, await client.goal(id));
+          if (action === 'goal' && method === 'POST') return json(response, 200, await client.setGoal(id, await body(request)));
+          if (action === 'session-context' && method === 'GET') return json(response, 200, await client.sessionContext(id));
+          if (action === 'session-intent' && method === 'POST') return json(response, 201, await client.createSessionIntent(id, await body(request)));
+          throw new BridgeError('Method is not allowed', 405);
+        }
         const thread = url.pathname.match(/^\/api\/threads\/([^/]+)(?:\/(turns|steer|interrupt|resume|continue|context|prompts|delete|rename|archive|unarchive|revert|rewind|fork|compact|review|git|permissions|effort|service-tier|folder|shell|side-chat))?$/);
         if (thread) {
           const id = decodeURIComponent(thread[1]);
