@@ -580,13 +580,12 @@ export default function Home() {
   }, []);
   useEffect(() => {
     let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;
-    function disconnected() { wasConnected = false; recovery++; setConnected(false); setConnectionStatus("Elpis is disconnected. Waiting to reconnect…"); setApprovals([]); }
+    let restoring = Promise.resolve();
+    function disconnected() { wasConnected = false; recovery++; setConnected(false); setConnectionStatus("Elpis is disconnected. Reconnecting to Elpis… Your draft is saved."); setApprovals([]); }
     async function reconnect(initial = false) {
       const attempt = ++recovery, thread = selectedRef.current, requestId = request.current;
       const ids = new Set(tabsRef.current.tabs.flatMap(tab => tab.threadId ? [tab.threadId] : []));
       if (thread) ids.add(thread.id);
-      // loadThread already restores the shown chat; the first connection only resumes other tabs.
-      if (initial && thread) ids.delete(thread.id);
       const current = () => !disposed && attempt === recovery;
       if (!initial) {
         setAccountRefresh(value => value + 1);
@@ -597,6 +596,9 @@ export default function Home() {
       // A list page can omit open chats or fail; each tab still needs its own authoritative turn state.
       await Promise.all([...ids].map(async id => {
         const open = () => current() && !hidden.current.has(id) && (selectedRef.current?.id === id || tabsRef.current.tabs.some(tab => tab.threadId === id));
+        // Close the gap between restoring this chat and subscribing, without holding up the app or other tabs.
+        if (initial && thread?.id === id) await restoring;
+        if (!open()) return;
         const turnRevision = turnRevisions.current[id];
         const historyRevision = liveRevision.current;
         const shown = () => open() && request.current === requestId && selectedRef.current?.id === id;
@@ -632,7 +634,7 @@ export default function Home() {
         // The chat of the shown tab comes back; without saved tabs, the last chat does.
         const launch = new URLSearchParams(location.search);
         const last = launch.has("session") ? launch.get("session") : restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
-        if (last && !selectedRef.current && request.current === 0) void loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
+        if (last && !selectedRef.current && request.current === 0) restoring = loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
         events = new EventSource("/api/events");
         events.addEventListener("sideChat", event => window.dispatchEvent(new CustomEvent("elpis:side-chat", { detail: JSON.parse(event.data) })));
         events.addEventListener("connection", event => {
@@ -1881,7 +1883,6 @@ export default function Home() {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
     return searchedThreads.filter(child => child.parentThreadId === parentId).map(child => <div key={child.id}>{threadRow(child, depth)}{expanded[child.id] && runDescendants(child.id, depth + 1, next)}</div>);
   }
-  useEffect(() => { document.title = view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"; }, [view]);
   /** A listed chat and, when shown, its agents under it. */
   const chatRows = (thread: Thread) => threadBranch(thread);
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
@@ -1919,6 +1920,7 @@ export default function Home() {
   for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["customize", "Customize"]] as const) if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) });
 
   return <div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
+    <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
     {desktop && <div className="title-bar"><Button variant="ghost" size="icon" aria-label={sidebarCollapsed || (panelShown && panelDrawer && !sidebar) ? "Open sidebar" : "Close sidebar"} title={`${sidebarCollapsed ? "Open" : "Close"} sidebar (Ctrl+B)`} onClick={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)}><PanelLeft /></Button><NavButtons canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} /><AppUpdate /></div>}
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />

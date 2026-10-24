@@ -13,7 +13,6 @@ export default function LoveSpotWindow() {
   const [dark, setDark] = useState(false);
   const [desktop, setDesktop] = useState(false);
   useEffect(() => {
-    document.title = "Love Spot · Elpis";
     setDesktop(!!window.elpisDesktop);
     const media = matchMedia("(prefers-color-scheme: dark)");
     const refresh = () => {
@@ -28,6 +27,7 @@ export default function LoveSpotWindow() {
     return () => { media.removeEventListener("change", refresh); window.removeEventListener("storage", refresh); stop?.(); };
   }, []);
   return <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
+    <title>Love Spot · Elpis</title>
     {desktop && <div className="title-bar shrink-0"><AppUpdate /></div>}
     <ViewBoundary label="Love Spot"><LoveSpot dark={dark} onOpenChat={id => { void window.elpisDesktop?.openSessionWindow?.(id); }} /></ViewBoundary>
   </main>;
