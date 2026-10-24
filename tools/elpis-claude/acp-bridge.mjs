@@ -148,7 +148,7 @@ const clipItem = (it) => it.type === "fileChange" ? { ...it, changes: it.changes
 const clipTurn = (turn) => ({ ...turn, items: turn.items.map(clipItem) });
 const ELPIS_HOME = process.env.ELPIS_HOME || `${HOME}/.elpis-next`;
 const STORE = process.env.ACP_BRIDGE_STORE ?? `${ELPIS_HOME}/elpis-claude/sessions.json`;
-async function loadStore() {
+async function readStore() {
   try {
     const store = JSON.parse(await readFile(STORE, "utf8"));
     if (!store || typeof store !== "object" || Array.isArray(store)) throw new Error("expected a JSON object");
@@ -160,17 +160,20 @@ async function loadStore() {
     throw error;
   }
 }
-// Elpis: Esc-Esc rewind pages the whole thread history, and every page re-read and re-parsed this
-// whole file (13.6 MB = ~55 ms each). Read-only callers on that path share one parse per saved
-// version; saves rename a new file into place, so inode, size or mtime changes with every save.
+// All read-only callers share a parse of the saved version, including concurrent startup reads.
+// Writes still read a fresh, private copy. Atomic saves and external replacements invalidate it.
 let storeSnapshot = null;
+let storeRead = null;
+async function loadStore() { return loadStoreSnapshot(); }
 async function loadStoreSnapshot() {
   let sig = null;
   try { const s = statSync(STORE); sig = `${s.ino}:${s.size}:${s.mtimeMs}`; } catch {}
   if (sig && storeSnapshot?.sig === sig) return storeSnapshot.store;
-  const store = await loadStore();
-  if (sig) storeSnapshot = { sig, store };
-  return store;
+  if (sig && storeRead?.sig === sig) return storeRead.promise;
+  const promise = readStore().then(store => { if (sig) storeSnapshot = { sig, store }; return store; });
+  storeRead = { sig, promise };
+  try { return await promise; }
+  finally { if (storeRead?.promise === promise) storeRead = null; }
 }
 let storeChain = Promise.resolve();
 const deletingThreads = new Set();
@@ -178,7 +181,7 @@ const deletedThreads = new Set();
 // Resolves true once saved, false if saving failed.
 function updateStore(fn) {
   storeChain = storeChain.then(async () => {
-    const st = await loadStore(); fn(st);
+    const st = await readStore(); fn(st);
     // Late plan/tool notifications cannot recreate a deleted transcript.
     for (const tid of deletedThreads) { delete st[tid]; if (st._delegations) delete st._delegations[tid]; }
     await saveStore(st); return true;
