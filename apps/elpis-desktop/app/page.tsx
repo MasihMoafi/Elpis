@@ -374,6 +374,8 @@ export default function Home() {
   const completedTurns = useRef(new Set<string>());
   // A resume snapshot must not overwrite a turn event that arrived while it was being read.
   const turnRevisions = useRef<Record<string, number>>({});
+  /** Bumped by each engine settings announcement, so an older resume answer never replaces a newer mode. */
+  const modeRevisions = useRef<Record<string, number>>({});
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [activity, setActivity] = useState<Record<string, string>>({});
   const [liveError, setLiveError] = useState<Record<string, string>>({});
@@ -509,7 +511,7 @@ export default function Home() {
   }
 
   const reconcileLiveThread = useCallback((id: string, live: Live) => {
-    remember(live.thread); upsertThread(live.thread); rememberModes(id, live);
+    remember(live.thread); upsertThread(live.thread);
     if (selectedRef.current?.id === id) select({ ...selectedRef.current, ...live.thread });
     if (live.thread.status) statusRevisions.current[id] = (statusRevisions.current[id] ?? 0) + 1;
     turnRevisions.current[id] = (turnRevisions.current[id] ?? 0) + 1;
@@ -546,9 +548,10 @@ export default function Home() {
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
     try {
-      const turnRevision = turnRevisions.current[thread.id];
+      const turnRevision = turnRevisions.current[thread.id], modeRevision = modeRevisions.current[thread.id];
       const live = await api<Live>(`/threads/${encodeURIComponent(thread.id)}/resume`, {});
       if (request.current !== id || live.thread?.id !== thread.id) return;
+      if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
   }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
@@ -611,7 +614,7 @@ export default function Home() {
         // Close the gap between restoring this chat and subscribing, without holding up the app or other tabs.
         if (initial && thread?.id === id) await restoring;
         if (!open()) return;
-        const turnRevision = turnRevisions.current[id];
+        const turnRevision = turnRevisions.current[id], modeRevision = modeRevisions.current[id];
         const historyRevision = liveRevision.current;
         const shown = () => open() && request.current === requestId && selectedRef.current?.id === id;
         // History and resume are independent: a refused history read must not leave a finished turn running.
@@ -621,7 +624,9 @@ export default function Home() {
         })() : Promise.resolve();
         const resume = (async () => {
           const live = await api<Live>(`/threads/${encodeURIComponent(id)}/resume`, {});
-          if (open() && live.thread?.id === id && turnRevisions.current[id] === turnRevision) reconcileLiveThread(id, live);
+          if (!open() || live.thread?.id !== id) return;
+          if (modeRevisions.current[id] === modeRevision) rememberModes(id, live);
+          if (turnRevisions.current[id] === turnRevision) reconcileLiveThread(id, live);
         })();
         const results = await Promise.allSettled([history, resume]);
         if (!open()) return;
@@ -709,7 +714,7 @@ export default function Home() {
           // missed (another window, a reconnect, a dropped stream), so a finished chat never keeps offering a follow-up.
           if (method === "thread/status/changed" && params.status && params.status.type !== "active") { turnRevisions.current[params.threadId] = (turnRevisions.current[params.threadId] ?? 0) + 1; setActiveTurns(prev => without(prev, params.threadId)); }
           // The engine's applied permission mode, from this or any other client.
-          if (method === "thread/settings/updated" && params.permissions) setThreadModes(prev => ({ ...prev, [params.threadId]: params.permissions }));
+          if (method === "thread/settings/updated" && params.permissions) { modeRevisions.current[params.threadId] = (modeRevisions.current[params.threadId] ?? 0) + 1; setThreadModes(prev => ({ ...prev, [params.threadId]: params.permissions })); }
           if (method === "thread/settings/updated" && params.threadSettings?.model) {
             const settings = { model: params.threadSettings.model, modelProvider: params.threadSettings.modelProvider, reasoningEffort: params.threadSettings.effort ?? null };
             settingsOf.current[params.threadId] = settings; patchThread(params.threadId, settings);
@@ -1015,7 +1020,9 @@ export default function Home() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   }
-  /** What a reopened chat reports about its approval mode and Plan mode. */
+  /** What a reopened chat reports about its approval mode and Plan mode. It is applied even when the chat's status
+   * changed meanwhile (a resume itself reports one), unless the engine announced newer settings for it since the
+   * request: without it the composer fell back to Ask for a Full access chat after a reload. */
   function rememberModes(id: string, live: Live) {
     if (live.permissions) setThreadModes(prev => ({ ...prev, [id]: live.permissions! }));
     if (typeof live.planMode === "boolean") setThreadPlans(prev => ({ ...prev, [id]: live.planMode! }));
@@ -1059,7 +1066,7 @@ export default function Home() {
     setChangingPermissions(true); setError("");
     try {
       const result = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(id)}/permissions`, { permissions: mode });
-      setThreadModes(prev => ({ ...prev, [id]: result.permissions }));
+      modeRevisions.current[id] = (modeRevisions.current[id] ?? 0) + 1; setThreadModes(prev => ({ ...prev, [id]: result.permissions }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setChangingPermissions(false); }
   }
