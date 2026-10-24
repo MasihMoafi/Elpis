@@ -99,7 +99,7 @@ class AcpProcess {
  * move work between agents: Love Spot (bridge/love-agents.mjs) per card, and the Workflows bridge runtime per stage
  * transition, passing the previous stage's answer in `inputs` instead of posting it into a chat.
  *
- * @param spec `{ name, command, args?, env?, model?, instructions?, instructionsInPrompt?, meta? }`: the ACP agent
+ * @param spec `{ name, command, args?, env?, model?, mode?, instructions?, instructionsInPrompt?, meta? }`: the ACP agent
  *   process to start. `model` is chosen with session/set_config_option (the agent must offer it); `instructions` go
  *   in session/new `_meta.systemPrompt.append` (Elpis, Claude and Antigravity agents read it), or at the head of the
  *   prompt with `instructionsInPrompt` for agents that take no system prompt.
@@ -144,8 +144,8 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
       const reject = offered.find(option => option.kind === 'reject_once') ?? offered.find(option => String(option.kind).startsWith('reject'));
       const refuse = { outcome: reject ? { outcome: 'selected', optionId: reject.optionId } : { outcome: 'cancelled' } };
       if (stopped) return { outcome: { outcome: 'cancelled' } };
-      // Only this node's session asks the person; any other session it opens (a subagent's) is refused.
-      if (params?.sessionId !== sessionId) return refuse;
+      // Workflow subagents share the automatic policy. Ordinary callers accept only their own session.
+      if (params?.sessionId !== sessionId && !spec.meta?.elpis?.workflow) return refuse;
       let cancel;
       const cancelled = new Promise(resolve => { cancel = () => resolve(CANCELLED); });
       waiting.add(cancel);
@@ -187,6 +187,7 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
       const changed = await node.call('session/set_config_option', { sessionId, configId: 'model', value: spec.model });
       configOptions = changed?.configOptions ?? configOptions;
     }
+    if (spec.mode) await node.call('session/set_mode', { sessionId, modeId: spec.mode });
     // Elpis takes effort in its scoped workflow policy. Other ACP agents advertise it after model selection.
     if (spec.reasoningEffort && !spec.elpis) {
       const option = configOptions.find(item => item.id === 'effort');

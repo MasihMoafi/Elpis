@@ -48,7 +48,7 @@ const app = agent({ name: "fake-acp-agent" })
     log({ method: "session/fork", params });
     return { sessionId: `${params.sessionId}-fork` };
   })
-  .onRequest("session/set_mode", () => ({}))
+  .onRequest("session/set_mode", ({ params }) => { log({ method: "session/set_mode", params }); return {}; })
   .onRequest("_session/steering", params => params, async ({ params }) => {
     log({ method: "_session/steering", params });
     const s = sessions.get(params.sessionId);
@@ -94,9 +94,9 @@ const app = agent({ name: "fake-acp-agent" })
     let permission = "";
     if (text.includes("[permission]")) {
       const answer = await client.request("session/request_permission", {
-        sessionId: params.sessionId,
+        sessionId: process.env.FAKE_ACP_PERMISSION_SESSION || params.sessionId,
         toolCall: { toolCallId: "t1", title: "Write notes.txt", kind: "edit", status: "pending" },
-        options: [{ optionId: "allow_once", name: "Allow once", kind: "allow_once" }, { optionId: "reject_once", name: "Reject", kind: "reject_once" }],
+        options: process.env.FAKE_ACP_PERMISSION_OPTIONS ? JSON.parse(process.env.FAKE_ACP_PERMISSION_OPTIONS) : [{ optionId: "allow_once", name: "Allow once", kind: "allow_once" }, { optionId: "reject_once", name: "Reject", kind: "reject_once" }],
       });
       log({ permission: answer.outcome });
       permission = `permission: ${answer.outcome.outcome === "selected" ? answer.outcome.optionId : "cancelled"}. `;

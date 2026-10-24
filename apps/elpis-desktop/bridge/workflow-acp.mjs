@@ -48,7 +48,7 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onPermission, onSession, onEnd } = {}) {
+  onSession, onEnd } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map();
   const mergingSources = new Set(), mergeControllers = new Map();
@@ -91,14 +91,26 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       progressTimers.delete(record.id); void save(record).catch(error => { record.persistenceError = error.message; });
     }, 200));
   };
+  const permission = async (record, task, request) => {
+    const options = request.options ?? [];
+    const option = options.find(option => option.kind === 'allow_once') ?? options.find(option => option.kind === 'allow_always');
+    const entry = { at: Date.now(), round: record.round, sessionId: request.sessionId, toolCallId: request.toolCall?.toolCallId, title: String(request.toolCall?.title || task.title).slice(0, 1000), optionId: option?.optionId ?? null };
+    const log = task.permissions ??= []; log.push(entry); if (log.length > 100) log.shift();
+    progress(record, task, { sessionUpdate: 'agent_message_chunk', messageId: `permission-${randomUUID()}`, content: { type: 'text', text: `${option ? 'Allowed' : 'Refused'} automatically: ${entry.title}${option ? ` (${option.name || option.optionId})` : ' (no allow option offered)'}` } });
+    await save(record); return entry.optionId;
+  };
+  const fullAccess = spec => {
+    // This is the ACP mode a chat uses for Full access; no engine bypass profile or CLI flag.
+    if (!spec.elpis && !spec.instructionsInPrompt) spec.mode = 'bypassPermissions';
+    return spec;
+  };
   async function reviewAndMerge(record, signal) {
     if (await checkWorkflowReview(record.review, signal)) { record.review = await mergeWorkflowReview(record.review, signal); return; }
     const mother = record.mother = { id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: [] };
-    const permissionScope = new AbortController();
     record.review.status = 'reviewing'; await save(record);
     try {
       const instructions = 'You are Mother, the workflow coordinator. Review the children’s candidate commits and focused test evidence. Read and run checks only; do not change files, commit, merge, delegate or push. Approve only if the requested task is complete and the checks pass. Return only JSON: {"passed":true or false,"summary":"observed evidence and any remaining failure"}.';
-      const spec = nodeSpec({ name: 'Mother', prompt: instructions, model: mother.model, provider: mother.provider }, env);
+      const spec = fullAccess(nodeSpec({ name: 'Mother', prompt: instructions, model: mother.model, provider: mother.provider }, env));
       spec.reasoningEffort = mother.reasoningEffort;
       spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: 'Workflows · Mother', workflow: { kind: 'verify', writeScopes: [], reasoningEffort: mother.reasoningEffort } } };
       const result = await runAcpNode(spec, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, answer: task.result?.summary ?? task.failureReason ?? task.status })) }, {
@@ -106,7 +118,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         onUpdate: update => progress(record, mother, update),
         onControl: control => controls.set(`${record.id}:mother`, control),
         onSession: id => { mother.sessionId = id; onSession?.(record, mother, id); void save(record).catch(() => {}); },
-        onPermission: request => onPermission?.(record, mother, request, permissionScope.signal),
+        onPermission: request => permission(record, mother, request),
       });
       let verdict;
       try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* malformed review cannot authorize a merge */ }
@@ -115,7 +127,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (await workflowCandidateChanged(record.review)) throw new BridgeError('Mother changed the candidate during review; nothing was merged', 409);
       record.review = await mergeWorkflowReview(record.review, signal); mother.status = 'succeeded';
     } catch (error) { mother.status = signal?.aborted ? 'cancelled' : 'failed'; mother.failureReason = error.message; record.review.status = 'ready'; record.review.error = error.message; throw error; }
-    finally { permissionScope.abort(); controls.delete(`${record.id}:mother`); clearTimeout(progressTimers.get(record.id)); progressTimers.delete(record.id); await save(record); }
+    finally { controls.delete(`${record.id}:mother`); clearTimeout(progressTimers.get(record.id)); progressTimers.delete(record.id); await save(record); }
   }
   async function execute(record, root, controller) {
     let isolation;
@@ -129,7 +141,6 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         record.tasks.forEach(task => { task.status = 'pending'; task.failureReason = null; task.assignedThreadId = null; task.result = null; });
         const byId = new Map(record.tasks.map(t => [t.id, t]));
         const run = async task => {
-          const permissionScope = new AbortController();
           try {
             if (controller.signal.aborted) throw new BridgeError('Workflow cancelled', 409);
             task.status = 'running'; await save(record);
@@ -142,14 +153,14 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             const instructions = [`Acceptance criteria:\n${task.acceptanceCriteria.map(c => `- ${c}`).join('\n')}`,
               scopes.length ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
-            const spec = nodeSpec({ name: task.title, prompt: instructions, model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' }, env);
+            const spec = fullAccess(nodeSpec({ name: task.title, prompt: instructions, model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' }, env));
             if (task.reasoningEffort) spec.reasoningEffort = task.reasoningEffort;
             spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${task.title}`, workflow: { kind: task.kind, writeScopes: scopes, ...(task.reasoningEffort ? { reasoningEffort: task.reasoningEffort } : {}) } } };
             const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),
               ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];
             const result = await runAcpNode(spec, { task: record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n${task.instruction}` : task.instruction, inputs }, {
               cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-              onPermission: request => onPermission?.(record, task, request, permissionScope.signal),
+              onPermission: request => permission(record, task, request),
               onSession: id => { task.assignedThreadId = spec.elpis ? id : null; task.sessionId = id; onSession?.(record, task, id); void save(record).catch(() => {}); },
               onUpdate: update => progress(record, task, update),
               onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
@@ -164,7 +175,6 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
           } catch (error) {
             task.status = controller.signal.aborted ? 'cancelled' : 'failed'; task.failureReason = error.message;
           }
-          permissionScope.abort();
           controls.delete(`${record.id}:${task.id}`);
           await save(record);
         };

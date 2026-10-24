@@ -236,15 +236,21 @@ test('a Mother part that fails never starts the Father', { timeout: 30000 }, asy
   assert.equal(f.socket.sent.some(row => row.method === 'thread/start'), false);
   assert.equal(f.log('f').length, 0);
 });
-test('ACP permissions use the existing approval panel and the offered decision reaches the agent', { timeout: 20000 }, async t => {
+test('workflow ACP permissions are allowed and recorded on the node without reaching the approval UI', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();
+  const questions = [];
+  f.client.on('event', event => {
+    if (event.type !== 'approval') return;
+    questions.push(event.data);
+    // Let the old implementation finish so its UI leak fails explicitly, without a timeout.
+    f.client.answerApproval(event.data.id, { decision: 'accept' });
+  });
   const r = await f.run([task('a', [], '[permission]')]);
-  for (let n = 0; n < 300 && !f.client.pendingApprovals.length; n++) await pause(20);
-  const question = f.client.pendingApprovals[0]; assert.ok(question);
-  assert.throws(() => f.client.answerApproval(question.id, { decision: 'acceptForSession' }), /not offered/);
-  f.client.answerApproval(question.id, { decision: 'accept' });
   const g = await f.finished(r.graphId); assert.equal(g.status, 'succeeded');
   assert.match(g.tasks[0].result.summary, /permission: allow_once/); assert.equal(f.client.pendingApprovals.length, 0);
+  assert.deepEqual(questions, [], 'no permission question is emitted to the person');
+  assert.equal(g.tasks[0].permissions[0].optionId, 'allow_once');
+  assert.match(g.tasks[0].progress.find(entry => entry.text?.includes('automatically')).text, /Write notes.txt/);
 });
 test('time limit cancels the process and blocks dependents', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();

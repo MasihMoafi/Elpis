@@ -179,7 +179,7 @@ export class DesktopClient extends EventEmitter {
   #sideChats = new Map();
   #interviewThreads = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
-  #workflowRuns; #acpApprovals = new Map();
+  #workflowRuns;
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
   #turnRevisions = new Map();
@@ -206,7 +206,6 @@ export class DesktopClient extends EventEmitter {
     });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(elpisHome(), 'desktop-workflows'),
-      onPermission: (record, task, request, signal) => this.#workflowPermission(record, task, request, signal),
       onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record), ...workflowOptions });
     this.#bind(socket);
   }
@@ -1978,23 +1977,6 @@ export class DesktopClient extends EventEmitter {
     this.#mutating.add(id);
     try { return await run(); } finally { this.#mutating.delete(id); }
   }
-  #workflowPermission(record, task, request, signal) {
-    const choices = new Map();
-    for (const option of request.options ?? []) {
-      const decision = { allow_once: 'accept', allow_always: 'acceptForSession', reject_once: 'decline', reject_always: 'decline' }[option.kind];
-      if (decision && !choices.has(decision)) choices.set(decision, option.optionId);
-    }
-    const id = randomUUID(), approval = { id, wireId: `acp-${id}`, method: 'item/commandExecution/requestApproval', supported: true,
-      params: { threadId: record.rootThreadId, turnId: record.id, command: request.toolCall?.title || task.title, availableDecisions: [...choices.keys()] } };
-    return new Promise(resolve => {
-      const finish = option => { signal.removeEventListener('abort', abort); resolve(option); };
-      const abort = () => { this.#approvals.delete(id); this.#acpApprovals.delete(id); this.emit('event', { type: 'approvalResolved', data: { id } }); finish(null); };
-      this.#approvals.set(id, approval); this.#acpApprovals.set(id, { choices, resolve: finish });
-      signal.addEventListener('abort', abort, { once: true });
-      if (signal.aborted) return abort();
-      const { wireId, ...visible } = approval; this.emit('event', { type: 'approval', data: visible });
-    });
-  }
   answerApproval(id, body) {
     const pending = this.#approvals.get(id);
     if (!pending) throw new BridgeError('Approval is no longer pending', 409);
@@ -2019,9 +2001,7 @@ export class DesktopClient extends EventEmitter {
       if (!isOffered) throw new BridgeError('Decision is not offered for this request');
       result = { decision: body.decision };
     }
-    const acp = this.#acpApprovals.get(id);
-    if(acp){ acp.resolve(acp.choices.get(result.decision) ?? null); this.#acpApprovals.delete(id); }
-    else this.#socket.send(JSON.stringify({ id: pending.wireId, result }));
+    this.#socket.send(JSON.stringify({ id: pending.wireId, result }));
     this.#approvals.delete(id);
     this.emit('event', { type: 'approvalResolved', data: { id } }); return { resolved: true };
   }

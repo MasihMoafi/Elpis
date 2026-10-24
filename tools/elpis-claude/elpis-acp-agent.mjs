@@ -290,8 +290,10 @@ function workflowPolicy(value, cwd) {
     roots.push(root);
   }
   if (value.reasoningEffort !== undefined && (typeof value.reasoningEffort !== 'string' || !/^[a-z]{2,16}$/.test(value.reasoningEffort))) throw RequestError.invalidParams(undefined, "Invalid workflow reasoning effort");
-  return { profile: { extends: ':read-only', filesystem: { '/': 'read', ...Object.fromEntries(roots.map(root => [root, 'write'])) }, network: { enabled: false } },
-    turn: { permissions: 'elpis-workflow', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}) } };
+  // Automatic writers use ordinary Full access. Checks keep their filesystem ceiling and never ask to escape it.
+  const scoped = value.kind === 'verify' || !roots.length;
+  return { ...(scoped ? { profile: { extends: ':read-only', filesystem: { '/': 'read', ...Object.fromEntries(roots.map(root => [root, 'write'])) }, network: { enabled: false } } } : {}),
+    turn: { approvalPolicy: 'never', permissions: scoped ? 'elpis-workflow' : ':danger-full-access', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}) } };
 }
 
 function mcpConfig(servers = []) {
@@ -342,8 +344,8 @@ const app = agent({ name: "elpis" })
       ...(ephemeral ? { ephemeral: true } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(provider ? { modelProvider: provider } : {}),
-      approvalPolicy: "on-request", ...(policy ? { permissions: "elpis-workflow" } : { sandbox: "workspace-write" }),
-      ...(policy || Object.keys(config).length ? { config: { ...config, ...(policy ? { "permissions.elpis-workflow": policy.profile } : {}) } } : {}),
+      approvalPolicy: policy ? "never" : "on-request", ...(policy ? { permissions: policy.turn.permissions } : { sandbox: "workspace-write" }),
+      ...(policy?.profile || Object.keys(config).length ? { config: { ...config, ...(policy?.profile ? { "permissions.elpis-workflow": policy.profile } : {}) } } : {}),
       ...(typeof append === "string" && append.trim() ? { developerInstructions: append } : {}),
     });
     const id = started?.thread?.id;

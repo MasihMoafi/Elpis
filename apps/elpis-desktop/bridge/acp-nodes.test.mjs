@@ -68,6 +68,11 @@ test('permission requests go to onPermission; the chosen option reaches the agen
   const c = agentSpec(t, 'C');
   await runAcpNode(c.spec, { task: '[permission] write it' }, { cwd: c.dir, onPermission: () => 'not-offered' });
   assert.deepEqual(c.received().find(m => m.permission).permission, { outcome: 'selected', optionId: 'reject_once' }, 'an option the agent did not offer is not sent');
+  const nested = agentSpec(t, 'Nested', { env: { FAKE_ACP_PERMISSION_SESSION: 'foreign-session' } });
+  let foreignAsked = false;
+  const child = await runAcpNode(nested.spec, { task: '[permission]' }, { cwd: nested.dir, onPermission: () => { foreignAsked = true; return 'allow_once'; } });
+  assert.equal(foreignAsked, false, 'ordinary callers still cannot ask on behalf of an unknown session');
+  assert.match(child.answer, /permission: reject_once/);
 });
 
 test('cancel by signal sends session/cancel and answers a pending permission as cancelled', { timeout: 20000 }, async t => {

@@ -49,6 +49,38 @@ test('node models and advertised effort are applied before prompting; unavailabl
   assert.equal(f.log('unsupported').some(row => row.method === 'session/prompt'), false);
 });
 
+test('all automatic workflow roles and Mother use Full access and log offered decisions; missing allow and verifier scope escape cannot grant more access', { timeout: 20000 }, async t => {
+  const env = {};
+  for (const id of ['check-implement', 'check-fix', 'verify']) env[id] = { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Observed the requested check' }) };
+  env.refused = { FAKE_ACP_PERMISSION_OPTIONS: JSON.stringify([{ optionId: 'deny-only', kind: 'reject_once', name: 'Reject' }]) };
+  env.nested = { FAKE_ACP_PERMISSION_SESSION: 'nested-workflow-agent' };
+  env.explore = { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/evidence', text: 'workflow evidence' }), FAKE_ACP_PERMISSION_OPTIONS: JSON.stringify([{ optionId: 'grant-this-call', kind: 'allow_once', name: 'Allow this call' }]) };
+  const f = fixture(t, { env });
+  const tasks = [task('explore'), task('implement', { kind: 'implement', writeScopes: ['src'] }), task('fix', { kind: 'fix', writeScopes: ['src'] }),
+    task('check-implement', { kind: 'verify', dependsOn: ['implement'] }), task('check-fix', { kind: 'verify', dependsOn: ['fix'] }), task('verify', { kind: 'verify' }), task('nested'), task('refused')]
+    .map(task => ({ ...task, instruction: '[permission]', ...(task.id === 'explore' ? { writeScopes: ['src'] } : {}) }));
+  const started = await f.start(tasks, { isolation: 'worktree', autoMerge: true });
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'succeeded', completed.error);
+  for (const node of [...completed.tasks, completed.mother]) {
+    assert.ok(node.permissions?.length, `${node.title} recorded its automatic permission`);
+    const calls = f.log(node.title), mode = calls.findIndex(row => row.method === 'session/set_mode');
+    assert.equal(calls[mode]?.params.modeId, 'bypassPermissions', `${node.title} uses the chat's Full access ACP mode`);
+    assert.ok(mode < calls.findIndex(row => row.method === 'session/prompt'));
+  }
+  assert.equal(completed.tasks.find(task => task.id === 'explore').permissions[0].optionId, 'grant-this-call', 'the offered ID is opaque and is never invented');
+  assert.equal(completed.tasks.find(task => task.id === 'nested').permissions[0].optionId, 'allow_once', 'the automatic policy also covers this process’s subagents');
+  assert.equal(completed.tasks.find(task => task.id === 'refused').permissions[0].optionId, null);
+  assert.deepEqual(f.log('refused').find(row => row.permission).permission, { outcome: 'selected', optionId: 'deny-only' });
+
+  const g = fixture(t, { env: { rogue: { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/seed', text: 'forbidden verifier edit' }), FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Agent claims a pass' }) } } });
+  const rogue = await g.start([task('rogue', { kind: 'verify', instruction: '[permission]' })], { isolation: 'worktree', autoMerge: true });
+  const rejected = await g.finished(rogue.graphId);
+  assert.equal(rejected.status, 'failed'); assert.match(rejected.tasks[0].failureReason, /outside its write scopes/);
+  assert.equal(fs.readFileSync(path.join(g.cwd, 'src/seed'), 'utf8'), 'base');
+  assert.equal(rejected.review, undefined, 'a verifier scope escape cannot reach review or merge');
+});
+
 test('Mother uses Claude Opus to approve the reviewed commit; a rejected review never merges', { timeout: 20000 }, async t => {
   for (const mode of ['approve', 'reject', 'next-stage']) {
     const approved = mode !== 'reject';
