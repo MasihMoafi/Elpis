@@ -133,6 +133,7 @@
   ],
   "ui": [
     "tests/speed-chat.test.cjs",
+    "tests/canvas-keys.test.cjs",
     "tests/chat-organize.test.cjs",
     "tests/voice.test.cjs",
     "tests/polish.test.cjs",

@@ -109,18 +109,22 @@ export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: bo
 }
 
 /** `father`: the agents past the Mother's ten, which the Father runs (lib/canvas.ts `parents`). */
-export type IsoController = { fit: () => void; frame: () => void; reveal: (ids: string[]) => void; position: (client: Point) => Point; keepView: () => void };
-type Props = { modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
+export type IsoController = { fit: () => void; frame: () => void; cancelGesture: () => boolean; zoom: (factor: number) => void; reveal: (ids: string[]) => void; position: (client: Point) => Point; keepView: () => void };
+type Props = { inserting: string | null; canConnect: (source: string, target: string, ignored?: string | null, alongside?: boolean) => boolean; onReconnect: (edge: CanvasEdge, source: string, target: string) => void; minimap: boolean; renamingFrame: string | null; onFrameName: (id: string, title: string | null) => void; onNoteText: (id: string, text: string) => void; onMoveStart: (id: string, extract: boolean) => void; onMove: (id: string, dx: number, dy: number) => void; onMoveEnd: (shift: boolean, cancel?: boolean) => void; onMovePreview: (id: string) => void; modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string, kind?: CanvasEdge["kind"]) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
 /** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
  * (Shift adds), a double-click renames an agent and Enter opens Info, the arrows move between agents in run order.
  * The parent owns window/crossing selection in both views; middle-drag and scroll pan, Ctrl/Cmd+scroll zooms. */
-export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
+export function IsoBoard({ inserting, canConnect, onReconnect, minimap, renamingFrame, onFrameName, onNoteText, onMoveStart, onMove, onMoveEnd, onMovePreview, graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
   const root = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, SVGGElement>());
   const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
   const wave = useMemo(() => waves(graph), [graph]);
   const fathered = father.length > 0, his = new Set(father);
   const places = useMemo(() => isoLayout(graph, wave, fathered ? FATHER : undefined), [graph, wave, fathered]);
-  const content = useMemo(() => bounds(places), [places]);
+  const content = useMemo(() => {
+    const box = bounds(places);
+    for (const node of graph.nodes) if (node.type === "note") { const at = node.isoPosition ?? node.position; box.left = Math.min(box.left, at.x); box.top = Math.min(box.top, at.y); box.right = Math.max(box.right, at.x + 200); box.bottom = Math.max(box.bottom, at.y + 110); }
+    return box;
+  }, [places, graph.nodes]);
   const byId = new Map(places.map(place => [place.id, place])), nodes = new Map(graph.nodes.map(node => [node.id, node]));
   const order = places.map(place => place.id), agents = places.filter(place => place.kind === "agent");
   const [size, setSize] = useState<{ width: number; height: number } | null>(null), [family, setFamily] = useState("sans-serif");
@@ -132,7 +136,8 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const [panning, setPanning] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const rename = (id: string) => { if (nodes.get(id)?.type === "agent") { onSelect([id]); setRenaming(id); } };
-  const [wireDrag, setWireDrag] = useState<{ id: string; end: "source" | "target"; from: Point; to: Point } | null>(null);
+  const [wireDrag, setWireDrag] = useState<{ id: string; end: "source" | "target"; from: Point; to: Point; edge?: CanvasEdge; alongside?: boolean } | null>(null);
+  const movingNode = useRef<{ id: string; x: number; y: number; moved: boolean; alt: boolean } | null>(null), suppressClick = useRef(false);
   const drag = useRef<{ x: number; y: number; from: View; moved: boolean } | null>(null);
 
   useLayoutEffect(() => {
@@ -157,7 +162,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     if (!size || !picked.length) return;
     const box = bounds(picked);
     if (view.x + view.zoom * box.left < INSET.left || view.x + view.zoom * box.right > size.width - INSET.right || view.y + view.zoom * box.top < INSET.top || view.y + view.zoom * box.bottom > size.height - INSET.bottom) move(isoFit(box, size, INSET, { min: ZOOM.min, max: view.zoom }));
-  }, keepView: () => setMoved({ layout: "free", view }), fit: () => setMoved(null), frame: () => {
+  }, cancelGesture: () => { if (!wireDrag) return false; setWireDrag(null); return true; }, zoom: factor => zoomBy(factor ? factor : 1 / view.zoom), keepView: () => setMoved({ layout: "free", view }), fit: () => setMoved(null), frame: () => {
     const picked = places.filter(place => selected.includes(place.id));
     if (size && picked.length) move(isoFit(bounds(picked), size, INSET, { min: ZOOM.min, max: 1.5 }));
   } }));
@@ -191,7 +196,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const count = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
   const parentLine = (id: string) => id === MOTHER ? ["This run's chat", count(agents.length), STATUS[motherState]] : ["His own chat", count(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
   const describe = (id: string) => id === MOTHER || id === FATHER ? parentLine(id).join(", ").replace(/^./, letter => letter.toLowerCase())
-    : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
+    : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${nodes.get(id)?.type === "agent" && (nodes.get(id)!.data as AgentData).muted ? "muted, skipped in runs" : STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
   const wires: CanvasEdge[] = [
     // The parents' wires, as on the flat board: the Mother starts her agents of the first wave; the Father starts his
     // agents that wait for none of his others.
@@ -221,13 +226,7 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     if (at.x < INSET.left || at.x > size.width - INSET.right || at.y < INSET.top || at.y > size.height - INSET.bottom) move({ ...view, x: view.x + size.width / 2 - at.x, y: view.y + size.height / 2 - at.y });
   };
   const keys = (event: ReactKeyboardEvent, id: string) => {
-    const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[event.key];
-    if (step) {
-      event.preventDefault();
-      const next = order[Math.max(0, Math.min(order.length - 1, order.indexOf(id) + step))];
-      setFocusId(next); buttons.current.get(next)?.focus({ preventScroll: true }); reveal(next);
-    } else if (event.key === "Enter") { event.preventDefault(); open(id); }
-    else if (event.key === " ") { event.preventDefault(); pick(id, event.shiftKey || event.ctrlKey || event.metaKey); }
+    if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); open(id); }
   };
 
   // The ground: a plate under the graph with a grid offset from the agents, so each stands in a cell.
@@ -285,15 +284,23 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
   const subjectModel = subjectNode?.type === "agent" ? `${modelLabel(subjectNode.data)}${subjectNode.data.effort ? ` · ${subjectNode.data.effort} thinking` : ""}` : null;
 
   return <div ref={root} className="iso-board" role="region" aria-label="Isometric board" tabIndex={-1} data-panning={panning || undefined}
-    onDoubleClick={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onAdd({ x: event.clientX, y: event.clientY }); }}
-    onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label")) onBoardMenu(event); }}
+    onDoubleClick={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .iso-note, .iso-frame")) onAdd({ x: event.clientX, y: event.clientY }); }}
+    onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .iso-note, .iso-frame")) onBoardMenu(event); }}
     onPointerDown={event => {
-      if (event.button !== 1 || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label")) return;
+      if (event.button !== 1 || (event.target as Element).closest(".iso-hud, .iso-port, .iso-label, .iso-link, .iso-flow-label, input, textarea")) return;
       event.preventDefault(); event.currentTarget.focus({ preventScroll: true });
       drag.current = { x: event.clientX, y: event.clientY, from: view, moved: false };
       event.currentTarget.setPointerCapture(event.pointerId);
     }}
+    onKeyDown={event => { if (event.key === "Escape") { setWireDrag(null); if (movingNode.current?.moved) onMoveEnd(false, true); movingNode.current = null; } }}
     onPointerMove={event => {
+      const moving = movingNode.current;
+      if (moving) {
+        const dx = (event.clientX - moving.x) / view.zoom, dy = (event.clientY - moving.y) / view.zoom;
+        if (!moving.moved && Math.hypot(event.clientX - moving.x, event.clientY - moving.y) < 5) return;
+        if (!moving.moved) { onMoveStart(moving.id, moving.alt); moving.moved = true; suppressClick.current = true; event.currentTarget.setPointerCapture(event.pointerId); }
+        onMove(moving.id, Math.round(dx / 20) * 20, Math.round(dy / 20) * 20); onMovePreview(moving.id); return;
+      }
       if (wireDrag) { const box = event.currentTarget.getBoundingClientRect(); setWireDrag({ ...wireDrag, to: { x: event.clientX - box.left, y: event.clientY - box.top } }); return; }
       const start = drag.current;
       if (!start) return;
@@ -302,13 +309,15 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
       start.moved = true; setPanning(true); move({ ...start.from, x: start.from.x + dx, y: start.from.y + dy });
     }}
     onPointerUp={event => {
+      if (movingNode.current) { if (movingNode.current.moved) onMoveEnd(event.shiftKey); movingNode.current = null; setTimeout(() => { suppressClick.current = false; }); }
       if (wireDrag) {
         const hit = document.elementFromPoint(event.clientX, event.clientY), port = hit?.closest<HTMLElement>(".iso-port"), node = hit?.closest<SVGGElement>(".iso-node");
         const over = port?.dataset.node ?? node?.dataset.id;
         const from = wireDrag; setWireDrag(null);
         const box = event.currentTarget.getBoundingClientRect(), distance = Math.hypot(event.clientX - box.left - from.from.x, event.clientY - box.top - from.from.y);
+        if (from.edge) { if (over && over !== from.id && (!port || port.dataset.end !== from.end)) onReconnect(from.edge, ...(from.end === "source" ? [from.id, over] as const : [over, from.id] as const)); return; }
         if (over === from.id && distance < 8) { onCommand({ x: event.clientX, y: event.clientY }, from.id, from.end); return; }
-        if (over && over !== from.id && (!port || port.dataset.end !== from.end)) onConnect(...(from.end === "source" ? [from.id, over] as const : [over, from.id] as const));
+        if (over && over !== from.id && (!port || port.dataset.end !== from.end)) onConnect(...(from.end === "source" ? [from.id, over] as const : [over, from.id] as const), event.altKey ? "alongside" : undefined);
         else if (!over && hit && root.current?.contains(hit) && !hit.closest(".iso-hud, .iso-label, .iso-link, .iso-flow-label")) {
           if (distance >= 8) onAdd({ x: event.clientX, y: event.clientY }, from.id, from.end);
         }
@@ -317,8 +326,8 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
       drag.current = null; setPanning(false);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     }}
-    onLostPointerCapture={() => { drag.current = null; setPanning(false); setWireDrag(null); }}
-    onPointerCancel={() => { drag.current = null; setPanning(false); setWireDrag(null); }}>
+    onLostPointerCapture={() => { if (movingNode.current?.moved) onMoveEnd(false, true); movingNode.current = null; drag.current = null; setPanning(false); setWireDrag(null); }}
+    onPointerCancel={() => { if (movingNode.current?.moved) onMoveEnd(false, true); movingNode.current = null; drag.current = null; setPanning(false); setWireDrag(null); }}>
     <svg role="group" aria-label="Agents in run order">
       <defs><filter id={blur} x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation={dark ? 11 : 7} /></filter></defs>
       <g className="iso-world" transform={`translate(${view.x.toFixed(1)},${view.y.toFixed(1)}) scale(${view.zoom.toFixed(4)})`}>
@@ -332,16 +341,17 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
         </g>}
         {wires.map(wire => {
           const route = routeOf(wire), path = `M ${route.map(point => xy(project(point.u, point.v))).join(" L ")}`, state = wireState(wire, states);
-          return <g key={wire.id} className="iso-link" onClick={event => onWireClick(event, wire)} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, wire); }} data-state={state} data-kind={wire.kind} data-mother={wire.source === MOTHER || undefined} data-father={wire.source === FATHER || undefined} data-hot={(hot && (wire.source === hot || wire.target === hot)) || undefined}>
+          return <g key={wire.id} className="iso-link" data-inserting={inserting === wire.id || undefined} data-id={wire.id} onClick={event => onWireClick(event, wire)} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onWireMenu(event, wire); }} data-state={state} data-kind={wire.kind} data-mother={wire.source === MOTHER || undefined} data-father={wire.source === FATHER || undefined} data-hot={(hot && (wire.source === hot || wire.target === hot)) || undefined}>
             <path className="iso-wire-hit" d={path} /><path className="iso-wire-bed" d={path} /><path className="iso-wire" d={path} />{waits(wire) && wire.source !== MOTHER && <Chevrons route={route} live={state === "live"} />}
           </g>;
         })}
         {painted.map(place => {
           const shape = shapeOf(place), ring = ellipse(shape.ring), pillar = place.kind !== "agent";
           return <g key={place.id} ref={element => { if (element) buttons.current.set(place.id, element); else buttons.current.delete(place.id); }}
-            className="iso-node" style={place.kind === "agent" ? { "--agent-color": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties : undefined} data-id={place.id} data-kind={place.kind} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
+            className="iso-node" style={place.kind === "agent" ? { "--agent-color": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties : undefined} data-id={place.id} data-kind={place.kind} data-muted={nodes.get(place.id)?.type === "agent" && (nodes.get(place.id)!.data as AgentData).muted || undefined} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
             role="button" tabIndex={tabbable === place.id ? 0 : -1} aria-pressed={selected.includes(place.id)} aria-label={`${titleOf(place.id)}: ${describe(place.id)}`}
-            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey)} onDoubleClick={() => rename(place.id)} onKeyDown={event => keys(event, place.id)}
+            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => { if (!suppressClick.current) pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey); }} onDoubleClick={() => open(place.id)} onKeyDown={event => keys(event, place.id)}
+            onPointerDown={event => { if (event.button !== 0 || place.kind !== "agent") return; movingNode.current = { id: place.id, x: event.clientX, y: event.clientY, moved: false, alt: event.altKey }; }}
             onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}
             onFocus={() => { setFocused(place.id); setFocusId(place.id); }} onBlur={() => setFocused(current => current === place.id ? null : current)}>
             <ellipse className="iso-hit" cx={place.at.x} cy={place.at.y} rx={ring.rx} ry={ring.ry} />
@@ -361,11 +371,37 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
     {places.filter(place => place.kind === "agent").flatMap(place => (["target", "source"] as const).map(end => {
       const point = screen(place.at), offset = ellipse(shapeOf(place).ring).rx * view.zoom;
       const at = { x: point.x + (end === "source" ? offset : -offset), y: point.y };
-      return <button data-slot="iso-port" key={`${place.id}-${end}`} type="button" className="iso-port" data-kind="agent" data-node={place.id} data-end={end} aria-label={`${end === "source" ? "Output" : "Input"} of ${titleOf(place.id)}`} title={end === "source" ? "Drag to another agent's input, or drop to add an agent" : "Drag from another agent's output"} style={{ left: at.x, top: at.y, "--kind": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties}
+      const valid = !wireDrag ? undefined : end !== wireDrag.end && canConnect(...(wireDrag.end === "source" ? [wireDrag.id, place.id] as const : [place.id, wireDrag.id] as const), wireDrag.edge?.id ?? null, wireDrag.alongside || wireDrag.edge?.kind === "alongside");
+      return <button data-valid={valid} data-slot="iso-port" key={`${place.id}-${end}`} type="button" className="iso-port" data-kind="agent" data-node={place.id} data-end={end} aria-label={`${end === "source" ? "Output" : "Input"} of ${titleOf(place.id)}`} title={end === "source" ? "Drag to another agent's input, or drop to add an agent" : "Drag from another agent's output"} style={{ left: at.x, top: at.y, "--kind": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties}
         onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }}
-        onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); root.current?.focus({ preventScroll: true }); root.current?.setPointerCapture(event.pointerId); setWireDrag({ id: place.id, end, from: at, to: at }); }}
+        onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); root.current?.focus({ preventScroll: true }); root.current?.setPointerCapture(event.pointerId); setWireDrag({ id: place.id, end, from: at, to: at, alongside: event.altKey }); }}
         onClick={event => { event.stopPropagation(); if (event.detail === 0) { const box = event.currentTarget.getBoundingClientRect(); onCommand({ x: box.left, y: box.bottom }, place.id, end); } }} />;
     }))}
+    {graph.edges.filter(edge => selected.includes(edge.id)).flatMap(edge => (["source", "target"] as const).map(end => {
+      const place = byId.get(edge[end]), fixed = byId.get(edge[end === "source" ? "target" : "source"]); if (!place || !fixed) return null;
+      const at = screen(place.at), origin = screen(fixed.at);
+      return <button type="button" className="iso-port iso-wire-end" key={`${edge.id}-${end}`} aria-label={`Reconnect ${end} of wire`} style={{ left: at.x, top: at.y - 18 }} onPointerDown={event => {
+        if (event.button !== 0) return; event.preventDefault(); event.stopPropagation(); root.current?.focus({ preventScroll: true }); root.current?.setPointerCapture(event.pointerId);
+        setWireDrag({ id: fixed.id, end: end === "source" ? "target" : "source", from: origin, to: at, edge });
+      }} />;
+    }))}
+    {(graph.frames ?? []).map(frame => {
+      const members = places.filter(place => frame.nodeIds.includes(place.id)).map(place => ({ left: place.at.x - 90, top: place.at.y - 150, right: place.at.x + 90, bottom: place.at.y + 60 }));
+      for (const node of graph.nodes) if (node.type === "note" && frame.nodeIds.includes(node.id)) { const at = node.isoPosition ?? node.position; members.push({ left: at.x - 24, top: at.y - 40, right: at.x + 224, bottom: at.y + 134 }); }
+      if (!members.length) return null;
+      const first = screen({ x: Math.min(...members.map(box => box.left)), y: Math.min(...members.map(box => box.top)) });
+      const last = screen({ x: Math.max(...members.map(box => box.right)), y: Math.max(...members.map(box => box.bottom)) });
+      return <div key={frame.id} className="canvas-frame iso-frame" style={{ left: first.x, top: first.y, width: last.x - first.x, height: last.y - first.y }}>
+        <div className="canvas-frame-title" onClick={() => onSelect([...frame.nodeIds, frame.id])} onPointerDown={event => { if (event.button !== 0 || (event.target as Element).closest("input")) return; event.stopPropagation(); movingNode.current = { id: frame.id, x: event.clientX, y: event.clientY, moved: false, alt: false }; }}>
+          {renamingFrame === frame.id ? <CanvasTextEdit label="Frame name" maxLength={120} value={frame.title} onSave={title => onFrameName(frame.id, title)} onCancel={() => onFrameName(frame.id, null)} /> : <strong>{frame.title}</strong>}
+        </div></div>;
+    })}
+    {graph.nodes.filter(node => node.type === "note").map(node => {
+      const at = screen(node.isoPosition ?? node.position);
+      return <div key={node.id} data-id={node.id} className="canvas-note iso-note" style={{ left: at.x, top: at.y }} onClick={event => { event.stopPropagation(); onSelect(event.shiftKey ? [...selected, node.id] : [node.id]); }}>
+        <span className="canvas-note-grip" onPointerDown={event => { if (event.button !== 0) return; event.stopPropagation(); movingNode.current = { id: node.id, x: event.clientX, y: event.clientY, moved: false, alt: false }; }}>Note · for you</span>
+        <textarea aria-label="Note" value={node.data.text} onChange={event => onNoteText(node.id, event.target.value)} /></div>;
+    })}
     <div className="iso-labels">
       {places.map(place => {
         const at = labelPositions.get(place.id)!;
@@ -404,11 +440,16 @@ export function IsoBoard({ graph, father, states, selected, onSelect, onOpen, da
       })}
     </div>
     <div className="iso-hud iso-controls" role="toolbar" aria-label="Zoom">
-      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
-      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (Ctrl/Cmd+scroll)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
-      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
+      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
+      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
+      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph (Home)" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
       <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Middle-drag</b>Pan</span></span>
     </div>
+    {minimap && <svg className="iso-hud canvas-minimap iso-minimap" role="img" aria-label="Minimap" viewBox={`${content.left - 30} ${content.top - 30} ${content.right - content.left + 60} ${content.bottom - content.top + 60}`} onClick={event => {
+      if (!size) return; const point = event.currentTarget.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
+      const matrix = event.currentTarget.getScreenCTM(); if (!matrix) return; const at = point.matrixTransform(matrix.inverse());
+      move({ ...view, x: size.width / 2 - at.x * view.zoom, y: size.height / 2 - at.y * view.zoom });
+    }}>{places.map(place => <circle key={place.id} cx={place.at.x} cy={place.at.y} r={18} />)}</svg>}
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>

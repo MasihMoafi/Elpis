@@ -1,6 +1,7 @@
 import { characters } from "./agent-characters";
 import { appStorage } from "@/lib/projects";
-import { waits } from "./canvas-delete-flow";
+import { deleteKeepingFlow, waits } from "./canvas-delete-flow";
+import { linkedIds, type CanvasFrame } from "./canvas-editing";
 export { waits };
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
@@ -9,7 +10,7 @@ export { waits };
  * (`runTasks`), and reading or planning happens inside the writers (lat.md/tasks.md, 17 October 2026). */
 /** `provider` is null for the engine's own provider; `effort` is the thinking level (sent per task); `writeScopes` are the project's
  * folders the agent may write ("." is the whole project) besides its own folder (`ownFolders`). */
-export type AgentData = { character?: string; characterImage?: string; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
+export type AgentData = { character?: string; characterImage?: string; muted?: boolean; title: string; instruction: string; model: string | null; provider?: string | null; effort?: string | null; writeScopes: string[]; acceptanceCriteria: string[] };
 export type NoteData = { text: string };
 type Position = { x: number; y: number };
 /** `isoPosition` pins a manually placed pedestal in projected ground units until Arrange is used. */
@@ -22,7 +23,7 @@ export type CanvasEdge = { id: string; source: string; target: string; kind?: "a
  * what the user left empty, and the model of her chat (the run's root). */
 export type MotherSettings = { brief: string; model: string | null; provider: string | null };
 /** `maxAgents` is the most agents the graph may hold; `template` is the architecture it was loaded from. */
-export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; maxAgents?: number; template?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number };
+export type CanvasGraph = { name: string; nodes: CanvasNode[]; edges: CanvasEdge[]; frames?: CanvasFrame[]; minimap?: boolean; maxAgents?: number; template?: string; mother?: MotherSettings; motherFlow?: string; roundLimit?: number };
 /** A task's state from /api/workflows, shared by ACP runs and retained native history. */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
 /** The words both views of the board (flat and isometric) use for an agent's state, and for its check: the read-only
@@ -310,6 +311,7 @@ export function makesLoop(edges: CanvasEdge[], source: string, target: string) {
 /** The run in its parts: the Mother's tasks, and the Father's (empty within PER_PARENT agents). The Father's part
  * starts after hers has succeeded, so waiting on her agents is dropped from his tasks. */
 export function runParts(graph: CanvasGraph): { mother: RunTask[]; father: RunTask[] } | { error: string } {
+  graph = executionGraph(graph);
   const built = runTasks(graph);
   if ("error" in built) return built;
   const split = parents(graph), his = new Set(split.father.flatMap(id => [id, checkOf(id)]));
@@ -317,6 +319,7 @@ export function runParts(graph: CanvasGraph): { mother: RunTask[]; father: RunTa
 }
 
 export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: string } {
+  graph = executionGraph(graph);
   const agents = agentsOf(graph);
   if (graph.template === "recursive" && (!Number.isSafeInteger(graph.roundLimit) || graph.roundLimit! < 1 || graph.roundLimit! > 100)) return { error: "Recursive workflows need a round limit from 1 to 100." };
   if (graph.template !== "recursive" && graph.edges.some(edge => edge.feedback)) return { error: "Feedback links need the recursive pattern and a round limit." };
@@ -360,6 +363,15 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
         dependsOn: [node.id], writeScopes: [`${folder}/check`], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
     ];
   }) };
+}
+
+/** Mute changes execution only. The saved drawing and its settings remain available to unmute or undo. */
+export function executionGraph(graph: CanvasGraph, targets?: string[]): CanvasGraph {
+  const muted = agentsOf(graph).filter(node => node.data.muted).map(node => node.id);
+  const enabled = muted.length ? deleteKeepingFlow(graph, muted).graph : graph;
+  if (!targets) return enabled;
+  const ids = new Set(linkedIds(enabled, targets.filter(id => enabled.nodes.some(node => node.id === id && node.type === "agent")), "upstream"));
+  return { ...enabled, nodes: enabled.nodes.filter(node => node.type === "mother" || ids.has(node.id)), edges: enabled.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)) };
 }
 
 /** What Elpis designs from a goal (POST /api/canvas/plan, bridge/canvas-plan.mjs): the whole team, each agent keyed

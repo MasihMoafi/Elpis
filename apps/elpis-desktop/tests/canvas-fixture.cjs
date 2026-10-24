@@ -23,7 +23,7 @@ function planFor(body, fill = ['src']) {
  * device before the page opens; `listed(run, looks)` answers a look at the run (workGraph/list) instead of the default,
  * which runs for one look and then succeeds. */
 const ENDED = new Set(['succeeded', 'completed', 'failed', 'cancelled']);
-async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '' } = {}) {
+async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '' } = {}) {
   const posts = [], plans = [], runs = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
@@ -79,6 +79,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }));
     if (saved && !localStorage.getItem('elpis-workflow-draft-v1')) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(saved));
   }, graph);
+  if (autoLayout !== undefined) await page.addInitScript(on => localStorage.setItem('elpis-canvas-auto', on ? 'on' : 'off'), autoLayout);
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.getByRole('button', { name: 'Workflows', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
