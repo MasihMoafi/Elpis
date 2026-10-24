@@ -125,7 +125,9 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         result = { data: data.map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor }; break;
       }
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
-      case 'thread/resume': result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] } }; break;
+      // Like the engine (thread_processor.rs), an archived chat refuses to resume, naming the terminal's command.
+      case 'thread/resume': if (threads.get(request.params.threadId)?.archived) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: `session ${request.params.threadId} is archived. Run \`codex unarchive ${request.params.threadId}\` to unarchive it first.` } }))); return; }
+        result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] } }; break;
       case 'thread/turns/list': result = { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
       case 'thread/fork': { const thread = { id: FORK, forkedFromId: request.params.threadId, source: 'appServer', canAcceptDirectInput: true, model: request.params.model, modelProvider: request.params.modelProvider, status: { type: 'idle' } }; threads.set(FORK, thread); result = { thread }; break; }
       case 'thread/name/set': threads.get(request.params.threadId).name = request.params.name; result = {}; break;
@@ -1283,6 +1285,28 @@ test('rename, archive, unarchive and edit-and-resend reach native thread methods
   threads.get(CHILD).status = { type: 'idle' };
   await assert.rejects(client.revert(CHILD, { beforeTurnId: 'turn-1', text: 'Replace' }), /only from its parent/);
   assert.equal(socket.sent.filter(row => row.method === 'thread/revert').length, 1, 'an agent owned by its parent is never reverted');
+  client.close();
+});
+
+test('an archived chat opens without an error, and writing in it brings it back and sends; no terminal command is named', async () => {
+  const { client, socket, threads } = fixture(); await client.initialize(); await client.listThreads();
+  await client.archiveThread(ROOT, {});
+  const opened = await client.resume(ROOT, {});
+  assert.equal(opened.thread.id, ROOT, 'opening an archived chat shows it, read from the engine');
+  assert.equal(threads.get(ROOT).archived, true, 'opening it leaves it archived');
+  const events = []; client.on('event', event => events.push(event));
+  await client.send(ROOT, { text: 'One more thing' });
+  assert.equal(threads.get(ROOT).archived, undefined, 'sending brings it back first');
+  assert.deepEqual(socket.sent.filter(row => ['thread/unarchive', 'turn/start'].includes(row.method) && row.params.threadId === ROOT).map(row => row.method), ['thread/unarchive', 'turn/start']);
+  assert.equal(threads.get(CHILD).archived, undefined, 'its agent comes back with it');
+  assert.match(JSON.stringify(socket.sent.filter(row => row.method === 'turn/start').at(-1).params.input), /One more thing/);
+  assert.equal((await client.listThreads()).data.some(thread => thread.id === ROOT), true, 'it is in the chat list again');
+  socket.emit('message', JSON.stringify({ method: 'thread/unarchived', params: { threadId: ROOT } }));
+  assert(events.some(event => event.data?.method === 'thread/unarchived'), 'the window hears that a chat came back');
+  threads.get(ROOT).status = { type: 'idle' }; threads.get(ROOT).archived = true;
+  const error = await client.setServiceTier(ROOT, { enabled: true }).then(() => null, error => error);
+  assert(error, 'a change other than a message still needs the chat back');
+  assert.doesNotMatch(error.message, /codex/i); assert.match(error.message, /archived/i);
   client.close();
 });
 

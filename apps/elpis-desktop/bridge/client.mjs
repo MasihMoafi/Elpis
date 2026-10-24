@@ -73,7 +73,7 @@ const NOTIFICATIONS = new Set([
   'thread/tokenUsage/updated', 'thread/smartPrune/updated',
   'thread/goal/updated', 'thread/goal/cleared',
   'thread/started', 'thread/status/changed', 'thread/name/updated', 'thread/settings/updated',
-  'thread/closed', 'thread/archived', 'thread/deleted', 'turn/started', 'turn/completed',
+  'thread/closed', 'thread/archived', 'thread/unarchived', 'thread/deleted', 'turn/started', 'turn/completed',
   'turn/aborted', 'turn/diff/updated', 'turn/plan/updated', 'item/started', 'item/completed',
   'turn/activityUpdated', 'turn/costUpdated',
   'item/agentMessage/delta', 'item/reasoning/summaryTextDelta', 'item/commandExecution/outputDelta',
@@ -141,6 +141,9 @@ function modeOf(result) {
 const WHOLE_TURNS = 'whole-turns:';
 /** Requests that download (a Git clone, a plugin bundle) can take minutes; the rest answer within the default wait. */
 const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/install']);
+// The engine refuses to resume an archived chat and names its terminal command (`codex unarchive`), which this app does not have.
+const ARCHIVED_SESSION = /^session \S+ is archived\./;
+const archivedSession = error => ARCHIVED_SESSION.test(error?.engineMessage ?? '');
 const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
 /** What a module with a conversation of its own (the canvas planner, bridge/canvas-plan.mjs) may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
@@ -326,7 +329,7 @@ export class DesktopClient extends EventEmitter {
         const contextFiles = pending.method === 'thread/contextFiles/list' || pending.method === 'thread/contextFiles/set';
         const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? '');
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
-        const detail = (workflow || pending.method.startsWith('thread/goal/') || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
+        const detail = ARCHIVED_SESSION.test(message.error.message ?? '') ? 'This chat is archived. Unarchive it, or send a message in it, to continue.' : (workflow || pending.method.startsWith('thread/goal/') || EXPLAINED.has(pending.method) || message.error.code === -32601) && typeof message.error.message === 'string' ? message.error.message.slice(0,1000) : `Elpis rejected the operation (${message.error.code ?? 'unknown'}). No automatic retry was made.`;
         const error = new BridgeError(conflict ? 'Settings changed in another client. Reload settings before saving again.' : unsupported ? contextFiles ? 'Update and restart Elpis to view and change context files.' : 'Update and restart Elpis to run workflows from this app.' : detail, conflict || message.error.data?.reason === 'threadBusy' ? 409 : unsupported ? 503 : workflow ? 400 : 502);
         error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
@@ -1704,7 +1707,10 @@ export class DesktopClient extends EventEmitter {
   async resume(id, body) {
     object(body, []);
     // A chat already followed (the list follows running ones) is read again, so its mode, Plan and effort still show.
-    const result = await this.#attach(id) ?? await this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(() => null);
+    // An archived chat opens read from the engine, without following it: the engine resumes it only once it is back.
+    let archived = false;
+    const result = await this.#attach(id).catch(error => { if (!archivedSession(error)) throw error; archived = true; return null; })
+      ?? (archived ? null : await this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(() => null));
     void this.#releaseLeft(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');
@@ -1737,7 +1743,16 @@ export class DesktopClient extends EventEmitter {
     if (typeof value !== 'string' || !EFFORT.test(value)) throw new BridgeError('Choose a reasoning effort offered by the model');
     return value;
   }
+  /** Writing in an archived chat brings it back first (with the agents archived with it), as a reply brings an archived mail thread back to the inbox. */
   async send(id, body) {
+    try { return await this.#send(id, body); }
+    catch (error) {
+      if (!archivedSession(error)) throw error;
+      await this.unarchiveThread(id, {});
+      return this.#send(id, body);
+    }
+  }
+  async #send(id, body) {
     object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'mentions', 'permissions', 'mode']);
     const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments, body.mentions);
     const effort = this.#effort(body.effort), permissions = permissionMode(body.permissions);

@@ -728,6 +728,8 @@ export default function Home() {
           if (method === "thread/started" && params.thread?.parentThreadId) upsertThread(params.thread);
           if (method === "thread/name/updated" || method === "thread/started") refreshThreads().catch(e => setError(String(e)));
           if (method === "thread/deleted" || (method === "thread/archived" && rewindSwitch.current !== params.threadId)) removeThreads(new Set([params.threadId]), method === "thread/deleted");
+          // A chat brought back (writing in it, or Unarchive anywhere) returns to the list.
+          if (method === "thread/unarchived") { hidden.current.delete(params.threadId); refreshThreads().catch(e => setError(String(e))); }
           const line = threadId ? activityOf(method, params) : null;
           if (line && threadId) setActivity(prev => prev[threadId] === line ? prev : { ...prev, [threadId]: line });
           if (!threadId || threadId !== selectedRef.current?.id) return;
