@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/side-empty.test.cjs": {
+      "blob": "24d9a4e52ca626605eba8680b8d376e2ecaf23a2",
+      "approval": "846d842e321f25a45259ae8239f3b16a7b7511dc",
+      "reason": "GOAL, Masih 24 Oct: \"/goal doesn't exist here btw. it should obviously; along with the ES.md and context files should be visible in the tab right.\" Context is the fifth panel action; retain the existing minimum-width and overflow checks for every button."
+    },
   "tests/browser-drawing.test.cjs": {
     "blob": "1c1f224d84c38fcd37397d8520b7649885b76549",
     "approval": "e3db232c95e08534da9d7cc5e599fcad7fcf259c",
