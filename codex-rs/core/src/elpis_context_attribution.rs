@@ -69,7 +69,13 @@ pub(crate) fn classify(prompt: &Prompt, input: &[ResponseItem]) -> ContextAttrib
     };
 
     for item in input {
-        let tokens = u64::try_from(estimate_item_token_count(item).max(0)).unwrap_or(u64::MAX);
+        let tokens = match item {
+            ResponseItem::Reasoning {
+                encrypted_content: Some(content),
+                ..
+            } => encrypted_reasoning_tokens(content),
+            _ => u64::try_from(estimate_item_token_count(item).max(0)).unwrap_or(u64::MAX),
+        };
         let target = match item {
             ResponseItem::Message { role, .. } if role == "system" => {
                 &mut snapshot.system_instructions
@@ -115,6 +121,22 @@ pub(crate) fn classify(prompt: &Prompt, input: &[ResponseItem]) -> ContextAttrib
         .saturating_add(snapshot.output_schema)
         .saturating_add(snapshot.unrecognized_items);
     snapshot
+}
+
+/// Characters of a reasoning item's `encrypted_content` per token it adds to later requests, times
+/// ten. Measured on 24 Oct 2026 over 4,511 consecutive requests in 13 gpt-6.1-sol chats: each
+/// character of a response's encrypted reasoning grew the next request's input by 0.0641 tokens
+/// (one token per 15.6 characters). The shared history estimate (`estimate_item_token_count`,
+/// copied from Codex: decoded bytes minus 650, over four) counts about 2.6 times that, which made
+/// "Reasoning + compaction" the largest share of every reasoning-heavy chat.
+const ENCRYPTED_REASONING_CHARS_PER_TOKEN_X10: u64 = 156;
+
+/// Tokens one encrypted reasoning item occupies in a request, from its encrypted length.
+pub(crate) fn encrypted_reasoning_tokens(encrypted_content: &str) -> u64 {
+    u64::try_from(encrypted_content.len())
+        .unwrap_or(u64::MAX)
+        .saturating_mul(10)
+        .div_ceil(ENCRYPTED_REASONING_CHARS_PER_TOKEN_X10)
 }
 
 #[cfg(test)]

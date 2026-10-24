@@ -1643,6 +1643,25 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
 });
 
 
+test('encrypted reasoning weighs what the model is sent: one token per 15.6 characters, as the engine counts it (A225, A260)', async () => {
+  const { sizedItem } = await import('./elpis-features.mjs');
+  const tokens = item => { const [key, bytes] = sizedItem(item); return [key, Math.ceil(bytes / 4)]; };
+  const reasoning = length => ({ type: 'reasoning', summary: [], encrypted_content: 'g'.repeat(length) });
+  // The same values the engine's tests pin (core elpis_context_attribution_tests.rs).
+  for (const [length, expected] of [[0, 0], [1, 1], [156, 10], [1560, 100], [7287, 468], [156000, 10000]]) assert.deepEqual(tokens(reasoning(length)), ['reasoning', expected], `${length} characters`);
+  assert.deepEqual(tokens({ type: 'reasoning', summary: [{ type: 'summary_text', text: 'plain' }] }), ['reasoning', 0], 'no encrypted content weighs nothing');
+  assert.deepEqual(tokens({ type: 'compaction', encrypted_content: 'g'.repeat(68620) }), ['reasoning', 12704], 'a compaction keeps the shared estimate');
+  // Any length: rounded up by less than a token, never more as it shrinks, and below the old decoded-size estimate for every real item (>= 1.5k characters).
+  let seed = 0x5eed1024, last = -1;
+  const lengths = [0, 1, 155, 156, 157, 1591, 1592, ...Array.from({ length: 500 }, () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) % 70000)].sort((a, b) => a - b);
+  for (const length of lengths) {
+    const [, count] = tokens(reasoning(length));
+    assert.ok(count >= length / 15.6 - 1e-9 && count < length / 15.6 + 1, `${length}: ${count}`);
+    assert.ok(count >= last, 'longer reasoning never weighs less'); last = count;
+    if (length >= 1592) assert.ok(count < Math.ceil(Math.max(0, Math.floor(length * 3 / 4) - 650) / 4), `${length}: not below the old estimate`);
+  }
+});
+
 test('an old chat shows category shares estimated from its saved transcript, until the engine sends its own', async () => {
   const { rolloutShares, contextLedger } = await import('./elpis-features.mjs');
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-shares-'));
@@ -1660,13 +1679,13 @@ test('an old chat shows category shares estimated from its saved transcript, unt
   const write = async (name, rows) => { const file = path.join(temp, name); await fs.writeFile(file, rows.join('\n') + '\n'); return file; };
   const plain = await write('rollout-a.jsonl', lines);
   const shares = await rolloutShares(plain);
-  assert.deepEqual(shares, { systemInstructions: 100, developerMessages: 200, userMessages: 10, agentMessages: 25, reasoning: 213, toolCalls: 25, toolResults: 1000, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0 },
-    'each item counted as the engine counts it: text bytes ÷ 4, a reasoning blob by its decoded size, a call by name, namespace and arguments');
+  assert.deepEqual(shares, { systemInstructions: 100, developerMessages: 200, userMessages: 10, agentMessages: 25, reasoning: 129, toolCalls: 25, toolResults: 1000, toolDefinitions: 0, outputSchema: 0, unrecognizedItems: 0 },
+    'each item counted as the engine counts it: text bytes ÷ 4, a reasoning blob at 15.6 characters a token, a call by name, namespace and arguments');
   const usage = total => ({ last: { totalTokens: total }, modelContextWindow: 20000 });
   const ledger = contextLedger(usage(2000), shares);
   assert.deepEqual(ledger.categories.map(row => [row.label, row.tokens]), [
-    ['User messages', 10], ['Agent messages', 25], ['Reasoning + compaction', 213], ['Tool calls', 25], ['Tool results', 1000],
-    ['System instructions', 100], ['Developer messages', 200], ['Tool definitions + schema', 427]], 'what the transcript cannot hold (the tool definitions) is the rest of the measured total');
+    ['User messages', 10], ['Agent messages', 25], ['Reasoning + compaction', 129], ['Tool calls', 25], ['Tool results', 1000],
+    ['System instructions', 100], ['Developer messages', 200], ['Tool definitions + schema', 511]], 'what the transcript cannot hold (the tool definitions) is the rest of the measured total');
   assert.equal(ledger.basis, 'transcript'); assert.equal(ledger.categories.reduce((sum, row) => sum + row.tokens, 0), 2000);
   const engine = contextLedger({ ...usage(2000), contextAttribution: { userMessages: 5, toolDefinitions: 5, estimatedTotal: 10 } }, shares);
   assert.equal(engine.basis, 'engine', 'the engine\'s own shares win over the transcript'); assert.deepEqual(engine.categories.map(row => row.tokens), [1000, 1000]);
