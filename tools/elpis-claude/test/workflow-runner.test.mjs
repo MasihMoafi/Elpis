@@ -296,21 +296,71 @@ test("workflow() runs a saved workflow inline, one level deep (WR2)", async () =
   assert.match(unknown.error, /Unknown workflow nope/);
 });
 
-test("isolation: 'worktree' gives an agent its own git worktree, removed when unchanged (WR2)", async () => {
-  const repo = home();
-  execFileSync("git", ["init", "-q", repo]);
-  execFileSync("git", ["-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]);
-  const cwds = [];
-  const ex = executor();
-  const open = ex.open;
-  ex.open = async (o) => { cwds.push(o.cwd); if (cwds.length === 2) fs.writeFileSync(path.join(o.cwd, "changed.txt"), "x"); return open(o); };
+const gitIn = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", ...args], { encoding: "utf8" }).trim();
+function repo() {
+  const dir = home();
+  execFileSync("git", ["init", "-q", dir]);
+  gitIn(dir, "commit", "-q", "--allow-empty", "-m", "init");
+  return dir;
+}
+const branches = (dir) => gitIn(dir, "branch", "--format=%(refname:short)").split("\n").filter((b) => b.startsWith("elpis-workflow/"));
+
+test("isolation: 'worktree' gives each agent its own worktree and branch: unchanged ones go with their branch, changed or committed ones stay (WR2)", async () => {
+  const main = repo();
+  const cwds = {};
+  const ex = executor({ answer: (p) => `done: ${p}` });
+  const turn = ex.turn;
+  ex.turn = async (o) => {
+    const prompt = promptOf(o.text), cwd = ex.opened.find((x) => `chat-${ex.opened.indexOf(x) + 1}` === o.threadId).cwd;
+    cwds[prompt] = cwd;
+    if (prompt === "dirty") fs.writeFileSync(path.join(cwd, "changed.txt"), "x");
+    if (prompt === "commit") { fs.writeFileSync(path.join(cwd, "made.txt"), "y"); gitIn(cwd, "add", "made.txt"); gitIn(cwd, "commit", "-q", "-m", "made"); }
+    return turn(o);
+  };
   const r = runner(ex);
-  const { run: done } = await run(r, `${META}return [await agent('clean', { isolation: 'worktree' }), await agent('dirty', { isolation: 'worktree' })]`, { cwd: repo });
+  const { run: done } = await run(r, `${META}return await parallel(['clean', 'dirty', 'commit'].map((p) => () => agent(p, { isolation: 'worktree' })))`, { cwd: main });
   assert.equal(done.status, "completed", done.error);
-  assert.ok(cwds.every((c) => c.startsWith(done.dir)), cwds.join(", "));
-  assert.equal(fs.existsSync(cwds[0]), false, "an unchanged worktree is removed");
-  assert.equal(fs.existsSync(path.join(cwds[1], "changed.txt")), true, "a changed one is kept");
-  assert.match(done.result[1], /Changes left in worktree/);
+  assert.equal(new Set(Object.values(cwds)).size, 3, "a worktree per agent");
+  assert.ok(Object.values(cwds).every((c) => c.startsWith(done.dir) && c !== main), JSON.stringify(cwds));
+  assert.equal(fs.existsSync(cwds.clean), false, "an unchanged worktree is removed");
+  const agents = Object.fromEntries(r.read(done.id).agents.map((a) => [a.label, a]));
+  assert.deepEqual(branches(main).sort(), [agents.dirty.worktreeBranch, agents.commit.worktreeBranch].sort(), "the unchanged agent's branch goes with it; the others stay");
+  assert.equal(fs.readFileSync(path.join(cwds.dirty, "changed.txt"), "utf8"), "x", "an uncommitted change is kept");
+  assert.equal(gitIn(main, "show", `${agents.commit.worktreeBranch}:made.txt`), "y", "a commit is kept on its branch");
+  assert.equal(done.result[0], "done: clean");
+  for (const [i, name] of [[1, "dirty"], [2, "commit"]]) assert.equal(done.result[i], `done: ${name}\n\n[Changes left in worktree ${cwds[name]} on branch ${agents[name].worktreeBranch}]`);
+  assert.equal(fs.existsSync(path.join(main, "changed.txt")), false, "the person's checkout is untouched");
+});
+
+test("an isolated agent resumed after its runtime died keeps its worktree, and what it committed before is kept (WR3)", async () => {
+  const main = repo(), h = home();
+  // The first runtime dies mid-turn: the agent's turn never ends there, so nothing of it is cleaned up (as at a SIGKILL).
+  const ex1 = executor();
+  ex1.turn = async (o) => {
+    const cwd = ex1.opened.at(-1).cwd;
+    fs.writeFileSync(path.join(cwd, "half.txt"), "1"); gitIn(cwd, "add", "half.txt"); gitIn(cwd, "commit", "-q", "-m", "half");
+    return new Promise(() => {});
+  };
+  const r1 = runner(ex1, h);
+  const { runId } = await r1.start({ script: `${META}return await agent('build it', { isolation: 'worktree' })`, parentThreadId: "chat-parent", cwd: main, model: "gpt-test" });
+  while (!fs.existsSync(path.join(ex1.opened[0]?.cwd ?? "/nonexistent", "half.txt"))) await sleep(10);
+  const first = ex1.opened[0].cwd;
+  r1.close();
+  const state = JSON.parse(fs.readFileSync(path.join(r1.runsDir, runId, "run.json"), "utf8"));
+  state.owner = { pid: 999999, token: "gone" };
+  fs.writeFileSync(path.join(r1.runsDir, runId, "run.json"), JSON.stringify(state));
+  const ex2 = executor();
+  const r2 = runner(ex2, h);
+  const done = ended(r2, runId);
+  assert.deepEqual(r2.recover(), [runId]);
+  const finished = await done;
+  assert.equal(finished.status, "completed", finished.error);
+  assert.equal(ex2.turns.length, 1);
+  assert.equal(fs.existsSync(path.join(first, "half.txt")), true, "the resumed agent works on in the same worktree, and it is kept");
+  const agent = r2.read(runId).agents[0];
+  assert.equal(agent.worktree, first);
+  assert.equal(gitIn(main, "show", `${agent.worktreeBranch}:half.txt`), "1", "the commit made before the restart is on its branch");
+  assert.match(finished.result, /Changes left in worktree/);
 });
 
 test("a script reaches nothing outside its context: no process, file system or shell through any hook, promise, error or result (WR2)", async () => {
