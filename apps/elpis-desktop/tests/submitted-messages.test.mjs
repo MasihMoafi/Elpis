@@ -51,3 +51,13 @@ test('history removal after an observed echo never resurrects a sent prompt', ()
   assert.equal(withSubmittedMessages([echo], [observed], 'chat').length, 1);
   assert.deepEqual(withSubmittedMessages([], [observed], 'chat'), [], 'rewind, compaction or another client may remove a recorded item');
 });
+
+test('a message sent while the agent works shows right below the last message, not at the start of its turn (R2)', () => {
+  const ask = entry('active', 'ask', 'Build it'), work = { turnId: 'active', item: { id: 'work', type: 'agentMessage', text: 'Working on it' } };
+  const pending = sent({ turnId: 'active', newTurn: false, previousKeys: [entryKey(ask), entryKey(work)] });
+  assert.deepEqual(withSubmittedMessages([ask, work], [pending], 'chat').map(item => item.item.id), ['ask', 'work', 'local']);
+  const later = { turnId: 'active', item: { id: 'later', type: 'agentMessage', text: 'More' } };
+  assert.deepEqual(withSubmittedMessages([ask, work, later], [pending], 'chat').map(item => item.item.id), ['ask', 'work', 'local', 'later'], 'what the agent writes afterwards comes after it');
+  const fresh = { turnId: 'new', item: { id: 'early', type: 'agentMessage', text: 'Hi' } };
+  assert.deepEqual(withSubmittedMessages([ask, work, fresh], [sent({ turnId: 'new', previousKeys: [entryKey(ask), entryKey(work)] })], 'chat').map(item => item.item.id), ['ask', 'work', 'local', 'early'], 'a new turn still opens with the message');
+});
