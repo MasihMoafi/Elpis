@@ -1526,8 +1526,10 @@ export default function Home() {
     { id: "delete", label: agentRuns.length > 100 ? "Delete 100 Agent runs…" : "Delete Agent run history…", destructive: true, run: () => { setDeleteRunHistory(true); setDeleteTargets(agentRuns.slice(0, 100)); } },
   ];
   const ordinaryUnread = attention.unread.filter(id => ordinaryThreads.some(thread => thread.id === id));
-  const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
-  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!t.parentThreadId || !(searchTerm ? filtered : searchedThreads).some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
+  // The engine's search matches letter case exactly; a listed chat's title and first message match in any case here.
+  const filtered = searchedThreads.filter(t => !isAgentRun(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
+  // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
+  const roots = filtered.filter(t => !isUnlinkedAgent(t, searchedThreads) && (!!searchTerm || !t.parentThreadId || !searchedThreads.some(p => p.id === t.parentThreadId))).filter(t => searchTerm || !projectChats[t.id] || pins.includes(t.id));
   const unlinked = filtered.filter(t => isUnlinkedAgent(t, searchedThreads));
   // The chat list in screen order: Pinned, the groups (when the list is drawn by them), then Recents; sorted as chosen.
   // Search results keep the search's order.
@@ -1539,7 +1541,7 @@ export default function Home() {
   const loveChats = searchTerm ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Love Spot");
   const workflowChats = searchTerm || hiddenPages.includes("canvas") ? [] : ungroupedChats.filter(thread => chatOrigin(thread, loveActivity.threads) === "Workflows");
   const recentChats = searchTerm ? ungroupedChats : ungroupedChats.filter(thread => !chatOrigin(thread, loveActivity.threads));
-  const ordered = [...(collapsedSections.pinned ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
+  const ordered = [...(collapsedSections.pinned && !searchTerm ? [] : pinnedChats), ...(collapsedSections.groups ? [] : grouped?.groups.flatMap(section => chatGroups.collapsed.includes(section.group.id) ? [] : section.chats) ?? []), ...(collapsedSections.love ? [] : loveChats), ...(collapsedSections.workflows ? [] : workflowChats), ...(collapsedSections.recents ? [] : recentChats)];
   // An expanded chat owns its visible agents, including background runs. History must not duplicate those rows.
   const inlineAgents = new Set<string>();
   const collectAgents = (id: string, seen = new Set<string>()) => {
@@ -1727,7 +1729,7 @@ export default function Home() {
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
-    const canExpandAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
+    const canExpandAgents = !searchTerm && (agentParents.has(thread.id) || !!childCursors[thread.id]);
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
       bookmarked={bookmarked} onBookmark={toggleBookmark}
       onMoveToProject={!isAgent(thread) ? setProjectMove : undefined}
@@ -1780,10 +1782,10 @@ export default function Home() {
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
-    return (searchTerm ? filtered : searchedThreads).filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, next));
+    return searchedThreads.filter(c => c.parentThreadId === parentId).map(child => threadBranch(child, depth, next));
   }
   function threadBranch(thread: Thread, depth = 0, seen = new Set<string>()) {
-    return <div key={thread.id}>{threadRow(thread, depth)}{expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
+    return <div key={thread.id}>{threadRow(thread, depth)}{!searchTerm && expanded[thread.id] && descendants(thread.id, depth + 1, seen)}</div>;
   }
   function runDescendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
     if (seen.has(parentId)) return null; const next = new Set(seen).add(parentId);
@@ -1854,7 +1856,7 @@ export default function Home() {
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
               empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>; })}
         </section>}
-        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{!collapsedSections.pinned && pinnedChats.map(chatRows)}</section>}
+        {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}
         {loveChats.length > 0 && <section role="group" aria-label="Love Spot"><div className="section-label-row">{foldable("love", "Love Spot")}</div>{!collapsedSections.love && loveChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
         {workflowChats.length > 0 && <section role="group" aria-label="Workflows"><div className="section-label-row">{foldable("workflows", "Workflows")}</div>{!collapsedSections.workflows && workflowChats.map(thread => <div key={thread.id}>{threadRow(thread, 0, true)}{expanded[thread.id] && descendants(thread.id, 1)}</div>)}</section>}
