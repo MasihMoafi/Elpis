@@ -500,7 +500,7 @@ test("an effort picked while a Claude turn runs reaches that turn and survives a
 });
 
 // Only the real engine records and restores a chat's permissions: run with A124_ENGINE=/absolute/native/binary.
-for (const mode of ["full", "auto", "bypass", "ask"]) test(`a Claude chat set to ${mode} reopens in ${mode} after a bridge and engine restart`, { timeout: 30000, skip: !process.env.A124_ENGINE && "needs the real engine (A124_ENGINE)" }, async t => {
+for (const mode of ["full", "auto", "bypass", "ask"]) test(`a Claude chat set to ${mode} reopens in ${mode} after a bridge and engine restart`, { timeout: 30000, skip: engine.endsWith("fake-app-server.mjs") && "needs the real engine (A124_ENGINE)" }, async t => {
   const f = await fixture(t);
   const { turn } = await f.client.send(f.id, { text: "hello" });
   await until(() => f.ended(turn.id), "the turn ends");
