@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
-import { api, unreadable } from "@/lib/api";
+import { api, unreadable, type Model } from "@/lib/api";
 import { SettingRow, SettingsActions, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 
 type Backend = "openrouter" | "codex" | "local";
@@ -31,15 +31,36 @@ const FALLBACK_NOTE: Record<Fallback, string> = {
 function WhisperTypeSettings({ server, save, disabled = false }: { server: Pick<VoiceServer, "whispertype">; save: (body: Record<string, unknown>) => Promise<void>; disabled?: boolean }) {
   const [backend, setBackend] = useState<Fallback>(server.whispertype?.backend ?? "auto");
   const [model, setModel] = useState(server.whispertype?.model ?? "");
+  const [models, setModels] = useState<Model[]>([]);
+  const [catalogStatus, setCatalogStatus] = useState("Loading OpenRouter audio models…");
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [saved, setSaved] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    api<{ data: Model[] }>("/models?provider=openrouter&inputModality=audio").then(result => {
+      if (!Array.isArray(result?.data)) throw unreadable("OpenRouter audio models");
+      if (!disposed) { setModels(result.data); setCatalogStatus(result.data.length ? "" : "OpenRouter returned no models that accept audio input."); }
+    }).catch(e => { if (!disposed) setCatalogStatus(`OpenRouter models unavailable: ${message(e)}`); });
+    return () => { disposed = true; };
+  }, []);
+  const customModels = [...new Set([server.whispertype?.model, model])].filter((value): value is string => !!value && !models.some(item => item.model === value));
   async function submit(event: React.FormEvent) {
     event.preventDefault(); event.stopPropagation(); if (busy || disabled) return; setBusy(true); setError(""); setSaved(false);
     try { await save({ action: "whispertype", backend: backend === "auto" ? null : backend, model: model.trim() || null }); setSaved(true); }
     catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   return <form onSubmit={submit} aria-label="Transcription settings">
-    <SettingRow title="OpenRouter transcription model" description="For chats that run on OpenRouter. An OpenRouter model ID; it is required there.">
-      <Input aria-label="OpenRouter transcription model" className="w-64 max-w-full" value={model} onChange={e => { setSaved(false); setModel(e.target.value); }} placeholder="openai/gpt-4o-mini-transcribe" disabled={disabled || busy} />
+    <SettingRow title="OpenRouter transcription model" description="For chats that run on OpenRouter. Choose a model that accepts audio input; it is required there.">
+      <div className="settings-field-stack text-sm">
+        <OptionSelect aria-label="OpenRouter transcription model" aria-describedby="openrouter-transcription-status" className="settings-choice" value={model} disabled={disabled || busy || (!models.length && !model)} onChange={e => { setSaved(false); setModel(e.target.value); }}>
+          <option value="">Not set</option>
+          {customModels.map(value => <option key={value} value={value}>{value}</option>)}
+          {models.map(item => <option key={item.model} value={item.model}>{item.displayName || item.model}</option>)}
+        </OptionSelect>
+        <span id="openrouter-transcription-status" role="status" className="text-xs text-muted-foreground">{catalogStatus}</span>
+        <details><DisclosureSummary className="cursor-pointer">Advanced: custom model</DisclosureSummary>
+          <Input aria-label="Custom OpenRouter transcription model" value={model} onChange={e => { setSaved(false); setModel(e.target.value); }} maxLength={200} disabled={disabled || busy} />
+        </details>
+      </div>
     </SettingRow>
     <SettingRow title="Fallback transcription" description={`For chats on Anthropic, Claude and Antigravity, which offer Elpis no transcription. ${FALLBACK_NOTE[backend]}`}>
       <OptionSelect aria-label="Fallback transcription engine" className="settings-choice" value={backend} disabled={disabled || busy} onChange={e => { setSaved(false); setBackend(e.target.value as Fallback); }}><option value="auto">Automatic</option><option value="local">Local WhisperType</option><option value="codex">ChatGPT sign-in</option><option value="openrouter">OpenRouter</option></OptionSelect>
@@ -66,7 +87,7 @@ function VoiceChoice() {
   }
   const voices = speaking?.available ? speaking.voices ?? [] : [];
   return <SettingsGroup title="Voice chat">
-    <SettingRow title="Voice" description={speaking && !speaking.available ? "Connect ChatGPT under Settings → Connections to choose a voice." : "Choose the voice Elpis uses for new voice chats."}>
+    <SettingRow title="Voice" description={`${speaking && !speaking.available ? "Connect ChatGPT under Settings → Connections to choose a voice. " : ""}ChatGPT voices for new voice chats. Claude's voices are only available in Anthropic's apps.`}>
       <OptionSelect aria-label="Voice chat voice" className="settings-choice" value={speaking?.voice ?? ""} disabled={busy || !voices.length} onChange={e => void choose(e.target.value)}>
         {voices.length ? voices.map(voice => <option key={voice} value={voice}>{named(voice)}</option>) : <option value="">{speaking ? "Unavailable" : "Reading…"}</option>}
       </OptionSelect>

@@ -97,6 +97,21 @@ test('OpenRouter lists its top programming models first, marked, then the rest n
     ['deepseek/deepseek-v4.1-flash', 'Top for coding #1 · ≈1049k context'], ['z-ai/glm-5.3', 'Top for coding #2 · ≈1049k context'], ['new/obscure', '']]);
 });
 
+test('OpenRouter audio choices keep audio inputs without requiring tools and exclude text-only models', async () => {
+  const definition = { base_url: 'https://openrouter.ai/api/v1', wire_api: 'chat' };
+  const rows = [
+    { id: 'voice/audio-only', name: 'Audio only', architecture: { input_modalities: ['text', 'audio'] }, supported_parameters: ['temperature'] },
+    { id: 'voice/audio-tools', architecture: { input_modalities: ['audio'] }, supported_parameters: ['tools'] },
+    { id: 'text/chat', architecture: { input_modalities: ['text'], output_modalities: ['audio'] }, supported_parameters: ['tools'] },
+    { id: 'unknown/chat', supported_parameters: ['tools'] },
+  ];
+  const result = await providerModels(definition, { inputModality: 'audio', fetchImpl: async () => json({ data: rows }) });
+  assert.deepEqual(result.data.map(row => row.model), ['voice/audio-only', 'voice/audio-tools']);
+  assert.deepEqual(result.data[0].architecture, { input_modalities: ['text', 'audio'] });
+  const textOnly = await providerModels(definition, { inputModality: 'audio', fetchImpl: async () => json({ data: rows.slice(2) }) });
+  assert.deepEqual(textOnly, { data: [], nextCursor: null });
+});
+
 test('missing referenced keys and unsupported authentication stop before any request', async () => {
   let calls = 0;
   const fetchImpl = async () => { calls++; return listed(); };

@@ -415,6 +415,22 @@ test('configured connection models use only that endpoint and never authorize th
   } finally { globalThis.fetch = original; client.close(); }
 });
 
+test('connection models forward the OpenRouter audio filter and explain a missing connection key', async () => {
+  const { client, configRead } = fixture(); await client.initialize();
+  configRead.config.model_providers.openrouter = { base_url: 'https://openrouter.ai/api/v1', experimental_bearer_token: 'catalog-key' };
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ id: 'voice/audio', architecture: { input_modalities: ['audio'] }, supported_parameters: [] },
+    { id: 'text/chat', architecture: { input_modalities: ['text'] }, supported_parameters: ['tools'] }] }));
+  try {
+    const result = await client.models({ provider: 'openrouter', inputModality: 'audio' });
+    assert.deepEqual(result.data.map(row => row.model), ['voice/audio']);
+    await assert.rejects(client.models({ inputModality: 'audio' }), /OpenRouter audio models/);
+    await assert.rejects(client.models({ provider: 'openrouter', inputModality: 'video' }), /OpenRouter audio models/);
+    configRead.config.model_providers.openrouter = { base_url: 'https://openrouter.ai/api/v1', env_key: 'ELPIS_D1_MISSING_KEY' };
+    await assert.rejects(client.models({ provider: 'openrouter', inputModality: 'audio' }), /Add an API key for this connection/);
+  } finally { globalThis.fetch = original; client.close(); }
+});
+
 test('the current API default loads its own catalog instead of the engine startup catalog', async () => {
   const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
   configRead.config.model_provider = 'anthropic-credits';
@@ -1414,6 +1430,7 @@ test('providers report separate sign-in and usage per provider; MCP shows creden
   await assert.rejects(client.saveMcp({ version: 'user-version', action: 'add', name: 'bad.name', command: 'x' }), /server name/);
   await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'rag', backend: 'local' }), /Unsupported MCP change/);
   await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'gpu; rm' }), /OpenRouter, Codex sign-in or local/);
+  await assert.rejects(client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'local', model: 'invalid model' }), { message: 'Choose an OpenRouter model.' });
   assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 4, 'refused changes write nothing');
   await client.saveMcp({ version: 'user-version', action: 'whispertype', name: 'whispertype', backend: 'codex' });
   assert.deepEqual(socket.sent.filter(row => row.method === 'config/batchWrite').at(-1).params.edits, [{ keyPath: 'mcp_servers.whispertype.env.WHISPERTYPE_BACKEND', value: 'codex', mergeStrategy: 'replace' }]);

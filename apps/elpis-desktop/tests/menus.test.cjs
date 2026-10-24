@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
-async function fixture(run, env = { WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_CLOUD_MODEL: 'openai/gpt-4o-mini-transcribe' }) {
+async function fixture(run, env = { WHISPERTYPE_BACKEND: 'local', WHISPERTYPE_CLOUD_MODEL: 'user/saved-audio-model' }) {
   const calls = [], clients = new Set();
   const { transcriptionStatus } = await import('../bridge/transcription.mjs'); // the real route rules answer the page, so the provider it sends is checked end to end
   const whispertype = { command: 'fixture-mcp', env };
@@ -79,7 +79,7 @@ test('the microphone is one plain button that follows the chat provider and name
   await settled('Local WhisperType');
   // An existing chat follows its own provider, and a model switched inside it.
   await page.locator('.thread-row[data-thread-id="routed"] .thread-link').click();
-  await settled('OpenRouter (cloud) · openai/gpt-4o-mini-transcribe');
+  await settled('OpenRouter (cloud) · user/saved-audio-model');
   await page.locator('.thread-row[data-thread-id="google"] .thread-link').click();
   await settled('Gemini API (cloud) · gemini-flash-latest');
   await page.locator('.thread-row[data-thread-id="existing"] .thread-link').click();
@@ -115,7 +115,46 @@ test('existing chat keeps both pending model and effort, and sends the visible c
 }));
 
 const { fixture: parityFixture } = require('./parity-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { chooseOption, controlValue, openSettings } = require('./controls.cjs');
+
+for (const connected of [true, false]) test(`transcription menu ${connected ? 'retains a saved custom model' : 'explains a disconnected OpenRouter'}`, async () => {
+  const model = connected ? 'user/saved-audio-model' : null;
+  const f = await parityFixture({ routes: {
+    '/api/mcp': () => ({ version: 'm1', write: { available: true }, servers: [{ name: 'whispertype', whispertype: { backend: 'local', model } }] }),
+    '/api/tools/transcription': () => ({ available: true, backend: 'local', label: 'Local WhisperType' }),
+    '/api/voice': () => ({ available: true, voice: 'juniper', voices: ['juniper'] }),
+    '/api/models': (_body, url) => {
+      if (!url.searchParams.has('provider')) return { data: [] };
+      assert.equal(url.search, '?provider=openrouter&inputModality=audio');
+      return connected ? { data: [{ id: 'fixture/audio-model', model: 'fixture/audio-model', displayName: 'Catalog audio' }] }
+        : { __http: 502, error: 'Add an API key for this connection.' };
+    },
+  } });
+  try {
+    await openSettings(f.page); await f.page.getByRole('tab', { name: 'Voice', exact: true }).click();
+    const panel = f.page.getByRole('tabpanel', { name: 'Voice', exact: true });
+    await panel.getByText("ChatGPT voices for new voice chats. Claude's voices are only available in Anthropic's apps.", { exact: true }).waitFor();
+    await panel.getByText('Advanced: transcription', { exact: true }).click();
+    const control = panel.getByRole('combobox', { name: 'OpenRouter transcription model', exact: true });
+    assert.equal(await controlValue(control), model ?? '');
+    if (connected) {
+      await control.click();
+      await f.page.getByRole('option', { name: 'Catalog audio', exact: true }).waitFor();
+      assert.deepEqual(await f.page.getByRole('listbox').getByRole('option').allInnerTexts(), ['Not set', model, 'Catalog audio']);
+      await f.page.getByRole('option', { name: 'Catalog audio', exact: true }).click();
+      await f.page.getByRole('listbox').waitFor({ state: 'detached' });
+      await chooseOption(control, model);
+      assert.equal(await controlValue(control), model, 'the saved custom choice remains available after selecting another model');
+      await panel.getByText('Advanced: custom model', { exact: true }).click();
+      await panel.getByLabel('Custom OpenRouter transcription model', { exact: true }).fill('user/another-model');
+      assert.equal(await controlValue(control), 'user/another-model');
+    } else {
+      await panel.getByRole('status').filter({ hasText: 'Add an API key for this connection.' }).waitFor();
+      assert.equal(await control.isDisabled(), true);
+    }
+    assert.deepEqual(f.posts.filter(post => post.path === '/api/mcp'), [], 'reading and choosing never writes transcription settings');
+  } finally { await f.close(); }
+});
 
 for (const colorScheme of ['light', 'dark']) test(`nested provider selection closes its own list and keeps the model form usable in ${colorScheme}`, async () => {
   const f = await parityFixture({ colorScheme, routes: {

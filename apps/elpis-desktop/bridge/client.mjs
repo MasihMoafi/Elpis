@@ -626,7 +626,8 @@ export class DesktopClient extends EventEmitter {
     throw new BridgeError('Recorded media was not found', 404);
   }
   async models(options = {}) {
-    object(options, ['cursor', 'limit', 'provider']);
+    object(options, ['cursor', 'limit', 'provider', 'inputModality']);
+    if (options.inputModality !== undefined && (options.inputModality !== 'audio' || options.provider !== 'openrouter')) throw new BridgeError('Choose OpenRouter audio models');
     if (options.provider !== undefined) {
       text(options.provider, 'configured connection', 64);
       if (!/^[a-z][a-z0-9_-]*$/.test(options.provider)) throw new BridgeError('Choose an existing configured connection');
@@ -642,7 +643,7 @@ export class DesktopClient extends EventEmitter {
       if (options.provider !== 'openai' || options.provider !== read?.config?.model_provider) {
         const definitions = { ...BUILT_IN_KEY_PROVIDERS, ...(read?.config?.model_providers ?? {}), ...(managed?.modelProviders ?? {}) };
         if (!Object.hasOwn(definitions, options.provider)) throw new BridgeError('This connection needs a saved API address before Elpis can list its models. Add a connection in Settings → Models & accounts.');
-        try { return await providerModels(definitions[options.provider], { savedKey: savedProviderKey(configHome(read), options.provider) }); }
+        try { return await providerModels(definitions[options.provider], { savedKey: savedProviderKey(configHome(read), options.provider), inputModality: options.inputModality }); }
         catch (error) { throw new BridgeError(error.message || 'Could not load models from this connection.', 502); }
       }
     }
@@ -1003,7 +1004,7 @@ export class DesktopClient extends EventEmitter {
       if (input.backend !== null && !['openrouter', 'codex', 'local'].includes(input.backend)) throw new BridgeError('Choose OpenRouter, Codex sign-in or local transcription');
       edits = [{ keyPath: `${key}.env.WHISPERTYPE_BACKEND`, value: input.backend, mergeStrategy: 'replace' }];
       if (input.model !== undefined) {
-        if (input.model !== null && !/^[a-z0-9._-]+\/[a-z0-9._:-]+$/i.test(input.model)) throw new BridgeError('Give an OpenRouter model ID such as openai/gpt-4o-mini-transcribe');
+        if (input.model !== null && !/^[a-z0-9._-]+\/[a-z0-9._:-]+$/i.test(input.model)) throw new BridgeError('Choose an OpenRouter model.');
         edits.push({ keyPath: `${key}.env.WHISPERTYPE_CLOUD_MODEL`, value: input.model, mergeStrategy: 'replace' });
       }
     } else throw new BridgeError('Unsupported MCP change');

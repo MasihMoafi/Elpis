@@ -12,7 +12,8 @@ test('settings pages appear in order and each control writes only its own backin
     smartPrune: { enabled: true, explicitOverride: { available: true, model: null, provider: null, version: 'p1' } }, memory: { enabled: false, generate: null, use: null, skipExternalContext: null, extractionModel: null, consolidationModel: null },
     options, managed: { allowedApprovalPolicies: null, allowedSandboxModes: ['read-only', 'workspace-write'] }, write: { available: true, reason: 'Applies to new conversations.' } });
   let hooks = { version: 'h1', write: { available: true }, warnings: [], errors: [], hooks: [{ key: 'user:hooks.json:pre_tool_use:0:0', event: 'preToolUse', handler: 'command', command: 'rtk hook claude', matcher: '^Bash$', timeoutSec: 5, source: 'user', sourcePath: '/home/person/.elpis-next/hooks.json', pluginId: null, enabled: true, managed: false, trust: 'untrusted' }] };
-  const mcp = () => ({ version: `m${version}`, configPath: '/home/person/.elpis-next/config.toml', write: { available: true }, servers: [{ name: 'whispertype', enabled: true, transport: 'stdio', command: 'whispertype-mcp', url: null, credentials: [], whispertype: { backend: 'openrouter', model: null } }] });
+  let whispertype = { backend: 'openrouter', model: null };
+  const mcp = () => ({ version: `m${version}`, configPath: '/home/person/.elpis-next/config.toml', write: { available: true }, servers: [{ name: 'whispertype', enabled: true, transport: 'stdio', command: 'whispertype-mcp', url: null, credentials: [], whispertype }] });
   const posts = [], clients = new Set();
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk; const body = raw ? JSON.parse(raw) : undefined;
@@ -21,10 +22,16 @@ test('settings pages appear in order and each control writes only its own backin
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); clients.add(res); return; }
     if (url.pathname === '/api/health') return json({ connected: true });
     if (url.pathname === '/api/about') return json({ version: '0.1.0', commit: 'ac82360bd', releaseNotes: 'https://example.invalid/releases' });
-    if (url.pathname === '/api/models') return json({ data: [{ id: 'main-model', model: 'main-model', displayName: 'Main model' }] });
+    if (url.pathname === '/api/models') {
+      if (url.searchParams.get('provider') === 'openrouter') {
+        assert.equal(url.searchParams.get('inputModality'), 'audio');
+        return json({ data: [{ id: 'fixture/audio-model', model: 'fixture/audio-model', displayName: 'Catalog audio', architecture: { input_modalities: ['audio'] } }] });
+      }
+      return json({ data: [{ id: 'main-model', model: 'main-model', displayName: 'Main model' }] });
+    }
     if (url.pathname === '/api/threads') return json({ data: [], nextCursor: null });
     if (url.pathname === '/api/settings') { if (req.method === 'POST') { Object.assign(options, body.options); version++; } return json(settings()); }
-    if (url.pathname === '/api/mcp') { if (req.method === 'POST') version++; return json(mcp()); }
+    if (url.pathname === '/api/mcp') { if (req.method === 'POST') { whispertype = { backend: body.backend, model: body.model }; version++; } return json(mcp()); }
     if (url.pathname === '/api/import-chats') return json({ days: 30, atATime: 50, sources: [] });
     if (url.pathname === '/api/tools/transcription') return json({ available: true, backend: 'openrouter', label: 'OpenRouter' });
     if (url.pathname === '/api/hooks') { if (req.method === 'POST') hooks = { ...hooks, version: 'h2', hooks: hooks.hooks.map(hook => ({ ...hook, ...(body.trust ? { trust: 'trusted' } : { enabled: body.enabled }) })) }; return json(hooks); }
@@ -97,17 +104,26 @@ test('settings pages appear in order and each control writes only its own backin
     await panel.getByText('Advanced: transcription', { exact: true }).click();
     assert.deepEqual(await panel.getByRole('form', { name: 'Transcription settings' }).locator('.settings-row-title').allInnerTexts(), ['OpenRouter transcription model', 'Fallback transcription']);
     assert.equal(await panel.getByLabel('Transcription engine', { exact: true }).count(), 0, 'the old engine row is gone');
+    assert.equal(await controlValue(panel.getByLabel('OpenRouter transcription model', { exact: true })), '');
+    assert.equal(await panel.getByLabel('OpenRouter transcription model', { exact: true }).innerText(), 'Not set');
+    assert.equal(await panel.getByRole('textbox', { name: 'OpenRouter transcription model', exact: true }).count(), 0);
+    assert.equal(await panel.getByLabel('Custom OpenRouter transcription model', { exact: true }).isVisible(), false);
     await chooseOption(panel.getByLabel('Fallback transcription engine', { exact: true }), 'local');
-    await panel.getByLabel('OpenRouter transcription model', { exact: true }).fill('openai/gpt-4o-mini-transcribe');
+    await chooseOption(panel.getByLabel('OpenRouter transcription model', { exact: true }), 'fixture/audio-model');
     await panel.getByRole('button', { name: 'Save transcription settings' }).click();
     await panel.getByRole('status').filter({ hasText: 'Transcription settings saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm2', name: 'whispertype', action: 'whispertype', backend: 'local', model: 'openai/gpt-4o-mini-transcribe' } });
+    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm2', name: 'whispertype', action: 'whispertype', backend: 'local', model: 'fixture/audio-model' } });
+    await open('General'); panel = await open('Voice');
+    // The disclosure may stay open across pages; open it only when closed.
+    if (!await panel.getByLabel('Fallback transcription engine', { exact: true }).isVisible()) await panel.getByText('Advanced: transcription', { exact: true }).click();
+    assert.equal(await controlValue(panel.getByLabel('OpenRouter transcription model', { exact: true })), 'fixture/audio-model');
     // Automatic is no explicit engine: it saves null, and never OpenRouter by default.
     await chooseOption(panel.getByLabel('Fallback transcription engine', { exact: true }), 'auto');
+    await chooseOption(panel.getByLabel('OpenRouter transcription model', { exact: true }), '');
     await panel.getByText('Uses the ChatGPT sign-in while Elpis is signed in to ChatGPT, otherwise Local WhisperType.', { exact: false }).waitFor();
     await panel.getByRole('button', { name: 'Save transcription settings' }).click();
     await panel.getByRole('status').filter({ hasText: 'Transcription settings saved' }).waitFor();
-    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm3', name: 'whispertype', action: 'whispertype', backend: null, model: 'openai/gpt-4o-mini-transcribe' } });
+    assert.deepEqual(lastPost(), { path: '/api/mcp', body: { version: 'm3', name: 'whispertype', action: 'whispertype', backend: null, model: null } });
 
     panel = await open('Personalization');
     await panel.getByLabel('Instructions for every chat', { exact: true }).fill('Answer briefly.');

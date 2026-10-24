@@ -150,7 +150,7 @@ function gatewayRows(catalogue) {
   return catalogue.models.filter(record).map(row => ({ id: row.slug, display_name: row.display_name, context_window: row.context_window }));
 }
 
-function choices(catalogue, wire = 'responses') {
+function choices(catalogue, wire = 'responses', inputModality) {
   if (wire === 'gemini_generate_content') catalogue = { data: geminiRows(catalogue) };
   if (wire === 'gateway') catalogue = { data: gatewayRows(catalogue) };
   if (!record(catalogue) || !Array.isArray(catalogue.data)) throw unavailable('This connection did not return an OpenAI-compatible model list.');
@@ -160,14 +160,15 @@ function choices(catalogue, wire = 'responses') {
   for (const row of catalogue.data) {
     if (!record(row) || typeof row.id !== 'string' || !MODEL_ID.test(row.id) || /^(claude|agy|antigravity)\//i.test(row.id) || seen.has(row.id)) continue;
     seen.add(row.id);
-    // As the terminal lists them: only models that take tools, since an agent cannot work without them.
-    if (Array.isArray(row.supported_parameters) && !row.supported_parameters.includes('tools')) continue;
+    const inputModalities = Array.isArray(row.architecture?.input_modalities) ? row.architecture.input_modalities.filter(value => typeof value === 'string') : null;
+    // Agent models need tools; transcription models only need to accept audio.
+    if (inputModality ? !inputModalities?.includes(inputModality) : Array.isArray(row.supported_parameters) && !row.supported_parameters.includes('tools')) continue;
     const displayName = [row.name, row.display_name, row.displayName].map(value => label(value, 200)).find(Boolean) || row.id;
     const context = [row.context_length, row.context_window, row.max_context_length, row.max_input_tokens].find(value => Number.isSafeInteger(value) && value > 0);
     const description = context ? `≈${Math.round(context / 1000)}k context` : label(row.description, 1000);
-    data.push({ id: row.id, model: row.id, displayName, ...(description ? { description } : {}) });
+    data.push({ id: row.id, model: row.id, displayName, ...(description ? { description } : {}), ...(inputModalities ? { architecture: { input_modalities: inputModalities } } : {}) });
   }
-  if (catalogue.data.length && !data.length) throw unavailable('This connection did not return any supported model IDs.');
+  if (!inputModality && catalogue.data.length && !data.length) throw unavailable('This connection did not return any supported model IDs.');
   return { data, nextCursor: null };
 }
 
@@ -185,7 +186,7 @@ async function codingFirst(models, url, headers, fetchImpl, signal) {
 }
 
 /** List one server-owned configured OpenAI-compatible connection; never changes configuration or resolves external auth. */
-export async function providerModels(definition, { env = process.env, fetchImpl = fetch, signal, savedKey = null } = {}) {
+export async function providerModels(definition, { env = process.env, fetchImpl = fetch, signal, savedKey = null, inputModality } = {}) {
   const url = endpoint(definition);
   const gateway = gatewayRouted(definition);
   // Through the gateway only its own headers go along; it adds the vendor key itself.
@@ -207,8 +208,8 @@ export async function providerModels(definition, { env = process.env, fetchImpl 
       if (response.status === 429) throw unavailable('This connection is rate limiting model requests. Try again later.');
       throw unavailable(`This connection could not list models (HTTP ${Number.isInteger(response.status) ? response.status : 'error'}).`);
     }
-    const listed = choices(await readCatalogue(response, requestSignal), gateway ? 'gateway' : wireOf(definition));
-    return new URL(url).hostname === 'openrouter.ai' ? { ...listed, data: await codingFirst(listed.data, url, headers, fetchImpl, requestSignal) } : listed;
+    const listed = choices(await readCatalogue(response, requestSignal), gateway ? 'gateway' : wireOf(definition), inputModality);
+    return !inputModality && new URL(url).hostname === 'openrouter.ai' ? { ...listed, data: await codingFirst(listed.data, url, headers, fetchImpl, requestSignal) } : listed;
   } catch (error) {
     if (signal?.aborted) throw unavailable('Model loading was cancelled.');
     if (timeout.signal.aborted) throw unavailable('The connection took too long to list models. Try again.');

@@ -55,7 +55,7 @@ function cwdOf(url, ...others) {
 function pageQuery(url, ancestor = false, models = false) {
   const result = {};
   for (const [key, value] of url.searchParams) {
-    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
+    if (!['limit', 'cursor', ...(ancestor ? ['ancestorThreadId', 'archived', 'searchTerm', 'includeAgentRuns'] : []), ...(models ? ['provider', 'inputModality'] : [])].includes(key) || result[key] !== undefined) throw new BridgeError('Unsupported query parameter');
     if (key === 'searchTerm') {
       if (!value.trim() || value.length > 200) throw new BridgeError('Search must contain 1 through 200 characters');
       result.searchTerm = value.trim();
