@@ -338,6 +338,7 @@
     "tests/polish.runtime.cjs",
     "tests/sidebar-archive-delete.runtime.mjs",
     "tests/sidebar-organize.runtime.mjs",
+    "tests/archived-chat.runtime.cjs",
     "tests/permissions-effort.runtime.mjs",
     "tests/ledger-app.runtime.cjs",
     "tests/ledger-engine.runtime.mjs",
