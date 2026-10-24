@@ -382,7 +382,10 @@ test('flat and isometric views share new editing commands, frame names, note tex
       const selected = iso ? await f.canvas.locator('.iso-node[aria-pressed="true"]').getAttribute('data-id') : (await selectedIds(f))[0]; assert.equal(selected, 'c');
       assert.equal(await f.canvas.getByRole('textbox', { name: 'Note', exact: true }).inputValue(), 'Personal');
       // Find centred C, which can leave A outside the board: show the whole graph before pointing at it.
-      await f.fit(); await node('a').dblclick(); await f.canvas.getByRole('dialog', { name: 'A info', exact: true }).waitFor(); await f.page.keyboard.press('Escape');
+      // Double-click opens Info on the flat board and renames on the isometric one (tests/canvas-editing.test.cjs pins it).
+      await f.fit(); await node('a').dblclick();
+      if (iso) { await f.canvas.getByRole('textbox', { name: 'Rename agent', exact: true }).waitFor(); await f.page.keyboard.press('Escape'); }
+      else { await f.canvas.getByRole('dialog', { name: 'A info', exact: true }).waitFor(); await f.page.keyboard.press('Escape'); }
     }
   } finally { await f.close(); }
 });

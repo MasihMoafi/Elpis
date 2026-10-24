@@ -17,7 +17,7 @@ Next 16 static export (`app/page.tsx` is the one page shell), React 19, Tailwind
 | Motion | `--motion-fast` .12 s, `--motion` .2 s, `--ease` |
 
 ## 3. Primitives (`components/ui`): use, do not re-make
-`button` (variants: default, outline, secondary, ghost, destructive, link; sizes: xs, sm, default, lg, icon, icon-xs, icon-sm, icon-lg), `input`, `textarea`, `search-field`, `switch`, `alert-dialog`, `dropdown-menu`, `context-menu`, `popover`, `tooltip`, `select`, `combobox`, `option-select`, `disclosure-summary`.
+`button` (variants: default, outline, secondary, ghost, destructive, link; sizes: xs, sm, default, lg, icon, icon-xs, icon-sm, icon-lg), `input`, `textarea`, `search-field`, `switch`, `alert-dialog`, `dropdown-menu`, `context-menu`, `popover`, `tooltip`, `select`, `combobox`, `option-select`, `disclosure-summary`, `menu-row` (a row of a menu whose owner drives its own keys: the look of a dropdown item).
 
 ## 4. Shared patterns: reuse before writing
 | Need | Use | Where |

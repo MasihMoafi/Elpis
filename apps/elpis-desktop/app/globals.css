@@ -85,13 +85,13 @@ html { font-size:var(--interface-size, 16px); }
 :where(.settings-group-heading, .customize-title) > :not(h2, h3) { order:2; }
 /* One cut per role. Controls and the rows that light on hover or selection, and code blocks inside panels: --cut. */
 :where(.search-field, .model-select, .composer-chip, .feature-form select, .provider-model-input, .field select, .composer-pill, .context-ring, .feature-chip, .task-tab,
-  .browser-toolbar input, .browser-find input, .annotation-editor textarea, .canvas-chip, .canvas-count input, .quick-add-field, .agent-dashboard header button,
+  .browser-toolbar input, .browser-find input, .annotation-editor textarea, .canvas-chip, .agent-dashboard header button,
   .thread-row, .account-row, .back-link, .usage-summary, .team-row, .activity-card, .activity-heading, .activity-group > summary, .hud-menu-item,
-  .sidebar-group-row, .command-row, .canvas-template, .quick-add-option, .step-head, .turn-changes-toggle, .choice, .change-row,
+  .sidebar-group-row, .command-row, .canvas-template, .step-head, .turn-changes-toggle, .choice, .change-row,
   .markdown pre, .step-script, .decision-body pre, .hud-tooltip, .canvas-count-error) { border-radius:var(--corner-radius, var(--cut) 0); corner-shape:var(--corner-shape, bevel); }
 /* Badges and keycaps: --cut-sm. */
-:where(.kbd, .model-provider-tabs button, .model-option-provider, .pending-count, .customize-badge, .plan-pill button, .canvas-toolbar kbd, .quick-add kbd, .canvas-help kbd,
-  .canvas-inspector-actions kbd, .canvas-folders .canvas-chip button, .settings-badge, .choice-key:not([data-radio]), .change-status, .browser-zoom, .annotation-hint kbd) { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); corner-shape:var(--corner-shape, bevel); }
+:where(.kbd, .model-provider-tabs button, .model-option-provider, .pending-count, .customize-badge, .plan-pill button, .canvas-toolbar kbd, .quick-add kbd:not(.kbd-hint), .canvas-help kbd,
+  .canvas-inspector-actions kbd, .settings-badge, .choice-key:not([data-radio]), .change-status, .browser-zoom, .annotation-hint kbd) { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); corner-shape:var(--corner-shape, bevel); }
 /* Panels (edge --border) and the accented ones: floating surfaces and the composer (edge --hud-edge, set by each): --cut-lg. */
 :where(.view-error, .tool-item, .feature-section, .customize-list, .agent-conversation-group, .file-card, .provider-key-form, .plan-card, .task-list, .canvas-notice, .agent-node,
   .settings-rows, .settings-card, .step-card, .decision-card, .failed-turn-card, .message.user,
@@ -672,6 +672,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .hud-menu-item { display:flex; align-items:center; gap:10px; padding:8px; }
 .hud-menu-item small { color:var(--muted-foreground); font-size:var(--text-small); line-height:1.35; }
 .hud-menu-item[data-highlighted], .hud-menu-item[aria-selected="true"] { background:var(--selected); }
+/* A row the keys reach (components/ui/menu-row.tsx) shows focus as a dropdown item does: by its fill, not the page outline. */
+[data-slot="menu-row"]:focus-visible { outline:none; }
 .hud-menu-item svg { flex-shrink:0; }
 .hud-menu-item > svg:first-child { color:var(--primary); }
 .hud-menu-item[data-variant="destructive"] { color:var(--destructive); }
@@ -951,8 +953,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-frame { position:absolute; pointer-events:none; }
 .iso-frame .canvas-frame-title { pointer-events:auto; }
 .iso-note { position:absolute; }
-.iso-board > .iso-minimap { position:absolute; inset:12px 12px auto auto; width:150px; height:100px; border:1px solid var(--border); background:var(--card); cursor:crosshair; }
-.iso-minimap circle { fill:var(--muted-foreground); }
 .iso-wire-end { border-color:var(--primary); }
 .iso-port[data-valid="true"] { outline:1px solid var(--primary); outline-offset:3px; }
 .iso-port[data-valid="false"] { opacity:.35; }
@@ -961,11 +961,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
 .canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
-/* The reason Run cannot start sits just under the button (R20) and never pushes the toolbar onto a second row. */
-.canvas-header > .canvas-run-control { position:relative; display:flex; align-items:center; flex:none; }
+/* The reason Run cannot start sits just under the button (R20) and never pushes the toolbar onto a second row; the
+   run's status stays beside it, as before. */
+.canvas-header > .canvas-run-control { position:relative; display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
 .canvas-run-control > button { flex:none; }
-.canvas-run-control .canvas-notice, .canvas-run-control .canvas-run-status { position:absolute; top:calc(100% + 6px); right:0; z-index:30; width:max-content; max-width:min(420px, 60vw); margin:0; }
-.canvas-run-control .canvas-run-status { padding:6px 10px; border:1px solid var(--border); background:var(--card); }
+.canvas-run-control .canvas-notice { position:absolute; top:calc(100% + 6px); right:0; z-index:30; width:max-content; max-width:min(420px, 60vw); margin:0; }
 .canvas-run-control .canvas-notice > span { overflow:visible; white-space:normal; overflow-wrap:anywhere; }
 .canvas-run-status { color:var(--muted-foreground); font-size:0.75rem; }
 @container agents-canvas (max-width:760px) {
@@ -979,7 +979,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-dot { width:8px; height:8px; border-radius:50%; background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 25%, transparent); }
 .canvas-dot[data-status="failed"], .canvas-dot[data-status="cancelled"] { background:var(--destructive); box-shadow:none; }
 .canvas-dot[data-status="succeeded"], .canvas-dot[data-status="completed"] { background:var(--success); box-shadow:none; }
-.canvas-template { display:grid; gap:3px; padding:9px 10px; border:1px solid transparent; background:transparent; color:var(--foreground); text-align:left; font-size:0.8125rem; cursor:pointer; }
+.canvas-template { display:grid; justify-content:stretch; align-items:start; gap:3px; height:auto; padding:9px 10px; color:var(--foreground); text-align:left; white-space:normal; font-size:0.8125rem; font-weight:400; cursor:pointer; }
 .canvas-template:hover { background:var(--hover); border-color:var(--hairline); }
 .canvas-template:focus-visible { outline:1.5px solid var(--ring); }
 .canvas-template small { color:var(--muted-foreground); font-size:0.75rem; line-height:1.35; }
@@ -989,12 +989,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-toolbar-more { border-inline-start:1px solid var(--hairline); }
 .canvas-toolbar-keys { display:flex; gap:12px; margin-inline-start:10px; color:var(--muted-foreground); font-size:0.75rem; }
 .canvas-toolbar-keys > span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
-.canvas-toolbar kbd, .quick-add kbd { padding:1px 5px; border:1px solid var(--hairline); font:0.6875rem/1.3 var(--mono); color:var(--muted-foreground); }
+.canvas-toolbar kbd, .quick-add kbd:not(.kbd-hint) { padding:1px 5px; border:1px solid var(--hairline); font:0.6875rem/1.3 var(--mono); color:var(--muted-foreground); }
 /* Counts typed in the header (CountField): out of range is refused in a note under the field. */
 .canvas-count { position:relative; }
-.canvas-count input { width:46px; height:24px; padding:0 6px; border:1px solid var(--border); background:var(--background); color:var(--foreground); font:inherit; font-variant-numeric:tabular-nums; text-align:center; outline:none; }
-.canvas-count input:focus { border-color:var(--ring); }
-.canvas-count input[aria-invalid="true"] { border-color:var(--destructive); }
 .canvas-count-error { position:absolute; top:calc(100% + 6px); right:0; z-index:7; width:max-content; max-width:280px; padding:6px 9px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:0.75rem; line-height:1.35; box-shadow:var(--shadow); }
 /* Quick add (Ctrl+A, double-click, or a wire let go on the board): how many, which kind, then one model. */
 .quick-add { position:absolute; z-index:6; display:flex; flex-direction:column; gap:6px; width:min(340px, calc(100% - 16px)); overflow-y:auto; }
@@ -1002,11 +999,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .quick-add > .quick-add-list { flex:0 1 auto; min-height:60px; }
 .quick-add-title { display:flex; justify-content:space-between; gap:10px; }
 .quick-add-title span:last-child:not(:first-child) { text-transform:none; letter-spacing:0; font-family:inherit; font-size:0.71875rem; }
-.quick-add-field { height:34px; padding:0 10px; border:1px solid var(--border); background:var(--background); color:var(--foreground); font-size:0.8125rem; outline:none; }
-.quick-add-field:focus { border-color:var(--ring); }
-/* The command line and the prompts step grow with their lines (after .quick-add-field, whose one-line height they replace). */
-.quick-add-field.quick-add-tasks, .quick-add-field.quick-add-command { height:auto; padding:8px 10px; resize:vertical; font:inherit; font-size:0.8125rem; line-height:1.4; }
-.quick-add-field.quick-add-command { width:100%; min-height:36px; field-sizing:content; padding-block:7px; resize:none; }
 .quick-add-list { display:grid; gap:1px; max-height:300px; overflow:auto; }
 .quick-add-plan { display:flex; flex-wrap:wrap; gap:4px 6px; margin:0; padding:0 4px; font-size:0.75rem; color:var(--muted-foreground); }
 .quick-add-plan b { color:var(--foreground); font-weight:600; }
@@ -1014,10 +1006,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .quick-add-plan em { flex-basis:100%; font-style:normal; color:var(--destructive); }
 .quick-add-crumb { display:flex; justify-content:space-between; margin:2px 0 0; padding:0 4px; line-height:1.4; color:var(--muted-foreground); }
 .quick-add-more { margin-inline-start:auto; flex:none; color:var(--muted-foreground); }
-.quick-add-option { display:flex; align-items:center; gap:10px; padding:7px 8px; border:0; background:transparent; color:var(--foreground); text-align:left; font-size:0.8125rem; cursor:pointer; }
-.quick-add-option[aria-selected="true"], .quick-add-option[role="menuitem"]:focus { background:var(--hover); outline:none; }
-.quick-add-option kbd { margin-inline-start:auto; flex:none; }
-.quick-add-option .canvas-kind { flex:none; }
 .quick-add-note, .quick-add-help { margin:0; padding:0 4px; color:var(--muted-foreground); font-size:0.71875rem; line-height:1.35; }
 /* An agent's dashboard (Enter or double-click): what it is, its wiring, and its live work. */
 .agent-dashboard { position:absolute; z-index:7; top:16px; right:16px; display:grid; gap:12px; width:min(420px, calc(100% - 32px)); max-height:calc(100% - 32px); overflow:auto; padding:14px; border-left:3px solid var(--kind); }
@@ -1047,9 +1035,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-log-panel .hud-menu-title { margin:0 0 4px; }
 .canvas-log { display:grid; align-content:start; gap:2px; height:76px; overflow:auto; margin:0; padding:0; list-style:none; }
 .canvas-log li { min-width:0; border-left:3px solid var(--muted-foreground); }
-.canvas-log button { display:flex; align-items:baseline; gap:8px; width:100%; min-width:0; padding:3px 7px; border:0; background:transparent; color:var(--foreground); text-align:left; font-size:0.75rem; line-height:1.5; }
-.canvas-log button:hover { background:var(--hover); }
-.canvas-log button > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.canvas-log [data-slot="button"] { align-items:baseline; min-width:0; }
+.canvas-log [data-slot="button"] > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .canvas-log li[data-tone="start"] { border-left-color:var(--context); }
 .canvas-log li[data-tone="done"] { border-left-color:var(--success); }
 .canvas-log li[data-tone="fail"] { border-left-color:var(--destructive); }
@@ -1125,7 +1112,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @keyframes canvas-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .agent-node-mark[data-check="running"] { animation:none; } }
 /* Quick create: either + adds one successor linked only from this agent, shown on hover or focus. */
-.agent-node-plus { position:absolute; display:grid; place-items:center; width:24px; height:24px; padding:0; border:1.5px solid var(--kind); border-radius:50%; background:var(--card); color:var(--kind); cursor:pointer; opacity:0; transition:opacity .12s ease, transform .12s ease; }
+.agent-node-plus { position:absolute; opacity:0; transition:opacity .12s ease; }
 .agent-node-plus[data-side="right"] { top:50%; right:-46px; transform:translateY(-50%); }
 .agent-node-plus[data-side="bottom"] { left:50%; bottom:-27px; transform:translateX(-50%); }
 .agent-node-plus { z-index:2; pointer-events:none; }
@@ -1138,7 +1125,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .react-flow__node:hover .agent-node::before, .react-flow__node:hover .agent-node::after { content:""; position:absolute; }
 .react-flow__node:hover .agent-node::before { top:20%; bottom:20%; left:100%; width:48px; }
 .react-flow__node:hover .agent-node::after { left:30%; right:30%; top:100%; height:28px; }
-.agent-node-plus:hover { background:var(--kind); color:var(--card); }
 @media (prefers-reduced-motion:reduce) { .agent-node-plus { transition:none; } }
 /* An agent's dots: 12 px to see, 28 px to hit (an invisible ring around each), and they grow under the pointer. */
 .agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); transition:transform .12s ease; }
@@ -1148,7 +1134,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* A note for the user, never sent: dragged by its strip, written in below. */
 .canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }
 .canvas-note-grip { padding:6px 10px 0; line-height:1.4; color:#6b5f2a; cursor:grab; user-select:none; }
-.canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font:0.8125rem/1.4 inherit; resize:both; outline:none; }
+.canvas-note textarea { width:180px; min-height:80px; padding:4px 10px 10px; border:0; background:transparent; color:#2b2611; font-size:0.8125rem; line-height:1.4; field-sizing:fixed; resize:both; box-shadow:none; }
 .dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
 .canvas-notice { flex:none; display:flex; align-items:center; gap:10px; margin:6px 12px; padding:8px 12px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:0.8125rem; box-shadow:var(--shadow); }
 .canvas-notice[data-tone="info"] { border-color:var(--border); }
@@ -1162,8 +1148,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-folders-chosen { display:flex; flex-wrap:wrap; gap:4px; }
 .canvas-folders .canvas-chip { height:26px; max-width:100%; gap:4px; padding:0 4px 0 8px; color:var(--foreground); font-family:var(--mono); font-size:0.75rem; }
 .canvas-chip-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.canvas-folders .canvas-chip button { display:grid; place-items:center; width:18px; height:18px; border:0; background:transparent; color:var(--muted-foreground); cursor:pointer; }
-.canvas-folders .canvas-chip button:hover { background:var(--hover); color:var(--foreground); }
 .canvas-inspector-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
 /* The isometric view (components/agents-iso.tsx), as Deus Ex's hacking screen: pedestals on a ground grid in one SVG,
  * upright titles and chamfered controls in HTML over it. Colours come from the theme's tokens and the agent's --kind;
@@ -1254,10 +1238,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-chamfer { --cut:7px; border:1px solid var(--hud-edge); background:var(--hud-face); }
 .iso-hud { position:absolute; z-index:2; bottom:12px; }
 .iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
-.iso-key { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-width:32px; height:30px; padding:0 10px; color:var(--foreground); font-size:0.78125rem; font-weight:500; cursor:pointer; }
-.iso-key:hover { background:var(--hud-face-hover); }
-.iso-key:focus-visible { outline:none; background:var(--ring); }
-.dark .iso-key { color:var(--gold); }
 .iso-keys b { color:var(--foreground); font-weight:500; }
 .iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; border-left-color:var(--kind, var(--border)); }
 .iso-status strong { min-width:0; overflow-wrap:anywhere; font-size:0.84375rem; font-weight:600; color:var(--foreground); }
@@ -1385,7 +1365,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .agent-node[data-kind="agent"] { --kind:var(--agent-color); border-left:5px solid var(--agent-color); background:color-mix(in oklab, var(--agent-color) 20%, var(--card)); }
 .dark .agent-node[data-kind="agent"] { background:color-mix(in oklab, var(--agent-color) 10%, var(--card)); }
 .iso-node[data-kind="agent"] { --kind:var(--agent-color); }
-.canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+.canvas-pattern-command { position:absolute; bottom:48px; left:12px; right:12px; z-index:12; display:grid; gap:6px; padding:10px; }
 .canvas-round-limit { position:absolute; bottom:48px; right:12px; z-index:3; display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--card); color:var(--foreground); border:1px solid var(--border); }
 /* Reuse the installed controls and theme: the offline desktop bundle has no daisyUI stylesheet. */
 .canvas-characters { position:relative; }

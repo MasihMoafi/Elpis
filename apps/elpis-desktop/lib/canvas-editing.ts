@@ -1,21 +1,7 @@
-import type { CanvasEdge, CanvasGraph, CanvasNode } from "./canvas";
+import { linkedIds, type CanvasEdge, type CanvasGraph, type CanvasNode } from "./canvas";
 
 type Point = { x: number; y: number };
 export type CanvasFrame = { id: string; title: string; nodeIds: string[] };
-
-/** Walk a whole dependency branch once, including previous-round links, never alongside links. */
-export function linkedIds(graph: CanvasGraph, ids: string[], direction: "upstream" | "downstream") {
-  const found = new Set(ids), pending = [...ids];
-  while (pending.length) {
-    const id = pending.pop()!;
-    for (const edge of graph.edges) {
-      if (edge.kind === "alongside") continue;
-      const next = direction === "upstream" ? edge.target === id && edge.source : edge.source === id && edge.target;
-      if (next && !found.has(next)) { found.add(next); pending.push(next); }
-    }
-  }
-  return [...found];
-}
 
 /** Extract only a single, unambiguous gap; the caller keeps the node and its new position. */
 export function extractAgent(graph: CanvasGraph, id: string): CanvasGraph | null {

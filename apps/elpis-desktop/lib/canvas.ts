@@ -1,7 +1,7 @@
 import { characters } from "./agent-characters";
 import { appStorage } from "@/lib/projects";
 import { deleteKeepingFlow, waits } from "./canvas-delete-flow";
-import { linkedIds, type CanvasFrame } from "./canvas-editing";
+import type { CanvasFrame } from "./canvas-editing";
 export { waits };
 
 /** The agents canvas (components/agents-canvas.tsx): agents are nodes, a wire A → B means B waits for A, and a run
@@ -363,6 +363,20 @@ export function runTasks(graph: CanvasGraph): { tasks: RunTask[] } | { error: st
         dependsOn: [node.id], writeScopes: [`${folder}/check`], acceptanceCriteria: [`Each of “${title}”'s criteria is shown to hold or not, with evidence`], ...model },
     ];
   }) };
+}
+
+/** Walk a whole dependency branch once, including previous-round links, never alongside links. */
+export function linkedIds(graph: CanvasGraph, ids: string[], direction: "upstream" | "downstream") {
+  const found = new Set(ids), pending = [...ids];
+  while (pending.length) {
+    const id = pending.pop()!;
+    for (const edge of graph.edges) {
+      if (edge.kind === "alongside") continue;
+      const next = direction === "upstream" ? edge.target === id && edge.source : edge.source === id && edge.target;
+      if (next && !found.has(next)) { found.add(next); pending.push(next); }
+    }
+  }
+  return [...found];
 }
 
 /** Mute changes execution only. The saved drawing and its settings remain available to unmute or undo. */

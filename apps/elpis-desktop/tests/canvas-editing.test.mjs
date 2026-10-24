@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
-import { extractAgent, insidePolygon, insertAgent, linkedIds, segmentsCross } from '../lib/canvas-editing.ts';
 
 // Resolve the app's existing extensionless TS imports and @ alias under Node, without a build.
 registerHooks({ resolve(specifier, context, next) {
@@ -9,7 +8,8 @@ registerHooks({ resolve(specifier, context, next) {
   try { return next(specifier, context); }
   catch (error) { if (specifier.startsWith('./') && !/\.[a-z]+$/.test(specifier)) return next(`${specifier}.ts`, context); throw error; }
 } });
-const { executionGraph, runParts, runTasks } = await import('../lib/canvas.ts');
+const { executionGraph, linkedIds, runParts, runTasks } = await import('../lib/canvas.ts');
+const { extractAgent, insidePolygon, insertAgent, segmentsCross } = await import('../lib/canvas-editing.ts');
 const edge = (source, target, extra = {}) => ({ id: `${source}->${target}`, source, target, ...extra });
 const board = () => ({ name: 'Editing', nodes: ['a', 'b', 'c', 'd'].map((id, i) => ({ id, type: 'agent', position: { x: i * 260, y: 0 },
   data: { title: id, instruction: `Write ${id}`, model: null, writeScopes: ['src'], acceptanceCriteria: [] } })), edges: [edge('a', 'b'), edge('b', 'c', { label: 'Result' })] });

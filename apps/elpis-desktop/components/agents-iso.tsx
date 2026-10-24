@@ -4,9 +4,15 @@ import { Segmented } from "@/components/settings/rows";
 import { useEffect, useId, useLayoutEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Ref, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { agentColor, CHECK_LABEL as CHECK, FATHER, MOTHER, STATUS_LABEL as STATUS, checkOf, waits, waves, type AgentData, type CanvasEdge, type CanvasGraph, type TaskStatus } from "@/lib/canvas";
 import { ISO_STEP, isoFit, isoLayout, isoRoute, project, type Box, type Ground, type IsoPlace, type Point } from "@/lib/iso";
+
+/** A note's text, the same field on both views. */
+export function NoteText({ text, onText }: { text: string; onText: (text: string) => void }) {
+  return <Textarea aria-label="Note" className="nodrag" value={text} placeholder="Write a note" onChange={event => onText(event.target.value)} />;
+}
 
 /** The agents canvas's second view (components/agents-canvas.tsx): the graph as Deus Ex's hacking screen, for
  * watching, selecting and connecting agents. Settings and graph mutations are shared with the flat board.
@@ -110,11 +116,11 @@ export function ViewToggle({ iso, onChange }: { iso: boolean; onChange: (iso: bo
 
 /** `father`: the agents past the Mother's ten, which the Father runs (lib/canvas.ts `parents`). */
 export type IsoController = { fit: () => void; frame: () => void; cancelGesture: () => boolean; zoom: (factor: number) => void; reveal: (ids: string[]) => void; position: (client: Point) => Point; keepView: () => void };
-type Props = { inserting: string | null; canConnect: (source: string, target: string, ignored?: string | null, alongside?: boolean) => boolean; onReconnect: (edge: CanvasEdge, source: string, target: string) => void; minimap: boolean; renamingFrame: string | null; onFrameName: (id: string, title: string | null) => void; onNoteText: (id: string, text: string) => void; onMoveStart: (id: string, extract: boolean) => void; onMove: (id: string, dx: number, dy: number) => void; onMoveEnd: (shift: boolean, cancel?: boolean) => void; onMovePreview: (id: string) => void; modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string, kind?: CanvasEdge["kind"]) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
+type Props = { inserting: string | null; canConnect: (source: string, target: string, ignored?: string | null, alongside?: boolean) => boolean; onReconnect: (edge: CanvasEdge, source: string, target: string) => void; renamingFrame: string | null; onFrameName: (id: string, title: string | null) => void; onNoteText: (id: string, text: string) => void; onMoveStart: (id: string, extract: boolean) => void; onMove: (id: string, dx: number, dy: number) => void; onMoveEnd: (shift: boolean, cancel?: boolean) => void; onMovePreview: (id: string) => void; modelLabel: (data: AgentData) => string; controller: Ref<IsoController>; onConnect: (source: string, target: string, kind?: CanvasEdge["kind"]) => void; onAdd: (at: Point, id?: string, end?: "source" | "target") => void; onCommand: (at: Point, id: string, end: "source" | "target") => void; onNodeMenu: (event: ReactMouseEvent, id: string) => void; onBoardMenu: (event: ReactMouseEvent) => void; onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void; onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void; onRename: (id: string, title: string) => void; graph: CanvasGraph; father: string[]; states: States; selected: string[]; onSelect: (ids: string[]) => void; onOpen: (id: string) => void; dark: boolean };
 /** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
  * (Shift adds), a double-click renames an agent and Enter opens Info, the arrows move between agents in run order.
  * The parent owns window/crossing selection in both views; middle-drag and scroll pan, Ctrl/Cmd+scroll zooms. */
-export function IsoBoard({ inserting, canConnect, onReconnect, minimap, renamingFrame, onFrameName, onNoteText, onMoveStart, onMove, onMoveEnd, onMovePreview, graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
+export function IsoBoard({ inserting, canConnect, onReconnect, renamingFrame, onFrameName, onNoteText, onMoveStart, onMove, onMoveEnd, onMovePreview, graph, father, states, selected, onSelect, onOpen, dark, modelLabel, controller, onConnect, onAdd, onCommand, onNodeMenu, onBoardMenu, onWireMenu, onWireClick, onRename }: Props) {
   const root = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, SVGGElement>());
   const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
   const wave = useMemo(() => waves(graph), [graph]);
@@ -226,7 +232,13 @@ export function IsoBoard({ inserting, canConnect, onReconnect, minimap, renaming
     if (at.x < INSET.left || at.x > size.width - INSET.right || at.y < INSET.top || at.y > size.height - INSET.bottom) move({ ...view, x: view.x + size.width / 2 - at.x, y: view.y + size.height / 2 - at.y });
   };
   const keys = (event: ReactKeyboardEvent, id: string) => {
-    if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); open(id); }
+    // Plain arrows walk the agents in run order; with Shift or Alt they are the board's (select linked, nudge).
+    const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[event.key];
+    if (step && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      const next = order[Math.max(0, Math.min(order.length - 1, order.indexOf(id) + step))];
+      setFocusId(next); buttons.current.get(next)?.focus({ preventScroll: true }); reveal(next);
+    } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) { event.preventDefault(); open(id); }
   };
 
   // The ground: a plate under the graph with a grid offset from the agents, so each stands in a cell.
@@ -350,7 +362,7 @@ export function IsoBoard({ inserting, canConnect, onReconnect, minimap, renaming
           return <g key={place.id} ref={element => { if (element) buttons.current.set(place.id, element); else buttons.current.delete(place.id); }}
             className="iso-node" style={place.kind === "agent" ? { "--agent-color": agentColor(place.id, nodes.get(place.id)!.data as AgentData) } as CSSProperties : undefined} data-id={place.id} data-kind={place.kind} data-muted={nodes.get(place.id)?.type === "agent" && (nodes.get(place.id)!.data as AgentData).muted || undefined} data-status={statusOf(place.id)} data-hot={hot === place.id || undefined}
             role="button" tabIndex={tabbable === place.id ? 0 : -1} aria-pressed={selected.includes(place.id)} aria-label={`${titleOf(place.id)}: ${describe(place.id)}`}
-            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => { if (!suppressClick.current) pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey); }} onDoubleClick={() => open(place.id)} onKeyDown={event => keys(event, place.id)}
+            onContextMenu={event => { event.preventDefault(); event.stopPropagation(); onNodeMenu(event, place.id); }} onClick={event => { if (!suppressClick.current) pick(place.id, event.shiftKey || event.ctrlKey || event.metaKey); }} onDoubleClick={() => rename(place.id)} onKeyDown={event => keys(event, place.id)}
             onPointerDown={event => { if (event.button !== 0 || place.kind !== "agent") return; movingNode.current = { id: place.id, x: event.clientX, y: event.clientY, moved: false, alt: event.altKey }; }}
             onPointerEnter={() => setHovered(place.id)} onPointerLeave={() => setHovered(current => current === place.id ? null : current)}
             onFocus={() => { setFocused(place.id); setFocusId(place.id); }} onBlur={() => setFocused(current => current === place.id ? null : current)}>
@@ -400,7 +412,7 @@ export function IsoBoard({ inserting, canConnect, onReconnect, minimap, renaming
       const at = screen(node.isoPosition ?? node.position);
       return <div key={node.id} data-id={node.id} className="canvas-note iso-note" style={{ left: at.x, top: at.y }} onClick={event => { event.stopPropagation(); onSelect(event.shiftKey ? [...selected, node.id] : [node.id]); }}>
         <span className="canvas-note-grip" onPointerDown={event => { if (event.button !== 0) return; event.stopPropagation(); movingNode.current = { id: node.id, x: event.clientX, y: event.clientY, moved: false, alt: false }; }}>Note · for you</span>
-        <textarea aria-label="Note" value={node.data.text} onChange={event => onNoteText(node.id, event.target.value)} /></div>;
+        <NoteText text={node.data.text} onText={text => onNoteText(node.id, text)} /></div>;
     })}
     <div className="iso-labels">
       {places.map(place => {
@@ -440,16 +452,11 @@ export function IsoBoard({ inserting, canConnect, onReconnect, minimap, renaming
       })}
     </div>
     <div className="iso-hud iso-controls" role="toolbar" aria-label="Zoom">
-      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(1 / 1.25)}><Minus size={14} /></button>
-      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Plus size={14} /></button>
-      <button data-slot="iso-key" type="button" className="iso-key iso-chamfer" aria-label="Fit view" title="Show the whole graph (Home)" onClick={() => setMoved(null)}><Maximize2 size={13} />Fit</button>
+      <Button variant="outline" size="icon-sm" aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(1 / 1.25)}><Minus /></Button>
+      <Button variant="outline" size="icon-sm" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Plus /></Button>
+      <Button variant="outline" size="sm" aria-label="Fit view" title="Show the whole graph (Home)" onClick={() => setMoved(null)}><Maximize2 />Fit</Button>
       <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Middle-drag</b>Pan</span></span>
     </div>
-    {minimap && <svg className="iso-hud canvas-minimap iso-minimap" role="img" aria-label="Minimap" viewBox={`${content.left - 30} ${content.top - 30} ${content.right - content.left + 60} ${content.bottom - content.top + 60}`} onClick={event => {
-      if (!size) return; const point = event.currentTarget.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
-      const matrix = event.currentTarget.getScreenCTM(); if (!matrix) return; const at = point.matrixTransform(matrix.inverse());
-      move({ ...view, x: size.width / 2 - at.x * view.zoom, y: size.height / 2 - at.y * view.zoom });
-    }}>{places.map(place => <circle key={place.id} cx={place.at.x} cy={place.at.y} r={18} />)}</svg>}
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>

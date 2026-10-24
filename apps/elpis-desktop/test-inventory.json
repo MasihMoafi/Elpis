@@ -172,6 +172,7 @@
     "tests/canvas-run.test.cjs",
     "tests/canvas-runlog.test.cjs",
     "tests/canvas-settings.test.cjs",
+    "tests/canvas-shared-controls.test.cjs",
     "tests/canvas-store.test.cjs",
     "tests/canvas-worktrees.test.cjs",
     "tests/canvas.test.cjs",

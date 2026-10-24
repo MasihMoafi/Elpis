@@ -8,17 +8,18 @@ import { Check, ChevronRight, ExternalLink, ListOrdered, Play, Plus, StickyNote,
 import { AgentsIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MenuRow } from "@/components/ui/menu-row";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowHistory } from "@/components/workflow-history";
 import { WorkflowSources } from "@/components/workflow-sources";
 import { summarize, workedFor } from "@/components/transcript";
 import { isoLayout } from "@/lib/iso";
-import { IsoBoard, ViewToggle, type IsoController } from "@/components/agents-iso";
+import { IsoBoard, NoteText, ViewToggle, type IsoController } from "@/components/agents-iso";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { deleteKeepingFlow } from "@/lib/canvas-delete-flow";
-import { extractAgent, frameBounds, insidePolygon, insertAgent, linkedIds, segmentsCross } from "@/lib/canvas-editing";
-import { executionGraph } from "@/lib/canvas";
+import { extractAgent, frameBounds, insidePolygon, insertAgent, segmentsCross } from "@/lib/canvas-editing";
+import { executionGraph, linkedIds } from "@/lib/canvas";
 import { api, providerChoices, type Entry, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { appStorage } from "@/lib/projects";
@@ -71,8 +72,8 @@ function AgentNode({ id, data }: NodeProps<Node<AgentNodeData>>) {
     <span className="agent-node-mark" role="img" data-check={check} aria-label={CHECK_LABEL[check]} title={CHECK_LABEL[check]}>{check === "succeeded" ? <Check size={12} /> : check === "failed" || check === "blocked" ? <X size={12} /> : null}</span>
     <Handle type="source" position={Position.Right} title="Add agents that wait for this one" onClick={event => data.onHandle?.(id, "source", event)} />
     {/* Both quick-create buttons add one successor linked only from this agent. */}
-    <button data-slot="agent-plus" type="button" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
-    <button data-slot="agent-plus" type="button" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus size={13} /></button>
+    <Button variant="outline" size="icon-xs" className="agent-node-plus nodrag" data-side="right" aria-label={`Add the next agent after ${data.title || "this one"}`} title="Add the next agent: it waits for this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus /></Button>
+    <Button variant="outline" size="icon-xs" className="agent-node-plus nodrag" data-side="bottom" aria-label={`Add an agent after ${data.title || "this one"}`} title="Add an agent after this one, connected only from this one" onClick={event => { event.stopPropagation(); data.onQuick?.(id); }}><Plus /></Button>
   </div>;
 }
 
@@ -91,7 +92,7 @@ function MotherNode({ id, data }: NodeProps<Node<MotherData>>) {
 function NoteNode({ id, data }: NodeProps<Node<NoteData & { onText?: (id: string, text: string) => void }>>) {
   // The strip is the handle: dragging it moves the note, while the text below takes the keys.
   return <div className="canvas-note"><span className="canvas-note-grip" title="A note for you, never sent to an agent; drag here to move it">Note · for you</span>
-    <textarea aria-label="Note" className="nodrag" value={data.text} placeholder="Write a note" onChange={event => data.onText?.(id, event.target.value)} /></div>;
+    <NoteText text={data.text} onText={text => data.onText?.(id, text)} /></div>;
 }
 /** The Father: he runs the agents past the Mother's ten, in his own chat, once her part has succeeded, and reports to
  * her. Drawn only when the graph needs him. */
@@ -229,7 +230,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
     const typed = lines(tasks), total = Math.min(room, Math.max(asking.count ?? 1, typed.length)), given = Math.min(typed.length, total);
     return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
       <p className="hud-menu-title quick-add-title"><span>{total === 1 ? "Prompt for the new agent" : `Prompts for the ${total} new agents`}</span><span>{asking.model?.label ?? "Default model"}</span></p>
-      <textarea autoFocus className="quick-add-field quick-add-tasks" aria-label="Prompts, one per line" rows={Math.min(8, Math.max(3, total))} value={tasks}
+      <Textarea autoFocus className="min-h-0" aria-label="Prompts, one per line" rows={Math.min(8, Math.max(3, total))} value={tasks}
         placeholder={Array.from({ length: Math.min(3, total) }, (_, index) => `Prompt for agent ${index + 1}`).join("\n")} onChange={event => setTasks(event.target.value)}
         onKeyDown={event => {
           if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -243,7 +244,7 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
   }
   return <div className="quick-add hud-menu nodrag nowheel" role="dialog" aria-label="Add agents" style={{ left: adding.left, top: adding.top, maxHeight: adding.height }} onBlur={close}>
     <p className="hud-menu-title quick-add-title"><span>{room ? "Add agents" : "No room for more agents"}</span><span>{room} of {limit} left</span></p>
-    <textarea ref={field} autoFocus className="quick-add-field quick-add-command" aria-label="Command" value={text} spellCheck={false} placeholder="Tell Elpis what to do, or 3 sol high: prompt; prompt"
+    <Textarea ref={field} autoFocus className="min-h-0 resize-none" aria-label="Command" value={text} spellCheck={false} placeholder="Tell Elpis what to do, or 3 sol high: prompt; prompt"
       rows={Math.min(6, text.split("\n").length)} onChange={event => { setText(event.target.value); setActive(0); setLevel(null); }} onKeyDown={keys} />
     <p className="quick-add-plan" aria-label="Will add">
       {command.note ? <b>Note</b> : asks ? <><b>Elpis</b><span>will do it: design or change the team from what you wrote</span></> : text.trim() ? <><b>{`${Math.min(count, room) || count} × Agent`}</b>
@@ -255,10 +256,10 @@ function CommandBar({ adding, room, limit, catalog, providers, onAgents, onNote,
     </p>
     <p className="quick-add-crumb">{shown.name === "providers" ? "Providers" : shown.name === "models" ? `Models · ${providers.find(provider => provider.id === shown.provider)?.label ?? ""}` : `Thinking · ${shown.model.label}`}{level && <span>← back</span>}</p>
     <div role="listbox" aria-label={shown.name === "providers" ? "Providers" : shown.name === "models" ? "Models" : "Thinking levels"} className="quick-add-list">
-      {rows.map((row, index) => <button data-slot="quick-add-option" key={row.key} type="button" role="option" aria-selected={row === current} className="quick-add-option"
+      {rows.map((row, index) => <MenuRow key={row.key} role="option" aria-selected={row === current}
         onMouseEnter={() => setActive(index)} onClick={() => { setActive(index); (row.open ?? row.take)(); }}>
         <span className="select-option">{row.label}{row.hint && <small>{row.hint}</small>}</span>{row.more && <ChevronRight size={14} className="quick-add-more" />}
-      </button>)}
+      </MenuRow>)}
       {!rows.length && <p className="quick-add-note">Nothing to choose here.</p>}
     </div>
     <p className="quick-add-help">{lastWord && command.unknown.includes(lastWord.toLowerCase()) ? "Tab takes the highlighted choice · " : ""}↑↓ · → open · ← back · Tab take · Shift+Enter next prompt · Enter {level ? "take" : asks ? "ask Elpis" : "add"} · Esc</p>
@@ -282,8 +283,8 @@ function CanvasMenu({ at, name, title, detail, items, onDelete, onClose }: { at:
       else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }}>
     <p className="hud-menu-title quick-add-title"><span>{title}</span>{detail && <span>{detail}</span>}</p>
-    <div ref={list} className="quick-add-list">{items.map((item, index) => <button data-slot="quick-add-option" key={item.label} type="button" role="menuitem" autoFocus={index === 0} className="quick-add-option" onClick={() => { onClose(); item.take(); }}>
-      <span className="select-option">{item.label}{item.hint && <small>{item.hint}</small>}</span>{item.keys && <kbd>{item.keys}</kbd>}</button>)}</div>
+    <div ref={list} className="quick-add-list">{items.map((item, index) => <MenuRow key={item.label} role="menuitem" autoFocus={index === 0} onClick={() => { onClose(); item.take(); }}>
+      <span className="select-option">{item.label}{item.hint && <small>{item.hint}</small>}</span>{item.keys && <kbd className="kbd-hint" aria-hidden="true">{item.keys}</kbd>}</MenuRow>)}</div>
   </div>;
 }
 
@@ -299,7 +300,7 @@ function CountField({ label, value, min, max, why, onChange }: { label: string; 
     setError(""); if (typed !== value) onChange(typed);
   };
   return <label className="canvas-chip canvas-count">{label}
-    <input type="text" inputMode="numeric" aria-label={label} aria-invalid={Boolean(error)} value={text} size={3}
+    <Input className="hud-cut-sm h-6 w-12 px-1.5 text-center tabular-nums md:text-xs" inputMode="numeric" aria-label={label} aria-invalid={Boolean(error)} value={text}
       onChange={event => type(event.target.value.replace(/\D/g, ""))} onBlur={() => { setText(String(value)); setError(""); }}
       onKeyDown={event => { if (event.key === "Escape") { setText(String(value)); setError(""); } }} />
     {error && <span className="canvas-count-error" role="alert">{error}</span>}
@@ -358,7 +359,7 @@ function FolderPicker({ cwd, folders, error, value, own, onChange }: { cwd?: str
   return <div className="canvas-folders" role="group" aria-label="May write">
     <span>May write</span>
     <span className="canvas-folders-chosen">{own && <span className="canvas-chip" title={`${own}: its own folder. The run makes it, and the agent and its check write their reports there.`}><span className="canvas-chip-label">{own}</span></span>}
-      {value.map(folder => <span key={folder} className="canvas-chip" title={folderLabel(folder)}><span className="canvas-chip-label">{folderLabel(folder)}</span><button data-slot="chip-remove" type="button" aria-label={`Remove ${folderLabel(folder)}`} onClick={() => onChange(value.filter(item => item !== folder))}><X size={12} /></button></span>)}</span>
+      {value.map(folder => <span key={folder} className="canvas-chip" title={folderLabel(folder)}><span className="canvas-chip-label">{folderLabel(folder)}</span><Button variant="ghost" size="icon-xs" aria-label={`Remove ${folderLabel(folder)}`} onClick={() => onChange(value.filter(item => item !== folder))}><X className="size-3" /></Button></span>)}</span>
     {!cwd ? <small>Agents write inside a project: choose one at the top.</small>
       : error ? <small role="alert">{error}</small>
       : <OptionSelect aria-label="Add a folder" value="" onChange={event => { if (event.target.value) onChange([...value, event.target.value]); }}>
@@ -743,20 +744,21 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
     const spot = source ? { x: source.position.x + (from!.as === "target" ? COLUMN : -COLUMN), y: source.position.y } : where.at;
     const taken = boxes();
     const made = newAgents(Math.min(count, room), choice, { x: 0, y: 0 }, tasks, agents.map(node => node.data.title)).map(node => { const at = place(spot, taken); taken.push({ ...at, w: NODE_W, h: NODE_H }); return { ...node, position: at }; });
-    let kept = graph.nodes;
+    // In the isometric view every agent keeps the spot it is drawn at, applied to the latest board.
+    let pinned: Map<string, XYPosition> | null = null;
     if (iso) {
       const scene = isoLayout(graph, order, split.father.length ? FATHER : undefined), occupied = isoBoxes(scene);
       const origin = scene.find(item => item.id === from?.id)?.at;
       const at = where.isoAt ?? (origin ? { x: origin.x + (from?.as === "source" ? -COLUMN : COLUMN), y: origin.y } : { x: 300, y: 0 });
       for (const node of made) { const slot = place({ x: at.x - ISO_NODE.w / 2, y: at.y - ISO_NODE.top }, occupied, ISO_NODE); node.isoPosition = { x: slot.x + ISO_NODE.w / 2, y: slot.y + ISO_NODE.top }; occupied.push({ ...slot, w: ISO_NODE.w, h: ISO_NODE.h }); }
-      kept = graph.nodes.map(node => { const at = scene.find(item => item.id === node.id)?.at; return at ? { ...node, isoPosition: at } : node; }); isoController.current?.keepView();
+      pinned = new Map(scene.map(item => [item.id, item.at])); isoController.current?.keepView();
     }
     const wire = (source: string, target: string) => ({ id: `${source}->${target}`, source, target });
     // On a wire, the new agents take its place: each waits for its first agent and feeds its second. From a dot or a
     // dropped wire, they join that agent. The Mother's wires are implied, never drawn.
     const wires = between ? made.flatMap(node => [...(between.source === MOTHER ? [] : [wire(between.source, node.id)]), wire(node.id, between.target)])
       : from && from.id !== MOTHER ? made.map(node => from.as === "target" ? wire(from.id, node.id) : wire(node.id, from.id)) : [];
-    setGraph(current => ({ ...current, nodes: [...kept, ...made], edges: [...current.edges.filter(edge => edge.id !== between?.id), ...wires] }));
+    setGraph(current => ({ ...current, nodes: [...(pinned ? current.nodes.map(node => pinned!.has(node.id) ? { ...node, isoPosition: pinned!.get(node.id)! } : node) : current.nodes), ...made], edges: [...current.edges.filter(edge => edge.id !== between?.id), ...wires] }));
     setSelection(made.map(node => node.id));
     if (iso) setTimeout(() => isoController.current?.reveal(made.map(node => node.id)), 140); else reveal(made.map(node => node.id));
     setNotice(count > room ? `Added ${room}: the limit is ${limit} agents.` : "");
@@ -856,7 +858,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       else if (!ctrl && !event.altKey && (event.key === "ContextMenu" || event.shiftKey && event.key === "F10")) { take(); keyboardMenu(); }
       else if (plain && event.code === "KeyL") { take(); setLasso(true); setMenu(null); setAdding(null); }
       else if (plain && event.code === "KeyM") { take(); mute(); }
-      else if (plain && event.key.startsWith("Arrow")) { take(); focusNearest(event.key); }
+      // A focused isometric agent walks the run order itself (components/agents-iso.tsx).
+      else if (plain && event.key.startsWith("Arrow") && !target?.closest(".iso-node")) { take(); focusNearest(event.key); }
       else if (!ctrl && !event.altKey && (event.key === "+" || event.code === "NumpadAdd" || event.code === "Equal")) { take(); zoom(1.25); }
       else if (!ctrl && !event.altKey && (event.key === "-" || event.code === "NumpadSubtract")) { take(); zoom(1 / 1.25); }
       else if (plain && ["Digit0", "Numpad0"].includes(event.code)) { take(); zoom(0); }
@@ -1398,7 +1401,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {iso ? <IsoBoard graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
         canConnect={validConnection} inserting={insertWire}
         onReconnect={(edge, source, target) => { connectionCancelled.current = false; reconnect(edge, source, target); }}
-        minimap={minimap} renamingFrame={renamingFrame} onFrameName={(id, title) => { if (title) { checkpoint(); setGraph(current => ({ ...current, frames: current.frames?.map(frame => frame.id === id ? { ...frame, title } : frame) })); } setRenamingFrame(null); focusBoard(); }} onNoteText={setText}
+        renamingFrame={renamingFrame} onFrameName={(id, title) => { if (title) { checkpoint(); setGraph(current => ({ ...current, frames: current.frames?.map(frame => frame.id === id ? { ...frame, title } : frame) })); } setRenamingFrame(null); focusBoard(); }} onNoteText={setText}
         onMoveStart={beginDrag} onMove={moveIso} onMoveEnd={(shift, cancel) => { if (cancel && nodeDrag.current) nodeDrag.current.cancelled = true; finishDrag(shift); }} onMovePreview={id => setInsertWire(nodeDrag.current?.extract ? null : insertionAt(id)?.id ?? null)}
         onConnect={connect} onAdd={(at, id, end) => addAgent(at, id ? { id, as: end === "source" ? "target" : "source" } : undefined)}
         onCommand={(at, id, end) => openAdder(at, { id, as: end === "source" ? "target" : "source" })}
@@ -1424,7 +1427,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       {run && <section className="canvas-log-panel" aria-label="Run capture">
         <p className="hud-menu-title">Run log · {log.length} events</p>
         <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
-          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><button data-slot="log-line" type="button" title={`Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}><time>+{clock(line.at - run.startedAt)}</time><span title={line.text}>{line.text}</span></button></li>)}
+          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={`Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}><time>+{clock(line.at - run.startedAt)}</time><span title={line.text}>{line.text}</span></Button></li>)}
         </ol>
       </section>}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
@@ -1437,8 +1440,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         {/* The keys, as Deus Ex's control strip shows them: a few, short; the rest are in each control's tooltip. */}
         <span className="canvas-toolbar-keys" title="AutoCAD selection: drag left to right for a solid window (fully inside); right to left for a dashed crossing (touching). Shift adds to the selection. Middle-drag or scroll to pan."><span><kbd>Space</kbd>Patterns</span><span><kbd>A</kbd>Add next</span><span><kbd>Enter</kbd>Info</span><span><kbd>Shift</kbd>AutoCAD selection</span><span><kbd>Ctrl+A</kbd>All</span></span>
       </div>
-      {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="input input-sm w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
-      {patternCommand !== null && <form className="canvas-pattern-command bg-base-100 text-base-content" aria-label="Workflow command" onSubmit={event => {
+      {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
+      {patternCommand !== null && <form className="canvas-pattern-command hud-menu" aria-label="Workflow command" onSubmit={event => {
         event.preventDefault(); const number = Number(patternCommand);
         if (!Number.isInteger(number) || number < 1 || number > PATTERNS.length) { setNotice("Choose a pattern number from 1 to 5."); return; }
         if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
@@ -1446,7 +1449,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         setTimeout(() => fitAll(), 60); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
       }}>
         <span className="text-xs">{PATTERNS.map((name, index) => `${index + 1} ${name}`).join(" · ")}</span>
-        <Input className="input input-sm w-full" aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Enter applies · Esc cancels" onChange={event => setPatternCommand(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); } }} />
+        <Input aria-label="Workflow pattern" autoFocus inputMode="numeric" value={patternCommand} placeholder="Pattern number · Enter applies · Esc cancels" onChange={event => setPatternCommand(event.target.value)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setPatternCommand(null); board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus(); } }} />
       </form>}
       {finding !== null && <div className="quick-add hud-menu canvas-search" role="dialog" aria-label="Find on board" onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); setFinding(null); focusBoard(); }
@@ -1455,7 +1458,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
       }}>
         <p className="hud-menu-title">Find agents <kbd>Ctrl+F</kbd></p>
         <Input autoFocus aria-label="Find agents" value={finding} onChange={event => { setFinding(event.target.value); setFindIndex(0); }} />
-        <div className="quick-add-list" role="listbox" aria-label="Matching agents">{found.map((node, index) => <button type="button" className="quick-add-option" role="option" aria-selected={index === findIndex} key={node.id} onClick={() => findAgent(node.id)}>{node.data.title}{node.data.muted ? " · muted" : ""}</button>)}</div>
+        <div className="quick-add-list" role="listbox" aria-label="Matching agents">{found.map((node, index) => <MenuRow role="option" aria-selected={index === findIndex} key={node.id} onClick={() => findAgent(node.id)}>{node.data.title}{node.data.muted ? " · muted" : ""}</MenuRow>)}</div>
         {!found.length && <p className="quick-add-note">No matching agents.</p>}
       </div>}
       {runTargets && <div className="quick-add hud-menu canvas-search" role="dialog" aria-label="Run selected" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setRunTargets(null); focusBoard(); } }}>
@@ -1466,7 +1469,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
         <Button variant="ghost" size="sm" onClick={() => { setRunTargets(null); focusBoard(); }}>Cancel <kbd>Esc</kbd></Button>
       </div>}
       {adding && <CommandBar adding={adding} room={room} limit={limit} catalog={catalog} providers={providers} onClose={() => setAdding(null)}
-        onAgents={command => { checkpoint(); restored.current = true; addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
+        onAgents={command => { checkpoint(); addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { checkpoint(); addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}
       {menu && (view => <CanvasMenu at={menu} {...view} onClose={() => setMenu(null)} />)(menuView(menu))}
       {dashboard && <AgentDashboard node={dashboard} own={own.get(dashboard.id) ?? ""} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
@@ -1542,11 +1545,11 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu }: Props) {
           <span>Critical path · {critical.length} rounds</span>{critical.map(titleOf).join(" → ")}</p>}
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
-        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><button data-slot="pattern-card" type="button" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
+        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><Button variant="ghost" size={null} className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
           <strong>{template.name}{graph.template === template.id && <span className="canvas-template-loaded">On the board</span>}</strong>
           <Shape shape={shapes.get(template.id) ?? []} /><small>{template.description}</small>
           {template.caution && <small className="canvas-template-caution">{template.caution}</small>}
-          {template.source && <small className="canvas-template-source">{template.source}</small>}</button>
+          {template.source && <small className="canvas-template-source">{template.source}</small>}</Button>
           <a className={buttonVariants({ variant: "link", size: "xs" })} href={`#workflow-sources-${template.id}`} aria-label={`Sources for ${template.name}`} onClick={event => { event.preventDefault(); setSelection([]); setSourceId(template.id); }}>Sources</a></div>)}
       </section>)}
       <section className="canvas-guide" aria-label="Guide">
