@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Square, Sun, X } from "lucide-react";
+import { Archive, ArrowDown, Blocks, Bookmark, BookmarkMinus, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -18,7 +18,7 @@ import { ChatMessage } from "@/components/chat-message";
 import { FailedTurnCard, type FailedTurn } from "@/components/failed-turn-card";
 import { ViewBoundary } from "@/components/view-boundary";
 import { Transcript } from "@/components/transcript";
-import { useChatAttention, usePins } from "@/lib/use-sidebar-state";
+import { useBookmarks, useChatAttention, usePins } from "@/lib/use-sidebar-state";
 import { SIDEBAR, useAppearance } from "@/lib/use-appearance";
 import { addGroup, deleteGroup, emptyGroups, groupSections, moveChats, placeChat, prioritizeChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups, type ChatGroup, type ChatGroups } from "@/lib/chat-groups";
 import { configuredShortcuts, shortcutFor, shortcutHint } from "@/lib/shortcuts";
@@ -180,6 +180,7 @@ export default function Home() {
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const { pins, togglePinned } = usePins();
+  const { bookmarks, toggleBookmarked } = useBookmarks();
   // Groups the person made, and how the sidebar lists chats (lib/chat-groups.ts); kept on this computer, read once.
   const [chatGroups, setChatGroups] = useState<ChatGroups>(emptyGroups);
   const chatGroupsRef = useRef(chatGroups); chatGroupsRef.current = chatGroups;
@@ -1558,6 +1559,7 @@ export default function Home() {
     else if (id === "files" && desktop) { const away = view !== "chat"; if (away) show("chat"); if (!side.toggleFiles(!away)) focusComposer(); }
   };
   const togglePin = (thread: Thread) => togglePinned(thread.id);
+  const toggleBookmark = (thread: Thread) => toggleBookmarked(thread.id);
   /** A narrow window slides the sidebar over the page; a wide one collapses it (the sidebar button and Ctrl+B), as in ChatGPT and Claude. */
   function narrow() { return matchMedia("(max-width: 760px)").matches || (panelShown && panelDrawer); }
   function showSidebar(open: boolean) { if (!narrow()) { setSidebarCollapsed(!open); return; } setSidebar(open); if (open) setSidebarCollapsed(false); }
@@ -1693,12 +1695,13 @@ export default function Home() {
   }
   /** `inOrigin`: the row sits in the group named for its origin, so the origin is not written again beside its title. */
   function threadRow(thread: Thread, depth = 0, inOrigin = false) {
-    const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id);
+    const name = title(thread), state = agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
     const origin = chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     const canExpandAgents = agentParents.has(thread.id) || !!childCursors[thread.id];
     return <ThreadActions key={thread.id} thread={thread} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
+      bookmarked={bookmarked} onBookmark={toggleBookmark}
       onMoveToProject={!isAgent(thread) ? setProjectMove : undefined}
       attention={attentionFor(thread.id)}
       selection={marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined}
@@ -1724,14 +1727,19 @@ export default function Home() {
         {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
-      {!depth && <span className="row-hover-actions"><Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button><Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button></span>}
+      <span className="row-hover-actions">
+        {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
+        <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
+        {!depth && <Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => void archiveThread(thread)}><ArchiveIcon size={13} /></Button>}
+      </span>
+      {bookmarked && <span className="thread-bookmark" role="img" aria-label="Bookmarked" title="Bookmarked"><Bookmark size={13} fill="currentColor" aria-hidden="true" /></span>}
       {menu}
       </>}
     </ThreadActions>;
   }
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: React.ReactElement, content: (menu: React.ReactNode) => React.ReactNode, shown: boolean) =>
-    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} onMoveToProject={!isAgent(thread) ? setProjectMove : undefined} area={area}>{content}</ThreadActions>;
+    <ThreadActions label={shown ? "Chat actions" : undefined} thread={thread} attention={attentionFor(thread.id)} group={groupMenu(thread, [thread.id])} onRequestDelete={() => deleteChats([thread.id])} onRename={renameThread} onArchive={archiveThread} pinned={pins.includes(thread.id)} onPin={togglePin} bookmarked={bookmarks.includes(thread.id)} onBookmark={toggleBookmark} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined} renameRequested={shown && renameRequest} onRenameRequestHandled={() => setRenameRequest(false)} onMoveToProject={!isAgent(thread) ? setProjectMove : undefined} area={area}>{content}</ThreadActions>;
   const chatActions = (area: React.ReactElement, content: React.ReactNode) => view === "chat" && selected
     ? threadMenu(selected, area, menu => <>{content}{menu}</>, true)
     : cloneElement(area, undefined, content);

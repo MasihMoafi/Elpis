@@ -2,7 +2,7 @@
 
 import { cloneElement, useEffect, useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import { CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Pencil, PinOff, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
+import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Pencil, PinOff, Plus, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -26,6 +26,8 @@ type Props = {
   onArchive?: (thread: Thread) => Promise<void>;
   pinned?: boolean;
   onPin?: (thread: Thread) => void;
+  bookmarked?: boolean;
+  onBookmark?: (thread: Thread) => void;
   /** The sidebar's list of this chat's agents, under its row. */
   agents?: { shown: boolean; onToggle: () => void };
   /** Set by the rename shortcut; the rename dialog opens once. */
@@ -52,7 +54,7 @@ type Props = {
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
-export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject }: Props) {
+export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onArchive, pinned, onPin, bookmarked, onBookmark, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -90,6 +92,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, onA
   const actions = (many ? [move, archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
+    onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
     move,
     onMoveToProject ? { id: "project", label: "Move to project…", icon: <FolderInput size={14} />, run: () => onMoveToProject(thread) } : undefined,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }

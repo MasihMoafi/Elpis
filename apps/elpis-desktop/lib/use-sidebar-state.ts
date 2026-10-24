@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readAttention, saveAttention, type Attention } from "@/lib/attention";
 import { readPins, savePins } from "@/lib/pins";
+import { readBookmarks, saveBookmarks } from "@/lib/bookmarks";
 
 /** Which chats have an answer not yet read and which wait on a plan, kept on this computer. A plan the person has answered stops waiting.
  * `planTurns` remembers each chat's latest plan turn while the window is open. */
@@ -23,13 +24,24 @@ export function useChatAttention(planAnswered: Record<string, string>, onError: 
   return { attention, setAttention, planTurns, markRead };
 }
 
+function useChatMarks(read: () => string[], save: (ids: string[]) => void) {
+  const [ids, setIds] = useState<string[]>([]);
+  useEffect(() => { setIds(read()); }, [read]);
+  const toggle = (id: string) => {
+    const next = ids.includes(id) ? ids.filter(value => value !== id) : [id, ...ids];
+    setIds(next); save(next);
+  };
+  return [ids, toggle] as const;
+}
+
 /** The chats pinned to the top of the sidebar, newest pin first, kept on this computer. */
 export function usePins() {
-  const [pins, setPins] = useState<string[]>([]);
-  useEffect(() => { setPins(readPins()); }, []);
-  const togglePinned = (id: string) => {
-    const next = pins.includes(id) ? pins.filter(value => value !== id) : [id, ...pins];
-    setPins(next); savePins(next);
-  };
+  const [pins, togglePinned] = useChatMarks(readPins, savePins);
   return { pins, togglePinned };
+}
+
+/** Bookmarks mark chats without changing their sidebar section or order. */
+export function useBookmarks() {
+  const [bookmarks, toggleBookmarked] = useChatMarks(readBookmarks, saveBookmarks);
+  return { bookmarks, toggleBookmarked };
 }

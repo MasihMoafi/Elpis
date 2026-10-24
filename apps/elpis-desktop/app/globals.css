@@ -782,10 +782,14 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-link:focus-visible { outline:none; }
 .thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
 .thread-row.selected { background:var(--selected); }
-.row-hover-actions { display:none; align-items:center; }
+.row-hover-actions { display:none; align-items:center; flex-shrink:0; }
 .thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
 .row-hover-actions button { color:var(--muted-foreground); }
 .row-hover-actions button:hover { color:var(--primary); }
+.thread-bookmark { position:absolute; right:7px; top:50%; transform:translateY(-50%); color:var(--primary); pointer-events:none; }
+.thread-row:has(.thread-bookmark) .thread-actions { opacity:0; }
+.thread-row:has(.thread-bookmark):is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-actions { opacity:1; }
+.thread-row:is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-bookmark { visibility:hidden; }
 /* Every chat reserves the same chevron column, including chats without agents. */
 /* A chat's status dot, before its title: a still amber ring while it runs, filled amber when it finished unseen, red on error. */
 .thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 26px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
