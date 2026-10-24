@@ -430,6 +430,10 @@ export default function Home() {
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [itemCursor, setItemCursor] = useState<string | null>(null);
+  // Earlier entries already read but not shown yet: a page can hold more than ten messages, and a press shows ten.
+  // A fresh read of the newest page drops them with the old cursor.
+  const heldEarlier = useRef(new Map<string, Entry[]>());
+  const [heldCount, setHeldCount] = useState(0);
   /** Each chat's last read transcript: reopening a chat draws it at once while it rereads, as in the ChatGPT app. */
   const transcripts = useRef(new Map<string, { entries: Entry[]; cursor: string | null }>());
   useEffect(() => { if (selected && !loading) transcripts.current.set(selected.id, { entries, cursor: itemCursor }); }, [selected, loading, entries, itemCursor]);
@@ -539,12 +543,16 @@ export default function Home() {
     saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); setText(savedDraft(thread.id));
     const id = ++request.current; stickToBottom.current = true; restoreScroll.current = null;
     liveVersions.current.clear(); const historyRevision = liveRevision.current;
+    let unread = false;
     const shown = transcripts.current.get(thread.id);
     select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(true); setError(""); restoreAttachments(thread.id);
     try {
       const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
       if (request.current !== id) return;
-      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor);
+      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); heldEarlier.current.delete(thread.id);
+      // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
+      // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
+      unread = !result.data.length && !result.nextCursor;
     } catch (e) { if (request.current === id) setError(String(e)); return; }
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
@@ -554,6 +562,10 @@ export default function Home() {
       if (request.current !== id || live.thread?.id !== thread.id) return;
       if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
+      if (unread) {
+        const again = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
+        if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); heldEarlier.current.delete(thread.id); }
+      }
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
   }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
 
@@ -621,8 +633,9 @@ export default function Home() {
         // History and resume are independent: a refused history read must not leave a finished turn running.
         const history = thread?.id === id ? (async () => {
           const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100`);
-          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); }
-        })() : Promise.resolve();
+          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); heldEarlier.current.delete(id); }
+          return !result.data.length && !result.nextCursor;
+        })() : Promise.resolve(false);
         const resume = (async () => {
           const live = await api<Live>(`/threads/${encodeURIComponent(id)}/resume`, {});
           if (!open() || live.thread?.id !== id) return;
@@ -631,6 +644,11 @@ export default function Home() {
         })();
         const results = await Promise.allSettled([history, resume]);
         if (!open()) return;
+        // A saved chat reads as empty until the resume has loaded it (see loadThread): read it again.
+        if (results[0].status === "fulfilled" && results[0].value && results[1].status === "fulfilled" && shown()) {
+          const again = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100`).catch(() => null);
+          if (again && Array.isArray(again.data) && shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); heldEarlier.current.delete(id); }
+        }
         const failed = results.find(result => result.status === "rejected");
         if (failed?.status === "rejected") setLiveError(previous => ({ ...previous, [id]: failed.reason instanceof Error ? failed.reason.message : String(failed.reason) }));
       }));
@@ -1299,14 +1317,17 @@ export default function Home() {
     if (request.current === originalRequest) restoreComposerFocus(originalFocus);
   }
   const EARLIER_MESSAGES = 10;
+  const earlierHeld = (id?: string) => !!id && (heldEarlier.current.get(id)?.length ?? 0) > 0;
   async function older(untilTurnId?: string, untilItemId?: string): Promise<boolean> {
-    if (!selected || !itemCursor) return false;
+    if (!selected || !itemCursor && !earlierHeld(selected.id)) return false;
     const revision = request.current;
     setLoading(true);
-    const id = selected.id, pages: Entry[] = [], seen = new Set<string>();
-    let cursor: string | null = itemCursor, found = false;
+    const id = selected.id, pages: Entry[] = [...heldEarlier.current.get(id) ?? []], seen = new Set<string>();
+    const messagesIn = (list: Entry[]) => list.filter(entry => entry.item.type === "userMessage").length;
+    let cursor: string | null = itemCursor, found = pages.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
     try {
-      while (cursor) {
+      // A press brings ten more of the chat's messages, however many tool steps lie between them.
+      while (cursor && !found && (untilTurnId || messagesIn(pages) < EARLIER_MESSAGES)) {
         if (seen.has(cursor)) throw new Error("Repeated conversation cursor");
         seen.add(cursor);
         const result: { data: Entry[]; nextCursor: string | null } = await api(`/threads/${encodeURIComponent(id)}?limit=100&cursor=${encodeURIComponent(cursor)}`);
@@ -1314,16 +1335,22 @@ export default function Home() {
         found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
         pages.unshift(...result.data.reverse());
         cursor = result.nextCursor;
-        // A press brings ten more of the chat's messages, however many tool steps lie between them.
-        const messages = pages.filter(entry => entry.item.type === "userMessage").length;
-        if (found || selectedRef.current?.id !== id || request.current !== revision || !untilTurnId && messages >= EARLIER_MESSAGES) break;
+        if (selectedRef.current?.id !== id || request.current !== revision) break;
       }
       if (selectedRef.current?.id !== id || request.current !== revision) return false;
+      // Show from the tenth message back; keep the rest for the next press.
+      let split = 0;
+      if (!untilTurnId && messagesIn(pages) > EARLIER_MESSAGES) {
+        let count = 0;
+        for (let index = pages.length - 1; index >= 0; index--) if (pages[index].item.type === "userMessage" && ++count === EARLIER_MESSAGES) { split = index; break; }
+      }
+      heldEarlier.current.set(id, pages.slice(0, split));
       setError("");
       stickToBottom.current = false;
       if (scroll.current) restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop };
-      setEntries(prev => [...pages, ...prev]);
+      setEntries(prev => [...pages.slice(split), ...prev]);
       setItemCursor(cursor);
+      setHeldCount(count => count + 1);
       return untilTurnId ? found : true;
     } catch (e) { if (request.current === revision) setError(String(e)); return false; }
     finally { if (request.current === revision) setLoading(false); }
@@ -2163,7 +2190,7 @@ export default function Home() {
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; setAwayFromBottom(!stickToBottom.current); }}><div className="chat-content">
-          {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
+          {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           {chatConversation}
