@@ -44,6 +44,8 @@ export async function createTrash({ client, file }) {
       const entry = { ids: [], archived: [] }, worktrees = [];
       try {
         for (const id of threadIds) {
+          // An agent of a chat deleted with it went with that chat.
+          if (entry.archived.includes(id)) continue;
           const agents = await liveDescendants(id);
           const result = await client.archiveThread(id, {});
           if (result.worktree?.kept) worktrees.push({ threadId: id, worktree: result.worktree });

@@ -113,3 +113,14 @@ test('Ctrl+Z works when unarchiving a chat brings its agents back with it: each 
   assert.deepEqual(client.calls.filter(call => call[0] === 'unarchive'), [['unarchive', 'root']]);
   assert.equal(client.threads.get('agent').archived, false);
 });
+
+test('a chat and its agent deleted together: the agent goes with its chat, and the deletion does not fail on it', async () => {
+  // The engine refuses to archive a chat that is already archived; the sidebar's selection held both (24 Oct).
+  const client = fakeClient(), archive = client.archiveThread;
+  client.archiveThread = async id => { if (client.threads.get(id).archived) throw Error(`thread ${id} is already archived`); return archive(id); };
+  const trash = await createTrash({ client, file: await temp() });
+  assert.deepEqual(await trash.trash(['root', 'agent']), { trashed: ['root'] });
+  assert.ok(trash.has('agent'));
+  const back = await trash.undo();
+  assert.deepEqual([back.threads.map(thread => thread.id), back.restored], [['root'], ['root', 'agent']]);
+});

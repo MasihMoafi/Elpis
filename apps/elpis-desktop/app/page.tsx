@@ -1705,7 +1705,8 @@ export default function Home() {
     if (selectedRef.current && ids.includes(selectedRef.current.id)) shownWhenDeleted.current.add(selectedRef.current.id);
     const { trashed, worktrees } = await api<{ trashed: string[]; worktrees?: { threadId: string; worktree: WorktreeOutcome }[] }>("/trash", { threadIds: ids });
     for (const { threadId, worktree } of worktrees ?? []) { const thread = targets.find(item => item.id === threadId); if (thread) noteKept(keptNotice(title(thread), "deleted", worktree)); }
-    removeThreads(new Set(trashed), false);
+    // An agent deleted with its chat is not listed as trashed itself (bridge/trash.mjs); it leaves the list all the same.
+    removeThreads(new Set([...trashed, ...ids]), false);
     setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0])}”` : `Deleted ${targets.length} chats`);
   }
   /** Ctrl+Z and the notice's Undo: the newest deletion comes back, with the chat that was open opened again. */
