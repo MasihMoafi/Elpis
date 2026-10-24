@@ -49,8 +49,12 @@ export function withSubmittedMessages(entries: Entry[], submissions: SubmittedMe
         : sent.newTurn && entry.turnId === found.turnId ? { ...entry, clientTurnKey: sent.key } : entry);
     } else if (!sent.failed && !sent.recorded) {
       const pending: Entry = { turnId: sent.turnId ?? sent.key, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}), clientPending: true, item: { id: sent.key, type: "userMessage", content: sent.content } };
-      const firstWork = sent.turnId ? result.findIndex(entry => entry.turnId === sent.turnId) : -1;
-      const at = firstWork < 0 ? result.length : firstWork;
+      // A new turn opens with its message; a message sent into a running turn sits right below what was shown when it
+      // was sent (R2), so what the agent writes afterwards follows it.
+      const seen = new Set(sent.previousKeys);
+      const firstWork = sent.turnId && sent.newTurn ? result.findIndex(entry => entry.turnId === sent.turnId) : -1;
+      const afterShown = result.reduce((last, entry, index) => seen.has(entryKey(entry)) ? index + 1 : last, 0);
+      const at = firstWork >= 0 ? firstWork : sent.newTurn ? result.length : afterShown;
       result = [...result.slice(0, at), pending, ...result.slice(at)];
       if (sent.newTurn && sent.turnId) result = result.map(entry => entry.turnId === sent.turnId ? { ...entry, clientTurnKey: sent.key } : entry);
     }
