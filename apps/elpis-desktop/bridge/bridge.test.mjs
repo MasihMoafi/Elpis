@@ -116,6 +116,8 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         let nextCursor = null;
         if (threadListPaging) {
           data = data.filter(thread => !request.params.sourceKinds?.length || request.params.sourceKinds.includes(typeof thread.source === 'object' ? 'subAgentThreadSpawn' : thread.source));
+          // Like the engine's index: search matches the first message in exact letter case, not a name given later.
+          if (request.params.searchTerm) data = data.filter(thread => (thread.preview ?? '').includes(request.params.searchTerm));
           const offset = Number(request.params.cursor ?? 0), end = offset + request.params.limit;
           if (end < data.length) nextCursor = String(end);
           data = data.slice(offset, end);
@@ -478,6 +480,22 @@ test('saved-conversation search passes its term and cursor to the native list be
     const count = socket.sent.filter(message => message.method === 'thread/list').length;
     await assert.rejects(client.listThreads({ searchTerm: ' ' }), /conversation search/);
     assert.equal(socket.sent.filter(message => message.method === 'thread/list').length, count);
+  } finally { client.close(); }
+});
+
+test('search finds a chat by its name in any letter case, also past the first page the sidebar loaded', async () => {
+  const { client, threads } = fixture({ threadListPaging: true }); await client.initialize();
+  const chat = (id, name, preview, source = 'vscode') => threads.set(id, { id, name, preview, source, status: { type: 'idle' }, cwd: '/work' });
+  for (let i = 0; i < 230; i++) chat(`filler-${i}`, `Filler chat ${i}`, `lorem ${i}`);
+  chat('named-main', 'main', 'Set up the repo'); chat('branch', 'Main branch cleanup', 'tidy the branches');
+  chat('hermes', 'Hermes main setup', 'configure hermes'); chat('domain', 'Domain notes', 'dns records');
+  chat('mention', 'Release checklist', 'merge into main tomorrow'); chat('run', 'main', 'background run', 'exec');
+  try {
+    for (const term of ['main', 'MAIN', 'mai', 'Main']) {
+      const found = (await client.listThreads({ searchTerm: term, limit: 100 })).data.map(thread => thread.id);
+      assert.deepEqual(['named-main', 'branch', 'hermes', 'domain', 'mention'].filter(id => !found.includes(id)), [], `${term} misses named chats`);
+      assert.ok(!found.includes('run') && !found.some(id => id.startsWith('filler-')), `${term} lists only matches`);
+    }
   } finally { client.close(); }
 });
 

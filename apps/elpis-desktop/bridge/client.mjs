@@ -33,6 +33,8 @@ const string = value => typeof value === 'string' ? value : null;
 /** Every kind of conversation the window lists, agents included. */
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'subAgent', 'subAgentReview', 'subAgentCompact', 'subAgentThreadSpawn', 'subAgentOther', 'unknown'];
 const CHAT_SOURCE_KINDS = ['cli', 'vscode', 'appServer', 'unknown'];
+/** Search reads at most this many pages of 100 chats for names (2,000 chats). */
+const SEARCH_SCAN_PAGES = 20;
 
 // Image history can exceed 8 MiB; keep runtime messages and HTTP responses bounded together.
 export const MAX_BRIDGE_MESSAGE_BYTES = 100 * 1024 * 1024;
@@ -481,6 +483,18 @@ export class DesktopClient extends EventEmitter {
       ...(options.searchTerm ? { searchTerm: options.searchTerm.trim() } : {}),
       sourceKinds: includeAgentRuns ? SOURCE_KINDS : CHAT_SOURCE_KINDS,
       ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}) });
+    // The engine's search matches a chat's first message in exact letter case and misses a name given later, so "main" did
+    // not find the chat named main once it was past the loaded page. Match names and first messages in any case over the
+    // whole list, as the Codex resume picker matches its rows (tui/src/resume_picker.rs, matches_query).
+    if (options.searchTerm && !options.cursor && !options.archived && !options.ancestorThreadId) {
+      const term = options.searchTerm.trim().toLowerCase(), seen = new Set(result.data.map(thread => thread.id));
+      let cursor;
+      for (let page = 0; page < SEARCH_SCAN_PAGES; page++) {
+        const listed = await this.#rpc('thread/list', { limit: 100, ...(cursor ? { cursor } : {}), modelProviders: [], sourceKinds: includeAgentRuns ? SOURCE_KINDS : CHAT_SOURCE_KINDS });
+        for (const thread of listed.data ?? []) if (!seen.has(thread.id) && `${thread.name ?? ''} ${thread.preview ?? ''} ${thread.agentNickname ?? ''}`.toLowerCase().includes(term)) { seen.add(thread.id); result.data.push(thread); }
+        if (!(cursor = listed.nextCursor)) break;
+      }
+    }
     // A native fork has no first_user_message of its own until another turn. Keep the current rewind checkpoint
     // discoverable across desktop restarts without inventing a user message just to make the engine list it.
     if (!options.cursor && !options.ancestorThreadId && !options.archived) {
