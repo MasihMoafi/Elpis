@@ -137,6 +137,7 @@
   ],
   "ui": [
     "tests/workflow-identity.test.cjs",
+    "tests/workflow-expand-follow.test.cjs",
     "tests/speed-chat.test.cjs",
     "tests/canvas-keys.test.cjs",
     "tests/chat-organize.test.cjs",

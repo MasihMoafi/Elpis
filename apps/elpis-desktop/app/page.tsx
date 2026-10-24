@@ -777,22 +777,6 @@ export default function Home() {
     }, 3000);
     return () => { disposed = true; clearInterval(timer); };
   }, [selected?.id, selectedLiveError, view, loading, select, liveKeysAfter]);
-  // Follow agents whose parent is expanded in the sidebar.
-  const observedIds = JSON.stringify(Object.keys(expanded).filter(id => expanded[id]).sort());
-  useEffect(() => {
-    let disposed = false, inFlight = false;
-    const refresh = async () => {
-      if (disposed || inFlight || document.visibilityState !== "visible") return;
-      inFlight = true;
-      try {
-        const ids = JSON.parse(observedIds) as string[];
-        for (let start = 0; start < ids.length && !disposed; start += 3) await Promise.all(ids.slice(start, start + 3).map(id => loadChildren(id, undefined, false)));
-      } catch (cause) { if (!disposed) setError(String(cause)); }
-      finally { inFlight = false; }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 5000);
-    return () => { disposed = true; clearInterval(timer); };
-  }, [observedIds, loadChildren]);
   // Name the parent and the agent a continued chat came from, even when they are not on the loaded page.
   const relatedIds = [...new Set([selected?.parentThreadId, selected?.forkedFromId, ...(preferences.showAgentRuns && agentRunsOpen ? threads.filter(isAgentRun).map(thread => thread.parentThreadId) : [])])].filter((id): id is string => !!id && !threads.some(thread => thread.id === id) && !related[id]);
   useEffect(() => {
@@ -1621,6 +1605,24 @@ export default function Home() {
     previousRuns.current = new Map(workflowCatalog.runs.map(run => [run.id, run.status]));
     if (ended.length) setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) }));
   }, [workflowCatalog.runs]);
+  // Follow agents whose parent is expanded in the sidebar. An expanded workflow is keyed `workflow:<run id>`: follow its
+  // chat, as its Expand button does; the bridge refuses any other key as an invalid thread ID.
+  const observedIds = JSON.stringify([...new Set(Object.keys(expanded).filter(id => expanded[id]).flatMap(id => id.startsWith("workflow:")
+    ? workflowRuns.filter(run => `workflow:${run.id}` === id).map(run => run.rootThreadId) : [id]))].sort());
+  useEffect(() => {
+    let disposed = false, inFlight = false;
+    const refresh = async () => {
+      if (disposed || inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const ids = JSON.parse(observedIds) as string[];
+        for (let start = 0; start < ids.length && !disposed; start += 3) await Promise.all(ids.slice(start, start + 3).map(id => loadChildren(id, undefined, false)));
+      } catch (cause) { if (!disposed) setError(String(cause)); }
+      finally { inFlight = false; }
+    };
+    void refresh(); const timer = setInterval(() => void refresh(), 5000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [observedIds, loadChildren]);
   const searchedThreads = searchTerm && searchResults.query === searchTerm ? mergeListedThreads(sidebarThreads, searchResults.data, hidden.current) : sidebarThreads;
   const matchedOnServer = new Set(searchTerm && searchResults.query === searchTerm ? searchResults.data.map(thread => thread.id) : []);
   const unreadIds = new Set(attention.unread);
