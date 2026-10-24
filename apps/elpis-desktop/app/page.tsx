@@ -833,12 +833,13 @@ export default function Home() {
   }, [ready, view, selected?.id]);
   // Elpis can replace turns only in chats it lets this app write directly, and not while one is running.
   const replaceable = !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
-  const turnEntries = new Map<string, Entry[]>();
-  for (const entry of entries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
-  // A descending item page can cut only its oldest turn. Later turns have a visible
-  // earlier-turn boundary; replacing them does not need the rest of the older history.
-  const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, replacementEligibility(group, id, { historyComplete: !loading && (itemCursor === null || id !== entries[0]?.turnId) })]));
-  const replacementOptionsKey = JSON.stringify([...replacementOptions]);
+  const { turnEntries, replacementOptions, replacementOptionsKey } = useMemo(() => {
+    const turnEntries = new Map<string, Entry[]>();
+    for (const entry of entries) { const group = turnEntries.get(entry.turnId) ?? []; group.push(entry); turnEntries.set(entry.turnId, group); }
+    // Only the oldest turn can be cut by a descending history page.
+    const replacementOptions = new Map([...turnEntries].map(([id, group]) => [id, replacementEligibility(group, id, { historyComplete: !loading && (itemCursor === null || id !== entries[0]?.turnId) })]));
+    return { turnEntries, replacementOptions, replacementOptionsKey: JSON.stringify([...replacementOptions]) };
+  }, [entries, loading, itemCursor]);
   const failedTurn = selected ? failedTurns[selected.id] : undefined;
   const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
   const recoveredEdit = selected ? savedDraft(`recovery-${selected.id}`) : "";
@@ -1311,6 +1312,8 @@ export default function Home() {
             time={e.item.type === "userMessage" ? e.startedAtMs : undefined}
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable ? () => live.current.setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Keep the conversation's context providers outside composer-only renders.
+  const chatConversation = useMemo(() => selected ? <ReadAloud key={selected.id} threadId={selected.id} enabled={connected}>{agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud> : conversation, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation]);
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
   function editQueued(item: FollowUp) {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
@@ -1953,7 +1956,7 @@ export default function Home() {
           {itemCursor && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
-          {selected ? <ReadAloud key={selected.id} threadId={selected.id} enabled={connected}>{agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud> : conversation}
+          {chatConversation}
           {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
             blockedReason={continues ? "Continue this conversation here before trying again." : failedInput?.allowed ? undefined : failedInput?.reason ?? "The original complete input is unavailable, so this turn cannot be safely resent."}
