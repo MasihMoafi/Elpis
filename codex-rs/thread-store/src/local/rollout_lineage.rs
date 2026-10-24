@@ -27,7 +27,14 @@ pub(super) struct RolloutLineageSegment {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RolloutLineage {
     pub(super) segments: Vec<RolloutLineageSegment>,
+    /// An earlier rollout this history continues from is gone. The segments hold the history that
+    /// remains, so the chat still opens; readers say the earliest part is missing.
+    pub(super) missing_earlier: bool,
 }
+
+/// The note a chat carries when the earliest part of its history is missing.
+pub(super) const MISSING_EARLIER_HISTORY_NOTE: &str =
+    "The earliest part of this chat is missing, so it opened with the history that remains.";
 
 impl LocalThreadStore {
     pub(super) async fn resolve_rollout_lineage(
@@ -65,6 +72,7 @@ impl LocalThreadStore {
         let mut seen = HashSet::new();
         let mut next_rollout_id = None;
         let mut end = None;
+        let mut missing_earlier = false;
 
         loop {
             let coordination_id = next_rollout_id.unwrap_or(requested_thread_id);
@@ -76,9 +84,18 @@ impl LocalThreadStore {
             };
             let (rollout_id, rollout_path) = match (next_rollout_id, initial_path.take()) {
                 (Some(rollout_id), _) => {
-                    let rollout_path = resolve_rollout_path_by_id(self, rollout_id)
-                        .await?
-                        .ok_or_else(|| malformed_lineage(rollout_id, "missing source rollout"))?;
+                    let Some(rollout_path) = resolve_rollout_path_by_id(self, rollout_id).await?
+                    else {
+                        // The earlier part was deleted. Keep what remains readable rather than
+                        // refusing every read of the chat.
+                        tracing::warn!(
+                            thread_id = %requested_thread_id,
+                            missing_rollout_id = %rollout_id,
+                            "earlier history rollout is missing; reading the history that remains"
+                        );
+                        missing_earlier = true;
+                        break;
+                    };
                     (rollout_id, rollout_path)
                 }
                 (None, Some(path)) => {
@@ -198,7 +215,10 @@ impl LocalThreadStore {
         }
 
         segments.reverse();
-        Ok(RolloutLineage { segments })
+        Ok(RolloutLineage {
+            segments,
+            missing_earlier,
+        })
     }
 }
 
@@ -222,6 +242,10 @@ enum LineageRepresentation {
 impl RolloutLineage {
     pub(super) fn segments(&self) -> &[RolloutLineageSegment] {
         self.segments.as_slice()
+    }
+
+    pub(super) fn missing_earlier(&self) -> bool {
+        self.missing_earlier
     }
 
     pub(super) fn segment_index_for_ordinal(&self, ordinal: u64) -> Option<usize> {

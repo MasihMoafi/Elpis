@@ -220,7 +220,14 @@ async fn load_inherited_summary_items(
     lineage: &RolloutLineage,
     turn: &StoredTurnRow,
 ) -> ThreadStoreResult<Vec<StoredThreadItem>> {
-    let source = find_source_turn(pool, lineage, turn.turn_id.as_str()).await?;
+    let source = match find_source_turn(pool, lineage, turn.turn_id.as_str()).await {
+        Ok(source) => source,
+        // The source turn was in the earlier part that is missing; the turn keeps no summary.
+        Err(ThreadStoreError::InvalidRequest { .. }) if lineage.missing_earlier() => {
+            return Ok(Vec::new());
+        }
+        Err(err) => return Err(err),
+    };
     let Some(segment) = lineage
         .segments()
         .iter()

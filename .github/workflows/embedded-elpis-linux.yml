@@ -359,6 +359,9 @@ jobs:
             loaded_children_give_up_the_full_access_their_parent_gives_up \
             revocation regains_full_access \
             recompute_token_usage record_initial_history_seeds_token_info_from_rollout
+          # A chat whose earlier rollout is gone still opens (24 Oct, his rust-obsidian chat).
+          cargo test --profile dev-small --locked -p codex-thread-store --lib -- \
+            rollout_lineage model_context
       - name: Context and session integration tests
         if: ${{ !cancelled() && inputs.verification != 'ui' && inputs.verification != 'build' }}
         working-directory: codex-rs
