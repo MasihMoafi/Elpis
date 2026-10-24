@@ -337,6 +337,7 @@
   "opt-in": [
     "tests/polish.runtime.cjs",
     "tests/sidebar-archive-delete.runtime.mjs",
+    "tests/sidebar-organize.runtime.mjs",
     "tests/ledger-app.runtime.cjs",
     "tests/ledger-engine.runtime.mjs",
     "tests/changes-installed.runtime.cjs",
