@@ -3575,6 +3575,7 @@ impl ThreadRequestProcessor {
             data,
             next_cursor: page.next_cursor,
             backwards_cursor: page.backwards_cursor,
+            earliest_history_missing: page.earliest_history_missing,
         })
     }
 

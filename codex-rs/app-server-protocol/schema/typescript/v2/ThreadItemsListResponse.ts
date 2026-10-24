@@ -13,4 +13,9 @@ nextCursor: string | null,
  * Opaque cursor to pass as `cursor` when reversing `sortDirection`.
  * This is only populated when the page contains at least one item.
  */
-backwardsCursor: string | null, };
+backwardsCursor: string | null,
+/**
+ * Elpis: the earliest part of this thread's history is missing (an earlier rollout it
+ * continues was deleted), so these items are the history that remains.
+ */
+earliestHistoryMissing?: boolean, };

@@ -186,6 +186,7 @@ async fn list_items_pages_whole_thread_and_per_turn_rows() {
             expected_item("turn-1", "item-2", /*rollout_ordinal*/ 12),
         ]
     );
+    assert!(!first_page.earliest_history_missing, "a complete history");
     let second_page = store
         .list_items(item_params(
             thread_id,
@@ -787,6 +788,59 @@ INSERT INTO thread_realtime_items (
             .collect::<Vec<_>>(),
         vec![(1, 0, "source-turn"), (1, 2, "voice:started")]
     );
+}
+
+#[tokio::test]
+async fn list_items_reads_what_remains_when_an_earlier_rollout_is_gone() {
+    // His rust-obsidian chat (24 Oct): the chat's rollout continues one that was deleted. Its items
+    // still list, and every page says the earliest part is missing.
+    let (home, store, thread_id) = store_with_mode(ThreadHistoryMode::Paginated).await;
+    write_rollout(
+        rollout_path(home.path(), thread_id).as_path(),
+        thread_id,
+        Some(HistoryPosition {
+            thread_id: ThreadId::default(),
+            end_ordinal_exclusive: 7,
+            end_byte_offset: 41_901_968,
+        }),
+    );
+    let db = history_db(&store).await;
+    insert_turn(
+        db,
+        thread_id,
+        "turn-1",
+        /*ordinal*/ 10,
+        "completed",
+        /*error_json*/ None,
+        /*first_user_item_id*/ None,
+        /*final_agent_item_id*/ None,
+    )
+    .await;
+    for (item_id, ordinal) in [("item-1", 11), ("item-2", 12), ("item-3", 13)] {
+        insert_item(db, thread_id, "turn-1", item_id, ordinal).await;
+    }
+
+    let mut cursor = None;
+    let mut listed = Vec::new();
+    loop {
+        let page = store
+            .list_items(item_params(
+                thread_id,
+                /*turn_id*/ None,
+                cursor,
+                /*page_size*/ 2,
+                SortDirection::Desc,
+            ))
+            .await
+            .expect("a chat with a missing earlier part still lists");
+        assert!(page.earliest_history_missing);
+        listed.extend(item_ids(&page).into_iter().map(str::to_owned));
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(listed, vec!["item-3", "item-2", "item-1"]);
 }
 
 #[tokio::test]

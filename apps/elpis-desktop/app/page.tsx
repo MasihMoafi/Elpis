@@ -120,6 +120,8 @@ const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, l
 type View = "chat" | "agentsGuide" | "canvas" | "experimentLab" | "loveSpot" | "customize" | "settings";
 type NextTurn = { model?: string; plan?: boolean };
 type Live = { thread: Thread; activeTurnId?: string | null; permissions?: PermissionMode | null; planMode?: boolean };
+/** A page of a chat's history; `earliestHistoryMissing` when the record it continued was deleted. */
+type HistoryPage = { data: Entry[]; nextCursor: string | null; earliestHistoryMissing?: boolean };
 /** The terminal's answer to a finished plan: Plan mode off, then this message. */
 const IMPLEMENT_PLAN = "Implement the plan.";
 /** A read refused only because the background service is not there (bridge/server.mjs: 503 ELPIS_RUNTIME_UNAVAILABLE). */
@@ -430,6 +432,10 @@ export default function Home() {
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [itemCursor, setItemCursor] = useState<string | null>(null);
+  // Chats whose earliest part is gone (the record it continued was deleted): they open with what remains and say so.
+  const [historyGaps, setHistoryGaps] = useState<ReadonlySet<string>>(() => new Set());
+  const noteHistoryGap = useCallback((id: string, page: { earliestHistoryMissing?: boolean }) => setHistoryGaps(gaps => gaps.has(id) === !!page.earliestHistoryMissing ? gaps
+    : new Set(page.earliestHistoryMissing ? [...gaps, id] : [...gaps].filter(gap => gap !== id))), []);
   // Earlier entries already read but not shown yet: a page can hold more than ten messages, and a press shows ten.
   // A fresh read of the newest page drops them with the old cursor.
   const heldEarlier = useRef(new Map<string, Entry[]>());
@@ -547,9 +553,9 @@ export default function Home() {
     const shown = transcripts.current.get(thread.id);
     select(thread); setView("chat"); setSidebar(false); setEntries(shown?.entries ?? []); setItemCursor(shown?.cursor ?? null); setLoading(true); setError(""); restoreAttachments(thread.id);
     try {
-      const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
+      const result = await api<HistoryPage & { thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`); if (!Array.isArray(result.data)) throw unreadable("conversations"); if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
       if (request.current !== id) return;
-      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); heldEarlier.current.delete(thread.id);
+      select(remember(result.thread)); setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(thread.id, result); heldEarlier.current.delete(thread.id);
       // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
       // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
       unread = !result.data.length && !result.nextCursor;
@@ -563,11 +569,11 @@ export default function Home() {
       if (modeRevisions.current[thread.id] === modeRevision) rememberModes(thread.id, live);
       if (turnRevisions.current[thread.id] === turnRevision) reconcileLiveThread(thread.id, live);
       if (unread) {
-        const again = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
-        if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); heldEarlier.current.delete(thread.id); }
+        const again = await api<HistoryPage>(`/threads/${encodeURIComponent(thread.id)}?limit=100`);
+        if (request.current === id && Array.isArray(again.data)) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(thread.id, again); heldEarlier.current.delete(thread.id); }
       }
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
-  }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead]);
+  }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
 
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
@@ -632,8 +638,8 @@ export default function Home() {
         const shown = () => open() && request.current === requestId && selectedRef.current?.id === id;
         // History and resume are independent: a refused history read must not leave a finished turn running.
         const history = thread?.id === id ? (async () => {
-          const result = await api<{ thread: Thread; data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100`);
-          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); heldEarlier.current.delete(id); }
+          const result = await api<HistoryPage & { thread: Thread }>(`/threads/${encodeURIComponent(id)}?limit=100`);
+          if (shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...result.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(result.nextCursor); noteHistoryGap(id, result); heldEarlier.current.delete(id); }
           return !result.data.length && !result.nextCursor;
         })() : Promise.resolve(false);
         const resume = (async () => {
@@ -646,8 +652,8 @@ export default function Home() {
         if (!open()) return;
         // A saved chat reads as empty until the resume has loaded it (see loadThread): read it again.
         if (results[0].status === "fulfilled" && results[0].value && results[1].status === "fulfilled" && shown()) {
-          const again = await api<{ data: Entry[]; nextCursor: string | null }>(`/threads/${encodeURIComponent(id)}?limit=100`).catch(() => null);
-          if (again && Array.isArray(again.data) && shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); heldEarlier.current.delete(id); }
+          const again = await api<HistoryPage>(`/threads/${encodeURIComponent(id)}?limit=100`).catch(() => null);
+          if (again && Array.isArray(again.data) && shown()) { setEntries(previous => mergeHistoryWithLive(previous, [...again.data].reverse(), liveKeysAfter(historyRevision))); setItemCursor(again.nextCursor); noteHistoryGap(id, again); heldEarlier.current.delete(id); }
         }
         const failed = results.find(result => result.status === "rejected");
         if (failed?.status === "rejected") setLiveError(previous => ({ ...previous, [id]: failed.reason instanceof Error ? failed.reason.message : String(failed.reason) }));
@@ -768,7 +774,7 @@ export default function Home() {
       } catch (e) { if (!disposed) { disconnected(); setError(String(e)); } }
     }
     initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };
-  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread]);
+  }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
     if (childPaging.current.has(id)) return;
@@ -2190,7 +2196,8 @@ export default function Home() {
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
         <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; setAwayFromBottom(!stickToBottom.current); }}><div className="chat-content">
-          {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) && <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>}
+          {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>
+            : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
           {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           {chatConversation}

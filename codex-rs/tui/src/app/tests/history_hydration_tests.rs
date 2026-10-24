@@ -218,6 +218,7 @@ async fn history_hydration_metadata_tracks_missing_turns_and_stale_completions_k
             data: Vec::new(),
             next_cursor: None,
             backwards_cursor: None,
+            earliest_history_missing: false,
         }),
     ] {
         app.handle_event(

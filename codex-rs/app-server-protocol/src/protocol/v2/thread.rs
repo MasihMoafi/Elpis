@@ -1836,6 +1836,10 @@ pub struct ThreadItemsListResponse {
     /// Opaque cursor to pass as `cursor` when reversing `sortDirection`.
     /// This is only populated when the page contains at least one item.
     pub backwards_cursor: Option<String>,
+    /// Elpis: the earliest part of this thread's history is missing (an earlier rollout it
+    /// continues was deleted), so these items are the history that remains.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub earliest_history_missing: bool,
 }
 
 /// EXPERIMENTAL - list ordinary and realtime thread history in rollout order.

@@ -182,6 +182,7 @@ pub(in crate::local) async fn list_items(
         items: page.rows.into_iter().map(|row| row.item).collect(),
         next_cursor: page.next_cursor,
         backwards_cursor: page.backwards_cursor,
+        earliest_history_missing: lineage.missing_earlier(),
     })
 }
 
