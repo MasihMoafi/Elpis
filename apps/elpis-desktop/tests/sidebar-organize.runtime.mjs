@@ -106,7 +106,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
       const button = page.getByRole('button', { name: `Use ${theme} theme`, exact: true });
       if (await button.count()) await button.first().click();
       await page.waitForTimeout(1200); const box = await aside().boundingBox();
-      await page.screenshot({ path: path.join(shots, `${name}-${theme}.png`), clip: { x: 0, y: 0, width: Math.ceil(box.x + box.width) + 8, height: Math.ceil(box.height) } });
+      await page.screenshot({ path: path.join(shots, `${name}-${theme}.png`), clip: { x: 0, y: 0, width: Math.ceil(box.x + box.width) + 40, height: Math.ceil(box.height) } });
     }
   };
 
