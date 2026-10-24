@@ -84,7 +84,8 @@ const APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileCh
 const LISTED = new Set(['thread/started', 'thread/status/changed', 'thread/name/updated']);
 const ACCOUNT_NOTIFICATIONS = new Set(['account/updated', 'account/login/completed', 'account/rateLimits/updated']);
 // Native refusals the person can act on (a fork still referencing a chat, a busy agent) are shown as Elpis wrote them.
-const READ_RPCS = new Set(['initialize','externalAgentConfig/detect','externalAgentConfig/import/readHistories','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list']);
+const scriptRunId = (value) => { if (typeof value !== 'string' || !/^wf_[0-9a-f-]{36}$/.test(value)) throw new BridgeError('Invalid workflow run ID'); return value; };
+const READ_RPCS = new Set(['initialize','externalAgentConfig/detect','externalAgentConfig/import/readHistories','thread/list','thread/read','thread/items/list','thread/turns/list','model/list','experimentalFeature/list','claudeAccounts/read','account/read','account/rateLimits/read','config/read','configRequirements/read','pruner/read','workGraph/list','hooks/list','workflowRun/list','workflowRun/read']);
 const readRpc = (method, params) => READ_RPCS.has(method) || ['thread/goal/get', 'thread/contextFiles/list'].includes(method) || (method === 'thread/resume' && Object.keys(params || {}).every(key => ['threadId','excludeTurns','initialTurnsPage'].includes(key)));
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval settings and
  * the engine's built-in permission profiles. Bypass is `:bypass-permissions`: Full access plus no refusals
@@ -325,7 +326,7 @@ export class DesktopClient extends EventEmitter {
       clearTimeout(pending.timer); this.#pending.delete(message.id);
       if (message.error) {
         const conflict = message.error.data?.config_write_error_code === 'configVersionConflict' || message.error.data?.reason === 'staleVersion';
-        const workflow = pending.method === 'workGraph/run' || pending.method === 'workGraph/runWithProviders';
+        const workflow = pending.method === 'workGraph/run' || pending.method === 'workGraph/runWithProviders' || pending.method.startsWith('workflowRun/');
         const contextFiles = pending.method === 'thread/contextFiles/list' || pending.method === 'thread/contextFiles/set';
         const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? '');
         // An operation Elpis does not support (-32601) says which one; the bare code would not.
@@ -375,6 +376,8 @@ export class DesktopClient extends EventEmitter {
         this.emit('event', {type:'approvalResolved',data:{id:key}});
       }
     }
+    // Workflows that run until they finish (SPEC WR7): every change of a run, for the app's view of runs.
+    if (message.method === 'workflowRun/updated') { this.emit('event', { type: 'workflowRun', data: message.params }); return; }
     if (ACCOUNT_NOTIFICATIONS.has(message.method)) {
       if (message.method !== 'account/rateLimits/updated') this.#catalog = null;
       this.emit('event', { type: 'account', data: { method: message.method } }); return;
@@ -1248,6 +1251,24 @@ export class DesktopClient extends EventEmitter {
     const run = (await this.#workflowRuns.list()).find(record => record.id === id);
     if (!run) throw new BridgeError('Workflow not found', 404);
     return { run };
+  }
+  // Workflows that run until they finish (SPEC WR7): the runtime's script runs, started from a chat or from here.
+  async scriptRuns(threadIdValue) { if (threadIdValue !== undefined) threadId(threadIdValue); return this.#rpc('workflowRun/list', threadIdValue ? { threadId: threadIdValue } : {}); }
+  async scriptRun(runId) { return this.#rpc('workflowRun/read', { runId: scriptRunId(runId) }); }
+  async startScriptRun(body) {
+    object(body, ['threadId', 'script', 'scriptPath', 'args', 'resumeFromRunId', 'budget']);
+    threadId(body.threadId);
+    if (body.script === undefined && body.scriptPath === undefined) throw new BridgeError('Give the workflow script or its saved path');
+    if (body.script !== undefined) text(body.script, 'workflow script', 1_000_000);
+    if (body.scriptPath !== undefined && !path.isAbsolute(text(body.scriptPath, 'script path', 4096))) throw new BridgeError('Give an absolute script path');
+    if (body.resumeFromRunId !== undefined) scriptRunId(body.resumeFromRunId);
+    return this.#rpc('workflowRun/start', body);
+  }
+  async stopScriptRun(runId) { return this.#rpc('workflowRun/stop', { runId: scriptRunId(runId) }); }
+  async resumeScriptRun(runId) { return this.#rpc('workflowRun/resume', { runId: scriptRunId(runId) }); }
+  async skipScriptAgent(runId, agentId) {
+    if (typeof agentId !== 'string' || !/^a[0-9a-f]{16}$/.test(agentId)) throw new BridgeError('Invalid agent ID');
+    return this.#rpc('workflowRun/skip', { runId: scriptRunId(runId), agentId });
   }
   async steerWorkflow(id, taskId, body) {
     threadId(id); text(taskId, 'workflow node', 100); object(body, ['id', 'text']);

@@ -348,6 +348,17 @@ export async function startDesktopServer(options = {}) {
           if([...url.searchParams.keys()].some(key=>key!=='threadId')||url.searchParams.getAll('threadId').length!==1)throw new BridgeError('Choose one workflow conversation');
           return json(response,200,await client.workflows(url.searchParams.get('threadId')));
         }
+        // Workflows that run until they finish (SPEC WR7).
+        if (url.pathname === '/api/workflow-runs' && method === 'GET') {
+          if ([...url.searchParams.keys()].some(key => key !== 'threadId') || url.searchParams.getAll('threadId').length > 1) throw new BridgeError('Unexpected workflow run parameters');
+          return json(response, 200, await client.scriptRuns(url.searchParams.get('threadId') ?? undefined));
+        }
+        if (url.pathname === '/api/workflow-runs' && method === 'POST') return json(response, 200, await client.startScriptRun(await body(request)));
+        const scriptRun = url.pathname.match(/^\/api\/workflow-runs\/(wf_[0-9a-f-]{36})(?:\/(stop|resume|agents\/(a[0-9a-f]{16})\/skip))?$/);
+        if (scriptRun && !scriptRun[2] && method === 'GET') return json(response, 200, await client.scriptRun(scriptRun[1]));
+        if (scriptRun?.[2] === 'stop' && method === 'POST') return json(response, 200, await client.stopScriptRun(scriptRun[1]));
+        if (scriptRun?.[2] === 'resume' && method === 'POST') return json(response, 200, await client.resumeScriptRun(scriptRun[1]));
+        if (scriptRun?.[3] && method === 'POST') return json(response, 200, await client.skipScriptAgent(scriptRun[1], scriptRun[3]));
         if (url.pathname === '/api/workflows/run' && method === 'POST') return json(response,200,await client.runWorkflow(await body(request)));
         if (url.pathname === '/api/workflows/presets' && method === 'GET') return json(response, 200, client.workflowPresets());
         if (url.pathname === '/api/workflows/presets' && method === 'POST') return json(response, 200, await client.runWorkflowPreset(await body(request)));
