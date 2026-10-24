@@ -106,7 +106,8 @@
     "bridge/smart-prune.test.mjs",
     "bridge/workflow-acp.test.mjs",
     "bridge/settings-files.test.mjs",
-    "bridge/love-spot-voice.test.mjs"
+    "bridge/love-spot-voice.test.mjs",
+    "bridge/workflow-runs.test.mjs"
   ],
   "desktop": [
     "desktop/app-updates.test.cjs",
@@ -369,6 +370,7 @@
     "tests/love-dock.test.cjs",
     "tests/settings2.runtime.cjs",
     "tests/sidebar-search.runtime.cjs",
-    "tests/startup.runtime.cjs"
+    "tests/startup.runtime.cjs",
+    "tests/workflow-run.runtime.mjs"
   ]
 }

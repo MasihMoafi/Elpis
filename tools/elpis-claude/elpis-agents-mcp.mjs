@@ -4,7 +4,7 @@
 // normal Elpis thread, so it appears in Elpis history (`elpis resume <thread id>` opens it).
 import { spawn } from "node:child_process";
 import { appendLog } from "./log-redaction.mjs";
-import WebSocket from "ws";
+import { connectAppServer } from "./app-server-connection.mjs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -19,46 +19,7 @@ const BRIDGE = process.env.ELPIS_BRIDGE_URL;
 const PARENT = process.env.ELPIS_PARENT_THREAD ?? null;
 const bridgedModel = (m) => /^(claude|agy)\//.test(m ?? "");
 
-// One app-server connection, to the bridge (WebSocket) or the engine (stdio). A helper never asks
-// for approval: there is nobody to answer, so every request is declined.
-function connect() {
-  const pending = new Map();
-  const listeners = new Set();
-  let seq = 0;
-  let send, close, opened;
-  const onMessage = (m) => {
-    if (m.id !== undefined && !m.method && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(m.error) : p.resolve(m.result); return; }
-    if (m.id !== undefined && m.method) send({ id: m.id, result: { decision: "decline" } });
-    for (const l of listeners) l(m);
-  };
-  if (BRIDGE) {
-    const ws = new WebSocket(BRIDGE);
-    opened = new Promise((resolve, reject) => { ws.once("open", resolve); ws.once("error", reject); });
-    ws.on("message", (d) => onMessage(JSON.parse(d.toString())));
-    send = (o) => ws.send(JSON.stringify(o));
-    close = () => ws.close();
-  } else {
-    const proc = spawn(ENGINE, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
-    let buf = "";
-    proc.stdout.on("data", (chunk) => {
-      buf += chunk;
-      let i;
-      while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) onMessage(JSON.parse(line)); }
-    });
-    send = (o) => proc.stdin.write(JSON.stringify(o) + "\n");
-    close = () => proc.kill();
-    opened = Promise.resolve();
-  }
-  const call = (method, params) => new Promise((resolve, reject) => {
-    const id = `agents-${++seq}`;
-    pending.set(id, { resolve, reject });
-    send({ id, method, params });
-  });
-  const ready = opened
-    .then(() => call("initialize", { clientInfo: { name: "elpis-agents", title: null, version: "0.3.0" }, capabilities: { experimentalApi: true } }))
-    .then(() => send({ method: "initialized" }));
-  return { call, listeners, ready, close };
-}
+const connect = (name) => connectAppServer({ url: BRIDGE, engineBin: ENGINE, ...(name && { name }) });
 
 // What each model is for, grouped by where it runs, from the app server's own model list.
 let catalogConn = null;
@@ -319,6 +280,53 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
       clearTimeout(timer);
       return { content: [{ type: "text", text: report(thread_id) }] };
     }),
+  );
+}
+
+// Workflows that run until they finish (SPEC WR1): the script runs in the Elpis runtime, not in this process, so it
+// continues after this chat's turn, the window or the app closes, and resumes after a restart. Opt-in, as in Claude
+// Code: the runtime starts it only when the person asked for a workflow in their own message.
+if (process.env.ELPIS_WORKFLOW_TOOL === "1" && BRIDGE) {
+  server.registerTool(
+    "workflow",
+    {
+      description:
+        "Run a workflow: a JavaScript script that orchestrates many helper agents deterministically (fan out, verify, synthesize). " +
+        "ONLY use it when the person explicitly asked for a workflow in their own message (the keyword \"ultracode\", or words like " +
+        "\"use a workflow\" / \"run a workflow\"); a task that would merely benefit does not count, and the runtime refuses otherwise. " +
+        "It returns at once with a run id and the saved script's path; the run continues in the background, and when it ends this chat " +
+        "gets a <workflow-notification> with the script's return value. Do not wait or poll for it.\n\n" +
+        "Script format: it must begin with `export const meta = { name: 'kebab-name', description: 'one line', phases: [{ title: 'Scan', detail: '...' }] }` " +
+        "(a PURE literal: no variables, calls, spreads or interpolation), then a plain JavaScript body (no TypeScript) with top-level await and `return value`.\n" +
+        "Hooks: agent(prompt, {label, phase, schema, model, effort, isolation: 'worktree'}) -> Promise of the agent's final text, or, with schema " +
+        "(JSON Schema, {type:'object', properties} at the root, required among properties), the validated object; null if the agent failed after its retries or was skipped. " +
+        "Each agent is a new helper chat that does not see this conversation: give it complete instructions. model defaults to this chat's model; effort 'low'..'max'. " +
+        "parallel(thunks) is a barrier (a throwing thunk gives null); pipeline(items, stage1, stage2, ...) runs each item through the stages with no barrier " +
+        "(each stage gets (prevResult, item, index)); prefer pipeline. phase(title), log(message), args (this call's args, verbatim JSON), " +
+        "budget {total, spent(), remaining()}, workflow(name or {scriptPath}, args) runs another workflow inline (one level). " +
+        "Date.now(), Math.random() and new Date() without arguments throw (they would break resume): pass timestamps through args. No filesystem or Node APIs. " +
+        "Limits: min(16, CPUs-2) agents at once (the rest queue), 1000 agents per run, 4096 items per parallel/pipeline call.\n\n" +
+        "To change a workflow, edit the saved script and launch {scriptPath, resumeFromRunId}: the unchanged prefix of agent() calls returns the old run's results at once; " +
+        "the first edited or new call and everything after it run live. Same script and args: every call is cached.",
+      inputSchema: {
+        script: z.string().optional().describe("The workflow script: `export const meta = {...}` followed by the body. Pass it inline."),
+        args: z.any().optional().describe("Any JSON value, passed to the script as `args` verbatim (pass arrays and objects as JSON, not as a string)."),
+        scriptPath: z.string().optional().describe("Run a saved script file instead of `script` (the path an earlier launch returned, after editing it)."),
+        resumeFromRunId: z.string().optional().describe("Reuse that run's journal: unchanged agent() calls return their results at once."),
+      },
+    },
+    async ({ script, args, scriptPath, resumeFromRunId }, extra) => {
+      const threadId = PARENT ?? extra?._meta?.threadId ?? null;
+      const conn = connect("elpis-workflow");
+      try {
+        await conn.ready;
+        const r = await conn.call("workflowRun/start", { threadId, script, args, scriptPath, resumeFromRunId, cwd: process.cwd() });
+        log(`workflow ${r.runId} started by ${threadId}`);
+        return { content: [{ type: "text", text: `Workflow "${r.name}" is running in the background as ${r.runId}.\nScript saved at ${r.scriptPath} (edit it and launch {scriptPath, resumeFromRunId: "${r.runId}"} to change it).\nThis chat gets a <workflow-notification> with its result when it ends; do not wait or poll.` }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `The workflow did not start: ${e.message ?? JSON.stringify(e)}` }], isError: true };
+      } finally { conn.close(); }
+    },
   );
 }
 

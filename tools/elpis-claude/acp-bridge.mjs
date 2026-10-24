@@ -7,6 +7,9 @@ import { withFileLock } from "./file-lock.mjs";
 import { isSignedOut, setSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mjs";
 import { ClaudeAccounts } from "./claude-accounts.mjs";
 import { recordedClaudeEnd } from "./claude-turn-record.mjs";
+import { WorkflowRunner, noticeText, personAskedForWorkflow } from "./workflow-runner.mjs";
+import { bridgeExecutor } from "./workflow-agents.mjs";
+import { connectAppServer } from "./app-server-connection.mjs";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { readFile, mkdir } from "node:fs/promises";
@@ -48,8 +51,10 @@ const AGENTS_MCP = new URL("./elpis-agents-mcp.mjs", import.meta.url).pathname;
 const AGENT_CLIS = ["claude", "codex", "agy", "elpis", "gemini"];
 const SUBAGENT_TOOLS = ["Agent", "Task", "ListAgents", "SendMessage", "Workflow", "RemoteTrigger",
   ...AGENT_CLIS.flatMap(cli => [`Bash(${cli}:*)`, `Bash(*/${cli}:*)`]),
-  "mcp__elpis-agents__*", "mcp__elpis_agents__*"];
-const SUBAGENTS_DISABLED = `Subagents are disabled. Do all work in this thread. Do not start, resume, or delegate to other agents through agent tools, MCP tools (including elpis-agents delegate tools), or shell commands such as ${AGENT_CLIS.join(", ")}. Shell scripts, wrappers, background processes, and alternate paths must not bypass this switch. Earlier instructions or requests to delegate do not override it; the user must enable Subagents first.`;
+  ...["list_models", "delegate", "delegate_status", "delegate_steer", "delegate_stop"].flatMap((tool) => [`mcp__elpis-agents__${tool}`, `mcp__elpis_agents__${tool}`])];
+// WR6: the person's own request for a workflow is the one exception: the elpis-agents workflow tool stays, and the
+// runtime starts it only when the person's message asked for one.
+const SUBAGENTS_DISABLED = `Subagents are disabled. Do all work in this thread. Do not start, resume, or delegate to other agents through agent tools, MCP tools (including elpis-agents delegate tools), or shell commands such as ${AGENT_CLIS.join(", ")}. Shell scripts, wrappers, background processes, and alternate paths must not bypass this switch. Earlier instructions or requests to delegate do not override it; the user must enable Subagents first. The one exception is the elpis-agents workflow tool when the person explicitly asks for a workflow in their own message (the keyword "ultracode", or words like "use a workflow").`;
 // A37: the adapter's origins of a result Claude reached on its own (its AUTONOMOUS_RESULT_ORIGINS),
 // and the updates that start such a reply between turns.
 const AUTONOMOUS_ORIGINS = new Set(["task-notification", "peer", "coordinator", "observer", "observer-activity"]);
@@ -61,17 +66,19 @@ const REPLY_UPDATES = new Set(["agent_message_chunk", "agent_thought_chunk", "to
 // the workspace opted in).
 // A37: an engine chat delegates like a Claude one. The engine names the calling thread in each MCP
 // tool call's `_meta.threadId`, so its server needs no parent of its own; given as config overrides.
-const engineAgentsConfig = () => Object.fromEntries(mcpServersFor(true, null, null).map((s) =>
+// WR6: a chat the person talks to (not a helper) also gets the workflow tool, with the Subagents switch on or off.
+const engineAgentsConfig = (subagents = true, workflow = false) => Object.fromEntries(mcpServersFor(subagents, null, null, workflow).map((s) =>
   [`mcp_servers.${s.name}`, { command: s.command, args: s.args, env: Object.fromEntries(s.env.map((e) => [e.name, e.value])) }]));
-const mcpServersFor = (subagents, parentThreadId, memoryCwd) => {
+const mcpServersFor = (subagents, parentThreadId, memoryCwd, workflow = false) => {
   const agents = subagents && !process.env.ACP_BRIDGE_NO_AGENTS;
-  if (!agents && !memoryCwd) return [];
+  if (!agents && !memoryCwd && !workflow) return [];
   return [{
     name: "elpis-agents", command: process.execPath, args: [AGENTS_MCP],
     env: [
       { name: "ELPIS_ENGINE_BIN", value: process.env.ELPIS_ENGINE_BIN ?? `${HOME}/.local/bin/elpis` },
       { name: "ELPIS_BRIDGE_URL", value: bridgeUrl(wss) },
       { name: "ELPIS_AGENT_TOOLS", value: agents ? "1" : "0" },
+      { name: "ELPIS_WORKFLOW_TOOL", value: workflow ? "1" : "0" },
       ...(parentThreadId ? [{ name: "ELPIS_PARENT_THREAD", value: parentThreadId }] : []),
       ...(memoryCwd ? [{ name: "ELPIS_MEMORY_CWD", value: memoryCwd }] : []),
       ...(process.env.ELPIS_HOME ? [{ name: "ELPIS_HOME", value: process.env.ELPIS_HOME }] : []),
@@ -438,6 +445,7 @@ const helperThreads = new Set();
 // connection to a TUI's, and the answer comes back. The delegate tool names itself
 // "elpis-agents" in initialize; every other connection is a TUI.
 const helperConns = new WeakSet();
+const workflowToolConns = new WeakSet(); // a chat's workflow tool: its launches need the person's request (WR6)
 const relayed = new Map(); // id sent to the TUI -> answers the helper's request
 const chatAccess = new Map(); // a chat's confirmed approval policy and profile, for the helpers it starts
 // A helper's ceiling is the sandbox it may have: what it asked for (read-only unless it asked to
@@ -543,6 +551,7 @@ async function stopBridge(successor) {
   if (stopping) return;
   stopping = true;
   clearTimeout(idleTimer);
+  workflows.close(); // its runs stay running: the next runtime resumes them from their journals
   if (draining) { draining.server.close(); try { if (JSON.parse(readFileSync(drainFile(), "utf8")).pid === process.pid) rmSync(drainFile(), { force: true }); } catch {} }
   stopBridgeListener();
   await storeChain;
@@ -564,6 +573,7 @@ function writeDrain() {
 async function startDrain(successor) {
   if (stopping || draining) return;
   const launchSuccessor = () => spawn(process.execPath, [join(dirname(successor), "shared-runtime.mjs"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
+  workflows.release(); // the newer runtime resumes the runs from their journals
   if (![...contexts].some((c) => c.busy())) return void stopBridge(successor);
   const server = createDrainServer();
   server.wss.on("connection", (ws) => { ws.drainShadow = true; wss.emit("connection", ws); });
@@ -603,13 +613,71 @@ function checkIdle() {
   checkDrain();
   for (const c of [...contexts]) c.releaseIfUnused();
   clearTimeout(idleTimer);
-  if (!process.env.ELPIS_SHARED_BRIDGE || clients.size || [...contexts].some((c) => c.busy())) return;
+  // A running workflow, or a notice still due, keeps the runtime (WR3).
+  const working = () => clients.size || [...contexts].some((c) => c.busy()) || workflows.busy() || noticesDue.size;
+  if (!process.env.ELPIS_SHARED_BRIDGE || working()) return;
   idleTimer = setTimeout(async () => {
-    if (clients.size || [...contexts].some((c) => c.busy())) return;
+    if (working()) return;
     await stopBridge();
   }, 30_000);
 }
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => stopBridge());
+
+// Workflows that run until they finish (SPEC WR1–WR8). The runner lives here, in the long-lived runtime: a run
+// continues after its chat's turn, its window or the app ends, and the next runtime resumes it from its journal.
+const retryMs = Number(process.env.ELPIS_WORKFLOW_RETRY_MS) || 2000;
+const workflows = new WorkflowRunner({
+  home: ELPIS_HOME, log,
+  retry: { attempts: Number(process.env.ELPIS_WORKFLOW_ATTEMPTS) || 4, delays: [retryMs, retryMs * 4, retryMs * 15] },
+  executor: bridgeExecutor({ url: () => bridgeUrl(wss), log }),
+});
+// Every change reaches the app and the terminals (WR7).
+workflows.on("updated", (change) => {
+  const msg = { method: "workflowRun/updated", params: change, emittedAtMs: now() };
+  for (const c of clients) if (!helperConns.has(c)) sendClient(c, msg);
+  if (change.kind === "ended") checkIdle();
+});
+// WR5: the chat that started a run gets its notice as a new turn once it is free, and its model continues from it.
+const noticesDue = new Set();
+async function deliverNotice(run) {
+  if (!run.parentThreadId || run.notice?.state !== "pending" || noticesDue.has(run.id) || stopping) return;
+  noticesDue.add(run.id);
+  const threadId = run.parentThreadId;
+  let conn = null;
+  try {
+    while (!stopping) {
+      if (!conn || conn.closed) {
+        conn = connectAppServer({ url: bridgeUrl(wss), name: "elpis-workflow-runner" });
+        await conn.ready;
+        await conn.call("thread/resume", { threadId }).catch((e) => log(`workflow ${run.id}: notice: reopen ${threadId}: ${e?.message ?? JSON.stringify(e)}`));
+      }
+      const read = await conn.call("thread/read", { threadId, includeTurns: false }).catch((e) => ({ error: e }));
+      if (read.error && /not found/i.test(read.error.message ?? "")) { workflows.markNotice(run.id, { state: "undeliverable", why: "the chat was deleted" }); return; }
+      if (read.thread?.status?.type === "active") { await new Promise((r) => setTimeout(r, 2000)); continue; }
+      const done = new Promise((resolve) => conn.listeners.add((m) => { if (m.method === "turn/completed" && m.params?.threadId === threadId) resolve(); }));
+      try {
+        const started = await conn.call("turn/start", { threadId, input: [{ type: "text", text: noticeText(run), text_elements: [] }] });
+        workflows.markNotice(run.id, { state: "delivered", turnId: started?.turn?.id ?? null, at: now() });
+        log(`workflow ${run.id}: notice delivered to ${threadId}`);
+      } catch (e) {
+        log(`workflow ${run.id}: notice to ${threadId} waits: ${e?.message ?? JSON.stringify(e)}`);
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      // The notice's turn belongs to this connection; it stays open until the chat has answered.
+      await Promise.race([done, new Promise((r) => setTimeout(r, 30 * 60_000))]);
+      return;
+    }
+  } catch (e) {
+    log(`workflow ${run.id}: notice failed: ${e?.message ?? JSON.stringify(e)}`);
+    setTimeout(() => { noticesDue.delete(run.id); void deliverNotice(run); }, 5000).unref();
+  } finally { noticesDue.delete(run.id); conn?.close(); checkIdle(); }
+}
+workflows.on("ended", (run) => { void deliverNotice(run); });
+// After a restart, and while a handed-over runtime lets its runs go: runs nobody owns continue here.
+const recoverWorkflows = () => { if (!stopping && !draining) { try { workflows.recover(); } catch (e) { log(`workflow recovery: ${e.message}`); } } };
+wss.on("listening", recoverWorkflows);
+setInterval(recoverWorkflows, 5000).unref();
 // A newer installation that joined this bridge left its bridge's path here (shared-runtime.mjs). This bridge starts
 // that one and hands it every connection (startDrain); the open terminals and the desktop app reconnect to it.
 const successorFile = process.env.ELPIS_SHARED_BRIDGE && process.env.ELPIS_BRIDGE_SOCKET && join(dirname(process.env.ELPIS_BRIDGE_SOCKET), "successor");
@@ -1035,6 +1103,7 @@ wss.on("connection", (ws) => {
     for (const t of [result?.thread, ...(Array.isArray(result?.data) ? result.data : [])]) {
       if (!t || typeof t !== "object") continue;
       if (helpers[t.id] && t.parentThreadId == null) { t.parentThreadId = helpers[t.id].parentThreadId; changed = true; }
+      if (helpers[t.id]?.workflowRunId && t.workflowRunId == null) { t.workflowRunId = helpers[t.id].workflowRunId; t.workflowAgentId = helpers[t.id].workflowAgentId ?? null; changed = true; }
       changed = ownModel(t, store) || changed;
       if (Array.isArray(result?.data)) changed = markHelperTurn(t) || changed;
     }
@@ -1365,7 +1434,12 @@ wss.on("connection", (ws) => {
   const subagentsAllowed = (cwd) => engineCall("config/read", { includeLayers: false, cwd })
     .then((r) => r?.config?.features?.multi_agent !== false, (e) => { log(`subagents switch unread: ${e.message ?? JSON.stringify(e)}`); return true; });
   // The engine's own chats and helpers get the delegate tool while the Subagents switch is on (A37).
-  const withAgents = async (params) => { if (params && await subagentsAllowed(params.cwd)) params.config = { ...params.config, ...engineAgentsConfig() }; };
+  // WR6: a chat the person talks to gets the workflow tool whatever the switch says; a helper never does.
+  const withAgents = async (params, helper = false) => {
+    if (!params) return;
+    const tools = engineAgentsConfig(await subagentsAllowed(params.cwd), !helper);
+    if (Object.keys(tools).length) params.config = { ...params.config, ...tools };
+  };
   const activeTurns = new BusyMap(); // thread id -> its running Claude or Antigravity turn
   const reconnects = new Map(); // thread id -> the timer of its retry after a dropped connection
   const pendingMirrors = new Map(); // native history copies do not own the provider's turn status
@@ -1525,7 +1599,7 @@ wss.on("connection", (ws) => {
       pendingAdopt.set(msg.id, r);
       boundAccess(msg.params, r.ceiling, "sandbox");
     }
-    if (!claudeModel.has(tid)) await withAgents(msg.params);
+    if (!claudeModel.has(tid)) await withAgents(msg.params, !!d);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
   // A thread/settings/updated that waits for helpers to apply a reduction keeps its place: any
@@ -1709,10 +1783,11 @@ wss.on("connection", (ws) => {
         // Its chat lost write access while it was starting.
         if (openHelper(tid, d, d.ceiling).ceiling !== d.sandbox) restrictHelper(tid);
         const { ceiling } = helperScope.get(tid);
-        updateStore((st) => { st._delegations = { ...st._delegations, [tid]: { parentThreadId: d.parentThreadId, model: d.model, startedAt: Math.floor(now() / 1000), requested: d.requested, ceiling } }; });
+        const run = d.workflowRunId ? { workflowRunId: d.workflowRunId, workflowAgentId: d.workflowAgentId } : {};
+        updateStore((st) => { st._delegations = { ...st._delegations, [tid]: { parentThreadId: d.parentThreadId, model: d.model, startedAt: Math.floor(now() / 1000), requested: d.requested, ceiling, ...run } }; });
         log(`helper thread ${tid} (${d.model}) started by ${d.parentThreadId}`);
         helperThreads.add(tid);
-        toOthers({ method: "thread/started", params: { thread: { ...parsed.result.thread, parentThreadId: d.parentThreadId, turns: [] } }, emittedAtMs: now() });
+        toOthers({ method: "thread/started", params: { thread: { ...parsed.result.thread, parentThreadId: d.parentThreadId, ...run, turns: [] } }, emittedAtMs: now() });
       }
     }
     if (parsed && openingMcp.has(parsed.id)) {
@@ -2029,7 +2104,7 @@ wss.on("connection", (ws) => {
         await storeChain;
         const store = await loadStore();
         const helper = !!store._delegations?.[threadId] || !!store[threadId]?.parentThreadId;
-        const mcpServers = [...mcpServersFor(subagents, threadId, helper ? null : cwd), ...appServers];
+        const mcpServers = [...mcpServersFor(subagents, threadId, helper ? null : cwd, !helper), ...appServers];
         // A session belongs to one agent; a chat that switched agent starts a fresh one, seeded below.
         const sameAccount = agent.key !== "claude" || (store[threadId]?.claudeAccountId ?? "default") === accountId;
         const sameAgent = (store[threadId]?.agent ?? "claude") === agent.key && sameAccount;
@@ -2495,7 +2570,9 @@ wss.on("connection", (ws) => {
       const requested = ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only";
       p.sandbox = helperCeiling(requested, parentThreadId);
       delete p.permissions;
-      const d = { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested, ceiling: p.sandbox };
+      // A workflow's agent (WR2): linked to its run, so the lists fold it under the run.
+      const run = p.elpisWorkflow && typeof p.elpisWorkflow.runId === "string" ? { workflowRunId: p.elpisWorkflow.runId, workflowAgentId: p.elpisWorkflow.agentId ?? null } : {};
+      const d = { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested, ceiling: p.sandbox, ...run };
       pendingDelegation.set(msg.id, d);
       pendingHelpers.add(d);
       // The helper asks before acting when its chat does.
@@ -2503,6 +2580,7 @@ wss.on("connection", (ws) => {
       if (inherited && inherited !== "never") p.approvalPolicy = inherited;
       delete p.elpisParentThreadId;
     }
+    delete p.elpisWorkflow;
     let pick = null;
     if (isBridged(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
     else {
@@ -2517,7 +2595,7 @@ wss.on("connection", (ws) => {
       rememberStart(msg.id, pick);
       p.model = null;
       if (p.config) delete p.config.model_reasoning_effort;
-    } else await withAgents(msg.params);
+    } else await withAgents(msg.params, helper);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
 
@@ -2821,6 +2899,70 @@ wss.on("connection", (ws) => {
     } finally { for (const id of acquired) deletingThreads.delete(id); }
   }
   const openingReplies = new Set();
+  // WR6: a chat's workflow tool starts a run only inside a turn the person started whose own words asked for one.
+  // A helper chat, a workflow's notice or Claude's reply to a background job never counts.
+  async function personAskedIn(threadId) {
+    const refuse = (why) => { throw Object.assign(new Error(why), { code: -32600 }); };
+    await storeChain;
+    const store = await loadStore();
+    if (store._delegations?.[threadId] || store[threadId]?.parentThreadId) refuse("A helper chat cannot start a workflow; only a chat the person talks to can.");
+    let texts = [], running = false;
+    const provider = providerOwners.get(threadId)?.model() ?? claudeModel.get(threadId) ?? store[threadId]?.model;
+    if (isBridged(provider)) {
+      const active = store[threadId]?.active;
+      running = Boolean(active) || activeTurns.has(threadId);
+      texts = (active?.userItems ?? []).filter((item) => item.type === "userMessage").map((item) => textOf(item.content));
+    } else {
+      const turn = (await engineCall("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "full" }, 10_000))?.data?.[0];
+      running = turn?.status === "inProgress";
+      texts = (turn?.items ?? []).filter((item) => item.type === "userMessage").map((item) => textOf(item.content));
+    }
+    log(`workflow opt-in for ${threadId}: ${isBridged(provider) ? provider : "engine"} turn ${running ? "running" : "idle"}, ${texts.length} messages`);
+    if (!running) refuse("Workflows start only during a message from the person.");
+    if (!personAskedForWorkflow(texts)) refuse("The person did not ask for a workflow. Workflows run only when the person's own message asks for one (the keyword \"ultracode\", or words like \"use a workflow\"). Do the task without one, or ask them whether they want a workflow.");
+    // Their "+500k"-style token target is the run's budget, as in the reference.
+    const target = texts.join("\n").match(/(?:^|\s)\+(\d+(?:\.\d+)?)\s*([km])\b/i);
+    return target ? Math.round(Number(target[1]) * (target[2].toLowerCase() === "m" ? 1e6 : 1e3)) : null;
+  }
+  // WR7: the protocol the app and the chats' workflow tool use.
+  async function workflowRequest(msg) {
+    const p = msg.params ?? {};
+    const reply = (result) => toTui({ id: msg.id, result });
+    const need = (key) => { if (typeof p[key] !== "string" || !p[key]) throw Object.assign(new Error(`${key} is required`), { code: -32602 }); return p[key]; };
+    switch (msg.method) {
+      case "workflowRun/start": {
+        const threadId = need("threadId");
+        const fromTool = workflowToolConns.has(ws);
+        const budget = fromTool ? await personAskedIn(threadId) : (Number.isFinite(p.budget) ? p.budget : null);
+        // Its agents run on the chat's own model and provider, in its folder (WR2).
+        await storeChain;
+        const store = await loadStore();
+        let model = providerOwners.get(threadId)?.model() ?? claudeModel.get(threadId) ?? store[threadId]?.model ?? null, provider = null, effort = null;
+        let cwd = threadCwd.get(threadId) ?? store[threadId]?.active?.cwd ?? store[threadId]?.cwd ?? null;
+        if (isBridged(model)) effort = claudeEffort.get(threadId) ?? store[threadId]?.effort ?? null;
+        else {
+          const thread = (await engineCall("thread/read", { threadId, includeTurns: false }, 10_000).catch(() => null))?.thread;
+          if (!thread) throw Object.assign(new Error(`thread not found: ${threadId}`), { code: -32600 });
+          model = thread.model ?? null; provider = thread.modelProvider ?? null; effort = thread.reasoningEffort ?? null; cwd ??= thread.cwd ?? null;
+        }
+        const started = await workflows.start({ script: p.script, scriptPath: p.scriptPath, args: p.args, resumeFromRunId: p.resumeFromRunId,
+          parentThreadId: threadId, cwd: cwd ?? p.cwd ?? HOME, model, provider, effort, budget, origin: fromTool ? "chat" : "app" })
+          .catch((e) => { throw Object.assign(e, { code: -32602 }); });
+        log(`workflow ${started.runId} (${started.name}) started from ${fromTool ? "chat" : "the app"} ${threadId} on ${model ?? "the default model"}`);
+        return reply(started);
+      }
+      case "workflowRun/list": return reply({ data: workflows.list({ parentThreadId: p.threadId }) });
+      case "workflowRun/read": {
+        const run = workflows.read(need("runId"));
+        if (!run) throw Object.assign(new Error(`No workflow run ${p.runId}.`), { code: -32600 });
+        return reply({ run });
+      }
+      case "workflowRun/stop": return reply({ run: await workflows.stop(need("runId")) });
+      case "workflowRun/resume": return reply({ run: await workflows.resume(need("runId")) });
+      case "workflowRun/skip": workflows.skip(need("runId"), need("agentId")); return reply({});
+      default: throw Object.assign(new Error(`Unknown method ${msg.method}`), { code: -32601 });
+    }
+  }
   async function runWorkGraph(msg) {
     await storeChain;
     const tid = msg.params?.rootThreadId;
@@ -2879,10 +3021,15 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents") helperConns.add(ws);
+    if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-workflow") workflowToolConns.add(ws);
     if (context.failed && msg.method && msg.id !== undefined) { toTui({ id: msg.id, error: { code: -32603, message: "The session backend disconnected; reopen this chat." } }); return; }
     const target = msg.params?.threadId ?? msg.params?.elpisParentThreadId;
     if (msg.method && (deletingThreads.has(target) || (deletedThreads.has(target) && msg.method !== "thread/delete"))) {
       toTui({ id: msg.id, error: { code: -32600, message: deletedThreads.has(target) ? `thread not found: ${target}` : "The chat is being deleted; wait for deletion to finish." } }); return;
+    }
+    if (typeof msg.method === "string" && msg.method.startsWith("workflowRun/")) {
+      workflowRequest(msg).catch((e) => toTui({ id: msg.id, error: { code: Number.isInteger(e.code) ? e.code : -32603, message: e.message ?? String(e) } }));
+      return;
     }
     if (msg.method === "workGraph/run" || msg.method === "workGraph/runWithProviders") {
       runWorkGraph(msg).catch(e => toTui({ id: msg.id, error: Number.isInteger(e.code) ? e : { code: -32603, message: e.message ?? String(e) } }));
