@@ -263,6 +263,26 @@ impl ChatWidget {
             return KeyEventAction::None;
         }
 
+        // Elpis: an empty Enter forces a queued /compact the way it forces pending steers (Codex's
+        // "empty Enter: interrupt and send immediately"): the reply stops and the chat compacts now.
+        if empty_submit
+            && self.input_queue.pending_steers.is_empty()
+            && self.input_queue.next_queued_input_is_compact()
+            && self.bottom_pane.is_task_running()
+            && self.bottom_pane.no_modal_or_popup_active()
+        {
+            if self.input_queue.compact_after_interrupt {
+                return KeyEventAction::None;
+            }
+            self.input_queue.compact_after_interrupt = true;
+            if self.submit_op(AppCommand::interrupt()) {
+                self.pause_active_goal_for_interrupt();
+            } else {
+                self.input_queue.compact_after_interrupt = false;
+            }
+            return KeyEventAction::None;
+        }
+
         if self.handle_plugins_popup_key_event(key_event) {
             return KeyEventAction::None;
         }

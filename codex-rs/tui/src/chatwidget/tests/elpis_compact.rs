@@ -9,10 +9,8 @@ use super::*;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use pretty_assertions::assert_eq;
 
-const SAVED_30: &str =
-    "• Pressure compaction saved: 30% remaining. Checked before each turn. /compact alone compacts now.\n";
-const NOT_CHANGED: &str =
-    "■ Compaction setting was not changed: Use /compact N with 0 < N < 70.\n";
+const SAVED_30: &str = "• Pressure compaction saved: 30% remaining. Checked before each turn. /compact alone compacts now.\n";
+const NOT_CHANGED: &str = "■ Compaction setting was not changed: Use /compact N with 0 < N < 70.\n";
 const GUIDANCE: &str = "keep the Cedar blockers";
 
 type Events = tokio::sync::mpsc::UnboundedReceiver<AppEvent>;
@@ -163,7 +161,11 @@ async fn compact_numbers_out_of_range_show_usage_and_change_nothing() {
 
         assert_eq!(saved_percent(&home), Some(25.0), "/compact {invalid}");
         let sent = drain(&mut rx);
-        assert_eq!(sent.cells, vec![NOT_CHANGED.to_string()], "/compact {invalid}");
+        assert_eq!(
+            sent.cells,
+            vec![NOT_CHANGED.to_string()],
+            "/compact {invalid}"
+        );
         assert!(!sent.ops.iter().any(is_compaction), "/compact {invalid}");
     }
     assert_no_submit_op(&mut ops);
@@ -193,7 +195,11 @@ async fn typed_compact_text_compacts_now_with_that_guidance() {
     );
     assert!(chat.bottom_pane.is_task_running());
     assert_no_submit_op(&mut ops);
-    assert_eq!(saved_percent(&home), Some(25.0), "guidance changed the threshold");
+    assert_eq!(
+        saved_percent(&home),
+        Some(25.0),
+        "guidance changed the threshold"
+    );
 }
 
 #[tokio::test]
@@ -246,15 +252,142 @@ async fn queued_compact_text_compacts_and_holds_the_next_message() {
     queue_composer_text(&mut chat, "continue after the compaction");
     complete_turn(&mut chat, "turn-1");
 
-    assert!(
-        drain(&mut rx).ops.contains(&Op::CompactWithInstructions {
-            instructions: GUIDANCE.to_string(),
-        })
-    );
+    assert!(drain(&mut rx).ops.contains(&Op::CompactWithInstructions {
+        instructions: GUIDANCE.to_string(),
+    }));
     assert_no_submit_op(&mut ops);
     assert_eq!(
         chat.queued_user_message_texts(),
         vec!["continue after the compaction"]
     );
     assert_eq!(saved_percent(&home), None);
+}
+
+// A224/A255 (24 Oct): "/compact" typed during a reply waits in the queue; an empty Enter forces it,
+// as Codex's empty Enter forces pending steers: the reply stops and the chat compacts now.
+
+fn queued_texts(chat: &ChatWidget) -> Vec<String> {
+    chat.input_queue
+        .queued_user_messages
+        .iter()
+        .map(|queued| queued.user_message.text.clone())
+        .collect()
+}
+
+fn empty_enter(chat: &mut ChatWidget) {
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+}
+
+#[tokio::test]
+async fn empty_enter_forces_a_queued_compact_during_a_reply() {
+    for (typed, guidance) in [
+        ("/compact", None),
+        ("/compact keep the Cedar blockers", Some(GUIDANCE)),
+    ] {
+        let (mut chat, mut rx, mut ops, _home) = chat_with_home().await;
+        handle_turn_started(&mut chat, "turn-1");
+        type_and_submit(&mut chat, typed);
+        queue_composer_text(&mut chat, "and then this");
+        assert_eq!(
+            queued_texts(&chat),
+            vec![typed.to_string(), "and then this".to_string()]
+        );
+        drain(&mut rx);
+
+        empty_enter(&mut chat);
+        next_interrupt_op(&mut ops);
+        empty_enter(&mut chat);
+        assert!(
+            ops.try_recv().is_err(),
+            "{typed}: a second Enter must not interrupt twice"
+        );
+        assert!(
+            !drain(&mut rx).ops.iter().any(is_compaction),
+            "{typed}: not before the reply stops"
+        );
+
+        handle_turn_interrupted(&mut chat, "turn-1");
+        let sent = drain(&mut rx);
+        let compactions: Vec<&Op> = sent.ops.iter().filter(|op| is_compaction(op)).collect();
+        match guidance {
+            None => assert!(
+                matches!(compactions.as_slice(), [Op::Compact]),
+                "{:?}",
+                sent.ops
+            ),
+            Some(text) => assert!(
+                matches!(compactions.as_slice(), [Op::CompactWithInstructions { instructions }] if instructions == text),
+                "{:?}",
+                sent.ops
+            ),
+        }
+        assert!(
+            sent.cells
+                .iter()
+                .any(|cell| cell.contains("Reply stopped to compact now.")),
+            "{:?}",
+            sent.cells
+        );
+        assert_eq!(
+            queued_texts(&chat),
+            vec!["and then this".to_string()],
+            "{typed}: the rest stays queued"
+        );
+        assert_eq!(
+            chat.bottom_pane.composer_text(),
+            "",
+            "{typed}: nothing is restored into the composer"
+        );
+        assert!(!chat.input_queue.compact_after_interrupt);
+    }
+}
+
+#[tokio::test]
+async fn empty_enter_forces_only_a_compact_at_the_front_of_the_queue() {
+    for queue in [
+        vec!["a plain message"],
+        vec!["a plain message", "/compact"],
+        vec!["/compact 30"],
+    ] {
+        let (mut chat, mut rx, mut ops, _home) = chat_with_home().await;
+        handle_turn_started(&mut chat, "turn-1");
+        for text in &queue {
+            if text.starts_with('/') {
+                type_and_submit(&mut chat, text);
+            } else {
+                queue_composer_text(&mut chat, text);
+            }
+        }
+        drain(&mut rx);
+        let expected: Vec<String> = queue.iter().map(ToString::to_string).collect();
+        assert_eq!(queued_texts(&chat), expected, "{queue:?}");
+
+        empty_enter(&mut chat);
+        assert!(
+            ops.try_recv().is_err(),
+            "{queue:?}: Enter must not interrupt the reply"
+        );
+        assert!(!chat.input_queue.compact_after_interrupt, "{queue:?}");
+    }
+}
+
+#[tokio::test]
+async fn an_unforced_interrupt_restores_a_queued_compact_and_a_reply_that_ends_runs_it() {
+    // An interrupt not forced by Enter (Esc) keeps Codex's behaviour: the queue returns to the
+    // composer.
+    let (mut chat, mut rx, _ops, _home) = chat_with_home().await;
+    handle_turn_started(&mut chat, "turn-1");
+    type_and_submit(&mut chat, "/compact");
+    handle_turn_interrupted(&mut chat, "turn-1");
+    assert!(!drain(&mut rx).ops.iter().any(is_compaction));
+    assert_eq!(chat.bottom_pane.composer_text(), "/compact");
+
+    // Without Enter, a queued /compact runs when the reply ends, and a stale force is never left.
+    let (mut chat, mut rx, _ops, _home) = chat_with_home().await;
+    handle_turn_started(&mut chat, "turn-2");
+    type_and_submit(&mut chat, "/compact");
+    chat.input_queue.compact_after_interrupt = true;
+    complete_turn(&mut chat, "turn-2");
+    assert!(drain(&mut rx).ops.iter().any(is_compaction));
+    assert!(!chat.input_queue.compact_after_interrupt);
 }

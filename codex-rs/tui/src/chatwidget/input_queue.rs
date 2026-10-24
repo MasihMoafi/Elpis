@@ -50,6 +50,9 @@ pub(super) struct InputQueueState {
     /// When set, the next interrupt should resubmit all pending steers as one
     /// fresh user turn instead of restoring them into the composer.
     pub(super) submit_pending_steers_after_interrupt: bool,
+    /// Elpis: when set, the next interrupt runs the queued `/compact` at once instead of restoring
+    /// the queue into the composer (an empty Enter forces a queued compaction, A224/A255).
+    pub(super) compact_after_interrupt: bool,
     pub(super) suppress_queue_autosend: bool,
     pub(super) transcript_copy: std::sync::Weak<crate::copy_input_guard::CopyInputGuard>,
     /// Hold submissions while a usage failure or backend-directed model fallback is resolved.
@@ -69,6 +72,18 @@ impl InputQueueState {
             .any(|message| matches!(message.delivery, MessageDelivery::Unconfirmed(_)))
     }
 
+    /// The next queued input is a bare `/compact` (with or without instructions).
+    pub(super) fn next_queued_input_is_compact(&self) -> bool {
+        self.rejected_steers_queue.is_empty()
+            && self.queued_user_messages.front().is_some_and(|queued| {
+                queued.action == crate::bottom_pane::QueuedInputAction::ParseSlash
+                    && crate::bottom_pane::prompt_args::parse_slash_name(&queued.user_message.text)
+                        .is_some_and(|(name, _, _)| {
+                            name == crate::slash_command::SlashCommand::Compact.command()
+                        })
+            })
+    }
+
     pub(super) fn has_queued_follow_up_messages(&self) -> bool {
         !self.rejected_steers_queue.is_empty() || !self.queued_user_messages.is_empty()
     }
@@ -86,6 +101,7 @@ impl InputQueueState {
         self.pending_steers.clear();
         self.pending_steer_recall_ids = None;
         self.submit_pending_steers_after_interrupt = false;
+        self.compact_after_interrupt = false;
         self.rate_limit_recovery_pending = false;
     }
 
