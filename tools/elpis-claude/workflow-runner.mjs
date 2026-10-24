@@ -127,6 +127,7 @@ export class WorkflowRunner extends EventEmitter {
     };
     this.#runs.set(id, run);
     this.#launch(run, cache, { copy: true, previous: from?.agents });
+    this.#save(run, true);
     return { runId: id, scriptPath: saved, name: run.name, status: run.status };
   }
 
@@ -318,13 +319,7 @@ export class WorkflowRunner extends EventEmitter {
         run.currentPhase = m.title;
         this.#changed(run, { kind: "phase", phase: m.title });
         return;
-      case "log": {
-        const line = { at: this.#now(), message: m.message.slice(0, 4000), ...(m.group && { group: m.group }) };
-        run.logs.push(line);
-        if (run.logs.length > LOG_LINES) run.logs.splice(0, run.logs.length - LOG_LINES);
-        this.#changed(run, { kind: "log", log: line });
-        return;
-      }
+      case "log": this.#note(run, m.message.slice(0, 4000), m.group); return;
       case "scriptError":
         run.scriptErrors.push({ at: this.#now(), where: m.where, message: m.message });
         if (run.scriptErrors.length > 200) run.scriptErrors.shift();
@@ -565,9 +560,10 @@ export class WorkflowRunner extends EventEmitter {
     } catch (e) { this.#log(`workflow ${run.id}: worktree cleanup: ${e.message}`); return rec.worktree; }
   }
 
-  #note(run, message) {
-    const line = { at: this.#now(), message };
+  #note(run, message, group = null) {
+    const line = { at: this.#now(), message, ...(group && { group }) };
     run.logs.push(line);
+    if (run.logs.length > LOG_LINES) run.logs.splice(0, run.logs.length - LOG_LINES);
     this.#changed(run, { kind: "log", log: line });
   }
 }

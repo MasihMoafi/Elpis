@@ -124,7 +124,8 @@ test("Subagents Off denies shell agents in Claude session options and survives r
   for (const cli of ["claude", "codex", "agy", "elpis", "gemini"]) {
     assert.ok(denied.includes(`Bash(${cli}:*)`), `Off must deny ${cli} -p ... through Bash`);
   }
-  assert.ok(denied.includes("mcp__elpis-agents__*"), "configured delegate MCP tools cannot bypass Off");
+  for (const tool of ["list_models", "delegate", "delegate_status", "delegate_steer", "delegate_stop"]) assert.ok(denied.includes(`mcp__elpis-agents__${tool}`), `configured delegate MCP tool ${tool} cannot bypass Off`);
+  assert.ok(!denied.some((d) => /workflow$|elpis-agents__\*/.test(d)), "the workflow tool stays: the runtime starts it only when the person asks (WR6)");
   assert.match(off._meta.systemPrompt.append, /Subagents are disabled/);
   assert.match(off._meta.systemPrompt.append, /shell/i);
   assert.match(off._meta.systemPrompt.append, /claude.*codex.*agy.*elpis.*gemini/);
