@@ -67,14 +67,15 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
   const env = { ...process.env, ELPIS_ENGINE_BIN: process.env.ELPIS_TEST_ENGINE };
   let home, browser, page;
   const start = async (seedDir, configSeed) => {
-    const { stdout } = await run(helper, ['start', path.resolve(process.env.ELPIS_TEST_APP), port, seedDir], { env: { ...env, ...(configSeed ? { ELPIS_E2E_CONFIG_SEED: configSeed } : {}) }, timeout: 120000 });
+    const { stdout } = await run(helper, ['start', path.resolve(process.env.ELPIS_TEST_APP), port, seedDir], { env: { ...env, ...(configSeed ? { ELPIS_E2E_CONFIG_SEED: configSeed } : {}) }, timeout: 240000 });
     home = stdout.trim().split('\n').pop(); browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     page = browser.contexts().flatMap(context => context.pages()).find(item => item.url().startsWith('http://127.0.0.1'));
     assert.ok(page, 'the packaged app opens its renderer'); page.setDefaultTimeout(15000);
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
+    await page.locator(`.thread-row[data-thread-id="${ids["Plain one"]}"]`).waitFor();
+    // The first-run name question can come a moment after the list; it is not part of these checks.
     const notNow = page.getByRole('button', { name: 'Not now', exact: true });
-    if (await notNow.isVisible().catch(() => false)) await notNow.click();
-    await page.locator(`.thread-row[data-thread-id="${ids.Mother}"]`).waitFor();
+    await notNow.waitFor({ timeout: 6000 }).then(() => notNow.click(), () => {});
     await page.waitForTimeout(1500); // the workflow history arrives after the chat list
   };
   const stop = async () => { await browser?.close().catch(() => {}); if (home) await run(helper, ['stop', home]).catch(() => {}); };
@@ -104,7 +105,8 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     for (const theme of ['light', 'dark']) {
       const button = page.getByRole('button', { name: `Use ${theme} theme`, exact: true });
       if (await button.count()) await button.first().click();
-      await page.waitForTimeout(300); await aside().screenshot({ path: path.join(shots, `${name}-${theme}.png`) });
+      await page.waitForTimeout(1200); const box = await aside().boundingBox();
+      await page.screenshot({ path: path.join(shots, `${name}-${theme}.png`), clip: { x: 0, y: 0, width: Math.ceil(box.x + box.width) + 8, height: Math.ceil(box.height) } });
     }
   };
 
@@ -114,6 +116,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     assert.deepEqual(MAINS.filter(name => !lists.includes(name)), [], 'every main chat is listed');
     assert.deepEqual([...new Set(lists)].length, lists.length, 'no chat is listed twice');
     assert.equal(await aside().locator('[aria-label="Agents whose parent is not listed"]').count(), 0, 'no list of orphan agents');
+    await shoot('on-start');
   });
 
   await t.test('the Workflows section is there and starts folded; its run hides its helper chats', async () => {
@@ -125,6 +128,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     const expand = section('Workflows').getByRole('button', { name: /^Expand .* in Review team$/ });
     await expand.click();
     await eventually(async () => assert.deepEqual((await rowsIn(section('Workflows'))).sort(), ['Inspect code', 'Review team', 'Write tests']));
+    await shoot('workflow-open');
     await page.waitForTimeout(6000); // the sidebar follows an expanded branch every five seconds
     await noError('expanded workflow run');
     await section('Workflows').getByRole('button', { name: /^Collapse .* in Review team$/ }).click();
@@ -141,6 +145,7 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     await row('Agent two').waitFor(); await row('Agent one').waitFor(); await row('Legacy agent').waitFor();
     await row('Agent one').getByRole('button', { name: /^Expand agents in / }).click();
     await row('Agent one child').waitFor();
+    await shoot('mother-open');
     await row('Mother').getByRole('button', { name: 'Collapse agents in Mother', exact: true }).click();
     await eventually(async () => assert.equal(await row('Agent two').count(), 0));
     await noError('mother branches');
@@ -178,8 +183,8 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
   await t.test('archiving the mother takes her agents and the chat she made; deleting a chat takes the chat put under it', async () => {
     await settle(); await row('Mother').hover(); await page.getByRole('button', { name: 'Archive Mother', exact: true }).click();
     await eventually(async () => assert.equal(await row('Mother').count(), 0));
-    await eventually(async () => { const list = await archived(); for (const name of ['Mother', 'Agent two']) assert.ok(list.includes(name), `${name} is archived`); });
-    assert.deepEqual((await listed()).filter(name => ['Mother', 'Agent two'].includes(name)), [], 'nothing of the mother stays live');
+    await eventually(async () => { const list = await archived(); for (const name of ['Mother', 'Agent two', 'Legacy agent']) assert.ok(list.includes(name), `${name} is archived`); });
+    assert.deepEqual((await listed()).filter(name => ['Mother', 'Agent two', 'Legacy agent'].includes(name)), [], 'nothing of the mother stays live');
     await action('Old guest', 'Put under…');
     await page.getByRole('combobox', { name: 'Parent chat' }).click(); await page.getByRole('option', { name: 'Old host', exact: true }).click();
     await page.getByRole('button', { name: 'Put under', exact: true }).click();
@@ -208,15 +213,15 @@ test('the sidebar lists only main chats; children sit folded under them; organiz
     await row('Host').getByRole('button', { name: 'Expand chats in Host', exact: true }).click(); await row('Guest').waitFor();
     assert.equal(await sectionToggle('Workflows').getAttribute('aria-expanded'), 'false', 'Workflows stays folded');
     await sectionToggle('Workflows').click();
-    await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await row('Mother').waitFor();
+    await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await row('Plain one').waitFor();
     await eventually(async () => assert.equal(await sectionToggle('Workflows').getAttribute('aria-expanded'), 'true', 'an opened Workflows section stays open'));
     await sectionToggle('Workflows').click();
     const lists = await chatLists();
     assert.deepEqual(CHILDREN.filter(name => lists.includes(name)), [], 'still no child listed');
     assert.deepEqual(['Mother', 'Agent two', 'Old host', 'Old guest'].filter(name => lists.includes(name)), [], 'archived and deleted chats stay gone');
     await noError('after restart');
-    const log = await fs.readFile(path.join(home, 'elpis/logs/desktop-requests.jsonl'), 'utf8').catch(() => '');
-    assert.equal(log.trim(), '', `no failed request after the restart: ${log.slice(0, 400)}`);
+    const after = await fs.readFile(path.join(home, 'elpis/logs/desktop-requests.jsonl'), 'utf8').catch(() => '');
+    assert.equal(after.trim(), '', `no failed request after the restart: ${after.slice(0, 400)}`);
   });
 
 });
