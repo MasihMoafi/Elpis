@@ -313,6 +313,8 @@ impl ChatWidget {
     /// This does not clear MCP startup tracking, because MCP startup can overlap with turn cleanup
     /// and should continue to drive the bottom-pane running indicator while it is in progress.
     pub(super) fn finalize_turn(&mut self) {
+        // Any ending clears a forced /compact; an interrupt reads it first (`on_interrupted_turn`).
+        self.input_queue.compact_after_interrupt = false;
         self.flush_answer_and_plan_streams();
         self.flush_interrupt_activity();
         self.finish_dynamic_activity();

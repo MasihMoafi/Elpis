@@ -393,6 +393,8 @@ impl ChatWidget {
     /// separated by newlines rather than auto-submitting the next one.
     pub(super) fn on_interrupted_turn(&mut self, reason: TurnAbortReason) {
         self.requeue_image_submission();
+        let compact_now = self.input_queue.compact_after_interrupt
+            && self.input_queue.next_queued_input_is_compact();
         // Finalize, log a gentle prompt, and clear running state.
         self.finalize_turn();
         let send_pending_steers_immediately =
@@ -402,6 +404,11 @@ impl ChatWidget {
             if send_pending_steers_immediately {
                 self.add_to_history(history_cell::new_info_event(
                     "Model interrupted to submit steer instructions.".to_owned(),
+                    /*hint*/ None,
+                ));
+            } else if compact_now {
+                self.add_to_history(history_cell::new_info_event(
+                    "Reply stopped to compact now.".to_owned(),
                     /*hint*/ None,
                 ));
             } else {
@@ -469,6 +476,11 @@ impl ChatWidget {
                 );
             } else if let Some(combined) = self.drain_pending_messages_for_restore() {
                 self.restore_composer_state(combined);
+            }
+        } else if compact_now {
+            // Later queued inputs follow the compaction as usual.
+            if let Some((compact, _)) = self.pop_next_queued_user_message() {
+                self.submit_queued_slash_prompt(compact);
             }
         } else if let Some(combined) = self.drain_pending_messages_for_restore() {
             self.restore_composer_state(combined);
