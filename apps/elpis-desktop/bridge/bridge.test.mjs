@@ -199,8 +199,10 @@ test('LEDGER uses native marketplace/catalog/plugin methods and versioned plugin
   await client.initialize();
   try {
     const last = method => f.socket.sent.findLast(row => row.method === method)?.params;
-    for (const source of ['owner/repo', 'https://example.org/catalog.git', '/catalog']) await client.changeMarketplace({ action: 'add', source });
-    assert.deepEqual(last('marketplace/add'), { source: '/catalog' });
+    for (const source of ['owner/repo', 'https://example.org/catalog.git', 'git@example.org:owner/catalog.git', '/catalog']) {
+      await client.changeMarketplace({ action: 'add', source });
+      assert.deepEqual(last('marketplace/add'), { source });
+    }
     const found = await client.pluginCatalog({ cwd: '/workspace', search: 'docs', cursor: 'old-page' });
     assert.equal(found.nextCursor, 'next');
     assert.deepEqual(last('plugin/search'), { cwds: ['/workspace'], searchTerm: 'docs', cursor: 'old-page', limit: 50 });

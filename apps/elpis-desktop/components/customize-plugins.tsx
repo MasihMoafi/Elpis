@@ -5,6 +5,7 @@ import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { CustomizeRow } from "@/components/customize-row";
 import { api, unreadable } from "@/lib/api";
@@ -76,6 +77,10 @@ function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { c
   const busy = pending || changing !== null || loading;
   return <section className="mt-5 grid gap-3" aria-label="Plugin catalog">
     <div className="customize-title"><h2>Add plugins</h2><Button variant="ghost" size="icon-sm" aria-label="Refresh plugins" disabled={busy} onClick={() => void load()}><RefreshCw /></Button></div>
+    {!!catalog?.appCatalogs?.some(item => !item.added) && <div className="flex flex-wrap items-center gap-2">
+      {catalog.appCatalogs.filter(item => !item.added).map(item => <Button key={item.app} size="sm" variant="outline" disabled={busy} onClick={() => void marketplace("add", { action: "add-app", app: item.app })}>Add the {item.label} plugins</Button>)}
+      <span className="customize-note">Catalogs already on this computer; add one to search its plugins.</span>
+    </div>}
     <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); if (query.trim() === search) void load(); else setSearch(query.trim()); }}>
       <Input className="flex-1" aria-label="Search plugins" placeholder="Search plugins" value={query} maxLength={1000} onChange={event => setQuery(event.target.value)} />
       <Button size="sm" variant="outline" type="submit" disabled={pending || changing !== null}>Search</Button>
@@ -90,16 +95,15 @@ function PluginCatalog({ cwd, version, pending, install, errors, onReload }: { c
     {catalog?.nextCursor && <Button variant="ghost" disabled={busy} onClick={() => void load(catalog.nextCursor!)}>Load more</Button>}
     <section aria-label="Marketplaces" className="grid gap-3">
       <div className="customize-title"><h2>Marketplaces</h2></div>
-      <p className="customize-note">GitHub owner/repo, a git URL, or a folder containing a Codex or Claude Code marketplace.</p>
-      {!!catalog?.appCatalogs?.some(item => !item.added) && <div className="flex flex-wrap items-center gap-2">
-        {catalog.appCatalogs.filter(item => !item.added).map(item => <Button key={item.app} size="sm" variant="outline" disabled={busy} onClick={() => void marketplace("add", { action: "add-app", app: item.app })}>Add the {item.label} plugins</Button>)}
-        <span className="customize-note">From the app on this computer; nothing is downloaded until you install a plugin.</span>
-      </div>}
-      <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); if (source.trim() && !busy) void marketplace("add", { action: "add", source: source.trim() }); }}>
-        <Input className="flex-1" aria-label="Marketplace source" placeholder="owner/repo, git URL or folder" value={source} maxLength={4096} onChange={event => setSource(event.target.value)} />
-        <Button type="submit" size="sm" variant="outline" disabled={busy || !source.trim()}>Add marketplace</Button>
-      </form>
-      {!source.trim() && <SettingsNotice>Enter a marketplace source to add it.</SettingsNotice>}
+      <details className="grid gap-3">
+        <DisclosureSummary className="cursor-pointer">Advanced: add from Git URL or folder</DisclosureSummary>
+        <p className="customize-note">A Git URL (or owner/repo) or a folder on this computer that holds a Codex or Claude Code marketplace.</p>
+        <form className="flex flex-wrap items-center gap-2" onSubmit={event => { event.preventDefault(); if (source.trim() && !busy) void marketplace("add", { action: "add", source: source.trim() }); }}>
+          <Input className="flex-1" aria-label="Marketplace source" placeholder="https://github.com/heygen-com/hyperframes" value={source} maxLength={4096} onChange={event => setSource(event.target.value)} />
+          <Button type="submit" size="sm" variant="outline" disabled={busy || !source.trim()}>Add marketplace</Button>
+        </form>
+        {!source.trim() && <SettingsNotice>Enter a Git URL or folder to add a marketplace.</SettingsNotice>}
+      </details>
       {changing && <SettingsNotice>Updating marketplaces…</SettingsNotice>}
       {actionErrors.add && <SettingsNotice tone="alert">{actionErrors.add}</SettingsNotice>}
       {catalog && !catalog.marketplaces.length && <SettingsEmpty title="No marketplaces added" />}

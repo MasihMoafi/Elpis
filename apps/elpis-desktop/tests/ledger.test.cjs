@@ -102,6 +102,7 @@ test('LEDGER add marketplace, browse, search, install, installed state, remove; 
     await page.getByRole('button', { name: 'Add plugins', exact: true }).click();
     const catalog = page.getByRole('region', { name: 'Plugin catalog', exact: true });
     await catalog.getByText('No marketplaces added', { exact: true }).waitFor();
+    await catalog.getByText('Advanced: add from Git URL or folder', { exact: true }).click();
     const source = catalog.getByRole('textbox', { name: 'Marketplace source', exact: true });
     await source.fill('anthropics/claude-plugins-official');
     s.reject(true); await catalog.getByRole('button', { name: 'Add marketplace', exact: true }).click();

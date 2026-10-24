@@ -139,6 +139,8 @@ function modeOf(result) {
 }
 /** The cursor of a page cut from whole turns (see #itemsPage); the engine's own cursors never start with it. */
 const WHOLE_TURNS = 'whole-turns:';
+/** Requests that download (a Git clone, a plugin bundle) can take minutes; the rest answer within the default wait. */
+const DOWNLOADS = new Set(['marketplace/add', 'marketplace/upgrade', 'plugin/install']);
 const EXPLAINED = new Set(['externalAgentConfig/import', 'thread/settings/update', 'account/read', 'account/rateLimits/read', 'thread/delete', 'thread/fork', 'thread/start', 'thread/resume', 'thread/name/set', 'thread/archive', 'thread/unarchive', 'thread/revert', 'thread/compact/start', 'review/start', 'turn/start', 'turn/steer', 'turn/interrupt', 'config/batchWrite', 'account/login/start', 'account/logout', 'claudeSubscription/write', 'hooks/list', 'memory/reset', 'plugin/list', 'plugin/search', 'plugin/install', 'plugin/uninstall', 'marketplace/add', 'marketplace/remove']);
 /** What a background module with a conversation of its own may ask of the engine; see `sideRpc`. */
 const SIDE_RPCS = new Set(['thread/start', 'turn/start', 'turn/interrupt', 'thread/unsubscribe', 'thread/delete']);
@@ -294,7 +296,7 @@ export class DesktopClient extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id); reject(new BridgeError(reading ? 'Elpis timed out while reading. Reload the view to try again.' : 'Elpis request timed out; its outcome is unknown. Refresh before retrying.', 504));
-      }, this.timeoutMs);
+      }, DOWNLOADS.has(method) ? Math.max(this.timeoutMs, 600000) : this.timeoutMs);
       this.#pending.set(id, { resolve, reject, timer, method, reading });
       try { this.#socket.send(JSON.stringify({ id, method, params })); }
       catch { clearTimeout(timer); this.#pending.delete(id); reject(new BridgeError('Could not send request to Elpis', 503)); }

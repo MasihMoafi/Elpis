@@ -34,20 +34,47 @@ export class CustomizePage {
     if (input.cursor != null) text(input.cursor, 'plugin search cursor', 4096);
     const scope = input.cwd ? { cwds: [input.cwd] } : {};
     const catalog = await this.#rpc('plugin/list', scope);
-    const search = input.search?.trim() ? await this.#rpc('plugin/search', { ...scope, searchTerm: input.search.trim(), ...(input.cursor ? { cursor: input.cursor } : {}), limit: 50 }) : null;
-    const snapshot = pluginCatalogSnapshot(catalog, search);
+    const term = input.search?.trim().toLowerCase();
+    const snapshot = pluginCatalogSnapshot(term ? { ...catalog, marketplaces: (catalog.marketplaces ?? []).map(market => ({ ...market,
+      plugins: (market.plugins ?? []).filter(plugin => [plugin.name, plugin.interface?.displayName, plugin.description, plugin.interface?.shortDescription, plugin.interface?.longDescription, ...(plugin.keywords ?? [])]
+        .some(value => typeof value === 'string' && value.toLowerCase().includes(term))) })) } : catalog);
+    if (term) {
+      let search;
+      try { search = await this.#rpc('plugin/search', { ...scope, searchTerm: input.search.trim(), ...(input.cursor ? { cursor: input.cursor } : {}), limit: 50 }); }
+      catch (error) {
+        // A remote HTTP refusal must not prevent searching the catalogs already listed on this computer.
+        if (!(error instanceof Error) || !/remote plugin catalog request to \S+ failed with status \d{3}\b/i.test(error.message)) throw error;
+      }
+      if (search) {
+        const remote = pluginCatalogSnapshot(catalog, search), seen = new Set(snapshot.plugins.map(plugin => plugin.id));
+        for (const plugin of remote.plugins) if (!seen.has(plugin.id)) { seen.add(plugin.id); snapshot.plugins.push(plugin); }
+        snapshot.nextCursor = remote.nextCursor;
+      }
+    }
+    // One plugin, one row (R35): a copy in a catalog on this computer wins over the same plugin in the remote catalog.
+    const local = new Set(snapshot.plugins.filter(plugin => plugin.marketplacePath).map(plugin => plugin.pluginName));
+    snapshot.plugins = snapshot.plugins.filter(plugin => plugin.marketplacePath || plugin.installed || !local.has(plugin.pluginName));
+    // Two plugins with one display name (HyperFrames ships `hyperframes` and `core-skills` under one) say which is which.
+    const shown = snapshot.plugins.map(plugin => plugin.name);
+    for (const plugin of snapshot.plugins) if (shown.filter(name => name === plugin.name).length > 1 && plugin.pluginName !== plugin.name) plugin.name = `${plugin.name} (${plugin.pluginName})`;
     return { ...snapshot, appCatalogs: appCatalogs(this.#appHome).map(({ app, label, name }) => ({ app, label, added: snapshot.marketplaces.some(market => market.name === name) })) };
   }
   /** Turns plugins on and adds the catalog the named desktop app keeps on this computer (bridge/app-catalogs.mjs). */
   async #addAppCatalog(app) {
     const found = appCatalogs(this.#appHome).find(catalog => catalog.app === app);
     if (!found) throw new BridgeError('That app has no plugin catalog on this computer', 404);
-    const { version } = await this.#settings();
-    await this.#saveSettings({ version, features: { plugins: true } });
+    await this.#enablePlugins();
     if (found.app === 'claude') return this.#rpc('marketplace/add', { source: found.source });
     const folder = await linkBundledCatalog(this.#home(), found.source), current = await this.#settings();
     return this.#rpc('config/batchWrite', { expectedVersion: current.version, reloadUserConfig: true,
       edits: [{ keyPath: `marketplaces."${found.name}"`, value: { source_type: 'local', source: folder }, mergeStrategy: 'replace' }] });
+  }
+  /** A marketplace is only listed while plugins are on, so adding one turns them on. */
+  async #enablePlugins() {
+    const { version, features } = await this.#settings();
+    const plugins = features?.data?.find(feature => feature.key === 'plugins');
+    if (!plugins || plugins.enabled) return;
+    await this.#saveSettings({ version, features: { plugins: true } });
   }
   async changePlugin(input) {
     object(input, ['action', 'id', 'enabled', 'version', 'cwd']); text(input.id, 'plugin', 512);
@@ -75,7 +102,11 @@ export class CustomizePage {
     object(input, ['action', 'source', 'name', 'cwd', 'app']);
     // Validate the project folder before any engine mutation.
     projectFolder(input.cwd);
-    if (input.action === 'add') return this.#rpc('marketplace/add', { source: text(input.source, 'marketplace source', 4096).trim() });
+    if (input.action === 'add') {
+      const source = text(input.source, 'marketplace source', 4096).trim();
+      await this.#enablePlugins();
+      return this.#rpc('marketplace/add', { source });
+    }
     if (input.action === 'add-app') return this.#addAppCatalog(input.app);
     if (input.action === 'remove') return this.#rpc('marketplace/remove', { marketplaceName: text(input.name, 'marketplace', 256) });
     throw new BridgeError('Choose a marketplace action');

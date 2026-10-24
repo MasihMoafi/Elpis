@@ -23,7 +23,7 @@ function setup(t, { chatgpt = true } = {}) {
   };
   const client = new DesktopClient(socket, { appHome: home, archiveDirectory: path.join(root, 'archives'), rewindHome: path.join(root, 'rewind'), spawnLinksFile: path.join(root, 'links.json'),
     githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(root, 'workflows') } });
-  Object.assign(client, { settings: async () => ({ version: 'v1' }), saveSettings: async input => { saved.push(input); } });
+  Object.assign(client, { settings: async () => ({ version: 'v1', features: { available: true, data: [{ key: 'plugins', enabled: saved.length > 0 }] } }), saveSettings: async input => { saved.push(input); } });
   t.after(() => client.close());
   return { client, socket, listed, saved, home, elpis };
 }
@@ -56,4 +56,24 @@ test('adding the ChatGPT catalog links the app\'s folder where the engine keeps 
   await f.client.changeMarketplace({ action: 'add-app', app: 'chatgpt' });
   assert.equal(fs.readlinkSync(link), source, 'adding it again keeps the link');
   assert.deepEqual(sent(f.socket, 'marketplace/add'), [], 'the reserved name never goes through marketplace/add');
+});
+
+test('adding a marketplace from a Git URL waits for the clone; an ordinary request still times out', async t => {
+  const f = setup(t); f.client.timeoutMs = 30;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw); f.socket.sent.push(request);
+    if (request.id !== undefined) setTimeout(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: {} })), 120);
+  };
+  await f.client.changeMarketplace({ action: 'add', source: 'https://github.com/heygen-com/hyperframes' });
+  assert.deepEqual(sent(f.socket, 'marketplace/add').map(params => params.source), ['https://github.com/heygen-com/hyperframes']);
+  await assert.rejects(f.client.pluginCatalog(), /timed out/);
+});
+
+test('adding a marketplace from a Git URL or folder turns plugins on first, so its plugins are listed', async t => {
+  const f = setup(t);
+  await f.client.changeMarketplace({ action: 'add', source: ' /home/me/hyperframes ' });
+  assert.deepEqual(f.saved, [{ version: 'v1', features: { plugins: true } }]);
+  assert.deepEqual(sent(f.socket, 'marketplace/add'), [{ source: '/home/me/hyperframes' }]);
+  await assert.rejects(f.client.changeMarketplace({ action: 'add', source: '   ' }));
+  assert.equal(f.saved.length, 1, 'an empty source changes nothing');
 });
