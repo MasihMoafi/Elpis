@@ -338,6 +338,7 @@
     "tests/workflow-notice.test.cjs"
   ],
   "opt-in": [
+    "tests/tui-engine.runtime.mjs",
     "tests/polish.runtime.cjs",
     "tests/sidebar-archive-delete.runtime.mjs",
     "tests/chat-basics.runtime.mjs",
