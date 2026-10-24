@@ -1,8 +1,8 @@
 // The terminal (TUI) and its engine, driven through a private tmux server against a local stand-in for the OpenAI
 // Responses API, in a throwaway home (no account, no session bus, no daemon of Masih's). 24 Oct 2026:
 //  - A225/A260 "the reasoning and compaction miscalculation": the Context Ledger's Reasoning + compaction share must be
-//    the share of reasoning in what the model was sent. The stand-in charges encrypted reasoning at the rate measured on
-//    his gpt-6.1-sol chats (one token per 15.6 characters) and everything else at four bytes a token.
+//    the share of reasoning in what the model was sent. The stand-in replays his chats' reasoning (real encrypted
+//    lengths, real reported tokens; responses-standin.mjs) and charges everything else at four bytes a token.
 //  - A224/A255 "enter should force it": /compact typed during a reply waits; an empty Enter stops the reply and compacts.
 //  - A chat whose earlier rollout is gone (his rust-obsidian chat, -32600 "missing source rollout") still opens.
 // ELPIS_TUI_BIN=/absolute/elpis node --test tests/tui-engine.runtime.mjs
@@ -57,9 +57,10 @@ test('A225/A260: the ledger\'s Reasoning + compaction is the share of reasoning 
   const tui = await terminal(t);
   await tui.type('work 6 on this'); tui.key('Enter');
   await tui.until(text => /reply \d+/.test(text), 'the reply arrives after six tool steps', 60000);
-  const sent = tui.mock.state.requests.at(-1);
-  assert.equal(sent.reasoningItems, 6, 'every step of the turn sends the turn\'s reasoning back');
-  const truth = tui.mock.state.last;
+  // The chat's last request (the title is asked for on the side).
+  const turn = tui.mock.state.requests.filter(request => request.asked.startsWith('work')), sent = turn.at(-1);
+  assert.equal(sent.reasoningItems, turn.slice(0, -1).reduce((sum, request) => sum + request.produced, 0), 'every step of the turn sends the turn\'s reasoning back');
+  const truth = sent.truth;
   const used = truth.input + truth.output, share = truth.reasoning / used;
   await tui.type('/context'); tui.key('Enter');
   const row = await tui.until(text => {
