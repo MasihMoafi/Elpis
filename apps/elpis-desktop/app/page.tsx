@@ -1231,6 +1231,7 @@ export default function Home() {
     setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id);
     if (request.current === originalRequest) restoreComposerFocus(originalFocus);
   }
+  const EARLIER_MESSAGES = 10;
   async function older(untilTurnId?: string, untilItemId?: string): Promise<boolean> {
     if (!selected || !itemCursor) return false;
     const revision = request.current;
@@ -1246,7 +1247,9 @@ export default function Home() {
         found = result.data.some(entry => entry.turnId === untilTurnId && entry.item.type === "userMessage" && (!untilItemId || entry.item.id === untilItemId));
         pages.unshift(...result.data.reverse());
         cursor = result.nextCursor;
-        if (!untilTurnId || found || selectedRef.current?.id !== id || request.current !== revision) break;
+        // A press brings ten more of the chat's messages, however many tool steps lie between them.
+        const messages = pages.filter(entry => entry.item.type === "userMessage").length;
+        if (found || selectedRef.current?.id !== id || request.current !== revision || !untilTurnId && messages >= EARLIER_MESSAGES) break;
       }
       if (selectedRef.current?.id !== id || request.current !== revision) return false;
       setError("");

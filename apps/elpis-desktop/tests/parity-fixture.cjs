@@ -117,4 +117,4 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const disconnectEvents = () => { for (const stream of streams) stream.end(); };
   return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening, disconnectEvents };
 }
-module.exports = { fixture, CWD, FILES, TURNS };
+module.exports = { fixture, CWD, FILES, TURNS, THREADS };
