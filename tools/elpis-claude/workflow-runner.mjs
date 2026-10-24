@@ -179,6 +179,12 @@ export class WorkflowRunner extends EventEmitter {
     control.abort(Object.assign(new Error("Skipped by the person."), { name: "Skipped" }));
   }
 
+  // A run whose chat is still owed its notice, for the runtime to deliver it now.
+  pending(runId) {
+    const run = this.#runs.get(runId) ?? this.#load(runId);
+    return run?.parentThreadId && run.status !== "running" && run.notice?.state === "pending" ? run : null;
+  }
+
   markNotice(runId, notice) {
     const run = this.#runs.get(runId);
     if (!run) return;
