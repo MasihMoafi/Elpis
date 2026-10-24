@@ -166,7 +166,10 @@ fn reasoning_estimate_rules_hold_for_any_length() {
         let tokens = encrypted_reasoning_tokens(&"g".repeat(len));
         let exact = len as f64 / 15.6;
         // Rounded up, never by a whole token.
-        assert!(tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0, "{len}");
+        assert!(
+            tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0,
+            "{len}"
+        );
         // Every real reasoning item is at least 1.5k characters; there the old estimate is larger.
         if len >= 1_592 {
             let old = u64::try_from(estimate_item_token_count(&reasoning(len))).expect("positive");

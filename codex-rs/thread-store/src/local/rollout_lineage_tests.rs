@@ -182,21 +182,81 @@ async fn resolves_lineage_at_explicit_history_position() {
 }
 
 #[tokio::test]
-async fn rejects_missing_cycles_and_out_of_bounds_offsets() {
+async fn a_missing_earlier_rollout_ends_the_lineage_instead_of_failing_it() {
     let home = TempDir::new().expect("temp dir");
     let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
-    let missing_parent = ThreadId::default();
-    let missing_child = ThreadId::default();
+    // Any depth: the chain stops at the first rollout that is gone and keeps everything after it.
+    for present_ancestors in 0..3_u64 {
+        let missing = ThreadId::default();
+        let mut base = unchecked_history_position(missing, /*end_ordinal_exclusive*/ 7);
+        let mut expected = Vec::new();
+        let mut start_ordinal = 8;
+        for _ in 0..present_ancestors {
+            let ancestor = ThreadId::default();
+            let path = write_rollout(home.path(), ancestor, Some(base), /*next_ordinal*/ 3);
+            let end = history_position(path.as_path(), ancestor, base.end_ordinal_exclusive + 2);
+            expected.push(RolloutLineageSegment {
+                rollout_id: ancestor,
+                rollout_path: path,
+                start_ordinal,
+                end: Some(end),
+            });
+            start_ordinal = end.end_ordinal_exclusive + 1;
+            base = end;
+        }
+        let child = ThreadId::default();
+        let child_path = write_rollout(home.path(), child, Some(base), /*next_ordinal*/ 2);
+        expected.push(RolloutLineageSegment {
+            rollout_id: child,
+            rollout_path: child_path,
+            start_ordinal,
+            end: None,
+        });
+
+        for lineage in [
+            store
+                .resolve_rollout_lineage(child, /*initial_path*/ None)
+                .await
+                .expect("a missing earlier part still resolves"),
+            store
+                .resolve_rollout_lineage_for_reference(child)
+                .await
+                .expect("and can still be forked"),
+        ] {
+            assert!(lineage.missing_earlier(), "{present_ancestors} ancestors");
+            assert_eq!(
+                lineage
+                    .segments
+                    .iter()
+                    .map(|s| (s.rollout_id, s.start_ordinal, s.end))
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|s| (s.rollout_id, s.start_ordinal, s.end))
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    // A complete lineage is not marked.
+    let root = ThreadId::default();
     write_rollout(
         home.path(),
-        missing_child,
-        Some(unchecked_history_position(
-            missing_parent,
-            /*end_ordinal_exclusive*/ 1,
-        )),
+        root,
+        /*history_base*/ None,
         /*next_ordinal*/ 2,
     );
-    assert_invalid_lineage(&store, missing_child, "missing source rollout").await;
+    let lineage = store
+        .resolve_rollout_lineage(root, /*initial_path*/ None)
+        .await
+        .expect("resolve complete lineage");
+    assert!(!lineage.missing_earlier());
+}
+
+#[tokio::test]
+async fn rejects_cycles_and_out_of_bounds_offsets() {
+    let home = TempDir::new().expect("temp dir");
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
 
     let cycle_a = ThreadId::default();
     let cycle_b = ThreadId::default();

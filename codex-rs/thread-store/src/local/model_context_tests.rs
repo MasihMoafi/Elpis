@@ -138,6 +138,61 @@ async fn loads_recent_context_after_many_empty_wake_turns() {
 }
 
 #[tokio::test]
+async fn a_chat_whose_earlier_rollout_is_gone_resumes_with_what_remains_and_a_note() {
+    // His rust-obsidian chat (24 Oct): a later rollout of the chat pointed at an earlier one that
+    // had been deleted, and every read failed with "missing source rollout".
+    let home = TempDir::new().expect("temp dir");
+    let uuid = Uuid::from_u128(/*v*/ 1100);
+    let thread_id = ThreadId::from_string(&uuid.to_string()).expect("thread id");
+    let deleted = ThreadId::from_string(&Uuid::from_u128(/*v*/ 1101).to_string())
+        .expect("deleted rollout id");
+    let path = write_paginated_rollout(
+        home.path(),
+        "2025-01-03T13-00-20",
+        uuid,
+        [
+            user_message("history since the earlier part"),
+            turn_context(home.path(), "remaining"),
+        ],
+    );
+    set_history_base(
+        path.as_path(),
+        HistoryPosition {
+            thread_id: deleted,
+            end_ordinal_exclusive: 45_271,
+            end_byte_offset: 41_901_968,
+        },
+    );
+    let session_meta = codex_rollout::read_session_meta_line(path.as_path())
+        .await
+        .expect("read session metadata");
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+
+    let context = store
+        .load_latest_model_context(LoadThreadHistoryParams {
+            thread_id,
+            include_archived: false,
+        })
+        .await
+        .expect("a chat with a missing earlier part still opens");
+
+    assert_eq!(
+        serde_json::to_value(context.items).expect("serialize context"),
+        serde_json::to_value(vec![
+            RolloutItem::SessionMeta(session_meta),
+            RolloutItem::EventMsg(EventMsg::Warning(codex_protocol::protocol::WarningEvent {
+                message: "The earliest part of this chat is missing, so it opened with the \
+                          history that remains."
+                    .to_string(),
+            })),
+            user_message("history since the earlier part"),
+            turn_context(home.path(), "remaining"),
+        ])
+        .expect("serialize expected context")
+    );
+}
+
+#[tokio::test]
 async fn fork_context_excludes_items_after_frozen_cutoff() {
     let home = TempDir::new().expect("temp dir");
     let uuid = Uuid::from_u128(/*v*/ 1007);
