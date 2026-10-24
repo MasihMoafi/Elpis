@@ -20,11 +20,12 @@ function fixture(t, home = path.join(os.tmpdir(), `spawn-links-${randomUUID()}`)
   socket.send = raw => {
     const request = JSON.parse(raw); socket.sent.push(request);
     if (request.id === undefined) return;
-    const { threadId, ancestorThreadId } = request.params ?? {};
-    const listed = [...threads.values()].filter(thread => !thread.archived && (!ancestorThreadId || engineParents[thread.id] === ancestorThreadId));
+    const { threadId, ancestorThreadId, archived } = request.params ?? {};
+    const listed = [...threads.values()].filter(thread => !!thread.archived === !!archived && (!ancestorThreadId || engineParents[thread.id] === ancestorThreadId));
     const result = request.method === 'thread/list' ? { data: listed.map(thread => ({ ...thread, parentThreadId: engineParents[thread.id] })), nextCursor: null }
       : request.method === 'thread/read' ? { thread: structuredClone(threads.get(threadId)) }
-      : request.method === 'thread/archive' ? (threads.get(threadId).archived = true, {}) : {};
+      : request.method === 'thread/archive' ? (threads.get(threadId).archived = true, {})
+      : request.method === 'thread/unarchive' ? (delete threads.get(threadId).archived, { thread: structuredClone(threads.get(threadId)) }) : {};
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })));
   };
   const open = () => new DesktopClient(socket, { archiveDirectory: path.join(home, 'archives'), rewindHome: path.join(home, 'rewind'), spawnLinksFile: path.join(home, 'spawn-links.json'),
@@ -68,4 +69,17 @@ test('the agent chats the engine lists under a chat are archived with it, so del
   await f.client.archiveThread(MAKER, {});
   assert.deepEqual([...f.threads.values()].filter(thread => thread.archived).map(thread => thread.id), [MAKER, CHILD]);
   assert.deepEqual((await f.client.listThreads()).data.map(thread => thread.id), [OTHER], 'no agent of the deleted chat is left in the list');
+});
+
+test('unarchiving a chat brings back the agents archived with it, and not one archived on its own before', async t => {
+  // Archived chats › Unarchive gave Masih's chat back without its agents (24 Oct): they stayed archived, and the archive
+  // lists no agents, so nothing could bring them back.
+  const f = fixture(t, undefined, { [CHILD]: MAKER, [OTHER]: MAKER });
+  await f.client.archiveThread(OTHER, {});
+  await f.client.archiveThread(MAKER, {});
+  assert.deepEqual([...f.threads.values()].filter(thread => thread.archived).map(thread => thread.id), [MAKER, CHILD, OTHER]);
+  const back = await f.client.unarchiveThread(MAKER, {});
+  assert.deepEqual(back.restored, [CHILD], 'the window is told which agents came back');
+  assert.deepEqual((await f.client.listThreads({ ancestorThreadId: MAKER })).data.map(thread => thread.id), [CHILD]);
+  assert.equal(f.threads.get(OTHER).archived, true, 'an agent archived before its chat stays archived');
 });

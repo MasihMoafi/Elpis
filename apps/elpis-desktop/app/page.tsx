@@ -1220,7 +1220,12 @@ export default function Home() {
     try { const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {}); removeThreads(new Set([thread.id]), false); noteKept(keptNotice(title(thread), "archived", result.worktree)); }
     catch (e) { setError(`Could not archive “${title(thread)}”: ${e instanceof Error ? e.message : String(e)}`); }
   }
-  function unarchived(thread: Thread) { hidden.current.delete(thread.id); upsertThread(thread); refreshThreads().catch(e => setError(String(e))); }
+  /** A chat back from Archived chats, with the agents archived with it (`restored`), which show under it again. */
+  function unarchived(thread: Thread, restored: string[] = []) {
+    for (const id of [thread.id, ...restored]) hidden.current.delete(id);
+    upsertThread(thread); refreshThreads().catch(e => setError(String(e)));
+    if (restored.length) void loadChildren(thread.id, undefined, false);
+  }
   /** Edit-and-resend and regenerate: Elpis replaces the turn and every later one, then runs the new text. */
   async function replaceFrom(turnId: string, replacement: string, editKey?: string, retryModel?: string) {
     const thread = selectedRef.current; if (!thread) return;

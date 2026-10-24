@@ -61,7 +61,7 @@ type Props = {
   active?: boolean; threadId?: string;
   accountRefresh: number; onProvidersChanged?: () => Promise<void> | void;
   theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void;
-  onUnarchived: (thread: Thread) => void; onImported?: () => void; onDeleteThread: (thread: Thread) => Promise<void>; onBack?: () => void;
+  onUnarchived: (thread: Thread, restored: string[]) => void; onImported?: () => void; onDeleteThread: (thread: Thread) => Promise<void>; onBack?: () => void;
   onCustomize?: () => void;
   onChatContext?: () => void;
   onChatPermissions?: () => void; onChatModel?: () => void; modelChangeReason?: string; currentModel?: string | null; currentPermission?: string | null;

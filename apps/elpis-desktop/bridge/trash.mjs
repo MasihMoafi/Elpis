@@ -57,13 +57,19 @@ export async function createTrash({ client, file }) {
     async undo() {
       const at = entries.findLastIndex(entry => !entry.earlier);
       if (at < 0) return { threads: [], restored: [] };
-      const entry = entries[at], threads = [];
+      const entry = entries[at], threads = [], back = new Set();
       for (const [index, id] of entry.archived.entries()) {
-        try { const result = await client.unarchiveThread(id, {}); if (entry.ids.includes(id)) threads.push(result.thread); }
-        catch (error) { entry.archived = entry.archived.slice(index); entry.ids = entry.ids.filter(chat => entry.archived.includes(chat)); await save(); throw error; }
+        // Unarchiving a chat brings back the agents archived with it (client.unarchiveThread); those are done.
+        if (back.has(id)) continue;
+        try {
+          const result = await client.unarchiveThread(id, {});
+          for (const restored of [id, ...(result.restored ?? [])]) back.add(restored);
+          if (entry.ids.includes(id)) threads.push(result.thread);
+        }
+        catch (error) { entry.archived = entry.archived.slice(index).filter(chat => !back.has(chat)); entry.ids = entry.ids.filter(chat => entry.archived.includes(chat)); await save(); throw error; }
       }
       entries.splice(at, 1); await save();
-      return { threads, restored: entry.archived };
+      return { threads, restored: [...new Set([...entry.archived, ...back])] };
     },
     /** Deletes every waiting chat for good. A chat already gone is done; a failure waits for the next start. */
     async purge() {

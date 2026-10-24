@@ -1536,12 +1536,24 @@ export class DesktopClient extends EventEmitter {
       return { thread: { ...(await this.#current(id)), name } };
     });
   }
-  /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. */
+  /** The IDs of every chat listed under this one that is not archived: its agents and the chats it made. */
+  async #listedUnder(id) {
+    const ids = [];
+    for (let cursor; ;) {
+      const page = await this.listThreads({ ancestorThreadId: id, limit: 100, ...(cursor ? { cursor } : {}) }).catch(() => ({ data: [], nextCursor: null }));
+      ids.push(...page.data.map(thread => thread.id));
+      if (!page.nextCursor || page.nextCursor === cursor) return ids;
+      cursor = page.nextCursor;
+    }
+  }
+  /** Archives a chat and, natively, the agents it spawned; Elpis announces each with thread/archived. The agents archived
+   * with it are kept in its archive record, so Unarchive brings them back with it. */
   async archiveThread(id, body) {
     object(body, []);
+    const agents = await this.#listedUnder(id);
     const archived = await this.#mutate(id, async () => {
       const cwd = await this.#folderOf(threadId(id)).catch(() => null);
-      await this.#archiveHistory.record(id, 'Archived by you.');
+      await this.#archiveHistory.record(id, 'Archived by you.', agents);
       try { await this.#rpc('thread/archive', { threadId: id }); }
       catch (error) { await this.#archiveHistory.forget(id); throw error; }
       await this.#rewindHistory.hide(id, true);
@@ -1551,24 +1563,28 @@ export class DesktopClient extends EventEmitter {
     });
     // The engine archives its own spawn tree with the chat (codex thread_archive_response). Archive everything else listed under
     // the chat too (the chats it made with create_thread, anything the engine left), so deleting it leaves nothing behind.
-    for (let cursor; ;) {
-      const page = await this.listThreads({ ancestorThreadId: id, limit: 100, ...(cursor ? { cursor } : {}) }).catch(() => ({ data: [], nextCursor: null }));
-      for (const child of page.data) await this.archiveThread(child.id, {}).catch(() => {});
-      if (!page.nextCursor || page.nextCursor === cursor) break;
-      cursor = page.nextCursor;
-    }
+    for (const child of await this.#listedUnder(id)) await this.archiveThread(child, {}).catch(() => {});
     return archived;
   }
+  /** Brings a chat back with the agents archived with it; `restored` names those agents. */
   async unarchiveThread(id, body) {
     object(body, []);
-    return this.#mutate(id, async () => {
-      const result = await this.#rpc('thread/unarchive', { threadId: threadId(id) });
+    const { agents, ...back } = await this.#mutate(id, async () => {
+      const saved = await this.#archiveHistory.read(threadId(id)).catch(() => null);
+      const result = await this.#rpc('thread/unarchive', { threadId: id });
       if (result.thread?.id !== id) throw new BridgeError('Elpis restored another thread', 502);
       await this.#archiveHistory.forget(id);
       await this.#rewindHistory.hide(id, false);
       const worktree = isChatWorktreePath(result.thread.cwd) ? await restoreChatWorktree(result.thread.cwd) : null;
-      return { thread: this.#decorate(result.thread), ...(worktree ? { worktree } : {}) };
+      return { thread: this.#decorate(result.thread), ...(worktree ? { worktree } : {}), agents: Array.isArray(saved?.agents) ? saved.agents : [] };
     });
+    const restored = [];
+    for (const agent of agents) {
+      if (restored.includes(agent)) continue;
+      // An agent already back, or deleted since, has nothing to restore.
+      try { const result = await this.unarchiveThread(agent, {}); restored.push(agent, ...(result.restored ?? []).filter(other => !restored.includes(other))); } catch { /* see above */ }
+    }
+    return { ...back, ...(restored.length ? { restored } : {}) };
   }
   /** Edit-and-resend and regenerate: Elpis drops the given turn and every later one (thread/revert), then the new text starts a turn.
    * Without `text` it is Rewind to here: the turns are dropped and nothing else happens. */
@@ -2008,8 +2024,8 @@ class ArchiveHistory {
       return info;
     } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   }
-  async record(id, archiveReason) {
-    const info = { archivedAt: Date.now(), archiveReason };
+  async record(id, archiveReason, agents = []) {
+    const info = { archivedAt: Date.now(), archiveReason, ...(agents.length ? { agents } : {}) };
     await fs.promises.mkdir(this.directory, { recursive: true, mode: 0o700 });
     const file = this.file(id), temporary = `${file}.${randomUUID()}.pending`;
     await fs.promises.writeFile(temporary, JSON.stringify(info), { mode: 0o600 });
@@ -2034,7 +2050,7 @@ class ArchiveHistory {
       if (cursor && seen.has(cursor)) throw Error('Could not load every archived conversation.');
       seen.add(cursor);
     } while (cursor);
-    const data = (await Promise.all([...rows.values()].map(async row => ({ ...row, ...(await this.read(row.id) ?? {
+    const data = (await Promise.all([...rows.values()].map(async row => ({ ...row, ...(await this.read(row.id).then(info => info && { archivedAt: info.archivedAt, archiveReason: info.archiveReason }) ?? {
       archivedAt: row.archivedAt ?? null, archiveReason: row.archiveReason ?? 'Reason unavailable for this older archive.',
     }) })))).sort(archiveOrder).filter(row => !boundary || archiveOrder(row, boundary) > 0);
     const page = data.slice(0, limit), last = page.at(-1);

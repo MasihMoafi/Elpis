@@ -94,3 +94,22 @@ test('trash reports kept worktrees per chat and omits clean worktrees', async ()
   assert.deepEqual(await trash.trash(['root', 'other']), { trashed: ['root', 'other'], worktrees: [{ threadId: 'root', worktree: kept }] });
   assert.deepEqual((await trash.undo()).threads.map(thread => thread.id), ['root', 'other']);
 });
+
+test('Ctrl+Z works when unarchiving a chat brings its agents back with it: each chat is unarchived once', async () => {
+  // The real client restores the agents archived with a chat and refuses a chat that is not archived (24 Oct).
+  const client = fakeClient();
+  client.unarchiveThread = async id => {
+    client.calls.push(['unarchive', id]);
+    if (!client.threads.get(id).archived) throw Error(`thread ${id} is not archived`);
+    client.threads.get(id).archived = false;
+    const restored = id === 'root' ? ['agent'] : [];
+    for (const agent of restored) client.threads.get(agent).archived = false;
+    return { thread: client.threads.get(id), ...(restored.length ? { restored } : {}) };
+  };
+  const trash = await createTrash({ client, file: await temp() });
+  await trash.trash(['root']);
+  const back = await trash.undo();
+  assert.deepEqual([back.threads.map(thread => thread.id), back.restored], [['root'], ['root', 'agent']]);
+  assert.deepEqual(client.calls.filter(call => call[0] === 'unarchive'), [['unarchive', 'root']]);
+  assert.equal(client.threads.get('agent').archived, false);
+});

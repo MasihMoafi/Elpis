@@ -8,7 +8,7 @@ import { SettingRow, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/com
 import { DeleteChatsDialog, ThreadActions } from "@/components/thread-actions";
 import { api, unreadable, title, type Thread } from "@/lib/api";
 
-type Props = { onUnarchived: (thread: Thread) => void; onDelete: (thread: Thread) => Promise<void> };
+type Props = { onUnarchived: (thread: Thread, restored: string[]) => void; onDelete: (thread: Thread) => Promise<void> };
 
 type Page = { data: Thread[]; nextCursor: string | null };
 
@@ -38,9 +38,9 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
   async function unarchive(thread: Thread) {
     setBusy(thread.id); setError("");
     try {
-      const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/unarchive`, {});
+      const result = await api<{ thread: Thread; restored?: string[] }>(`/threads/${encodeURIComponent(thread.id)}/unarchive`, {});
       setThreads(prev => prev?.filter(item => item.id !== thread.id) ?? prev);
-      onUnarchived(result.thread);
+      onUnarchived(result.thread, result.restored ?? []);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
   }
