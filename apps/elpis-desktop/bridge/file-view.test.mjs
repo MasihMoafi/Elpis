@@ -73,6 +73,19 @@ test('reads a text file by a path inside the project, relative or absolute, with
   assert.deepEqual(await readFile(root, './src/../src/lib/parser.ts'), expected);
 });
 
+test('a chat link written from a repository one folder down opens that file; nothing deeper or hidden is guessed', async t => {
+  const { root, outside } = await project(); cleanup(t, root, outside);
+  const put = async (file, content) => { await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true }); await fs.writeFile(path.join(root, file), content); };
+  await put('repo/apps/desktop/SPEC.md', '# Spec\n');
+  await put('a/b/deep/only.md', 'deep');
+  await put('.hidden/apps/secret.md', 'hidden');
+  const found = await readFile(root, 'apps/desktop/SPEC.md');
+  assert.equal(found.path, 'repo/apps/desktop/SPEC.md');
+  assert.equal(found.content, '# Spec\n');
+  await refused(readFile(root, 'deep/only.md'), 404, /No such file/);
+  await refused(readFile(root, 'apps/secret.md'), 404, /No such file/);
+});
+
 test('says so for a binary file or one over 512 KB, instead of sending it; refuses what lies outside the project', async t => {
   const { root, outside } = await project(); cleanup(t, root, outside);
   assert.deepEqual(await readFile(root, 'blob.bin'), { path: 'blob.bin', binary: true, size: 5 });

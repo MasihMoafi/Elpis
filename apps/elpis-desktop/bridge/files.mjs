@@ -57,10 +57,30 @@ async function inside(cwd, target, kind, root = false) {
   const rel = within(abs, base) ? path.relative(base, abs) : within(abs, top) ? path.relative(top, abs) : null;
   if (rel === null) throw outside(kind);
   let real, info;
-  try { real = await fs.realpath(abs); info = await fs.stat(real); } catch { throw new BridgeError(`No such ${kind} in ${base}: ${rel.split(path.sep).join('/') || '.'}`, 404); }
+  try { real = await fs.realpath(abs); info = await fs.stat(real); }
+  catch {
+    // Masih, 24 Oct: "I should be able to open whatever I like here." An agent's link such as apps/elpis-desktop/SPEC.md
+    // is often relative to a repository one folder below the chat's folder: open the newest such file there.
+    const found = kind === 'file' && !path.isAbsolute(target) ? await oneFolderDown(base, top, rel) : null;
+    if (!found) throw new BridgeError(`No such ${kind} in ${base}: ${rel.split(path.sep).join('/') || '.'}`, 404);
+    return found;
+  }
   if (!within(real, top)) throw outside(kind);
   if (kind === 'file' ? !info.isFile() : !info.isDirectory()) throw new BridgeError(`Not a ${kind}.`);
   return { real, rel: rel.split(path.sep).join('/'), info };
+}
+/** The most recently changed `<folder>/<rel>` file among the project's direct subfolders, still inside the project. */
+async function oneFolderDown(base, top, rel) {
+  const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
+  let best = null;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const candidate = path.join(base, entry.name, rel);
+    const real = await fs.realpath(candidate).catch(() => null), info = real && await fs.stat(real).catch(() => null);
+    if (!info?.isFile() || !within(real, top)) continue;
+    if (!best || info.mtimeMs > best.info.mtimeMs) best = { real, rel: path.relative(base, candidate).split(path.sep).join('/'), info };
+  }
+  return best;
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || (a.name < b.name ? -1 : 1);
 
