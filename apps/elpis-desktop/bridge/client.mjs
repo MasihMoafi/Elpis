@@ -1541,7 +1541,8 @@ export class DesktopClient extends EventEmitter {
   /** Opens a chat live in this app: subscribes it and reports the turn it is running, if any. */
   async resume(id, body) {
     object(body, []);
-    const result = await this.#attach(id);
+    // A chat already followed (the list follows running ones) is read again, so its mode, Plan and effort still show.
+    const result = await this.#attach(id) ?? await this.#rpc('thread/resume', { threadId: id, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }).catch(() => null);
     void this.#releaseLeft(id);
     if (result) {
       const active = (result.initialTurnsPage?.data ?? result.thread.turns ?? []).find(turn => turn.status === 'inProgress');

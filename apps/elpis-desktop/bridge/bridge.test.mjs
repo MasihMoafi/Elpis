@@ -121,7 +121,7 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
         result = { data: data.map(thread => ({ ...thread, forkedFromId: null, ...(omitWorkflowParentInList && thread.source?.subAgent?.other?.startsWith('work_graph:') ? {parentThreadId:null} : {}) })), nextCursor }; break;
       }
       case 'thread/read': result = { thread: structuredClone(threads.get(request.params.threadId)) }; break;
-      case 'thread/resume': result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: [] } }; break;
+      case 'thread/resume': result = { ...(engineSettings.has(request.params.threadId) ? (({ sandboxPolicy, ...rest }) => ({ ...rest, sandbox: sandboxPolicy }))(engineSettings.get(request.params.threadId)) : {}), thread: structuredClone(threads.get(request.params.threadId)), model: threads.get(request.params.threadId).model ?? MODEL, collaborationMode: threads.get(request.params.threadId).collaborationMode, initialTurnsPage: { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] } }; break;
       case 'thread/turns/list': result = { data: threads.get(request.params.threadId).status?.type === 'active' ? [{ id: 'running-turn', status: 'inProgress' }] : [] }; break;
       case 'thread/fork': { const thread = { id: FORK, forkedFromId: request.params.threadId, source: 'appServer', canAcceptDirectInput: true, model: request.params.model, modelProvider: request.params.modelProvider, status: { type: 'idle' } }; threads.set(FORK, thread); result = { thread }; break; }
       case 'thread/name/set': threads.get(request.params.threadId).name = request.params.name; result = {}; break;
@@ -1221,7 +1221,8 @@ test('opening a chat rejoins it without overrides, reports its running turn, and
     { threadId: ROOT, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } });
   const again = await client.resume(ROOT, {});
   assert.equal(again.thread.id, ROOT);
-  assert.equal(socket.sent.filter(message => message.method === 'thread/resume').length, 1, 'an owned chat is not resumed twice');
+  assert.deepEqual(socket.sent.filter(message => message.method === 'thread/resume').map(message => message.params).at(-1),
+    { threadId: ROOT, excludeTurns: true, initialTurnsPage: { limit: 1, sortDirection: 'desc', itemsView: 'summary' } }, 'an owned chat is read again without overrides');
   const agent = await client.resume(CHILD, {});
   assert.equal(agent.thread.desktopAccess.mode, 'continue');
   await assert.rejects(client.resume(ROOT, { model: 'override' }), /Unsupported/);
@@ -1927,6 +1928,27 @@ test('permission modes become Elpis approval and sandbox settings, and resume re
     await client.createThread({ permissions: 'ask' });
     const started = socket.sent.findLast(message => message.method === 'thread/start').params;
     assert.deepEqual([started.approvalPolicy, started.approvalsReviewer, started.sandbox], ['on-request', 'user', 'workspace-write']);
+  } finally { client.close(); }
+});
+
+test('a running chat the list already follows still reports its mode, Plan and effort when opened', async () => {
+  const { client, threads, engineSettings } = fixture(); await client.initialize();
+  try {
+    Object.assign(threads.get(ROOT), { status: { type: 'active' }, collaborationMode: { mode: 'plan' } });
+    engineSettings.set(ROOT, { approvalPolicy: 'never', approvalsReviewer: 'user', sandboxPolicy: { type: 'dangerFullAccess' }, activePermissionProfile: null, reasoningEffort: 'xhigh' });
+    await client.listThreads({});
+    await new Promise(resolve => setTimeout(resolve, 10)); // the list follows the running chat in the background
+    const opened = await client.resume(ROOT, {});
+    assert.equal(opened.permissions, 'full');
+    assert.equal(opened.planMode, true);
+    assert.equal(opened.thread.reasoningEffort, 'xhigh');
+    assert.equal(opened.activeTurnId, 'running-turn');
+    // A chat left as configured reports Ask for approval, not Full access.
+    delete threads.get(ROOT).collaborationMode;
+    engineSettings.set(ROOT, { approvalPolicy: 'on-request', approvalsReviewer: 'user', sandboxPolicy: { type: 'workspaceWrite' }, activePermissionProfile: null, reasoningEffort: null });
+    const again = await client.resume(ROOT, {});
+    assert.equal(again.permissions, 'ask');
+    assert.equal(again.planMode, false);
   } finally { client.close(); }
 });
 
