@@ -1,5 +1,7 @@
 // Opt-in subscription acceptance; no credentials are copied, and engine threads are ephemeral.
-// ELPIS_PLAYWRIGHT_PACKAGE=... node tests/love-spot-voice.runtime.mjs [--call|--barge]
+// ELPIS_PLAYWRIGHT_PACKAGE=... [LOVE_SPOT_MODEL=claude/sonnet] node tests/love-spot-voice.runtime.mjs [--call|--barge|--written]
+// --written: he writes a note, Voice is on, and Matilda must start speaking while she is still writing her reply (24 Oct:
+// "love space doesn't speak in real-time when it types"), on any model ("doesn't have speech for anthropic models").
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,7 +13,8 @@ import { startDesktopServer } from '../bridge/server.mjs';
 import { createLoveSpot } from '../bridge/love-spot-store.cjs';
 const require = createRequire(import.meta.url), { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');
-const run = promisify(execFile), barge = process.argv.includes('--barge'), live = barge || process.argv.includes('--call');
+const run = promisify(execFile), barge = process.argv.includes('--barge'), live = barge || process.argv.includes('--call'), written = process.argv.includes('--written');
+const model = process.env.LOVE_SPOT_MODEL || 'gpt-6-luna', provider = model.startsWith('claude/') ? {} : { modelProvider: 'openai' };
 const root = await fs.mkdtemp(path.join(process.env.HOME, '.cache/elpis-briefs/cc/lovevoice-live-'));
 const directory = path.join(root, 'board'); await fs.mkdir(directory);
 const wav = path.join(root, 'microphone.wav');
@@ -33,15 +36,15 @@ if (barge) {
   duration = 10000 + Number((await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', first])).stdout) * 1000;
 }
 const client = await DesktopClient.connect(), side = new Set();
-const result = { live, barge, voice: (await client.voiceStatus()).voice, speechDurationMs: duration, firstTextDeltaMs: null, firstBoardTextMs: null, firstPlayedAudioMs: null, transcript: '', userTurns: 0, events: [], errors: [], requests: [], root };
+const result = { live, barge, written, model, turnCompletedMs: null, voice: (await client.voiceStatus()).voice, speechDurationMs: duration, firstTextDeltaMs: null, firstBoardTextMs: null, firstPlayedAudioMs: null, transcript: '', userTurns: 0, events: [], errors: [], requests: [], root };
 let speechEnd = 0, app, browser, page;
 const proxy = new Proxy(client, { get(target, key) {
   if (key === 'listThreads') return async () => ({ data: [], nextCursor: null });
   if (key === 'createThread') return async body => {
-    const made = await client.sideRpc('thread/start', { model: 'gpt-6-luna', modelProvider: 'openai', cwd: directory, developerInstructions: body.instructions, approvalPolicy: 'never', sandbox: 'read-only' });
+    const made = await client.sideRpc('thread/start', { model, ...provider, cwd: directory, developerInstructions: body.instructions, approvalPolicy: 'never', sandbox: 'read-only' });
     side.add(made.thread.id); return made;
   };
-  if (key === 'send') return async (id, body) => client.sideRpc('turn/start', { threadId: id, model: 'gpt-6-luna', effort: 'low', input: [{ type: 'text', text: [body.text, ...body.attachments.filter(a => a.type === 'text').map(a => a.text)].join('\n\n'), text_elements: [] }] });
+  if (key === 'send') return async (id, body) => client.sideRpc('turn/start', { threadId: id, model, effort: 'low', input: [{ type: 'text', text: [body.text, ...body.attachments.filter(a => a.type === 'text').map(a => a.text)].join('\n\n'), text_elements: [] }] });
   if (key === 'setServiceTier') return async () => ({});
   const value = target[key]; return typeof value === 'function' ? value.bind(target) : value;
 } });
@@ -51,6 +54,7 @@ client.on('side', message => {
   if ((message.method === 'item/agentMessage/delta' || message.method === 'thread/realtime/transcript/delta' && message.params.role === 'assistant') && result.firstTextDeltaMs === null && speechEnd) result.firstTextDeltaMs = Date.now() - speechEnd;
   if (message.method === 'thread/realtime/transcript/done' && message.params.role === 'assistant') result.transcript += message.params.text;
   if (message.method === 'thread/realtime/transcript/done' && message.params.role === 'user') result.userTurns++;
+  if (message.method === 'turn/completed' && side.has(message.params?.threadId) && result.turnCompletedMs === null && speechEnd) result.turnCompletedMs = Date.now() - speechEnd;
 });
 try {
   app = await startDesktopServer({ client: proxy, loveSpot: { directory, screenshots: path.join(root, 'screenshots') }, elpisHome: root, trashFile: path.join(root, 'trash.json') });
@@ -72,15 +76,23 @@ try {
     navigator.mediaDevices.getUserMedia = async (...args) => { const stream = await mic(...args); window.playbackProof.micBegan = Date.now(); return stream; };
   });
   page.on('pageerror', cause => result.errors.push(cause.message));
-  page.on('request', request => { const url = new URL(request.url()); if (request.method() === 'POST' && /voice|talk/.test(url.pathname)) result.requests.push(url.pathname); });
+  page.on('request', request => { const url = new URL(request.url()); if (request.method() === 'POST' && /voice|talk/.test(url.pathname)) result.requests.push({ path: url.pathname, ms: speechEnd ? Date.now() - speechEnd : null }); });
   await page.goto(app.url); await page.getByRole('button', { name: 'Love Spot', exact: true }).click();
   await page.locator('.excalidraw canvas').first().waitFor();
-  if (live) await page.getByRole('button', { name: 'Start voice chat', exact: true }).click();
-  else await page.getByRole('group', { name: 'Voice note', exact: true }).getByRole('button', { name: 'Dictate message', exact: true }).click();
-  await page.waitForFunction(() => window.playbackProof.micBegan > 0);
-  speechEnd = await page.evaluate(duration => window.playbackProof.micBegan + duration, duration);
-  await page.waitForTimeout(Math.max(0, speechEnd - Date.now()) + 300);
-  if (!live) await page.getByRole('button', { name: 'Stop recording and transcribe' }).click();
+  if (written) {
+    // He writes on the board as he would; the moment the note is done is time zero.
+    const bounds = await page.locator('.excalidraw').boundingBox();
+    await page.mouse.click(bounds.x + 400, bounds.y + 300); await page.keyboard.press('t'); await page.mouse.click(bounds.x + 400, bounds.y + 300);
+    await page.keyboard.type('Matilda, tell me in six short sentences about a lighthouse keeper and her cat. Do not use tools.'); await page.keyboard.press('Escape');
+    speechEnd = Date.now();
+  } else {
+    if (live) await page.getByRole('button', { name: 'Start voice chat', exact: true }).click();
+    else await page.getByRole('group', { name: 'Voice note', exact: true }).getByRole('button', { name: 'Dictate message', exact: true }).click();
+    await page.waitForFunction(() => window.playbackProof.micBegan > 0);
+    speechEnd = await page.evaluate(duration => window.playbackProof.micBegan + duration, duration);
+    await page.waitForTimeout(Math.max(0, speechEnd - Date.now()) + 300);
+  }
+  if (!live && !written) await page.getByRole('button', { name: 'Stop recording and transcribe' }).click();
   for (const deadline = Date.now() + 45000; Date.now() < deadline;) {
     if (result.firstBoardTextMs === null) {
       const board = JSON.parse(await fs.readFile(path.join(directory, 'scene.excalidraw'), 'utf8').catch(() => '{"elements":[]}'));
@@ -98,6 +110,11 @@ try {
   }
   result.board = JSON.parse(await fs.readFile(path.join(directory, 'scene.excalidraw'), 'utf8').catch(() => '{"elements":[]}')).elements.filter(e => e.type === 'text' && !e.isDeleted).map(e => ({ id: e.id, text: e.originalText || e.text }));
   assert.ok(result.firstPlayedAudioMs !== null, 'Matilda produced no verified played audio');
+  if (written) {
+    for (let n = 0; n < 600 && result.turnCompletedMs === null; n++) await page.waitForTimeout(100);
+    assert.ok(result.turnCompletedMs !== null, 'her written reply never finished');
+    assert.ok(result.firstPlayedAudioMs < result.turnCompletedMs, `She spoke only after writing (${result.firstPlayedAudioMs} ms, reply finished at ${result.turnCompletedMs} ms)`);
+  }
   if (live) {
     let energy = result.playback.energy;
     const secondSpeechEnd = speechEnd + captureDuration - duration;
