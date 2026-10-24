@@ -103,7 +103,7 @@ fn reasoning(encrypted_len: usize) -> ResponseItem {
 
 /// Seeded lengths: the edges, then many spread across real reasoning sizes (1.5k to 60k).
 fn sampled_lengths() -> Vec<usize> {
-    let mut lengths = vec![0, 1, 155, 156, 157, 1_559, 1_560, 1_592, 4_096, 68_620];
+    let mut lengths = vec![0, 1, 866, 867, 1_286, 1_287, 1_288, 1_592, 2_701, 2_702, 68_620];
     let mut state: u64 = 0x5eed_2026_1024;
     for _ in 0..500 {
         state = state
@@ -114,25 +114,66 @@ fn sampled_lengths() -> Vec<usize> {
     lengths
 }
 
+fn history_estimate(item: &ResponseItem) -> u64 {
+    u64::try_from(estimate_item_token_count(item).max(0)).expect("non-negative")
+}
+
 #[test]
-fn encrypted_reasoning_costs_one_token_per_fifteen_point_six_characters() {
-    assert_eq!(encrypted_reasoning_tokens(""), 0);
-    assert_eq!(encrypted_reasoning_tokens("g"), 1);
-    assert_eq!(encrypted_reasoning_tokens(&"g".repeat(156)), 10);
-    assert_eq!(encrypted_reasoning_tokens(&"g".repeat(1_560)), 100);
-    assert_eq!(encrypted_reasoning_tokens(&"g".repeat(156_000)), 10_000);
+fn encrypted_state_costs_a_fixed_overhead_then_one_token_per_fourteen_characters() {
+    let tokens = |len: usize| encrypted_reasoning_tokens(&"g".repeat(len));
+    assert_eq!(tokens(0), 0);
+    assert_eq!(tokens(1_287), 0);
+    assert_eq!(tokens(1_288), 1);
+    assert_eq!(tokens(1_287 + 1_414), 100);
+    assert_eq!(tokens(1_287 + 141_400), 10_000);
+}
+
+#[test]
+fn reasoning_matches_what_the_provider_reported_in_his_chats() {
+    // Every gpt-6.1-sol response with reasoning in his chats of 20-24 Oct: the reported reasoning
+    // tokens, then the encrypted length of each reasoning item (numbers only).
+    let measured: serde_json::Value =
+        serde_json::from_str(include_str!("elpis_reasoning_cost.json")).expect("fixture");
+    let chats = measured["chats"].as_array().expect("chats");
+    let (mut reported, mut estimated, mut history) = (0u64, 0u64, 0u64);
+    for chat in chats {
+        let (mut chat_reported, mut chat_estimated) = (0u64, 0u64);
+        let responses = chat.as_array().expect("responses");
+        for response in responses {
+            let numbers: Vec<u64> = response
+                .as_array()
+                .expect("response")
+                .iter()
+                .map(|value| value.as_u64().expect("number"))
+                .collect();
+            chat_reported += numbers[0];
+            for &len in &numbers[1..] {
+                let item = reasoning(usize::try_from(len).expect("length"));
+                chat_estimated += classify(&prompt(), std::slice::from_ref(&item)).reasoning;
+                history += history_estimate(&item);
+            }
+        }
+        if responses.len() >= 20 {
+            let ratio = chat_estimated as f64 / chat_reported as f64;
+            assert!((0.95..1.2).contains(&ratio), "a chat at {ratio:.3}");
+        }
+        reported += chat_reported;
+        estimated += chat_estimated;
+    }
+    assert_eq!(reported, 2_625_861, "the fixture is the measured set");
+    let ratio = estimated as f64 / reported as f64;
+    assert!((0.97..1.03).contains(&ratio), "all chats at {ratio:.3}");
+    // The shared estimate it replaces counted nearly three times what the model was sent.
+    assert!(history as f64 / reported as f64 > 2.5);
 }
 
 #[test]
 fn reasoning_is_counted_by_its_measured_cost_not_the_history_estimate() {
-    // A reasoning item of the median size in his chat (about 7.3k characters, about 430 tokens of
-    // reasoning reported by the provider).
     let item = reasoning(7_287);
     let snapshot = classify(&prompt(), std::slice::from_ref(&item));
 
-    assert_eq!(snapshot.reasoning, 468);
-    let history_estimate = u64::try_from(estimate_item_token_count(&item)).expect("positive");
-    assert_eq!(history_estimate, 1_204);
+    assert_eq!(snapshot.reasoning, 425);
+    assert_eq!(history_estimate(&item), 1_204);
     assert_eq!(
         snapshot.estimated_total,
         snapshot.system_instructions + snapshot.reasoning
@@ -149,14 +190,18 @@ fn reasoning_without_encrypted_content_weighs_nothing() {
 }
 
 #[test]
-fn compaction_keeps_the_shared_history_estimate() {
-    let compaction = item(json!({
-        "type": "compaction",
-        "id": "c1",
-        "encrypted_content": "g".repeat(68_620),
-    }));
-    let expected = u64::try_from(estimate_item_token_count(&compaction)).expect("positive");
-    assert_eq!(classify(&prompt(), &[compaction]).reasoning, expected);
+fn compaction_is_sized_at_the_same_measured_rate() {
+    let blob = "g".repeat(57_272);
+    for compaction in [
+        item(json!({"type": "compaction", "id": "c1", "encrypted_content": blob})),
+        item(json!({"type": "context_compaction", "id": "c2", "encrypted_content": blob})),
+    ] {
+        let snapshot = classify(&prompt(), std::slice::from_ref(&compaction));
+        // His first compaction of 20 Oct: 57,272 characters, about 4,080 tokens in the next request.
+        assert_eq!(snapshot.reasoning, encrypted_reasoning_tokens(&blob));
+        assert_eq!(snapshot.reasoning, 3_960);
+        assert!(snapshot.reasoning < history_estimate(&compaction));
+    }
 }
 
 #[test]
@@ -164,15 +209,13 @@ fn reasoning_estimate_rules_hold_for_any_length() {
     let lengths = sampled_lengths();
     for &len in &lengths {
         let tokens = encrypted_reasoning_tokens(&"g".repeat(len));
-        let exact = len as f64 / 15.6;
+        let exact = len.saturating_sub(1_287) as f64 / 14.14;
         // Rounded up, never by a whole token.
-        assert!(
-            tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0,
-            "{len}"
-        );
-        // Every real reasoning item is at least 1.5k characters; there the old estimate is larger.
-        if len >= 1_592 {
-            let old = u64::try_from(estimate_item_token_count(&reasoning(len))).expect("positive");
+        assert!(tokens as f64 >= exact - 1e-9 && (tokens as f64) < exact + 1.0, "{len}");
+        // Never above the shared estimate; below it wherever there is anything to count.
+        let old = history_estimate(&reasoning(len));
+        assert!(tokens <= old, "{len}: {tokens} > {old}");
+        if tokens > 0 {
             assert!(tokens < old, "{len}: {tokens} >= {old}");
         }
         // Classification adds exactly this and keeps the parts summing to the total.

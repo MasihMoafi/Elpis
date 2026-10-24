@@ -73,6 +73,14 @@ pub(crate) fn classify(prompt: &Prompt, input: &[ResponseItem]) -> ContextAttrib
             ResponseItem::Reasoning {
                 encrypted_content: Some(content),
                 ..
+            }
+            | ResponseItem::Compaction {
+                encrypted_content: content,
+                ..
+            }
+            | ResponseItem::ContextCompaction {
+                encrypted_content: Some(content),
+                ..
             } => encrypted_reasoning_tokens(content),
             _ => u64::try_from(estimate_item_token_count(item).max(0)).unwrap_or(u64::MAX),
         };
@@ -123,20 +131,26 @@ pub(crate) fn classify(prompt: &Prompt, input: &[ResponseItem]) -> ContextAttrib
     snapshot
 }
 
-/// Characters of a reasoning item's `encrypted_content` per token it adds to later requests, times
-/// ten. Measured on 24 Oct 2026 over 4,511 consecutive requests in 13 gpt-6.1-sol chats: each
-/// character of a response's encrypted reasoning grew the next request's input by 0.0641 tokens
-/// (one token per 15.6 characters). The shared history estimate (`estimate_item_token_count`,
-/// copied from Codex: decoded bytes minus 650, over four) counts about 2.6 times that, which made
-/// "Reasoning + compaction" the largest share of every reasoning-heavy chat.
-const ENCRYPTED_REASONING_CHARS_PER_TOKEN_X10: u64 = 156;
+/// Encrypted model state (`encrypted_content` of reasoning and compaction items) is sized as the
+/// shared history estimate is, with constants measured on his chats instead of Codex's: a fixed
+/// overhead, then one token per 14.14 characters. Fitted on 25 Oct 2026 to the reported
+/// `reasoning_output_tokens` of 4,363 gpt-6.1-sol responses in 24 chats
+/// (`elpis_reasoning_cost.json`); held out one chat at a time, 18 of 21 chats with 20 or more
+/// responses land within 3%. The shared estimate (`estimate_item_token_count`, Codex's decoded
+/// bytes minus 650, over four) counts 2.8 times what was reported, which made "Reasoning +
+/// compaction" the largest share of every reasoning-heavy chat (A225, A260). The first request
+/// after each of his remote compactions put a compaction item at 13.9 to 16.9 characters a token,
+/// so compaction uses the same rate.
+const ENCRYPTED_OVERHEAD_CHARS: u64 = 1_287;
+const ENCRYPTED_CHARS_PER_TOKEN_X100: u64 = 1_414;
 
-/// Tokens one encrypted reasoning item occupies in a request, from its encrypted length.
+/// Tokens one encrypted reasoning or compaction item occupies in a request, from its length.
 pub(crate) fn encrypted_reasoning_tokens(encrypted_content: &str) -> u64 {
     u64::try_from(encrypted_content.len())
         .unwrap_or(u64::MAX)
-        .saturating_mul(10)
-        .div_ceil(ENCRYPTED_REASONING_CHARS_PER_TOKEN_X10)
+        .saturating_sub(ENCRYPTED_OVERHEAD_CHARS)
+        .saturating_mul(100)
+        .div_ceil(ENCRYPTED_CHARS_PER_TOKEN_X100)
 }
 
 #[cfg(test)]

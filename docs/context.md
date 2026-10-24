@@ -549,15 +549,17 @@ retained items, not that the effort setting is 18%. The original reported 18%
 cannot be validated without its matching request snapshot. Provider-reported
 reasoning output tokens in `/usage` are a separate quantity.
 
-Encrypted reasoning is sized at one token per 15.6 characters of its
-`encrypted_content` (core `encrypted_reasoning_tokens`, mirrored by the desktop's
-transcript estimate). That rate was measured on 24 Oct 2026 over 4,511 consecutive
-gpt-6.1-sol requests: each character of a reply's encrypted reasoning grew the next
-request's input by 0.0641 tokens. The shared history estimate it replaces (decoded
-bytes minus 650, over four) counted about 2.6 times that, so a reasoning-heavy chat
-showed reasoning near half the window (232.1k of 475k) when about a third
-(~155k) was really there. Compaction items keep the shared estimate; their rate is
-not yet measured.
+Encrypted model state (the `encrypted_content` of reasoning and compaction items)
+is sized as Codex sizes it, a fixed overhead then a per-character rate, with
+constants measured on Masih's chats: 1,287 characters, then one token per 14.14
+(core `encrypted_reasoning_tokens`, mirrored by the desktop's transcript estimate).
+They were fitted on 25 Oct 2026 to the reported `reasoning_output_tokens` of 4,363
+gpt-6.1-sol responses in 24 chats (`codex-rs/core/src/elpis_reasoning_cost.json`,
+numbers only); held out one chat at a time, 18 of 21 chats land within 3%.
+Codex's constants (decoded bytes minus 650, over four) counted 2.8 times what was
+reported, so a reasoning-heavy chat showed "Reasoning + compaction" near half the
+window (232.1k of 475k). The first request after each remote compaction put a
+compaction item at 13.9 to 16.9 characters a token, so compaction uses the same rate.
 
 ---
 
