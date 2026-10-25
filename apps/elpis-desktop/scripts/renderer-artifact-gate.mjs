@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/chat-activity.test.cjs": {
+      "blob": "b764612da30e5c3f5da30fdd9b1cde08d176abe8",
+      "approval": "81dd022e9dd5d055cbb15110fb2649751f8578f6",
+      "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion."
+    },
     "tests/composer-consistency.test.cjs": {
       "blob": "f0a5e4ab3f6103ddaec3614fbb7ae88109027c22",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
