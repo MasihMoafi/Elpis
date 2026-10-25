@@ -27,13 +27,13 @@ export function AppMenus(props: AppMenusProps) {
   const run = (command: AppMenuCommand) => {
     const p = callbacks.current;
     const actions: Partial<Record<AppMenuCommand, Action>> = { "new-chat": p.onNewChat, "open-folder": p.onOpenFolder, settings: p.onSettings, sidebar: p.onToggleSidebar, back: p.onBack, forward: p.onForward, shortcuts: p.onShortcuts };
-    if (actions[command]) { actions[command]!(); return; }
     const target = previous.current;
     if (target?.isConnected) {
       target.focus({ preventScroll: true });
       if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && textSelection.current) target.setSelectionRange(textSelection.current.start, textSelection.current.end);
       else if (selection.current?.startContainer.isConnected) { const current = window.getSelection(); current?.removeAllRanges(); current?.addRange(selection.current); }
     }
+    if (actions[command]) { actions[command]!(); return; }
     void window.elpisDesktop?.menu?.command(command as NativeMenuCommand).catch(cause => callbacks.current.onError(cause instanceof Error ? cause.message : String(cause)));
   };
   useEffect(() => {
