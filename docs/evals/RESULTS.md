@@ -220,7 +220,10 @@ input plus output and all pruner usage, including cached input once. The ON tota
 includes **37,321 Luna tokens**. ON used **77.7% more tokens** overall (web-server
 138.4% more; SQLite 24.2% more). Different agent rollouts and shared cache state
 limit interpretation. Dollar cost was not measured through the saved login.
-These runs demonstrated no token or monetary savings.
+Sol alone used **703,692 tokens OFF versus 1,213,188 ON (+72.4%)**. Its uncached
+input rose 18.1% and output rose 43.0%; the linked recovery report separates
+cached input, uncached input and output. These runs demonstrated no main-model
+token savings or monetary savings.
 
 ---
 
