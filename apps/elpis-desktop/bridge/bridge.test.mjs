@@ -2011,6 +2011,17 @@ test('permission modes become Elpis approval and sandbox settings, and resume re
   } finally { client.close(); }
 });
 
+test('an agent chat can keep its own permission choice without forking or changing its parent', async () => {
+  const { client, engineSettings, socket } = fixture(); await client.initialize();
+  try {
+    const parent = structuredClone(engineSettings.get(ROOT));
+    assert.equal((await client.setPermissions(CHILD, { permissions: 'full' })).permissions, 'full');
+    assert.equal(engineSettings.get(CHILD).approvalPolicy, 'never');
+    assert.deepEqual(engineSettings.get(ROOT), parent);
+    assert.equal(socket.sent.some(row => row.method === 'thread/fork'), false);
+  } finally { client.close(); }
+});
+
 test('a running chat the list already follows still reports its mode, Plan and effort when opened', async () => {
   const { client, threads, engineSettings } = fixture(); await client.initialize();
   try {

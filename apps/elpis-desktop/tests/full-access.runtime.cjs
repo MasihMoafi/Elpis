@@ -33,16 +33,19 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const id = seedRun.stdout.split('\n').filter(Boolean).map(s => { try { return JSON.parse(s); } catch { return {}; } }).find(row => row.type === 'thread.started')?.thread_id;
   assert.ok(id, seedRun.stdout);
   const { DatabaseSync } = require('node:sqlite');
+  const appHome = await fs.mkdtemp(path.join(os.tmpdir(), 'e2e-'));
+  await fs.mkdir(path.join(appHome, 'elpis'));
   for (const name of await fs.readdir(seed)) if (/^state_.*\.sqlite$/.test(name)) {
     const db = new DatabaseSync(path.join(seed, name));
-    db.prepare('UPDATE threads SET source = ? WHERE id = ?').run('cli', id); db.close();
+    db.prepare('UPDATE threads SET source = ?, originator = ?, rollout_path = replace(rollout_path, ?, ?) WHERE id = ?').run('cli', 'codex-tui', seed, path.join(appHome, 'elpis'), id); db.close();
   }
   for (const file of await fs.readdir(path.join(seed, 'sessions'), { recursive: true })) if (file.endsWith(`${id}.jsonl`)) {
     const filePath = path.join(seed, 'sessions', file), rows = (await fs.readFile(filePath, 'utf8')).trim().split('\n').map(JSON.parse);
     const meta = rows.find(row => row.type === 'session_meta'); meta.payload.source = 'cli'; meta.payload.originator = 'codex-tui';
+    for (const row of rows) if (row.type === 'turn_context') { row.payload.approval_policy = 'on-request'; row.payload.active_permission_profile = { id: ':danger-full-access' }; }
     await fs.writeFile(filePath, rows.map(JSON.stringify).join('\n') + '\n');
   }
-  const extra = { ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'), ELPIS_NO_AGY: '1', FAKE_ACP_MODELS: 'haiku', FAKE_ACP_LOG: path.join(root, 'acp.jsonl') };
+  const extra = { ELPIS_E2E_HOME: appHome, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mjs'), ELPIS_NO_AGY: '1', FAKE_ACP_MODELS: 'haiku', FAKE_ACP_LOG: path.join(root, 'acp.jsonl') };
   app = await startApp({ app: process.env.ELPIS_TEST_APP, engine: process.env.ELPIS_TEST_ENGINE, port: Number(process.env.ELPIS_TEST_PORT || 9732), seed, env: extra });
   let page = app.page;
   await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 }); await skipFirstRun(page);
