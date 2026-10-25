@@ -23,7 +23,8 @@ async function launch(args, flushText, flushBrowsers, canRestart = async () => t
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
     require: name => name === './app-updates.cjs' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }
-      : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } } : require(name) });
+      : name === './tray.cjs' ? { createCloseToTray: () => ({}), createTray: () => { calls.push('tray'); return { destroy() {} }; } }
+      : name === './screenshot-popup.cjs' ? { createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }), drawsOnWayland: () => false } : require(name) });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), context);
   vm.runInContext('server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;', context);
   ready();
