@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/sidebar-creators.test.cjs": {
+      "blob": "21f7ae074660ae529bc05d619b5fcab749512163",
+      "approval": "0ff5340483d4f94b7baa1de092fcd06cf4b5b4e2",
+      "reason": "Isolated fixtures use the standard temporary directory on a fresh runner, without depending on a personal cache folder. All creator-history, folded-branch, keyboard, provider and persistence assertions remain."
+    },
     "tests/browser-panel.test.cjs": {
       "blob": "3272ad4cadc3dc05d26728f8553f89907463e0e0",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
@@ -65,7 +70,7 @@ export const retainedUpdates = {
       "reason": "TESTING.md: wait for observable states. Await opened lazy transcript bodies and prune rows before counting them; retain exact content, ordering and failure assertions."
     },
     "tests/smart-prune.test.cjs": {
-      "blob": "d307653982b4267388401f44378f449b197c9918",
+      "blob": "cdf2e920832420bb3e8ddba6f4ce9f8b676f2639",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "TESTING.md: wait for observable states. Await opened lazy transcript bodies and prune rows before counting them; retain exact content, ordering and failure assertions."
     },
@@ -145,7 +150,7 @@ export const retainedUpdates = {
       "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade. Masih 24 Oct: a dark opening before a light app is wrong; the opening follows the app theme. Preserve every animation, timing and click-through assertion."
     },
     "tests/controls.cjs": {
-      "blob": "ac87649f1f3084bd04af99ed3db59b053b1a97fd",
+      "blob": "774e13941df85a01c87b28003fa4201e1aa258a3",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. Footer, Masih 22 Oct: \"theme should be next to settings\". The helpers open Settings with the gear and switch the theme with its button (c88df8e6d). A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
@@ -209,7 +214,7 @@ export const retainedUpdates = {
       "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
     },
     "tests/desktop-polish.test.cjs": {
-      "blob": "06fbcdd7f4c384861b17bda2fd8b312fea84d274",
+      "blob": "f99963a4166d01d245cd7b6d6e7a0db3cd83ecab",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
@@ -524,6 +529,7 @@ export async function runUiFile(file, root, evidence, home, env = process.env) {
     ELPIS_CONFIG_DIR: path.join(home, 'elpis'), XDG_CONFIG_HOME: path.join(home, '.config'), XDG_CACHE_HOME: path.join(home, '.cache'),
     XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'), TMPDIR: path.dirname(home),
     EXCALIDRAW_LOCAL_DIR: path.join(home, 'love-spot'), EXCALIDRAW_SCREENSHOTS_DIR: path.join(home, 'Screenshots') };
+  if (env.ELPIS_REVIEW_SHOTS) childEnv.ELPIS_REVIEW_SHOTS = path.join(env.ELPIS_REVIEW_SHOTS, file.source);
   await fs.mkdir(childEnv.TMPDIR, { recursive: true });
   delete childEnv.NODE_TEST_CONTEXT;
   console.log(`RUN ${file.source}: ${file.name}`);
