@@ -98,6 +98,23 @@ test("every workflow role uses Full access without asking and keeps its effort",
   await assert.rejects(a.conn.agent.request('session/new', { cwd: a.dir, mcpServers: [], _meta: { elpis: { workflow: { kind: 'implement', writeScopes: ['../escape'] } } } }), /scope/i);
 });
 
+test('a private ACP agent follows changing default scopes and never asks', { timeout: 20000 }, async t => {
+  let configFile;
+  const write = mode => fs.writeFileSync(configFile, JSON.stringify({ config: { approval_policy: mode === 'full' ? 'never' : 'on-request', default_permissions: mode === 'full' ? ':danger-full-access' : ':workspace' } }));
+  const a = start(t, { command: dir => {
+    configFile = path.join(dir, 'config.json'); write('ask');
+    return { argv: [process.execPath, AGENT], env: { ELPIS_ENGINE_BIN: ENGINE, FAKE_ENGINE_CONFIG: configFile } };
+  } });
+  const { sessionId } = await a.open({ elpis: { workflow: { kind: 'verify', writeScopes: [] } } });
+  const started = a.engine().find(row => row.method === 'thread/start').params;
+  assert.deepEqual([started.approvalPolicy, started.permissions], ['never', ':workspace']);
+  for (const mode of ['full', 'ask', 'full']) {
+    write(mode); await a.prompt(sessionId, `Follow ${mode}`);
+    const turn = a.engine().filter(row => row.method === 'turn/start').at(-1).params;
+    assert.deepEqual([turn.approvalPolicy, turn.permissions], ['never', mode === 'full' ? ':danger-full-access' : ':workspace']);
+  }
+});
+
 test("initialize and session/new start an Elpis thread with the chosen model and instructions", { timeout: 20000 }, async (t) => {
   const a = start(t);
   const { init, sessionId } = await a.open({ systemPrompt: { append: "Be brief and exact." } });

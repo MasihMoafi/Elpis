@@ -108,23 +108,52 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const helperFullDefault = await helper.call('thread/resume', { threadId: started.thread.id, excludeTurns: true });
   assert.equal(helperFullDefault.approvalPolicy, 'never');
   assert.equal(helperFullDefault.activePermissionProfile?.id, ':danger-full-access', 'the same helper follows Full access again');
-  const helperFile = path.join(root, 'helper-full'), helperRequests = [];
-  helper.listeners.add(message => { if (message.id !== undefined && message.method) helperRequests.push(message); });
-  await helper.call('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: `PERMISSION_FILE:${helperFile}`, text_elements: [] }] });
-  const deadline = Date.now() + 30000;
-  while (!await fs.stat(helperFile).then(() => true, () => false)) { assert.equal(helperRequests.length, 0, 'automatic helper never asks'); assert.ok(Date.now() < deadline, 'helper command ran'); await new Promise(r => setTimeout(r, 50)); }
-  assert.equal(helperRequests.length, 0);
+  t.diagnostic('existing automatic helper: Ask scope then Full scope applied; approval stayed never');
+  const helperCommand = async (connection, tag) => {
+    const helperFile = path.join(root, tag), requests = [];
+    const listener = message => { if (message.id !== undefined && message.method) requests.push(message); };
+    connection.listeners.add(listener);
+    try {
+      await connection.call('turn/start', { threadId: started.thread.id, input: [{ type: 'text', text: `PERMISSION_FILE:${helperFile}`, text_elements: [] }] });
+      const deadline = Date.now() + 30000;
+      while (!await fs.stat(helperFile).then(() => true, () => false)) { assert.equal(requests.length, 0, 'automatic helper never asks'); assert.ok(Date.now() < deadline, 'helper command ran'); await new Promise(r => setTimeout(r, 50)); }
+      assert.equal(requests.length, 0);
+    } finally { connection.listeners.delete(listener); }
+    t.diagnostic(`${tag}: command ran; no approval request`);
+  };
+  await helperCommand(helper, 'helper-full');
   await page.keyboard.press('Control+n');
   await page.getByRole('combobox', { name: 'Model', exact: true }).click();
   await page.getByRole('option').filter({ hasText: /haiku/i }).first().click();
   await command('claude-full', false, true);
   const claudeId = await page.locator('.thread-row.active').first().getAttribute('data-thread-id');
+  await setDefault('Ask for approval'); await select(claudeId); await command('claude-inherited-ask', true, true);
+  await setDefault('Full access'); await select(claudeId); await command('claude-inherited-full', false, true);
   const modes = (await fs.readFile(path.join(root, 'acp.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(x => x.method === 'session/set_mode');
   assert.ok(modes.some(x => x.params.modeId === 'default'), 'Full access uses Claude permission checks with automatic answers');
   assert.equal(modes.some(x => x.params.modeId === 'bypassPermissions'), false, 'Full access never selects Bypass');
+  const { createLoveAgents, loveNodeSpec } = await import(path.join(process.env.ELPIS_TEST_APP, 'bridge/love-agents.mjs'));
+  for (const [tag, model, provider] of [['love-gpt', 'gpt-5.5', 'mock'], ['love-claude', 'claude/haiku', 'claude']]) {
+    const file = path.join(root, tag);
+    const card = { id: tag, type: 'rectangle', customData: { loveAgent: { name: tag, prompt: 'Run the requested command.', model, provider, task: `${provider === 'claude' ? '[permission] ' : ''}PERMISSION_FILE:${file}` } } };
+    let scene = { elements: [card], files: {}, appState: {} };
+    const runner = createLoveAgents({ read: async () => ({ scene }), save: async value => { scene = value; } }, {
+      env: { ELPIS_ENGINE_BIN: process.env.ELPIS_TEST_ENGINE, ELPIS_HOME: path.join(app.home, 'elpis'), ELPIS_NODE_BIN: process.execPath },
+      nodeSpec: (node, env) => { const spec = loveNodeSpec(node, env); return { ...spec, env: { ...spec.env, HOME: app.home, CODEX_HOME: path.join(app.home, 'elpis'), ELPIS_APP_BRIDGE_SOCKET: socket, XDG_RUNTIME_DIR: path.join(app.home, 'run') } }; },
+    });
+    try { await runner.run({ id: tag, cwd: work }); assert.equal(await fs.readFile(file, 'utf8'), 'ran'); }
+    finally { await runner.close(); }
+    assert.equal(scene.elements[0].customData.loveAgent.permission, null);
+    t.diagnostic(`${tag}: packaged Love Spot controller and provider ran the command without a question`);
+  }
   const oldHome = app.home; await stopApp(app);
   app = await startApp({ app: process.env.ELPIS_TEST_APP, engine: process.env.ELPIS_TEST_ENGINE, port: Number(process.env.ELPIS_TEST_PORT || 9732), env: { ...extra, ELPIS_E2E_HOME: oldHome } });
   page = app.page; await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 });
   await select(id); await command('restart-inherited'); await select(normal); await command('restart-explicit-ask', true);
   await select(claudeId); await command('restart-claude', false, true);
+  const restartedHelper = connectAppServer({ url: `ws+unix://${socket}:/`, name: 'elpis-agents' });
+  t.after(() => restartedHelper.close()); await restartedHelper.ready;
+  const resumedHelper = await restartedHelper.call('thread/resume', { threadId: started.thread.id, excludeTurns: true });
+  assert.deepEqual([resumedHelper.approvalPolicy, resumedHelper.activePermissionProfile?.id], ['never', ':danger-full-access']);
+  await helperCommand(restartedHelper, 'restart-helper-full');
 });

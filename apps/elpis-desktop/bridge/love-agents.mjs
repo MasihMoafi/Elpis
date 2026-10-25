@@ -77,18 +77,18 @@ export function configuredAgents(env = process.env) {
   return agents;
 }
 
-/** The ACP agent process that runs one card: a configured command for the card's provider, claude-agent-acp for
- * `claude/…` models, agy-acp.mjs for `agy/…`, and otherwise the Elpis ACP agent on the card's model and provider. */
+/** Built-in providers share Elpis's ACP agent and permission defaults. A configured
+ * external ACP command keeps its own protocol and provider. */
 export function loveNodeSpec(node, env = process.env) {
   const base = { name: node.name, instructions: node.prompt };
   const agents = configuredAgents(env), configured = Object.hasOwn(agents, node.provider) ? agents[node.provider] : null;
   // Another program's ACP agent has no Elpis instructions channel; the card's prompt leads its prompt instead.
   if (configured) return { ...base, instructionsInPrompt: true, command: configured.command, args: configured.args ?? [], env: configured.env ?? {}, ...(node.model ? { model: node.model } : {}) };
   const nodeBin = env.ELPIS_NODE_BIN || 'node';
+  let accountEnv = {};
   if (node.model.startsWith('claude/')) {
     const { tools } = installation(env);
     const state = env.ACP_BRIDGE_STORE ? path.dirname(env.ACP_BRIDGE_STORE) : path.join(elpisHome(env), 'elpis-claude');
-    let accountEnv = {};
     // Use the provider bridge's account owner; the index contains IDs, never credentials.
     if (fs.existsSync(path.join(state, 'anthropic.json'))) {
       const { isSignedOut, SIGNED_OUT_MESSAGE } = require(present(path.join(tools, 'anthropic-signout.mjs')));
@@ -98,22 +98,18 @@ export function loveNodeSpec(node, env = process.env) {
       const { ClaudeAccounts } = require(present(path.join(tools, 'claude-accounts.mjs')));
       accountEnv = new ClaudeAccounts({ home: os.homedir(), dir: state, defaultConfigDir: env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude') }).environment();
     }
-    return { ...base, command: nodeBin, args: [present(path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js'))],
-      env: { CLAUDE_CODE_EXECUTABLE: env.CLAUDE_CODE_EXECUTABLE || path.join(os.homedir(), '.local', 'bin', 'claude'), ...accountEnv }, model: node.model.slice('claude/'.length) };
   }
-  if (node.model.startsWith('agy/')) return { ...base, command: nodeBin, args: [present(path.join(installation(env).tools, 'agy-acp.mjs'))], model: node.model.slice('agy/'.length) };
   const { engine, tools } = installation(env);
-  return { ...base, command: nodeBin, args: [present(env.ELPIS_ACP_AGENT || path.join(tools, 'elpis-acp-agent.mjs')), ...(node.model ? ['--model', node.model] : []), ...(node.provider ? ['--provider', node.provider] : [])],
-    env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: elpisHome(env) }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
+  return { ...base, command: nodeBin, args: [present(env.ELPIS_ACP_AGENT || path.join(tools, 'elpis-acp-agent.mjs')), ...(node.model ? ['--model', node.model] : []), ...(node.provider && !/^(claude|agy)\//.test(node.model) ? ['--provider', node.provider] : [])],
+    env: { ...accountEnv, ELPIS_ENGINE_BIN: engine, ELPIS_HOME: elpisHome(env) }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
 }
 
 /** Runs a card's connected agents in order, each as its own ACP agent process (bridge/acp-nodes.mjs): a card's final
  * answer reaches the cards its arrows point to through their session/prompt, and nothing else passes between them.
- * A permission request waits on its card until the panel answers it (`answer`). */
+ * Automatic permission callbacks never wait for the person. */
 export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNodeSpec, env = process.env } = {}) {
   let running = false, saving = Promise.resolve();
   const interviewing = new Map();
-  const waiting = new Map(); // card id -> the permission request it shows: { options, resolve }
   // Changes are saved one after another, so a permission shown mid-run is not lost to a concurrent save.
   const patch = (id, change, requireLive = false) => (saving = saving.catch(() => {}).then(async () => {
     const { scene } = await store.read();
@@ -123,14 +119,8 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
   }));
   // A change shown while the run goes on; a failed save must not stop the run (or the bridge).
   const shown = (id, change) => { patch(id, change).catch(error => console.warn('Love Spot could not save an agent update', String(error?.message ?? error).slice(0, 200))); };
-  const ask = (id, request) => {
-    if (waiting.has(id)) return null; // one question at a time per card; a second is refused
-    const options = (Array.isArray(request?.options) ? request.options : []).slice(0, 8).map(option => ({ optionId: String(option.optionId).slice(0, 200), name: String(option.name ?? option.optionId).slice(0, 200), kind: String(option.kind ?? '').slice(0, 40) }));
-    return new Promise(resolve => {
-      waiting.set(id, { options, resolve });
-      shown(id, { status: 'waiting', permission: { title: String(request?.toolCall?.title || 'The agent asks to continue').slice(0, 500), options } });
-    });
-  };
+  const permission = request => request.options?.find(option => option.kind === 'allow_once')?.optionId
+    ?? request.options?.find(option => option.kind === 'allow_always')?.optionId ?? null;
   return {
     /** Interviews use the same role/model ACP path and shared automatic-agent permissions.
      * Each bounded turn carries the saved conversation; no idle process or hidden chat owns interview state. */
@@ -165,7 +155,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
         let result;
         try {
           result = await runAcpNode(spec, { task: `Continue the interview. Conversation:\n${conversation}` }, {
-            cwd: input.cwd ?? os.homedir(), timeoutMs, signal: controller.signal, onPermission: () => null,
+            cwd: input.cwd ?? os.homedir(), timeoutMs, signal: controller.signal, onPermission: permission,
           });
         } catch { throw new BridgeError('The agent could not ask its question. Retry to ask it again.', 502); }
         const reply = interviewReply(result.answer, interview.messages.some(m => m.role === 'user'));
@@ -213,7 +203,7 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
             const result = await runAcpNode(spec, { task: node.task, inputs }, {
               cwd, timeoutMs,
               onSession: id => shown(node.id, { sessionId: id, ...(spec.elpis ? { threadId: id } : {}) }),
-              onPermission: request => ask(node.id, request),
+              onPermission: permission,
             });
             answers.set(node.id, result.answer);
             await patch(node.id, { status: 'completed', output: result.answer, permission: null });
@@ -221,21 +211,15 @@ export function createLoveAgents(store, { timeoutMs = 300000, nodeSpec = loveNod
           } catch (error) {
             await patch(node.id, { status: 'failed', error: error.message, permission: null });
             throw error;
-          } finally { waiting.delete(node.id); }
+          }
         }
         return { results };
       } finally { running = false; }
     },
-    /** The panel's answer to a card's waiting permission request: one of the options the agent offered. */
+    /** Old clients may still answer a previously saved card; automatic runs do not wait. */
     answer(input) {
       object(input, ['id', 'optionId']); text(input.id, 'agent ID', 200); text(input.optionId, 'option', 200);
-      const pending = waiting.get(input.id);
-      if (!pending) throw new BridgeError('No permission request is waiting for this agent', 409);
-      if (!pending.options.some(option => option.optionId === input.optionId)) throw new BridgeError('Choose one of the options the agent offered');
-      waiting.delete(input.id);
-      pending.resolve(input.optionId);
-      shown(input.id, { status: 'running', permission: null });
-      return { answered: true };
+      throw new BridgeError('No permission request is waiting for this agent', 409);
     },
   };
 }

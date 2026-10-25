@@ -17,7 +17,7 @@ import { parseArgs } from "node:util";
 import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 import { redactSecrets } from "./log-redaction.mjs";
 import { runtimeDir } from "./shared-runtime.mjs";
-import { permissionSettingsAllowed } from './permission-policy.mjs';
+import { defaultPermissionSettings, permissionSettingsAllowed } from './permission-policy.mjs';
 import WebSocket from "ws";
 
 const VERSION = "0.1.0";
@@ -337,7 +337,7 @@ const app = agent({ name: "elpis" })
     const ephemeral = params._meta?.elpis?.ephemeral === true;
     const policy = workflowPolicy(params._meta?.elpis?.workflow, params.cwd);
     const config = mcpConfig(params.mcpServers);
-    const access = { approvalPolicy: 'never', permissions: policy?.turn.permissions ?? ':danger-full-access' };
+    const access = defaultPermissionSettings(await engine.call('config/read', { includeLayers: true, cwd: params.cwd }), true);
     const requirements = (await engine.call('configRequirements/read', {})).requirements ?? {};
     if (!permissionSettingsAllowed(access, requirements)) throw new RequestError(-32602, 'Managed settings forbid these automatic agent permissions.');
     const started = await engine.call("thread/start", {
@@ -352,7 +352,7 @@ const app = agent({ name: "elpis" })
     });
     const id = started?.thread?.id;
     if (typeof id !== "string") throw new RequestError(-32603, "The Elpis engine did not start a thread");
-    sessions.set(id, { id, policy, turn: null, announced: new Set(), phases: new Map(), streamed: new Map() });
+    sessions.set(id, { id, cwd: params.cwd, policy, turn: null, announced: new Set(), phases: new Map(), streamed: new Map() });
     const name = params._meta?.elpis?.name;
     if (!ephemeral && typeof name === "string" && name.trim()) await engine.call("thread/name/set", { threadId: id, name: name.trim().slice(0, 120) }).catch(() => {});
     return { sessionId: id };
@@ -377,7 +377,8 @@ const app = agent({ name: "elpis" })
     turn.result = done.then(result);
     turn.result.catch(() => {});
     try {
-      turn.started = engine.call("turn/start", { threadId: s.id, ...(s.policy?.turn ?? {}), input: [{ type: "text", text: promptText(params.prompt), text_elements: [] }] });
+      const access = defaultPermissionSettings(await engine.call('config/read', { includeLayers: true, cwd: s.cwd }), true);
+      turn.started = engine.call("turn/start", { threadId: s.id, ...(s.policy?.turn ?? {}), ...access, input: [{ type: "text", text: promptText(params.prompt), text_elements: [] }] });
       const started = await turn.started;
       turn.id ??= started?.turn?.id ?? null;
       if (turn.cancelled) interrupt(s);
