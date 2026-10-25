@@ -3,11 +3,9 @@
 use std::io;
 use std::path::Path;
 
-use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::ThreadHistoryMode;
-use codex_protocol::protocol::WarningEvent;
 use codex_rollout::ModelContextScan;
 use codex_rollout::ModelContextScanProgress;
 use codex_rollout::ReverseJsonlScanner;
@@ -16,7 +14,6 @@ use codex_rollout::ScanOutcome;
 
 use super::LocalThreadStore;
 use super::read_thread;
-use super::rollout_lineage::MISSING_EARLIER_HISTORY_NOTE;
 use super::rollout_lineage::RolloutLineage;
 use super::thread_rollout_resolver;
 use crate::LoadThreadHistoryParams;
@@ -206,13 +203,5 @@ fn scan_model_context_from_lineage_blocking(
 
     let mut items = scan.finish();
     items.insert(0, RolloutItem::SessionMeta(session_meta));
-    if lineage.missing_earlier() {
-        items.insert(
-            1,
-            RolloutItem::EventMsg(EventMsg::Warning(WarningEvent {
-                message: MISSING_EARLIER_HISTORY_NOTE.to_string(),
-            })),
-        );
-    }
     Ok(items)
 }

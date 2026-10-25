@@ -979,6 +979,17 @@ impl App {
                     self.transcript_view.history = if self.scrollback_has_older_history { TranscriptHistoryState::Partial } else { TranscriptHistoryState::Complete };
                 }
                 self.finish_initial_history_replay_buffer(tui);
+                if self
+                    .chat_widget
+                    .thread_id()
+                    .is_some_and(|thread_id| app_server.history_missing_earlier(thread_id))
+                {
+                    self.chat_widget.add_info_message(
+                        crate::app_server_session::EARLIEST_HISTORY_MISSING_NOTE
+                            .to_string(),
+                        /*hint*/ None,
+                    );
+                }
             }
             AppEvent::ConsolidateAgentMessage {
                 source,

@@ -28,13 +28,9 @@ pub(super) struct RolloutLineageSegment {
 pub(super) struct RolloutLineage {
     pub(super) segments: Vec<RolloutLineageSegment>,
     /// An earlier rollout this history continues from is gone. The segments hold the history that
-    /// remains, so the chat still opens; readers say the earliest part is missing.
+    /// remains, so the chat still opens; its item pages say the earliest part is missing.
     pub(super) missing_earlier: bool,
 }
-
-/// The note a chat carries when the earliest part of its history is missing.
-pub(super) const MISSING_EARLIER_HISTORY_NOTE: &str =
-    "The earliest part of this chat is missing, so it opened with the history that remains.";
 
 impl LocalThreadStore {
     pub(super) async fn resolve_rollout_lineage(
