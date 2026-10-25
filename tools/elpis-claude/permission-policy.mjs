@@ -30,12 +30,15 @@ export function permissionSettingsAllowed(settings, requirements = {}) {
 }
 // config/read returns layers from highest to lowest precedence. An absent approval policy
 // means Elpis's Full access default, even when the native engine would choose on-request.
+function configuredProfile(read) {
+  const config = read?.config ?? {};
+  const layer = read?.layers?.find(layer => layer?.config?.default_permissions != null || layer?.config?.sandbox_mode != null)?.config ?? config;
+  return layer.default_permissions != null ? config.default_permissions : PROFILES[config.sandbox_mode];
+}
 export function defaultPermissionMode(read) {
   const config = read?.config ?? {};
   if (config.approval_policy == null) return 'full';
-  const layer = read?.layers?.find(layer => layer?.config?.default_permissions != null || layer?.config?.sandbox_mode != null)?.config ?? config;
-  const profile = layer.default_permissions != null;
-  const sandbox = profile ? Object.keys(PROFILES).find(mode => PROFILES[mode] === config.default_permissions) : config.sandbox_mode;
+  const sandbox = Object.keys(PROFILES).find(mode => PROFILES[mode] === configuredProfile(read));
   const reviewer = config.approvals_reviewer === 'guardian_subagent' ? 'auto_review' : config.approvals_reviewer ?? 'user';
   return Object.keys(PERMISSION_PRESETS).find(mode => {
     const p = PERMISSION_PRESETS[mode];
@@ -45,6 +48,6 @@ export function defaultPermissionMode(read) {
 export function defaultPermissionSettings(read, automatic = false) {
   const config = read?.config ?? {};
   const settings = permissionSettings(defaultPermissionMode(read)) ?? { approvalPolicy: config.approval_policy, approvalsReviewer: config.approvals_reviewer ?? 'user',
-    permissions: config.default_permissions ?? PROFILES[config.sandbox_mode] };
+    permissions: configuredProfile(read) };
   return automatic ? { ...settings, approvalPolicy: 'never', permissions: settings.permissions === ':bypass-permissions' ? ':danger-full-access' : settings.permissions } : settings;
 }

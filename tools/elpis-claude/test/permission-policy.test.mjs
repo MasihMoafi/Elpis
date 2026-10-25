@@ -19,6 +19,8 @@ test('Full access is the missing-policy default and never enables Bypass', () =>
 test('config layers decide the profile syntax and custom configs stay custom', () => {
   const config = { approval_policy: 'on-request', approvals_reviewer: 'auto_review', sandbox_mode: 'workspace-write', default_permissions: ':danger-full-access' };
   assert.equal(defaultPermissionMode({ config, layers: [{ config: { sandbox_mode: 'workspace-write' } }, { config: { default_permissions: ':danger-full-access' } }] }), 'auto');
+  const scoped = { config: { approval_policy: 'never', sandbox_mode: 'read-only', default_permissions: ':bypass-permissions' }, layers: [{ config: { sandbox_mode: 'read-only' } }, { config: { default_permissions: ':bypass-permissions' } }] };
+  assert.equal(defaultPermissionSettings(scoped).permissions, ':read-only', 'a higher layer sandbox wins over a lower layer profile in custom settings too');
   assert.equal(defaultPermissionMode({ config, layers: [{ config: { default_permissions: ':danger-full-access' } }] }), 'custom');
   assert.equal(defaultPermissionMode({ config: { approval_policy: 'never', default_permissions: ':bypass-permissions' } }), 'custom');
 });
