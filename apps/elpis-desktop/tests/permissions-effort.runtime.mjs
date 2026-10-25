@@ -175,6 +175,8 @@ test('permissions and effort: Full access by default, Settings default, mid-chat
     assert.equal(await runCommand('b1.txt'), 'prompt');
     chatB = await currentId();
     assert.equal(engineSettings(home, chatB).approval, 'on-request');
+    // B deliberately keeps Ask when the shared default changes again.
+    await chooseMode('Ask for approval');
     await chooseOption(page.getByLabel('Reasoning effort', { exact: true }), 'low');
     await openSettings(page, 'Configuration');
     await chooseOption(page.getByLabel('Default permissions', { exact: true }), 'full');
