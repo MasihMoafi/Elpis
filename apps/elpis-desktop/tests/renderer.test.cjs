@@ -61,6 +61,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     // An existing chat opens writable: its own empty draft, followed live through a plain native rejoin.
     assert.equal(await controlValue(page.getByLabel('Message Elpis')),'');
     await page.getByLabel('Refresh conversation').click();await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
+    await page.getByRole('button', { name: 'Expand agents in Investigate pruning quality', exact: true }).click();
     await page.locator('.thread-row[data-thread-id="child"] .thread-title').filter({hasText:'Inspect cache behaviour'}).waitFor();assert(calls.some(c=>c.path==='/api/threads'&&c.method==='GET'));
     assert.equal(await page.getByRole('button',{name:'Continue here',exact:true}).count(),0);assert.deepEqual(calls.find(c=>c.path==='/api/threads/existing/resume').data,{});
     await page.getByLabel('Search conversations').fill('Inspect cache');assert.equal(await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).count(),0);

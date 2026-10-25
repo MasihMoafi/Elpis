@@ -109,5 +109,7 @@ for (const mode of ['drawer', 'floating']) test(`reconnect status stays at the w
   assert.ok(notice.y >= workspace.y + workspace.height * .7, 'reconnect remains visible at the bottom');
   emit('connection', { connected: true });
   await status.waitFor({ state: 'detached' });
+  if (mode === 'drawer') await page.getByRole('button', { name: 'Close side panel', exact: true }).click();
+  else await page.getByRole('button', { name: /^Restore floating chat:/ }).click();
   assert.equal(await composer.inputValue(), 'Keep this draft behind the panel.');
 }));

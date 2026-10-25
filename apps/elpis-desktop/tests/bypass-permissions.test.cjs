@@ -49,7 +49,7 @@ test('Bypass permissions is red, asks once, and only then applies', async () => 
 
     // Offered fourth, after Full access, in red; the other modes are not red.
     await pill.click();
-    const items = page.getByRole('menuitem');
+    const items = page.getByRole('menu').getByRole('menuitem');
     assert.deepEqual((await items.allInnerTexts()).map(text => text.split('\n')[0].trim()), ['Ask for approval', 'Approve for me', 'Full access', 'Bypass permissions']);
     const bypass = items.filter({ hasText: 'Bypass permissions' });
     assert.equal(await color(bypass), red, 'the Bypass row is red');

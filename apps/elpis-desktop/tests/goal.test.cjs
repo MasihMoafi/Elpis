@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
+const { captureReview } = require('./controls.cjs');
 const { fixture } = require('./parity-fixture.cjs');
 const { files, contextRoutes } = require('./context-files-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
@@ -38,9 +38,8 @@ for (const colorScheme of ['light', 'dark']) test(`goal slash and right Context 
     reject = true; await panel.getByRole('button', { name: 'Clear goal', exact: true }).click(); await panel.getByRole('alert').waitFor();
     assert.ok(goal, 'a rejected Clear keeps the existing goal'); reject = false;
     await panel.getByRole('button', { name: 'Retry context files', exact: true }).click(); await panel.getByRole('alert').waitFor({ state: 'hidden' });
-    await fs.mkdir('/home/masih/.cache/elpis-shots', { recursive: true });
     await assertUiFit(panel, `Context ${colorScheme}`);
-    await f.page.screenshot({ path: `/home/masih/.cache/elpis-shots/goal-${colorScheme}.png` });
+    await captureReview(f.page, `goal-${colorScheme}`);
     await panel.getByRole('button', { name: 'Create ES.md', exact: true }).click();
     await f.page.getByRole('article').getByRole('heading', { name: 'Session intent', exact: true }).waitFor();
     await panel.getByRole('button', { name: 'Source', exact: true }).click();

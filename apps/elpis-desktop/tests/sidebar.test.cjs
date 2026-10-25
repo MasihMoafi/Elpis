@@ -91,9 +91,10 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     await page.getByLabel('Project name').fill('Renamed project'); await page.getByRole('button', { name: 'Save project', exact: true }).click();
     await aside.locator('.project-row').filter({ hasText: 'Renamed project' }).waitFor();
 
-    // 2. The sidebar toggle at the top left hides the sidebar and stays reachable; Ctrl+B does the same.
+    // 2. The sidebar closes to the right of its brand and reopens from the title bar; Ctrl+B does the same.
     const close = page.getByRole('button', { name: 'Close sidebar', exact: true }), open = page.getByRole('button', { name: 'Open sidebar', exact: true });
-    const box = await close.boundingBox(); assert.ok(box && box.x < 80 && box.y < 60, `the toggle sits at the top left (${JSON.stringify(box)})`);
+    const box = await close.boundingBox(), brand = await aside.locator('.brand-home').boundingBox(), sidebar = await aside.boundingBox();
+    assert.ok(box && brand && box.x >= brand.x + brand.width && box.x + box.width <= sidebar.x + sidebar.width && Math.abs(box.y + box.height / 2 - brand.y - brand.height / 2) <= 1, `the close control aligns after the brand (${JSON.stringify({ box, brand, sidebar })})`);
     await close.click(); await aside.waitFor({ state: 'hidden' });
     const reopen = await open.boundingBox(); assert.ok(reopen && reopen.x < 80 && reopen.y < 60, `the reopen button sits at the top left (${JSON.stringify(reopen)})`);
     await open.click(); await aside.waitFor({ state: 'visible' });

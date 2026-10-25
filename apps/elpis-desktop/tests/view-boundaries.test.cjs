@@ -88,7 +88,7 @@ test('the complete sidebar wordmark fits its SVG viewport and toggle at desktop 
           const bounds = image.getBoundingClientRect(), parent = image.closest('.brand').getBoundingClientRect();
           const toggle = image.closest('.brand').querySelector('.sidebar-toggle').getBoundingClientRect();
           const result = { svgClipped: box.x < view.x || box.x + box.width > view.x + view.width,
-            layoutClipped: bounds.right > parent.right || bounds.left < toggle.right };
+            layoutClipped: bounds.left < parent.left || toggle.right > parent.right || bounds.right > toggle.left };
           host.remove(); return result;
         });
         assert.deepEqual(clipped, { svgClipped: false, layoutClipped: false }, `${colorScheme} ${width}`);
