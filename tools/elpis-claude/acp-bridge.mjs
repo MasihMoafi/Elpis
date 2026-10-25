@@ -451,6 +451,7 @@ const helperConns = new WeakSet();
 const workflowToolConns = new WeakSet(); // a chat's workflow tool: its launches need the person's request (WR6)
 const relayed = new Map(); // id sent to the TUI -> answers the helper's request
 const chatAccess = new Map(); // confirmed approval policy and profile for automatic tool decisions
+const TOOL_APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval']);
 const automaticThreads = new Set(), blockedAutomaticThreads = new Set();
 const explicitChatChoices = new Set();
 // Automatic helpers follow the shared default. An explicitly requested read-only
@@ -487,22 +488,32 @@ const startingProviders = new Map(); // start response must name the model befor
 const contexts = new Set();
 const sendClient = (client, msg) => { if (client.readyState === 1) client.sendWire(JSON.stringify(msg)); };
 const viewers = (threadId, includeHelpers = false) => [...clients].filter((c) => c.readyState === 1 && (includeHelpers || !helperConns.has(c)) && subscriptions.get(c)?.has(threadId));
-function relayToTui(msg, answer, origin) {
+function relayToTui(msg, answer, origin, toolPermission = false) {
   let threadId = msg.params?.threadId;
   while (helperScope.get(threadId)?.parentThreadId) threadId = helperScope.get(threadId).parentThreadId;
   if (!threadId) return false;
   const watching = new Set(viewers(threadId));
+  const pending = msg.id !== undefined && [...relayed.values()].find(relay => relay.origin === origin && relay.upstreamId === msg.id && relay.message.method === msg.method);
+  if (pending) {
+    for (const client of watching) { pending.clients.add(client); sendClient(client, pending.message); }
+    return true;
+  }
   const id = `relay-${randomUUID()}`;
-  relayed.set(id, { answer, origin, clients: watching, message: { ...msg, id }, threadId });
+  relayed.set(id, { answer, origin, upstreamId: msg.id, toolPermission, clients: watching, message: { ...msg, id }, threadId });
   for (const client of watching) sendClient(client, { ...msg, id });
   return true;
+}
+function settleRelay(id, reply) {
+  const relay = relayed.get(id);
+  if (!relay) return;
+  relayed.delete(id);
+  for (const client of relay.clients) sendClient(client, { method: 'serverRequest/resolved', params: { threadId: relay.message.params.threadId, requestId: id } });
+  if (reply !== undefined) relay.answer(reply);
 }
 function cancelRelays(origin, threadId, turnId) {
   for (const [id, relay] of relayed) {
     if (relay.origin !== origin || (threadId && relay.message.params?.threadId !== threadId) || (turnId && relay.message.params?.turnId !== turnId)) continue;
-    relayed.delete(id);
-    for (const client of relay.clients) sendClient(client, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: id } });
-    relay.answer({ error: { code: -32603, message: "The requesting turn ended." } });
+    settleRelay(id, { error: { code: -32603, message: "The requesting turn ended." } });
   }
 }
 function flushApprovals(client, threadId) {
@@ -877,6 +888,10 @@ wss.on("connection", (ws) => {
     const prev = threadAccess.get(threadId) ?? {};
     threadAccess.set(threadId, { profile: profile ?? prev.profile, reviewer: s.approvalsReviewer ?? prev.reviewer });
     chatAccess.set(threadId, { policy: threadPolicy.get(threadId), profile: threadAccess.get(threadId).profile });
+    if (threadPolicy.get(threadId) === 'never') for (const [id, relay] of relayed) {
+      if (relay.origin === ws && relay.toolPermission && relay.message.params.threadId === threadId)
+        settleRelay(id, { result: { decision: fullFor(threadId) ? 'accept' : 'decline' } });
+    }
     for (const confirm of confirmations.get(threadId) ?? []) confirm(threadAccess.get(threadId).profile);
   };
   // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
@@ -1520,9 +1535,15 @@ wss.on("connection", (ws) => {
   const engineTurns = new BusyMap(); // thread id -> its running engine turn
   // Providers may edit without callbacks in Accept edits, Auto, or Bypass. Stop a running turn
   // whose authority a restriction reduces; its next prompt applies the confirmed restricted mode.
-  const stopIfReduced = (tid, previousAccess) => {
+  // Full access keeps the provider's normal mode, so compare the confirmed profile too.
+  const authorityOf = tid => {
+    const profile = threadAccess.get(tid)?.profile;
+    if (threadPolicy.get(tid) === 'never' && UNSANDBOXED.includes(profile)) return profile === ':bypass-permissions' ? 4 : 3;
+    return AUTHORITY[accessModeOf(tid, 'claude', threadPolicy.get(tid) !== 'never')];
+  };
+  const stopIfReduced = (tid, previousAuthority) => {
     const running = activeTurns.get(tid);
-    if (!running || AUTHORITY[accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never")] >= AUTHORITY[previousAccess]) return;
+    if (!running || authorityOf(tid) >= previousAuthority) return;
     running.cancelled = true;
     if (running.sessionId) running.acp?.send({ method: "session/cancel", params: { sessionId: running.sessionId } });
     notify("warning", { threadId: tid, message: "Stopped the active turn to apply restricted permissions. Send a message to continue." });
@@ -1586,10 +1607,10 @@ wss.on("connection", (ws) => {
   // Update each connection holding a helper. Provider tools follow the confirmed
   // bridge policy; native tools follow the engine's confirmed settings.
   const restrictHelper = (tid) => {
-    const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
+    const previousAuthority = authorityOf(tid);
     const ceiling = helperScope.get(tid)?.ceiling ?? 'read-only';
     threadSandbox.set(tid, ceiling);
-    stopIfReduced(tid, previousAccess);
+    stopIfReduced(tid, previousAuthority);
     if (claudeModel.has(tid)) return applyProfile(tid, { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' }[ceiling]);
     return enforceHelper(tid);
   };
@@ -1747,13 +1768,14 @@ wss.on("connection", (ws) => {
     if (parsed?.method === 'turn/started' && blockedAutomaticThreads.has(parsed.params?.threadId)) {
       void engineCall('turn/interrupt', { threadId: parsed.params.threadId, turnId: parsed.params.turn.id }).catch(error => log(`automatic agent interrupt: ${error.message ?? error}`));
     }
-    if (parsed?.id !== undefined && ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(parsed.method)
-      && (automaticThreads.has(parsed.params?.threadId) || helperScope.has(parsed.params?.threadId))) {
-      const own = await permissionChoices.read(parsed.params.threadId);
-      if (!own || own.inherit || own.automatic) {
+    if (parsed?.id !== undefined && TOOL_APPROVALS.has(parsed.method)) {
+      const tid = parsed.params.threadId;
+      const own = await permissionChoices.read(tid);
+      if (threadPolicy.get(tid) === 'never' || ((automaticThreads.has(tid) || helperScope.has(tid)) && (!own || own.inherit || own.automatic))) {
         engine.stdin.write(JSON.stringify({ id: parsed.id, result: { decision: !blockedAutomaticThreads.has(parsed.params.threadId) && fullFor(parsed.params.threadId) ? 'accept' : 'decline' } }) + '\n');
         return;
       }
+      if (relayToTui(parsed, reply => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + '\n'), ws, true)) return;
     }
     if (th?.id && parsed?.result?.approvalPolicy) { noteAccess(th.id, parsed.result); resumeResults.set(th.id, { ...parsed.result, thread: { ...th } }); }
     if (parsed?.method === "thread/name/updated") {
@@ -1783,11 +1805,14 @@ wss.on("connection", (ws) => {
     // broadcasts thread/closed after its work stops and its unsubscribed runtime unloads.
     if (parsed?.method === "thread/closed") engineTurns.delete(parsed.params?.threadId);
     if (parsed?.method === "thread/status/changed" && ["idle", "notLoaded"].includes(parsed.params?.status?.type)) engineTurns.delete(parsed.params.threadId);
+    if (parsed?.method === 'serverRequest/resolved' && parsed.params?.requestId !== undefined) {
+      for (const [id, relay] of relayed) if (relay.origin === ws && relay.upstreamId === parsed.params.requestId) settleRelay(id);
+    }
     if (parsed?.method === "thread/settings/updated") {
       const tid = parsed.params?.threadId;
-      const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
+      const previousAuthority = authorityOf(tid);
       noteAccess(tid, parsed.params?.threadSettings);
-      stopIfReduced(tid, previousAccess);
+      stopIfReduced(tid, previousAuthority);
     }
     shareHelper(parsed);
     notePlan(parsed);
@@ -2021,8 +2046,8 @@ wss.on("connection", (ws) => {
     if (reopened) replayPlan(reopened);
   });
 
-  const askTui = (method, params) => new Promise((resolve) => {
-    if (!relayToTui({ method, params }, (reply) => resolve(reply.result), ws)) resolve(null);
+  const askTui = (method, params, toolPermission = false) => new Promise((resolve) => {
+    if (!relayToTui({ method, params }, (reply) => resolve(reply.result), ws, toolPermission)) resolve(null);
   });
 
   // One transcript drawn from Claude's ACP updates: the chat's turn (`root`), or the turn of a
@@ -2402,10 +2427,10 @@ wss.on("connection", (ws) => {
           // No "don't ask again": Claude Code would save that rule to the project for good,
           // while Elpis's label promises only this session.
           availableDecisions: ["accept", "decline", "cancel"],
-        });
+        }, !planIds.length);
         if (turnState.cancelled) return undefined;
         access = accessModeOf(threadId, agent.key, (threadPolicy.get(threadId) ?? policy) !== "never");
-        if ((threadPolicy.get(threadId) ?? policy) === "never" && access !== "bypassPermissions" && !planIds.length) {
+        if ((threadPolicy.get(threadId) ?? policy) === "never" && !fullFor(threadId) && !planIds.length) {
           if (t) t.declined = true;
           return pick("reject_once") ?? pick("reject_always") ?? null;
         }
@@ -3146,9 +3171,7 @@ wss.on("connection", (ws) => {
     if (msg.id !== undefined && !msg.method && String(msg.id).startsWith("relay-")) {
       const relay = relayed.get(msg.id);
       if (relay?.clients.has(ws)) {
-        relayed.delete(msg.id);
-        relay.answer(msg);
-        for (const client of relay.clients) sendClient(client, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: msg.id } });
+        settleRelay(msg.id, msg);
       }
       return;
     }
