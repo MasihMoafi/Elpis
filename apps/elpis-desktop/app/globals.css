@@ -251,7 +251,7 @@ button:disabled { cursor:not-allowed; }
 .composer textarea { border:0; box-shadow:none; background:transparent; min-height:44px; max-height:240px; resize:none; font-size:0.90625rem; padding:2px 0; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
-.composer-controls { --composer-control-gap:4px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
+.composer-controls { --composer-control-gap:8px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
 .model-select { display:inline-flex; align-items:center; justify-content:space-between; gap:6px; background:transparent; color:var(--muted-foreground); border:1px solid transparent; min-width:0; height:32px; padding:0 8px; max-width:260px; font-size:0.78125rem; font-weight:500; white-space:nowrap; }
 .model-select:hover { background:var(--hover); color:var(--foreground); }
 .model-select > svg { flex-shrink:0; color:var(--muted-foreground); }
@@ -371,7 +371,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-title { flex-shrink:0; font-weight:500; color:var(--foreground); }
 .activity-preview { flex:1; color:var(--muted-foreground); white-space:nowrap; font:0.75rem var(--mono); }
 
-.model-controls { display:flex; align-items:center; flex-wrap:wrap; gap:var(--composer-control-gap, 4px); min-width:0; }
+.model-controls { display:flex; align-items:center; flex-wrap:wrap; gap:var(--composer-control-gap, 8px); min-width:0; }
 .provider-model-input { border:1px solid var(--border); }
 .provider-select { color:var(--foreground); }
 .provider-model-input { max-width:240px; min-width:0; background:transparent; color:var(--foreground); height:28px; padding:0 8px; font-size:0.78125rem; }
@@ -645,7 +645,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
 .composer-controls { margin-top:6px; }
-.composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 4px); min-width:0; }
+.composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); min-width:0; }
 .composer-right .dictation-control { margin-top:0; }
 .composer .dictation-status:empty { display:none; }
 .fast-toggle[aria-pressed="true"] { color:var(--accent-text); background:var(--selected); }
@@ -1312,12 +1312,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
   .composer-controls { gap:8px; }
   .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
   .composer .model-picker-trigger { min-width:56px; max-width:130px; flex:0 1 auto; }
-}
-/* A narrow chat uses two aligned groups instead of squeezing the action buttons together. */
-@container composer (max-width:480px) {
-  .composer-controls { flex-wrap:wrap; }
-  .composer .model-controls, .composer-right { flex-basis:100%; }
-  .composer-right .model-picker-trigger { margin-inline-end:auto; }
 }
 @container composer (max-width:380px) {
   .composer-pill .pill-short { display:none; }
