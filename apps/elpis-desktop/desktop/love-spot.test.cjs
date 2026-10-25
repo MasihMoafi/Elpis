@@ -217,7 +217,7 @@ test('dock preparation replaces both launch paths, preserves other actions, and 
 test('Restart refuses active work and a later idle retry preserves standalone Love Spot mode', async () => {
   let active = true;
   const f = await launch(['--love-spot-app'], async () => true, undefined, async () => !active);
-  await assert.rejects(f.restart('/selected/new/launch'), /running chats/);
+  await assert.rejects(f.restart('/selected/new/launch'), /Wait for the voice call, Love Spot, Lab or workflow run in this window to finish/);
   assert.ok(!f.calls.includes('board-close'));
   active = false; assert.equal(await f.restart('/selected/new/launch'), true);
   assert.ok(f.calls.includes('board-close'));
