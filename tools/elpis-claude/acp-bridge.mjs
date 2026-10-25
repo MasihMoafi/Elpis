@@ -1253,7 +1253,10 @@ wss.on("connection", (ws) => {
         // A loaded native thread ignores resume profile overrides. Apply the
         // confirmed settings before it resumes or starts either provider's turn.
         if (method === 'thread/resume' || method === 'turn/start') {
-          if (method === 'thread/resume' && !loaded) await engineCall('thread/resume', { threadId: p.threadId, excludeTurns: true });
+          if (method === 'thread/resume' && !loaded) {
+            const ids = (await engineCall('thread/loaded/list', {})).data ?? [];
+            if (!ids.includes(p.threadId)) await engineCall('thread/resume', { threadId: p.threadId, excludeTurns: true });
+          }
           await engineCall('thread/settings/update', { threadId: p.threadId, ...chosen });
         }
         for (const key of fields) delete p[key];
