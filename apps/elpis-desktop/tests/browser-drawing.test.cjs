@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore } = require('./controls.cjs');
+const { guardDesktopStore, widenSidePanel } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const staticOut = process.env.ELPIS_TEST_OUT || path.join(__dirname, '../out');
 const shots = process.env.ELPIS_SHOTS;
@@ -108,6 +108,9 @@ test('Draw loads the editor only when used, captures before hiding the page, and
   const before = f.scripts.length;
   await page.getByRole('button', { name: 'Draw on this page' }).waitFor();
   await f.shoot('draw-button-light');
+  // A217 opens the browser small; widen it before using several drawing tools.
+  await widenSidePanel(page, 700);
+  await eventually(async () => assert.equal((await f.log()).at(-1), 'visible'));
   await page.evaluate(() => window.__log.length = 0);
   const area = await open(f), log = await f.log();
   assert.ok(f.scripts.length > before, 'the editor chunk is fetched on Draw');
@@ -118,11 +121,13 @@ test('Draw loads the editor only when used, captures before hiding the page, and
   const add = page.getByRole('button', { name: 'Add to message' });
   assert.equal(await add.isDisabled(), true, 'nothing is marked yet');
 
-  const cx = area.x + area.width / 2, cy = area.y + area.height / 2;
-  await draw(page, 'arrow', { x: cx - 150, y: cy - 100 }, { x: cx + 100, y: cy });
-  await draw(page, 'freedraw', { x: cx - 120, y: cy + 60 }, { x: cx + 120, y: cy + 90 });
-  await draw(page, 'rectangle', { x: cx + 20, y: cy - 150 }, { x: cx + 160, y: cy - 60 });
-  await tool(page, 'text').click(); await page.mouse.click(cx - 200, cy + 130); await page.keyboard.type('Make this bigger'); await page.keyboard.press('Escape');
+  const point = (x, y) => ({ x: area.x + area.width * x, y: area.y + area.height * y });
+  await draw(page, 'arrow', point(0.3, 0.4), point(0.6, 0.5));
+  await draw(page, 'freedraw', point(0.35, 0.6), point(0.65, 0.64));
+  await draw(page, 'rectangle', point(0.55, 0.3), point(0.7, 0.42));
+  await tool(page, 'text').click(); const text = point(0.3, 0.67); await page.mouse.click(text.x, text.y);
+  await page.locator('.excalidraw-wysiwyg').waitFor();
+  await page.keyboard.type('Make this bigger'); await page.keyboard.press('Escape');
   await f.shoot('draw-modal-marked-light');
   await eventually(async () => assert.equal(await add.isDisabled(), false));
 

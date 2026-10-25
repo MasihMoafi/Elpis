@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, TURNS } = require('./parity-fixture.cjs');
+const { widenSidePanel } = require('./controls.cjs');
 
 async function using(options, run) {
   const f = await fixture({ width: 1280, height: 800, ...options });
@@ -10,10 +11,12 @@ async function using(options, run) {
 const panel = async page => { await page.getByRole('button', { name: 'Show side panel', exact: true }).click(); };
 
 test('820px keeps a usable chat and composer beside the panel with a drawer sidebar', () => using({ width: 820 }, async ({ page, composer }) => {
+  const sidebar = await page.locator('aside.sidebar').boundingBox();
   await panel(page);
   assert.equal(await composer.isVisible(), true);
   const chat = await page.locator('.chat-view').boundingBox(), side = await page.locator('.side-panel').boundingBox();
-  assert.ok(chat.width >= 360 && side.width >= 360, JSON.stringify({ chat, side }));
+  // The panel opens as wide as the sidebar was (A217: "same size of th left pane").
+  assert.ok(chat.width >= 360 && Math.abs(side.width - sidebar.width) <= 2, JSON.stringify({ chat, side, sidebar }));
   assert.ok(chat.x + chat.width <= side.x + 1);
   await composer.fill('A draft beside the panel');
   await page.getByRole('button', { name: 'Open sidebar', exact: true }).first().click();
@@ -40,6 +43,10 @@ for (const running of [false, true]) test(`composer labels fit at every desktop 
 test('the prompt rail yields to chat text in a narrow pane', () => using({ width: 1280 }, async ({ page }) => {
   assert.equal(await page.locator('.prompt-rail').isVisible(), true);
   await panel(page);
+  assert.equal(await page.locator('.prompt-rail').isVisible(), true);
+  // The panel opens as wide as the sidebar (A217), which leaves the chat wide; widening it narrows the chat to 640px or less.
+  await widenSidePanel(page, 420);
+  assert.ok((await page.locator('.chat-view').boundingBox()).width <= 640);
   assert.equal(await page.locator('.prompt-rail').isVisible(), false);
 }));
 

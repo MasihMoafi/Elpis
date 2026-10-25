@@ -125,9 +125,12 @@ test('Ctrl+` opens a shell as a side-panel tab in the chat’s folder; keys, out
   await panel(page).getByRole('button', { name: 'Restart terminal' }).click();
   await eventually(async () => assert.deepEqual((await calls()).restart.map(([k]) => k), [key]));
   await eventually(async () => assert.equal(await panel(page).getByText('Shell exited').count(), 0));
-  // Closing the tab ends its shell; the panel stays, empty, ready for a new tab.
+  // Closing the tab ends its shell; with its last tab gone the panel closes (A217: "this shouldn't be open for no reason")
+  // and opens again, empty, ready for a new tab.
   await sidePanel(page).getByRole('button', { name: 'Close Terminal 1 tab' }).click();
   await eventually(async () => assert.deepEqual((await calls()).closed, [key]));
+  await eventually(async () => assert.equal(await sidePanel(page).count(), 0));
+  await page.getByRole('button', { name: 'Show side panel' }).click();
   await sidePanel(page).getByText('Nothing open here yet.').waitFor();
   await page.getByRole('button', { name: 'Close side panel' }).click();
   await eventually(async () => assert.equal(await sidePanel(page).count(), 0));

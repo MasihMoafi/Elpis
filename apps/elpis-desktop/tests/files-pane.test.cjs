@@ -12,7 +12,7 @@ const os = require('node:os');
 const { promisify } = require('node:util');
 const execFile = promisify(require('node:child_process').execFile);
 const { fixture } = require('./parity-fixture.cjs');
-const { unapprovedOranges } = require('./controls.cjs');
+const { unapprovedOranges, widenSidePanel } = require('./controls.cjs');
 const CWD = path.join(os.homedir(), '.cache', `elpis-file-previews-${process.pid}`);
 const trashProject = async () => { if (await fs.stat(CWD).catch(() => null)) await execFile('gio', ['trash', CWD]); };
 /** Retries `check` until it stops throwing: a folder is read by the bridge after the click that opens it. */
@@ -139,8 +139,13 @@ async function open({ editors = [], ...options } = {}) {
   const ref = name => f.page.locator('.message.agent').first().getByRole('button', { name, exact: true });
   return { ...f, close: async () => { await f.close(); await handlers.close(); await trashProject(); }, side, view, tree, tabs, row, editor, shot, ref };
 }
-async function openFilesTab(f) {
+async function openWidePanel(f) {
   await f.page.getByRole('button', { name: 'Show side panel' }).click();
+  // A217 opens at the sidebar's width; widen before opening a file so its tree stays visible.
+  await widenSidePanel(f.page, 600);
+}
+async function openFilesTab(f) {
+  await openWidePanel(f);
   await f.side.getByRole('button', { name: 'New side panel tab', exact: true }).click();
   await f.page.getByRole('menuitem', { name: 'Files', exact: true }).click();
   await f.tree.waitFor();
@@ -224,6 +229,7 @@ test('a path in a reply is a button that opens the Files tab on the file at its 
     assert.equal(await f.ref('npm run build').count(), 0);
     assert.equal(await f.page.getByRole('region', { name: 'Side panel' }).count(), 0, 'nothing is open before a click');
 
+    await openWidePanel(f);
     await f.ref('src/lib/parser.ts:2-3').click();
     assert.equal(await f.side.getByRole('tab', { name: 'Files', exact: true }).getAttribute('aria-selected'), 'true');
     // A short label still puts its × at the tab's right end, as on chat tabs (Masih's screenshot 19:35).
@@ -338,7 +344,7 @@ test('the filter finds files by name from anywhere in the tree, and ? searches t
     const filter = f.side.getByRole('textbox', { name: 'Filter files', exact: true });
     assert.equal(await filter.getAttribute('placeholder'), 'Filter files… (? for contents)');
     await filter.fill('lpar');
-    assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['parser.ts\nsrc/lib'], 'the file and its folder, found by letters in order');
+    await eventually(async () => assert.deepEqual(await f.tree.getByRole('treeitem').allInnerTexts(), ['parser.ts\nsrc/lib'], 'the file and its folder, found by letters in order'));
     await filter.fill('guide');
     await f.tree.getByRole('treeitem').filter({ hasText: 'guide.md' }).click();
     await f.view.getByText(/See the parser section/).waitFor();
@@ -428,6 +434,7 @@ test('open files and unsaved edits stay when another side-panel tab is shown', a
 test('code is coloured by its language, as in a code block, and long lines wrap inside the pane by default', async () => {
   const f = await open();
   try {
+    await openWidePanel(f);
     await f.ref('src/lib/parser.ts:2-3').click();
     const text = f.editor('src/lib/parser.ts');
     await text.waitFor();
@@ -539,6 +546,7 @@ test('Open in: a path\'s menu offers the Files pane, each installed editor, the 
 test('with no editor chosen, or none installed, Open in uses the system\'s default app; a file in the tree has the same menu', async () => {
   const f = await open();
   try {
+    await openWidePanel(f);
     await f.ref('the lexer').click();
     await f.view.getByRole('button', { name: 'More file actions', exact: true }).click();
     await f.page.getByRole('menuitem', { name: 'Open in default app', exact: true }).click();

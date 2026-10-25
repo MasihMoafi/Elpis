@@ -48,6 +48,18 @@ async function openSettings(page, item = 'Settings') {
 /** Switches the theme to 'dark' or 'light' with the theme button beside Settings. */
 async function chooseTheme(page, theme) { await leaveSettings(page); await page.locator('aside.sidebar').getByRole('button', { name: `Use ${theme} theme`, exact: true }).click(); }
 async function sidebar(page) { await leaveSettings(page); return page.locator('aside'); }
+/** Drags the open side panel's left edge until the panel is `width` pixels wide, as a person widens it: the panel opens
+ * only as wide as the sidebar (A217, "same size of th left pane"), so a case that needs a wide panel widens it first. */
+async function widenSidePanel(page, width) {
+  const handle = page.getByRole('separator', { name: 'Resize side panel', exact: true });
+  await handle.hover();
+  const from = await page.getByRole('region', { name: 'Side panel', exact: true }).boundingBox();
+  const edge = await handle.boundingBox();
+  const x = edge.x + edge.width / 2, y = edge.y + edge.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  await page.mouse.move(x - (width - from.width), y, { steps: 8 }); await page.mouse.up();
+  await page.waitForFunction(width => document.querySelector('section[aria-label="Side panel"]').getBoundingClientRect().width >= width - 1, width);
+}
 /** Makes the page's stub of the desktop store (window.elpisDesktop.storage) refuse what the real one refuses
  * (STORE_KEYS in desktop/state.cjs): a refused key throws, uncaught, as "Unsupported workspace value", so the test's
  * pageerror check fails. Add it before the stub's own init script. */
@@ -165,4 +177,4 @@ async function assertDialogActionsExplained(dialog, expected) {
     if (expected) assert.match(reasons.join(' '), expected);
   }
 }
-module.exports = { LOGO_ACCENT, assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar };
+module.exports = { LOGO_ACCENT, assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };

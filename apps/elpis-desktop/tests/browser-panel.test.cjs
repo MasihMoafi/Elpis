@@ -8,7 +8,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore } = require('./controls.cjs');
+const { guardDesktopStore, widenSidePanel } = require('./controls.cjs');
 const staticOut = path.join(__dirname, '../out');
 const shots = process.env.ELPIS_SHOTS;
 
@@ -177,6 +177,10 @@ test('A21: a Send that fails puts the message and its comments back in the compo
 test('find bar, options menu, Not secure, zoom and the failure screen', async t => {
   const { page, errors, commands, shoot } = await fixture(t);
   await page.evaluate(() => window.__push({ tabs: [{ ...window.__state.tabs[0], url: 'http://example.com/', security: 'insecure', zoom: 125 }] }));
+  // The panel opens small (A217: as wide as the sidebar, and a page's 380px floor), where the warning is its icon; widened, it is in words.
+  await page.getByTitle('This site does not use a secure connection').waitFor();
+  assert.equal(await page.getByText('Not secure').isVisible(), false);
+  await widenSidePanel(page, 480);
   await page.getByText('Not secure').waitFor();
   await page.getByRole('button', { name: '125%' }).click();
   assert.deepEqual((await page.evaluate(() => window.__commands)).at(-1), { action: 'zoom', value: 'reset' });
