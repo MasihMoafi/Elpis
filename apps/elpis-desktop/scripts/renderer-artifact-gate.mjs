@@ -24,6 +24,31 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/composer-consistency.test.cjs": {
+      "blob": "f0a5e4ab3f6103ddaec3614fbb7ae88109027c22",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "S35 keeps permissions beside the model while voice/send actions wrap together only when needed. The existing narrow Plan journey additionally includes supported Fast and voice controls; every no-overlap, fit and alignment assertion remains."
+    },
+    "tests/love-spot-sync.test.cjs": {
+      "blob": "712b03d600f6c236f4555533ca87804c3293e864",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added."
+    },
+    "tests/arrow-keys.test.cjs": {
+      "blob": "f0d6f492707b3edfefadc8d1a29bb8c0d1876a2c",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure."
+    },
+    "tests/workflow-provenance.test.cjs": {
+      "blob": "e8e88defb2ae4322a4488db2060a8838afd460f6",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "Wait for restored comparison results before asserting the saved stop choice after reload; retain exact restored choice, request and provenance assertions."
+    },
+    "tests/step-sentences.test.cjs": {
+      "blob": "93d149058192dac1a5811ef7feffe45a913637c4",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains."
+    },
     "tests/night-workflows.test.cjs": {
       "blob": "b7a51ea7c95482c50d29d9c0fd67ee0e360eece7",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
@@ -110,14 +135,14 @@ export const retainedUpdates = {
       "reason": "S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/workflow-polish.test.cjs": {
-      "blob": "f5493e652078dad9eb1f5bf2244c0f1f445c5325",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion."
+      "blob": "6a91508074920acadebc49db298f2a47223d417e",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion. Wait on stable disclosure owners: a :not([open]) locator changes identity after the click. Keep all reasoning, tool, copy and discovered-agent assertions after their bodies mount."
     },
     "tests/sidebar-groups.test.cjs": {
-      "blob": "00c7b3b58cb4e4fe97ff059cce18820b12914cd3",
-      "approval": "1cfd51e4409aea37add77c5d6a70590c46c6d30f",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion."
+      "blob": "45377165997c1c5758c3e64d49f56135edee25d8",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions."
     },
     "tests/workflow-observer.test.cjs": {
       "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
@@ -165,9 +190,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
     "tests/hud-language.test.cjs": {
-      "blob": "ca3d5b6617be4a5123a08c5e2f4afdcf39db3dc5",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
-      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+      "blob": "649ff6c3a09569c7fc89c2a8b9e60bdaadec828a",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). Wait for opened lazy activity bodies before checking their HUD geometry; retain every theme, menu, dialog and surface assertion."
     },
     "tests/ledger-page.test.cjs": {
       "blob": "3f08e4309e6681b9b8b861bc234fa259486a97bb",
@@ -405,9 +430,9 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "dded14b5e5d94056f7b059215ce76675333e24db",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks."
+      "blob": "174c143c6bed32a9511951865ba981a938f2e95b",
+      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks."
     },
     "tests/love-dock.test.cjs": {
       "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",
