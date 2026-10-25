@@ -24,20 +24,65 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/browser-panel.test.cjs": {
+      "blob": "3272ad4cadc3dc05d26728f8553f89907463e0e0",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+    },
+    "tests/terminal.test.cjs": {
+      "blob": "96f3319406a764eaf54f55128faf4f74eda06a84",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+    },
+    "tests/slash-commands.test.cjs": {
+      "blob": "9d55c9df95dc2073d115471a1cce481a5647dce9",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
+    },
+    "tests/config-navigation.test.cjs": {
+      "blob": "9fec23177956a4ec8f8b20b32eedc3410a5cab69",
+      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
+      "reason": "S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
+    },
+    "tests/workflow-polish.test.cjs": {
+      "blob": "8f0b26e59e598694bbb71a3522cb05720f6942fc",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions."
+    },
+    "tests/sidebar-groups.test.cjs": {
+      "blob": "1be6db6a14ffb2819e6501e3450b93010ff05277",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
+    },
+    "tests/workflow-observer.test.cjs": {
+      "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
+    },
+    "tests/chat-edits.test.cjs": {
+      "blob": "6a103a535903e9c2acfe88c8798a6d8829fabc97",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "TESTING.md: wait for observable states. Await opened lazy transcript bodies and prune rows before counting them; retain exact content, ordering and failure assertions."
+    },
+    "tests/smart-prune.test.cjs": {
+      "blob": "d307653982b4267388401f44378f449b197c9918",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "TESTING.md: wait for observable states. Await opened lazy transcript bodies and prune rows before counting them; retain exact content, ordering and failure assertions."
+    },
     "tests/side-empty.test.cjs": {
       "blob": "24d9a4e52ca626605eba8680b8d376e2ecaf23a2",
       "approval": "846d842e321f25a45259ae8239f3b16a7b7511dc",
       "reason": "GOAL, Masih 24 Oct: \"/goal doesn't exist here btw. it should obviously; along with the ES.md and context files should be visible in the tab right.\" Context is the fifth panel action; retain the existing minimum-width and overflow checks for every button."
     },
   "tests/browser-drawing.test.cjs": {
-    "blob": "1c1f224d84c38fcd37397d8520b7649885b76549",
-    "approval": "e3db232c95e08534da9d7cc5e599fcad7fcf259c",
-    "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks. Masih, 23 Oct: the palette \"should be somewhere in this\" style panel, and the opacity number was \"visually wrong\": the toggle sits in the panel, and the opacity value stays under its slider after the panel reopens."
+      "blob": "552619f4f4a3285a0f277e639c9fdead604fba4d",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks. Masih, 23 Oct: the palette \"should be somewhere in this\" style panel, and the opacity number was \"visually wrong\": the toggle sits in the panel, and the opacity value stays under its slider after the panel reopens. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
   },
   "tests/love-spot-identity.test.cjs": {
-    "blob": "22c1869b9fbbdad68d1f5a461f7b2b9225514b3f",
-    "approval": "0864860125d66b628ca4f0f88896cadb09af0e50",
-    "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks."
+      "blob": "590784520a49677a2d6bb968735797224c5fd17d",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Masih, 23 October 2026: “There is no way to close this menu that pops up, and in the draw mode I can't come to the chat here.” “Directly in the chat, next to your message.” Replace obsolete focus confinement with Style and lossless Chat/Resume; retain capture, attach, discard, theme and portrait identity checks. Matilda uses her approved circular embedded SVG portrait; retain rendered identity and reject altered portrait/circle geometry."
   },
     "tests/code-opens.test.cjs": {
       "blob": "eeb0761006b96eb06f2032ff8abb4bd7ab54cbaa",
@@ -100,9 +145,9 @@ export const retainedUpdates = {
       "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade."
     },
     "tests/controls.cjs": {
-      "blob": "88c707e2a62524bbd4e6b2ce37d650ed556cba36",
-      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. Footer, Masih 22 Oct: \"theme should be next to settings\". The helpers open Settings with the gear and switch the theme with its button (c88df8e6d)."
+      "blob": "ac87649f1f3084bd04af99ed3db59b053b1a97fd",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. Footer, Masih 22 Oct: \"theme should be next to settings\". The helpers open Settings with the gear and switch the theme with its button (c88df8e6d). A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/input-hints.test.cjs": {
       "blob": "8709043fe7d186dde635579ca33e30fe481ba62f",
@@ -153,26 +198,28 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/provider-usage.test.cjs": {
-      "blob": "f7224436280cca61f9856afdde3b606d8687e5a5",
-      "approval": "988aad0e78bd264c00e435be07598e79f08941e8",
-      "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action"
+      "blob": "a831c7540406a39077766eb3e531bbe998140484",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
     },
     "tests/claude-chat.test.cjs": {
-      "blob": "0808f78884331931a6ce04a1e4ab0f47a9af62aa",
-      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
-      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update."
+      "blob": "58b0d904f76474ec33ee76f5079ea0be6c6de8a0",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
     },
     "tests/command-menu.test.cjs": {
       "blob": "335dcdab0114fafb0e45c3af362501bc7c8f13d2",
       ...pageRemovalApproval
     },
     "tests/composer-files.test.cjs": {
-      "blob": "f1f0bcca23d00215aab2efe36267ba750cbfb7e2",
-      ...pageRemovalApproval
+      "blob": "9cfb1e0156430f9236d847c4ea22d4366f758a14",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
     },
     "tests/desktop-polish.test.cjs": {
-      "blob": "0ec66f04a4a7dba9158e6add376ff28761c6f871",
-      ...pageRemovalApproval
+      "blob": "ee2822dc5aa8fd77901ada2ca610a2b1f513650d",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/desktop-sweep.test.cjs": {
       "blob": "ab7b9ecdd8cae06cc0d13681d7e51786e57b548a",
@@ -194,9 +241,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "20ec102db6751099b08e53e80deef8a82415701a",
-      "approval": "4cdc16bf9539acfbf771110f35840336c01e85f0",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). 23 Oct, Masih: add the voice picker in Settings exactly like the ChatGPT app screenshot. Open Advanced: transcription before the existing fallback and model writes; every assertion is retained."
+      "blob": "c1e87b74514f41be314472b659a9dd432e2ba187",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). 23 Oct, Masih: add the voice picker in Settings exactly like the ChatGPT app screenshot. Open Advanced: transcription before the existing fallback and model writes; every assertion is retained. A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
     },
     "tests/settings-write.test.cjs": {
       "blob": "09f90ee692006240e183eb49d99051431d05de7b",
@@ -204,9 +251,9 @@ export const retainedUpdates = {
       "reason": "S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": the memory options show only while Memories is on, so the saved-settings fixture has Memories on; every version-chained save assertion is unchanged."
     },
     "tests/context-menu.test.cjs": {
-      "blob": "3f99bf0cdc98f059df5187122c504114e0c2e717",
-      "approval": "ff010db233ed8c4aea32cdb295b58afbad1c30b0",
-      "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" Show agents leaves the menu of a chat without agents (c88df8e6d)."
+      "blob": "b4bba2d7126b7bb0192503a80646c083ab292c45",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" Show agents leaves the menu of a chat without agents (c88df8e6d). Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
     },
     "tests/preferences.test.cjs": {
       "blob": "2a27c24660a0a2d14da383b02f7ad95ab2e6529f",
@@ -214,8 +261,9 @@ export const retainedUpdates = {
       "reason": "OBSRM page removal (see pageRemovalApproval) plus SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Two shortcut tests added; no existing assertion removed. Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" (efb597b8b) The send-hint assertion goes with sendHint, which nothing calls."
     },
     "tests/renderer.test.cjs": {
-      "blob": "58cfcc2abc3d705b01819ca73ffa862004881c83",
-      ...pageRemovalApproval
+      "blob": "5b8c4296ccdba31be41bd93cefc000570f23b4bd",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions."
     },
     "tests/sidebar-attention.test.cjs": {
       "blob": "c889f4da05279b38c5308c0ab1f0dd03037b0809",
@@ -226,9 +274,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/usability.test.cjs": {
-      "blob": "84bfb13ee065c938ca9006268d585efa9f18580a",
-      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Both models now have custom editors: target Background choices, verify the Main editor stays closed and enter an exact custom draft; preserve the approved OBSRM navigation checks."
+      "blob": "e5cb1ba443f4983879427b0a4ff10b9cdb8d28a5",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Both models now have custom editors: target Background choices, verify the Main editor stays closed and enter an exact custom draft; preserve the approved OBSRM navigation checks. Read aloud supports each chat; its private warm-up request sends no message and saves no account settings. Exclude that one operation from the mutation counter while preserving all no-send/no-settings checks."
     },
     "tests/workflow-approvals.test.cjs": {
       "blob": "1f182af9780ec77af10a8eedfe40813dddc889a9",
@@ -240,9 +288,9 @@ export const retainedUpdates = {
       "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The negative colour probe must use the former, now unapproved Send orange; every diff assertion stays."
     },
     "tests/config-defaults.test.cjs": {
-      "blob": "3fde4827aa6a0ecc7e8512bbe41fa8eeca8c54a1",
-      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes."
+      "blob": "4baf2d4ce89b8f0e36cc55a3b1c43249fc359993",
+      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/customize.test.cjs": {
       "blob": "e7478d146149e0be40694c1b2c7a125f4a15b7c8",
@@ -260,14 +308,14 @@ export const retainedUpdates = {
       "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The retained theme check needs its matching exact-logo state helper, including token equality, old-orange rejection and text contrast."
     },
     "tests/settings-row-audit.cjs": {
-      "blob": "d7d595ebcb1f61fbd05f65a577ac30f9d9608069",
-      "approval": "38ecd3dc0cd1d53c1b34b82897beb3f201a5869e",
-      "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks."
+      "blob": "d1bfe4e596428f295143ab377869e4573bb22cac",
+      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
+      "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/settings-rows.test.cjs": {
-      "blob": "cb68c8db5ff63c8bbb6dd9d18d94221937ac8797",
-      "approval": "843fcac1416a9cc485d141e78a381fb6707546e6",
-      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations."
+      "blob": "dc9760e9d4454c1e78e4b4536a63ba1a8443ba19",
+      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
+      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/sidebar-indent.test.cjs": {
       "blob": "5bb88e37e24230393592abe93c2e3d46ef669805",
@@ -275,9 +323,9 @@ export const retainedUpdates = {
       "reason": "V1, Masih's approved request in GATE11: \"every chat row uses the project-chat layout, all chevrons in one column\". Retain exact circle/title coordinates, hover, expansion, selection and reload checks in both themes."
     },
     "tests/tabs.test.cjs": {
-      "blob": "11efb2427b9ce0dfe3d383fdfdc8b72bc18ad969",
-      "approval": "efb597b8b6ce2adf92546a544b3688d39016ee30",
-      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing."
+      "blob": "f975865ef14cac12eb7907ad69222be3756d571f",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
     },
     "tests/sidebar-parity.test.cjs": {
       "blob": "02943d2f19811a05e53e63a20c0417d777bdfe1a",
@@ -295,9 +343,9 @@ export const retainedUpdates = {
       "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
     },
     "tests/files-pane.test.cjs": {
-      "blob": "2cf60a078dc211db052e3c6117bd861b096fe9cf",
-      "approval": "97d52bcaabd025ba6eba5f6c51acb44092d0e144",
-      "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged."
+      "blob": "5676e038dd8293b9a0bcfb8ad516707e67437d71",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
       "blob": "94fddf69cdb5846badf7c8ead8d6ff381f7e3617",
@@ -310,9 +358,9 @@ export const retainedUpdates = {
       "reason": "Love Spot, Masih 23 Oct: \"remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda.\" The native window has no Talk button or panel: a captured voice note on the board is what Matilda answers, on the board, and the voice control still has to fit the window."
     },
     "tests/startup-archive.test.cjs": {
-      "blob": "60c97c8eeffa14c48ae79451aa01019dc252b37f",
-      "approval": "abd017f5d131e3382a3bda673f52e728418178d8",
-      "reason": "Voice, 23 Oct: the composer asks GET /api/voice for whether a call is possible; this strict fixture reports any unknown request as a failure, so it answers that one (no call here)."
+      "blob": "bd411e5a0e6e7e5bb070f6e87054a7f3b0ed0b52",
+      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
+      "reason": "Voice, 23 Oct: the composer asks GET /api/voice for whether a call is possible; this strict fixture reports any unknown request as a failure, so it answers that one (no call here). WI: unique workflow names and colours read workflow history at startup; fixture answers that read with an empty history. Preserve strict unknown-request rejection, archive, restore and deletion checks."
     },
     "tests/view-errors.test.cjs": {
       "blob": "3aa697bf47386452b99868dae38662643f8d08fe",
