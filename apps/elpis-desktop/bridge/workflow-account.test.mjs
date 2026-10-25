@@ -10,7 +10,7 @@ import { runAcpNode } from './acp-nodes.mjs';
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 
 test('Claude nodes use the account selected in Elpis and respect its sign-out', { timeout: 20000 }, async t => {
-  const homeRoot = fs.mkdtempSync(path.join(os.homedir(), '.cache/elpis-briefs/cc/wfrun-account-'));
+  const homeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wfrun-account-'));
   const f = { home: homeRoot, cwd: homeRoot };
   t.after(() => execFileSync('gio', ['trash', homeRoot]));
   const install = path.join(f.home, 'installation'), tools = path.join(install, 'tools/elpis-claude'), engine = path.join(install, 'elpis');

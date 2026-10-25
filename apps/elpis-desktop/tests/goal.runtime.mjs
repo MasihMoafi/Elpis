@@ -106,7 +106,7 @@ test('real engine and Claude adapter goal set/get/clear through authenticated de
 });
 
 test('native Claude reports loaded project instructions and excludes unrelated files', { skip: !process.env.ELPIS_GOAL_CLAUDE, timeout: 60000 }, async t => {
-  const root = await fs.mkdtemp(path.join(os.homedir(), '.cache/elpis-briefs/cc/native-')), project = path.join(root, 'project'), config = path.join(root, '.claude');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'native-')), project = path.join(root, 'project'), config = path.join(root, '.claude');
   await fs.mkdir(project); await fs.mkdir(config);
   const projectFile = path.join(project, 'CLAUDE.md'), unrelated = path.join(project, 'NOT-LOADED.md');
   await fs.writeFile(projectFile, 'Project instructions for the context manifest.'); await fs.writeFile(unrelated, 'This unrelated file must be excluded.');

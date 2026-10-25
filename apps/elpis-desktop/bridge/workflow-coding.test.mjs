@@ -18,7 +18,7 @@ async function until(read, check) {
   assert.fail('Workflow condition did not settle');
 }
 function fixture(t, options = {}) {
-  const home = fs.mkdtempSync(path.join(os.homedir(), '.cache/elpis-briefs/cc/wfrun-test-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wfrun-test-'));
   const cwd = path.join(home, 'project'); fs.mkdirSync(cwd);
   const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Test', '-c', 'user.email=test@elpis.local', ...args], { cwd, encoding: 'utf8' }).trim();
   git('init', '-q'); fs.mkdirSync(path.join(cwd, 'src')); fs.writeFileSync(path.join(cwd, 'src/seed'), 'base'); git('add', 'src/seed'); git('commit', '-qm', 'base');

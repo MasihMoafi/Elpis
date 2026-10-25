@@ -209,7 +209,7 @@ export const retainedUpdates = {
       "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
     },
     "tests/desktop-polish.test.cjs": {
-      "blob": "ee2822dc5aa8fd77901ada2ca610a2b1f513650d",
+      "blob": "06fbcdd7f4c384861b17bda2fd8b312fea84d274",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },

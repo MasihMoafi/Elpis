@@ -91,3 +91,22 @@ test('the sidebar closes beside its brand and reopens from the title bar without
   assert.equal(await close.isVisible(), true);
   assert.equal(await composer.inputValue(), 'Keep my draft while moving the sidebar.');
 }));
+
+
+for (const mode of ['drawer', 'floating']) test(`reconnect status stays at the workspace bottom with the ${mode} panel hiding the chat`, () => using({}, async ({ page, composer, emit }) => {
+  await composer.fill('Keep this draft behind the panel.');
+  if (mode === 'drawer') await page.setViewportSize({ width: 720, height: 800 });
+  await panel(page);
+  if (mode === 'floating') {
+    await page.getByRole('button', { name: 'Enter full view', exact: true }).click();
+    await page.getByRole('button', { name: 'Collapse floating chat', exact: true }).click();
+  }
+  emit('connection', { connected: false });
+  const status = page.getByRole('status').filter({ hasText: 'Reconnecting to Elpis' });
+  await status.waitFor();
+  const notice = await status.boundingBox(), workspace = await page.locator('main.workspace').boundingBox();
+  assert.ok(notice.y >= workspace.y + workspace.height * .7, 'reconnect remains visible at the bottom');
+  emit('connection', { connected: true });
+  await status.waitFor({ state: 'detached' });
+  assert.equal(await composer.inputValue(), 'Keep this draft behind the panel.');
+}));

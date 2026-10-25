@@ -9,7 +9,7 @@ import { startDesktopServer } from './server.mjs';
 import { sessionContextFiles } from './session-context.mjs';
 
 const ID = '00000000-0000-0000-0000-0000000000a1';
-const scratch = path.join(os.homedir(), '.cache/elpis-briefs/cc');
+const scratch = os.tmpdir();
 function runtime(cwd, writable = true) {
   let goal = null;
   const socket = new EventEmitter(), calls = [];
