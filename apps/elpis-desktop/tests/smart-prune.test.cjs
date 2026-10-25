@@ -37,7 +37,7 @@ test('Smart Prune off adds no entry; failure says the original was kept', async 
   try {
     await app.page.getByRole('button', { name: 'Fix the parser', exact: true }).first().click();
     for (const summary of await app.page.locator('.worked-for > summary').all()) await summary.click();
-    await app.page.locator('.activity-group > summary').last().waitFor();
+    await app.page.locator('.activity-group > summary').nth(1).waitFor();
     for (const summary of await app.page.locator('.activity-group > summary').all()) await summary.click();
     await app.page.getByRole('button', { name: /✂ Smart Prune/ }).waitFor();
     assert.equal(await app.page.getByRole('button', { name: /✂ Smart Prune/ }).count(), 1);
