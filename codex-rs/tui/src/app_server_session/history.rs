@@ -133,7 +133,14 @@ pub(crate) struct ThreadHistoryPagination {
     seen_turn_cursors: HashSet<String>,
     seen_item_cursors: HashSet<String>,
     loading_older: bool,
+    /// Elpis: an item page said the earliest part of this chat is missing (an earlier rollout it
+    /// continues was deleted); the transcript says so once its history is shown.
+    earliest_history_missing: bool,
 }
+
+/// What a chat whose earliest part is missing says once its history is shown.
+pub(crate) const EARLIEST_HISTORY_MISSING_NOTE: &str =
+    "The earliest part of this chat is missing, so it opened with the history that remains.";
 
 impl AppServerSession {
     pub(crate) async fn revert_thread(
@@ -169,6 +176,12 @@ impl AppServerSession {
             page.loading_older = false;
         }
         Ok(response)
+    }
+
+    pub(crate) fn history_missing_earlier(&self, thread_id: ThreadId) -> bool {
+        self.history_pagination
+            .get(&thread_id)
+            .is_some_and(|page| page.earliest_history_missing)
     }
 
     pub(crate) fn has_older_history(&self, thread_id: ThreadId) -> bool {
@@ -269,6 +282,7 @@ impl AppServerSession {
         state: &mut ThreadHistoryPagination,
         turns: &mut Vec<Turn>,
     ) -> Result<Vec<ThreadItem>> {
+        state.earliest_history_missing |= page.earliest_history_missing;
         state.next_item_cursor = advancing_cursor(
             state.next_item_cursor.as_deref(),
             page.next_cursor,
@@ -364,6 +378,7 @@ impl AppServerSession {
                 )
                 .await?;
             if page.data.is_empty() {
+                state.earliest_history_missing |= page.earliest_history_missing;
                 state.next_item_cursor = None;
                 break;
             }

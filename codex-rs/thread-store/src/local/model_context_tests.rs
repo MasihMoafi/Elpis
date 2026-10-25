@@ -138,7 +138,7 @@ async fn loads_recent_context_after_many_empty_wake_turns() {
 }
 
 #[tokio::test]
-async fn a_chat_whose_earlier_rollout_is_gone_resumes_with_what_remains_and_a_note() {
+async fn a_chat_whose_earlier_rollout_is_gone_resumes_with_what_remains() {
     // His rust-obsidian chat (24 Oct): a later rollout of the chat pointed at an earlier one that
     // had been deleted, and every read failed with "missing source rollout".
     let home = TempDir::new().expect("temp dir");
@@ -180,11 +180,6 @@ async fn a_chat_whose_earlier_rollout_is_gone_resumes_with_what_remains_and_a_no
         serde_json::to_value(context.items).expect("serialize context"),
         serde_json::to_value(vec![
             RolloutItem::SessionMeta(session_meta),
-            RolloutItem::EventMsg(EventMsg::Warning(codex_protocol::protocol::WarningEvent {
-                message: "The earliest part of this chat is missing, so it opened with the \
-                          history that remains."
-                    .to_string(),
-            })),
             user_message("history since the earlier part"),
             turn_context(home.path(), "remaining"),
         ])

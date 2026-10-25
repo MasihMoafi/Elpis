@@ -22,6 +22,7 @@ mod web_search;
 #[path = "app_server_session/collaboration_catalog_tests.rs"]
 mod collaboration_catalog_tests;
 
+pub(crate) use history::EARLIEST_HISTORY_MISSING_NOTE;
 pub(crate) use history::HISTORY_ITEM_PAGE_LIMIT;
 pub(crate) use history::HISTORY_ITEM_SCAN_LIMIT;
 pub(crate) use history::HistoryHydrationScope;
@@ -3841,6 +3842,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_chat_whose_earlier_part_is_gone_resumes_and_says_so() -> Result<()> {
+        // His rust-obsidian chat (24 Oct): its rollout continues an earlier one that was deleted.
+        let codex_home = tempfile::tempdir().expect("tempdir");
+        let config = build_config(&codex_home).await;
+        let filename_ts = "2025-01-05T12-00-00";
+        let thread = create_fake_paginated_rollout(
+            codex_home.path(),
+            filename_ts,
+            "2025-01-05T12:00:00Z",
+            "Saved user message",
+            Some(config.model_provider_id.as_str()),
+            /*git_info*/ None,
+        )
+        .expect("create paginated rollout");
+        let path = app_test_support::rollout_path(codex_home.path(), filename_ts, thread.as_str());
+        let contents = std::fs::read_to_string(&path)?;
+        let (meta, rest) = contents.split_once('\n').expect("session meta line");
+        let mut meta: serde_json::Value = serde_json::from_str(meta)?;
+        meta["payload"]["history_base"] = serde_json::json!({
+            "thread_id": ThreadId::new().to_string(),
+            "end_ordinal_exclusive": meta["ordinal"].clone(),
+            "end_byte_offset": 41_901_968,
+        });
+        std::fs::write(&path, format!("{meta}\n{rest}"))?;
+
+        let thread_id = ThreadId::from_string(thread.as_str())?;
+        let mut app_server = crate::start_embedded_app_server_for_picker(&config).await?;
+        app_server
+            .resume_thread(
+                &LocalSettings::from(&config),
+                config.clone(),
+                thread_id,
+                ResumeModelSettings::RestoreFromThread,
+            )
+            .await?;
+        assert!(app_server.history_missing_earlier(thread_id));
+        app_server.shutdown().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn side_fork_uses_one_request_for_long_paginated_history() -> Result<()> {
         let codex_home = tempfile::tempdir().expect("tempdir");
         let mut config = build_config(&codex_home).await;
@@ -3910,6 +3952,7 @@ mod tests {
         let loaded_items: usize = resumed.turns.iter().map(|turn| turn.items.len()).sum();
         assert!(loaded_items <= HISTORY_ITEM_PAGE_LIMIT as usize);
         assert!(app_server.has_older_history(source_thread_id));
+        assert!(!app_server.history_missing_earlier(source_thread_id));
 
         let mut side_config = config;
         side_config.ephemeral = true;
