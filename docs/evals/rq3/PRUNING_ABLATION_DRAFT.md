@@ -1,5 +1,7 @@
 # Pruning Ablation: Review Draft
 
+Historical token-efficiency proposal. The current correctness-study contract is [FINAL_PROTOCOL.md](FINAL_PROTOCOL.md); its endpoint and sample-size calculation differ.
+
 2026-09-05. NOT APPROVED. Owner and acceptance authority: Masih.
 Scope: specification only; no experiments, installs, uploads, or paid inference.
 

@@ -1,0 +1,101 @@
+{
+  "kind": "Conditional sample-size planning, not experimental results",
+  "source": "https://doi.org/10.1186/s12874-025-02497-2",
+  "alpha_one_sided": 0.05,
+  "assumed_true_pass_rate_difference": 0,
+  "published_507_pair_example_reproduced": true,
+  "formula": "q0=(q+sqrt(q^2+4*(1-q)*delta^2))/2; n=ceil((z_(1-alpha)*sqrt(q0-delta^2)+z_power*sqrt(q))^2/delta^2)",
+  "scenarios": [
+    {
+      "margin_percentage_points": 2.0,
+      "assumed_discordance_fraction": 0.1,
+      "power": 0.8,
+      "distinct_task_pairs": 1578,
+      "agent_executions": 3156
+    },
+    {
+      "margin_percentage_points": 2.0,
+      "assumed_discordance_fraction": 0.1,
+      "power": 0.9,
+      "distinct_task_pairs": 2178,
+      "agent_executions": 4356
+    },
+    {
+      "margin_percentage_points": 2.0,
+      "assumed_discordance_fraction": 0.2,
+      "power": 0.8,
+      "distinct_task_pairs": 3104,
+      "agent_executions": 6208
+    },
+    {
+      "margin_percentage_points": 2.0,
+      "assumed_discordance_fraction": 0.2,
+      "power": 0.9,
+      "distinct_task_pairs": 4297,
+      "agent_executions": 8594
+    },
+    {
+      "margin_percentage_points": 5.0,
+      "assumed_discordance_fraction": 0.1,
+      "power": 0.8,
+      "distinct_task_pairs": 274,
+      "agent_executions": 548
+    },
+    {
+      "margin_percentage_points": 5.0,
+      "assumed_discordance_fraction": 0.1,
+      "power": 0.9,
+      "distinct_task_pairs": 374,
+      "agent_executions": 748
+    },
+    {
+      "margin_percentage_points": 5.0,
+      "assumed_discordance_fraction": 0.2,
+      "power": 0.8,
+      "distinct_task_pairs": 507,
+      "agent_executions": 1014
+    },
+    {
+      "margin_percentage_points": 5.0,
+      "assumed_discordance_fraction": 0.2,
+      "power": 0.9,
+      "distinct_task_pairs": 699,
+      "agent_executions": 1398
+    },
+    {
+      "margin_percentage_points": 10.0,
+      "assumed_discordance_fraction": 0.1,
+      "power": 0.8,
+      "distinct_task_pairs": 81,
+      "agent_executions": 162
+    },
+    {
+      "margin_percentage_points": 10.0,
+      "assumed_discordance_fraction": 0.1,
+      "power": 0.9,
+      "distinct_task_pairs": 108,
+      "agent_executions": 216
+    },
+    {
+      "margin_percentage_points": 10.0,
+      "assumed_discordance_fraction": 0.2,
+      "power": 0.8,
+      "distinct_task_pairs": 134,
+      "agent_executions": 268
+    },
+    {
+      "margin_percentage_points": 10.0,
+      "assumed_discordance_fraction": 0.2,
+      "power": 0.9,
+      "distinct_task_pairs": 183,
+      "agent_executions": 366
+    }
+  ],
+  "limits": [
+    "The margin is a declared practical tolerance, not a universal standard.",
+    "Actual discordance is unknown; do not choose it from favorable pilot outcomes.",
+    "Repeated attempts of one task and different models are not independent task pairs.",
+    "Validate finite-sample operating characteristics before freezing the main study.",
+    "A nonsignificant difference test does not establish non-inferiority."
+  ]
+}

@@ -1,0 +1,1807 @@
+{
+  "stage": "held-out-synthetic-coverage-after-oracle-correction",
+  "binaryHash": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
+  "model": "gpt-5.6-luna",
+  "status": "passed",
+  "conversations": 20,
+  "maxConversations": 20,
+  "checkpoints": [
+    {
+      "step": {
+        "id": "replica_quorum",
+        "kind": "OFF"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 39,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 83,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 166,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 39,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 83,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 166,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": null
+      },
+      "resultHash": "59f796c3e205e70d2155c0b38f7eb9ddb37e8224820ac00379fb95bc302bbc9d"
+    },
+    {
+      "step": {
+        "id": "replica_quorum",
+        "kind": "NATIVE"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 39,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 83,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 166,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 39,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 83,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 166,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": {
+          "qualified": true,
+          "reason": "Qualified",
+          "prefix": {
+            "verdict": "PASS_OBSERVED_CONTINUATION_LINKAGE",
+            "mainRequests": 3,
+            "continuationLinks": 2,
+            "admissionRequest": 2,
+            "postAdmissionLinks": 1,
+            "stableRequestOptionsAndCacheKey": true,
+            "admittedOutputMatches": true,
+            "fullEncodedPrefixBytes": "NOT_CAPTURED",
+            "providerInternalCacheIntegrity": "NOT_OBSERVABLE",
+            "scope": "Normalized Responses delta trace: stable options, response chain, and exact admitted output. Not a full wire-prefix comparison.",
+            "excludedRequestFields": [
+              "client_metadata",
+              "type (validated response.create envelope only)"
+            ]
+          },
+          "sourceTokens": 6618,
+          "admittedTokens": 288,
+          "sourceTextHash": "7a39a2de95e1a976f3fdd2666576997e70ff7529cfdbf079ad9294a559f9ccda",
+          "admittedTextHash": "73fce2f3981c201c3e8f3283b26573285d318aeada22185c425166b4b931bb69"
+        }
+      },
+      "resultHash": "85e80f024cda675f9f098621616364341f57431b3fa7425b4d7dc058995e8329"
+    },
+    {
+      "step": {
+        "id": "replica_quorum",
+        "kind": "RAW"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 39,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 83,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 124,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 166,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 203,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 39,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 83,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 166,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q4",
+            "position": 124,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 203,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "51b2629412aadeb267db63fbe55b6cd8ffb64296e3d048956db5b1100c9a1884"
+    },
+    {
+      "step": {
+        "id": "replica_quorum",
+        "kind": "ADMITTED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 39,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 83,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 124,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 166,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 203,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 39,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 83,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 166,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q4",
+            "position": 124,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 203,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "c9029b253cf6790e7e23dcbca1c90307adfa43ea2b0d58353efca1048411abf9"
+    },
+    {
+      "step": {
+        "id": "replica_quorum",
+        "kind": "DAMAGED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 39,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 83,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 124,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 166,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 203,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 39,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 83,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 166,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q4",
+            "position": 124,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 203,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "9a83c565844254dc158153d90b5698c9948ae4c61f9cc4bd98c14bb1a85f751c"
+    },
+    {
+      "step": {
+        "id": "export_order",
+        "kind": "NATIVE"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 42,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 179,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 219,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 42,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 179,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 219,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": {
+          "qualified": true,
+          "reason": "Qualified",
+          "prefix": {
+            "verdict": "PASS_OBSERVED_CONTINUATION_LINKAGE",
+            "mainRequests": 3,
+            "continuationLinks": 2,
+            "admissionRequest": 2,
+            "postAdmissionLinks": 1,
+            "stableRequestOptionsAndCacheKey": true,
+            "admittedOutputMatches": true,
+            "fullEncodedPrefixBytes": "NOT_CAPTURED",
+            "providerInternalCacheIntegrity": "NOT_OBSERVABLE",
+            "scope": "Normalized Responses delta trace: stable options, response chain, and exact admitted output. Not a full wire-prefix comparison.",
+            "excludedRequestFields": [
+              "client_metadata",
+              "type (validated response.create envelope only)"
+            ]
+          },
+          "sourceTokens": 7003,
+          "admittedTokens": 299,
+          "sourceTextHash": "de42b9a45ea7e8d61bb14d8679daed3a9a41c414c3886d4c7acd0557a83a19fb",
+          "admittedTextHash": "7b958c4e1d61749195ac293c9b1b85c30d335847836f625581b3b82444c69022"
+        }
+      },
+      "resultHash": "058b2037d9e31db9befe1e124679102da98a820c4858765e07f77801fefa52e0"
+    },
+    {
+      "step": {
+        "id": "export_order",
+        "kind": "OFF"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 42,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 179,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 219,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 42,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 179,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 219,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": null
+      },
+      "resultHash": "61f86b1d19808c72d5d477149c6442e3a3b7c432d753e24a80a3cc96e727e650"
+    },
+    {
+      "step": {
+        "id": "export_order",
+        "kind": "ADMITTED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 42,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 89,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 134,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 179,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 219,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 42,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 179,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 219,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q3",
+            "position": 89,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 134,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "423ecfc910e7fc70a11a0e48bc138ca18c0b33ba2bacc762f104f2345009b618"
+    },
+    {
+      "step": {
+        "id": "export_order",
+        "kind": "RAW"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 42,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 89,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 134,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 179,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 219,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 42,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 179,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 219,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q3",
+            "position": 89,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 134,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "63b5b7191c06dfa905185331758976272ab16d02e4e3449bfd76cd0bdb7a88da"
+    },
+    {
+      "step": {
+        "id": "export_order",
+        "kind": "DAMAGED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 42,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 89,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 134,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 179,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 219,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 42,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 179,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 219,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q3",
+            "position": 89,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 134,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "ad2e2e9eb955bcdb8b1e02ef100f49b62a90bd1dfcaa1e769595f434a6dd7098"
+    },
+    {
+      "step": {
+        "id": "quota_rollover",
+        "kind": "OFF"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 84,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 127,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 207,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 84,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 127,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 207,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": null
+      },
+      "resultHash": "480b35f3f00aa8bec748134adec40022a17f8bea5e52a23ef770b99e7231a8bb"
+    },
+    {
+      "step": {
+        "id": "quota_rollover",
+        "kind": "NATIVE"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 84,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 127,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 207,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 84,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 127,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 207,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": {
+          "qualified": true,
+          "reason": "Qualified",
+          "prefix": {
+            "verdict": "PASS_OBSERVED_CONTINUATION_LINKAGE",
+            "mainRequests": 3,
+            "continuationLinks": 2,
+            "admissionRequest": 2,
+            "postAdmissionLinks": 1,
+            "stableRequestOptionsAndCacheKey": true,
+            "admittedOutputMatches": true,
+            "fullEncodedPrefixBytes": "NOT_CAPTURED",
+            "providerInternalCacheIntegrity": "NOT_OBSERVABLE",
+            "scope": "Normalized Responses delta trace: stable options, response chain, and exact admitted output. Not a full wire-prefix comparison.",
+            "excludedRequestFields": [
+              "client_metadata",
+              "type (validated response.create envelope only)"
+            ]
+          },
+          "sourceTokens": 6742,
+          "admittedTokens": 306,
+          "sourceTextHash": "8320e8e95632773ca75f083a5c202f5ebba5e864155e989a9819e9dfca9d4434",
+          "admittedTextHash": "37523f21f4dd9f8dfa8e4d8794ed505c616710f83e5418ec24cef454a2ca3f62"
+        }
+      },
+      "resultHash": "e622c04550cfb5da28a94db9ac2c35aed71c830464591d3db4f99e628b6924c9"
+    },
+    {
+      "step": {
+        "id": "quota_rollover",
+        "kind": "RAW"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 40,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 84,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 127,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 169,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 207,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 84,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 127,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 207,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q2",
+            "position": 40,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 169,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "927bcec72fcbe515c39a69223ab85765511f6bd318fce423cd030bf5c82c5908"
+    },
+    {
+      "step": {
+        "id": "quota_rollover",
+        "kind": "ADMITTED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 40,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 84,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 127,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 169,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 207,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 84,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 127,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 207,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q2",
+            "position": 40,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 169,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "2dbabe4936ffd0f363cf3443293dc57ad0972db77340a1d88518d9c9acdca4e8"
+    },
+    {
+      "step": {
+        "id": "quota_rollover",
+        "kind": "DAMAGED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 40,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 84,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 127,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 169,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 207,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 84,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q4",
+            "position": 127,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 207,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q2",
+            "position": 40,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 169,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "96e2d6347bf8e7ad55fb778fbb30dafea9028dc7f5129e60f7ff453ca83022ad"
+    },
+    {
+      "step": {
+        "id": "key_rotation",
+        "kind": "NATIVE"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 44,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 94,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 188,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 44,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 94,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 188,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": {
+          "qualified": true,
+          "reason": "Qualified",
+          "prefix": {
+            "verdict": "PASS_OBSERVED_CONTINUATION_LINKAGE",
+            "mainRequests": 3,
+            "continuationLinks": 2,
+            "admissionRequest": 2,
+            "postAdmissionLinks": 1,
+            "stableRequestOptionsAndCacheKey": true,
+            "admittedOutputMatches": true,
+            "fullEncodedPrefixBytes": "NOT_CAPTURED",
+            "providerInternalCacheIntegrity": "NOT_OBSERVABLE",
+            "scope": "Normalized Responses delta trace: stable options, response chain, and exact admitted output. Not a full wire-prefix comparison.",
+            "excludedRequestFields": [
+              "client_metadata",
+              "type (validated response.create envelope only)"
+            ]
+          },
+          "sourceTokens": 7423,
+          "admittedTokens": 378,
+          "sourceTextHash": "314c5f8b2f21f15321e19b281504c490f1f2629ab01e9f4d4676f435fc17eb67",
+          "admittedTextHash": "3cc9455e87410833493e5d6ceca054948604942c014595974bd74c9c679e3428"
+        }
+      },
+      "resultHash": "1d875982a0ed54016c9212e1fc7145879ca59a88e148aa6b435a02b587be0857"
+    },
+    {
+      "step": {
+        "id": "key_rotation",
+        "kind": "OFF"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 44,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 94,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 188,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 44,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 94,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 188,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [],
+        "admission": null
+      },
+      "resultHash": "ed81cc2a2b01ed83d6c87c57a1b1e8559c204bdc7c12aac64634745c6e6b6869"
+    },
+    {
+      "step": {
+        "id": "key_rotation",
+        "kind": "ADMITTED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 44,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 94,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 141,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 188,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 231,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 44,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 94,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 188,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q4",
+            "position": 141,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 231,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "8b5873b5da30e8256c91ab10b261f5e0d57e99d66112a099df15fc4d6bd0afb8"
+    },
+    {
+      "step": {
+        "id": "key_rotation",
+        "kind": "RAW"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 44,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 94,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 141,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 188,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 231,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 44,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 94,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 188,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q4",
+            "position": 141,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 231,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "f030721901f5999181ed6670fcd09199fd834cd64b69e159cd5fc60cba3a7dcf"
+    },
+    {
+      "step": {
+        "id": "key_rotation",
+        "kind": "DAMAGED"
+      },
+      "completed": true,
+      "gate": {
+        "passed": true,
+        "reasons": [],
+        "grade": {
+          "passed": true,
+          "format": true,
+          "checks": [
+            {
+              "id": "q1",
+              "position": 3,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q2",
+              "position": 44,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q3",
+              "position": 94,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q4",
+              "position": 141,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q5",
+              "position": 188,
+              "value": true,
+              "evidence": true
+            },
+            {
+              "id": "q6",
+              "position": 231,
+              "value": true,
+              "evidence": true
+            }
+          ]
+        },
+        "known": [
+          {
+            "id": "q1",
+            "position": 3,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q2",
+            "position": 44,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q3",
+            "position": 94,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q5",
+            "position": 188,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "withheld": [
+          {
+            "id": "q4",
+            "position": 141,
+            "value": true,
+            "evidence": true
+          },
+          {
+            "id": "q6",
+            "position": 231,
+            "value": true,
+            "evidence": true
+          }
+        ],
+        "admission": null
+      },
+      "resultHash": "2eef7db849684eb3ae42d23b228f763ea6215cf0965f1fe98941c0e3f5f3f3d5"
+    }
+  ],
+  "limits": [
+    "Not a representative confirmatory sample",
+    "Diagnostic artifacts, not repository implementations",
+    "Logical-prefix checks, not encoded-wire equality or provider-internal cache evidence"
+  ]
+}

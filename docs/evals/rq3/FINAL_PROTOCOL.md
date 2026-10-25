@@ -1,60 +1,29 @@
-# RQ3 Final Protocol: Long-Horizon Task Correctness
+# RQ3 paired task-correctness study
 
-## Research Question
-Does Elpis's context management maintain equal or superior task completion correctness compared to unpruned Codex on long-horizon, multi-step software engineering tasks?
+25 October 2026. **The six-arm Sol/Luna feasibility pilot finished with four official grades and two verifier timeouts.** Only one pair has both grades, and that pair lacks reliable ON admission evidence. See the [pilot result](SOL_LUNA_PILOT_20261025.md). The launcher is closed; main-study tasks, sample size and quota budget remain unfrozen. **RQ3 remains future work. Astra and paid OpenRouter remain forbidden; any authorized inference must use the saved ChatGPT login.**
 
-## Hypothesis
-Elpis achieves parity or superior pass rates on long-horizon benchmarks while avoiding context saturation window degradation experienced by unpruned models.
+**Question:** does Smart Prune reduce task success by less than a declared practical margin? The recommended primary margin is **5 percentage points**, with one-sided 95% confidence and 80% power. This is a proposed practical tolerance, not a universal research standard or a claim of exactly zero effect.
 
-## Independent & Dependent Variables
-- **Independent Variables**:
-  - Agent Framework: Elpis vs. Codex (baseline)
-  - Task Complexity / Horizon Length (number of required sub-steps / tools invocations)
-- **Dependent Variables**:
-  - Task Completion Pass Rate (binary pass/fail against deterministic test suite)
-  - Step Count to Completion
-  - Cumulative Token Cost per Resolved Task
+| Acceptance contract | State |
+| --- | --- |
+| Compare one pinned Elpis binary with pruning ON/OFF; same main model, prompts, graders, tools, native compaction, and budgets. | Matched invocation/config checks passed |
+| First configuration: `gpt-6-sol` high main, `gpt-6-luna` low pruner; saved ChatGPT authentication only, no paid OpenRouter calls or API-key billing. | Live main and pruner inference verified |
+| Three distinct cached Terminal-Bench tasks, one pair each, one lane; balanced arm order. Pilot is excluded from the confirmatory study. | Six arms recorded; launch gate closed |
+| Use official hidden graders. Preserve all attempts, including timeouts, failures and cases with no pruning admission; record infrastructure failures separately. | Four grades; two verifier timeouts; two earlier setup incidents retained |
+| Keep resource guard enabled, original auth unchanged, credentials out of evidence, no paid API keys, no production changes. | Native guard observed in all six arms |
+| Capture model identities, actual admissions, raw grades, final changes, all inference usage, cache counters and elapsed time. | Partial: five confirmed admissions; regex ON receipts lost; snapshot size limit retained |
+| Freeze independent main tasks, model configuration, N and total quota cap before collection. Model configurations receive separate conclusions. | Pending grading repair and complete audit capture |
 
-## Exact Comparison
-Paired runs of Elpis and Codex executing identical benchmark tasks with identical toolsets, prompts, system instructions, and LLM backends.
+At equal true success rates, conditional planning gives:
 
-## Number of Runs & Tasks
-- **Tasks**: TBD upon verification of local benchmark harness (e.g., verified LHTB / SWE-bench subsets).
-- **Runs per Task**: 3 independent runs per task per agent framework.
+| Permitted loss | Pairs if 10% disagree | Pairs if 20% disagree |
+| --- | ---: | ---: |
+| 2 percentage points | 1,578 | 3,104 |
+| **5 percentage points** | **274** | **507** |
+| 10 percentage points | 81 | 134 |
 
-## Model
-`gemini-2.5-pro` (or active default model, strictly locked).
+Each pair means two agent executions on one distinct task. These are planning scenarios; actual disagreement, task dependence and finite-sample behavior determine the final design. [Calculator](paired_power.py) reproduces a [published 507-pair example](https://doi.org/10.1186/s12874-025-02497-2).
 
-## Frozen Binary & Source
-- **Commit**: `0b832c3ef77ed29a658b694e73a0cd356a6fe99a`
-- **Binary Hash**: `782fd9859e1dd69aa5fb7074bfebf4dbd0e319574412cdc742926816a19ee0a1`
+The primary analysis uses a Nam/Tango paired score interval for ON-minus-OFF success rate. Declare non-inferiority only when the one-sided 95% lower bound exceeds −0.05. A nonsignificant McNemar test cannot establish unchanged performance. Report all four paired outcome counts and the interval; token use and latency are separate outcomes.
 
-## Stopping Rules
-1. Execution timeout per task (e.g., 30 minutes or 50 tool steps max).
-2. Infinite loop detection (same tool called with identical arguments 5 times consecutively).
-3. API authentication or rate-limit failure.
-
-## Success Criteria
-- Elpis achieves task correctness pass rate within 5% margin of unpruned baseline (or statistically non-inferior) while reducing total token consumption.
-
-## Failure Criteria
-- Systematic task degradation (> 15% lower pass rate than unpruned baseline due to context truncation).
-- Failure to complete multi-step setup sequences due to missing past state.
-
-## Required Evidence to Save
-- Complete command logs, tool invocation inputs/outputs, and stdout/stderr.
-- Git diffs generated by the agent for each task attempt.
-- Automated test evaluation harness output logs (pass/fail assertions).
-- Full session JSONL transcripts.
-
-## Analysis Method
-- Objective grading via deterministic test runner (unit/integration test suite execution per task).
-- Fisher's exact test / McNemar's test for paired binary pass/fail comparisons across tasks.
-
-## Supported vs. Unsupported Claims
-- **Claims Supported**:
-  - End-to-end task completion correctness parity/advantage of Elpis on evaluated benchmark tasks.
-  - Cost per solved task comparison.
-- **Claims CANNOT Support**:
-  - General correctness claims on arbitrary unverified third-party codebases outside the evaluated benchmark suite.
-  - Human developer productivity or code quality subjective assessments.
+Execution requires a compatible Linux sandbox host, not a local GPU. This pilot ran locally in Docker using process-specific supplementary-group access. Kaggle's separate model-proxy/notebook service remains an unvalidated Elpis/Terminal-Bench integration. Repair grader reliability and verify complete audit capture before a main study; uploads, large downloads, or a new paid budget require separate authorization.

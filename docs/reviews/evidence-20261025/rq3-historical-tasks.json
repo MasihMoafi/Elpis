@@ -1,0 +1,99 @@
+{
+  "source_commit": "459c72dbdd962b76673935d965cc35fe9a0ca67c",
+  "source_path": "docs/evals/terminal-bench/PLAN.md",
+  "source_sha256": "5075f22d836b4b626843edb577ba42207239d989bd2218833ca1802ebff68ade",
+  "source_reproduce": [
+    "git",
+    "show",
+    "459c72dbdd962b76673935d965cc35fe9a0ca67c:docs/evals/terminal-bench/PLAN.md"
+  ],
+  "identified_real_tasks_with_outcomes": 9,
+  "terminal_bench": {
+    "distinct_paired_tasks": 7,
+    "scored_pairs_including_repeated_dna": 8,
+    "executions_in_those_pairs": 16,
+    "main_model": "gpt-5.6-terra",
+    "main_effort": "medium",
+    "pruner_model": "gpt-5.6-luna",
+    "pruner_effort": "low",
+    "tasks": [
+      {
+        "id": "dna-assembly",
+        "off_passed": false,
+        "on_passed": false
+      },
+      {
+        "id": "extract-elf",
+        "off_passed": false,
+        "on_passed": true
+      },
+      {
+        "id": "merge-diff-arc-agi-task",
+        "off_passed": true,
+        "on_passed": true
+      },
+      {
+        "id": "sqlite-with-gcov",
+        "off_passed": true,
+        "on_passed": true
+      },
+      {
+        "id": "custom-memory-heap-crash",
+        "off_passed": true,
+        "on_passed": true
+      },
+      {
+        "id": "financial-document-processor",
+        "off_passed": true,
+        "on_passed": true
+      },
+      {
+        "id": "compile-compcert",
+        "off_passed": true,
+        "on_passed": true
+      }
+    ],
+    "additional_reported_off_only_inert_tasks": 5,
+    "names_and_grades_for_inert_tasks_available": false,
+    "excluded_pairs": [
+      {
+        "task": "crack-7z",
+        "pairs": 2,
+        "reason": "sandbox/deadline invalidity"
+      }
+    ],
+    "evidence_kind": "Preserved historical report; original per-run scratch is absent"
+  },
+  "lhtb": {
+    "distinct_tasks": 2,
+    "models": "Not identifiable from available grade records",
+    "vector_db": [
+      {
+        "task": "vector-db",
+        "arm": "on",
+        "reward": 0.3113,
+        "path": "/home/masih/Desktop/p/Elpis/docs/evals/archive/eval-archive-full/lhtb-grade-results-elpis/output/test_results.json",
+        "sha256": "3a58ab3eb2d085ae9c9dcb5b3c51a1ea9562400d6c758979b7baf88d29f32a8a"
+      },
+      {
+        "task": "vector-db",
+        "arm": "baseline",
+        "reward": 0.428,
+        "path": "/home/masih/Desktop/p/Elpis/docs/evals/archive/eval-archive-full/lhtb-grade-results-codex/output/test_results.json",
+        "sha256": "3cb7d170851f6b166251401d6b3695bfef410ee489c9fddda3a5bb13410c817e"
+      }
+    ],
+    "langchain_migration": {
+      "on_reward": 1.0,
+      "comparison_arm_available": false,
+      "path": "/home/masih/Desktop/p/Elpis/docs/evals/archive/eval-archive-full/lhtb-langchain-migration-elpis.grade/reward.txt",
+      "sha256": "d0ff5974b6aa52cf562bea5921840c032a860a91a3512f7fe8f768f6bbe005f6"
+    }
+  },
+  "limits": [
+    "No exact lifetime attempted-task total can be recovered.",
+    "Seven TB identities and two LHTB identities are distinct recorded real tasks, not synthetic fact probes.",
+    "No cross-model equivalence or non-inferiority follows from these historical pilots.",
+    "Other Flash/Elpis runs are described in backup notes without raw records and are excluded from this verified-outcome count."
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "verified_at_utc": "2026-10-25T05:18:47.318782+00:00",
+  "kind": "Offline reproduction of archived results; no new model inference",
+  "archive": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
+  "cohort": "held-out-synthetic-coverage-after-oracle-correction",
+  "model": "gpt-5.6-luna",
+  "binary_sha256": "21cbb5e2cf325fb0e47a5c054a48fc337b74637074a7d28993c6f7b8950ef8b5",
+  "distinct_synthetic_cases": 4,
+  "conversations_across_five_conditions": 20,
+  "core_manifest": {
+    "path": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/SHA256SUMS",
+    "sha256": "a59d581da8acf763e745c891ff37b12432af29d345feb89d6f8d006c4d48d7b4",
+    "files_verified_this_session": 490
+  },
+  "frozen_audit": {
+    "harness": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/harness/staged-study.mjs",
+    "sha256": "d3c18c409eec4ef39ec80b46676383a5e4df7713de9b0941e791bf5ff15d0759",
+    "reproduced_this_session": true,
+    "matched_archive_report_and_existing_review_copy": true,
+    "status": "passed"
+  },
+  "independent_answer_comparison_to_frozen_oracles": {
+    "RAW": {
+      "values_and_citation_sets_correct": 24,
+      "withheld_questions_correct": 8
+    },
+    "ADMITTED": {
+      "values_and_citation_sets_correct": 24,
+      "withheld_questions_correct": 8
+    }
+  },
+  "omission_controls": {
+    "cases": 4,
+    "all_passed_missing_fact_detection": true
+  },
+  "estimated_tool_output_representation_tokens": {
+    "before": 27786,
+    "after": 1271,
+    "reduction_percent": 95.42575397682286,
+    "unit": "Harness estimates of the raw and admitted tool-output representations"
+  },
+  "scope": [
+    "Not a representative confirmatory sample",
+    "Diagnostic artifacts, not repository implementations",
+    "Logical-prefix checks, not encoded-wire equality or provider-internal cache evidence",
+    "24 requirements are correlated within four cases; 20 conversations include controls.",
+    "Representation size is separate from total inference usage, optimizer overhead, billing, and latency."
+  ],
+  "historical_august_audit": {
+    "source": "../../evals/rq2/INDEPENDENT_AUDIT.md",
+    "reported_targets_retained": 6,
+    "reported_automatic_pruning_passes": 11,
+    "original_rollout_rechecked": false,
+    "reason": "Documented rollout and exact-ID match in current session store unavailable; showcase attributes this result to the historical audit."
+  },
+  "reproduce": {
+    "cwd": "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01",
+    "core_checksums": [
+      "sha256sum",
+      "--check",
+      "--quiet",
+      "SHA256SUMS"
+    ],
+    "frozen_audit": [
+      "node",
+      "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01/harness/staged-study.mjs",
+      "--audit",
+      "/home/masih/Desktop/p/Elpis/docs/evals/final-data/REMAINING-COVERAGE-LUNA-20260908-01"
+    ]
+  }
+}
