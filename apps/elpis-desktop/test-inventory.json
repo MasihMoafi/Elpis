@@ -374,6 +374,7 @@
     "tests/sidebar-search.runtime.cjs",
     "tests/startup.runtime.cjs",
     "tests/workflow-run.runtime.mjs",
-    "tests/workflow-app.runtime.mjs"
+    "tests/workflow-app.runtime.mjs",
+    "tests/full-access.runtime.cjs"
   ]
 }
