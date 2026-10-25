@@ -1,5 +1,6 @@
 // Shift+Tab in the message box cycles the permission mode as Claude Code does: Ask for approval, Approve for me,
-// Plan mode, and back; the focus stays in the message box. Synthetic HTTP fixture; no engine calls.
+// Plan mode, and back; Full access is the initial default. The focus stays in the message box.
+// Synthetic HTTP fixture; no engine calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -7,7 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
-test('Shift+Tab cycles Ask for approval, Approve for me and Plan mode, keeping the focus', async () => {
+test('Shift+Tab leaves the Full access default for Ask, then cycles Approve for me and Plan, keeping focus', async () => {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); for await (const _ of req) { /* drain */ }
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -32,7 +33,8 @@ test('Shift+Tab cycles Ask for approval, Approve for me and Plan mode, keeping t
     await pill.waitFor(); await page.waitForFunction(() => !document.querySelector('[aria-label="Change permissions"]')?.disabled);
     await input.click();
     const state = async () => `${(await pill.innerText()).trim()}${await plan.count() ? ' + Plan' : ''}`;
-    assert.equal(await state(), 'Ask for approval');
+    assert.equal(await state(), 'Full access');
+    await input.press('Shift+Tab'); assert.equal(await state(), 'Ask for approval');
     await input.press('Shift+Tab'); assert.equal(await state(), 'Approve for me');
     await input.press('Shift+Tab'); assert.equal(await state(), 'Ask for approval + Plan');
     await input.press('Shift+Tab'); assert.equal(await state(), 'Ask for approval');
