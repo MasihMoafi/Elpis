@@ -45,7 +45,7 @@ test('Back and Forward walk the chats and pages visited: the buttons, Alt+Left a
 }));
 
 const MENU = { user: ['Reply', 'Copy text', 'Copy as Markdown', 'Edit and retry', 'Rewind to here'], reply: ['Reply', 'Copy text', 'Copy as Markdown', 'Read aloud', 'Rewind to here', 'Fork chat from here'] };
-const menuItems = async page => { await page.getByRole('menuitem').first().waitFor(); return (await page.getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim()); };
+const menuItems = async page => { const menu = page.getByRole('menu'); await menu.getByRole('menuitem').first().waitFor(); return (await menu.getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim()); };
 const closeMenu = async page => { await page.keyboard.press('Escape'); await page.getByRole('menu').waitFor({ state: 'hidden' }); };
 
 test('right-click on a message keeps the hover … actions and appends Change this…', () => using({}, async f => {
@@ -268,7 +268,7 @@ test('the new surfaces paint no orange in the light theme: the @ picker, the + m
   await composer.click(); await page.keyboard.type('@'); await page.getByRole('listbox', { name: 'Mentions' }).waitFor();
   assert.deepEqual(await oranges(page), [], 'the @ picker');
   await composer.fill('');
-  await page.getByRole('button', { name: 'Add files and more', exact: true }).click(); await page.getByRole('menuitem').first().waitFor();
+  await page.getByRole('button', { name: 'Add files and more', exact: true }).click(); await page.getByRole('menu').getByRole('menuitem').first().waitFor();
   assert.deepEqual(await oranges(page), [], 'the + menu');
   await closeMenu(page);
   await page.locator('.message.agent', { hasText: 'two passes' }).click({ button: 'right' });
