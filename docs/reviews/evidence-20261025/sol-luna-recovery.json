@@ -1,0 +1,763 @@
+{
+  "generated_at": "2026-10-25T11:46:10.270359+00:00",
+  "scope": "New two-task recovery cohort; one execution per arm; descriptive only",
+  "plan_sha256": "f4eda795e3aa94a5af75deccbab94a2cbf61d36f52d5fa9ac13c7793d8bc0103",
+  "generator_sha256": "59a63957c5f28fd91fb7730944933b5011117a302e585cb11b4694a044a50376",
+  "main": {
+    "model": "gpt-6-sol",
+    "effort": "high",
+    "provider": "openai",
+    "auth": "existing ChatGPT login; copied access/id/account only, refresh token blank"
+  },
+  "pruner": {
+    "model": "gpt-6-luna",
+    "effort": "low",
+    "provider": "openai",
+    "backend": "llm",
+    "settings": "fresh per-container pruner.json identical across arms; default prompt pinned by binary"
+  },
+  "scheduled_arms": 4,
+  "recorded_arms": 4,
+  "graded_arms": 4,
+  "fully_graded_pairs": 2,
+  "pairs": [
+    {
+      "task": "configure-git-webserver",
+      "off_reward": 0.0,
+      "on_reward": 0.0,
+      "both_grades_valid": true,
+      "on_admitted_outputs": 4,
+      "matched_prompts_configs_resources_and_grader_test_code": true,
+      "bootstrap_environment_identical": false,
+      "only_pruning_invocation_flag_differs": true
+    },
+    {
+      "task": "sqlite-with-gcov",
+      "off_reward": 1.0,
+      "on_reward": 1.0,
+      "both_grades_valid": true,
+      "on_admitted_outputs": 3,
+      "matched_prompts_configs_resources_and_grader_test_code": true,
+      "bootstrap_environment_identical": true,
+      "only_pruning_invocation_flag_differs": true
+    }
+  ],
+  "runs": [
+    {
+      "id": "r4-01-configure-git-webserver-off",
+      "task": "configure-git-webserver",
+      "arm": "off",
+      "attempted": true,
+      "recorded": true,
+      "grade_valid": true,
+      "reward": 0.0,
+      "raw_official_reward": 0.0,
+      "grade_source": "original Harbor trial",
+      "grading_repair": null,
+      "grader_exception": null,
+      "pytest_started": true,
+      "tests_collected": 1,
+      "pytest_summary": [
+        "============================== 1 failed in 27.45s =============================="
+      ],
+      "agent_exit": 0,
+      "evidence_error": null,
+      "observed_main_models": [
+        "gpt-6-sol"
+      ],
+      "native_guard_invocations": 15,
+      "primary_usage": {
+        "input_tokens": 319919,
+        "cached_input_tokens": 287872,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 9601,
+        "reasoning_output_tokens": 6072,
+        "total_tokens": 329520
+      },
+      "optimizer_usage": {},
+      "pruning_measured": true,
+      "admitted_outputs": 0,
+      "optimizer_attempts": [],
+      "resource_limits": {
+        "memory.max": "4294967296",
+        "memory.swap.max": "0",
+        "cpu.max": "200000 100000",
+        "pids.max": "512"
+      },
+      "grader_env": {
+        "UV_PYTHON": "/opt/rq3/python/bin/python3",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache"
+      },
+      "prompt_sha256": "62151b7371bc364277a3c118bba755334c640fb0cefc7a5af106e6e763cf1d97",
+      "runtime_config_sha256": {
+        "effective-config.toml": "0e4a5521a9952cae5ff0e1afe25c5c1f266466452c41a1cda5a2a960ed8fa4a6",
+        "pruner.json": "56f4724fefd8728a54d850c9064b380221993cab7b0452ad491c215635584d01"
+      },
+      "argv": [
+        "/opt/rq3/elpis",
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--dangerously-bypass-hook-trust",
+        "-C",
+        "/app",
+        "--model",
+        "gpt-6-sol",
+        "-c",
+        "model_provider=\"openai\"",
+        "-c",
+        "forced_login_method=\"chatgpt\"",
+        "-c",
+        "cli_auth_credentials_store=\"file\"",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "-c",
+        "features.automatic_context_pruning=false",
+        "-c",
+        "features.hooks=true",
+        "-c",
+        "features.multi_agent=false",
+        "-c",
+        "features.multi_agent_v2=false",
+        "-c",
+        "features.apps=false",
+        "-c",
+        "features.plugins=false",
+        "-c",
+        "features.memories=false",
+        "-c",
+        "web_search=\"disabled\"",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "log_dir=\"/logs/agent/runtime-log\"",
+        "-c",
+        "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
+        "-"
+      ],
+      "started_at": "2026-10-25T10:53:05.215710Z",
+      "raw_trial_finished_at": "2026-10-25T10:56:53.828921Z",
+      "finished_at": "2026-10-25T10:56:53.828921Z",
+      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-01-configure-git-webserver-off/configure-git-webserver__BnMYMLu/result.json",
+      "raw_result_sha256": "915e5e85980a9854ba5a8c9c8f2744629c56a0aebd6a19a069d98722c861d613",
+      "raw_status_sha256": "23cbe5aec2275fea4b7dd32c45ac41c52bac2da420d889058c7619a6d03722a0",
+      "grader_stdout_sha256": "6e9bb6c2ee00614ada557f5c2c6366152098c3670171ffd89fb51690f005106d",
+      "evidence_sha256": {
+        "events.jsonl": "62b7a852f7749be80a8cf8b33b04c25b6c1170581b7d8b78ada944ff2e82a870",
+        "grader-cache.json": "bba3423d7bcb685b05f436280c3a9d5f20cd97bf42cc31625d762e0f71755950",
+        "launch.json": "1adf6e08045182ea2cadf3b3973ab9dd4a78380e1c0a691fc17d4e62772f5d65",
+        "native-guard-hooks.jsonl": "27052b7a60f57550635a370fd65d141b09c8ce89ab5d68999d7078c7dbe77c5c",
+        "resource-limits.json": "95e932eb234e9785b93d0ebee0dfe2be8eb13f677b712623fd7bf3909d93f52e",
+        "sessions/2026/10/25/rollout-2026-10-25T10-53-16-01a172b1-7749-7ca0-9f8e-8a8e0a0fcb9b.jsonl": "bb5df86205c974a8631fab29216a434219c44dedfdf51dfb22118e82afd20f4d"
+      }
+    },
+    {
+      "id": "r4-02-configure-git-webserver-on",
+      "task": "configure-git-webserver",
+      "arm": "on",
+      "attempted": true,
+      "recorded": true,
+      "grade_valid": true,
+      "reward": 0.0,
+      "raw_official_reward": null,
+      "grade_source": "official grader resumed on retained candidate; original timeout preserved",
+      "grading_repair": {
+        "started_at": "2026-10-25T11:29:17.264818+00:00",
+        "original_grader_exception": "VerifierTimeoutError",
+        "original_result_retained": true,
+        "model_repeated": false,
+        "candidate_container": "configure-git-webserver__adwemgh__env-main-1",
+        "prior_stdout": "",
+        "restore_services_evidence_sha256": "30f7e8504e7e4aaac1cec926cdbde3535f62cd547b0a192f2f905a0e6c5dba28",
+        "restoration": "Restart only nginx and sshd, both previously launched successfully by the candidate; do not alter deployment or service configuration.",
+        "official_tests_sha256": {
+          "test.sh": "c2d6e4c127dddad2baf492ef851b4303d424fad73bca40946606a32c09fb8b33",
+          "verify.sh": "1dc44c923b797ed24ca423c9b9efcd9c1eed4d7261007139b0a724f4e2f53d05",
+          "test_outputs.py": "232e7187b61cc22d980d9007695b80579ea1ff9dd8e222ef08a4e73f7c182d2a"
+        },
+        "services_restarted_from_unchanged_candidate_config": [
+          "nginx",
+          "sshd"
+        ],
+        "candidate_configuration_unchanged_by_restoration": {
+          "/etc/nginx/sites-available/git-site": "81a777bc4cf7f594b802c639d24c20bf17754a9547526d1b48567c877e4a2a11",
+          "/git/server/hooks/post-receive": "fc43408e041264ae9bf9e764a44b952986d811f8d198e38f73835090599f337a",
+          "/etc/ssh/sshd_config": "64325541513d33ea1d2ccd19c77750d458e67e7967fd2e7ef81d92f0aa2ffe21"
+        },
+        "grade_valid": true,
+        "reward": 0.0,
+        "pytest_started": true,
+        "grader_command_exit": 0,
+        "grader_env": {
+          "UV_PYTHON": "/opt/rq3/python/bin/python3",
+          "UV_PYTHON_DOWNLOADS": "never",
+          "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache",
+          "PATH": "/opt/rq3/grader-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        },
+        "stdout_file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/verifier/grading-repair-01.txt",
+        "stdout_sha256": "d5f64e5ec71c93db3c68b5f9853bd303b65c985da08b12523e252d10cb487803",
+        "official_tests_unchanged": true,
+        "completed_at": "2026-10-25T11:29:56.482790+00:00"
+      },
+      "grader_exception": "VerifierTimeoutError",
+      "pytest_started": true,
+      "tests_collected": 1,
+      "pytest_summary": [
+        "============================== 1 failed in 29.54s =============================="
+      ],
+      "agent_exit": 0,
+      "evidence_error": null,
+      "observed_main_models": [
+        "gpt-6-sol"
+      ],
+      "native_guard_invocations": 32,
+      "primary_usage": {
+        "input_tokens": 748163,
+        "cached_input_tokens": 706304,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 14567,
+        "reasoning_output_tokens": 9554,
+        "total_tokens": 762730
+      },
+      "optimizer_usage": {
+        "input_tokens": 21798,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1180,
+        "reasoning_output_tokens": 184,
+        "total_tokens": 22978
+      },
+      "pruning_measured": true,
+      "admitted_outputs": 4,
+      "optimizer_attempts": [
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-2fe9-7773-a7cc-b0b1ab36b96f.json",
+          "sha256": "32121a4a9d21f395c732837a360b266c1c6c94492b99c5447f8433ef3020321f",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 2726,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 183,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 2909
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "5ccecb60adfebd7a7cf92e812626eb5ff994f9f77f4a34e60bb54d043c00eb5a",
+            "request.json": "2c85a04e9ef3efe71a9df2e5d0d8f66578d9aa97d1414bd9bd72bb0f2299841b",
+            "response.json": "a82d1bd540782b90004e69a2cdbef079228fa8885d75479f388a240582598cc0"
+          }
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-4ba4-7c71-9d53-036e319cbaa8.json",
+          "sha256": "7700ca72a2d15b974283fe76dd7ff990557aa380c2122ecb9ee9b65215b93661",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 3743,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 197,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 3940
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "b97804ff38fc398ad4f48c680c25a69cb40babe062d97bff7b7807e825187814",
+            "request.json": "eda2518737f6581a471a801f501adec76665dfa141fd5995e638fd6cd640a97c",
+            "response.json": "d60ea21646fa590e9c3ac24709d62f0daed99336d8173bb3c6b7cabb34242c46"
+          }
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-b79c-7fa3-bfdc-96c5ac41b164.json",
+          "sha256": "40e1723bd39fe2fa3bb3c4faf7221e6d1e207cb15330dea8a53462aa355f47a1",
+          "status": "unchanged",
+          "usage": {
+            "input_tokens": 3041,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 204,
+            "reasoning_output_tokens": 103,
+            "total_tokens": 3245
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low"
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b5-d34a-7c32-ab0a-cd0aec81a4d6.json",
+          "sha256": "277e0636c9b9fc115836a5e071ce0d803c3063b44ef1452614b4ac41fa0044be",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 5925,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 203,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 6128
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "3b66deb6dcce967648c225395725b275aee1bd0fff4bd89f5cfba622c488b952",
+            "request.json": "b196ec86ae05cb54196475649a5873213b6bcc4efc73822421be53f3eb4f787a",
+            "response.json": "794e343e919eafb1222078ddf64ea3d3780da72cbf0d093863c39171321b0d17"
+          }
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b6-55f0-7e31-9737-0985efb601d5.json",
+          "sha256": "b89fec5531f89aa084efee7e2d485a9d70ccbf986950f7543dcec21fa4c9f5ee",
+          "status": "unchanged",
+          "usage": {
+            "input_tokens": 3800,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 150,
+            "reasoning_output_tokens": 37,
+            "total_tokens": 3950
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low"
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/agent/smart-prune/attempts/01a172b6-7f22-7920-ace6-d390651f1944.json",
+          "sha256": "a7eaceffe06cf35598ae7e45801f9a1c55cba536620d1796d17ff20962f508ed",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 2563,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 243,
+            "reasoning_output_tokens": 44,
+            "total_tokens": 2806
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "c51bd9c98e1702e4b49ccec7493019594b69fbf6434a42dcaed71ec2793eb5b7",
+            "request.json": "d5b0faa154feaedccfa4333cf7227bd0626b504d44b441d4d92799b5929c426b",
+            "response.json": "49bf94e1bfd1b092959afaf436293ea80451fa24005129a3be4ebd0980064383"
+          }
+        }
+      ],
+      "resource_limits": {
+        "memory.max": "4294967296",
+        "memory.swap.max": "0",
+        "cpu.max": "200000 100000",
+        "pids.max": "512"
+      },
+      "grader_env": {
+        "UV_PYTHON": "/opt/rq3/python/bin/python3",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache",
+        "PATH": "/opt/rq3/grader-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      },
+      "prompt_sha256": "62151b7371bc364277a3c118bba755334c640fb0cefc7a5af106e6e763cf1d97",
+      "runtime_config_sha256": {
+        "effective-config.toml": "0e4a5521a9952cae5ff0e1afe25c5c1f266466452c41a1cda5a2a960ed8fa4a6",
+        "pruner.json": "56f4724fefd8728a54d850c9064b380221993cab7b0452ad491c215635584d01"
+      },
+      "argv": [
+        "/opt/rq3/elpis",
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--dangerously-bypass-hook-trust",
+        "-C",
+        "/app",
+        "--model",
+        "gpt-6-sol",
+        "-c",
+        "model_provider=\"openai\"",
+        "-c",
+        "forced_login_method=\"chatgpt\"",
+        "-c",
+        "cli_auth_credentials_store=\"file\"",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "-c",
+        "features.automatic_context_pruning=true",
+        "-c",
+        "features.hooks=true",
+        "-c",
+        "features.multi_agent=false",
+        "-c",
+        "features.multi_agent_v2=false",
+        "-c",
+        "features.apps=false",
+        "-c",
+        "features.plugins=false",
+        "-c",
+        "features.memories=false",
+        "-c",
+        "web_search=\"disabled\"",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "log_dir=\"/logs/agent/runtime-log\"",
+        "-c",
+        "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
+        "-"
+      ],
+      "started_at": "2026-10-25T10:57:01.068340Z",
+      "raw_trial_finished_at": "2026-10-25T11:17:17.715698Z",
+      "finished_at": "2026-10-25T11:29:56.482790+00:00",
+      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-02-configure-git-webserver-on/configure-git-webserver__aDwEmGh/result.json",
+      "raw_result_sha256": "539e62e8f0a9d62439167bcaa0dd7171bda878a519d42db124c755fdb60ad799",
+      "raw_status_sha256": "cd1fce644ee4425e1ffd9114fb405d80b4acf0294d5ca210c44e5ae63defa9e2",
+      "grader_stdout_sha256": "d5f64e5ec71c93db3c68b5f9853bd303b65c985da08b12523e252d10cb487803",
+      "evidence_sha256": {
+        "events.jsonl": "30f7e8504e7e4aaac1cec926cdbde3535f62cd547b0a192f2f905a0e6c5dba28",
+        "grader-cache.json": "bba3423d7bcb685b05f436280c3a9d5f20cd97bf42cc31625d762e0f71755950",
+        "launch.json": "8b3ccbfe4cc124bb6dbede6e0d682161f4e5c48c1626bafd76363712cadc414c",
+        "native-guard-hooks.jsonl": "9ff83fbef8f76cdc6f6d52f2d8e414a09b3992f73d1c570ee1f75431aa4bb6cc",
+        "resource-limits.json": "95e932eb234e9785b93d0ebee0dfe2be8eb13f677b712623fd7bf3909d93f52e",
+        "sessions/2026/10/25/rollout-2026-10-25T10-57-13-01a172b5-11bc-78f3-882c-80672d69b4f0.jsonl": "758f32b79ff5ebb631e86aa485feed2d59e22d2e9a72bd4b49bd8d6ad21e9926"
+      }
+    },
+    {
+      "id": "r4-03-sqlite-with-gcov-on",
+      "task": "sqlite-with-gcov",
+      "arm": "on",
+      "attempted": true,
+      "recorded": true,
+      "grade_valid": true,
+      "reward": 1.0,
+      "raw_official_reward": 1.0,
+      "grade_source": "original Harbor trial",
+      "grading_repair": null,
+      "grader_exception": null,
+      "pytest_started": true,
+      "tests_collected": 3,
+      "pytest_summary": [
+        "============================== 3 passed in 0.11s ==============================="
+      ],
+      "agent_exit": 0,
+      "evidence_error": null,
+      "observed_main_models": [
+        "gpt-6-sol"
+      ],
+      "native_guard_invocations": 27,
+      "primary_usage": {
+        "input_tokens": 446691,
+        "cached_input_tokens": 418944,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3767,
+        "reasoning_output_tokens": 1199,
+        "total_tokens": 450458
+      },
+      "optimizer_usage": {
+        "input_tokens": 12673,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1670,
+        "reasoning_output_tokens": 265,
+        "total_tokens": 14343
+      },
+      "pruning_measured": true,
+      "admitted_outputs": 3,
+      "optimizer_attempts": [
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-0bb4-7423-9db1-961dd1257187.json",
+          "sha256": "c5f6a81fbb41dbcffdb4f41b246ac4d8d3c728a9027e36cb7b53a29a1e0afe63",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 2411,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 675,
+            "reasoning_output_tokens": 188,
+            "total_tokens": 3086
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "4025ebec0277aca624579f0d23f43925c59db87e22dc8f8e9d4a90ca8f769216",
+            "request.json": "c11a0e7bd25fa8e47d436b9d966c5815f77e47a2fa3137b572efa07970ccf301",
+            "response.json": "62c40be83358e8421099f8d67d7c775eeada81c1c5a0b5ec5ba37f62819d674f"
+          }
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-772b-7162-85c7-ec9e3a41399c.json",
+          "sha256": "961e89fbb0b2bdd8cbb2b386376309dfcdf771802d024dae49deaa447c2ec653",
+          "status": "unchanged",
+          "usage": {
+            "input_tokens": 3912,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 166,
+            "reasoning_output_tokens": 46,
+            "total_tokens": 4078
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low"
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d6-991f-7b91-bb21-8d1a815eddb6.json",
+          "sha256": "67e1e297fff032c53e3a32f6c3c794838b43d113c811c7d049ea9e79483933f4",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 3966,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 687,
+            "reasoning_output_tokens": 31,
+            "total_tokens": 4653
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "cb6bb0894e8524cf3dfea490d2df2b835854b8d2f1edef34038e90f45a92b260",
+            "request.json": "5ceb6627ad34bf7e33082c2d32ea848c0ef6c94b00eece01336918ceb23df0fe",
+            "response.json": "0acadfa52706a0463f192637f86a785a20f72825b47f19adc562c52d9aedc2d2"
+          }
+        },
+        {
+          "file": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/agent/smart-prune/attempts/01a172d7-2f40-7830-9e6e-a1ebd631d1cb.json",
+          "sha256": "eeb93b38670d554e4b5fe02fc43727b56316a6bfd31b3d4d283c050858425605",
+          "status": "admitted",
+          "usage": {
+            "input_tokens": 2384,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 142,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 2526
+          },
+          "model": "gpt-6-luna",
+          "reasoning_effort": "low",
+          "receipt_sha256": {
+            "manifest.json": "eb88233598c5afd40c7e22aa4f1fa00b6ee54248731d81c3eeea90d17bcffd5d",
+            "request.json": "845a04b66cd5faf4b3cc5b4d16755251de0427b10d91263d141e4c55154af1c6",
+            "response.json": "55d9fae007882aa4144666722e935f901c281962e00adfb21a490d69a2b2958b"
+          }
+        }
+      ],
+      "resource_limits": {
+        "memory.max": "4294967296",
+        "memory.swap.max": "0",
+        "cpu.max": "200000 100000",
+        "pids.max": "512"
+      },
+      "grader_env": {
+        "UV_PYTHON": "/opt/rq3/python/bin/python3",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache",
+        "PATH": "/opt/rq3/grader-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      },
+      "prompt_sha256": "b6ba9acf62292bc2a0bab40d4805b3abceededbb0ccd4477a1ce9ccc42c14dd9",
+      "runtime_config_sha256": {
+        "effective-config.toml": "0e4a5521a9952cae5ff0e1afe25c5c1f266466452c41a1cda5a2a960ed8fa4a6",
+        "pruner.json": "56f4724fefd8728a54d850c9064b380221993cab7b0452ad491c215635584d01"
+      },
+      "argv": [
+        "/opt/rq3/elpis",
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--dangerously-bypass-hook-trust",
+        "-C",
+        "/app",
+        "--model",
+        "gpt-6-sol",
+        "-c",
+        "model_provider=\"openai\"",
+        "-c",
+        "forced_login_method=\"chatgpt\"",
+        "-c",
+        "cli_auth_credentials_store=\"file\"",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "-c",
+        "features.automatic_context_pruning=true",
+        "-c",
+        "features.hooks=true",
+        "-c",
+        "features.multi_agent=false",
+        "-c",
+        "features.multi_agent_v2=false",
+        "-c",
+        "features.apps=false",
+        "-c",
+        "features.plugins=false",
+        "-c",
+        "features.memories=false",
+        "-c",
+        "web_search=\"disabled\"",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "log_dir=\"/logs/agent/runtime-log\"",
+        "-c",
+        "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
+        "-"
+      ],
+      "started_at": "2026-10-25T11:32:33.783680Z",
+      "raw_trial_finished_at": "2026-10-25T11:35:23.354365Z",
+      "finished_at": "2026-10-25T11:35:23.354365Z",
+      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-03-sqlite-with-gcov-on/sqlite-with-gcov__nWmXEej/result.json",
+      "raw_result_sha256": "1bc7dca36d0ad87ef69c33a4c3b9cc9cb2d00de546d26dc9c21729228b288480",
+      "raw_status_sha256": "0c0ce71768ea2813e4d817307606d0e6625ef1d301444bc952ac2e7e0cafbdd1",
+      "grader_stdout_sha256": "d242fef41262157de2d96ba453ba0a8efea97aa2a14a1fb86528dc5d0e40f026",
+      "evidence_sha256": {
+        "events.jsonl": "e3511c921421a9c48964002c4289210900fc8778a7130503848ca6257bd766ce",
+        "grader-cache.json": "4f621f72c6078fc65425a785f49002ff11d9f57465791e90ad2aa53ec5c553a0",
+        "launch.json": "dbad7fca06512bee8d4484de967fe669d535517fb037b41c36bd8d186e1dd652",
+        "native-guard-hooks.jsonl": "96c623475ea8013459b78861f1497831387e671f92acc88bb9d25ae391974554",
+        "resource-limits.json": "95e932eb234e9785b93d0ebee0dfe2be8eb13f677b712623fd7bf3909d93f52e",
+        "sessions/2026/10/25/rollout-2026-10-25T11-32-45-01a172d5-99ff-7e12-8883-f4963d124a26.jsonl": "71c22946046296c239f0f1631718262f4f357733ab909c7615ceb7967291fa8f"
+      }
+    },
+    {
+      "id": "r4-04-sqlite-with-gcov-off",
+      "task": "sqlite-with-gcov",
+      "arm": "off",
+      "attempted": true,
+      "recorded": true,
+      "grade_valid": true,
+      "reward": 1.0,
+      "raw_official_reward": 1.0,
+      "grade_source": "original Harbor trial",
+      "grading_repair": null,
+      "grader_exception": null,
+      "pytest_started": true,
+      "tests_collected": 3,
+      "pytest_summary": [
+        "============================== 3 passed in 0.11s ==============================="
+      ],
+      "agent_exit": 0,
+      "evidence_error": null,
+      "observed_main_models": [
+        "gpt-6-sol"
+      ],
+      "native_guard_invocations": 19,
+      "primary_usage": {
+        "input_tokens": 370952,
+        "cached_input_tokens": 344064,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3220,
+        "reasoning_output_tokens": 1103,
+        "total_tokens": 374172
+      },
+      "optimizer_usage": {},
+      "pruning_measured": true,
+      "admitted_outputs": 0,
+      "optimizer_attempts": [],
+      "resource_limits": {
+        "memory.max": "4294967296",
+        "memory.swap.max": "0",
+        "cpu.max": "200000 100000",
+        "pids.max": "512"
+      },
+      "grader_env": {
+        "UV_PYTHON": "/opt/rq3/python/bin/python3",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache",
+        "PATH": "/opt/rq3/grader-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      },
+      "prompt_sha256": "b6ba9acf62292bc2a0bab40d4805b3abceededbb0ccd4477a1ce9ccc42c14dd9",
+      "runtime_config_sha256": {
+        "effective-config.toml": "0e4a5521a9952cae5ff0e1afe25c5c1f266466452c41a1cda5a2a960ed8fa4a6",
+        "pruner.json": "56f4724fefd8728a54d850c9064b380221993cab7b0452ad491c215635584d01"
+      },
+      "argv": [
+        "/opt/rq3/elpis",
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--dangerously-bypass-hook-trust",
+        "-C",
+        "/app",
+        "--model",
+        "gpt-6-sol",
+        "-c",
+        "model_provider=\"openai\"",
+        "-c",
+        "forced_login_method=\"chatgpt\"",
+        "-c",
+        "cli_auth_credentials_store=\"file\"",
+        "-c",
+        "model_reasoning_effort=\"high\"",
+        "-c",
+        "features.automatic_context_pruning=false",
+        "-c",
+        "features.hooks=true",
+        "-c",
+        "features.multi_agent=false",
+        "-c",
+        "features.multi_agent_v2=false",
+        "-c",
+        "features.apps=false",
+        "-c",
+        "features.plugins=false",
+        "-c",
+        "features.memories=false",
+        "-c",
+        "web_search=\"disabled\"",
+        "-c",
+        "project_doc_max_bytes=0",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "log_dir=\"/logs/agent/runtime-log\"",
+        "-c",
+        "shell_environment_policy.exclude=[\"LD_LIBRARY_PATH\"]",
+        "-"
+      ],
+      "started_at": "2026-10-25T11:35:29.487064Z",
+      "raw_trial_finished_at": "2026-10-25T11:37:52.576723Z",
+      "finished_at": "2026-10-25T11:37:52.576723Z",
+      "raw_result": "/home/masih/Work/tries/elpis-rq3-20261025/runs/r4-04-sqlite-with-gcov-off/sqlite-with-gcov__ASAijqU/result.json",
+      "raw_result_sha256": "f074bcb7276d6e87c7b7c1de9341064041229a34af89eda5c0efb32ae725f4f3",
+      "raw_status_sha256": "fbbfaef667b855f013c3575c9ebe8aea9afc6357b598ac1e77675363d26ec920",
+      "grader_stdout_sha256": "5dfbee74772e650bcf12f834a01755d5c30eea4d1a8ba96b70f5571848308e6f",
+      "evidence_sha256": {
+        "events.jsonl": "9a36bc0e930948df8e3c1fefa3072f331cc66e94e389fcf8174a9b2b4c613c6c",
+        "grader-cache.json": "4f621f72c6078fc65425a785f49002ff11d9f57465791e90ad2aa53ec5c553a0",
+        "launch.json": "e11565cb83b17ad1ac5bb59804a560c348a5b69bc749bf3fda1d770ae2589cbf",
+        "native-guard-hooks.jsonl": "8f73808dcb5ed2c3b19d5810dac1c0e4d8eaa48782f73b23265ae0ee8caca7c2",
+        "resource-limits.json": "95e932eb234e9785b93d0ebee0dfe2be8eb13f677b712623fd7bf3909d93f52e",
+        "sessions/2026/10/25/rollout-2026-10-25T11-35-40-01a172d8-46b5-7c80-a86d-260a1f2ec34c.jsonl": "4d2e11cbe92d783cb44a2f14932f4b5ca34ee846b08b6459f3fce6a690b03d37"
+      }
+    }
+  ],
+  "known_primary_usage": {
+    "input_tokens": 1885725,
+    "cached_input_tokens": 1757184,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 31155,
+    "reasoning_output_tokens": 17928,
+    "total_tokens": 1916880
+  },
+  "known_optimizer_usage": {
+    "input_tokens": 34471,
+    "cached_input_tokens": 0,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 2850,
+    "reasoning_output_tokens": 449,
+    "total_tokens": 37321
+  },
+  "confirmed_admitted_outputs": 7,
+  "optimizer_usage_complete": true,
+  "usage_scope": "This four-arm cohort only; prior pilot/setup/smoke excluded. Cached input is included in input; reasoning output is included in output. No invoice-dollar inference.",
+  "prior_results_preserved": true,
+  "protocol_deviations": [
+    "Both new arms receive the same explicit 4 GiB RAM, no swap, 2 CPU and 512 PID caps; original pilot had no explicit task resource cap.",
+    "Verifier uses existing pinned CPython 3.13.5 rather than downloading another interpreter; test code, agent time and verifier time remain unchanged.",
+    "Official installer reads the checksum-verified original uv 0.7.13 archive from a container-local file cache populated after agent execution; no grader assertions or task state are changed.",
+    "After a second direct installer-script stall, cache its exact verified 0.7.13 bytes too: a grader-only curl wrapper handles only that literal installer URL/argument pair and delegates every task-test request to /usr/bin/curl. First web OFF grade remains unchanged. No grader assertion or model input is modified."
+  ],
+  "statistical_limit": "Two tasks cannot establish non-inferiority or a general performance effect."
+}

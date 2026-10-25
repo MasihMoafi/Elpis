@@ -1,0 +1,264 @@
+{
+  "experiment_id": "RQ3-RECOVERY-20261025-01",
+  "created_utc": "2026-10-25T10:40:35.191817+00:00",
+  "status": "recovery_finished",
+  "purpose": "New matched reruns of the two ungraded task pairs; descriptive only; preserve all prior grades and incidents",
+  "acceptance": [
+    "two distinct official task graders; four matched new agent runs",
+    "same pinned binary/models/native compaction/guard in both arms; only pruning differs",
+    "one lane; six arms at most; no retries or pruning-engagement filter",
+    "retain every official grade, error, timeout, rollout, usage and optimizer receipt",
+    "no credential artifacts, user configuration changes, or package installers; coordinator may fetch pinned benchmark images directly",
+    "count actual applied admissions using admitted attempt records plus durable manifests; retain inert ON cases; flag an all-zero pilot before any main batch",
+    "quota/model smoke is separate from official benchmark grading/task completion"
+  ],
+  "binary": {
+    "source": "/home/masih/.local/lib/elpis-next/versions/engine-20261024-bridge-ac4ce8d0c-a95c5dfb/package/bin/codex",
+    "installed_entry": "/home/masih/.local/bin/elpis-next",
+    "version": "0.4.1",
+    "sha256": "a95c5dfbb3845a4405c569912b1a760742bbf147c7c6568765c653393f841a22",
+    "minimum_glibc": "2.39"
+  },
+  "harbor": {
+    "version": "0.21.0",
+    "python": "/home/masih/.local/share/uv/tools/harbor/bin/python",
+    "package_source": "/home/masih/.local/share/uv/tools/harbor/lib/python3.13/site-packages/harbor",
+    "package_sha256": "b02faf7f335a1e9128df900f8d39a9cfb1626f2797773be66968bfaa2049a2ce",
+    "adapter_reference": "agents/installed/codex.py exec lifecycle and environments/docker/docker.py stdin_data API",
+    "launcher": "/home/masih/.local/bin/harbor"
+  },
+  "guard": {
+    "source": "/home/masih/.local/lib/agent-resource-guard/guard.py",
+    "sha256": "1d73278e63e8ecc3e9b724de869d8830c16471a7cacb0219f3625a87446186db",
+    "hook": "PreToolUse Bash and write/edit tools",
+    "reserves": "existing guard unchanged: 40/15 GiB; 5/1 percent inodes; proportional small-filesystem reserves",
+    "native_hook_registration": "enabled isolated hook; observer requires actual wrapped native shell calls on every run"
+  },
+  "main": {
+    "model": "gpt-6-sol",
+    "effort": "high",
+    "provider": "openai",
+    "auth": "existing ChatGPT login; copied access/id/account only, refresh token blank"
+  },
+  "pruner": {
+    "model": "gpt-6-luna",
+    "effort": "low",
+    "provider": "openai",
+    "backend": "llm",
+    "settings": "fresh per-container pruner.json identical across arms; default prompt pinned by binary"
+  },
+  "native_compaction": {
+    "token_limit": null,
+    "enabled": "pinned runtime/model default; no artificially reduced token window; identical per arm"
+  },
+  "runtime_root": "/home/masih/Work/tries/elpis-rq3-20261025",
+  "tasks": [
+    {
+      "name": "configure-git-webserver",
+      "source": "/home/masih/.cache/harbor/tasks/XvSZ8ep75ygfvFmonK4WcK/configure-git-webserver",
+      "fixture_sha256": "bb30c49fc50eb66eb1f90e57cf1fca935dfaa2350a422428621750147b41267f",
+      "task_toml_sha256": "f6a4b4bf2ab8a554473a279152301ed7596aff04479407bb9054d9916919b92a",
+      "instruction_sha256": "62151b7371bc364277a3c118bba755334c640fb0cefc7a5af106e6e763cf1d97",
+      "docker_image": "ghcr.io/laude-institute/terminal-bench/configure-git-webserver:2.0",
+      "declared_base": "ubuntu:24.04",
+      "grader": "unmodified cached official tests; not inspected to solve task",
+      "registry_manifest_digest": "sha256:ee8dbb176c1910e4ea7f2d9fdb36f76b75f6836908c7d455f18962c8fe794ef8",
+      "docker_image_id": "sha256:0f4a4df868ae4b971d44dc9412be6d623876c21b15ec6995ac6d2e94ee1a2084"
+    },
+    {
+      "name": "sqlite-with-gcov",
+      "source": "/home/masih/.cache/harbor/tasks/TZkz8FNfFEczUoS4UUaE8u/sqlite-with-gcov",
+      "fixture_sha256": "a0b3d68b3566e618022b66cb3e7547f70432735b0cbd947e54fe69bbc2f89e98",
+      "task_toml_sha256": "17f889200f0d10c2919acd7c9dddc5642f29cf29ac248ad4ca9a337e3c585963",
+      "instruction_sha256": "b6ba9acf62292bc2a0bab40d4805b3abceededbb0ccd4477a1ce9ccc42c14dd9",
+      "docker_image": "ghcr.io/laude-institute/terminal-bench/sqlite-with-gcov:2.0",
+      "declared_base": "ubuntu:24.04",
+      "grader": "unmodified cached official tests; not inspected to solve task",
+      "registry_manifest_digest": "sha256:a12a8b616883eaaba3c9cc311f7f5e866e7fda28222f54547684ae72eeca5362",
+      "docker_image_id": "sha256:71e0388fea4da78697aee02d000ced2b0ad174bb9ce9b3d2600d7e8311ae414c"
+    }
+  ],
+  "schedule": [
+    {
+      "id": "r4-01-configure-git-webserver-off",
+      "task": "configure-git-webserver",
+      "arm": "off"
+    },
+    {
+      "id": "r4-02-configure-git-webserver-on",
+      "task": "configure-git-webserver",
+      "arm": "on"
+    },
+    {
+      "id": "r4-03-sqlite-with-gcov-on",
+      "task": "sqlite-with-gcov",
+      "arm": "on"
+    },
+    {
+      "id": "r4-04-sqlite-with-gcov-off",
+      "task": "sqlite-with-gcov",
+      "arm": "off"
+    }
+  ],
+  "order": "deterministic alternating first arm OFF, ON, OFF; 2:1 first-arm balance is maximal for three tasks; three total runs per arm",
+  "limits": {
+    "max_arms": 4,
+    "concurrency": 1,
+    "max_retries": 0,
+    "agent_seconds": 900,
+    "verifier_seconds": 900,
+    "trial_wall_seconds": 1980,
+    "pilot_wall_seconds": 7200,
+    "shutdown_grace_seconds": 30,
+    "billing_cap": "subscription pilot: no invoice-dollar assertion; bounded by six arms and wall caps"
+  },
+  "candidate_exclusions": [
+    {
+      "task": "build-cython-ext",
+      "reason": "declared Debian bookworm base is glibc 2.36, below pinned binary GLIBC_2.39 requirement"
+    },
+    {
+      "task": "fix-code-vulnerability",
+      "reason": "python:3.11-slim tag does not establish glibc >=2.39; no task-image/runtime changes to force compatibility"
+    }
+  ],
+  "blockers": [],
+  "confirmatory_study": "separate study owned by coordinator; 5pp margin is a researcher recommendation; this pilot cannot establish noninferiority",
+  "harness_sha256": {
+    "README.md": "e4d30465fa465831e7f8f7d05c23ba93737a47482f6ea125205e6c3d446566e0",
+    "pilot.py": "c9a120f3eaca69777cabf1fc00fbcfbfac2e76e24928a30692b8bc0bce285212",
+    "elpis_agent.py": "42bb5723a4ca26dd1b1aeb680709aa96a289d22adca16c827619a0cdf2126c90",
+    "hook_recorder.py": "640fe83a6309cacef2ef6e9092e4cbde36b2de56ae8128e23aa47d91ac5fabbb",
+    "recovery_agent.py": "5a7117612641df2f151d00d00e585b1a844945cd16b114533d34e8efcc1c2941"
+  },
+  "coordinator_review": [
+    "Use native compaction defaults rather than forcing 60,000 tokens.",
+    "Strip proxy environment variables from the dedicated experiment process; do not modify shared routing.",
+    "Pilot only; main sample size and quota budget are not authorized by this launcher."
+  ],
+  "user_instruction": "You can run experiments but no astra; it's too expensive; sol at most!",
+  "benchmark_runs_started": 4,
+  "authorization": {
+    "date": "2026-10-25",
+    "user_instruction": "You can run experiments but no astra; it's too expensive; sol at most!",
+    "allowed_main_models": [
+      "gpt-6-sol"
+    ],
+    "allowed_pruner_models": [
+      "gpt-6-luna"
+    ],
+    "scope": "three-task feasibility pilot, six arms, one lane; main study remains unfrozen",
+    "authentication": "saved ChatGPT login only for both main and pruner",
+    "paid_openrouter_forbidden": true,
+    "api_key_billing_forbidden": true,
+    "image_setup": "three digest-verified public images fetched directly; 84,329,609 unique compressed bytes after deduplication; loaded locally without proxy changes"
+  },
+  "agent_python": {
+    "source": "existing Miniconda CPython 3.13.5, standard library only; no packages installed or downloaded",
+    "bundle": "/home/masih/Work/tries/elpis-rq3-20261025/agent-python",
+    "tree_sha256": "73a95ddc6feb76d056c49b7f2352092bcfea2fbf563fce77fab343871eb3ad77",
+    "container_path": "/opt/rq3/python/bin/python3"
+  },
+  "ca_bundle": {
+    "source": "/home/masih/Work/tries/elpis-rq3-20261025/bin/ca-certificates.crt",
+    "sha256": "c3a14cb0b4638d907d1edbabeae615b7c1f7d329e04ad0f08cc7eb22c735c2dc",
+    "container_path": "/opt/rq3/ca-certificates.crt"
+  },
+  "setup_revision": 3,
+  "setup_incidents": [],
+  "code_mode_host": {
+    "source": "/home/masih/.local/lib/elpis-next/versions/engine-20261024-bridge-ac4ce8d0c-a95c5dfb/package/bin/codex-code-mode-host",
+    "sha256": "b4dba40bbd397e0b75862a30e2e6828d90cfcad0cf032d201a19ac5f8a5226bf"
+  },
+  "helper_libraries": [
+    {
+      "source": "/home/masih/Work/tries/elpis-rq3-20261025/lib/libssl.so.3",
+      "name": "libssl.so.3",
+      "sha256": "05e3d52e3747fd6bdc94e30109ce3c355465b3e09a48110001e3d7371a77dfd5"
+    },
+    {
+      "source": "/home/masih/Work/tries/elpis-rq3-20261025/lib/libcrypto.so.3",
+      "name": "libcrypto.so.3",
+      "sha256": "f812b89d93a1b24ebcc9888c0bfa7a8961790f9614e230f83b55e00d496d288a"
+    }
+  ],
+  "runtime_smoke": {},
+  "capture_limit": "working directory snapshots up to 128 MiB; paths outside it are represented by rollout and official grader only",
+  "audit_capture_correction": {
+    "cause": "Smart Prune writes to CODEX_HOME/logs/smart-prune, independently of the configured general log_dir",
+    "change": "copy that nonsecret audit directory before parsing attempts and manifests; record audited absence explicitly",
+    "experimental_intervention_changed": false,
+    "first_ON_recovery": "Regex ON could not be recovered after container removal; three web-server ON admissions were manually recovered; corrected export was used from r3-04 onward"
+  },
+  "benchmark_runs_started_scope": "four r4 recovery arms maximum; prior r3 and setup attempts remain separate",
+  "matched_pilot_arms_recorded": 4,
+  "model_calls_must_not_resume": true,
+  "analysis_sha256": {
+    "summarize_recovery.py": "59a63957c5f28fd91fb7730944933b5011117a302e585cb11b4694a044a50376"
+  },
+  "parent_experiment_id": "RQ3-NI-20261025-01",
+  "authorization_request": "Okay run them again then or continue them if you can ASAP.",
+  "agent_import_path": "recovery_agent:RecoveryElpis",
+  "environment_overrides": {
+    "override_cpus": 2,
+    "override_memory_mb": 4096,
+    "kwargs": {
+      "keep_containers": true
+    },
+    "extra_docker_compose": [
+      "/home/masih/Work/tries/elpis-rq3-20261025/no-pull.yaml",
+      "/home/masih/Work/tries/elpis-rq3-20261025/recovery-20261025-01/resource-caps.yaml"
+    ]
+  },
+  "verifier_overrides": {
+    "env": {
+      "UV_PYTHON": "/opt/rq3/python/bin/python3",
+      "UV_PYTHON_DOWNLOADS": "never",
+      "INSTALLER_DOWNLOAD_URL": "file:///opt/rq3/grader-cache",
+      "PATH": "/opt/rq3/grader-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    }
+  },
+  "summary_file": "recovery-20261025-01/controller-resume-summary.json",
+  "prior_results": "Original six arms remain unchanged under r3-* and their closed plan/checkpoint.",
+  "retention": "Keep completed containers stopped, with credentials cleared, so verifier errors can be repaired without another model run.",
+  "protocol_deviations": [
+    "Both new arms receive the same explicit 4 GiB RAM, no swap, 2 CPU and 512 PID caps; original pilot had no explicit task resource cap.",
+    "Verifier uses existing pinned CPython 3.13.5 rather than downloading another interpreter; test code, agent time and verifier time remain unchanged.",
+    "Official installer reads the checksum-verified original uv 0.7.13 archive from a container-local file cache populated after agent execution; no grader assertions or task state are changed.",
+    "After a second direct installer-script stall, cache its exact verified 0.7.13 bytes too: a grader-only curl wrapper handles only that literal installer URL/argument pair and delegates every task-test request to /usr/bin/curl. First web OFF grade remains unchanged. No grader assertion or model input is modified."
+  ],
+  "environment_caps_sha256": "1d4496741ec6ec8fc8cdf7c7049d901cba07bd7fc104620052ae85eeeca06236",
+  "grader_uv": {
+    "version": "0.7.13",
+    "source": "/home/masih/Work/tries/elpis-rq3-20261025/recovery-20261025-01/uv-x86_64-unknown-linux-gnu.tar.gz",
+    "bytes": 17791244,
+    "sha256": "909278eb197c5ed0e9b5f16317d1255270d1f9ea4196e7179ce934d48c4c2545"
+  },
+  "coordinator_sha256": "00bc28351ddf9ec81f886df4a79cb6cc4118cfbab0f12999248e98e07981ba73",
+  "grader_preflight": "/home/masih/Work/tries/elpis-rq3-20261025/recovery-20261025-01/grader-preflight-02.json",
+  "memory_stop_available_bytes": 6442450944,
+  "grader_installer": {
+    "source": "/home/masih/Work/tries/elpis-rq3-20261025/recovery-20261025-01/uv-installer.sh",
+    "sha256": "1bd6dcfae3377079ed9ebeb47cc814b0a9b6f42a81089e97de49cd26f7b9d2d2"
+  },
+  "grader_curl_cache": {
+    "source": "/home/masih/Work/tries/elpis-rq3-20261025/recovery-20261025-01/cached-bootstrap-curl",
+    "sha256": "117eddc222eab3b5d2cfea83e824fd6dfb562ddc825792418766494f8b5315c6"
+  },
+  "metadata_errata": "The first recovery plan inherited the parent three-task acceptance label; its frozen four-run schedule and two task identities have not changed.",
+  "web_on_grading_repair": "Original verifier timeout retained; same candidate filesystem regraded without a model call; only previously recorded nginx/sshd services restored from unchanged config; exact tests hashed unchanged; recovered reward 0.",
+  "closed_at": "2026-10-25T11:44:35.407729+00:00",
+  "valid_grades": 4,
+  "normal_harbor_grades": 3,
+  "resumed_grades": 1,
+  "original_verifier_timeouts_retained": 1,
+  "fully_scored_pairs": 2,
+  "confirmed_admitted_outputs": 7,
+  "observed_collection_wall_seconds": 2694.526383,
+  "execution_method_checkpoints": {
+    "r4-01-configure-git-webserver-off": "b44cb78",
+    "r4-02-configure-git-webserver-on": "b44cb78",
+    "r4-03-sqlite-with-gcov-on": "6990657",
+    "r4-04-sqlite-with-gcov-off": "6990657"
+  }
+}

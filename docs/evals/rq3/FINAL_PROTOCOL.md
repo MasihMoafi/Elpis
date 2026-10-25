@@ -2,6 +2,13 @@
 
 25 October 2026. **The six-arm Sol/Luna feasibility pilot finished with four official grades and two verifier timeouts.** Only one pair has both grades, and that pair lacks reliable ON admission evidence. See the [pilot result](SOL_LUNA_PILOT_20261025.md). The launcher is closed; main-study tasks, sample size and quota budget remain unfrozen. **RQ3 remains future work. Astra and paid OpenRouter remain forbidden; any authorized inference must use the saved ChatGPT login.**
 
+Masih then requested reruns or continuation ASAP. The [four-run recovery](RECOVERY_20261025.md)
+completed both affected task pairs: web-server 0/0 OFF/ON; SQLite 1/1, with seven
+verified admissions. Its matched resource caps and cached bootstrap are recorded;
+one grade was recovered from a retained candidate without repeating its model run.
+Original timeouts and grades remain intact. These are descriptive follow-up data,
+excluded from a confirmatory study. No larger batch is launched automatically.
+
 **Question:** does Smart Prune reduce task success by less than a declared practical margin? The recommended primary margin is **5 percentage points**, with one-sided 95% confidence and 80% power. This is a proposed practical tolerance, not a universal research standard or a claim of exactly zero effect.
 
 | Acceptance contract | State |

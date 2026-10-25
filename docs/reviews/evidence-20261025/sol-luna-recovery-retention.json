@@ -1,0 +1,47 @@
+{
+  "checked_at": "2026-10-25T11:41:36.977371+00:00",
+  "no_container_started_for_audit": true,
+  "private_home_not_saved_or_printed": true,
+  "containers": [
+    {
+      "run": "r4-01-configure-git-webserver-off",
+      "container": "configure-git-webserver__bnmymlu__env-main-1",
+      "stopped": true,
+      "oom_killed": false,
+      "restart_policy": "no",
+      "credential_file_empty": true,
+      "private_home_files_checked_in_memory": 22,
+      "credential_or_jwt_matches": []
+    },
+    {
+      "run": "r4-02-configure-git-webserver-on",
+      "container": "configure-git-webserver__adwemgh__env-main-1",
+      "stopped": true,
+      "oom_killed": false,
+      "restart_policy": "no",
+      "credential_file_empty": true,
+      "private_home_files_checked_in_memory": 56,
+      "credential_or_jwt_matches": []
+    },
+    {
+      "run": "r4-03-sqlite-with-gcov-on",
+      "container": "sqlite-with-gcov__nwmxeej__env-main-1",
+      "stopped": true,
+      "oom_killed": false,
+      "restart_policy": "no",
+      "credential_file_empty": true,
+      "private_home_files_checked_in_memory": 48,
+      "credential_or_jwt_matches": []
+    },
+    {
+      "run": "r4-04-sqlite-with-gcov-off",
+      "container": "sqlite-with-gcov__asaijqu__env-main-1",
+      "stopped": true,
+      "oom_killed": false,
+      "restart_policy": "no",
+      "credential_file_empty": true,
+      "private_home_files_checked_in_memory": 20,
+      "credential_or_jwt_matches": []
+    }
+  ]
+}

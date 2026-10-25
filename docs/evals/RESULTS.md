@@ -206,6 +206,15 @@ all known usage are retained separately. These results establish neither unchang
 task performance nor a directional effect. The pilot is excluded from confirmatory
 inference; RQ3 remains future work.
 
+The subsequent [grading recovery](rq3/RECOVERY_20261025.md) ran four new agent
+executions on the two affected tasks with matched 4 GiB/two-CPU limits. Web-server
+scored **0/0 OFF/ON**; SQLite scored **1/1**. Seven ON admissions are verified.
+One grader was resumed on its retained candidate after a download timeout, without
+another model call; the original error and unchanged test/configuration hashes are
+retained. Exact public bootstrap files were cached to remove the download stall.
+The original six runs remain separate. No score difference was observed in these
+two rerun pairs; this descriptive result does not establish performance equivalence.
+
 ---
 
 ## Provider rules
