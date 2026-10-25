@@ -1571,7 +1571,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
           <span>Critical path · {critical.length} rounds</span>{critical.map(titleOf).join(" → ")}</p>}
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
-        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><Button variant="ghost" size={null} className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
+        {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><Button variant="ghost" size="content" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
           <strong>{template.name}{graph.template === template.id && <span className="canvas-template-loaded">On the board</span>}</strong>
           <Shape shape={shapes.get(template.id) ?? []} /><small>{template.description}</small>
           {template.caution && <small className="canvas-template-caution">{template.caution}</small>}

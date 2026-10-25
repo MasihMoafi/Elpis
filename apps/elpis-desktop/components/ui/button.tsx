@@ -24,6 +24,7 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
+        content: "h-auto whitespace-normal text-[0.8125rem] font-normal",
         default:
           "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pe-2 has-data-[icon=inline-start]:ps-2",
         xs: "hud-cut-sm h-6 gap-1 px-2 text-xs has-data-[icon=inline-end]:pe-1.5 has-data-[icon=inline-start]:ps-1.5 [&_svg:not([class*='size-'])]:size-3.5",
@@ -41,7 +42,7 @@ const buttonVariants = cva(
     // A ghost button has one colour wherever it sits (rule R5): an icon is muted until hovered, a label is in the text colour.
     compoundVariants: [
       { variant: "ghost", size: ["icon", "icon-xs", "icon-sm", "icon-lg"], class: "text-muted-foreground" },
-      { variant: "ghost", size: ["default", "xs", "sm", "lg"], class: "text-foreground" },
+      { variant: "ghost", size: ["default", "xs", "sm", "lg", "content"], class: "text-foreground" },
     ],
     defaultVariants: {
       variant: "default",

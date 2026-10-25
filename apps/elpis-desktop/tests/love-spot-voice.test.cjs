@@ -72,7 +72,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot plays live micropho
     await start.waitFor();
     assert.equal(await page.evaluate(() => window.voiceProof.audio.every(audio => audio.paused && audio.srcObject === null)), true, 'saved Mute stops the call and played audio');
     assert.equal(await start.isDisabled(), true);
-    await page.getByRole('switch', { name: 'Voice', exact: true, checked: false, disabled: false }).waitFor();
+    await page.getByRole('switch', { name: /^Voice/, checked: false, disabled: false }).waitFor();
     await page.getByRole('switch', { name: /^Voice/ }).click();
     await page.evaluate(() => { window.voiceProof.denied = true; }); await start.click();
     await page.getByRole('alert').filter({ hasText: 'Audio playback was blocked' }).waitFor();
