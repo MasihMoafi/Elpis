@@ -4,7 +4,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { CollapseDetails } from "@/components/step";
 import { WorkingMark } from "@/components/working-mark";
 
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { pruneOf } from "@/lib/smart-prune";
 import type { Entry, Item } from "@/lib/api";
 import { elapsed, reasoningOf, stepLabel, summarize, summaryParts } from "@/lib/steps";
@@ -12,13 +12,55 @@ import { CreatedFiles, ImageThumb, fileKind } from "@/components/file-cards";
 import { Counts } from "@/components/diff-view";
 import { TurnChanges } from "@/components/edit-rows";
 import { turnEdits } from "@/lib/diff";
+import { messageDomId } from "@/lib/message-reply";
+import { entryKey } from "@/lib/submitted-messages";
 
 /** The conversation as the ChatGPT app shows it: each user message, then the turn's work
  * collapsed into short activity lines, and once a turn ends everything before its final reply
  * folds into "Worked for …". `renderItem` draws one message or activity in full; `mediaOf` is where the bridge serves
  * an item's recorded pictures (lib/api.ts `mediaUrl`). */
 type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: (entry: Entry) => string | undefined; wrapItem?: (entry: Entry, node: ReactNode) => ReactNode };
+type ObserveTurn = (element: HTMLElement, show: () => void) => () => void;
 export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
+  const viewport = useRef<HTMLElement | null>(null);
+  const targets = useRef(new Map<Element, () => void>());
+  const frame = useRef(0);
+  const schedule = useCallback(() => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const root = viewport.current;
+      if (!root || !targets.current.size) return;
+      const turns = root.querySelectorAll<HTMLElement>("section.turn"), bounds = root.getBoundingClientRect();
+      const top = bounds.top - 1600, bottom = bounds.bottom + 1600;
+      let low = 0, high = turns.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (turns[middle].getBoundingClientRect().bottom < top) low = middle + 1; else high = middle;
+      }
+      for (let index = low; index < turns.length && turns[index].getBoundingClientRect().top <= bottom; index++) {
+        const show = targets.current.get(turns[index]);
+        targets.current.delete(turns[index]); show?.();
+      }
+    });
+  }, []);
+  const observe = useCallback<ObserveTurn>((element, show) => {
+    viewport.current = element.closest<HTMLElement>(".chat-scroll");
+    if (!viewport.current) { show(); return () => {}; }
+    targets.current.set(element, show); schedule();
+    return () => { targets.current.delete(element); };
+  }, [schedule]);
+  useEffect(() => {
+    const root = viewport.current;
+    if (!root) return;
+    // Visibility checks run only when the viewport or its content moves or changes size.
+    root.addEventListener("scroll", schedule, { passive: true });
+    const resize = new ResizeObserver(schedule);
+    resize.observe(root); if (root.firstElementChild) resize.observe(root.firstElementChild);
+    schedule();
+    return () => { root.removeEventListener("scroll", schedule); resize.disconnect(); cancelAnimationFrame(frame.current); frame.current = 0; };
+  }, [entries.length, schedule]);
+  useEffect(() => () => { targets.current.clear(); viewport.current = null; }, []);
   const wrapped = { ...draw, renderItem: (entry: Entry) => draw.wrapItem ? draw.wrapItem(entry, draw.renderItem(entry)) : draw.renderItem(entry) };
   const turns = turnsOf(entries);
   return <>{turns.map((turn, index) => {
@@ -26,7 +68,7 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
     const pause = typeof start === "number" && typeof end === "number" && (start - end >= HOUR || new Date(start).toDateString() !== new Date(end).toDateString());
     return <Fragment key={turn.clientKey ?? turn.id}>
       {pause && <div className="turn-time"><time dateTime={new Date(start).toISOString()}>{turnTime(start)}</time></div>}
-      <Turn turn={turn} active={turn.id === activeTurnId} onViewChanges={onViewChanges} {...wrapped} />
+      <Turn turn={turn} active={turn.id === activeTurnId} defer={turns.length > 40 && index < turns.length - 1} observe={observe} onViewChanges={onViewChanges} {...wrapped} />
     </Fragment>;
   })}
     {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && <div className="turn-working" role="status"><LiveStep key={activeTurnId} label="Working" /></div>}
@@ -72,8 +114,30 @@ function createdFiles(entries: Entry[]): string[] {
   return [...made];
 }
 
-function Turn({ turn, active, onViewChanges, renderItem, mediaOf, wrapItem }: { turn: TurnEntries; active: boolean; onViewChanges?: () => void } & Draw) {
+function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf, wrapItem }: { turn: TurnEntries; active: boolean; defer: boolean; observe: ObserveTurn; onViewChanges?: () => void } & Draw) {
   const [workOpen, setWorkOpen] = useState(false);
+  const [visited, setVisited] = useState(!defer || active);
+  const section = useRef<HTMLElement>(null);
+  const focusTarget = useRef<string | null>(null);
+  const materialized = visited || active || !defer;
+  useEffect(() => {
+    const element = section.current;
+    if (materialized) { if (!visited) setVisited(true); return; }
+    if (!element) return;
+    // Keep visited turns mounted so scrolling never discards selections or edit drafts.
+    return observe(element, () => setVisited(true));
+  }, [materialized, observe, visited]);
+  useLayoutEffect(() => {
+    if (!materialized || !focusTarget.current) return;
+    const target = document.getElementById(focusTarget.current);
+    focusTarget.current = null;
+    target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "center" });
+  }, [materialized]);
+  if (!materialized) return <section ref={section} className="turn" aria-label="Turn" data-prompt={turn.entries.some(entry => entry.item.type === "userMessage") ? "" : undefined} style={{ height: 320 }}>
+    {turn.entries.filter(entry => entry.item.type === "userMessage" || isReply(entry.item)).map(entry => <div key={entryKey(entry)} id={messageDomId(entryKey(entry))} tabIndex={-1} onFocus={event => { focusTarget.current = event.currentTarget.id; setVisited(true); }}>
+      {entry.item.type === "userMessage" && <span hidden className="message user">{entry.item.content?.filter(part => part.type === "text").map(part => part.text).join("\n")}</span>}
+    </div>)}
+  </section>;
   const ordered = withPrunes(turn.entries);
   // Older Claude saves represented /compact as a prompt and a synthetic tool call.
   // Its summary changes the model's context, while the conversation remains intact.
@@ -100,7 +164,7 @@ function Turn({ turn, active, onViewChanges, renderItem, mediaOf, wrapItem }: { 
   const foldEnd = Math.min(lastSent >= 0 ? lastSent : finalReply, beforeCompaction < 0 ? work.length : beforeCompaction);
   const folded = foldEnd > 0 ? work.slice(0, foldEnd) : [];
   const visible = foldEnd > 0 ? work.slice(foldEnd) : work;
-  return <section className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
+  return <section ref={section} className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
     {users.map(renderItem)}
     {folded.length > 0 && <details className="worked-for" onToggle={event => { if (event.target === event.currentTarget) setWorkOpen(event.currentTarget.open); }}>
       {/* Without recorded times, ChatGPT's "41 previous messages" says what the fold holds. */}

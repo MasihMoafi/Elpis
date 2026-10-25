@@ -349,6 +349,38 @@ test('205 prompts land inside the settled viewport, including unloaded first and
   } finally { await f.close(); }
 });
 
+test('large-chat navigation preserves a visited message edit while older turns become visible', async () => {
+  const chat = Array.from({ length: 65 }, (_, index) => [`t${index + 1}`, `Prompt ${index + 1}.`, `Answer ${index + 1}.\n\n${'A paragraph of recorded history for scrolling.\n\n'.repeat(12)}`]);
+  const f = await fixture({ chat, width: 1280, height: 700, routes: { '/api/threads/chat-a/prompts': () => indexOf(chat) } });
+  try {
+    await f.open('chat-a');
+    const marks = marksOf(f.page);
+    await f.page.waitForFunction(() => document.querySelectorAll('[data-slot="prompt-mark"]').length === 65);
+    await marks.first().click();
+    const first = f.page.locator('.user-turn').filter({ hasText: chat[0][1] });
+    await first.getByRole('button', { name: 'Edit message', exact: true }).click();
+    const edit = f.page.getByRole('textbox', { name: 'Edited message', exact: true });
+    await edit.fill('An unsent revision of the first message.');
+    await f.composer.fill('An unrelated composer draft.');
+    for (const position of [32, 64, 0]) {
+      await marks.nth(position).click();
+      await f.page.waitForFunction(({ position, prompt }) => {
+        const root = document.querySelector('.chat-scroll'), bounds = root.getBoundingClientRect();
+        const turn = root.querySelectorAll('section.turn[data-prompt]')[position];
+        const message = turn?.querySelector('[aria-label="Edited message"]') ?? turn?.querySelector('.message.user');
+        if (!message || (message.textContent.trim() !== prompt && message.value !== 'An unsent revision of the first message.')) return false;
+        const rect = message.getBoundingClientRect();
+        return rect.top >= bounds.top && rect.top < bounds.bottom;
+      }, { position, prompt: chat[position][1] });
+      assert.equal(await edit.inputValue(), 'An unsent revision of the first message.', 'reading another turn never discards the visited editor draft');
+    }
+    assert.equal(await edit.inputValue(), 'An unsent revision of the first message.');
+    assert.equal(await f.composer.inputValue(), 'An unrelated composer draft.');
+    assert.equal(f.posts.filter(post => post.path.endsWith('/revert') || post.path.endsWith('/turns')).length, 0, 'navigation never sends either draft');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('preview shows loading, empty, and unavailable reply states', async () => {
   const chat = [['t1', 'First prompt.', 'First answer.'], ['t2', 'Second prompt.', 'Second answer.'], ['t3', 'Third prompt.', 'Third answer.']];
   let resolveIndex;

@@ -58,9 +58,16 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     const root = scroller.current, list = loadedOrder.current;
     if (!root || !list.length) return;
     const top = root.getBoundingClientRect().top, bottom = root.scrollHeight - root.scrollTop - root.clientHeight < 4;
-    let turnId = list[0];
-    list.forEach(id => { if (elements.current.get(id)!.getBoundingClientRect().top - top <= root.clientHeight / 3) turnId = id; });
-    setCurrent(bottom ? list[list.length - 1] : turnId);
+    if (bottom) { setCurrent(list[list.length - 1]); return; }
+    // Positions are ordered; avoid measuring every offscreen turn on each scroll.
+    let low = 0, high = list.length - 1;
+    const boundary = top + root.clientHeight / 3;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (elements.current.get(list[middle])!.getBoundingClientRect().top <= boundary) low = middle;
+      else high = middle - 1;
+    }
+    setCurrent(list[low]);
   };
   const read = () => {
     const root = scroller.current;
