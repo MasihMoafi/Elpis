@@ -60,6 +60,8 @@
 /* Fields use the shared Button's default size; switches, icon actions and segmented choices keep their own shape. */
 .settings-page { --settings-control-h:32px; --settings-field-gap:8px; }
 .settings-field-stack { display:grid; min-width:0; gap:var(--settings-field-gap); }
+.settings-row.stacked .settings-field-stack { width:100%; }
+.settings-field-stack > .segmented { justify-self:start; }
 .settings-page .field { gap:var(--settings-field-gap); }
 .settings-page details > :not(summary) { margin-top:var(--settings-field-gap); }
 .settings-page :is([data-slot="input"], [data-slot="select-trigger"], .model-picker-trigger, .search-field) { height:var(--settings-control-h); min-height:var(--settings-control-h); font-size:var(--text-sm); }

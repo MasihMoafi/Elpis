@@ -64,13 +64,28 @@ test('Personalization files recover locally, preview text without images, and pr
       await editor.waitFor();
       await page.waitForFunction(label => !document.querySelector(`textarea[aria-label="${label}"]`).disabled, label);
       assert.equal(await editor.inputValue(), file.content);
+      const fillsRow = async field => {
+        const geometry = await field.evaluate(element => {
+          const field = element.getBoundingClientRect(), row = element.closest('.settings-row-control').getBoundingClientRect();
+          return { width: field.width, available: row.width, left: field.left - row.left };
+        });
+        assert.ok(Math.abs(geometry.width - geometry.available) <= 1 && Math.abs(geometry.left) <= 1, `the file field fills its row: ${JSON.stringify(geometry)}`);
+      };
+      await fillsRow(editor);
       await captureReview(page, `personalization-${kind}-loaded-edit-${colorScheme}`);
       await group.getByRole('radio', { name: 'Preview', exact: true }).click();
       await group.getByRole('heading', { name: 'Local text', exact: true }).waitFor();
       assert.equal(await group.locator('img').count(), 0);
       assert.deepEqual(images, [], 'a text preview never requests image resources');
+      const preview = group.getByLabel(`${label} preview`, { exact: true });
+      await fillsRow(preview);
       await captureReview(page, `personalization-${kind}-text-preview-${colorScheme}`);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await fillsRow(preview);
       await group.getByRole('radio', { name: 'Edit', exact: true }).click();
+      await fillsRow(editor);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await page.setViewportSize({ width: 1130, height: 660 });
       await editor.fill('Keep this local draft');
       await page.getByRole('tab', { name: 'General', exact: true }).click();
       await page.getByRole('tab', { name: 'Personalization', exact: true }).click();
