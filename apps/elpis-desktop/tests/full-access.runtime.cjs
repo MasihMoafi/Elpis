@@ -54,7 +54,15 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
     const file = path.join(root, tag);
     const text = `${claude ? '[permission] ' : ''}PERMISSION_FILE:${file}`;
     await page.getByLabel('Message Elpis', { exact: true }).fill(text); await page.getByLabel('Message Elpis', { exact: true }).press('Enter');
-    if (asks) { await deny().waitFor(); await assert.rejects(fs.stat(file)); await deny().click(); }
+    if (asks) {
+      const deadline = Date.now() + 30000;
+      while (!await deny().isVisible()) {
+        assert.equal(await fs.stat(file).then(() => true, () => false), false, `${tag}: command ran before approval`);
+        assert.ok(Date.now() < deadline, `${tag}: approval was shown`);
+        await new Promise(r => setTimeout(r, 50));
+      }
+      await assert.rejects(fs.stat(file)); await deny().click();
+    }
     else if (claude) { await page.getByText(new RegExp(`permission: allow_once[\\s\\S]*${tag}`)).last().waitFor({ timeout: 30000 }); assert.equal(await deny().count(), 0); assert.equal(await fs.readFile(file, 'utf8'), 'permission-ran'); }
     else { await page.waitForFunction(async tag => { const r = await fetch('/api/threads?limit=100'); return r.ok; }, tag); const end = Date.now() + 45000; for (;;) { if (await fs.stat(file).then(() => true, () => false)) break; assert.equal(await deny().count(), 0, `${tag}: inherited Full access asked for approval`); assert.ok(Date.now() < end, `${tag}: command did not run`); await new Promise(r => setTimeout(r, 50)); } }
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });

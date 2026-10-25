@@ -43,6 +43,10 @@ test('installed TUI follows shared defaults and keeps its own Ask choice across 
   const screen = async () => (await tmux('capture-pane', '-pt', 'permissions')).stdout;
   const key = (...keys) => tmux('send-keys', '-t', 'permissions', ...keys);
   const type = async text => { await tmux('set-buffer', '-b', 'input', text); await tmux('paste-buffer', '-p', '-b', 'input', '-t', 'permissions'); };
+  const waitForApproval = file => until(async () => {
+    assert.equal(await fs.stat(file).then(() => true, () => false), false, 'Ask command ran before approval');
+    return /Would you like to run|Do you want to run/.test(await screen());
+  }, 'Ask shows an approval request');
   await until(async () => {
     const text = await screen();
     if (/Hooks need review|Lifecycle hooks from config/.test(text)) { await key('Escape'); return false; }
@@ -63,7 +67,7 @@ test('installed TUI follows shared defaults and keeps its own Ask choice across 
   await fs.writeFile(configFile, config('on-request'));
   const askFile = path.join(root, 'default-ask');
   await type(`PERMISSION_FILE:${askFile}`); await until(async () => (await screen()).includes('default-ask'), 'typed Ask command appears'); await key('Enter');
-  await until(async () => /Would you like to run|Do you want to run|Run the permission regression/.test(await screen()), 'Settings Ask reaches the existing TUI chat');
+  await waitForApproval(askFile);
   await fs.writeFile(path.join(output, 'default-ask.txt'), await screen());
   await assert.rejects(fs.stat(askFile)); await key('Escape');
   await fs.writeFile(configFile, config('never'));
@@ -76,7 +80,7 @@ test('installed TUI follows shared defaults and keeps its own Ask choice across 
   const asks = async name => {
     const file = path.join(root, name);
     await type(`PERMISSION_FILE:${file}`); await until(async () => (await screen()).includes(name), 'the command is typed'); await key('Enter');
-    await until(async () => /Would you like to run|Do you want to run/.test(await screen()), `${name}: explicit Ask still asks`);
+    await waitForApproval(file);
     await assert.rejects(fs.stat(file)); await fs.writeFile(path.join(output, `${name}.txt`), await screen()); await key('Escape');
     await until(async () => /Ask Elpis/.test(await screen()), 'the denied turn ends');
   };
