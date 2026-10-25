@@ -113,7 +113,9 @@ async function main() {
   const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'elpis-bridge-permissions-'));
   const home = path.join(root, 'home'), cwd = path.join(root, 'work');
   fs.mkdirSync(home); fs.mkdirSync(cwd);
-  fs.writeFileSync(path.join(home, 'config.toml'), 'model="gpt-5.5"\n[features]\nsubagents=false\n[permissions.fixture-restricted]\nextends=":read-only"\n');
+  // This journey starts in Ask/workspace, then changes modes explicitly; the named
+  // restricted profile also requires a selected startup profile in native config.
+  fs.writeFileSync(path.join(home, 'config.toml'), 'model="gpt-5.5"\napproval_policy="on-request"\ndefault_permissions=":workspace"\n[features]\nsubagents=false\n[permissions.fixture-restricted]\nextends=":read-only"\n');
   const control = path.join(root, 'control.json');
   const agy = process.argv.includes('--gemini');
   const shared = process.argv.includes('--shared');
