@@ -9,12 +9,13 @@ const vm = require('node:vm');
 async function store(file, messages = []) {
   const source = await fs.readFile(path.join(__dirname, '../tools/elpis-claude/acp-bridge.mjs'), 'utf8');
   const context = vm.createContext({
-    STORE: file, Error, readFile: fs.readFile,
+    STORE: file, Error, readFile: fs.readFile, statSync: require('node:fs').statSync,
+    withFileLock: (_file, fn) => fn(),
     readJson: async file => { try { return JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; } },
     saveStore: value => fs.writeFile(file, JSON.stringify(value)),
     log: message => messages.push(message),
   });
-  vm.runInContext(source.slice(source.indexOf('async function loadStore()'), source.indexOf('const STATE_DIR =')) + '\nthis.api = { loadStore, updateStore };', context);
+  vm.runInContext(source.slice(source.indexOf('async function readStore()'), source.indexOf('const STATE_DIR =')) + '\nthis.api = { loadStore, updateStore };', context);
   return context.api;
 }
 
