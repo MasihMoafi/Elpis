@@ -173,40 +173,65 @@ test('placing a screenshot remains a deliberate local undo and redo action', asy
 });
 
 
-test('a remote delete inside a real embedded arrow-key batch stays outside Undo', async () => {
+test('a remote delete inside a real embedded arrow-key batch stays outside Undo', async t => {
   const f = await loveSpotFixture();
+  let other, original, beforeArrow, lastVisible;
+  const metadata = elements => elements.slice(0, 20).map(({ id, version, versionNonce, isDeleted, index, x, y }) => ({ id, version, versionNonce, isDeleted, index, x, y }));
   try {
     await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await f.open(f.page); await f.draw(f.page);
-    const original = (await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'shape did not save')).elements.find(e => !e.isDeleted);
-    const other = await f.newPage();
+    original = (await f.waitFor(s => s.elements.some(e => !e.isDeleted), 'shape did not save')).elements.find(e => !e.isDeleted);
+    other = await f.newPage();
     await other.evaluate(() => {
+      const trace = window.__syncIncomingTrace = { sources: 0, held: [], key: null, released: null };
       window.EventSource = class extends window.EventSource {
         constructor(...args) {
           super(...args);
+          const source = ++trace.sources;
           this.addEventListener('message', event => {
             const data = JSON.parse(event.data);
             if (window.__holdIncoming && data.type === 'scene' && data.scene.elements.some(e => e.isDeleted)) {
-              event.stopImmediatePropagation(); window.__releaseIncoming = () => this.onmessage?.(event);
+              event.stopImmediatePropagation();
+              trace.held.push({ source, readyState: this.readyState, revision: data.revision,
+                elements: data.scene.elements.slice(0, 20).map(({ id, version, versionNonce, isDeleted, index, x, y }) => ({ id, version, versionNonce, isDeleted, index, x, y })) });
+              if (trace.held.length > 8) trace.held.shift();
+              window.__releaseIncoming = () => {
+                trace.released = { source, readyState: this.readyState, handler: typeof this.onmessage, revision: data.revision };
+                this.onmessage?.(event);
+              };
             }
           });
         }
       };
     });
     await f.open(other);
-    await f.waitFor(async () => (await copied(other)).some(e => e.id === original.id), 'receiver did not load the shape');
+    await f.waitFor(async () => {
+      const elements = await copied(other); beforeArrow = metadata(elements);
+      return elements.some(e => e.id === original.id);
+    }, 'receiver did not load the shape');
     await other.evaluate(() => { window.__holdIncoming = true; });
     await copied(f.page); await f.page.keyboard.press('Delete');
     await f.waitFor(s => s.elements.find(e => e.id === original.id)?.isDeleted, 'delete did not save');
     await other.waitForFunction(() => typeof window.__releaseIncoming === 'function');
     await other.evaluate(() => window.addEventListener('keydown', event => {
+      window.__syncIncomingTrace.key = { key: event.key, target: event.target?.tagName, defaultPrevented: event.defaultPrevented };
       if (event.key === 'ArrowRight') { window.__holdIncoming = false; window.__releaseIncoming(); window.__releaseIncoming = null; }
     }, { once: true }));
     await other.bringToFront(); await other.keyboard.press('ArrowRight');
-    await f.waitFor(async () => (await copied(other)).length === 0, 'receiver did not apply the deletion');
+    assert.equal(await other.evaluate(() => window.__syncIncomingTrace.key?.key === 'ArrowRight' && !!window.__syncIncomingTrace.released), true, 'ArrowRight listener did not release the held deletion');
+    await f.waitFor(async () => {
+      const elements = await copied(other); lastVisible = metadata(elements);
+      return elements.length === 0;
+    }, 'receiver did not apply the deletion');
     await other.keyboard.press('ControlOrMeta+z'); await other.waitForTimeout(600);
     assert.equal((await f.scene()).elements.find(e => e.id === original.id)?.isDeleted, true, 'Undo captured the remote deletion during the key batch');
     await f.page.keyboard.press('ControlOrMeta+z');
     await f.waitFor(s => !s.elements.find(e => e.id === original.id)?.isDeleted, 'owner cannot undo its own delete');
+  } catch (cause) {
+    const gate = await other?.evaluate(() => ({ ...window.__syncIncomingTrace, focused: document.hasFocus(),
+      activeElement: document.activeElement?.outerHTML.slice(0, 300) })).catch(error => ({ error: error.message }));
+    const disk = await f.scene().then(scene => metadata(scene.elements)).catch(error => ({ error: error.message }));
+    t.diagnostic(`arrow-key sync failure: ${JSON.stringify({ original: original && metadata([original])[0], beforeArrow, lastVisible, gate, disk, errors: f.errors.slice(-10) })}`);
+    throw cause;
   } finally { await f.close(); }
 });
