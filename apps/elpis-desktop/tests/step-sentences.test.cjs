@@ -32,7 +32,10 @@ async function using(run) {
 }
 
 test('finished groups read as Claude words them, and a described step reads as its sentence', () => using(async ({ page }) => {
-  for (const fold of await page.locator('.worked-for > summary').all()) await fold.click();
+  for (const fold of await page.locator('.worked-for').all()) {
+    await fold.locator('> summary').click();
+    await fold.locator('> .worked-for-body').waitFor();
+  }
   const rows = (await page.locator('.activity-group:not(:has(.live-timer)) > summary .activity-group-label').allInnerTexts()).map(text => text.trim());
   assert.deepEqual(rows, [
     'Listed everything created outside the legal folder',
@@ -46,6 +49,7 @@ test('finished groups read as Claude words them, and a described step reads as i
   assert.equal(await mixed.locator('.live-timer').count(), 0, 'a finished row has no timer');
   await mixed.click();
   const mixedGroup = mixed.locator('..');
+  await mixedGroup.locator('> .activity-group-body').waitFor();
   assert.equal(await mixedGroup.getByText('2 hits', { exact: true }).count(), 0, 'tool output stays lazy until its own row opens');
   await mixedGroup.locator('.step-title').filter({ hasText: /rag/i }).click();
   await mixedGroup.getByText('2 hits', { exact: true }).waitFor();

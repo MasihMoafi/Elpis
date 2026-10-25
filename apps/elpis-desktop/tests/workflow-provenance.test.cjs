@@ -215,6 +215,7 @@ test('Lab offers “Until the task finishes”, sends and restores the choice, a
     assert.equal(await lab.getByRole('button', { name: 'Export JSON', exact: true }).isEnabled(), true);
     await f.page.reload();
     const again = await open();
+    await again.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
     assert.equal(await again.getByRole('radio', { name: 'Until the task finishes', exact: true }).getAttribute('aria-checked'), 'true', 'the saved choice returns after a reload');
     assert.equal(await again.getByRole('spinbutton').count(), 0, 'the saved until-finished choice still asks for no number');
     for (const theme of ['light', 'dark']) for (const [width, height] of [[1130, 660], [400, 760]]) {

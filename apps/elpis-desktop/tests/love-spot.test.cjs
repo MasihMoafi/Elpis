@@ -105,7 +105,10 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
     await voiceInfo.focus();
     // A mouse-opened board leaves focus in pointer mode; tab to the reason as a keyboard user would.
     await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
-    await page.getByRole('tooltip').getByText('Connect ChatGPT in Settings → Connections.', { exact: true }).waitFor();
+    const reason = page.getByRole('tooltip');
+    await reason.getByText('Connect ChatGPT in Settings → Connections.', { exact: true }).waitFor();
+    assert.ok((await voiceInfo.getAttribute('aria-describedby') || '').split(/\s+/).includes(await reason.getAttribute('id')), 'the reason also describes the focused control to assistive technology');
+    await page.keyboard.press('Escape'); await reason.waitFor({ state: 'hidden' });
     await voiceInfo.blur();
     for (const width of [1600, 1280, 1024, 820]) {
       await page.setViewportSize({ width, height: 960 });

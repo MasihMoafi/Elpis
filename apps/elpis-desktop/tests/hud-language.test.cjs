@@ -87,8 +87,13 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
   const visit = async where => { await page.waitForTimeout(250); reports.push([where, await measure(page)]); low.push(...(await page.evaluate(contrastFailures)).map(item => `${where}: ${item}`)); };
   await f.open('chat-a');
   // Unfold the finished work and its group; its first step opens with it, so a step card is on screen.
-  for (const fold of await page.locator('.worked-for > summary').all()) await fold.click();
-  const group = page.locator('.activity-group > summary').first(); if (await group.count()) await group.click();
+  for (const fold of await page.locator('.worked-for').all()) {
+    await fold.locator('> summary').click();
+    await fold.locator('> .worked-for-body').waitFor();
+  }
+  const group = page.locator('.activity-group').first();
+  await group.locator('> summary').click();
+  await group.locator('> .activity-group-body').waitFor();
   await page.locator('.step-card').first().waitFor();
   await visit('chat');
   await page.getByRole('button', { name: 'Change permissions' }).click(); await page.getByRole('menu').waitFor();

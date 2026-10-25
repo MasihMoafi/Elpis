@@ -29,6 +29,17 @@ const HELPERS = `
       },
       focus(index) { const el = document.querySelector('[data-arrow-check="' + index + '"]'); if (!el || !usable(el)) return null; el.focus(); return document.activeElement === el ? name(el) : null; },
       moved(index) { const el = document.querySelector('[data-arrow-check="' + index + '"]'), now = document.activeElement; return !!el && now !== el && now instanceof HTMLElement && now.matches(CONTROL) && area(el).contains(now); },
+      stalled(index) {
+        const el = document.querySelector('[data-arrow-check="' + index + '"]'), active = document.activeElement;
+        if (!el) return { missing: true, active: active && name(active) };
+        const ancestors = [];
+        for (let at = el.parentElement; at; at = at.parentElement) {
+          ancestors.push({ tag: at.tagName, controls: [...at.querySelectorAll(CONTROL)].map(control => ({ name: name(control), usable: usable(control), disabled: control.disabled === true, rects: control.getClientRects().length })) });
+          if (at === area(el)) break;
+        }
+        return { control: name(el), active: active && name(active), activeTag: active?.tagName, area: area(el).getAttribute('aria-label') || area(el).tagName,
+          ancestors };
+      },
     };
   })();`;
 
@@ -45,7 +56,10 @@ async function sweep(page, where) {
     label = await page.evaluate(i => window.__arrows.focus(i), index);
     if (!label) continue;
     await page.keyboard.press('ArrowUp');
-    if (!(await page.evaluate(i => window.__arrows.moved(i), index))) stuck.push(`${where}: “${label}”`);
+    if (!(await page.evaluate(i => window.__arrows.moved(i), index))) {
+      stuck.push(`${where}: “${label}”`);
+      console.log(`${where} arrow focus: ${JSON.stringify(await page.evaluate(i => window.__arrows.stalled(i), index))}`);
+    }
   }
   return { count, stuck };
 }
