@@ -76,13 +76,19 @@ async function main() {
   const engineShim = path.join(root, 'engine'), agyShim = path.join(root, 'agy');
   fs.writeFileSync(engineShim, `#!/usr/bin/env node\nprocess.argv.splice(2, 0, '--engine-fault'); require(${JSON.stringify(__filename)});\n`, { mode: 0o755 });
   fs.writeFileSync(agyShim, `#!/usr/bin/env node\nprocess.argv.push('--agy-fixture'); require(${JSON.stringify(path.join(__dirname, 'permissions-bridge.test.cjs'))});\n`, { mode: 0o755 });
-  const checks = [], failures = [], approvals = [], messages = [], servers = [], controls = [];
-  let files = 0;
+  const checks = [], failures = [], approvals = [], messages = [], servers = [], controls = [], observations = [];
+  let files = 0, currentGroup;
   const waitFor = async (check, label, ms = 30000) => {
     const deadline = Date.now() + ms;
     while (!check()) { assert(Date.now() < deadline, `${label} timed out`); await pause(20); }
   };
   const pass = name => { checks.push(name); console.log(`PASS ${name}`); };
+  const observe = (kind, result) => {
+    const { threadId, status, prompts, wrote, refused, permissionResult } = result;
+    const observation = { group: currentGroup, kind, threadId, status, prompts, wrote, ...(refused && { refused }), ...(permissionResult && { permissionResult }) };
+    observations.push(observation);
+    console.log(`OBSERVED ${JSON.stringify(observation)}`);
+  };
   const disconnects = () => (fs.readFileSync(log, 'utf8').match(/tui disconnected/g) ?? []).length;
   const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
     cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
@@ -181,11 +187,13 @@ async function main() {
     // through an approval callback in any other mode.
     async function claudeHelper(delegate, args, during, fixture = {}) {
       const prefix = path.join(root, String(++files));
-      const ctl = { marker: `${prefix}.write`, ready: `${prefix}.ready`, release: `${prefix}.release`, modeChanges: `${prefix}.modes`, autoEdit: true, ...fixture };
+      const ctl = { marker: `${prefix}.write`, ready: `${prefix}.ready`, release: `${prefix}.release`, modeChanges: `${prefix}.modes`, permissionResult: `${prefix}.permission`, autoEdit: true, ...fixture };
       controls.push(ctl);
       fs.writeFileSync(control, JSON.stringify(ctl));
       const t = await turn(delegate, { model: 'claude/haiku', ...args }, () => fs.existsSync(ctl.ready), () => fs.writeFileSync(ctl.release, 'release'), during);
-      return { ...t, wrote: fs.existsSync(ctl.marker) };
+      const result = { ...t, wrote: fs.existsSync(ctl.marker), permissionResult: fs.existsSync(ctl.permissionResult) ? JSON.parse(fs.readFileSync(ctl.permissionResult, 'utf8')) : null };
+      observe(args.model?.startsWith('agy/') ? 'gemini' : 'claude', result);
+      return result;
     }
     // The model's step in an engine turn: once released, write in the workspace with the default sandbox.
     function scriptedWrite(before = '') {
@@ -206,9 +214,11 @@ async function main() {
     async function engineHelper(delegate, args, during, before) {
       const step = scriptedWrite(before);
       const t = await turn(delegate, { model: 'gpt-5.5', provider: 'fixture', ...args }, () => provider.hanging.size > 0, step.release, during);
+      const result = { ...t, wrote: fs.existsSync(step.marker) };
+      observe('engine', result);
       if (t.status === 'completed') assert.equal(provider.actions.length, 0, 'the helper used every scripted model response');
       provider.actions.length = 0;
-      return { ...t, wrote: fs.existsSync(step.marker) };
+      return result;
     }
     // The TUI's turn on an engine thread it opened, with the permission fields the TUI sends;
     // `refused` when the bridge refuses to start it.
@@ -217,7 +227,9 @@ async function main() {
       const step = scriptedWrite(), start = approvals.length;
       try { await request('turn/start', { threadId, input: [{ type: 'text', text: 'Fixture write.' }], ...tuiFields }); } catch (error) {
         provider.actions.length = 0;
-        return { refused: error.message, wrote: false };
+        const result = { refused: error.message, wrote: false };
+        observe('tui', { threadId, ...result });
+        return result;
       }
       let completed;
       const done = notification('turn/completed', threadId).then(p => { completed = p; }, () => {});
@@ -226,10 +238,13 @@ async function main() {
       step.release();
       await done;
       provider.actions.length = 0;
-      return { status: completed?.turn.status, prompts: approvals.length - start, wrote: fs.existsSync(step.marker) };
+      const result = { status: completed?.turn.status, prompts: approvals.length - start, wrote: fs.existsSync(step.marker) };
+      observe('tui', { threadId, ...result });
+      return result;
     }
     const profileOf = r => r.activePermissionProfile?.id ?? { readOnly: ':read-only', workspaceWrite: ':workspace', dangerFullAccess: ':danger-full-access' }[r.sandbox?.type];
     async function group(label, run) {
+      currentGroup = label;
       try { await run(); } catch (error) {
         if (!keepGoing) throw error;
         failures.push(`${label}: ${error.message}`); console.log(`FAIL ${label}: ${error.message}`);
@@ -609,7 +624,7 @@ async function main() {
     });
     if (failures.length) process.exitCode = 1;
   } finally {
-    fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, failures, approvals, messages, requests: provider.requests }, null, 2));
+    fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, failures, observations, approvals, messages, requests: provider.requests }, null, 2));
     console.log(`Evidence: ${root}`);
     for (const proc of servers) proc.kill();
     ws?.close(); bridge.kill(); provider.close();

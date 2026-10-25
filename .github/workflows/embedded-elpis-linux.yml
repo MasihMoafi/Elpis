@@ -456,7 +456,7 @@ jobs:
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
           node scripts/delegate-reload.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis"
+          node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis" --keep-going
       - name: Shared launcher, native transport, and provider session ownership
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
