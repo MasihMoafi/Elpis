@@ -61,7 +61,7 @@ test('the send button\'s menu sends this one message the other way, with the mou
   await more.click();
   const item = page.getByRole('menuitem', { name: 'Queue for later', exact: true });
   assert.match(await item.innerText(), /Ctrl\+Enter/, 'the item shows its key');
-  assert.equal(await page.getByRole('menuitem').count(), 1, 'only the other choice is offered');
+  assert.equal(await page.getByRole('menu').getByRole('menuitem').count(), 1, 'only the other choice is offered');
   await item.click();
   await queueList(page).getByText('queued from the menu', { exact: true }).waitFor();
   assert.deepEqual(steered(f), []);
@@ -122,7 +122,7 @@ test('several queued messages collapse into a stack that opens, sends one now, r
 
   await rows.nth(1).getByRole('button', { name: 'Queued message actions', exact: true }).click();
   await page.getByRole('menu').waitFor();
-  assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Edit in composer', 'Send now', 'Remove from queue']);
+  assert.deepEqual(await page.getByRole('menu').getByRole('menuitem').allInnerTexts(), ['Edit in composer', 'Send now', 'Remove from queue']);
   await page.getByRole('menuitem', { name: 'Send now', exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('[aria-label="Queued follow-ups"] > li').length === 2);
   assert.deepEqual(steered(f), ['beta']);

@@ -1410,7 +1410,7 @@ export default function Home() {
       const fit = fitAttachments(withoutReplyAttachments(savedAttachments(owner)), [attachment, file]);
       if (fit.problems.length) throw Error(fit.problems.join("\n"));
       saveAttachments(owner, fit.kept);
-      if (selectedRef.current?.id === owner) { setShellMode(false); setAttachments(fit.kept); requestAnimationFrame(focusComposer); }
+      if (selectedRef.current?.id === owner) { setShellMode(false); setAttachments(fit.kept); focusComposer(); }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (selectedRef.current?.id === owner) setFileNotice(message);

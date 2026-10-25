@@ -183,12 +183,12 @@ test('a long chat draws only the turns on screen; off-screen turns skip layout a
     await f.open('chat-a');
     const last = f.page.getByText('Question 59', { exact: true });
     await last.waitFor();
-    await f.page.waitForTimeout(300);
     const drawn = text => f.page.getByText(text, { exact: true }).evaluate(node => node.checkVisibility({ contentVisibilityAuto: true }));
     assert.equal(await drawn('Question 59'), true, 'the newest turn, on screen, is drawn');
     assert.equal(await drawn('Question 0'), false, 'the first turn, far above, is skipped');
-    await f.page.getByText('Question 0', { exact: true }).scrollIntoViewIfNeeded();
-    await f.page.waitForTimeout(200);
+    // A deferred turn keeps a visible layout placeholder; its text mounts only after scrolling it into view.
+    await f.page.locator('section.turn').first().scrollIntoViewIfNeeded();
+    await f.page.waitForFunction(() => [...document.querySelectorAll('.message.user')].some(node => node.textContent.trim() === 'Question 0' && node.checkVisibility({ contentVisibilityAuto: true })));
     assert.equal(await drawn('Question 0'), true, 'scrolled to, it is drawn');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

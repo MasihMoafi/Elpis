@@ -92,8 +92,8 @@ test('the + menu offers Add files or photos, Mention, Slash commands and Plan mo
   const { page, composer } = f;
   await f.open('chat-a');
   const plus = page.getByRole('button', { name: 'Add files and more', exact: true });
-  const items = async () => (await page.getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim());
-  await plus.click(); await page.getByRole('menuitem').first().waitFor();
+  const items = async () => (await page.getByRole('menu').getByRole('menuitem').allInnerTexts()).map(text => text.split('\n')[0].trim());
+  await plus.click(); await page.getByRole('menu').getByRole('menuitem').first().waitFor();
   assert.deepEqual(await items(), ['Add files or photos', 'Mention', 'Slash commands', 'Plan mode', 'Run as a shell command']);
   await page.keyboard.press('Escape');
   await plus.click(); await page.getByRole('menuitem', { name: /^Mention/ }).click();
