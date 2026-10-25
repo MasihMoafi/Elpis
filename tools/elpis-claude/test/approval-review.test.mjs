@@ -66,7 +66,7 @@ if (role) {
     send({ id: msg.id, result });
   });
 } else {
-  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "agy-approved", "agy-denied", "agy-error"]) {
+  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "agy-full", "agy-approved", "agy-denied", "agy-error"]) {
     const agy = label.startsWith("agy-"), scenario = label.replace(/^agy-/, "");
     test(`bridged permission review: ${label}`, { timeout: 15000 }, async t => {
       const root = createTestTempDir(path.join(os.tmpdir(), "elpis-approval-"));
@@ -130,8 +130,8 @@ if (role) {
       if (review.length) assert.deepEqual(review[0].params, { threadId: "chat", command: "echo review-fixture", cwd: root, reason: `${agy ? "Gemini" : "Claude"} wants to run: echo review-fixture` });
       if (scenario === "error") assert.match(asks[0].params.reason, /review fixture unavailable/);
       if (scenario === "denied") assert.ok(seen.some(row => row.method === "item/agentMessage/delta" && row.params.delta.includes("fixture guardian rationale")));
-      // Full access is Claude Code's bypassPermissions (it has no sandbox of its own to keep).
-      if (!agy) assert.ok(rows.some(row => row.method === "session/set_mode" && row.params.modeId === ({ manual: "acceptEdits", full: "bypassPermissions" }[scenario] ?? "auto")));
+      // Full access uses the normal permission hook, answered by Elpis without asking the person.
+      if (!agy) assert.ok(rows.some(row => row.method === "session/set_mode" && row.params.modeId === ({ manual: "acceptEdits", full: "default" }[scenario] ?? "auto")));
     });
   }
 }

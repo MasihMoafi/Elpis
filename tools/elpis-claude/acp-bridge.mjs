@@ -17,8 +17,11 @@ import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
 import { homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
+import { defaultPermissionMode, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mjs';
+import { PermissionChoices } from './permission-choices.mjs';
 
 const HOME = process.env.HOME;
+const permissionChoices = new PermissionChoices(process.env.ELPIS_HOME || join(HOME, '.elpis-next'));
 const LOG = process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/bridge.log";
 const log = (s) => { try { appendLog(LOG, s); } catch {} };
 const ADAPTER = process.env.ACP_ADAPTER ?? new URL("./context-agent.mjs", import.meta.url).pathname;
@@ -448,6 +451,7 @@ const helperConns = new WeakSet();
 const workflowToolConns = new WeakSet(); // a chat's workflow tool: its launches need the person's request (WR6)
 const relayed = new Map(); // id sent to the TUI -> answers the helper's request
 const chatAccess = new Map(); // a chat's confirmed approval policy and profile, for the helpers it starts
+const automaticThreads = new Set(), blockedAutomaticThreads = new Set();
 // A helper's ceiling is the sandbox it may have: what it asked for (read-only unless it asked to
 // write), never more than its chat allowed at its start, and only ever lowered after that, as
 // the engine's own subagents inherit a reduction; its chat's later grants never raise it. Every
@@ -845,6 +849,9 @@ wss.on("connection", (ws) => {
   const dispatchOwned = (msg, client) => {
     const id = `forward-${randomUUID()}`;
     forwarded.set(id, { client, id: msg.id, owner: ws });
+    if (msg.method === 'thread/settings/update' && ['approvalPolicy', 'permissions', 'sandboxPolicy'].some(k => msg.params?.[k] != null)) {
+      permissionWrites.set(id, { threadId: msg.params.threadId, settings: Object.fromEntries(['approvalPolicy', 'approvalsReviewer', 'permissions', 'sandboxPolicy'].filter(k => msg.params[k] != null).map(k => [k, msg.params[k]])) });
+    }
     handleMessage(JSON.stringify({ ...msg, id }));
   };
   function claimProvider(tid, result) {
@@ -920,9 +927,9 @@ wss.on("connection", (ws) => {
     return reduceHelpers(threadId);
   };
   // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
-  // Read Only = Manual ("default"), Default = Accept edits, Approve for me = Auto, Full Access =
-  // Bypass permissions; Plan is Plan. Antigravity has only its default, Plan and full access. A
-  // read-only helper that may not ask plans.
+  // Ask uses Accept edits, Approve for me uses Auto. Full access keeps normal
+  // provider checks and answers their permission hook; only Bypass selects the
+  // provider's bypass mode. A read-only helper that may not ask plans.
   const MODE_NAMES = { default: "Manual", acceptEdits: "Accept edits", plan: "Plan mode", auto: "Auto", bypassPermissions: "Bypass permissions" };
   const claudeModeOf = (threadId, agentKey, ask) =>
     threadCollab.get(threadId) === "plan" ? "plan" : accessModeOf(threadId, agentKey, ask);
@@ -933,7 +940,7 @@ wss.on("connection", (ws) => {
     const readOnly = threadSandbox.get(threadId) === "read-only" || !!profile?.includes("read-only");
     // Never asking is an approval policy, not permission to leave a restricted profile.
     // Unknown/custom profiles stay restricted unless the engine explicitly names Full Access.
-    if (!ask) return readOnly ? "plan" : UNSANDBOXED.includes(profile) ? "bypassPermissions" : "default";
+    if (!ask) return readOnly ? "plan" : profile === ':bypass-permissions' ? "bypassPermissions" : "default";
     if (agentKey !== "claude" || readOnly) return "default";
     return reviewer === "auto_review" ? "auto" : "acceptEdits";
   };
@@ -1215,6 +1222,74 @@ wss.on("connection", (ws) => {
     });
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   });
+  const permissionWrites = new Map();
+  const permissionRefreshes = new Set();
+  // Frontends send their cached engine settings on starts/resumes/turns. Those are
+  // not a user choice. Only the chat menu (settings/update), or an explicitly marked
+  // new-chat choice, detaches a chat from Settings > Default permissions.
+  async function withPermissions(data) {
+    let msg;
+    try { msg = JSON.parse(String(data)); } catch { handleMessage(data); return; }
+    const p = msg.params ?? {}, method = msg.method;
+    if (method === 'config/batchWrite' && p.edits?.some(edit => ['approval_policy', 'approvals_reviewer', 'default_permissions', 'sandbox_mode'].includes(edit.keyPath))) permissionRefreshes.add(msg.id);
+    if (!['thread/start', 'thread/resume', 'thread/fork', 'thread/settings/update', 'turn/start'].includes(method)) { handleMessage(data); return; }
+    const source = p.elpisPermissionSource;
+    delete p.elpisPermissionSource;
+    const fields = ['approvalPolicy', 'approvalsReviewer', 'permissions', 'sandbox', 'sandboxPolicy'];
+    const hasPermissions = fields.some(key => p[key] != null);
+    const explicit = source === 'chat' || (method === 'thread/settings/update' && hasPermissions && source !== 'default' && p.model == null);
+    let automatic = !!p.elpisParentThreadId || helperConns.has(ws) || automaticThreads.has(p.threadId) || p.ephemeral === true || source === 'automatic';
+    try {
+      if (method === 'thread/settings/update') {
+        // A model picker may attach its model-specific permission suggestion. A
+        // model change does not detach the chat from its permission default.
+        if (hasPermissions && !explicit) for (const key of fields) delete p[key];
+        if (explicit && (!providerOwners.has(p.threadId) || providerOwners.get(p.threadId).ws === ws)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: Object.fromEntries(fields.filter(k => p[k] != null).map(k => [k, p[k]])) });
+      } else {
+        const record = p.threadId ? await permissionChoices.read(p.threadId) : null;
+        let chosen = record?.inherit ? null : record;
+        if (chosen?.automatic) { automatic = true; chosen = { ...chosen }; delete chosen.automatic; }
+        if (explicit) chosen = Object.fromEntries(fields.filter(k => p[k] != null).map(k => [k, p[k]]));
+        // A deliberately scoped task (read-only or a named workflow profile) keeps
+        // that scope. It still never asks the person for permission.
+        if (automatic && method === 'thread/start' && (p.sandbox === 'read-only' || (p.permissions && ![':workspace', ':danger-full-access', ':bypass-permissions'].includes(p.permissions)))) {
+          chosen = { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: p.permissions ?? ':read-only' };
+        }
+        if (!chosen) {
+          const read = await engineCall('config/read', { includeLayers: true, ...(p.cwd ? { cwd: p.cwd } : {}) });
+          const mode = automatic ? 'full' : defaultPermissionMode(read);
+          const config = read.config ?? {};
+          chosen = permissionSettings(mode) ?? { approvalPolicy: config.approval_policy, approvalsReviewer: config.approvals_reviewer ?? 'user',
+            permissions: config.default_permissions ?? ({ 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' }[config.sandbox_mode]) };
+          // Legacy TUI's on-request + Full access was an inherited engine fallback.
+          // Preserve distinguishable old chat choices; new records carry provenance.
+          if (!record && p.threadId && method === 'thread/resume' && !automatic) {
+            const prior = await engineCall('thread/resume', { threadId: p.threadId, excludeTurns: true });
+            const old = permissionMode(prior), profile = prior.activePermissionProfile?.id;
+            const own = old === 'bypass' || old === 'auto' || (old === 'ask' && profile === ':workspace' && mode === 'full');
+            if (own) chosen = permissionSettings(old);
+            await permissionChoices.write(p.threadId, own ? chosen : { inherit: true });
+          }
+        }
+        const requirements = (await engineCall('configRequirements/read', {})).requirements ?? {};
+        if (!permissionSettingsAllowed(chosen, requirements)) throw new Error('This permission mode is restricted by managed settings. Choose an allowed default in Settings.');
+        for (const key of fields) delete p[key];
+        Object.assign(p, chosen);
+        if (automatic) { p.approvalPolicy = 'never'; if (p.permissions === ':bypass-permissions') p.permissions = ':danger-full-access'; }
+        if (method === 'thread/start') permissionWrites.set(msg.id, { settings: explicit || automatic ? { ...chosen, ...(automatic ? { automatic: true } : {}) } : { inherit: true }, ephemeral: p.ephemeral === true });
+        if (method === 'turn/start' && explicit && !claudeModel.has(p.threadId)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: chosen });
+        // Claude turns use confirmed engine settings, not unconfirmed turn overrides.
+        if (method === 'turn/start' && claudeModel.has(p.threadId)) {
+          await engineCall('thread/settings/update', { threadId: p.threadId, ...chosen });
+          if (explicit) await permissionChoices.write(p.threadId, chosen);
+        }
+      }
+      handleMessage(JSON.stringify(msg));
+    } catch (error) {
+      permissionWrites.delete(msg.id);
+      toTui({ id: msg.id, error: { code: Number.isInteger(error.code) ? error.code : -32600, message: error.message ?? String(error) } });
+    }
+  }
   const textOf = (content) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
   async function elpisInstructions(threadId) {
     try {
@@ -1624,6 +1699,30 @@ wss.on("connection", (ws) => {
   lineReader(engine.stdout, async (line) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
+    if (parsed && !parsed.method && permissionRefreshes.delete(parsed.id) && !parsed.error) {
+      try {
+        const loaded = new Set((await engineCall('thread/loaded/list', {})).data ?? []);
+        for (const tid of chatAccess.keys()) {
+          const choice = await permissionChoices.read(tid);
+          if (!loaded.has(tid) || helperThreads.has(tid) || (choice && !choice.inherit)) continue;
+          const read = await engineCall('config/read', { includeLayers: true, ...(threadCwd.get(tid) ? { cwd: threadCwd.get(tid) } : {}) });
+          const settings = permissionSettings(defaultPermissionMode(read));
+          if (settings) await engineCall('thread/settings/update', { threadId: tid, ...settings });
+        }
+      } catch (error) { parsed = { id: parsed.id, error: { code: -32603, message: `The default was saved, but an open chat could not be updated: ${error.message ?? error}` } }; }
+      line = JSON.stringify(parsed);
+    }
+    if (parsed && !parsed.method && permissionWrites.has(parsed.id)) {
+      const write = permissionWrites.get(parsed.id); permissionWrites.delete(parsed.id);
+      if (!parsed.error) {
+        try {
+          const tid = write.threadId ?? parsed.result?.thread?.id;
+          if (write.ephemeral) { if (write.settings.automatic) automaticThreads.add(tid); }
+          else await permissionChoices.write(tid, write.settings);
+        }
+        catch { parsed = { id: parsed.id, error: { code: -32603, message: 'The permission choice could not be saved. Choose it again before restarting.' } }; line = JSON.stringify(parsed); }
+      }
+    }
     if (parsed && !parsed.method && pendingHelperTurns.has(parsed.id)) {
       const tid = pendingHelperTurns.get(parsed.id);
       pendingHelperTurns.delete(parsed.id);
@@ -1632,6 +1731,27 @@ wss.on("connection", (ws) => {
     }
     const th = parsed?.result?.thread ?? parsed?.params?.thread;
     if (th?.id && th?.cwd) { threadCwd.set(th.id, th.cwd); threadSeen.set(th.id, { ...th, turns: [] }); }
+    if (parsed?.method === 'thread/started' && th?.id && (th.parentThreadId || th.source?.subAgent)) {
+      automaticThreads.add(th.id);
+      try {
+        const requirements = (await engineCall('configRequirements/read', {})).requirements ?? {};
+        const settings = permissionSettings('full');
+        if (!permissionSettingsAllowed(settings, requirements)) throw new Error('Managed settings forbid Full access for this automatic agent.');
+        await engineCall('thread/settings/update', { threadId: th.id, ...settings });
+        await permissionChoices.write(th.id, { ...settings, automatic: true });
+      } catch (error) {
+        blockedAutomaticThreads.add(th.id);
+        notify('warning', { threadId: th.id, message: error.message ?? String(error) });
+      }
+    }
+    if (parsed?.method === 'turn/started' && blockedAutomaticThreads.has(parsed.params?.threadId)) {
+      void engineCall('turn/interrupt', { threadId: parsed.params.threadId, turnId: parsed.params.turn.id }).catch(error => log(`automatic agent interrupt: ${error.message ?? error}`));
+    }
+    if (parsed?.id !== undefined && ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(parsed.method)
+      && (automaticThreads.has(parsed.params?.threadId) || helperScope.has(parsed.params?.threadId))) {
+      engine.stdin.write(JSON.stringify({ id: parsed.id, result: { decision: !blockedAutomaticThreads.has(parsed.params.threadId) && fullFor(parsed.params.threadId) ? 'accept' : 'decline' } }) + '\n');
+      return;
+    }
     if (th?.id && parsed?.result?.approvalPolicy) { noteAccess(th.id, parsed.result); resumeResults.set(th.id, { ...parsed.result, thread: { ...th } }); }
     if (parsed?.method === "thread/name/updated") {
       const { threadId, threadName } = parsed.params;
@@ -2253,7 +2373,7 @@ wss.on("connection", (ws) => {
         // Full Access never asks, as in Codex: whatever the agent's own mode (its settings may
         // refuse Bypass, Claude Code still asks before writing in .claude, and a Plan turn goes on
         // after its plan), the bridge says yes.
-        if (access === "bypassPermissions" && !planIds.length) {
+        if (((threadPolicy.get(threadId) ?? policy) === 'never' && fullFor(threadId)) && !planIds.length) {
           log(`approval ${what} -> allowed (Full Access)`);
           return pick("allow_once") ?? pick("allow_always");
         }
@@ -2583,7 +2703,7 @@ wss.on("connection", (ws) => {
     if (helper) {
       // The helper's ceiling (helperScope, helperCeiling): a writer below a Full Access chat gets Full Access.
       const parentThreadId = p.elpisParentThreadId;
-      const requested = ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only";
+      const requested = [':workspace', ':danger-full-access'].includes(p.permissions) || ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only";
       p.sandbox = helperCeiling(requested, parentThreadId);
       delete p.permissions;
       // A workflow's agent (WR2): linked to its run, so the lists fold it under the run.
@@ -2591,9 +2711,9 @@ wss.on("connection", (ws) => {
       const d = { parentThreadId, model: p.model ?? null, sandbox: p.sandbox, requested, ceiling: p.sandbox, ...run };
       pendingDelegation.set(msg.id, d);
       pendingHelpers.add(d);
-      // The helper asks before acting when its chat does.
-      const inherited = chatAccess.get(parentThreadId)?.policy;
-      if (inherited && inherited !== "never") p.approvalPolicy = inherited;
+      // Automatic agents never put approval questions to the person. Their sandbox ceiling
+      // still applies: a denied action fails instead of asking the parent chat.
+      p.approvalPolicy = 'never';
       delete p.elpisParentThreadId;
     }
     delete p.elpisWorkflow;
@@ -3300,7 +3420,7 @@ wss.on("connection", (ws) => {
   ws.on("message", (data) => {
     let msg; try { msg = JSON.parse(String(data)); } catch {}
     noteRequest(msg);
-    if (!handover.take(msg)) handleMessage(data);
+    if (!handover.take(msg)) void withPermissions(data);
   });
   ws.on("close", async () => {
     handover.close();
