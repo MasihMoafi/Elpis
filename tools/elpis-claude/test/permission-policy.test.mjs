@@ -28,6 +28,9 @@ test('a scoped automatic task is checked by its actual never policy, separately 
   const scoped = { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':read-only' };
   assert.equal(permissionSettingsAllowed(scoped, { allowedApprovalPolicies: ['never'], allowedSandboxModes: ['read-only'] }), true);
   assert.equal(permissionSettingsAllowed(scoped, { allowedApprovalPolicies: ['never'], allowedSandboxModes: ['workspace-write'] }), false);
+  assert.equal(permissionAllowed('full', { allowedPermissionProfiles: { ':workspace': true } }), false, 'a profile allow-list can forbid Full access independently of sandbox modes');
+  assert.equal(permissionAllowed('full', { allowedPermissionProfiles: { ':danger-full-access': true, ':bypass-permissions': false } }), true);
+  assert.equal(permissionAllowed('bypass', { allowedPermissionProfiles: { ':danger-full-access': true, ':bypass-permissions': false } }), false, 'allowing Full access does not allow Bypass');
 });
 test('automatic agents follow the configured access scope and never ask or inherit Bypass', async () => {
   await forAll(200, g => {
@@ -44,9 +47,12 @@ test('preset round trips and managed restrictions hold for arbitrary allowed set
     assert.equal(permissionMode(settings), mode);
     const approvals = g.shuffle(['on-request', 'never', 'untrusted']).slice(0, g.int(0, 3));
     const sandboxes = g.shuffle(['read-only', 'workspace-write', 'danger-full-access']).slice(0, g.int(0, 3));
-    const allowed = permissionAllowed(mode, { allowedApprovalPolicies: approvals, allowedSandboxModes: sandboxes });
+    const reviewers = g.shuffle(['user', 'auto_review']).slice(0, g.int(0, 2));
+    const profiles = Object.fromEntries([':workspace', ':danger-full-access', ':bypass-permissions'].map(profile => [profile, g.pick([true, false])]));
+    const allowed = permissionAllowed(mode, { allowedApprovalPolicies: approvals, allowedSandboxModes: sandboxes, allowedPermissionProfiles: profiles, allowedApprovalsReviewers: reviewers });
     const expectedSandbox = ['full', 'bypass'].includes(mode) ? 'danger-full-access' : 'workspace-write';
-    assert.equal(allowed, approvals.includes(settings.approvalPolicy) && sandboxes.includes(expectedSandbox));
+    const expectedProfile = { ask: ':workspace', auto: ':workspace', full: ':danger-full-access', bypass: ':bypass-permissions' }[mode];
+    assert.equal(allowed, approvals.includes(settings.approvalPolicy) && sandboxes.includes(expectedSandbox) && profiles[expectedProfile] && reviewers.includes(mode === 'auto' ? 'auto_review' : 'user'));
     assert.equal(permissionSettings(mode).permissions === ':bypass-permissions', mode === 'bypass');
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
-import { api, unreadable } from "@/lib/api";
+import { api, unreadable, type PermissionRequirements } from "@/lib/api";
 
 /** The bridge's /settings snapshot. Every config-backed Settings page shares this one copy,
  * so a save on one page gives the others the new config version. */
@@ -25,7 +25,7 @@ export type ElpisSettings = {
   agents?: { graph: number; atOnce: number; source: string };
   sources?: Record<string, string>;
   features?: { available: boolean; reason?: string; data: { key: string; title: string; description: string; enabled: boolean; reason?: string | null }[] };
-  managed?: { modelProvider?: string | null; allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null; allowedWebSearchModes?: string[] | null };
+  managed?: PermissionRequirements & { modelProvider?: string | null; allowedWebSearchModes?: string[] | null };
   write: { available?: boolean; reason: string };
 };
 type State = { data: ElpisSettings | null; error: string; loading: boolean };
