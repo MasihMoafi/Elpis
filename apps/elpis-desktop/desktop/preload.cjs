@@ -48,6 +48,10 @@ function write(key, update) {
   return operation;
 }
 contextBridge.exposeInMainWorld('elpisDesktop',{
+  menu:{
+    command:command=>ipcRenderer.invoke('elpis:menu:command',command).then(checked),
+    subscribe:callback=>{const listener=(_event,command)=>callback(command);ipcRenderer.on('elpis:menu:requested',listener);return()=>ipcRenderer.removeListener('elpis:menu:requested',listener);},
+  },
   improve: {
     capture:bounds=>ipcRenderer.invoke('elpis:improve:capture',bounds).then(checked),
     onPoint:callback=>{const listener=(_event,point)=>callback(point);ipcRenderer.on('elpis:improve:point',listener);return()=>ipcRenderer.removeListener('elpis:improve:point',listener);},

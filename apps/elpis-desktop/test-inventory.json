@@ -111,6 +111,7 @@
     "bridge/workflow-runs.test.mjs"
   ],
   "desktop": [
+    "desktop/app-menu.test.cjs",
     "desktop/app-updates.test.cjs",
     "desktop/browser-agent.test.cjs",
     "desktop/browser-annotations.test.cjs",
@@ -138,6 +139,7 @@
     "desktop/sleep-blocker.test.cjs"
   ],
   "ui": [
+    "tests/app-menus.test.cjs",
     "tests/workflow-identity.test.cjs",
     "tests/workflow-expand-follow.test.cjs",
     "tests/speed-chat.test.cjs",

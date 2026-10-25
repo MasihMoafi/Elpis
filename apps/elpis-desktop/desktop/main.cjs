@@ -10,7 +10,8 @@ const { openThreadArgument } = require('./open-thread.cjs');
 const { createTray, createCloseToTray } = require('./tray.cjs');
 const { startQuickEntry } = require('./quick-entry.cjs');
 const { createScreenshotPopup } = require('./screenshot-popup.cjs');
-const { createSessionWindows, sessionWindowMenu } = require('./session-windows.cjs');
+const { createSessionWindows } = require('./session-windows.cjs');
+const { createAppMenu } = require('./app-menu.cjs');
 const { enableWaylandIme } = require('./wayland-ime.cjs');
 const { createAppUpdates, executableLauncher } = require('./app-updates.cjs');
 const fs = require('node:fs');
@@ -160,11 +161,11 @@ if (!app.requestSingleInstanceLock({ openThread: openThreadArgument(process.argv
   });
   app.whenReady().then(async () => {
     // Built once: rebuilding an unchanged menu redraws the Linux menu row (Cloudroom's flicker).
+    const appMenu = createAppMenu({ ipcMain, windows: () => sessionWindows?.windows ?? [], origin: () => server && new URL(server.url).origin,
+      newWindow: async () => { await prepareWindows(); await sessionWindows.open({ newSession: true }); }, quit: () => quitApp() });
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
-      { label: 'File', submenu: [sessionWindowMenu(() => sessionWindows.open({ newSession: true }).catch(showStartupError)), { role: 'close' }, { role: 'quit', accelerator: 'CommandOrControl+Q' }] },
-      { role: 'editMenu' },
-      { label: 'View', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] },
+      ...appMenu.template(),
     ]));
     if (loveSpotApp) return void await openWindow(true);
     const showWindow = () => void openWindow().catch(showStartupError);

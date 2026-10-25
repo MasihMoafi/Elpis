@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 
 /** Every file the packaged app loads besides the renderer; package.test.mjs checks it against their imports. */
 export const productionFiles = [
+  'desktop/app-menu.cjs', 'lib/app-menu-commands.cjs',
   'bridge/voice.mjs', 'bridge/voice-handoff.cjs',
   'bridge/resources/permission-policy.mjs',
   'bridge/import-chats.mjs',

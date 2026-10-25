@@ -19,7 +19,7 @@ async function launch(args, flushText, flushBrowsers, canRestart = async () => t
   const openers = { threads: { queue: id => calls.push(['thread', id]) }, newChats: { queue() {} } };
   const sessions = { windows: new Set(), flushText, flushBrowsers: async () => { calls.push('browser-flush'); await flushBrowsers?.(); }, openersFor: () => openers,
     open: async () => { calls.push('chat'); return host; }, openLoveSpot: async () => { calls.push('love'); } };
-  const electron = { app, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
+  const electron = { app, ipcMain: { handle() {}, removeHandler() {} }, dialog: { showErrorBox() {} }, Menu: { buildFromTemplate: x => x, setApplicationMenu() {} } };
   const context = vm.createContext({ __dirname, console, process: { argv: ['electron', 'app', ...args], env: {}, platform: 'linux' },
     sessions, openers, testStore: { get: () => null, flush: async () => calls.push('workspace-flush') }, testServer: { canRestart, close: async () => calls.push('board-close') },
     require: name => name === './app-updates.cjs' ? { executableLauncher: file => file, createAppUpdates: () => ({ setRunningEngine() {} }) } : name === 'electron' ? electron : name === './quick-entry.cjs' ? { startQuickEntry: () => { calls.push('quick-entry'); return { start: async () => {} }; } }

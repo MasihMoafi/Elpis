@@ -39,6 +39,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const origin = new URL(url).origin;
     const window = new BrowserWindow({
       title: loveSpot ? 'Love Spot · Elpis' : 'Elpis', width: 1320, height: 900, minWidth: 600, minHeight: 480,
+      autoHideMenuBar: true,
       icon: ICON,
       backgroundColor: '#151515', show: false,
       titleBarStyle: 'hidden', titleBarOverlay: { ...TITLE_BAR.dark, height: Math.round(36 * ZOOM) },
