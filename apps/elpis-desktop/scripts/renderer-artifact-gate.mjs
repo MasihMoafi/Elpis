@@ -140,9 +140,9 @@ export const retainedUpdates = {
       "reason": "SIDEBAR, Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good.\" Its row is a switch, not a chat, so the focus-ring check skips it. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/startup-splash.test.cjs": {
-      "blob": "e374436fc1bb7becd6726884bea1edfd2c81f77a",
+      "blob": "2d301700cb300d3fe104b69d70f6329c4d104db6",
       "approval": "1de4129f742172ae62f0f63f5c3bd5d0a46374fe",
-      "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade."
+      "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade. Masih 24 Oct: a dark opening before a light app is wrong; the opening follows the app theme. Preserve every animation, timing and click-through assertion."
     },
     "tests/controls.cjs": {
       "blob": "ac87649f1f3084bd04af99ed3db59b053b1a97fd",
@@ -160,9 +160,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/sidebar.test.cjs": {
-      "blob": "7c90469686a4dabe0c86c7b3f189f1ffeff87fd5",
+      "blob": "cfd20637d8dbd17302619ebe577e5a3d7a7766ff",
       "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
-      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984). Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
+      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984). Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can't, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged. A248: Bookmark belongs beside Pin and Archive; retain every deletion, selection, keyboard and hover assertion."
     },
     "tests/desktop-small-fixes.test.cjs": {
       "blob": "f02b388191828cac085bcbd12a80f994762ef192",
@@ -184,18 +184,10 @@ export const retainedUpdates = {
       "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
       "reason": "A87/R28: feature controls keep their one-click checks with the approved logo accent"
     },
-    "tests/page-column.test.cjs": {
-      "blob": "4a45579c8292e33530b15e6c793a6825e7a89b99",
-      ...pageRemovalApproval
-    },
     "tests/page-column.cjs": {
       "blob": "e4e6b692bcfe74810bc0f0629dd5cd16393d956f",
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
       "reason": "A126: shared column measurements cover the centred page shells Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows."
-    },
-    "tests/view-boundaries.test.cjs": {
-      "blob": "b77da2a3d0cb0a6ba70aa2a7fd7f4d66ba6afb1e",
-      ...pageRemovalApproval
     },
     "tests/provider-usage.test.cjs": {
       "blob": "a831c7540406a39077766eb3e531bbe998140484",
@@ -348,9 +340,9 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "94fddf69cdb5846badf7c8ead8d6ff381f7e3617",
+      "blob": "27421d4d36879c01db55e30317bce034a2f10cd7",
       "approval": "6c55175a10129526a7b1fcb3f92c55b529fcea14",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured."
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions."
     },
     "tests/love-dock.test.cjs": {
       "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",

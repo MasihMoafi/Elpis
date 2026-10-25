@@ -164,8 +164,9 @@ button:disabled { cursor:not-allowed; }
  * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
  * The panel is as wide as the sidebar, or what its dragged edge set (`--side-w`, from app/page.tsx, floored at sideMinWidth in side-panel.tsx). */
 @media(min-width:761px) {
-  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))); grid-template-rows:auto minmax(0,1fr); }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))); grid-template-rows:auto minmax(0,1fr) auto; }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-header { grid-column:1; grid-row:1; }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-notices { grid-column:1; grid-row:3; }
   .workspace-body.panel-open:not(.full-view) { display:contents; }
   .workspace-body.panel-open:not(.full-view) > .workspace-content { grid-column:1; grid-row:2; }
   .workspace-body.panel-open:not(.full-view) > .side-panel { grid-column:2; grid-row:1 / -1; display:grid; grid-template-rows:subgrid; width:auto; min-width:0; max-width:none; }
@@ -1341,6 +1342,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* Split sessions reuse the same chat surface and responsive composer in each document. */
 .session-split .workspace > .workspace-header,
+.session-split .workspace > .workspace-notices,
 .session-split .workspace > .workspace-body { width:50%; }
 .split-session { position:absolute; inset:0 0 0 auto; width:50%; height:100%; border:0; border-left:1px solid var(--hairline); background:var(--background); }
 .session-pane.app-shell { grid-template-columns:minmax(0,1fr); }
