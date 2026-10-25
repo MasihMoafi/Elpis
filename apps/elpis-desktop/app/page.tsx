@@ -838,7 +838,7 @@ export default function Home() {
   // A new chat starts in Settings' default permissions (Full access unless the config names an approval policy) until a
   // mode is chosen, so the button shows that; a config that matches no preset shows Ask.
   const defaultMode = providerSettings?.options?.defaultPermissions;
-  const configuredMode: PermissionMode = defaultMode === "auto" || defaultMode === "full" ? defaultMode : "ask";
+  const configuredMode: PermissionMode = defaultMode === "ask" || defaultMode === "custom" ? "ask" : defaultMode === "auto" ? "auto" : "full";
   const permissionMode: PermissionMode = selected ? threadModes[selected.id] ?? "ask" : newMode ?? configuredMode;
   const planMode = selected ? nextTurn[selected.id]?.plan ?? threadPlans[selected.id] ?? false : newPlan;
   // The last finished turn's proposed plan, while the chat is still in Plan mode and it is unanswered.
