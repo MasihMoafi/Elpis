@@ -40,6 +40,8 @@ export async function model() {
       }
       const lastUser = input.findLastIndex(item => item.type === 'message' && item.role === 'user');
       const asked = (input[lastUser]?.content ?? []).map(part => part.text ?? '').join(' ');
+      // A provider without remote compaction gets Codex's local compaction as an ordinary request.
+      if (asked.startsWith('You are performing a CONTEXT CHECKPOINT COMPACTION')) state.compactions++;
       const steps = Number(/^work (\d+)/.exec(asked)?.[1] ?? 0);
       const done = input.slice(lastUser + 1).filter(item => item.type === 'function_call_output').length;
       const n = state.requests.push({ url: req.url, asked, reasoningItems: input.filter(item => item.type === 'reasoning').length });

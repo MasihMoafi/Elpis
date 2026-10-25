@@ -66,4 +66,28 @@ function seedLongChat(home, { name = 'Long chat', turns = 40, tools = 3, minutes
   fs.appendFileSync(path.join(home, 'session_index.jsonl'), JSON.stringify({ id, thread_name: name, updated_at: new Date(start).toISOString() }) + '\n');
   return id;
 }
-module.exports = { seedChats, seedLongChat, uuid7 };
+/** His rust-obsidian chat's shape (24 Oct): a paginated rollout that continues an earlier rollout (`missing`) whose file
+ * is gone, holding one turn recorded as the engine records it (items included). Returns the rollout's path. */
+function seedMissingEarlierChat(home, { thread, missing, segment, cwd, at, provider = 'openai' }) {
+  const turn = 'turn-remaining', question = 'REMAINING QUESTION about the vault', answer = 'REMAINING ANSWER kept after the gap', base = 45271;
+  const seconds = Math.floor(Date.parse(at) / 1000), ms = seconds * 1000;
+  const done = item => ['event_msg', { type: 'item_completed', thread_id: thread, turn_id: turn, item, started_at_ms: ms, completed_at_ms: ms }];
+  const rows = [
+    ['session_meta', { id: thread, session_id: thread, timestamp: at, cwd, originator: 'elpis-desktop', cli_version: '0.162.0', source: 'vscode', thread_source: 'user', model_provider: provider, history_mode: 'paginated', history_base: { thread_id: missing, end_ordinal_exclusive: base, end_byte_offset: 41901968 } }],
+    ['event_msg', { type: 'task_started', turn_id: turn, started_at: seconds }],
+    ['response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: question }] }],
+    ['event_msg', { type: 'user_message', message: question, images: [], local_images: [], text_elements: [] }],
+    done({ type: 'UserMessage', id: 'user-remaining', content: [{ type: 'text', text: question, text_elements: [] }] }),
+    ['response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: answer }] }],
+    ['event_msg', { type: 'agent_message', message: answer }],
+    done({ type: 'AgentMessage', id: 'agent-remaining', content: [{ type: 'Text', text: answer }], phase: 'final_answer' }),
+    ['event_msg', { type: 'task_complete', turn_id: turn, last_agent_message: answer }],
+  ];
+  const dir = path.join(home, 'sessions', at.slice(0, 4), at.slice(5, 7), at.slice(8, 10));
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `rollout-${at.slice(0, 19).replace(/:/g, '-')}-${thread}_${segment}.jsonl`);
+  fs.writeFileSync(file, rows.map(([type, payload], index) => JSON.stringify({ timestamp: at, ordinal: base + index, type, payload })).join('\n') + '\n');
+  return file;
+}
+
+module.exports = { seedChats, seedLongChat, seedMissingEarlierChat, uuid7 };
