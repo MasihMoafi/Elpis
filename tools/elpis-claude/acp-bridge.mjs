@@ -1257,6 +1257,7 @@ wss.on("connection", (ws) => {
             if (!ids.includes(p.threadId)) await engineCall('thread/resume', { threadId: p.threadId, excludeTurns: true });
           }
           await engineCall('thread/settings/update', { threadId: p.threadId, ...chosen });
+          blockedAutomaticThreads.delete(p.threadId);
         }
         for (const key of fields) delete p[key];
         Object.assign(p, chosen);
@@ -1711,6 +1712,7 @@ wss.on("connection", (ws) => {
       if (!parsed.error) {
         try {
           const tid = write.threadId ?? parsed.result?.thread?.id;
+          blockedAutomaticThreads.delete(tid);
           if (!write.settings.inherit && !write.settings.automatic) explicitChatChoices.add(tid);
           if (write.ephemeral) { if (write.settings.automatic) automaticThreads.add(tid); }
           else await permissionChoices.write(tid, write.settings);
@@ -1733,9 +1735,12 @@ wss.on("connection", (ws) => {
         const settings = defaultPermissionSettings(await engineCall('config/read', { includeLayers: true, ...(th.cwd ? { cwd: th.cwd } : {}) }), true);
         if (!permissionSettingsAllowed(settings, requirements)) throw new Error('Managed settings forbid Full access for this automatic agent.');
         await engineCall('thread/settings/update', { threadId: th.id, ...settings });
+        blockedAutomaticThreads.delete(th.id);
         await permissionChoices.write(th.id, { ...settings, automatic: true });
       } catch (error) {
         blockedAutomaticThreads.add(th.id);
+        const turnId = engineTurns.get(th.id);
+        if (turnId) void engineCall('turn/interrupt', { threadId: th.id, turnId }).catch(error => log(`automatic agent interrupt: ${error.message ?? error}`));
         notify('warning', { threadId: th.id, message: error.message ?? String(error) });
       }
     }

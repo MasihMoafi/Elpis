@@ -48,6 +48,8 @@ if (process.argv.includes('app-server')) {
     let row = loaded.get(p.threadId);
     switch (msg.method) {
       case 'initialize': return reply({ userAgent: 'a166-fixture' });
+      case 'config/read': return reply({ config: fs.existsSync(path.join(process.env.HOME, 'permission-defaults.json')) ? JSON.parse(fs.readFileSync(path.join(process.env.HOME, 'permission-defaults.json'))) : {} });
+      case 'configRequirements/read': return reply({ requirements: fs.existsSync(path.join(process.env.HOME, 'requirements.json')) ? JSON.parse(fs.readFileSync(path.join(process.env.HOME, 'requirements.json'))) : null });
       case 'thread/start': {
         const id = randomUUID();
         row = { thread: { id, cwd: p.cwd, model: p.model, source: 'appServer', status: { type: 'idle' }, turns: [], historyMode: 'paginated' }, model: p.model, modelProvider: p.modelProvider ?? 'openai', ...settings(p) };
@@ -90,9 +92,11 @@ if (process.argv.includes('app-server')) {
         reply({ turn }); send({ method: 'turn/started', params: { threadId: p.threadId, turn } });
         if (p.input?.some(item => item.text === '[native-child]')) {
           const id = randomUUID();
-          const child = { thread: { id, parentThreadId: p.threadId, cwd: row.thread.cwd, model: row.thread.model, status: { type: 'idle' }, turns: [] }, ...settings({ approvalPolicy: 'on-request', permissions: ':workspace' }) };
+          const childTurn = { id: 'child-turn', status: 'inProgress', items: [] };
+          const child = { thread: { id, parentThreadId: p.threadId, cwd: row.thread.cwd, model: row.thread.model, status: { type: 'active' }, turns: [childTurn] }, ...settings({ approvalPolicy: 'on-request', permissions: ':workspace' }) };
           loaded.set(id, child); save(child);
           send({ method: 'thread/started', params: { thread: child.thread } });
+          send({ method: 'turn/started', params: { threadId: id, turn: childTurn } });
         }
         let n = 0;
         timers.set(p.threadId, setInterval(() => {
@@ -131,7 +135,7 @@ if (process.argv.includes('app-server')) {
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
       ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine,
       ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1', ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: log };
-    const bridge = spawn(process.execPath, [path.join(source, 'acp-bridge.mjs')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    const bridge = spawn(process.execPath, [process.env.HELPER_TEST_BRIDGE ?? path.join(source, 'acp-bridge.mjs')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '', app, desktop, mcp, observer, sse;
     bridge.stderr.on('data', data => { stderr += data; });
     t.after(async () => {
@@ -267,6 +271,25 @@ if (process.argv.includes('app-server')) {
       assert.equal(JSON.parse(fs.readFileSync(path.join(root, `${restricted}.json`))).sandboxPolicy.type, 'dangerFullAccess');
       assert.equal((await request(`/threads/${restricted}/resume`, {})).status, 200);
       assert.equal(JSON.parse(fs.readFileSync(path.join(root, `${restricted}.json`))).sandboxPolicy.type, 'dangerFullAccess', 'an explicit helper choice survives reopening');
+    });
+    await t.test('a native subagent already starting is stopped when managed settings forbid its automatic policy', async () => {
+      const parent = await rpc('thread/start', { model: 'gpt-test', cwd: root, approvalPolicy: 'on-request', permissions: ':workspace', elpisPermissionSource: 'chat' });
+      assert.ifError(parent.error);
+      fs.writeFileSync(path.join(root, 'requirements.json'), JSON.stringify({ allowedApprovalPolicies: ['on-request'], allowedSandboxModes: ['workspace-write'] }));
+      assert.ifError((await rpc('turn/start', { threadId: parent.result.thread.id, input: [{ type: 'text', text: '[native-child]' }] })).error);
+      let child;
+      await until(() => {
+        child = fs.readdirSync(root).filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(name => JSON.parse(fs.readFileSync(path.join(root, name)))).find(row => row.thread.parentThreadId === parent.result.thread.id);
+        return child?.thread.turns[0]?.status === 'interrupted';
+      }, 'managed rejection stops the child even if its turn started before requirements were read');
+      assert.deepEqual([child.approvalPolicy, child.activePermissionProfile.id], ['on-request', ':workspace'], 'the forbidden Full access mode was never applied');
+      assert.equal(observerEvents.some(message => message.method === 'item/commandExecution/requestApproval' && message.params.threadId === child.thread.id), false);
+      fs.writeFileSync(path.join(root, 'requirements.json'), JSON.stringify({ allowedApprovalPolicies: ['on-request', 'never'], allowedSandboxModes: ['workspace-write'] }));
+      fs.writeFileSync(path.join(root, 'permission-defaults.json'), JSON.stringify({ approval_policy: 'on-request', default_permissions: ':workspace' }));
+      assert.ifError((await rpc('turn/start', { threadId: child.thread.id, input: [{ type: 'text', text: 'Continue under the allowed default' }] })).error);
+      await until(() => observerEvents.some(message => message.method === 'item/agentMessage/delta' && message.params.threadId === child.thread.id), 'a previously blocked child continues when the new default is allowed');
+      const resumed = JSON.parse(fs.readFileSync(path.join(root, `${child.thread.id}.json`)));
+      assert.deepEqual([resumed.approvalPolicy, resumed.activePermissionProfile.id], ['never', ':workspace']);
     });
   });
 }
