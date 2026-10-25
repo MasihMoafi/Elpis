@@ -417,6 +417,7 @@ jobs:
           mkdir -p apps/elpis-desktop/bridge/resources
           cp codex-rs/core/src/prompts/rag.md apps/elpis-desktop/bridge/resources/rag.md
           cp codex-rs/skills/src/assets/personal/SKILL.md apps/elpis-desktop/bridge/resources/personal.md
+          cp tools/elpis-claude/permission-policy.mjs apps/elpis-desktop/bridge/resources/permission-policy.mjs
           node --test --test-reporter=tap tools/elpis-claude/test/claude-turn-record.test.mjs tools/elpis-claude/test/turn-delivery.test.mjs | tee "$RUNNER_TEMP/elpis-claude-turn-checks.log"
           for attempt in {1..10}; do
             node --test --test-reporter=tap --test-name-pattern='a bridge restart recovers' tools/elpis-claude/test/turn-delivery.test.mjs > "$RUNNER_TEMP/elpis-claude-restart-$attempt-checks.log" 2>&1
