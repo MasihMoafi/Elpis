@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
+const { captureReview, openSettings } = require('./controls.cjs');
 const { settingsBody } = require('./settings-fixture.cjs');
 
 const home = '/home/person/.elpis-next';
@@ -26,6 +26,8 @@ test('a missing instructions file says so and a memory file previews rendered', 
     const memory = page.getByRole('region', { name: 'Memory file', exact: true });
     await memory.getByText(`${home}/memories/MEMORY.md`, { exact: true }).waitFor();
     assert.match(await memory.getByRole('textbox', { name: 'Memory file', exact: true }).inputValue(), /^# Saved memory/);
+    await instructions.getByRole('radio', { name: 'Edit', exact: true }).click();
+    await captureReview(page, 'personalization-files-edit-light');
     await memory.getByRole('radio', { name: 'Preview', exact: true }).click();
     await memory.getByRole('heading', { name: 'Saved memory', exact: true }).waitFor();
     assert.equal(await memory.getByRole('listitem').filter({ hasText: 'Prefers short replies' }).count(), 1);
@@ -40,9 +42,10 @@ test('a missing instructions file says so and a memory file previews rendered', 
 
 test('Personalization files recover locally, preview text without images, and preserve editable drafts', async () => {
   for (const [kind, label, name] of [['instructions', 'Global instructions', 'AGENTS.md'], ['memory', 'Memory file', 'memories/MEMORY.md']]) {
+    const colorScheme = kind === 'memory' ? 'dark' : 'light';
     let unavailable = true, file = { path: `${home}/${name}`, content: '# Local text\n\n![Stored figure](https://preview.invalid/figure.png)', version: 'v1' };
     const endpoint = `/api/settings/files/${kind}`;
-    const f = await fixture({ routes: { ...routes, [endpoint]: body => {
+    const f = await fixture({ colorScheme, routes: { ...routes, [endpoint]: body => {
       if (unavailable) return { __http: 503, error: 'This file could not be read.' };
       if (body) file = { ...file, content: body.content, version: 'v2' };
       return file;
@@ -60,10 +63,13 @@ test('Personalization files recover locally, preview text without images, and pr
       const editor = group.getByRole('textbox', { name: label, exact: true });
       await editor.waitFor();
       await page.waitForFunction(label => !document.querySelector(`textarea[aria-label="${label}"]`).disabled, label);
+      assert.equal(await editor.inputValue(), file.content);
+      await captureReview(page, `personalization-${kind}-loaded-edit-${colorScheme}`);
       await group.getByRole('radio', { name: 'Preview', exact: true }).click();
       await group.getByRole('heading', { name: 'Local text', exact: true }).waitFor();
       assert.equal(await group.locator('img').count(), 0);
       assert.deepEqual(images, [], 'a text preview never requests image resources');
+      await captureReview(page, `personalization-${kind}-text-preview-${colorScheme}`);
       await group.getByRole('radio', { name: 'Edit', exact: true }).click();
       await editor.fill('Keep this local draft');
       await page.getByRole('tab', { name: 'General', exact: true }).click();

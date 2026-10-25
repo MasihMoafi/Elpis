@@ -3,6 +3,14 @@
 // A87's approved main colour comes from the new-chat logo, never from the token under test.
 const LOGO_ACCENT = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/branding/elpis-wordmark-amber-light-loop.svg'), 'utf8')
   .match(/<linearGradient\b[^>]*id="elpis-word-light-gold"[^>]*>\s*<stop\b[^>]*stop-color="(#[\da-f]+)"/i)[1];
+/** Optional review evidence from existing asserting cases; names include their theme and layout state. */
+async function captureReview(page, name) {
+  const directory = process.env.ELPIS_REVIEW_SHOTS;
+  if (!directory) return;
+  const fs = require('node:fs/promises'), path = require('node:path');
+  await fs.mkdir(directory, { recursive: true });
+  await page.screenshot({ path: path.join(directory, `${name}.png`), animations: 'disabled' });
+}
 async function openList(locator) {
   const page = locator.page();
   await locator.click();
@@ -177,4 +185,4 @@ async function assertDialogActionsExplained(dialog, expected) {
     if (expected) assert.match(reasons.join(' '), expected);
   }
 }
-module.exports = { LOGO_ACCENT, assertDialogActionsExplained, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
+module.exports = { LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };

@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
+const { captureReview } = require('./controls.cjs');
 
 test('the application menubar supports arrow keys and its File/Help actions open the working app surfaces', async () => {
   for (const colorScheme of ['light', 'dark']) {
@@ -12,6 +13,8 @@ test('the application menubar supports arrow keys and its File/Help actions open
       await f.page.keyboard.press('ArrowRight');
       assert.equal(await bar.getByRole('menuitem', { name: 'Edit', exact: true }).evaluate(element => element === document.activeElement), true);
       await f.page.keyboard.press('ArrowLeft'); await f.page.keyboard.press('ArrowDown');
+      await f.page.getByRole('menuitem', { name: 'Settings', exact: true }).waitFor();
+      await captureReview(f.page, `app-menus-file-open-${colorScheme}`);
       await f.page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
       await f.page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
       await bar.getByRole('menuitem', { name: 'Help', exact: true }).click();

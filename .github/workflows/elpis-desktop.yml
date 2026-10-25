@@ -117,6 +117,7 @@ jobs:
         env:
           ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/elpis-ui/node_modules/playwright-core
           ELPIS_CHROMIUM: /usr/bin/google-chrome
+          ELPIS_REVIEW_SHOTS: ${{ runner.temp }}/elpis-ui-evidence/review
         run: node scripts/renderer-artifact-gate.mjs --shard "$RUNNER_TEMP/elpis-ui-plan/plan.json" "${{ matrix.shard }}" "$RUNNER_TEMP/elpis-ui-evidence"
       - name: Preserve UI gate diagnostics
         if: ${{ always() }}

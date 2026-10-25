@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, TURNS } = require('./parity-fixture.cjs');
-const { widenSidePanel } = require('./controls.cjs');
+const { captureReview, widenSidePanel } = require('./controls.cjs');
 
 async function using(options, run) {
   const f = await fixture({ width: 1280, height: 800, ...options });
@@ -35,6 +35,7 @@ for (const running of [false, true]) test(`composer labels fit at every desktop 
       assert.deepEqual(clipped, [], `${width}px panel ${open}`);
       const box = await page.locator('.composer').boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width);
+      if (!running && (width === 820 || width === 1280)) await captureReview(page, `desktop-composer-idle-${width}-${open ? 'panel-open' : 'panel-closed'}-light`);
       if (open) await page.getByRole('button', { name: 'Close side panel', exact: true }).click();
     }
   }
