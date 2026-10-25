@@ -463,3 +463,25 @@ test('/fast changes OpenAI speed without sending a message, and gives clear on/o
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
+
+
+test('the Fast lightning control changes a running turn without sending or losing the draft', async () => {
+  const { page, context, errors, composer, openChat } = await open();
+  try {
+    await openChat();
+    emit('turn/started', { threadId: 'chat', turn: { id: 'running-fast' } });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor();
+    await composer.fill('Keep this follow-up draft.');
+    const fast = page.getByRole('button', { name: 'Fast mode', exact: true });
+    assert.equal(await fast.getAttribute('aria-pressed'), 'false');
+    assert.equal(await fast.locator('svg').count(), 1);
+    await page.route('**/api/threads/chat/service-tier', route => route.fulfill({ json: { serviceTier: 'priority', activeTurnApplied: true } }));
+    await fast.click();
+    await page.getByText('Fast is on. It uses plan limits faster. Applies from the next request in this turn.', { exact: true }).waitFor();
+    assert.equal(await fast.getAttribute('aria-pressed'), 'true');
+    assert.equal(await composer.inputValue(), 'Keep this follow-up draft.');
+    assert.equal(await page.getByRole('button', { name: 'Stop response', exact: true }).isVisible(), true);
+    assert.equal(posts.filter(post => post.path.endsWith('/turns')).length, 0);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});

@@ -38,10 +38,23 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   await page.getByLabel('Message Elpis',{exact:true}).fill('Keep this draft');
   await page.getByRole('button',{name:'Send message',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'Delivery is unknown'}).waitFor();
+  const errorAtBottom=async()=>{
+   const notice=await page.getByRole('alert').filter({hasText:'Delivery is unknown'}).boundingBox();
+   const workspace=await page.locator('main.workspace').boundingBox();
+   assert.ok(notice&&workspace&&Math.abs(notice.y+notice.height-workspace.y-workspace.height)<3,'an app error stays at the bottom, never above the page');
+  };
+  await errorAtBottom();
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  await page.getByRole('button',{name:'Back to app',exact:true}).waitFor();
+  await errorAtBottom();
+  await page.getByRole('button',{name:'Back to app',exact:true}).click();
   event('approval',{id:'stale',params:{threadId:'reconnect',reason:'Stale approval',availableDecisions:['accept']}});
   await page.getByText('Stale approval',{exact:true}).waitFor();
   event('connection',{connected:false});
   await page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).waitFor();
+  const recovery=await page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).boundingBox();
+  const workspace=await page.locator('main.workspace').boundingBox();
+  assert.ok(recovery&&workspace&&recovery.y>workspace.y+workspace.height*0.7,'reconnecting status stays near the bottom');
   assert.equal(await page.getByLabel('Message Elpis',{exact:true}).isDisabled(),true);
   assert.equal(await page.getByText('Stale approval',{exact:true}).count(),0);
   reconnectFixture.reply='Recovered history';const calls=reconnectFixture.calls.length;

@@ -159,16 +159,15 @@ button:disabled { cursor:not-allowed; }
 .header-action { order:3; }
 .workspace { display:flex; flex-direction:column; min-width:0; min-height:0; position:relative; }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
-.workspace-notices { display:flex; flex-direction:column; flex-shrink:0; }
+.workspace-notices { display:flex; flex-direction:column; flex-shrink:0; min-width:0; max-height:32vh; overflow:auto; }
 /* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
  * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
  * The panel is as wide as the sidebar, or what its dragged edge set (`--side-w`, from app/page.tsx, floored at sideMinWidth in side-panel.tsx). */
 @media(min-width:761px) {
-  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))); grid-template-rows:auto auto minmax(0,1fr); }
+  .workspace:has(> .workspace-body.panel-open:not(.full-view)) { display:grid; grid-template-columns:minmax(0,1fr) var(--side-w, max(var(--sidebar-width,256px), var(--side-min,200px))); grid-template-rows:auto minmax(0,1fr); }
   .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-header { grid-column:1; grid-row:1; }
-  .workspace:has(> .workspace-body.panel-open:not(.full-view)) > .workspace-notices { grid-column:1; grid-row:2; }
   .workspace-body.panel-open:not(.full-view) { display:contents; }
-  .workspace-body.panel-open:not(.full-view) > .workspace-content { grid-column:1; grid-row:3; }
+  .workspace-body.panel-open:not(.full-view) > .workspace-content { grid-column:1; grid-row:2; }
   .workspace-body.panel-open:not(.full-view) > .side-panel { grid-column:2; grid-row:1 / -1; display:grid; grid-template-rows:subgrid; width:auto; min-width:0; max-width:none; }
   .workspace-body.panel-open:not(.full-view) > .side-panel > .side-header { grid-row:1; }
   .workspace-body.panel-open:not(.full-view) > .side-panel > .side-body { grid-row:2 / -1; }
@@ -217,7 +216,7 @@ button:disabled { cursor:not-allowed; }
 .view-error p { margin:0 0 12px; }
 .failed-turn-card { margin:16px 0; background:var(--card); border-color:var(--border); }
 .failed-turn-card p { margin:0; overflow-wrap:anywhere; }
-.error-banner { background:color-mix(in oklch, var(--destructive), var(--background) 90%); border-bottom:1px solid color-mix(in oklch, var(--destructive), transparent 60%); color:var(--foreground); padding:8px 20px; font-size:0.8125rem; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.error-banner { min-width:0; overflow-wrap:anywhere; background:color-mix(in oklch, var(--destructive), var(--background) 90%); border-bottom:1px solid color-mix(in oklch, var(--destructive), transparent 60%); color:var(--foreground); padding:8px 20px; font-size:0.8125rem; display:flex; justify-content:space-between; align-items:center; gap:12px; }
 /* A warning, not an error: something stayed as it was and the person should know where (a kept worktree). */
 .error-banner.warning { background:color-mix(in oklch, var(--warning), var(--background) 88%); border-bottom-color:color-mix(in oklch, var(--warning), transparent 60%); }
 /* A notice that is not an error, such as "Deleted …" with its Undo. */
@@ -251,7 +250,7 @@ button:disabled { cursor:not-allowed; }
 .composer textarea { border:0; box-shadow:none; background:transparent; min-height:44px; max-height:240px; resize:none; font-size:0.90625rem; padding:2px 0; }
 .dark .composer textarea { background:transparent; }
 .composer textarea:focus-visible { outline:none; box-shadow:none; }
-.composer-controls { display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:12px; margin-top:4px; }
+.composer-controls { --composer-control-gap:4px; display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin-top:4px; }
 .model-select { display:inline-flex; align-items:center; justify-content:space-between; gap:6px; background:transparent; color:var(--muted-foreground); border:1px solid transparent; min-width:0; height:32px; padding:0 8px; max-width:260px; font-size:0.78125rem; font-weight:500; white-space:nowrap; }
 .model-select:hover { background:var(--hover); color:var(--foreground); }
 .model-select > svg { flex-shrink:0; color:var(--muted-foreground); }
@@ -371,7 +370,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-title { flex-shrink:0; font-weight:500; color:var(--foreground); }
 .activity-preview { flex:1; color:var(--muted-foreground); white-space:nowrap; font:0.75rem var(--mono); }
 
-.model-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; }
+.model-controls { display:flex; align-items:center; flex-wrap:wrap; gap:var(--composer-control-gap, 4px); min-width:0; }
 .provider-model-input { border:1px solid var(--border); }
 .provider-select { color:var(--foreground); }
 .provider-model-input { max-width:240px; min-width:0; background:transparent; color:var(--foreground); height:28px; padding:0 8px; font-size:0.78125rem; }
@@ -645,9 +644,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .empty-state h2 { font-family:var(--serif); font-weight:300; letter-spacing:.01em; }
 .dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px rgba(229,173,85,.35)); }
 .composer-controls { margin-top:6px; }
-.composer-right { display:flex; align-items:center; gap:8px; min-width:0; }
+.composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 4px); min-width:0; }
 .composer-right .dictation-control { margin-top:0; }
 .composer .dictation-status:empty { display:none; }
+.fast-toggle[aria-pressed="true"] { color:var(--accent-text); background:var(--selected); }
 .composer-plus { color:var(--muted-foreground); }
 .composer-plus:hover { color:var(--primary); }
 .composer-pill { display:inline-flex; align-items:center; gap:6px; padding:0 9px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); white-space:nowrap; }
@@ -838,6 +838,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .app-shell.sidebar-collapsed { grid-template-columns:minmax(0,1fr); }
 .app-shell.sidebar-collapsed > .sidebar { display:none; }
 /* The sidebar button at the top left: in the sidebar to close it, in the header to reopen it (always on narrow windows). */
+.brand .sidebar-toggle { margin-inline-start:auto; }
 .brand .sidebar-toggle, .workspace-header > .sidebar-open { color:var(--muted-foreground); flex-shrink:0; }
 .app-shell.sidebar-collapsed .workspace-header > .sidebar-open { display:inline-flex; }
 /* Desktop: the app's own title bar (desktop/main.cjs), as in the ChatGPT app. It holds the sidebar button, is the
@@ -845,7 +846,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .app-shell.has-title-bar { grid-template-rows:36px minmax(0,1fr); }
 .title-bar { grid-column:1 / -1; display:flex; align-items:center; gap:4px; height:36px; padding:0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 6px; background:var(--sidebar); border-bottom:1px solid var(--hairline); app-region:drag; -webkit-app-region:drag; }
 .title-bar button { color:var(--muted-foreground); app-region:no-drag; -webkit-app-region:no-drag; }
-.has-title-bar .sidebar:not(.open) .brand > .sidebar-toggle, .has-title-bar .workspace-header > .sidebar-open { display:none !important; }
+.has-title-bar .workspace-header > .sidebar-open { display:none !important; }
+.title-bar .sidebar-open-narrow { display:none; }
+@media(max-width:760px) { .title-bar .sidebar-open-narrow { display:inline-flex; } }
 .shortcuts-dialog { display:grid; gap:12px; max-width:520px; }
 .shortcuts-list { display:grid; gap:14px; max-height:min(60vh, 520px); overflow:auto; padding-right:4px; }
 .shortcuts-list h3 { margin:0 0 6px; color:var(--accent-text); }
@@ -1301,12 +1304,16 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
   .composer-right .context-ring { display:none; }
   .effort-long { display:none; } .effort-short { display:inline; }
   .composer-controls { gap:8px; }
-  .composer-right { gap:2px; }
   .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
   .composer .model-picker-trigger { min-width:56px; max-width:130px; flex:0 1 auto; }
 }
+/* A narrow chat uses two aligned groups instead of squeezing the action buttons together. */
+@container composer (max-width:480px) {
+  .composer-controls { flex-wrap:wrap; }
+  .composer .model-controls, .composer-right { flex-basis:100%; }
+  .composer-right .model-picker-trigger { margin-inline-end:auto; }
+}
 @container composer (max-width:380px) {
-  .composer .model-controls { gap:2px; }
   .composer-pill .pill-short { display:none; }
   .plan-pill > span { display:none; }
   .composer .model-select { min-width:52px; flex-shrink:1; }
@@ -1314,7 +1321,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @container workspace (min-width:421px) and (max-width:520px) {
   .composer-right .context-ring { display:none; }
   .composer .effort-long { display:none; } .composer .effort-short { display:inline; }
-  .composer-controls { gap:8px; } .composer .model-controls { gap:4px; } .composer-right { gap:2px; }
+  .composer-controls { gap:8px; }
   .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
 }
 /* The @ picker names the file or chat, and says which it is at the right edge. */
@@ -1329,7 +1336,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 
 /* Split sessions reuse the same chat surface and responsive composer in each document. */
 .session-split .workspace > .workspace-header,
-.session-split .workspace > .workspace-notices,
 .session-split .workspace > .workspace-body { width:50%; }
 .split-session { position:absolute; inset:0 0 0 auto; width:50%; height:100%; border:0; border-left:1px solid var(--hairline); background:var(--background); }
 .session-pane.app-shell { grid-template-columns:minmax(0,1fr); }

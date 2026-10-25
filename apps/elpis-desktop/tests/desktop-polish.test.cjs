@@ -68,3 +68,19 @@ test('a turn is visibly working before its first entry arrives', () => using({ r
   await page.locator('.turn-working').waitFor();
   assert.match(await page.locator('.turn-working').innerText(), /Working/);
 }));
+
+
+test('the sidebar closes beside its brand and reopens from the title bar without losing the chat draft', () => using({}, async ({ page, composer }) => {
+  await composer.fill('Keep my draft while moving the sidebar.');
+  const brand = page.locator('.sidebar .brand');
+  const close = brand.getByRole('button', { name: 'Close sidebar', exact: true });
+  const home = await brand.getByRole('button', { name: 'Elpis home', exact: true }).boundingBox();
+  const control = await close.boundingBox();
+  assert.ok(control.x >= home.x + home.width, 'close sits to the right of the brand');
+  assert.ok(Math.abs(control.y + control.height / 2 - home.y - home.height / 2) < 1, 'brand and close share a center line');
+  assert.equal(await page.locator('.title-bar').getByRole('button', { name: 'Close sidebar', exact: true }).count(), 0);
+  await close.click();
+  await page.locator('.title-bar').getByRole('button', { name: 'Open sidebar', exact: true }).click();
+  assert.equal(await close.isVisible(), true);
+  assert.equal(await composer.inputValue(), 'Keep my draft while moving the sidebar.');
+}));
