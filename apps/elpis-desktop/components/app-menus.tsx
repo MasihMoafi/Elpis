@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Menubar } from "@base-ui/react/menubar";
 import { APP_MENUS } from "@/lib/app-menu-commands.cjs";
 import { shortcutHint } from "@/lib/shortcuts";
+import type { Preferences } from "@/lib/preferences";
 import type { AppMenuCommand, NativeMenuCommand } from "@/lib/desktop";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -12,12 +13,13 @@ type Action = () => void;
 export type AppMenusProps = {
   onNewChat: Action; onOpenFolder: Action; onSettings: Action; onToggleSidebar: Action;
   onBack: Action; onForward: Action; onShortcuts: Action; canGoBack?: boolean; canGoForward?: boolean;
+  preferences: Pick<Preferences, "shortcutBindings">; onError: (message: string) => void;
 };
 
 /** Base UI owns roving focus, typeahead, pointer switching and Escape. */
 export function AppMenus(props: AppMenusProps) {
   const callbacks = useRef(props); callbacks.current = props;
-  const [native, setNative] = useState(false), [error, setError] = useState("");
+  const [native, setNative] = useState(false);
   const previous = useRef<HTMLElement | null>(null), selection = useRef<Range | null>(null);
   const trigger = useRef<HTMLElement | null>(null);
   const textSelection = useRef<{ start: number; end: number } | null>(null);
@@ -32,7 +34,7 @@ export function AppMenus(props: AppMenusProps) {
       if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && textSelection.current) target.setSelectionRange(textSelection.current.start, textSelection.current.end);
       else if (selection.current?.startContainer.isConnected) { const current = window.getSelection(); current?.removeAllRanges(); current?.addRange(selection.current); }
     }
-    void window.elpisDesktop?.menu?.command(command as NativeMenuCommand).catch(cause => setError(cause instanceof Error ? cause.message : String(cause)));
+    void window.elpisDesktop?.menu?.command(command as NativeMenuCommand).catch(cause => callbacks.current.onError(cause instanceof Error ? cause.message : String(cause)));
   };
   useEffect(() => {
     setNative(!!window.elpisDesktop?.menu);
@@ -61,12 +63,11 @@ export function AppMenus(props: AppMenusProps) {
         <DropdownMenuContent align="start" className="app-menu-content" finalFocus={() => chosen.current ? false : true}>
           {group.items.map((item, index) => 'separator' in item ? <DropdownMenuSeparator key={index} /> : <DropdownMenuItem key={item.id}
             disabled={item.target === 'native' && !native || item.id === 'back' && !props.canGoBack || item.id === 'forward' && !props.canGoForward}
-            onClick={() => { setError(""); chosen.current = true; pending.current = item.id; }}>
-            <span>{item.label}</span><span className="kbd-hint" aria-hidden="true">{'shortcut' in item ? shortcutHint(item.shortcut) : 'hint' in item ? item.hint : 'accelerator' in item ? item.accelerator.replace('CommandOrControl', 'Ctrl') : undefined}</span>
+            onClick={() => { chosen.current = true; pending.current = item.id; }}>
+            <span>{item.label}</span><span className="kbd-hint" aria-hidden="true">{'shortcut' in item ? shortcutHint(item.shortcut, props.preferences) : 'hint' in item ? item.hint : 'accelerator' in item ? item.accelerator.replace('CommandOrControl', 'Ctrl') : undefined}</span>
           </DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu>)}
     </Menubar>
-    {error && <span className="app-menu-error" role="alert">{error}</span>}
   </div>;
 }
