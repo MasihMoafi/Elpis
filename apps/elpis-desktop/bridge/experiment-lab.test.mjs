@@ -94,7 +94,7 @@ test('paired repetitions fix subscription/model/check, alternate order, preserve
   assert.equal(result.trials.length, 4);
   assert.ok(result.trials.every(t => t.passed === true && t.tokens === 15 && t.elapsedMs >= 0));
   assert.ok(result.trials.every(t => t.steps[0].prompt.includes(input().task) && t.steps[0].output.answer === '42'));
-  assert.ok(client.calls.filter(c => c.method === 'thread/start').every(c => c.params.model === 'gpt-6-luna' && c.params.modelProvider === 'openai' && c.params.sandbox === 'read-only' && c.params.config.forced_login_method === 'chatgpt'));
+  assert.ok(client.calls.filter(c => c.method === 'thread/start').every(c => c.params.model === 'gpt-6-luna' && c.params.modelProvider === 'openai' && c.params.permissions === ':danger-full-access' && c.params.config.forced_login_method === 'chatgpt'));
   assert.ok(client.prompts.every(p => !p.includes('Expected answer') && !p.includes('"42"')));
   assert.equal(client.listenerCount('side'), 0);
   assert.deepEqual(await createExperimentLab({ client, file }).read(), result);

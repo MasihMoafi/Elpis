@@ -452,60 +452,25 @@ const workflowToolConns = new WeakSet(); // a chat's workflow tool: its launches
 const relayed = new Map(); // id sent to the TUI -> answers the helper's request
 const chatAccess = new Map(); // a chat's confirmed approval policy and profile, for the helpers it starts
 const automaticThreads = new Set(), blockedAutomaticThreads = new Set();
-// A helper's ceiling is the sandbox it may have: what it asked for (read-only unless it asked to
-// write), never more than its chat allowed at its start, and only ever lowered after that, as
-// the engine's own subagents inherit a reduction; its chat's later grants never raise it. Every
-// helper this bridge has seen stays here, with the `restrict` of each connection that has it
-// open (a delegate server, a second one, or a TUI); the store keeps the ceiling in
-// `_delegations`, for a helper reopened after a restart.
+const explicitChatChoices = new Set();
+// Automatic helpers follow the shared default. An explicitly requested read-only
+// delegate scope remains scoped; a user choice for the helper itself wins. The
+// connections that hold a helper apply changes together, including private engines.
 const helperScope = new Map(); // helper thread id -> { parentThreadId, requested, ceiling, owners }
-// Helpers the engine is still starting or reopening, not yet in helperScope; a reduction
-// meanwhile lowers them too.
-const pendingHelpers = new Set(); // { parentThreadId, requested, ceiling }
+const pendingHelpers = new Set(); // a parent cannot be deleted while one of its helpers is starting
 const AUTHORITY = { plan: 0, default: 0, acceptEdits: 1, auto: 2, bypassPermissions: 3 };
-// Only the built-in Workspace and Full Access profiles let a chat's helpers write; a custom or
-// unknown profile does not.
 // Elpis's built-in profiles with no sandbox: Full Access and Bypass permissions (the engine's
 // `:bypass-permissions`, which also lifts its own refusals).
 const UNSANDBOXED = [":danger-full-access", ":bypass-permissions"];
-const WRITABLE = [":workspace", ...UNSANDBOXED];
-const writableFor = (threadId) => WRITABLE.includes(chatAccess.get(threadId)?.profile) && helperScope.get(threadId)?.ceiling !== "read-only";
-const fullFor = (threadId) => UNSANDBOXED.includes(chatAccess.get(threadId)?.profile) && [undefined, "danger-full-access"].includes(helperScope.get(threadId)?.ceiling);
-// A48 (Masih, 20 Oct: "Full access by default for everyone; subagents never ask; Full access, not
-// Bypass"): a helper that asks to write gets Full Access below a Full Access or Bypass chat, a
-// workspace below a Workspace chat, and read-only otherwise.
+const fullFor = (threadId) => UNSANDBOXED.includes(chatAccess.get(threadId)?.profile) && (explicitChatChoices.has(threadId) || [undefined, "danger-full-access"].includes(helperScope.get(threadId)?.ceiling));
+// A helper's own choice and the shared default determine its access, independently
+// of a permission choice for the parent chat. Automatic access never selects Bypass.
 const CEILINGS = ["read-only", "workspace-write", "danger-full-access"];
 const lowest = (...ceilings) => CEILINGS[Math.min(...ceilings.map((c) => Math.max(0, CEILINGS.indexOf(c))))];
-const helperCeiling = (requested, parentThreadId) => requested !== "workspace-write" || !writableFor(parentThreadId) ? "read-only"
-  : fullFor(parentThreadId) ? "danger-full-access" : "workspace-write";
-// A reopened helper's ceiling: the lower of the stored one and this bridge's, lowered to what
-// its chat allows now. A record from before ceilings were kept is read-only.
-const ceilingOf = (threadId, d) => lowest(d.ceiling, helperScope.get(threadId)?.ceiling ?? "danger-full-access", helperCeiling(d.requested, d.parentThreadId));
-// Lowers the ceiling of every helper below a chat that may still write. Resolves once each open
-// copy has applied it or been stopped; null when there was nothing to lower.
-function reduceHelpers(threadId) {
-  const work = [];
-  for (const d of pendingHelpers) if (d.parentThreadId === threadId) d.ceiling = "read-only";
-  for (const [id, h] of helperScope) {
-    if (h.parentThreadId !== threadId) continue;
-    if (h.ceiling !== "read-only") { h.ceiling = "read-only"; for (const restrict of h.owners) work.push(restrict(id)); }
-    const nested = reduceHelpers(id);
-    if (nested) work.push(nested);
-  }
-  return work.length ? Promise.all(work) : null;
-}
-// The same reduction in the store, for a helper reopened after a restart. False if it was not saved.
-async function persistReduction(threadId) {
-  await storeChain;
-  const below = (dels) => {
-    const ids = new Set([threadId]);
-    for (let grew = true; grew;) { grew = false; for (const [id, d] of Object.entries(dels)) if (ids.has(d.parentThreadId) && !ids.has(id)) { ids.add(id); grew = true; } }
-    ids.delete(threadId);
-    return [...ids].filter((id) => dels[id].ceiling !== "read-only");
-  };
-  if (!below((await loadStore())._delegations ?? {}).length) return true;
-  return updateStore((st) => { for (const id of below(st._delegations ?? {})) st._delegations[id].ceiling = "read-only"; });
-}
+const helperCeiling = requested => requested === 'workspace-write' ? 'danger-full-access' : 'read-only';
+// Explicit delegate scopes stay bounded; automatic writers are reconciled with the
+// current default before reopening or taking another turn.
+const ceilingOf = (threadId, d) => explicitChatChoices.has(threadId) ? 'danger-full-access' : lowest(d.ceiling, helperScope.get(threadId)?.ceiling ?? "danger-full-access", helperCeiling(d.requested));
 // Provider turns live in this bridge, while native turns live in the shared engine.
 // A provider thread has one runtime owner. Other terminals subscribe to that runtime;
 // their requests and replies keep their own ids, including when both clients use id 1.
@@ -905,7 +870,6 @@ wss.on("connection", (ws) => {
       for (const k of ["approvalPolicy", "approvalsReviewer", "activePermissionProfile", "cwd", "collaborationMode", "serviceTier", "disabledPluginIds"]) if (s[k] !== undefined) cached[k] = s[k];
       if (s.sandboxPolicy) cached.sandbox = s.sandboxPolicy;
     }
-    const wasWritable = chatAccess.has(threadId) ? writableFor(threadId) : null, wasFull = chatAccess.has(threadId) ? fullFor(threadId) : null;
     if (s.approvalPolicy) threadPolicy.set(threadId, s.approvalPolicy);
     const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
     const profile = s.permissions ?? s.activePermissionProfile?.id
@@ -914,14 +878,7 @@ wss.on("connection", (ws) => {
     threadAccess.set(threadId, { profile: profile ?? prev.profile, reviewer: s.approvalsReviewer ?? prev.reviewer });
     chatAccess.set(threadId, { policy: threadPolicy.get(threadId), profile: threadAccess.get(threadId).profile });
     for (const confirm of confirmations.get(threadId) ?? []) confirm(threadAccess.get(threadId).profile);
-    // A chat that can no longer write, or that leaves Full Access, lowers its helpers' ceilings.
-    if (writableFor(threadId) && (fullFor(threadId) || wasFull !== true)) return null;
-    if (wasWritable !== false) persistReduction(threadId).then((saved) => {
-      if (saved) return;
-      log(`helpers of ${threadId}: reduction not saved`);
-      notify("warning", { threadId, message: "Elpis could not save its helpers' reduced permissions; they stay reduced only until Elpis restarts." });
-    });
-    return reduceHelpers(threadId);
+    return null;
   };
   // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
   // Ask uses Accept edits, Approve for me uses Auto. Full access keeps normal
@@ -934,7 +891,7 @@ wss.on("connection", (ws) => {
   // approved.
   const accessModeOf = (threadId, agentKey, ask) => {
     const { profile, reviewer } = threadAccess.get(threadId) ?? {};
-    const readOnly = threadSandbox.get(threadId) === "read-only" || !!profile?.includes("read-only");
+    const readOnly = (!explicitChatChoices.has(threadId) && threadSandbox.get(threadId) === "read-only") || !!profile?.includes("read-only");
     // Never asking is an approval policy, not permission to leave a restricted profile.
     // Unknown/custom profiles stay restricted unless the engine explicitly names Full Access.
     if (!ask) return readOnly ? "plan" : profile === ':bypass-permissions' ? "bypassPermissions" : "default";
@@ -1228,6 +1185,8 @@ wss.on("connection", (ws) => {
     let msg;
     try { msg = JSON.parse(String(data)); } catch { handleMessage(data); return; }
     const p = msg.params ?? {}, method = msg.method;
+    if (method === 'thread/settings/update' && p.elpisPermissionSource == null && !helperConns.has(ws) && p.model == null
+      && ['approvalPolicy', 'permissions', 'sandboxPolicy'].some(key => p[key] != null)) p.elpisPermissionSource = 'chat';
     const owner = providerOwners.get(p.threadId);
     if (owner && owner.ws !== ws && ['thread/resume', 'thread/settings/update', 'turn/start'].includes(method)) { owner.dispatch(msg, ws); return; }
     if (method === 'config/batchWrite' && p.edits?.some(edit => ['approval_policy', 'approvals_reviewer', 'default_permissions', 'sandbox_mode'].includes(edit.keyPath))) permissionRefreshes.add(msg.id);
@@ -1236,16 +1195,17 @@ wss.on("connection", (ws) => {
     delete p.elpisPermissionSource;
     const fields = ['approvalPolicy', 'approvalsReviewer', 'permissions', 'sandbox', 'sandboxPolicy'];
     const hasPermissions = fields.some(key => p[key] != null);
-    const explicit = source === 'chat' || (method === 'thread/settings/update' && hasPermissions && source !== 'default' && p.model == null);
+    const explicit = source === 'chat';
     let automatic = !!p.elpisParentThreadId || helperConns.has(ws) || automaticThreads.has(p.threadId) || p.ephemeral === true || source === 'automatic';
     try {
       if (method === 'thread/settings/update') {
         // A model picker may attach its model-specific permission suggestion. A
         // model change does not detach the chat from its permission default.
-        if (hasPermissions && !explicit) for (const key of fields) delete p[key];
+        if (hasPermissions && !explicit && source !== 'default') for (const key of fields) delete p[key];
         if (explicit && (!providerOwners.has(p.threadId) || providerOwners.get(p.threadId).ws === ws)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: Object.fromEntries(fields.filter(k => p[k] != null).map(k => [k, p[k]])) });
       } else {
         const record = p.threadId ? await permissionChoices.read(p.threadId) : null;
+        if (record && !record.inherit && !record.automatic) explicitChatChoices.add(p.threadId);
         const scope = helperScope.get(p.threadId) ?? (method === 'thread/resume' ? (await loadStoreSnapshot())._delegations?.[p.threadId] : null);
         if (scope) automatic = true;
         let loaded = false;
@@ -1262,6 +1222,7 @@ wss.on("connection", (ws) => {
         if (automatic && method === 'thread/start' && (p.sandbox === 'read-only' || (p.permissions && ![':workspace', ':danger-full-access', ':bypass-permissions'].includes(p.permissions)))) {
           chosen = { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: p.permissions ?? ':read-only' };
         }
+        if (method === 'thread/start' && p.elpisParentThreadId) p.elpisRequestedScope = p.sandbox === 'read-only' || p.permissions === ':read-only' ? 'read-only' : 'workspace-write';
         if (!chosen) {
           const read = await engineCall('config/read', { includeLayers: true, ...(p.cwd ? { cwd: p.cwd } : {}) });
           const mode = defaultPermissionMode(read);
@@ -1281,7 +1242,14 @@ wss.on("connection", (ws) => {
         const requirements = (await engineCall('configRequirements/read', {})).requirements ?? {};
         if (!permissionSettingsAllowed(chosen, requirements)) throw new Error('This permission mode is restricted by managed settings. Choose an allowed default in Settings.');
         if (automatic) { chosen = { ...chosen, approvalPolicy: 'never', permissions: chosen.permissions === ':bypass-permissions' ? ':danger-full-access' : chosen.permissions }; }
-        if (scope) boundAccess(chosen, helperScope.has(p.threadId) ? scope.ceiling : ceilingOf(p.threadId, scope), 'sandboxPolicy');
+        if (scope && scope.requested !== 'read-only' && !explicitChatChoices.has(p.threadId)) {
+          const ceiling = { ':read-only': 'read-only', ':workspace': 'workspace-write', ':danger-full-access': 'danger-full-access' }[chosen.permissions];
+          if (ceiling && scope.ceiling !== ceiling) {
+            scope.ceiling = ceiling;
+            await updateStore(store => { if (store._delegations?.[p.threadId]) store._delegations[p.threadId].ceiling = ceiling; });
+          }
+        }
+        if (scope && !explicitChatChoices.has(p.threadId)) boundAccess(chosen, helperScope.has(p.threadId) ? scope.ceiling : ceilingOf(p.threadId, scope), 'sandboxPolicy');
         // A loaded native thread ignores resume profile overrides. Apply the
         // confirmed settings before it resumes or starts either provider's turn.
         if (method === 'thread/resume' || method === 'turn/start') {
@@ -1561,13 +1529,13 @@ wss.on("connection", (ws) => {
   const confirmations = new Map(); // thread id -> what waits for the profiles its engine confirms
   const HELPER_RESTRICT_MS = 5000;
   const applyProfile = (tid, profile) => new Promise((resolve) => {
-    if (threadAccess.get(tid)?.profile === profile) { resolve(true); return; }
-    const confirm = (confirmed) => { if (confirmed === profile) settle(true); };
+    if (threadAccess.get(tid)?.profile === profile && threadPolicy.get(tid) === 'never') { resolve(true); return; }
+    const confirm = (confirmed) => { if (confirmed === profile && threadPolicy.get(tid) === 'never') settle(true); };
     const settle = (ok, why) => { clearTimeout(timer); confirmations.get(tid)?.delete(confirm); if (!ok) log(`helper ${tid} not set to ${profile}: ${why}`); resolve(ok); };
     const timer = setTimeout(() => settle(false, "no confirmation"), HELPER_RESTRICT_MS);
     if (!confirmations.has(tid)) confirmations.set(tid, new Set());
     confirmations.get(tid).add(confirm);
-    engineCall("thread/settings/update", { threadId: tid, permissions: profile }).catch((e) => settle(false, e?.message ?? JSON.stringify(e)));
+    engineCall("thread/settings/update", { threadId: tid, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: profile }).catch((e) => settle(false, e?.message ?? JSON.stringify(e)));
   });
   const ownHelpers = new Map(); // helper thread id open on this connection -> { applying, waiting, failed }
   const releaseHelpers = () => {
@@ -1599,11 +1567,11 @@ wss.on("connection", (ws) => {
     }
     notify("warning", { threadId: tid, message: `${error.message} It runs again once they apply.` });
   };
-  // Restricts an engine helper on this connection to read-only; its turns wait until its engine
-  // confirms, and it stops if the engine does not.
+  // Apply a helper's current default scope; its turns wait for engine confirmation.
   const enforceHelper = (tid) => {
     const own = ownHelpers.get(tid);
-    const applying = own.applying = applyProfile(tid, ":read-only").then(async (ok) => {
+    const profile = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' }[helperScope.get(tid)?.ceiling];
+    const applying = own.applying = applyProfile(tid, profile).then(async (ok) => {
       own.failed = !ok;
       if (ok) own.waiting.length = 0;
       else await failHelper(tid, "its chat's restricted permissions could not be applied");
@@ -1612,14 +1580,14 @@ wss.on("connection", (ws) => {
     });
     return applying;
   };
-  // Lowers a helper on this connection to read-only. A Claude or Antigravity helper's next tool
-  // follows the bridge at once; its engine's copy is only the record. An engine helper's next tool
-  // follows its engine.
+  // Update each connection holding a helper. Provider tools follow the confirmed
+  // bridge policy; native tools follow the engine's confirmed settings.
   const restrictHelper = (tid) => {
     const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
-    threadSandbox.set(tid, "read-only");
+    const ceiling = helperScope.get(tid)?.ceiling ?? 'read-only';
+    threadSandbox.set(tid, ceiling);
     stopIfReduced(tid, previousAccess);
-    if (claudeModel.has(tid)) { applyProfile(tid, ":read-only"); return null; }
+    if (claudeModel.has(tid)) return applyProfile(tid, { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' }[ceiling]);
     return enforceHelper(tid);
   };
   // Opens a helper on this connection, under the lower of its known ceiling and `ceiling`.
@@ -1648,6 +1616,7 @@ wss.on("connection", (ws) => {
   // engine checked to be within it. False if the engine could not be brought within it.
   async function adoptHelper(tid, r, bridged) {
     const h = openHelper(tid, r, r.ceiling);
+    if (explicitChatChoices.has(tid)) return true;
     if (h.ceiling !== r.stored) updateStore((st) => { if (st._delegations?.[tid]) st._delegations[tid].ceiling = h.ceiling; });
     const profile = threadAccess.get(tid)?.profile;
     const want = h.ceiling === "read-only" ? ":read-only" : h.ceiling === "workspace-write" ? (UNSANDBOXED.includes(profile) ? ":workspace" : null)
@@ -1676,7 +1645,7 @@ wss.on("connection", (ws) => {
       const params = { threadId: tid };
       for (const k of ["approvalPolicy", "approvalsReviewer", "permissions", "model", "effort"]) if (msg.params[k] != null) params[k] = msg.params[k];
       if (msg.params.sandbox) params.permissions ??= { "read-only": ":read-only", "workspace-write": ":workspace", "danger-full-access": ":danger-full-access" }[msg.params.sandbox];
-      if (d) boundAccess(params, ceilingOf(tid, d), "sandboxPolicy");
+      if (d && !explicitChatChoices.has(tid)) boundAccess(params, ceilingOf(tid, d), "sandboxPolicy");
       try {
         if (Object.keys(params).length > 1) {
           if (isBridged(params.model)) { claudeModel.set(tid, params.model); delete params.model; }
@@ -1698,9 +1667,9 @@ wss.on("connection", (ws) => {
     }
     if (d) {
       const r = { parentThreadId: d.parentThreadId, model: d.model, requested: d.requested ?? "read-only", ceiling: ceilingOf(tid, d), stored: d.ceiling };
-      pendingHelpers.add(r);
       pendingAdopt.set(msg.id, r);
-      boundAccess(msg.params, r.ceiling, "sandbox");
+      pendingHelpers.add(r);
+      if (!explicitChatChoices.has(tid)) boundAccess(msg.params, r.ceiling, "sandbox");
     }
     if (!claudeModel.has(tid)) await withAgents(msg.params, !!d);
     engine.stdin.write(JSON.stringify(msg) + "\n");
@@ -1722,6 +1691,20 @@ wss.on("connection", (ws) => {
           const settings = defaultPermissionSettings(read, choice?.automatic === true);
           if (settings) await engineCall('thread/settings/update', { threadId: tid, ...settings });
         }
+        const scopes = [];
+        for (const [tid, helper] of helperScope) {
+          const choice = await permissionChoices.read(tid);
+          if (helper.requested === 'read-only' || (choice && !choice.inherit && !choice.automatic)) continue;
+          const read = await engineCall('config/read', { includeLayers: true, ...(threadCwd.get(tid) ? { cwd: threadCwd.get(tid) } : {}) });
+          const settings = defaultPermissionSettings(read, true);
+          const ceiling = { ':read-only': 'read-only', ':workspace': 'workspace-write', ':danger-full-access': 'danger-full-access' }[settings.permissions];
+          if (ceiling) { helper.ceiling = ceiling; scopes.push([tid, helper]); }
+        }
+        if (scopes.length) {
+          await updateStore(store => { for (const [tid, helper] of scopes) if (store._delegations?.[tid]) store._delegations[tid].ceiling = helper.ceiling; });
+          const applied = await Promise.all(scopes.flatMap(([tid, helper]) => [...helper.owners].map(apply => apply(tid))));
+          if (applied.some(ok => !ok)) throw new Error('An automatic agent could not apply the new default permissions.');
+        }
       } catch (error) { parsed = { id: parsed.id, error: { code: -32603, message: `The default was saved, but an open chat could not be updated: ${error.message ?? error}` } }; }
       line = JSON.stringify(parsed);
     }
@@ -1730,6 +1713,7 @@ wss.on("connection", (ws) => {
       if (!parsed.error) {
         try {
           const tid = write.threadId ?? parsed.result?.thread?.id;
+          if (!write.settings.inherit && !write.settings.automatic) explicitChatChoices.add(tid);
           if (write.ephemeral) { if (write.settings.automatic) automaticThreads.add(tid); }
           else await permissionChoices.write(tid, write.settings);
         }
@@ -1931,8 +1915,7 @@ wss.on("connection", (ws) => {
       const d = pendingDelegation.get(parsed.id); pendingDelegation.delete(parsed.id); pendingHelpers.delete(d);
       const tid = parsed.result?.thread?.id;
       if (tid) {
-        if (!writableFor(d.parentThreadId)) d.ceiling = "read-only";
-        // Its chat lost write access while it was starting.
+        // Every connection uses this helper's resolved scope.
         if (openHelper(tid, d, d.ceiling).ceiling !== d.sandbox) restrictHelper(tid);
         const { ceiling } = helperScope.get(tid);
         const run = d.workflowRunId ? { workflowRunId: d.workflowRunId, workflowAgentId: d.workflowAgentId } : {};
@@ -2717,10 +2700,11 @@ wss.on("connection", (ws) => {
     const p = msg.params ?? {};
     const helper = !!p.elpisParentThreadId;
     if (helper) {
-      // The helper's ceiling (helperScope, helperCeiling): a writer below a Full Access chat gets Full Access.
+      // Resolve this helper's shared default or deliberately requested task scope.
       const parentThreadId = p.elpisParentThreadId;
-      const requested = [':workspace', ':danger-full-access'].includes(p.permissions) || ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only";
-      p.sandbox = helperCeiling(requested, parentThreadId);
+      const requested = p.elpisRequestedScope ?? ([':workspace', ':danger-full-access'].includes(p.permissions) || ["workspace-write", "danger-full-access"].includes(p.sandbox) ? "workspace-write" : "read-only");
+      delete p.elpisRequestedScope;
+      p.sandbox = { ':read-only': 'read-only', ':workspace': 'workspace-write', ':danger-full-access': 'danger-full-access' }[p.permissions] ?? helperCeiling(requested);
       delete p.permissions;
       // A workflow's agent (WR2): linked to its run, so the lists fold it under the run.
       const run = p.elpisWorkflow && typeof p.elpisWorkflow.runId === "string" ? { workflowRunId: p.elpisWorkflow.runId, workflowAgentId: p.elpisWorkflow.agentId ?? null } : {};
@@ -3284,7 +3268,7 @@ wss.on("connection", (ws) => {
       && lp.sectionId == null && lp.projectId == null && lp.parentThreadId == null && lp.ancestorThreadId == null) pendingThreadList.set(msg.id, lp);
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
-      if (ownHelpers.has(p.threadId)) boundAccess(p, helperScope.get(p.threadId).ceiling, "sandboxPolicy");
+      if (ownHelpers.has(p.threadId) && !explicitChatChoices.has(p.threadId) && !permissionWrites.has(msg.id)) boundAccess(p, helperScope.get(p.threadId).ceiling, "sandboxPolicy");
       const choice = permissionWrites.get(msg.id);
       if (choice?.settings.permissions && choice.settings.permissions !== p.permissions) permissionWrites.delete(msg.id);
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); claimProvider(p.threadId); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
@@ -3329,7 +3313,7 @@ wss.on("connection", (ws) => {
         if (ownHelpers.has(tid) && msg.id !== undefined) pendingHelperTurns.set(msg.id, tid);
         engine.stdin.write(JSON.stringify(msg) + "\n");
       };
-      if (ownHelpers.has(tid)) boundAccess(msg.params, helperScope.get(tid).ceiling, "sandboxPolicy");
+      if (ownHelpers.has(tid) && !explicitChatChoices.has(tid)) boundAccess(msg.params, helperScope.get(tid).ceiling, "sandboxPolicy");
       if (msg.params?.collaborationMode?.mode) threadCollab.set(tid, msg.params.collaborationMode.mode);
       // Its permission fields are the TUI's unconfirmed choice: a Claude turn ignores them (see
       // claudeTurn), and the engine reports what it accepts for its own turn in

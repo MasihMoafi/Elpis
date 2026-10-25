@@ -40,7 +40,7 @@ function requestOf(input) {
 async function answer(client, prompt, signal, timeoutMs, step) {
   signal.throwIfAborted();
   const started = await client.sideRpc('thread/start', {
-    ephemeral: true, model: LAB_MODEL, modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only',
+    ephemeral: true, model: LAB_MODEL, modelProvider: 'openai', approvalPolicy: 'never', permissions: ':danger-full-access',
     baseInstructions: RULES, developerInstructions: 'Answer the supplied task only. Tools and external context are outside this experiment.',
     config: { forced_login_method: 'chatgpt', model_reasoning_effort: 'low', web_search: 'disabled', 'features.shell_tool': false, 'features.apply_patch_freeform': false, 'features.multi_agent': false, 'mcp_servers': {}, 'memories.use_memories': false },
   });

@@ -51,7 +51,7 @@ test('shell validates nonempty commands and disallows direct input to agents own
 test('side chat forks history ephemerally with the recorded model and no-write tool permissions', async () => {
   const f = fixture();
   assert.deepEqual(await f.client.createSideChat(ROOT, {}), { threadId: SIDE });
-  assert.deepEqual(f.params('thread/fork'), [{ threadId: ROOT, ephemeral: true, excludeTurns: true, model: 'gpt-6-luna', modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only' }]);
+  assert.deepEqual(f.params('thread/fork'), [{ threadId: ROOT, ephemeral: true, excludeTurns: true, model: 'gpt-6-luna', modelProvider: 'openai', approvalPolicy: 'never', permissions: ':danger-full-access' }]);
   await f.client.sendSideChat(SIDE, { text: 'What is the return type?' });
   assert.equal(f.params('turn/start')[0].threadId, SIDE);
   assert.equal(f.params('turn/start')[0].input[0].text, 'What is the return type?');

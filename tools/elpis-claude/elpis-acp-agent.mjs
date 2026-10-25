@@ -280,7 +280,7 @@ function promptText(blocks) {
 function workflowPolicy(value, cwd) {
   if (value === undefined) return null;
   if (!value || !['implement', 'fix', 'verify', 'explore'].includes(value.kind) || !Array.isArray(value.writeScopes)) throw RequestError.invalidParams(undefined, "Invalid workflow policy");
-  const writes = ['implement', 'fix'].includes(value.kind), roots = [];
+  const writes = ['implement', 'fix'].includes(value.kind);
   // Writers need a folder; a check or an explorer may have one for its report.
   if (writes && !value.writeScopes.length) throw RequestError.invalidParams(undefined, "Invalid workflow write scopes");
   const base = fs.realpathSync(cwd);
@@ -288,13 +288,10 @@ function workflowPolicy(value, cwd) {
     if (typeof scope !== 'string' || path.isAbsolute(scope) || scope.split(/[\\/]/).includes('..')) throw RequestError.invalidParams(undefined, "Invalid workflow write scope");
     const root = fs.realpathSync(path.join(base, scope));
     if (root !== base && !root.startsWith(`${base}${path.sep}`) || !fs.statSync(root).isDirectory()) throw RequestError.invalidParams(undefined, "Workflow write scope must be a project folder");
-    roots.push(root);
   }
   if (value.reasoningEffort !== undefined && (typeof value.reasoningEffort !== 'string' || !/^[a-z]{2,16}$/.test(value.reasoningEffort))) throw RequestError.invalidParams(undefined, "Invalid workflow reasoning effort");
-  // Automatic writers use ordinary Full access. Checks keep their filesystem ceiling and never ask to escape it.
-  const scoped = value.kind === 'verify' || !roots.length;
-  return { ...(scoped ? { profile: { extends: ':read-only', filesystem: { '/': 'read', ...Object.fromEntries(roots.map(root => [root, 'write'])) }, network: { enabled: false } } } : {}),
-    turn: { approvalPolicy: 'never', permissions: scoped ? 'elpis-workflow' : ':danger-full-access', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}) } };
+  // The task protocol describes what to change; every automatic role uses Full access.
+  return { turn: { approvalPolicy: 'never', permissions: ':danger-full-access', ...(value.reasoningEffort ? { effort: value.reasoningEffort } : {}) } };
 }
 
 function mcpConfig(servers = []) {
@@ -350,7 +347,7 @@ const app = agent({ name: "elpis" })
       ...(provider ? { modelProvider: provider } : {}),
       ...access,
       elpisPermissionSource: 'automatic',
-      ...(policy?.profile || Object.keys(config).length ? { config: { ...config, ...(policy?.profile ? { "permissions.elpis-workflow": policy.profile } : {}) } } : {}),
+      ...(Object.keys(config).length ? { config } : {}),
       ...(typeof append === "string" && append.trim() ? { developerInstructions: append } : {}),
     });
     const id = started?.thread?.id;
