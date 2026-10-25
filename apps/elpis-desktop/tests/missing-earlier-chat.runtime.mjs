@@ -44,7 +44,7 @@ test('a chat whose earlier part was deleted opens in the desktop, with a note', 
   await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 }); await skipFirstRun(page);
   await page.locator('aside.sidebar').getByText(/^REMAINING QUESTION/).click();
   const chat = page.locator('.chat-content');
-  await Promise.race([chat.getByText('REMAINING ANSWER kept after the gap').waitFor(), page.getByText(refused).first().waitFor()]);
+  await chat.getByText('REMAINING ANSWER kept after the gap').or(page.getByText(refused)).first().waitFor();
   assert.equal(await page.getByText(refused).count(), 0, 'the chat must not be refused');
   await chat.getByText('REMAINING QUESTION about the vault').waitFor();
   await page.getByText('The earliest part of this chat is missing', { exact: false }).first().waitFor({ timeout: 15000 });
