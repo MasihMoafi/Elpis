@@ -45,7 +45,7 @@ function reply(res, k, items) {
 const message = (k, text) => ({ type: "message", role: "assistant", id: `msg_${k}`, content: [{ type: "output_text", text }] });
 
 let count = 0;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   if (req.method === "GET") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ data: [{ id: "mock-model", object: "model" }], models: [] })); return; }
   let body = "";
   req.on("data", (c) => { body += c; });
@@ -58,6 +58,7 @@ http.createServer((req, res) => {
     const last = input.at(-1);
     const users = input.filter((i) => i?.role === "user");
     const prompt = textOf(users.at(-1));
+    const permissionFile = /PERMISSION_FILE:(\S+)/.exec(prompt)?.[1];
     const tools = (r.tools ?? []).flatMap((t) => (t.type === "namespace" ? (t.tools ?? []).map((x) => ({ ...x, ns: t.name })) : [t]));
     const workflowTool = tools.find((t) => /workflow$/.test(t.name ?? ""));
     const schema = r.text?.format?.type === "json_schema" ? r.text.format.schema : null;
@@ -66,6 +67,12 @@ http.createServer((req, res) => {
     if (last?.type === "function_call_output") {
       record({ ...entry, kind: "tool-output", output: String(last.output?.content ?? last.output ?? "").slice(0, 2000) });
       reply(res, k, [message(k, `TOOL SAID: ${typeof last.output === "string" ? last.output : JSON.stringify(last.output)}`)]);
+      return;
+    }
+    if (permissionFile) {
+      record({ k, kind: 'permission-command', file: permissionFile });
+      reply(res, k, [{ type: 'function_call', id: `fc_${k}`, call_id: `call_${k}`, name: 'exec_command',
+        arguments: JSON.stringify({ cmd: `printf permission-ran > '${permissionFile.replaceAll("'", "'\\''")}'`, sandbox_permissions: 'require_escalated', justification: 'Run the permission regression command.' }) }]);
       return;
     }
     if (prompt.trimStart().startsWith("<workflow-notification>")) {
@@ -110,4 +117,4 @@ http.createServer((req, res) => {
     const text = schema ? JSON.stringify(answerFor(schema, entry.prompt)) : agent ? `ANSWER(${entry.prompt})` : `reply ${hash(prompt)}`;
     reply(res, k, [message(k, text)]);
   });
-}).listen(port, "127.0.0.1", () => process.stdout.write(`listening ${port}\n`));
+}).listen(port, "127.0.0.1", () => process.stdout.write(`listening ${server.address().port}\n`));

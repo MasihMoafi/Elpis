@@ -10,6 +10,7 @@
 // [refuse] stops with `refusal`.
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from 'node:child_process';
 import { Readable, Writable } from "node:stream";
 import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 
@@ -93,12 +94,16 @@ const app = agent({ name: "fake-acp-agent" })
     log({ toolStarted: "t1" });
     let permission = "";
     if (text.includes("[permission]")) {
+      const permissionFile = /PERMISSION_FILE:(\S+)/.exec(text)?.[1];
       const answer = await client.request("session/request_permission", {
         sessionId: process.env.FAKE_ACP_PERMISSION_SESSION || params.sessionId,
-        toolCall: { toolCallId: "t1", title: "Write notes.txt", kind: "edit", status: "pending" },
+        toolCall: { toolCallId: "t1", title: permissionFile ? 'Run permission regression command' : "Write notes.txt", kind: permissionFile ? 'execute' : "edit", status: "pending" },
         options: process.env.FAKE_ACP_PERMISSION_OPTIONS ? JSON.parse(process.env.FAKE_ACP_PERMISSION_OPTIONS) : [{ optionId: "allow_once", name: "Allow once", kind: "allow_once" }, { optionId: "reject_once", name: "Reject", kind: "reject_once" }],
       });
       log({ permission: answer.outcome });
+      if (permissionFile && answer.outcome.outcome === 'selected' && answer.outcome.optionId.startsWith('allow_')) {
+        execFileSync('/bin/sh', ['-c', 'printf permission-ran > "$1"', 'permission-regression', permissionFile]);
+      }
       permission = `permission: ${answer.outcome.outcome === "selected" ? answer.outcome.optionId : "cancelled"}. `;
       if (answer.outcome.outcome === "cancelled") return { stopReason: "cancelled" };
     }
