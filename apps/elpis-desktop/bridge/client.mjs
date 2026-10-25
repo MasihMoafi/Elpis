@@ -1415,6 +1415,7 @@ export class DesktopClient extends EventEmitter {
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
         ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...permissionSetting(permissions),
+        elpisPermissionSource: body.permissions ? 'chat' : body.agents ? 'automatic' : 'default',
         ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
     } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
@@ -1782,7 +1783,7 @@ export class DesktopClient extends EventEmitter {
       if (!thread.desktopAccess.writable && !body.continueAs) throw new BridgeError(`${AGENT_RUN_NOTICE}. Choose Continue here after it finishes (continued conversation name required).`, 409);
       if (!thread.desktopAccess.writable && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
       const model = await this.#providerModel(body.model, thread.modelProvider);
-      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...permissionSetting(permissions), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
+      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...permissionSetting(permissions), ...(permissions ? { elpisPermissionSource: 'chat' } : {}), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();

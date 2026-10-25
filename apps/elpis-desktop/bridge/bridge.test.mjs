@@ -1161,7 +1161,7 @@ test('custom API models are validated under the selected native provider for cre
   await assert.rejects(client.createThread({ model: 'fixture/custom-model' }), /current Elpis model list/);
   assert.equal(socket.sent.filter(row => row.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'fixture/custom-model' });
-  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' }, 'a new chat starts in the default mode, Full access');
+  assert.deepEqual(socket.sent.findLast(row => row.method === 'thread/start').params, { model: 'fixture/custom-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' }, 'a new chat starts in the default mode, Full access');
   // Reflect the native thread/read route rather than trusting the renderer's selection.
   threads.get(CREATED).modelProvider = 'local'; threads.get(CREATED).model = 'fixture/custom-model';
   await client.send(CREATED, { text: 'follow-up', model: 'fixture/custom-model' });
@@ -1529,7 +1529,7 @@ test('settings expose supported fields; providers require configured identity an
   await assert.rejects(client.createThread({ provider: 'local' }), /model for this provider/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 0);
   await client.createThread({ provider: 'local', model: 'remote-model' });
-  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
+  assert.deepEqual(socket.sent.find(message => message.method === 'thread/start').params, { model: 'remote-model', modelProvider: 'local', approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'default' });
   requirementsRead.requirements = { modelProvider: 'openai', modelProviders: { local: { name: 'Managed', api_key: 'PRIVATE CONFIG SECRET' } } };
   await assert.rejects(client.createThread({ provider: 'local', model: 'remote-model' }), /restricted/);
   assert.equal(socket.sent.filter(message => message.method === 'thread/start').length, 1);
