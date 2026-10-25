@@ -48,7 +48,16 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     const portrait = page.locator('.message.agent img[alt="Matilda"]');
     await portrait.waitFor();
     assert.equal(await portrait.evaluate(image => image.complete && image.naturalWidth > 0), true);
-    assert.match(await portrait.getAttribute('src'), /^data:image\/webp;base64,/, 'the face is part of the page, never a request that can fail');
+    const face = await portrait.getAttribute('src');
+    assert.match(face, /^data:image\/svg\+xml;base64,/, 'the face is part of the page, never a request that can fail');
+    assert.doesNotMatch(Buffer.from(face.split(',')[1], 'base64').toString(), /href="(?!data:|#)/, 'the avatar embeds its portrait too: an SVG image never fetches one');
+    const alpha = await portrait.evaluate(image => {
+      const canvas = Object.assign(document.createElement('canvas'), { width: image.naturalWidth, height: image.naturalHeight }), context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0);
+      const { width: w, height: h } = canvas, at = (x, y) => context.getImageData(x, y, 1, 1).data[3];
+      return { corners: [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)], edges: [at(w >> 1, 1), at(1, h >> 1), at(w - 2, h >> 1), at(w >> 1, h - 2)] };
+    });
+    assert.ok(alpha.corners.every(a => a === 0) && alpha.edges.every(a => a > 200), `24 Oct, Masih: "this should be circular avatar profile looking": clear corners, a disc reaching every edge (${JSON.stringify(alpha)})`);
     assert.equal(await page.locator('.message.agent .speaker').textContent(), 'Matilda');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
