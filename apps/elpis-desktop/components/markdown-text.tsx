@@ -76,23 +76,24 @@ const HIGHLIGHT: NonNullable<React.ComponentProps<typeof Markdown>["rehypePlugin
 const urlTransform = (url: string) => url.startsWith("file:///") ? url : defaultUrlTransform(url);
 const PLUGINS = [remarkGfm, linkFilePaths];
 
-export const MarkdownText = memo(function MarkdownText({ text, file }: { text: string; file?: { cwd: string; path: string } }) {
+export const MarkdownText = memo(function MarkdownText({ text, file, allowImages = true }: { text: string; file?: { cwd: string; path: string }; allowImages?: boolean }) {
   const rendered = useMemo<Components>(() => {
-    if (!file) return components;
+    const base: Components = allowImages ? components : { ...components, img: ({ alt }) => alt ? <span>{alt}</span> : null };
+    if (!file) return base;
     const abs = resolveRef({ path: file.path }, file.cwd).abs, folder = abs.slice(0, abs.lastIndexOf("/")) || "/";
-    return { ...components,
+    return { ...base,
       a: ({ node: _node, href, children, ...props }) => {
         const target = href ? parseHref(href) : null;
         if (target) return <FileRefLink target={{ ...target, path: resolveRef(target, folder).abs }}>{children}</FileRefLink>;
         return <MarkdownLink {...props} href={href}>{children}</MarkdownLink>;
       },
-      img: ({ src, alt }) => {
+      img: !allowImages ? base.img : ({ src, alt }) => {
         const target = typeof src === "string" ? parseHref(src) : null;
         const found = target ? resolveRef({ path: resolveRef(target, folder).abs }, file.cwd) : null;
         // Documents cannot silently fetch remote resources or files outside the folder the tab was opened in.
         return found?.inside ? <img src={fileAssetUrl(file.cwd, found.rel)} alt={alt ?? ""} loading="lazy" /> : <span className="file-image-unavailable">{alt || "Image"} (image unavailable)</span>;
       },
     };
-  }, [file?.cwd, file?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [file?.cwd, file?.path, allowImages]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{text}</Markdown></div>;
 });

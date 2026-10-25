@@ -3,26 +3,26 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chooseOption } = require('./controls.cjs');
-const { PAGES, SECTIONS, settingsFixture, visit, captureSettings, measureRows, violations } = require('./settings-row-audit.cjs');
+const { PAGES, settingsFixture, visit, captureSettings, measureRows, violations } = require('./settings-row-audit.cjs');
 
 test('every Settings page uses shared rows and consistent computed sizing in light and dark', async () => {
   const problems = [];
   for (const theme of ['light', 'dark']) {
     const app = await settingsFixture(theme), measurements = [];
     try {
-      for (const [section, names] of [[false, PAGES], [true, SECTIONS]]) for (const name of names) {
-        await visit(app.page, name, section);
-        if (!section && ['Configuration', 'General'].includes(name)) {
+      for (const name of PAGES) {
+        await visit(app.page, name);
+        if (['Configuration', 'General'].includes(name)) {
           const panel = app.page.getByRole('tabpanel', { name, exact: true });
           await chooseOption(panel.getByLabel(name === 'General' ? 'Speed' : 'Default permissions', { exact: true }), name === 'General' ? 'fast' : 'ask');
           await panel.getByRole('status').filter({ hasText: 'saved' }).waitFor();
         }
         const measurement = await app.page.evaluate(measureRows);
-        if (section || !['Models & accounts', 'MCP servers', 'Usage & limits'].includes(name)) assert.ok(measurement.rows.length, `${name}: fixture must render rows`);
-        measurements.push({ name: `${section ? 'section' : 'page'} ${name}`, measurement });
+        if (!['Models & accounts', 'MCP servers', 'Usage & limits'].includes(name)) assert.ok(measurement.rows.length, `${name}: fixture must render rows`);
+        measurements.push({ name: `page ${name}`, measurement });
         if (process.env.ELPIS_SETTINGS_EVIDENCE) {
           const dir = path.join(process.env.ELPIS_SETTINGS_EVIDENCE, theme); await fs.mkdir(dir, { recursive: true });
-          await captureSettings(app.page, dir, `${section ? 'section' : 'page'}-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`);
+          await captureSettings(app.page, dir, `page-${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`);
         }
       }
       if (process.env.ELPIS_SETTINGS_EVIDENCE) await fs.writeFile(path.join(process.env.ELPIS_SETTINGS_EVIDENCE, `${theme}-measurements.json`), JSON.stringify(measurements, null, 2));
@@ -36,16 +36,17 @@ test('every Settings page uses shared rows and consistent computed sizing in lig
 test('row audit rejects a hand-written row and independently catches title, description and control drift', async () => {
   const app = await settingsFixture();
   try {
-    await visit(app.page, 'Advanced', true);
+    await visit(app.page, 'Configuration');
     const base = await app.page.evaluate(measureRows);
-    await app.page.locator('.settings-rows').filter({ visible: true }).evaluate(group => {
+    const group = app.page.locator('.settings-rows').filter({ visible: true }).first();
+    await group.evaluate(group => {
       const row = group.querySelector('.settings-row').cloneNode(true); row.removeAttribute('data-slot'); row.removeAttribute('data-elpis-source');
       row.querySelectorAll('[data-elpis-source]').forEach(el => el.removeAttribute('data-elpis-source'));
       group.append(row);
     });
     assert.ok(violations([{ name: 'injected', measurement: await app.page.evaluate(measureRows) }]).some(text => text.includes('outside shared component')));
-    await app.page.locator('.settings-rows > .settings-row').filter({ visible: true }).last().evaluate(el => el.remove());
-    await app.page.locator('.settings-rows').filter({ visible: true }).evaluate(group => {
+    await group.locator(':scope > .settings-row').last().evaluate(el => el.remove());
+    await group.evaluate(group => {
       const row = document.createElement('div'); row.id = 'unshared-row'; row.innerHTML = '<span>Different row</span><button>Change</button>'; group.append(row);
     });
     assert.ok(violations([{ name: 'injected without row classes', measurement: await app.page.evaluate(measureRows) }]).some(text => text.includes('outside shared component')));

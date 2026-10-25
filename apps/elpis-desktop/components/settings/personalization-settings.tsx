@@ -17,7 +17,7 @@ function CustomInstructions({ settings }: { settings: ElpisSettings }) {
   const saver = useSaver();
   const text = draft ?? saved, writable = editable(settings);
   return <SettingsGroup title="Custom instructions">
-    <SettingRow stacked title="Instructions for every chat" description="Elpis adds these to each new conversation as developer instructions. A project’s AGENTS.md files also apply.">
+    <SettingRow stacked title="Instructions for every chat" scope="new chats" description="Elpis adds these to each new conversation as developer instructions. A project’s AGENTS.md files also apply.">
       <Textarea aria-label="Instructions for every chat" className="max-h-80 min-h-28 text-sm" value={text} maxLength={32000} disabled={!writable || saver.pending !== null} placeholder="For example: Answer briefly. Prefer small, reversible changes." onChange={event => { saver.clear(); setDraft(event.target.value === saved ? null : event.target.value); }} />
     </SettingRow>
     {writable ? <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", async () => { await reloadSettings(); setDraft(null); }, "Settings reloaded. Unsaved edits were discarded.")} />}>
@@ -30,7 +30,7 @@ function CustomInstructions({ settings }: { settings: ElpisSettings }) {
 export function PersonalizationSettings() {
   const { models, error } = useModelCatalog();
   return <div aria-label="Personalization">
-    <SettingsHeader title="Personalization" description="Instructions and memories Elpis uses in every new chat." />
+    <SettingsHeader title="Personalization" description="Manage instructions and saved memories." />
     <FileSettings kind="instructions" label="Global instructions" />
     <FileSettings kind="memory" label="Memory file" />
     <SettingsLoader>{settings => <>

@@ -32,6 +32,48 @@ test('a missing instructions file says so and a memory file previews rendered', 
     assert.equal(await memory.getByRole('textbox').count(), 0, 'the preview replaces the editor');
     await memory.getByRole('radio', { name: 'Edit', exact: true }).click();
     assert.equal(await memory.getByRole('textbox', { name: 'Memory file', exact: true }).isVisible(), true);
+    assert.equal(await instructions.getByRole('alert').count(), 0);
+    assert.equal(await memory.getByRole('alert').count(), 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
+});
+
+test('Personalization files recover locally, preview text without images, and preserve editable drafts', async () => {
+  for (const [kind, label, name] of [['instructions', 'Global instructions', 'AGENTS.md'], ['memory', 'Memory file', 'memories/MEMORY.md']]) {
+    let unavailable = true, file = { path: `${home}/${name}`, content: '# Local text\n\n![Stored figure](https://preview.invalid/figure.png)', version: 'v1' };
+    const endpoint = `/api/settings/files/${kind}`;
+    const f = await fixture({ routes: { ...routes, [endpoint]: body => {
+      if (unavailable) return { __http: 503, error: 'This file could not be read.' };
+      if (body) file = { ...file, content: body.content, version: 'v2' };
+      return file;
+    } } }), { page } = f;
+    const images = [];
+    await page.route('https://preview.invalid/**', route => { images.push(route.request().url()); return route.fulfill({ status: 200, body: '' }); });
+    try {
+      await openSettings(page); await page.getByRole('tab', { name: 'Personalization', exact: true }).click();
+      const group = page.getByRole('region', { name: label, exact: true });
+      await group.getByRole('alert').filter({ hasText: 'could not be read' }).waitFor();
+      assert.equal(await group.getByText('Loading the engine’s file…', { exact: true }).count(), 0);
+      assert.equal(await group.getByRole('button', { name: `Reload ${label}`, exact: true }).isEnabled(), true);
+      unavailable = false;
+      await group.getByRole('button', { name: `Reload ${label}`, exact: true }).click();
+      const editor = group.getByRole('textbox', { name: label, exact: true });
+      await editor.waitFor();
+      await page.waitForFunction(label => !document.querySelector(`textarea[aria-label="${label}"]`).disabled, label);
+      await group.getByRole('radio', { name: 'Preview', exact: true }).click();
+      await group.getByRole('heading', { name: 'Local text', exact: true }).waitFor();
+      assert.equal(await group.locator('img').count(), 0);
+      assert.deepEqual(images, [], 'a text preview never requests image resources');
+      await group.getByRole('radio', { name: 'Edit', exact: true }).click();
+      await editor.fill('Keep this local draft');
+      await page.getByRole('tab', { name: 'General', exact: true }).click();
+      await page.getByRole('tab', { name: 'Personalization', exact: true }).click();
+      assert.equal(await editor.inputValue(), 'Keep this local draft');
+      await editor.press('Control+s');
+      await group.getByRole('status').filter({ hasText: `${label} saved.` }).waitFor();
+      assert.equal(file.content, 'Keep this local draft');
+      assert.equal(await group.getByRole('alert').count(), 0);
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  }
 });

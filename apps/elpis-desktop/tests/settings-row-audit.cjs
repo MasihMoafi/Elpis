@@ -4,7 +4,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats', 'About'];
-const SECTIONS = ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal', 'Advanced'];
 const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
   smartPrune: { enabled: true, explicitOverride: { available: true, model: null, provider: null, version: 'p1' } }, memory: { enabled: false, generate: null, use: null, skipExternalContext: null, extractionModel: null, consolidationModel: null },
   options: { defaultPermissions: 'full', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: null, developerInstructions: null, projectRootMarkers: null, worktreeRoot: null },
@@ -26,8 +25,8 @@ async function settingsFixture(theme = 'light', extra = {}) {
   return app;
 }
 
-async function visit(page, name, section = false) {
-  await (section ? page.locator('.settings-section-link').getByText(name, { exact: true }) : page.getByRole('tab', { name, exact: true })).click();
+async function visit(page, name) {
+  await page.getByRole('tab', { name, exact: true }).click();
   await page.locator('.settings-page-header h2').filter({ visible: true }).waitFor();
   await page.locator('.settings-page').evaluate(async () => { await document.fonts.ready; });
   await page.waitForTimeout(120);
@@ -114,4 +113,4 @@ function violations(pages) {
   return problems;
 }
 
-module.exports = { PAGES, SECTIONS, settingsFixture, visit, captureSettings, measureRows, violations };
+module.exports = { PAGES, settingsFixture, visit, captureSettings, measureRows, violations };

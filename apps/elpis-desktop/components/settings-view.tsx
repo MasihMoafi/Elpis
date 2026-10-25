@@ -22,10 +22,8 @@ import { ModelsIcon, ArchiveIcon, BellIcon, BranchIcon, ChatIcon, ContextIcon, F
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { ViewBoundary } from "@/components/view-boundary";
-import { SettingRow, SettingsGroup, SettingsHeader, SettingsScope } from "@/components/settings/rows";
-import { SettingsLoader } from "@/components/settings/config-choice";
-import { DefaultModelSettings } from "@/components/settings/maintenance";
-import { SECTIONS, type ConfigSectionId } from "@/lib/config-sections";
+import { SettingRow, SettingsGroup, SettingsScope } from "@/components/settings/rows";
+import { configDestination, SECTIONS, type ConfigSectionId } from "@/lib/config-sections";
 import type { Thread } from "@/lib/api";
 import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 
@@ -33,7 +31,7 @@ import { reloadSettings, settingsLoaded } from "@/lib/settings-store";
 const TABS = [
   { id: "providers", label: "Models & accounts", group: "models", scope: "this device", Icon: ModelsIcon, words: "providers api key sign in chatgpt anthropic openrouter gemini" },
   { id: "configuration", label: "Configuration", group: "permissions", scope: "new chats", Icon: FileEditIcon, words: "approval sandbox web search output reasoning background model smart prune pruning config file" },
-  { id: "personalization", label: "Personalization", group: "context", scope: "new chats", Icon: PersonIcon, words: "instructions memories memory" },
+  { id: "personalization", label: "Personalization", group: "context", scope: "this device", Icon: PersonIcon, words: "instructions memories memory" },
   { id: "mcp", label: "MCP servers", group: "connections", scope: "new chats", Icon: ToolIcon, words: "tools servers rag" },
   { id: "voice", label: "Voice", group: "connections", scope: "this device", Icon: MicIcon, words: "dictation transcription microphone whisper" },
   { id: "git", label: "Git", group: "connections", scope: "new chats", Icon: BranchIcon, words: "project root markers" },
@@ -50,6 +48,7 @@ const TABS = [
 ] as const;
 export type Tab = (typeof TABS)[number]["id"];
 export type SettingsDestination = Tab | ConfigSectionId | "sections";
+const settingsTab = (destination: SettingsDestination): Tab => TABS.find(page => page.id === destination)?.id ?? configDestination(destination);
 // Pages that edit the shared Elpis config snapshot refresh it when opened, so their saves use the current version.
 const CONFIG_PAGES: Tab[] = ["general", "personalization", "git", "worktrees", "configuration"];
 
@@ -73,37 +72,17 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
   const groups = SECTIONS, pages = TABS;
   const [query, setQuery] = useState("");
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const shown = pages.filter(item => terms.every(term => `${item.label} ${item.words}`.toLowerCase().includes(term)));
-  const visibleGroups = groups.filter(group => !terms.length || terms.every(term => `${group.label} ${group.description}`.toLowerCase().includes(term)) || shown.some(item => item.group === group.id));
-  const [tab, setTab] = useState<SettingsDestination>(initialTab);
-  const [modelOverviewVisited, setModelOverviewVisited] = useState(initialTab === "models");
-  const [visited, setVisited] = useState<Tab[]>(TABS.some(item => item.id === initialTab) ? [initialTab as Tab] : []);
-  const selectTab = (next: SettingsDestination) => {
-    if (next === "models") setModelOverviewVisited(true);
-    const page = TABS.find(page => page.id === next);
-    if (page) setVisited(previous => previous.includes(page.id) ? previous : [...previous, page.id]);
+  const shown = pages.filter(item => terms.every(term => `${item.label} ${item.words} ${groups.find(group => group.id === item.group)?.label}`.toLowerCase().includes(term)));
+  const visibleGroups = groups.filter(group => shown.some(item => item.group === group.id));
+  const [tab, setTab] = useState<Tab>(() => settingsTab(initialTab));
+  const [visited, setVisited] = useState<Tab[]>(() => [settingsTab(initialTab)]);
+  const selectTab = (destination: SettingsDestination) => {
+    const next = settingsTab(destination);
+    setVisited(previous => previous.includes(next) ? previous : [...previous, next]);
     setTab(next);
-    if (settingsLoaded() && (!page || CONFIG_PAGES.includes(page.id))) reloadSettings().catch(() => {});
+    if (settingsLoaded() && CONFIG_PAGES.includes(next)) reloadSettings().catch(() => {});
   };
   useEffect(() => { setQuery(""); selectTab(initialTab); }, [initialTab, navigationKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const selectedSection = SECTIONS.find(section => section.id === tab);
-  const sectionList = (sections: readonly typeof SECTIONS[number][]) => <SettingsGroup>
-    {sections.map(section => <SettingRow key={section.id} title={<h3 data-config-section={section.id}>{section.label}</h3>} description={section.description}>
-      <Button variant="outline" onClick={() => selectTab(section.id)}>Open {section.label}</Button>
-    </SettingRow>)}
-  </SettingsGroup>;
-  const sectionPage = selectedSection && <>
-    <SettingsHeader title={selectedSection.label} description={selectedSection.description} />
-    <SettingsGroup title="Settings">
-      {selectedSection.pages.map(link => { const item = TABS.find(page => page.id === link.tab)!; return <SettingRow key={link.tab} title={link.title} description={`Open ${item.label} settings.`} scope={link.scope}>
-        <Button variant="outline" onClick={() => selectTab(item.id)}>Open {item.label}</Button>
-      </SettingRow>; })}
-      {selectedSection.id === "connections" && onCustomize && <SettingRow title="Plugins & skills" description="Open the existing plugins and skills controls." scope="new chats"><Button variant="outline" onClick={onCustomize}>Open</Button></SettingRow>}
-      {selectedSection.id === "context" && threadId && <SettingRow title="Context Ledger" description="Choose what this chat admits into context. Saved defaults do not change its admission choices." scope="this chat"><Button variant="outline" onClick={onChatContext}>Open Context Ledger</Button></SettingRow>}
-      {selectedSection.id === "models" && threadId && <SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow>}
-      {selectedSection.id === "permissions" && threadId && <SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow>}
-    </SettingsGroup>
-  </>;
   const page = (section: Tab) => {
     switch (section) {
       case "general": return <GeneralSettings />;
@@ -112,14 +91,14 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       case "appearance": return <AppearanceSettings theme={theme} onTheme={onTheme} />;
       case "shortcuts": return <ShortcutSettings />;
       case "voice": return <VoiceSettings onOpenMcp={() => selectTab("mcp")} />;
-      case "personalization": return <PersonalizationSettings />;
-      case "providers": return <ProvidersSettings refreshKey={accountRefresh} onChanged={onProvidersChanged} />;
-      case "mcp": return <McpSettings onOpenVoice={() => selectTab("voice")} />;
+      case "personalization": return <><PersonalizationSettings />{threadId && onChatContext && <SettingsGroup title="Current chat"><SettingRow title="Context Ledger" description="Choose what this chat admits into context." scope="this chat"><Button variant="outline" onClick={onChatContext}>Open Context Ledger</Button></SettingRow></SettingsGroup>}</>;
+      case "providers": return <><ProvidersSettings refreshKey={accountRefresh} onChanged={onProvidersChanged} />{threadId && onChatModel && <SettingsGroup title="Current chat"><SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow></SettingsGroup>}</>;
+      case "mcp": return <><McpSettings onOpenVoice={() => selectTab("voice")} />{onCustomize && <SettingsGroup title="Plugins & skills"><SettingRow title="Plugins & skills" description="Manage plugins and skills in Customize." scope="this device"><Button variant="outline" onClick={onCustomize}>Open Customize</Button></SettingRow></SettingsGroup>}</>;
       case "usage": return <UsageSettings refreshKey={accountRefresh} />;
       case "git": return <GitSettings />;
       case "worktrees": return <WorktreeSettings />;
       case "hooks": return <HooksSettings />;
-      case "configuration": return <ConfigurationSettings />;
+      case "configuration": return <><ConfigurationSettings />{threadId && onChatPermissions && <SettingsGroup title="Current chat"><SettingRow title="Current permissions" description={currentPermission ?? "Not reported"} scope="this chat"><Button variant="outline" onClick={onChatPermissions}>Change this chat permissions</Button></SettingRow></SettingsGroup>}</>;
       case "import": return <ImportSettings onImported={onImported} />;
       case "archived": return <ArchivedView onUnarchived={onUnarchived} onDelete={onDeleteThread} />;
     }
@@ -131,14 +110,13 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       <SearchField aria-label="Search settings" placeholder="Search" value={query} maxLength={80} onChange={event => setQuery(event.target.value)} />
       <div role="tablist" aria-label="Settings sections" aria-orientation="vertical">
         {visibleGroups.map(group => { const items = shown.filter(item => item.group === group.id);
-          return <div key={group.id} className="settings-nav-group"><Button data-slot="section-link" type="button" variant="ghost" size="sm" className="section-label settings-section-link" aria-current={tab === group.id ? "page" : undefined} onClick={() => selectTab(group.id)}>{group.label}</Button>
+          return <div key={group.id} className="settings-nav-group"><p className="section-label settings-section-link flex items-center">{group.label}</p>
             {items.map(item => <Button key={item.id} data-slot="nav-row" variant="ghost" role="tab" type="button" id={`settings-tab-${item.id}`} aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} className={tab === item.id ? "active" : ""} onClick={() => selectTab(item.id)}><item.Icon size={15} aria-hidden="true" />{item.label}</Button>)}
           </div>; })}
         {!visibleGroups.length && <p className="settings-nav-empty">No setting matches.</p>}
       </div>
     </nav>
-    <div className="settings-page">{tab === "sections" && <><SettingsHeader title="Settings" description="Choose a section to set up Elpis." />{sectionList(groups)}</>}{sectionPage}
-      {modelOverviewVisited && <div hidden={tab !== "models"}><SettingsScope value="new chats"><SettingsLoader>{settings => <DefaultModelSettings value={settings} />}</SettingsLoader></SettingsScope></div>}
+    <div className="settings-page">
       {visited.map(section => <div key={section} role="tabpanel" id={`settings-panel-${section}`} aria-labelledby={`settings-tab-${section}`} hidden={tab !== section}><ViewBoundary resetKey={navigationKey}><SettingsScope value={TABS.find(item => item.id === section)!.scope}>
         {page(section)}
       </SettingsScope></ViewBoundary></div>)}

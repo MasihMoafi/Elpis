@@ -15,7 +15,7 @@ test('/config models edits the shared default reasoning effort and re-reads it',
   } } });
   try {
     await f.composer.fill('/config models'); await f.composer.press('Enter');
-    await f.page.getByRole('button', { name: 'Open Configuration', exact: true }).click();
+    await f.page.getByRole('tab', { name: 'Configuration', exact: true }).click();
     if (process.env.A32_SHOTS) {
       await fs.mkdir(process.env.A32_SHOTS, { recursive: true });
       for (const dark of [false, true]) {

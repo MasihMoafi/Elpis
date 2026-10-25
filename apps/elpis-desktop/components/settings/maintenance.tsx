@@ -87,27 +87,16 @@ export function ModelSettings({ value, models }: { value: ElpisSettings; models:
   </SettingsGroup>;
 }
 
-/** The Models overview edits the same defaults as Configuration. */
-export function DefaultModelSettings({ value }: { value: ElpisSettings }) {
-  const { models, error } = useModelCatalog();
-  return <>
-    <CatalogNotice error={error} />
-    <SettingsGroup>
-      <ModelPair which="main" value={value} models={models} modelTitle="Default model" />
-    </SettingsGroup>
-  </>;
-}
-
 const PAIRS = {
   main: { name: "Main", model: "New chats start with this model, here and in the TUI. Change it per chat in the composer.", provider: "The connection the main model runs on." },
   background: { name: "Background", model: "Smart Prune falls back to this model.", provider: "The connection the background model runs on." },
 };
 /** One model and the provider it runs on, saved together. The main model can't be cleared; the background one can. */
-function ModelPair({ which, value, models, modelTitle }: { which: keyof typeof PAIRS; value: ElpisSettings; models: Model[]; modelTitle?: string }) {
+function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value: ElpisSettings; models: Model[] }) {
   const [draft, setDraft] = useState<Partial<Background>>({});
   const saver = useSaver();
   const saved = value[which], current = { ...saved, ...draft }, { name } = PAIRS[which];
-  const title = modelTitle ?? `${name} model`;
+  const title = `${name} model`;
   const catalogs = useProviderCatalogs(value, models, [current.provider]);
   const pinned = which === "main" && value.managed?.modelProvider ? value.managed.modelProvider : null;
   const update = (key: keyof Background, text: string | null) => {

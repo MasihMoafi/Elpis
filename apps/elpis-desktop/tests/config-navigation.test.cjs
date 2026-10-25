@@ -3,25 +3,44 @@ const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
 const { chooseOption } = require('./controls.cjs');
 
-const sections = ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal', 'Advanced'];
 const settings = () => ({ version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
   smartPrune: { enabled: false, explicitOverride: { available: false } }, memory: { enabled: false, generate: false, use: false, extractionModel: null, consolidationModel: null },
   options: { defaultPermissions: 'ask' }, write: { available: true, reason: '' } });
 
-test('/config opens six sections; a named section ignores case; an unknown name shows the list', async () => {
+test('/config aliases open working pages; category labels never open link-only overviews', async () => {
   const f = await fixture({ routes: { '/api/settings': settings } });
   const { page, composer } = f;
   const run = async command => { await composer.fill(command); await composer.press('Enter'); };
   try {
+    for (const [command, title] of [
+      ['/config', 'Configuration'], ['/config models', 'Models & accounts'],
+      ['/config PeRmIsSiOnS', 'Configuration'], ['/config context', 'Personalization'],
+      ['/config connections', 'MCP servers'], ['/config app', 'General'],
+      ['/config advanced', 'Configuration'], ['/config no-such-section', 'Configuration'],
+    ]) {
+      await run(command);
+      await page.getByRole('tabpanel', { name: title, exact: true }).waitFor();
+      const nav = page.getByRole('navigation', { name: 'Settings navigation' });
+      const groups = await nav.locator('.settings-nav-group').evaluateAll(groups => groups.map(group => ({
+        label: group.querySelector('.section-label').textContent,
+        clickable: group.querySelector('.section-label').matches('button, a, [role="button"], [tabindex]'),
+        pages: group.querySelectorAll('[role="tab"]').length,
+      })));
+      assert.deepEqual(groups.map(group => group.label), ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal']);
+      assert.ok(groups.every(group => group.pages > 0 && !group.clickable), JSON.stringify(groups));
+      assert.equal(await page.getByRole('button', { name: /^Open (Models & accounts|Configuration|Personalization|General)$/ }).count(), 0);
+      await page.getByRole('button', { name: 'Back to app' }).click();
+    }
     await run('/config');
-    await page.getByRole('heading', { name: 'Settings', exact: true, level: 2 }).waitFor();
-    assert.deepEqual(await page.getByRole('heading', { level: 3 }).allTextContents(), sections);
-    await page.getByRole('button', { name: 'Back to app' }).click();
-    await run('/config PeRmIsSiOnS');
-    await page.getByRole('heading', { name: 'Permissions & behavior', exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Back to app' }).click();
-    await run('/config no-such-section');
-    assert.deepEqual(await page.getByRole('heading', { level: 3 }).allTextContents(), sections);
+    const search = page.getByRole('textbox', { name: 'Search settings', exact: true });
+    await search.fill('memories');
+    const nav = page.getByRole('navigation', { name: 'Settings navigation' });
+    assert.deepEqual(await nav.getByRole('tab').allTextContents(), ['Personalization']);
+    await nav.getByRole('tab', { name: 'Personalization', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('tabpanel', { name: 'Personalization', exact: true }).waitFor();
+    await search.fill('no-such-setting');
+    await nav.getByText('No setting matches.', { exact: true }).waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -52,7 +71,6 @@ test('a stale new-chats write reports the conflict and keeps the saved value', a
   const { page, composer } = f;
   try {
     await composer.fill('/config permissions'); await composer.press('Enter');
-    await page.getByRole('button', { name: 'Open Configuration' }).click();
     const panel = page.getByRole('tabpanel', { name: 'Configuration' });
     await chooseOption(panel.getByLabel('Web search', { exact: true }), 'live');
     await panel.getByRole('alert').filter({ hasText: 'changed in another client' }).waitFor();
