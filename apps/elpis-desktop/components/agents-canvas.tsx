@@ -434,7 +434,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
   const previousIdentity = useRef<WorkflowIdentity | undefined>(undefined);
   useEffect(() => {
     const before = previousIdentity.current; previousIdentity.current = identity;
-    if (identity && before?.id === identity.id && before.name !== identity.name && graph.name === before.name) setGraph(current => ({ ...current, name: identity.name }));
+    if (identity && before?.id === identity.id && before.name !== identity.name && graph.name === before.name) setIdentity({ name: identity.name });
   }, [identity, graph.name]);
   useEffect(() => {
     if (!workflowCatalog.hydrated) return;
@@ -1010,6 +1010,12 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
     if (editKey(graph) !== editKey(steps.settled)) { steps.past = [...steps.past, steps.settled].slice(-100); steps.future = []; }
     steps.settled = graph;
   };
+  // Which workflow the board is (its id and saved name) changes with a run or a rename elsewhere, never by an edit on the
+  // board: it goes into every undo step instead of becoming one, so Ctrl+Z undoes his last edit and keeps the workflow.
+  const setIdentity = (patch: Partial<Pick<CanvasGraph, "workflowId" | "name">>) => {
+    const steps = history.current, from = graph.workflowId, apply = (item: CanvasGraph) => item.workflowId === from ? { ...item, ...patch } : item;
+    steps.past = steps.past.map(apply); steps.future = steps.future.map(apply); steps.settled = apply(steps.settled); setGraph(apply);
+  };
   const restored = useRef(false);
   const restore = (next: CanvasGraph) => { history.current.restoring = true; restored.current = shapeKey(next) !== shapeKey(graph); setGraph(next); setSelection(current => current.filter(id => next.nodes.some(node => node.id === id) || next.edges.some(edge => edge.id === id) || next.frames?.some(frame => frame.id === id))); setMenu(null); };
   const undo = () => {
@@ -1326,7 +1332,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
       const result = await runPart(created.thread.id, runIdentity.name, built.mother, built.father.length ? await fatherPart(built.father) : undefined);
       workflowCatalog.attach(runIdentity.id, result.graphId, created.thread.id);
-      setGraph(current => ({ ...current, workflowId: result.graphId, name: runIdentity.name }));
+      setIdentity({ workflowId: result.graphId, name: runIdentity.name });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
     } catch (error) { setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
     finally { startingRun.current = false; setStarting(false); }
