@@ -348,6 +348,113 @@ async fn empty_enter_forces_a_queued_compact_during_a_reply() {
 }
 
 #[tokio::test]
+async fn forced_compact_keeps_steers_sent_while_the_reply_is_stopping() {
+    let (mut chat, mut rx, mut ops, _home) = chat_with_home().await;
+    handle_turn_started(&mut chat, "reply");
+    type_and_submit(&mut chat, "/compact");
+    queue_composer_text(&mut chat, "already queued");
+    empty_enter(&mut chat);
+    next_interrupt_op(&mut ops);
+
+    for text in ["first steer — یک", "second steer"] {
+        type_and_submit(&mut chat, text);
+        next_submit_op(&mut ops);
+    }
+    let pending: Vec<_> = chat.input_queue.pending_steers.iter().cloned().collect();
+    assert_eq!(pending.len(), 2);
+    drain(&mut rx);
+
+    handle_turn_interrupted(&mut chat, "reply");
+    assert_matches!(drain(&mut rx).ops.as_slice(), [Op::Compact]);
+    assert!(
+        chat.input_queue.pending_steers.is_empty(),
+        "steers discarded by the server must become sendable again"
+    );
+    assert_eq!(
+        queued_texts(&chat),
+        vec!["first steer — یک", "second steer", "already queued"]
+    );
+    for (queued, pending) in chat.input_queue.queued_user_messages.iter().zip(&pending) {
+        assert_eq!(queued.user_message, pending.user_message);
+        assert_eq!(queued.source, pending.source);
+        assert_eq!(queued.delivery, MessageDelivery::Unsent);
+    }
+    assert_eq!(
+        chat.input_queue.queued_user_message_history_records[0],
+        pending[0].history_record
+    );
+    assert_no_submit_op(&mut ops);
+
+    handle_turn_started(&mut chat, "compaction");
+    complete_turn(&mut chat, "compaction");
+    let Op::UserTurn { items, .. } = next_submit_op(&mut ops) else {
+        unreachable!();
+    };
+    assert_matches!(&items[0], UserInput::Text { text, .. } if text == "first steer — یک");
+    assert_eq!(queued_texts(&chat), vec!["second steer", "already queued"]);
+}
+
+#[tokio::test]
+async fn forced_compact_survives_switching_chats_only_with_the_in_flight_turn() {
+    for preserve_in_flight_turn in [true, false] {
+        let (mut chat, _rx, mut ops, _home) = chat_with_home().await;
+        handle_turn_started(&mut chat, "reply");
+        type_and_submit(&mut chat, "/compact");
+        empty_enter(&mut chat);
+        next_interrupt_op(&mut ops);
+        let input = chat.capture_thread_input_state();
+
+        let (mut restored, mut rx, _ops, _home) = chat_with_home().await;
+        restored.restore_thread_input_state(
+            input,
+            ThreadInputStateRestoreMode {
+                preserve_in_flight_turn,
+            },
+        );
+        drain(&mut rx);
+        handle_turn_interrupted(&mut restored, "reply");
+        assert_eq!(
+            drain(&mut rx).ops.iter().any(is_compaction),
+            preserve_in_flight_turn,
+            "a chat switch preserves the force; reconnecting without the turn clears it"
+        );
+        assert_eq!(
+            restored.bottom_pane.composer_text(),
+            if preserve_in_flight_turn { "" } else { "/compact" }
+        );
+        assert!(!restored.input_queue.compact_after_interrupt);
+    }
+}
+
+#[tokio::test]
+async fn empty_enter_does_not_force_compact_during_mcp_startup_without_a_reply() {
+    let (mut chat, mut rx, mut ops, _home) = chat_with_home().await;
+    chat.on_mcp_server_status_updated(McpServerStatusUpdatedNotification {
+        thread_id: None,
+        name: "test-mcp".to_string(),
+        status: McpServerStartupState::Starting,
+        error: None,
+        failure_reason: None,
+    });
+    chat.input_queue.user_turn_pending_start = true;
+    assert!(chat.bottom_pane.is_task_running());
+    assert!(!chat.turn_lifecycle.agent_turn_running);
+    type_and_submit(&mut chat, "/compact");
+    assert_eq!(queued_texts(&chat), vec!["/compact"]);
+    drain(&mut rx);
+
+    empty_enter(&mut chat);
+
+    assert!(
+        ops.try_recv().is_err(),
+        "MCP startup is not a reply to interrupt"
+    );
+    assert!(!chat.input_queue.compact_after_interrupt);
+    assert_eq!(queued_texts(&chat), vec!["/compact"]);
+    assert!(!drain(&mut rx).ops.iter().any(is_compaction));
+}
+
+#[tokio::test]
 async fn empty_enter_forces_only_a_compact_at_the_front_of_the_queue() {
     for queue in [
         vec!["a plain message"],
