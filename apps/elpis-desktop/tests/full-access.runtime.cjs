@@ -53,6 +53,12 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const mode = () => page.getByRole('button', { name: 'Change permissions', exact: true });
   const choose = async label => { await mode().click(); await page.getByRole('menuitem').filter({ hasText: label }).first().click(); await page.waitForFunction(label => document.querySelector('[aria-label="Change permissions"]')?.getAttribute('aria-description') === label, label); };
   const deny = () => page.getByRole('button').filter({ hasText: /^\s*\d*\s*Deny/ }).first();
+  const released = async (file, label) => {
+    const deadline = Date.now() + 30000;
+    while (!await fs.stat(file).then(() => true, () => false)) { assert.ok(Date.now() < deadline, `${label}: Full access releases the pending command`); await new Promise(r => setTimeout(r, 50)); }
+    await deny().waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  };
   const command = async (tag, asks = false, claude = false, options = {}) => {
     const file = path.join(root, tag);
     const text = `${claude ? '[permission] ' : ''}PERMISSION_FILE:${file}`;
@@ -93,10 +99,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const setDefault = async label => { await openSettings(page, 'Configuration'); await chooseOption(page.getByLabel('Default permissions', { exact: true }), { label }); await page.getByText('Default permissions saved.', { exact: false }).waitFor(); await leaveSettings(page); };
   await setDefault('Ask for approval'); await select(id); const held = await command('inherited-ask', true, false, { hold: true });
   await setDefault('Full access'); await select(id);
-  const released = Date.now() + 30000;
-  while (!await fs.stat(held).then(() => true, () => false)) { assert.ok(Date.now() < released, 'changing the default to Full access releases an inherited pending approval'); await new Promise(r => setTimeout(r, 50)); }
-  await deny().waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  await released(held, 'inherited pending approval');
   t.diagnostic('pending inherited approval: Full access released the command');
   await command('inherited-full-again');
   await select(normal); assert.equal(await fs.stat(ownHeld).then(() => true, () => false), false);
@@ -145,10 +148,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const claudeId = await page.locator('.thread-row.active').first().getAttribute('data-thread-id');
   await setDefault('Ask for approval'); await select(claudeId); const claudeHeld = await command('claude-inherited-ask', true, true, { hold: true });
   await setDefault('Full access'); await select(claudeId);
-  const claudeReleased = Date.now() + 30000;
-  while (!await fs.stat(claudeHeld).then(() => true, () => false)) { assert.ok(Date.now() < claudeReleased, 'Full access releases a pending Claude tool permission'); await new Promise(r => setTimeout(r, 50)); }
-  await deny().waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  await released(claudeHeld, 'Claude pending approval');
   t.diagnostic('pending Claude approval: Full access released the command through its normal permission hook');
   await command('claude-inherited-full', false, true);
   const modes = (await fs.readFile(path.join(root, 'acp.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(x => x.method === 'session/set_mode');
@@ -173,6 +173,38 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   page = app.page; await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 });
   await select(id); await command('restart-inherited'); await select(normal); await command('restart-explicit-ask', true);
   await select(claudeId); await command('restart-claude', false, true);
+  await select(normal); const restartOwnHeld = await command('restart-explicit-pending', true, false, { hold: true });
+  await setDefault('Ask for approval'); await select(id); const restartHeld = await command('restart-inherited-pending', true, false, { hold: true });
+  await setDefault('Full access'); await select(id); await released(restartHeld, 'restarted inherited pending approval');
+  await select(normal); assert.equal(await fs.stat(restartOwnHeld).then(() => true, () => false), false);
+  await deny().waitFor(); await deny().click();
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  t.diagnostic('after restart: Full access released inherited approval; explicit Ask stayed held');
+  await setDefault('Ask for approval'); await select(claudeId); const restartClaudeHeld = await command('restart-claude-pending', true, true, { hold: true });
+  await setDefault('Full access'); await select(claudeId); await released(restartClaudeHeld, 'restarted Claude pending approval');
+  t.diagnostic('after restart: Full access released the pending Claude approval');
+  await setDefault('Ask for approval');
+  const WebSocket = require('ws'), peer = new WebSocket(`ws+unix://${socket}:/`), peerPending = new Map(), peerRequests = [];
+  t.after(() => peer.close());
+  let peerSequence = 0;
+  peer.on('message', data => {
+    const message = JSON.parse(String(data));
+    if (message.method && message.id !== undefined) peerRequests.push(message);
+    else if (peerPending.has(message.id)) { const pending = peerPending.get(message.id); peerPending.delete(message.id); message.error ? pending.reject(message.error) : pending.resolve(message.result); }
+  });
+  await once(peer, 'open');
+  const peerCall = (method, params) => new Promise((resolve, reject) => { const requestId = `peer-${++peerSequence}`; peerPending.set(requestId, { resolve, reject }); peer.send(JSON.stringify({ id: requestId, method, params })); });
+  await peerCall('initialize', { clientInfo: { name: 'elpis-native-permissions-test', version: '1' }, capabilities: { experimentalApi: true } });
+  peer.send(JSON.stringify({ method: 'initialized' }));
+  const peerStarted = await peerCall('thread/start', { model: 'gpt-5.5', modelProvider: 'mock', cwd: work });
+  const peerFile = path.join(root, 'other-window-inherited-pending');
+  await peerCall('turn/start', { threadId: peerStarted.thread.id, input: [{ type: 'text', text: `PERMISSION_FILE:${peerFile}`, text_elements: [] }] });
+  const peerDeadline = Date.now() + 30000;
+  while (!peerRequests.some(message => message.params?.threadId === peerStarted.thread.id)) { assert.equal(await fs.stat(peerFile).then(() => true, () => false), false); assert.ok(Date.now() < peerDeadline, 'the second native connection asks before its command'); await new Promise(r => setTimeout(r, 50)); }
+  await setDefault('Full access');
+  const peerReleased = Date.now() + 30000;
+  while (!await fs.stat(peerFile).then(() => true, () => false)) { assert.ok(Date.now() < peerReleased, 'Full access releases inherited approval in another open native connection'); await new Promise(r => setTimeout(r, 50)); }
+  t.diagnostic('another open native connection: Full access released its pending approval');
   const restartedHelper = connectAppServer({ url: `ws+unix://${socket}:/`, name: 'elpis-agents' });
   t.after(() => restartedHelper.close()); await restartedHelper.ready;
   const resumedHelper = await restartedHelper.call('thread/resume', { threadId: started.thread.id, excludeTurns: true });
