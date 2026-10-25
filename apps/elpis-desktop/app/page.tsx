@@ -446,6 +446,7 @@ export default function Home() {
   useEffect(() => { if (selected && !loading) transcripts.current.set(selected.id, { entries, cursor: itemCursor }); }, [selected, loading, entries, itemCursor]);
   const scroll = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const followingBottom = useRef(false);
   // ChatGPT's round "scroll to bottom" button shows while the chat is away from its newest message.
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const restoreScroll = useRef<{ height: number; top: number } | null>(null);
@@ -548,7 +549,7 @@ export default function Home() {
     const owner = tabFor(tabsRef.current, thread.id);
     if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
     saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); setText(savedDraft(thread.id));
-    const id = ++request.current; stickToBottom.current = true; restoreScroll.current = null;
+    const id = ++request.current; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null;
     liveVersions.current.clear(); const historyRevision = liveRevision.current;
     let unread = false;
     const shown = transcripts.current.get(thread.id);
@@ -914,7 +915,7 @@ export default function Home() {
   const team = teamRoot ? threads.filter(thread => thread.parentThreadId === teamRoot.id) : [];
   const folder = (path?: string | null) => path ? path.split("/").filter(Boolean).at(-1) || path : "";
 
-  function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
+  function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
@@ -2198,7 +2199,7 @@ export default function Home() {
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
       {view === "chat" && <ViewBoundary label="Chat" resetKey={selected?.id}><div className="chat-split"><div className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}>
-        <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onScroll={event => { const element = event.currentTarget; stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; setAwayFromBottom(!stickToBottom.current); }}><div className="chat-content">
+        <div className="chat-scroll-wrap"><div className="chat-scroll" ref={scroll} onWheel={() => { followingBottom.current = false; }} onPointerDown={() => { followingBottom.current = false; }} onKeyDown={event => { if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) followingBottom.current = false; }} onScrollEnd={event => { if (followingBottom.current) { followingBottom.current = false; event.currentTarget.scrollTo({ top: event.currentTarget.scrollHeight }); } }} onScroll={event => { const element = event.currentTarget; const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80; stickToBottom.current = followingBottom.current || atBottom; setAwayFromBottom(!atBottom); }}><div className="chat-content">
           {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>
             : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
@@ -2210,8 +2211,8 @@ export default function Home() {
             onRetry={!continues && failedInput?.allowed ? retryModel => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) : undefined} />}
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, permissions })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} approval={a} answer={(id, body) => answer(id, body, approvalDraftKey(a))} deny={(id, text) => answer(id, { text }, approvalDraftKey(a), true)} busy={!!pendingDrafts[approvalDraftKey(a)]} answers={approvalDrafts[approvalDraftKey(a)]?.answers ?? {}} onAnswerChange={(id, value) => draftAnswer(a, id, value)} />)}
-        </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { stickToBottom.current = false; }} />
-          {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div></div>
+        </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { followingBottom.current = false; stickToBottom.current = false; }} />
+          {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { followingBottom.current = true; stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div></div>
         <div className="composer-wrap">
           {sideChat && selected?.id === sideChat.parentId && <SideChat key={`${sideChat.parentId}:${sideChat.question?.kind === "recap" ? sideChat.question.id : "side"}`} parentId={sideChat.parentId} open={sideChat.open} question={sideChat.question} onClose={() => { setSideChat(previous => previous ? { ...previous, open: false } : null); focusComposer(); }}  onForward={answer => void send(`From the side chat:\n\n${answer}`)} />}
           <ViewBoundary label="This panel" resetKey={panel}>
