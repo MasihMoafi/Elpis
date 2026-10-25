@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { PORTRAIT_DATA_URL } = require('../bridge/matilda-face.cjs');
 
 test('Love Spot conversations show their agent names and use the blood-red app icon', async () => {
   const threads = [
@@ -48,16 +49,23 @@ test('Love Spot conversations show their agent names and use the blood-red app i
     const portrait = page.locator('.message.agent img[alt="Matilda"]');
     await portrait.waitFor();
     assert.equal(await portrait.evaluate(image => image.complete && image.naturalWidth > 0), true);
-    const face = await portrait.getAttribute('src');
-    assert.match(face, /^data:image\/svg\+xml;base64,/, 'the face is part of the page, never a request that can fail');
-    assert.doesNotMatch(Buffer.from(face.split(',')[1], 'base64').toString(), /href="(?!data:|#)/, 'the avatar embeds its portrait too: an SVG image never fetches one');
-    const alpha = await portrait.evaluate(image => {
-      const canvas = Object.assign(document.createElement('canvas'), { width: image.naturalWidth, height: image.naturalHeight }), context = canvas.getContext('2d');
-      context.drawImage(image, 0, 0);
-      const { width: w, height: h } = canvas, at = (x, y) => context.getImageData(x, y, 1, 1).data[3];
-      return { corners: [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)], edges: [at(w >> 1, 1), at(1, h >> 1), at(w - 2, h >> 1), at(w >> 1, h - 2)] };
-    });
-    assert.ok(alpha.corners.every(a => a === 0) && alpha.edges.every(a => a > 200), `24 Oct, Masih: "this should be circular avatar profile looking": clear corners, a disc reaching every edge (${JSON.stringify(alpha)})`);
+    assert.match(await portrait.getAttribute('src'), /^data:image\/svg\+xml;base64,/,'the face is part of the page, never a request that can fail');
+    const shape = await portrait.evaluate(async (image, source) => {
+      const size = image.naturalWidth, r = size / 2, original = Object.assign(new Image(), { src: source });
+      await original.decode();
+      const pixels = picture => { const context = Object.assign(document.createElement('canvas'), { width: size, height: size }).getContext('2d'); context.drawImage(picture, 0, 0, size, size); return context.getImageData(0, 0, size, size).data; };
+      const shown = pixels(image), wanted = pixels(original);
+      const alpha = (k, turn) => shown[(Math.round(r - k * r * Math.sin(turn)) * size + Math.round(r + k * r * Math.cos(turn))) * 4 + 3];
+      let opaque = 0, same = 0;
+      for (let i = 0; i < shown.length; i += 4) {
+        const x = i / 4 % size, y = Math.floor(i / 4 / size);
+        if (wanted[i + 3] < 255 || (x - r) ** 2 + (y - r) ** 2 > (0.9 * r) ** 2) continue;
+        opaque++; if (Math.abs(shown[i] - wanted[i]) + Math.abs(shown[i + 1] - wanted[i + 1]) + Math.abs(shown[i + 2] - wanted[i + 2]) < 24) same++;
+      }
+      return { portrait: same / opaque, rim: Array.from({ length: 16 }, (_, k) => alpha(0.95, k * Math.PI / 8)), beyond: [1, 3, 5, 7].map(k => alpha(1.05, k * Math.PI / 4)) };
+    }, PORTRAIT_DATA_URL);
+    assert.ok(shape.portrait > 0.9, `the disc shows her portrait, not an empty or broken face (${shape.portrait})`);
+    assert.ok(shape.rim.every(a => a > 200) && shape.beyond.every(a => a === 0), `24 Oct, Masih: "this should be circular avatar profile looking": opaque just inside the circle at 16 angles, clear just outside it on the diagonals (${JSON.stringify(shape)})`);
     assert.equal(await page.locator('.message.agent .speaker').textContent(), 'Matilda');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
