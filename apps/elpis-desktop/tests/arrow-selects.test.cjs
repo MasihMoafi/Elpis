@@ -25,7 +25,7 @@ test('in the sidebar an arrow opens the page it reaches, but never New chat, the
   } finally { await f.close(); }
 });
 
-test('in Settings an arrow selects the section it reaches', async () => {
+test('in Settings each arrow selects the next real page across plain category labels', async () => {
   const f = await fixture();
   try {
     const { page } = f;
@@ -34,12 +34,11 @@ test('in Settings an arrow selects the section it reaches', async () => {
     await tabs.first().click();
     await page.waitForTimeout(150);
     const first = (await tabs.first().innerText()).trim(), focused = () => page.evaluate(() => ({ text: document.activeElement.textContent.trim(), tab: document.activeElement.getAttribute('role') === 'tab', selected: document.activeElement.getAttribute('aria-selected') }));
-    await page.keyboard.press('ArrowDown');
-    assert.equal((await focused()).tab, false, 'the next section\'s heading is reached first; the arrows cross from one section to the next');
-    await page.keyboard.press('ArrowDown');
-    const reached = await focused();
-    assert.equal(reached.tab, true); assert.notEqual(reached.text, first);
-    assert.equal(reached.selected, 'true', 'the tab it reached is the selected one, with no Enter');
+    for (const index of [1, 2]) {
+      const next = (await tabs.nth(index).innerText()).trim();
+      await page.keyboard.press('ArrowDown');
+      assert.deepEqual(await focused(), { text: next, tab: true, selected: 'true' }, 'one stroke crosses the category label and selects its real page without Enter');
+    }
     await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
     assert.deepEqual(await focused(), { text: first, tab: true, selected: 'true' }, 'and back again'); 
     assert.deepEqual(f.errors, []);

@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cjs');
 const { leaveSettings } = require('./controls.cjs');
-const { PAGES, SECTIONS, settingsFixture, visit } = require('./settings-row-audit.cjs');
+const { PAGES, settingsFixture, visit } = require('./settings-row-audit.cjs');
 const { scanDisclosures, modelSpacing, cornerWidths, checkWidths, shot } = require('./polish-check.cjs');
 const evidence = process.env.ELPIS_POLISH_EVIDENCE;
 
@@ -13,8 +13,8 @@ for (const theme of ['light', 'dark']) {
   test(`POLISH R30: every page and opened disclosure has no triangle markers (${theme})`, async () => {
     const f = await settingsFixture(theme), problems = [], visited = [];
     try {
-      for (const [section, names] of [[false, PAGES], [true, SECTIONS]]) for (const name of names) {
-        await visit(f.page, name, section);
+      for (const name of PAGES) {
+        await visit(f.page, name);
         problems.push(...(await scanDisclosures(f.page)).map(hit => `${name}: ${hit}`)); visited.push(name);
       }
       await leaveSettings(f.page);

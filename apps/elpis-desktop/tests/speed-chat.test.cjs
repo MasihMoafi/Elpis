@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { performance } = require('node:perf_hooks');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 
 const COUNT = 600; // Five items per turn, including large command output and a real diff.
@@ -31,7 +32,8 @@ const p95 = values => [...values].sort((a, b) => a - b)[Math.max(0, Math.ceil(va
 
 test('3,000-item chat stays responsive when opening, typing, scrolling, streaming and idle', { timeout: 240_000 }, async t => {
   const label = process.env.ELPIS_SPEED_LABEL || 'current';
-  const destination = process.env.ELPIS_SPEED_EVIDENCE || path.join(os.homedir(), '.cache/elpis-briefs/cc/speed-evidence');
+  const destination = process.env.ELPIS_SPEED_EVIDENCE || (process.env.ELPIS_REVIEW_SHOTS
+    ? path.join(process.env.ELPIS_REVIEW_SHOTS, 'speed') : path.join(os.homedir(), '.cache/elpis-briefs/cc/speed-evidence'));
   await fs.mkdir(destination, { recursive: true });
   const thread = THREADS[0];
   const f = await fixture({ desktop: true, width: 1440, height: 900, routes: {
@@ -41,6 +43,7 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
   const { page, composer } = f;
   page.setDefaultTimeout(120_000);
   const cdp = await page.context().newCDPSession(page);
+  const browserCdp = await page.context().browser().newBrowserCDPSession();
   await cdp.send('Performance.enable');
   await cdp.send('Profiler.enable');
   await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
@@ -80,14 +83,26 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
     }, true);
   });
   const metrics = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(({ name, value }) => [name, value]));
+  // This fixture owns a separate browser. Sum all of its renderer processes, including worker threads;
+  // CDP Performance's default TaskDuration measures wall occupancy, not process CPU time.
+  const rendererCpu = async () => {
+    const before = performance.now();
+    const { processInfo } = await browserCdp.send('SystemInfo.getProcessInfo');
+    const after = performance.now();
+    const processes = processInfo.filter(process => process.type === 'renderer').map(({ id, cpuTime }) => ({ id, cpuTime })).sort((a, b) => a.id - b.id);
+    assert.ok(processes.length && processes.every(process => Number.isFinite(process.cpuTime)), 'renderer CPU counters must be available');
+    return { atMs: (before + after) / 2, uncertaintyMs: (after - before) / 2, processes };
+  };
   const paint = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const report = { label, large, at: new Date().toISOString(), items: history.length, bytes: Buffer.byteLength(JSON.stringify(history)), browser: page.context().browser().version(), phases: {} };
   const phase = async (name, action) => {
     const before = await metrics();
     const start = await page.evaluate(() => ({ at: performance.now(), commits: window.__speedCommits.length }));
-    await cdp.send('Profiler.start');
+    // CPU sampling and its eight-second restart add work to an otherwise idle renderer.
+    const profiling = name !== 'idle';
+    if (profiling) await cdp.send('Profiler.start');
     let snapshot = Promise.resolve();
-    const timer = setTimeout(() => {
+    const timer = profiling && setTimeout(() => {
       snapshot = (async () => {
         const { profile } = await cdp.send('Profiler.stop');
         await fs.writeFile(path.join(destination, `${label}-${name}-partial.cpuprofile`), JSON.stringify(profile));
@@ -95,12 +110,14 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
       })().catch(() => {});
     }, 8000);
     try { await action(); await paint(); }
-    finally { clearTimeout(timer); await snapshot; }
+    finally { if (timer) clearTimeout(timer); await snapshot; }
     const end = await page.evaluate(start => ({ at: performance.now(), longTasks: window.__speedLong.filter(e => e.start >= start.at), commits: window.__speedCommits.slice(start.commits) }), start);
     const after = await metrics();
-    const { profile } = await cdp.send('Profiler.stop');
-    await fs.writeFile(path.join(destination, `${label}-${name}.cpuprofile`), JSON.stringify(profile));
-    report.phases[name] = { ms: end.at - start.at, taskMs: (after.TaskDuration - before.TaskDuration) * 1000,
+    if (profiling) {
+      const { profile } = await cdp.send('Profiler.stop');
+      await fs.writeFile(path.join(destination, `${label}-${name}.cpuprofile`), JSON.stringify(profile));
+    }
+    report.phases[name] = { ms: end.at - start.at, taskOccupancyMs: (after.TaskDuration - before.TaskDuration) * 1000,
       scriptMs: (after.ScriptDuration - before.ScriptDuration) * 1000, layoutMs: (after.LayoutDuration - before.LayoutDuration) * 1000,
       longTasks: end.longTasks, commits: end.commits };
   };
@@ -157,6 +174,7 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
       f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'speed-live', item: { id: 'speed-reply', type: 'agentMessage', text, status: 'completed' } } });
       f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-a', turn: { id: 'speed-live', status: 'completed' } } });
       await page.getByText(text, { exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
       report.streaming.deltas = sent;
       assert.equal(await composer.inputValue(), 'typing during a streaming response', 'streaming never drops typed text');
       // A delta for a different chat must not enter this transcript.
@@ -164,13 +182,22 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
       await paint();
       assert.equal(await page.getByText('FOREIGN DELTA MUST STAY ABSENT').count(), 0);
     });
+    const cpuBefore = await rendererCpu();
     await phase('idle', () => page.waitForTimeout(10_000));
-    report.idleCpuPercent = report.phases.idle.taskMs / report.phases.idle.ms * 100;
+    const cpuAfter = await rendererCpu();
+    report.idleCpu = { before: cpuBefore, after: cpuAfter, measurement: 'SystemInfo cumulative CPU seconds, all renderer processes and threads in the private fixture browser' };
+    assert.deepEqual(cpuAfter.processes.map(process => process.id), cpuBefore.processes.map(process => process.id), 'renderer processes must remain the same throughout the CPU observation');
+    report.idleCpu.ms = cpuAfter.processes.reduce((total, process, index) => total + (process.cpuTime - cpuBefore.processes[index].cpuTime) * 1000, 0);
+    assert.ok(report.idleCpu.ms >= 0, 'renderer CPU counters must be monotonic');
+    report.idleCpu.elapsedMs = cpuAfter.atMs - cpuBefore.atMs;
+    report.idleCpuPercent = report.idleCpu.ms / report.idleCpu.elapsedMs * 100;
+    report.idleTaskOccupancyPercent = report.phases.idle.taskOccupancyMs / report.phases.idle.ms * 100;
     report.domNodes = (await metrics()).Nodes;
-    await fs.mkdir(path.join(os.homedir(), '.cache/elpis-shots'), { recursive: true });
+    const shots = path.join(destination, 'shots');
+    await fs.mkdir(shots, { recursive: true });
     for (const colorScheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme }); await paint();
-      await page.screenshot({ path: path.join(os.homedir(), '.cache/elpis-shots', `speed-${label}-${colorScheme}.png`) });
+      await page.screenshot({ path: path.join(shots, `speed-${label}-${colorScheme}.png`) });
     }
     assert.deepEqual(f.errors, []);
     // Deliberately generous wall-time budgets; both input cases include a whole paint interval.
@@ -180,7 +207,8 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
     await t.test('idle budget', () => assert.ok(report.idleCpuPercent < 2, `idle renderer CPU ${report.idleCpuPercent.toFixed(2)}% >= 2%`));
   } finally {
     await fs.writeFile(path.join(destination, `${label}.json`), JSON.stringify(report, null, 2));
-    console.log('SPEED', JSON.stringify({ label, open: report.phases.open?.ms, typing: report.typing?.p95, scroll: report.scroll?.p95, streaming: report.streaming?.p95, idle: report.idleCpuPercent, nodes: report.domNodes }));
+    console.log('SPEED', JSON.stringify({ label, open: report.phases.open?.ms, typing: report.typing?.p95, scroll: report.scroll?.p95, streaming: report.streaming?.p95,
+      idle: report.idleCpuPercent, idleCpuMs: report.idleCpu?.ms, idleWindowMs: report.idleCpu?.elapsedMs, idleTaskOccupancyPercent: report.idleTaskOccupancyPercent, nodes: report.domNodes }));
     await f.close();
   }
 });

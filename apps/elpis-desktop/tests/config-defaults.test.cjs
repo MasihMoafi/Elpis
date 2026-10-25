@@ -51,13 +51,15 @@ test('reopening /config models re-reads a default saved by another client', asyn
   const f = await fixture({ routes: { '/api/settings': () => saved } });
   try {
     await f.composer.fill('/config models'); await f.composer.press('Enter');
-    const model = f.page.getByRole('combobox', { name: 'Default model', exact: true });
+    await f.page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+    const model = f.page.getByRole('combobox', { name: 'Main model', exact: true });
     await model.waitFor();
     assert.equal(await controlValue(model), '', 'an unset default stays unset in the inline editor');
     await f.page.getByRole('button', { name: 'Back to app' }).click();
     saved.main.model = 'sol'; saved.version = 'v2';
     await f.composer.fill('/config models'); await f.composer.press('Enter');
-    await f.page.waitForFunction(() => document.querySelector('[aria-label="Default model"][role="combobox"]')?.getAttribute('data-value') === 'sol');
+    await f.page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+    await f.page.waitForFunction(() => document.querySelector('[aria-label="Main model"][role="combobox"]')?.getAttribute('data-value') === 'sol');
     assert.equal(await controlValue(model), 'sol', 'reopening reads the default saved by another client');
     assert.deepEqual(f.posts.filter(post => post.path === '/api/settings'), []);
     assert.deepEqual(f.errors, []);

@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
-const { PAGES, SECTIONS, visit } = require('./settings-row-audit.cjs');
+const { PAGES, visit } = require('./settings-row-audit.cjs');
 const { scanDisclosures, modelSpacing, cornerWidths, checkWidths, shot } = require('./polish-check.cjs');
 
 async function main() {
@@ -59,10 +59,10 @@ async function main() {
         }
       }
       await openSettings(page);
-      for (const [section, names] of [[false, PAGES], [true, SECTIONS]]) for (const name of names) {
-        await visit(page, name, section);
+      for (const name of PAGES) {
+        await visit(page, name);
         problems.push(...(await scanDisclosures(page)).map(hit => `${theme} ${name}: ${hit}`));
-        if (['Models & accounts', 'Configuration', 'Personalization'].includes(name) && !section) {
+        if (['Models & accounts', 'Configuration', 'Personalization'].includes(name)) {
           const closed = page.locator('details:not([open]) > summary').filter({ hasText: 'Advanced: custom model', visible: true });
           while (await closed.count()) await closed.first().click();
           for (const m of await page.evaluate(modelSpacing)) {

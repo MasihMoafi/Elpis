@@ -51,10 +51,11 @@ test('row audit rejects a hand-written row and independently catches title, desc
     });
     assert.ok(violations([{ name: 'injected without row classes', measurement: await app.page.evaluate(measureRows) }]).some(text => text.includes('outside shared component')));
     await app.page.locator('#unshared-row').evaluate(el => el.remove());
+    // Config file paths have their own inline file-ref button; mutate a shared choice control.
     for (const [selector, property, value, expected] of [
       ['.settings-row-title', 'fontSize', '21px', 'fontSize'], ['.settings-row-description', 'fontSize', '19px', 'fontSize'],
-      ['.settings-row-control button', 'height', '44px', 'height'], ['.settings-row-control button', 'fontSize', '19px', 'fontSize'],
-      ['.settings-row-control button', 'transform', 'translateY(7px)', 'off centre'], ['.settings-scope', 'transform', 'translateY(4px)', 'baseline'],
+      ['.settings-row-control [data-slot="select-trigger"]', 'height', '44px', 'height'], ['.settings-row-control [data-slot="select-trigger"]', 'fontSize', '19px', 'fontSize'],
+      ['.settings-row-control [data-slot="select-trigger"]', 'transform', 'translateY(7px)', 'off centre'], ['.settings-scope', 'transform', 'translateY(4px)', 'baseline'],
       ['.settings-group-heading h3', 'fontSize', '20px', 'fontSize'], ['.settings-row', 'paddingTop', '22px', 'row padding'],
     ]) {
       await app.page.locator(`.settings-page ${selector}`).filter({ visible: true }).first().evaluate((el, { property, value }) => { el.style[property] = value; }, { property, value });
