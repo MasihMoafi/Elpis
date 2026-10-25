@@ -11,15 +11,15 @@ const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
 /** One player with generated silence as input. Closing its request also retires its native session. */
-export function ReadAloud({ threadId, enabled, children }: { threadId: string; enabled: boolean; children: ReactNode }) {
+export function ReadAloud({ threadId, enabled, children }: { threadId?: string; enabled: boolean; children: ReactNode }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
   const call = useRef<Playback | null>(null), warmed = useRef("");
   /** Once a chat's reply actions show, its speech thread is made ahead (bridge: warmSpeechThread). */
   function warm() {
-    if (!enabled || warmed.current === threadId) return;
+    if (!enabled || !threadId || warmed.current === threadId) return;
     warmed.current = threadId;
-    void api("/voice/read-aloud/warm", { threadId }).catch(() => { warmed.current = ""; });
+    void api("/voice/read-aloud/warm", { threadId }).catch(() => { if (warmed.current === threadId) warmed.current = ""; });
   }
   function stop() {
     const current = call.current; call.current = null;
@@ -34,6 +34,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
     setActive(null);
   }
   useEffect(() => {
+    warmed.current = ""; setError(null);
     const close = () => stop(); window.addEventListener("pagehide", close);
     return () => { window.removeEventListener("pagehide", close); stop(); };
   }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -42,7 +43,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
   async function play(id: string, text?: string) {
     const open = call.current;
     // A call kept open after a read takes this reply's text; it reads it as soon as it arrives.
-    if (open?.idle && open.session && text !== undefined && enabled) {
+    if (open?.idle && open.session && text !== undefined && enabled && threadId) {
       if (open.timer) clearTimeout(open.timer);
       Object.assign(open, { idle: false, complete: false, audible: false, draining: false, timer: null, reply: id }); setError(null); setActive(id);
       try {
@@ -53,7 +54,7 @@ export function ReadAloud({ threadId, enabled, children }: { threadId: string; e
       catch { if (call.current !== open) return; /* The call had ended: start a new one below. */ }
     }
     stop(); setError(null);
-    if (!enabled) { setError({ id, message: "Reconnect to Elpis before using Read aloud." }); return; }
+    if (!enabled || !threadId) { setError({ id, message: "Reconnect to Elpis before using Read aloud." }); return; }
     const current: Playback = { controller: new AbortController(), peer: null, audio: null, silence: null, timer: null, monitor: null, soundTimeout: null, audible: false, draining: false, energy: 0, ready: false, complete: false, reply: id };
     call.current = current; setActive(id);
     // A call kept open after its reply ends quietly, as when another call takes the speaker.

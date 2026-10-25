@@ -25,7 +25,7 @@ import { ReplyPreview } from "@/components/message-reply";
 import { messageDomId, readReply } from "@/lib/message-reply";
 import { questionReplies, questionReplyText } from "@/lib/question-reply";
 import { noticeOf, type WorkflowNotice } from "@/lib/workflow-notice";
-import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, unwrapShell } from "@/lib/steps";
+import { reasoningOf, shellTokens, stepDuration, stepFailed, stepLabel, summarize, unwrapShell } from "@/lib/steps";
 // Built into the page, as the board has it: no request that can fail or arrive late (Masih, 23 Oct).
 import { FACE_DATA_URL } from "@/bridge/matilda-face.cjs";
 
@@ -185,7 +185,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
     // Nothing to fold: the step is its picture.
     return <div className="activity-card"><div className="activity-heading"><span className="activity-icon"><BrowserIcon size={15}/></span><span className="activity-title">Viewed an image</span><span className="activity-preview" title={text(item.path)}>{name}</span></div>{safeBase&&<div className="px-3 pb-2"><ImageThumb src={`${safeBase}/0`} name={name} large/></div>}</div>;
   }
-  if(item.type==="contextCompaction")return <div className="context-event">Context compacted</div>;
+  if(item.type==="contextCompaction")return <div className="context-event">{summarize([item])}</div>;
   if(item.type==="enteredReviewMode")return <div className="context-event">{`Review started${typeof item.review==="string"&&item.review?`: ${item.review}`:""}`}</div>;
   if(item.type==="exitedReviewMode")return <article className={speaker==="Matilda"?"message agent flow-root":"message agent"}><MarkdownText text={typeof item.review==="string"?item.review:""}/></article>;
   return <Activity label={readable(item.type)}><details className="step-input"><DisclosureSummary>Recorded details</DisclosureSummary><TextOutput value={item}/></details></Activity>;

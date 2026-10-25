@@ -112,7 +112,7 @@ test('voice controls release the microphone after denial, cancelled startup, mut
   } finally { for (const stream of streams) stream.end(); await f.close(); }
 });
 
-test('Matilda and ordinary chat replies both offer Read aloud, warm it once on first sight, and send the displayed words', async () => {
+test('Matilda and ordinary chat replies offer Read aloud, warm once, send the displayed words and clear failures after navigation', async () => {
   const threads = [['chat-a', 'Love Spot'], ['chat-b', 'Other chat']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
   const f = await fixture({ threads, routes: { '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
   try {
@@ -128,7 +128,11 @@ test('Matilda and ordinary chat replies both offer Read aloud, warm it once on f
       await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === id)));
       const request = f.posts.find(row => row.path === '/api/voice/read-aloud' && row.body.threadId === id);
       assert.equal(request.body.text, 'All green.');
+      // The fixture returns no speech stream: a failed read belongs only to this visit to this chat.
+      await reply.getByRole('alert').waitFor();
     }
+    await f.open('chat-a');
+    assert.equal(await f.page.locator('.message.agent [role="alert"]').count(), 0, 'returning to a chat does not revive its previous speech failure');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

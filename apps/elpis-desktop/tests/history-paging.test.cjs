@@ -44,7 +44,7 @@ for (const colorScheme of ['light', 'dark']) {
       assert.equal(await earlier.count(), 0, 'the control disappears only at the first page');
       assert.equal(await f.page.getByText('History prompt 0', { exact: true }).isVisible(), true);
       assert.deepEqual((await f.page.locator('.message.user').allTextContents()).map(text => text.trim()), chat.filter((_, index) => index !== 12).map(turn => turn[1]));
-      const markers = f.page.locator('.context-event').filter({ hasText: 'Context compacted' });
+      const markers = f.page.locator('.context-event').filter({ hasText: 'Compacted the context' });
       assert.equal(await markers.count(), 2);
       for (const marker of await markers.all()) assert.equal(await marker.isVisible(), true, 'manual and automatic compactions stay outside collapsed activity');
       assert.equal(await f.page.locator('.message.user').filter({ hasText: '/compact' }).count(), 1, 'a failed compact keeps its prompt and failure, rather than reporting success');
