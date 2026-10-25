@@ -34,37 +34,29 @@ async function fixture(t, { loveAgents, prepareScreenshots } = {}) {
   return { directory, screenshots, request, load, save, origin, client };
 }
 
-test('Love Spot agent routes authenticate, run the saved drawing over ACP and answer its permission request', async t => {
+test('Love Spot agent routes authenticate and run saved drawing agents over ACP without waiting for tool approval', async t => {
   // The card runs as an ACP agent process: the scripted SDK agent, which logs what reaches it.
   const logRoot = createTestTempDir(path.join(os.tmpdir(), 'love-route-'));
   t.after(() => removeTestTempDir(logRoot));
   const log = path.join(logRoot, 'agent.jsonl');
   const nodeSpec = node => ({ name: node.name, command: process.execPath, args: [FAKE_ACP_AGENT], env: { FAKE_ACP_LOG: log, FAKE_ACP_NAME: 'route' }, instructions: node.prompt });
-  const f = await fixture(t, { loveAgents: { nodeSpec } });
+  const f = await fixture(t, { loveAgents: { nodeSpec, timeoutMs: 10000 } });
   for (const route of ['run', 'permission']) assert.equal((await fetch(`${f.origin}/api/love-spot/agents/${route}`, { method: 'POST', headers: { origin: f.origin, 'content-type': 'application/json' }, body: JSON.stringify({ id: 'agent' }) })).status, 401);
   await f.save({ elements: [element('agent', 1, { customData: { loveAgent: { name: 'Writer', preset: 'writer', model: 'gpt-6-luna', provider: 'openai', prompt: 'Be precise', task: '[permission] Route seed' } } })], files: {} });
   assert.equal((await f.request('/agents/run', { id: 'agent', unknown: true })).status, 400);
   assert.equal((await f.request('/agents/run', { id: 'agent', cwd: 'relative' })).status, 400);
   assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'allow_once' })).status, 409, 'nothing is waiting yet');
   await assert.rejects(fs.access(log), 'no agent started for a refused request');
-  const running = f.request('/agents/run', { id: 'agent' });
+  const reply = await f.request('/agents/run', { id: 'agent' });
   const card = async () => (await f.load()).scene.elements[0].customData.loveAgent;
-  const deadline = Date.now() + 5000;
-  while ((await card()).status !== 'waiting' && Date.now() < deadline) {
-    const state = await card();
-    assert.notEqual(state.status, 'failed', state.error);
-    await new Promise(resolve => setTimeout(resolve, 20));
-  }
-  assert.equal((await card()).status, 'waiting', 'the ACP fixture must request permission within five seconds');
-  assert.equal((await card()).permission.title, 'Write notes.txt');
-  assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'made-up' })).status, 400);
-  assert.equal((await f.request('/agents/permission', { id: 'agent', optionId: 'allow_once' })).status, 200);
-  const reply = await running;
   assert.equal(reply.status, 200);
   assert.equal((await reply.json()).results[0].output, 'route(default) answered: permission: allow_once. [permission] Route seed');
   const saved = await card();
   assert.deepEqual([saved.status, saved.sessionId, saved.permission], ['completed', 'route-session-1', null]);
-  assert.deepEqual(JSON.parse((await fs.readFile(log, 'utf8')).split('\n').find(line => line.includes('"session/new"'))).params._meta, { systemPrompt: { append: 'Be precise' } });
+  const messages = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(messages.filter(message => message.permission).map(message => message.permission), [{ outcome: 'selected', optionId: 'allow_once' }], 'the automatic permission is delivered to the ACP process exactly once');
+  assert.deepEqual(messages.find(message => message.method === 'session/new').params._meta, { systemPrompt: { append: 'Be precise' } });
+  for (const optionId of ['made-up', 'allow_once']) assert.equal((await f.request('/agents/permission', { id: 'agent', optionId })).status, 409, 'an old client cannot answer a permission an automatic agent already settled');
 });
 
 test('Love Spot load/save unions stale windows, keeps newest versions and deletion tombstones', async t => {
