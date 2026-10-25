@@ -71,6 +71,8 @@ async function answer(prompt, marker, target = 'test') {
   return provider.requests.at(-1).body;
 }
 const worktrees = () => git('worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).map(line => line.slice(9));
+// A saved fork exists before the event loop attaches its widget. Wait for its native header, not only its DB row.
+const showsDirectory = (screen, directory) => screen.includes(directory.startsWith(`${userHome}${path.sep}`) ? `~${directory.slice(userHome.length)}` : directory);
 async function reviewMenu(label) {
   await submit('/review');
   return screenWhen(screen => ['Select a review preset', 'Review against a base branch', 'Review uncommitted changes', 'Review a commit', 'Custom review instructions'].every(text => screen.includes(text)), label);
@@ -131,7 +133,7 @@ async function worktreeMenu(label) {
   key('Enter'); // Continue current conversation.
   await screenWhen(screen => {
     forked = threads().find(thread => thread.id !== original.id && thread.cwd !== cwd && worktrees().includes(thread.cwd));
-    return forked && !screen.includes('Continue current conversation') && !screen.includes('Creating worktree');
+    return forked && showsDirectory(screen, forked.cwd) && !screen.includes('Continue current conversation') && !screen.includes('Creating worktree');
   }, 'fork-created');
   assert.equal(worktrees().length, 2);
   assert(forked.cwd.startsWith(`${home}${path.sep}worktrees${path.sep}`), 'managed checkout stays in isolated home');
@@ -140,9 +142,11 @@ async function worktreeMenu(label) {
   assert(JSON.stringify(forkRequest).includes(forked.cwd), 'fork request uses the new checkout');
   pass('worktree Continue creates a real checkout and preserves conversation in its new cwd');
   await worktreeMenu('worktree-new'); key('Down'); key('Enter');
-  await screenWhen(screen => worktrees().length === 3 && !screen.includes('Start new conversation') && !screen.includes('Creating worktree'), 'fresh-checkout-created');
+  await screenWhen(screen => {
+    fresh = threads().find(thread => thread.cwd !== cwd && thread.cwd !== forked.cwd && worktrees().includes(thread.cwd));
+    return fresh && worktrees().length === 3 && showsDirectory(screen, fresh.cwd) && !screen.includes('Start new conversation') && !screen.includes('Creating worktree');
+  }, 'fresh-checkout-created');
   const freshRequest = await answer('NEW_CONVERSATION_ONLY: confirm this new checkout is ready.', 'FRESH_READY');
-  fresh = threads().find(thread => thread.cwd !== cwd && thread.cwd !== forked.cwd && worktrees().includes(thread.cwd));
   assert(fresh, 'fresh thread is saved in a managed checkout');
   assert.notEqual(fresh.cwd, forked.cwd);
   assert(JSON.stringify(freshRequest).includes(fresh.cwd), 'fresh request uses its own checkout');
@@ -152,6 +156,7 @@ async function worktreeMenu(label) {
   await screenWhen(screen => screen.includes('Working directory') && screen.includes('Use session directory'), 'resume-directory-picker', 'resumed');
   key('Enter', 'resumed'); // Native default: restore the saved session directory.
   await ready('resumed');
+  await screenWhen(screen => showsDirectory(screen, forked.cwd), 'resumed-checkout-attached', 'resumed');
   const resumed = await answer('Confirm the resumed fork still has its context.', 'RESUME_READY', 'resumed');
   assert(JSON.stringify(resumed).includes('SOURCE_CONVERSATION_TOKEN'));
   assert(JSON.stringify(resumed).includes(forked.cwd), 'native directory choice restores the saved worktree cwd');
@@ -161,8 +166,12 @@ async function worktreeMenu(label) {
   const beforeCli = new Set(worktrees());
   tmux('new-session', '-d', '-s', 'cli', '-c', cwd, '-x', '110', '-y', '46', command(['-C', cwd, '--worktree']));
   await ready('cli');
+  let cliWorktree;
+  await screenWhen(screen => {
+    cliWorktree = worktrees().find(directory => !beforeCli.has(directory));
+    return cliWorktree && showsDirectory(screen, cliWorktree);
+  }, 'cli-checkout-attached', 'cli');
   const cliRequest = await answer('Confirm the command-line worktree is ready.', 'CLI_WORKTREE_READY', 'cli');
-  const cliWorktree = worktrees().find(directory => !beforeCli.has(directory));
   assert(cliWorktree && cliWorktree.startsWith(`${home}${path.sep}worktrees${path.sep}`));
   assert.equal(worktrees().length, 4, '--worktree creates one additional checkout');
   assert(JSON.stringify(cliRequest).includes(cliWorktree), 'command-line worktree uses the created checkout');
