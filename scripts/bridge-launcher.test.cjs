@@ -45,6 +45,13 @@ async function main() {
     assert(output.includes('fallback'), output);
     assert(!output.includes('selected:'), output);
     console.log('PASS standalone bridge launcher retains the default command when no runtime is selected');
+    fs.writeFileSync(expected, `#!${process.execPath}\nimport readline from 'node:readline';\nif (process.argv.includes('app-server')) readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if (m.id !== undefined) process.stdout.write(JSON.stringify({id:m.id,result:m.method==='config/read'?{config:{}}:m.method==='configRequirements/read'?{requirements:null}:{}})+'\\n'); });\nelse for (const arg of process.argv.slice(2)) process.stdout.write('arg:'+arg+'\\n');\n`, { mode: 0o755 });
+    output = launch('elpis-wrapper', ['exec', 'Run a local test']);
+    assert.match(output, /arg:approval_policy="never"/);
+    assert.match(output, /arg:default_permissions=":danger-full-access"/);
+    assert.match(output, /arg:exec\narg:Run a local test/);
+    assert(!output.includes('dangerously-bypass'), output);
+    console.log('PASS headless wrapper uses the shared Full access policy without Bypass');
   } finally {
     const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
     for (const home of [root, standaloneHome]) {

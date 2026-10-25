@@ -132,7 +132,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const modes = (await fs.readFile(path.join(root, 'acp.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(x => x.method === 'session/set_mode');
   assert.ok(modes.some(x => x.params.modeId === 'default'), 'Full access uses Claude permission checks with automatic answers');
   assert.equal(modes.some(x => x.params.modeId === 'bypassPermissions'), false, 'Full access never selects Bypass');
-  const { createLoveAgents, loveNodeSpec } = await import(path.join(process.env.ELPIS_TEST_APP, 'bridge/love-agents.mjs'));
+  const { createLoveAgents, loveNodeSpec } = await import(path.join(process.env.ELPIS_TEST_APP, 'app/bridge/love-agents.mjs'));
   for (const [tag, model, provider] of [['love-gpt', 'gpt-5.5', 'mock'], ['love-claude', 'claude/haiku', 'claude']]) {
     const file = path.join(root, tag);
     const card = { id: tag, type: 'rectangle', customData: { loveAgent: { name: tag, prompt: 'Run the requested command.', model, provider, task: `${provider === 'claude' ? '[permission] ' : ''}PERMISSION_FILE:${file}` } } };
@@ -141,7 +141,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
       env: { ELPIS_ENGINE_BIN: process.env.ELPIS_TEST_ENGINE, ELPIS_HOME: path.join(app.home, 'elpis'), ELPIS_NODE_BIN: process.execPath },
       nodeSpec: (node, env) => { const spec = loveNodeSpec(node, env); return { ...spec, env: { ...spec.env, HOME: app.home, CODEX_HOME: path.join(app.home, 'elpis'), ELPIS_APP_BRIDGE_SOCKET: socket, XDG_RUNTIME_DIR: path.join(app.home, 'run') } }; },
     });
-    try { await runner.run({ id: tag, cwd: work }); assert.equal(await fs.readFile(file, 'utf8'), 'ran'); }
+    try { await runner.run({ id: tag, cwd: work }); assert.equal(await fs.readFile(file, 'utf8'), 'permission-ran'); }
     finally { await runner.close(); }
     assert.equal(scene.elements[0].customData.loveAgent.permission, null);
     t.diagnostic(`${tag}: packaged Love Spot controller and provider ran the command without a question`);
