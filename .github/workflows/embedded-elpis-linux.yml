@@ -282,7 +282,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: candidate-ledger-native
-          path: ${{ runner.temp }}/elpis-ledger-native
+          path: |
+            ${{ runner.temp }}/elpis-ledger-native
+            !${{ runner.temp }}/elpis-ledger-native/trash-data/**
           if-no-files-found: error
           retention-days: 7
       - name: Prove status regression detects the original missing instructions

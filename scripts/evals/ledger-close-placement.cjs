@@ -145,7 +145,10 @@ async function check({ binary, output, phase, smoke }, width, light) {
     save('before-first-request');
     // Real native transcript rendering, with a deterministic local inference response.
     // Dense lines expose both covered glyphs and a missing gap; idle screens cannot.
-    provider.actions.push(message(Array(80).fill('X'.repeat(600)).join('\n')));
+    // Two left-padding cells and one scrollbar cell leave width - 3 text cells.
+    // Fill complete wrapped rows: a seven-row terminal exposes just one transcript row,
+    // whose legitimate short remainder cannot establish the available transcript width.
+    provider.actions.push(message(Array(80).fill('X'.repeat((width - 3) * 8)).join('\n')));
     literal('Render the Ledger clearance fixture'); key('Enter');
     await until(text => text.includes('X'.repeat(20)) && !text.includes('esc to interrupt'));
     await pause(200);
