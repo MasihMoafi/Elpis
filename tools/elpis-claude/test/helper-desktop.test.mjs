@@ -39,6 +39,9 @@ if (process.argv.includes('app-server')) {
   };
   const handle = (msg, send) => {
     if (msg.id === undefined) return;
+    if (!msg.method && String(msg.id).startsWith('native-child-approval-')) {
+      fs.writeFileSync(path.join(process.env.HOME, 'native-child-decision.json'), JSON.stringify(msg.result)); return;
+    }
     const p = msg.params ?? {};
     const reply = result => send({ id: msg.id, result });
     const missing = () => send({ id: msg.id, error: { code: -32600, message: `thread not found: ${p.threadId}` } });
@@ -75,12 +78,22 @@ if (process.argv.includes('app-server')) {
         if (!row) return missing();
         Object.assign(row, settings(p, row)); save(row);
         send({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: row } });
+        if (row.thread.parentThreadId && !row.approvalRequested) {
+          row.approvalRequested = true; save(row);
+          send({ id: `native-child-approval-${p.threadId}`, method: 'item/commandExecution/requestApproval', params: { threadId: p.threadId, turnId: 'child-turn', itemId: 'child-command', command: 'printf child' } });
+        }
         return reply({});
       case 'turn/start': {
         if (!row) return missing();
         const turn = { id: randomUUID(), status: 'inProgress', items: [{ id: 'prompt', type: 'userMessage', content: p.input }] };
         row.thread.status = { type: 'active', activeFlags: [] }; row.thread.turns = [turn]; save(row);
         reply({ turn }); send({ method: 'turn/started', params: { threadId: p.threadId, turn } });
+        if (p.input?.some(item => item.text === '[native-child]')) {
+          const id = randomUUID();
+          const child = { thread: { id, parentThreadId: p.threadId, cwd: row.thread.cwd, model: row.thread.model, status: { type: 'idle' }, turns: [] }, ...settings({ approvalPolicy: 'on-request', permissions: ':workspace' }) };
+          loaded.set(id, child); save(child);
+          send({ method: 'thread/started', params: { thread: child.thread } });
+        }
         let n = 0;
         timers.set(p.threadId, setInterval(() => {
           n++;
@@ -172,6 +185,22 @@ if (process.argv.includes('app-server')) {
     const reading = readEvents();
     t.after(() => reading);
     const messages = () => live.split('\n\n').slice(0, -1).flatMap(block => block.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))));
+    await t.test('an engine subagent follows Full access independently of its parent Ask choice and never relays approval', async () => {
+      const native = await rpc('thread/start', { model: 'gpt-test', cwd: root });
+      assert.ifError(native.error);
+      const parentId = native.result.thread.id;
+      assert.ifError((await rpc('thread/settings/update', { threadId: parentId, approvalPolicy: 'on-request', permissions: ':workspace' })).error);
+      assert.ifError((await rpc('turn/start', { threadId: parentId, input: [{ type: 'text', text: '[native-child]' }] })).error);
+      let child;
+      await until(() => {
+        child = fs.readdirSync(root).filter(name => /^[\da-f-]{36}\.json$/.test(name)).map(name => JSON.parse(fs.readFileSync(path.join(root, name)))).find(row => row.thread.parentThreadId === parentId);
+        return child?.approvalPolicy === 'never' && child?.activePermissionProfile?.id === ':danger-full-access';
+      }, 'native subagent applies the shared Full access default');
+      await until(() => fs.existsSync(path.join(root, 'native-child-decision.json')), 'native subagent approval is answered automatically');
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'native-child-decision.json'))), { decision: 'accept' });
+      assert.equal(observerEvents.some(message => message.method === 'item/commandExecution/requestApproval' && message.params.threadId === child.thread.id), false);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(root, `${parentId}.json`))).approvalPolicy, 'on-request', 'the parent keeps its own choice');
+    });
     await t.test('sidebar and exact open requests return live history and turn', async () => {
       const listed = await request('/threads?limit=100');
       assert.equal(listed.status, 200, JSON.stringify(listed.body));
