@@ -442,8 +442,16 @@ test('/fast changes OpenAI speed without sending a message, and gives clear on/o
   try {
     await openChat();
     await run('/fast');
-    await page.getByText('Fast is on for subsequent turns. It uses plan limits faster.', { exact: true }).waitFor();
+    await page.getByText('Fast is on. It uses plan limits faster.', { exact: true }).waitFor();
     assert.deepEqual(posts.filter(post => post.path.endsWith('/service-tier')).at(-1).body, {});
+    await page.route('**/api/threads/chat/service-tier', route => route.fulfill({ json: { serviceTier: 'default', activeTurnApplied: true } }));
+    await run('/fast off');
+    await page.getByText('Fast is off. Standard speed is selected. Applies from the next request in this turn.', { exact: true }).waitFor();
+    await page.unroute('**/api/threads/chat/service-tier');
+    await page.route('**/api/threads/chat/service-tier', route => route.fulfill({ json: { serviceTier: 'priority', activeTurnApplied: false, warning: 'Fast is saved for later turns, but the running turn could not change speed.' } }));
+    await run('/fast on');
+    await page.getByText('Fast is saved for later turns, but the running turn could not change speed.', { exact: true }).waitFor();
+    await page.unroute('**/api/threads/chat/service-tier');
     await run('/fast off');
     await page.getByText('Fast is off. Standard speed is selected.', { exact: true }).waitFor();
     assert.deepEqual(posts.filter(post => post.path.endsWith('/service-tier')).at(-1).body, { enabled: false });

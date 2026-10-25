@@ -12,9 +12,10 @@ import { startDesktopServer } from './server.mjs';
 const CHAT = '00000000-0000-0000-0000-0000000000a1';
 const AGENT = '00000000-0000-0000-0000-0000000000a2';
 
-function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, supportsFast = true, refuseTier = false } = {}) {
+function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, supportsFast = true, refuseTier = false, active = false, finishOnTierUpdate = false, liveTierError = null } = {}) {
+  let activeTurnId = active ? 'active-turn' : null, activeServiceTier = serviceTier;
   const threads = new Map([
-    [CHAT, { id: CHAT, cwd, source: 'cli', canAcceptDirectInput: true, status: { type: 'idle' } }],
+    [CHAT, { id: CHAT, cwd, source: 'cli', canAcceptDirectInput: true, status: { type: active ? 'active' : 'idle' } }],
     [AGENT, { id: AGENT, cwd, source: { subAgent: { thread_spawn: { agent_path: '/root/helper' } } }, canAcceptDirectInput: false, status: { type: 'idle' } }],
   ]);
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => socket.emit('close');
@@ -29,7 +30,17 @@ function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, sup
       case 'model/list': result = { data: [{ model: 'gpt-6-luna', serviceTiers: supportsFast ? [{ id: 'priority', name: 'Fast' }] : [] }], nextCursor: null }; break;
       case 'thread/settings/update':
         if (!refuseTier) serviceTier = request.params.serviceTier;
+        if (finishOnTierUpdate) { activeTurnId = null; threads.get(CHAT).status = { type: 'idle' }; }
         result = {}; break;
+      case 'thread/turns/list': result = { data: activeTurnId ? [{ id: activeTurnId, status: 'inProgress' }] : [], nextCursor: null }; break;
+      case 'turn/settings/update':
+        if (liveTierError) {
+          queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: liveTierError } })));
+          return;
+        }
+        if (request.params.turnId !== activeTurnId) result = { status: 'targetUnavailable' };
+        else { activeServiceTier = request.params.serviceTier; result = { status: 'applied' }; }
+        break;
       case 'thread/compact/start': result = {}; break;
       case 'thread/items/list': result = { data: items.map(item => ({ turnId: 'turn-1', item })), nextCursor: null }; break;
       case 'review/start': result = { turn: { id: 'review-turn', status: 'inProgress', items: [] }, reviewThreadId: request.params.threadId }; break;
@@ -39,7 +50,7 @@ function fixture({ cwd, items = [], provider = 'openai', serviceTier = null, sup
   };
   const client = new DesktopClient(socket);
   const calls = method => socket.sent.filter(message => message.method === method);
-  return { client, socket, threads, calls };
+  return { client, socket, threads, calls, tiers: () => ({ saved: serviceTier, active: activeServiceTier }) };
 }
 
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
@@ -190,7 +201,48 @@ test('/fast toggles the real OpenAI thread service tier and accepts explicit on/
     assert.deepEqual(calls('thread/settings/update').map(call => call.params),
       ['priority', 'default', 'priority', 'default'].map(serviceTier => ({ threadId: CHAT, serviceTier })));
     assert.equal(calls('turn/start').length, 0, 'changing speed never starts a model turn');
+    assert.equal(calls('turn/settings/update').length, 0, 'an idle chat has no running turn to update');
   } finally { client.close(); }
+});
+
+test('/fast changes the running turn and saved speed without starting another turn', async () => {
+  const { client, calls, tiers } = fixture({ active: true }); await client.initialize();
+  try {
+    for (const [enabled, tier] of [[true, 'priority'], [false, 'default']]) {
+      const result = await client.setServiceTier(CHAT, { enabled });
+      assert.deepEqual(tiers(), { saved: tier, active: tier });
+      assert.equal(result.activeTurnApplied, true, 'the engine confirms the running turn changed');
+      assert.deepEqual(calls('turn/settings/update').at(-1).params, { threadId: CHAT, turnId: 'active-turn', serviceTier: tier });
+    }
+    assert.equal(calls('turn/start').length, 0);
+  } finally { client.close(); }
+});
+
+test('/fast keeps the saved speed when its captured active turn ends, without retargeting it', async () => {
+  for (const [enabled, initial, saved] of [[true, null, 'priority'], [false, 'priority', 'default']]) {
+    const { client, calls, tiers } = fixture({ active: true, serviceTier: initial, finishOnTierUpdate: true }); await client.initialize();
+    try {
+      const result = await client.setServiceTier(CHAT, { enabled });
+      assert.deepEqual(tiers(), { saved, active: initial });
+      assert.equal(calls('turn/settings/update').length, 1, 'the captured turn is tried once');
+      assert.equal(result.activeTurnApplied, false);
+      assert.equal(calls('turn/start').length, 0, 'an ended turn is never restarted to change speed');
+    } finally { client.close(); }
+  }
+});
+
+test('/fast reports a rejected running-turn change while retaining the saved speed', async () => {
+  for (const [enabled, initial, saved] of [[true, null, 'priority'], [false, 'priority', 'default']]) {
+    const { client, calls, tiers } = fixture({ active: true, serviceTier: initial, liveTierError: 'Fast is disabled by managed settings.' }); await client.initialize();
+    try {
+      const result = await client.setServiceTier(CHAT, { enabled });
+      assert.match(result.warning, /saved for later turns.*running turn could not change speed/i);
+      assert.match(result.warning, /disabled by managed settings/);
+      assert.equal(result.activeTurnApplied, false);
+      assert.deepEqual(tiers(), { saved, active: initial });
+      assert.equal(calls('turn/start').length, 0);
+    } finally { client.close(); }
+  }
 });
 
 test('/fast rejects other providers, unsupported models, invalid options and background agents before changing speed', async () => {

@@ -1552,9 +1552,11 @@ export default function Home() {
     setBusy(true); setSlashNotice('');
     try {
       let serviceTier: string;
+      let activeTurnApplied = false, warning: string | undefined;
       if (selected) {
-        const applied = await api<{ serviceTier: string }>(`/threads/${encodeURIComponent(selected.id)}/service-tier`, choice ? { enabled: choice === 'on' } : {});
+        const applied = await api<{ serviceTier: string; activeTurnApplied?: boolean; warning?: string }>(`/threads/${encodeURIComponent(selected.id)}/service-tier`, choice ? { enabled: choice === 'on' } : {});
         serviceTier = applied.serviceTier;
+        activeTurnApplied = applied.activeTurnApplied === true; warning = applied.warning;
         patchThread(selected.id, { serviceTier });
       } else {
         const current = await reloadSettings();
@@ -1564,7 +1566,8 @@ export default function Home() {
         serviceTier = enabled ? 'fast' : 'default';
         await saveSettings('/settings', { version: current.version, options: { serviceTier } });
       }
-      setSlashNotice(['fast', 'priority'].includes(serviceTier) ? 'Fast is on for subsequent turns. It uses plan limits faster.' : 'Fast is off. Standard speed is selected.');
+      const notice = ['fast', 'priority'].includes(serviceTier) ? 'Fast is on. It uses plan limits faster.' : 'Fast is off. Standard speed is selected.';
+      setSlashNotice(warning || notice + (activeTurnApplied ? ' Applies from the next request in this turn.' : ''));
     } catch (error) { setSlashNotice(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }

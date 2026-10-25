@@ -1829,10 +1829,24 @@ export class DesktopClient extends EventEmitter {
         if (!fastTier) throw new BridgeError(`${current.model} does not offer Fast on this account.`, 409);
       }
       const serviceTier = enabled ? fastTier : 'default';
+      // Capture the running turn before saving: a turn that ends during this change is never retargeted.
+      const turnId = thread.status?.type === 'active'
+        ? (await this.#rpc('thread/turns/list', { threadId: id, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' })).data?.find(turn => turn.status === 'inProgress')?.id
+        : null;
       await this.#rpc('thread/settings/update', { threadId: id, serviceTier });
       const applied = await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });
       if (applied.serviceTier !== serviceTier) throw new BridgeError('Elpis did not apply the requested speed. Try again.', 409);
-      return { serviceTier };
+      if (turnId) {
+        try {
+          const live = await this.#rpc('turn/settings/update', { threadId: id, turnId, serviceTier });
+          if (live?.status === 'applied') return { serviceTier, activeTurnApplied: true };
+          if (live?.status !== 'targetUnavailable') throw new Error('Elpis did not confirm the running turn’s speed.');
+        } catch (error) {
+          const reason = error instanceof Error ? error.engineMessage || error.message : String(error);
+          return { serviceTier, activeTurnApplied: false, warning: `${enabled ? 'Fast' : 'Standard speed'} is saved for later turns, but the running turn could not change speed. ${reason.slice(0, 1000)}` };
+        }
+      }
+      return { serviceTier, activeTurnApplied: false };
     });
   }
   /** Saves a chat's reasoning effort the moment it is picked, so later turns and a restart keep it (the engine records
