@@ -237,7 +237,24 @@ impl Session {
             || update.service_tier.is_some();
         let requires_model_switching = updates_model_settings
             || (update.approvals_reviewer.is_none() && update.environments.is_none());
-        if requires_model_switching && !self.features.enabled(Feature::StepModelSwitching) {
+        // Fast/default routing changes preserve the admitted model and execution authority.
+        let fast_tier_only = update.model.is_none()
+            && update.effort.is_none()
+            && update.summary.is_none()
+            && update.approvals_reviewer.is_none()
+            && update.environments.is_none()
+            && update.service_tier.as_ref().is_some_and(|tier| {
+                matches!(tier.as_deref(), None | Some("default" | "priority" | "fast"))
+            });
+        if fast_tier_only && !self.features.enabled(Feature::FastMode) {
+            return TurnSettingsUpdateOutcome::Rejected {
+                reason: "Fast speed changes are disabled for this session".to_string(),
+            };
+        }
+        if requires_model_switching
+            && !fast_tier_only
+            && !self.features.enabled(Feature::StepModelSwitching)
+        {
             return TurnSettingsUpdateOutcome::Rejected {
                 reason: "turn settings updates require the step_model_switching feature"
                     .to_string(),
@@ -325,6 +342,14 @@ impl Session {
             Err(reason) => return TurnSettingsUpdateOutcome::Rejected { reason },
         };
         let candidate_settings = updated_settings.as_ref().unwrap_or(current.as_ref());
+        if update.service_tier.is_some()
+            && candidate_settings.service_tier != candidate_settings.selected().service_tier
+        {
+            return TurnSettingsUpdateOutcome::Rejected {
+                reason: "the requested service tier is disabled or unsupported by the active model"
+                    .to_string(),
+            };
+        }
 
         // Recheck the latest rules before applying the update.
         // Managed requirements can change during model lookup. Keep the live authorization and
@@ -355,8 +380,8 @@ impl Session {
                 proposed,
             )
             .map_err(|error| error.to_string())?;
-            // Neither a reviewer nor an environment change changes model-owned authority.
-            if requires_model_switching {
+            // Reviewer, environment and routing changes preserve model-owned authority.
+            if requires_model_switching && !fast_tier_only {
                 check_legacy_turn_safety(
                     &turn_context,
                     &current,

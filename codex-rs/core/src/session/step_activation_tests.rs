@@ -411,6 +411,13 @@ struct ActivationFixture {
 }
 
 async fn activation_fixture(models: Vec<ModelInfo>) -> ActivationFixture {
+    activation_fixture_with_features(models, &[]).await
+}
+
+async fn activation_fixture_with_features(
+    models: Vec<ModelInfo>,
+    feature_updates: &[(Feature, bool)],
+) -> ActivationFixture {
     let (session, _) = make_session_and_context().await;
     let mut session = Arc::new(session);
     let mutable = Arc::get_mut(&mut session).expect("unshared test session");
@@ -425,6 +432,12 @@ async fn activation_fixture(models: Vec<ModelInfo>) -> ActivationFixture {
             .features
             .enable(feature)
             .expect("enable test feature");
+    }
+    for &(feature, enabled) in feature_updates {
+        mutable
+            .features
+            .set_enabled(feature, enabled)
+            .expect("configure test feature");
     }
     let configuration = &mut mutable.state.get_mut().session_configuration;
     let config = Arc::make_mut(&mut configuration.original_config_do_not_use);
@@ -510,6 +523,57 @@ fn settings_submission(
         },
         receiver,
     )
+}
+
+#[test_case(false, true; "Fast feature disabled")]
+#[test_case(true, false; "active model does not support Fast")]
+#[tokio::test]
+async fn fast_tier_updates_reject_disabled_or_unsupported_routing(
+    fast_enabled: bool,
+    supports_fast: bool,
+) {
+    let mut models = activation_models();
+    if !supports_fast {
+        for model in &mut models {
+            model.service_tiers.clear();
+            model.default_service_tier = None;
+        }
+    }
+    let ActivationFixture {
+        session,
+        turn,
+        finish,
+        ..
+    } = activation_fixture_with_features(
+        models,
+        &[
+            (Feature::StepModelSwitching, false),
+            (Feature::FastMode, fast_enabled),
+        ],
+    )
+    .await;
+    let before = turn.next_step_settings.load_full();
+    let saved = desired_step_settings(&session).await;
+    let result = session
+        .apply_turn_settings(
+            &turn.sub_id,
+            TurnSettingsUpdate {
+                service_tier: Some(Some(ServiceTier::Fast.request_value().to_string())),
+                ..Default::default()
+            },
+        )
+        .await;
+    let TurnSettingsUpdateOutcome::Rejected { reason } = result else {
+        panic!("unsupported speed must be rejected: {result:?}");
+    };
+    assert!(reason.contains(if fast_enabled {
+        "unsupported by the active model"
+    } else {
+        "Fast speed changes are disabled"
+    }));
+    assert!(Arc::ptr_eq(&before, &turn.next_step_settings.load_full()));
+    assert_eq!(desired_step_settings(&session).await, saved);
+    finish.notify_one();
 }
 
 #[tokio::test]
