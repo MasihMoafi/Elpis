@@ -265,7 +265,11 @@ impl ChatWidget {
 
         // Elpis: an empty Enter forces a queued /compact the way it forces pending steers (Codex's
         // "empty Enter: interrupt and send immediately"): the reply stops and the chat compacts now.
+        // Not during /review (steers are refused there too) nor in a chat its parent owns, which
+        // could not compact after the stop.
         if empty_submit
+            && !self.review.is_review_mode
+            && !self.blocks_direct_input
             && self.input_queue.pending_steers.is_empty()
             && self.input_queue.next_queued_input_is_compact()
             && self.bottom_pane.is_task_running()
