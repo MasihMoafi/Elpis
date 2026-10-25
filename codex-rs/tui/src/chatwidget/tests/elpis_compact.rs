@@ -9,8 +9,10 @@ use super::*;
 use crate::legacy_core::pressure_compaction::PressureCompaction;
 use pretty_assertions::assert_eq;
 
-const SAVED_30: &str = "• Pressure compaction saved: 30% remaining. Checked before each turn. /compact alone compacts now.\n";
-const NOT_CHANGED: &str = "■ Compaction setting was not changed: Use /compact N with 0 < N < 70.\n";
+const SAVED_30: &str =
+    "• Pressure compaction saved: 30% remaining. Checked before each turn. /compact alone compacts now.\n";
+const NOT_CHANGED: &str =
+    "■ Compaction setting was not changed: Use /compact N with 0 < N < 70.\n";
 const GUIDANCE: &str = "keep the Cedar blockers";
 
 type Events = tokio::sync::mpsc::UnboundedReceiver<AppEvent>;
@@ -316,7 +318,10 @@ async fn empty_enter_forces_a_queued_compact_during_a_reply() {
                 sent.ops
             ),
             Some(text) => assert!(
-                matches!(compactions.as_slice(), [Op::CompactWithInstructions { instructions }] if instructions == text),
+                matches!(
+                    compactions.as_slice(),
+                    [Op::CompactWithInstructions { instructions }] if instructions == text
+                ),
                 "{:?}",
                 sent.ops
             ),
@@ -368,6 +373,25 @@ async fn empty_enter_forces_only_a_compact_at_the_front_of_the_queue() {
             "{queue:?}: Enter must not interrupt the reply"
         );
         assert!(!chat.input_queue.compact_after_interrupt, "{queue:?}");
+    }
+
+    // Nor during /review (steers are refused there too), nor in a chat its parent owns.
+    for (review, parent_owned) in [(true, false), (false, true)] {
+        let (mut chat, mut rx, mut ops, _home) = chat_with_home().await;
+        handle_turn_started(&mut chat, "turn-1");
+        type_and_submit(&mut chat, "/compact");
+        assert_eq!(queued_texts(&chat), vec!["/compact".to_string()]);
+        drain(&mut rx);
+        chat.review.is_review_mode = review;
+        chat.blocks_direct_input = parent_owned;
+
+        empty_enter(&mut chat);
+        assert!(
+            ops.try_recv().is_err(),
+            "review {review}, parent-owned {parent_owned}: Enter must not interrupt the reply"
+        );
+        assert!(!chat.input_queue.compact_after_interrupt);
+        assert_eq!(queued_texts(&chat), vec!["/compact".to_string()]);
     }
 }
 
