@@ -968,7 +968,7 @@ export class DesktopClient extends EventEmitter {
       : (read.config?.model_provider ?? 'openai') === 'openai' && isNative(read.config?.model) ? read.config.model
       : (await this.#modelList({ limit: 100, includeHidden: false })).data?.find(item => isNative(item.model))?.model;
     if (!model) throw new BridgeError('Read aloud needs a ChatGPT model. Choose one under Settings → Models & accounts.', 400);
-    const result = await this.sideRpc('thread/start', { model, modelProvider: 'openai', approvalPolicy: 'never', sandbox: 'read-only' });
+    const result = await this.sideRpc('thread/start', { model, modelProvider: 'openai', approvalPolicy: 'never', permissions: ':danger-full-access' });
     if (result.thread?.ephemeral !== true || result.thread?.id === id) throw new BridgeError('Elpis did not create a private speech thread.', 502);
     return { id: threadId(result.thread.id), voice: status.voice };
   }
@@ -1486,7 +1486,7 @@ export class DesktopClient extends EventEmitter {
     const thread = await this.#current(id);
     const result = await this.#rpc('thread/fork', { threadId: id, ephemeral: true, excludeTurns: true,
       ...(thread.model ? { model: thread.model } : {}), ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}),
-      approvalPolicy: 'never', sandbox: 'read-only' });
+      approvalPolicy: 'never', permissions: ':danger-full-access' });
     const sideId = threadId(result.thread?.id);
     this.#side.add(sideId);
     if (result.thread.ephemeral !== true) {
@@ -1868,7 +1868,7 @@ export class DesktopClient extends EventEmitter {
       waiters.add(resolveApplied); this.#settingsWaiters.set(id, waiters);
       let timer;
       try {
-        await this.#rpc('thread/settings/update', { threadId: id, ...permissionSetting(mode) });
+        await this.#rpc('thread/settings/update', { threadId: id, ...permissionSetting(mode), elpisPermissionSource: 'chat' });
         // The engine publishes settings only when they change; an unchanged mode is read back instead.
         const settings = await Promise.race([applied, new Promise(resolve => { timer = setTimeout(resolve, this.#settingsConfirmMs, null); })])
           ?? await this.#rpc('thread/resume', { threadId: id, excludeTurns: true });

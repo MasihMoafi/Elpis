@@ -2139,7 +2139,7 @@ test('changing a chat\'s permissions applies now through the engine settings and
     for (const id of [ROOT, BRIDGED]) {
       assert.deepEqual(await client.setPermissions(id, { permissions: 'full' }), { permissions: 'full' });
       const update = socket.sent.findLast(message => message.method === 'thread/settings/update').params;
-      assert.deepEqual(update, { threadId: id, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access' });
+      assert.deepEqual(update, { threadId: id, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':danger-full-access', elpisPermissionSource: 'chat' });
       assert.equal(engineSettings.get(id).approvalPolicy, 'never', 'the engine holds the new mode');
       assert.equal(socket.sent.some(message => message.method === 'turn/start'), false, 'nothing waits for the next turn');
     }
@@ -2147,7 +2147,7 @@ test('changing a chat\'s permissions applies now through the engine settings and
     assert.deepEqual(engineSettings.get(ROOT).approvalsReviewer, 'auto_review');
     assert.deepEqual(await client.setPermissions(ROOT, { permissions: 'bypass' }), { permissions: 'bypass' });
     assert.deepEqual(socket.sent.findLast(message => message.method === 'thread/settings/update').params,
-      { threadId: ROOT, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions' });
+      { threadId: ROOT, approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions', elpisPermissionSource: 'chat' });
     // The app hears the applied mode from the engine's notification.
     assert.equal(events.filter(event => event.data?.method === 'thread/settings/updated').at(-1).data.params.permissions, 'bypass');
     // Choosing the mode a chat already has changes nothing, so no notification comes; the mode is read back instead.

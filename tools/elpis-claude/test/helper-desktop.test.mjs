@@ -219,11 +219,14 @@ if (process.argv.includes('app-server')) {
         await until(() => messages().some(msg => msg.method === 'thread/settings/updated' && msg.params?.threadId === id
           && msg.params.threadSettings.sandboxPolicy.type === sandbox && msg.params.threadSettings.approvalsReviewer === reviewer), `${permissions} permissions reach desktop SSE`);
         assert.equal((await request(`/threads/${id}/resume`, {})).body.activeTurnId, opened.body.activeTurnId);
+        const saved = JSON.parse(fs.readFileSync(path.join(root, `${id}.json`)));
+        assert.equal(saved.approvalPolicy, permissions === 'full' ? 'never' : 'on-request', 'resuming a helper preserves its own menu choice');
+        assert.equal(saved.sandboxPolicy.type, sandbox);
       }
       const previous = messages().length;
       await until(() => messages().slice(previous).some(msg => msg.method === 'item/agentMessage/delta' && msg.params?.threadId === id), 'helper remains live after permission changes');
     });
-    await t.test('missing threads and grants above the helper ceiling are refused', async () => {
+    await t.test('a missing chat is refused; the user can choose a helper mode above its automatic scope', async () => {
       const missing = await request(`/threads/${randomUUID()}/permissions`, { permissions: 'full' });
       assert.equal(missing.status, 502);
       assert.match(missing.body.error, /thread not found/);
@@ -231,9 +234,10 @@ if (process.argv.includes('app-server')) {
       const opened = await request(`/threads/${restricted}/resume`, {});
       assert.equal(opened.status, 200, JSON.stringify(opened.body));
       const changed = await request(`/threads/${restricted}/permissions`, { permissions: 'full' });
-      assert.equal(changed.status, 409, JSON.stringify(changed.body));
-      assert.match(changed.body.error, /did not apply full/);
-      assert.equal(JSON.parse(fs.readFileSync(path.join(root, `${restricted}.json`))).sandboxPolicy.type, 'readOnly');
+      assert.equal(changed.status, 200, JSON.stringify(changed.body));
+      assert.equal(JSON.parse(fs.readFileSync(path.join(root, `${restricted}.json`))).sandboxPolicy.type, 'dangerFullAccess');
+      assert.equal((await request(`/threads/${restricted}/resume`, {})).status, 200);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(root, `${restricted}.json`))).sandboxPolicy.type, 'dangerFullAccess', 'an explicit helper choice survives reopening');
     });
   });
 }

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { BridgeError, object, text, threadId } from './client.mjs';
 
 /** "Elpis handle it" on the agents canvas (POST /api/canvas/plan): a fast model turns a goal into a team of agents.
- * One turn in an ephemeral, read-only conversation on the background model, answered as JSON the schema fixes, then
+ * One turn in an ephemeral conversation on the background model, answered as JSON the schema fixes, then
  * checked strictly: the canvas gets a plan it can draw and run, or a clear refusal. */
 export const PLAN_TIMEOUT_MS = 90000;
 const LIMIT = 128;
@@ -186,7 +186,7 @@ export async function planCanvas(client, input, { timeoutMs = PLAN_TIMEOUT_MS } 
   const { main, background } = await client.settings();
   const choice = background?.model ? background : main;
   const started = await client.sideRpc('thread/start', { ephemeral: true, ...(choice?.model ? { model: choice.model, ...(choice.provider ? { modelProvider: choice.provider } : {}) } : {}),
-    ...(request.cwd ? { cwd: request.cwd } : {}), approvalPolicy: 'never', sandbox: 'read-only' });
+    ...(request.cwd ? { cwd: request.cwd } : {}), approvalPolicy: 'never', permissions: ':danger-full-access' });
   const id = threadId(started.thread?.id);
   const turn = follow(client, id, timeoutMs);
   let turnId, answer;

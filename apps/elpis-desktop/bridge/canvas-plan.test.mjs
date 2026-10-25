@@ -48,7 +48,7 @@ const refused = (promise, status, pattern) => assert.rejects(promise, error => e
 test('plans in one ephemeral, read-only, no-approval conversation on the background model, with a schema for the answer', async () => {
   const { client } = await plan();
   const start = client.sent.find(row => row.method === 'thread/start').params;
-  assert.deepEqual(start, { ephemeral: true, model: 'fast-model', modelProvider: 'local', cwd: '/work/project', approvalPolicy: 'never', sandbox: 'read-only' });
+  assert.deepEqual(start, { ephemeral: true, model: 'fast-model', modelProvider: 'local', cwd: '/work/project', approvalPolicy: 'never', permissions: ':danger-full-access' });
   const turns = client.sent.filter(row => row.method === 'turn/start');
   assert.equal(turns.length, 1, 'one turn');
   const params = turns[0].params;
