@@ -105,8 +105,8 @@ test("initialize and session/new start an Elpis thread with the chosen model and
   assert.equal(init.agentCapabilities.loadSession, false);
   const started = await until(() => a.engine().find((m) => m.method === "thread/start"), "thread/start");
   assert.deepEqual(
-    { cwd: started.params.cwd, model: started.params.model, modelProvider: started.params.modelProvider, approvalPolicy: started.params.approvalPolicy, sandbox: started.params.sandbox, developerInstructions: started.params.developerInstructions },
-    { cwd: a.dir, model: "luna-test", modelProvider: "openai", approvalPolicy: "on-request", sandbox: "workspace-write", developerInstructions: "Be brief and exact." },
+    { cwd: started.params.cwd, model: started.params.model, modelProvider: started.params.modelProvider, approvalPolicy: started.params.approvalPolicy, permissions: started.params.permissions, developerInstructions: started.params.developerInstructions },
+    { cwd: a.dir, model: "luna-test", modelProvider: "openai", approvalPolicy: "never", permissions: ":danger-full-access", developerInstructions: "Be brief and exact." },
   );
   assert.ok(a.engine().some((m) => m.method === "initialized"), "the engine connection completes its own handshake");
   assert.match(sessionId, /^[0-9a-f-]{36}$/, "the ACP session is the Elpis thread");

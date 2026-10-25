@@ -65,7 +65,7 @@ test('all automatic workflow roles and Mother use Full access and log offered de
   for (const node of [...completed.tasks, completed.mother]) {
     assert.ok(node.permissions?.length, `${node.title} recorded its automatic permission`);
     const calls = f.log(node.title), mode = calls.findIndex(row => row.method === 'session/set_mode');
-    assert.equal(calls[mode]?.params.modeId, 'bypassPermissions', `${node.title} uses the chat's Full access ACP mode`);
+    assert.equal(calls[mode]?.params.modeId, 'default', `${node.title} keeps the provider's permission checks active`);
     assert.ok(mode < calls.findIndex(row => row.method === 'session/prompt'));
   }
   assert.equal(completed.tasks.find(task => task.id === 'explore').permissions[0].optionId, 'grant-this-call', 'the offered ID is opaque and is never invented');

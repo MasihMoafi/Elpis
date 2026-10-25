@@ -72,9 +72,14 @@ done < <(git -C "$R" ls-files -z tools/elpis-claude)
 # pinned TUI frontend and the shared bridge). Only its engine and bridge paths move to the new bundle.
 grep -qF "$OLD/" "$HOME/.local/bin/elpis" || { printf 'the live launcher does not use %s\n' "$OLD" >&2; exit 1; }
 # Literal replacement also supports paths containing sed delimiters or ampersands.
-node - "$HOME/.local/bin/elpis" "$NEW/elpis-wrapper" "$OLD" "$NEW" <<'NODE'
+node - "$HOME/.local/bin/elpis" "$NEW/elpis-wrapper" "$OLD" "$NEW" "$R/tools/elpis-claude/elpis-wrapper" <<'NODE'
 const fs = require('node:fs');
-fs.writeFileSync(process.argv[3], fs.readFileSync(process.argv[2], 'utf8').split(process.argv[4]).join(process.argv[5]), { mode: 0o755 });
+const direct = fs.readFileSync(process.argv[6], 'utf8').match(/^direct\(\) \{[\s\S]*?^\}/m)?.[0];
+if (!direct) throw new Error('The launcher permission policy is missing');
+const previous = fs.readFileSync(process.argv[2], 'utf8').split(process.argv[4]).join(process.argv[5]);
+const updated = previous.replace(/^direct\(\) \{[^\n]*\}$|^direct\(\) \{\n[\s\S]*?^\}/m, direct);
+if (updated === previous && !previous.includes(direct)) throw new Error('The installed launcher has no recognized direct entry point');
+fs.writeFileSync(process.argv[3], updated, { mode: 0o755 });
 NODE
 cp "$HOME/.local/bin/elpis" "$NEW/previous-wrapper"
 git -C "$R" diff HEAD -- codex-rs tools/elpis-claude > "$NEW/source.patch"

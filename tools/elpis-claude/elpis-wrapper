@@ -6,7 +6,12 @@
 REAL="$HOME/.local/lib/elpis-next/elpis-next"
 BRIDGE_DIR="$HOME/Desktop/p/Elpis-wt-acp/tools/elpis-claude"
 
-direct() { exec "$REAL" "$@"; }
+direct() {
+  if [ "${1:-}" = exec ] && [ -f "$BRIDGE_DIR/exec-policy.mjs" ]; then
+    ELPIS_ENGINE_BIN="$REAL" exec node "$BRIDGE_DIR/exec-policy.mjs" "$@"
+  fi
+  exec "$REAL" "$@"
+}
 [ -n "${ELPIS_NO_CLAUDE:-}" ] && direct "$@"
 command -v node >/dev/null && [ -f "$BRIDGE_DIR/acp-bridge.mjs" ] \
   && [ -d "$BRIDGE_DIR/node_modules/@agentclientprotocol/claude-agent-acp" ] || direct "$@"
