@@ -94,6 +94,7 @@ test('finished work folds into one row per group, opens by click or keyboard, an
     // A87 permits the selected amber accent. Blue still exposes hard-coded orange on these surfaces.
     const { page, errors } = await app.open({ preferences: { accent: 'blue' } });
     await page.locator('.worked-for > summary').click();
+    await page.locator('.worked-for > .worked-for-body').waitFor();
     const groups = page.locator('.activity-group');
     const failedGroup = groups.filter({ hasText: /^Ran 2 commands/ });
     const mixed = groups.filter({ hasText: /^Edited and read app\.ts/ });
@@ -257,9 +258,11 @@ test('tool details and groups collapse from the bottom, return focus, and still 
   try {
     const { page, errors } = await app.open();
     await page.locator('.worked-for > summary').click();
-    const group = page.locator('.activity-group').first();
+    await page.locator('.worked-for > .worked-for-body').waitFor();
+    const group = page.locator('.worked-for .activity-group').first();
     const head = group.locator('> summary');
     await head.click();
+    await group.locator('> .activity-group-body').waitFor();
     const step = group.locator('.step').first();
     const stepHead = step.locator('> summary');
     if (!await step.evaluate(node => node.open)) await stepHead.click();
