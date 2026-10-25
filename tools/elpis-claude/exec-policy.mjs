@@ -2,7 +2,7 @@
 // engine's on-request fallback must not become an automatic agent's policy.
 import { spawn } from 'node:child_process';
 import { connectAppServer } from './app-server-connection.mjs';
-import { defaultPermissionMode, permissionSettingsAllowed, permissionSettings } from './permission-policy.mjs';
+import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed } from './permission-policy.mjs';
 import { PermissionChoices } from './permission-choices.mjs';
 import path from 'node:path';
 
@@ -19,14 +19,16 @@ try {
   const requirements = (await conn.call('configRequirements/read', {})).requirements ?? {};
   const resume = args.indexOf('resume'), id = resume >= 0 ? args.slice(resume + 1).find(value => /^[\da-f-]{36}$/i.test(value)) : null;
   const choice = id ? await new PermissionChoices(process.env.ELPIS_HOME || path.join(process.env.HOME, '.elpis-next')).read(id) : null;
-  const mode = defaultPermissionMode(read), settings = choice && !choice.inherit ? choice : permissionSettings(mode);
+  const automatic = !!(process.env.CODEX_THREAD_ID || process.env.ELPIS_PARENT_THREAD || choice?.automatic);
+  const settings = choice && !choice.inherit && !choice.automatic ? choice : defaultPermissionSettings(read, automatic);
   const combined = flags.some(arg => /^(?:--full-auto|--yolo|--dangerously-bypass-approvals-and-sandbox)$/.test(arg));
   const approvalChosen = combined || flags.some(arg => /^(?:-a|--ask-for-approval)(?:=|$)/.test(arg)) || overrides.some(arg => /^approval_policy\s*=/.test(arg));
   const sandboxChosen = combined || flags.some(arg => /^(?:-s|--sandbox)(?:=|$)/.test(arg)) || overrides.some(arg => /^(?:default_permissions|sandbox_mode)\s*=/.test(arg));
-  if (settings && (!approvalChosen || !sandboxChosen)) {
+  const nativeCustom = defaultPermissionMode(read) === 'custom' && (!choice || choice.inherit) && !automatic;
+  if (!nativeCustom && settings && (!approvalChosen || !sandboxChosen)) {
     if (!permissionSettingsAllowed({ ...settings, ...(approvalChosen ? { approvalPolicy: undefined } : {}), ...(sandboxChosen ? { permissions: undefined } : {}) }, requirements)) throw new Error('This permission mode is restricted by managed settings. Choose an allowed default in Settings.');
     const sandbox = { ':workspace': 'workspace-write', ':read-only': 'read-only', ':danger-full-access': 'danger-full-access' }[settings.permissions];
-    defaults = [...(!approvalChosen ? ['-c', `approval_policy=${JSON.stringify(settings.approvalPolicy)}`, '-c', `approvals_reviewer=${JSON.stringify(settings.approvalsReviewer)}`] : []),
+    defaults = [...(!approvalChosen ? ['-c', `approval_policy=${JSON.stringify(settings.approvalPolicy)}`, '-c', `approvals_reviewer=${JSON.stringify(settings.approvalsReviewer ?? 'user')}`] : []),
       ...(!sandboxChosen && settings.permissions ? ['-c', `default_permissions=${JSON.stringify(settings.permissions)}`] : []), ...(!sandboxChosen && sandbox ? ['-c', `sandbox_mode=${JSON.stringify(sandbox)}`] : [])];
   }
 } catch (error) { process.stderr.write(`${error.message ?? error}\n`); process.exitCode = 1; }

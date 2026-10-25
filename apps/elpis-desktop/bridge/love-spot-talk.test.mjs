@@ -35,6 +35,8 @@ test('Talk creates one persistent normal chat, attributes live notes by colour, 
   const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
   await f.talk.send({ text: 'Hello', model: 'luna', revision });
   assert.equal(f.created.length, 1); assert.equal(f.created[0].name, 'Love Spot'); assert.equal(f.created[0].cwd, f.directory);
+  assert.equal(f.created[0].automatic, true, 'board replies use the automatic-agent default');
+  assert.equal(f.sent[0].automatic, true, 'existing board conversations also use that default');
   const notes = f.sent[0].attachments.find(a => a.type === 'text').text;
   assert.match(notes, /Masih.*Apricot/s); assert.match(notes, /agent.*Blue thought/s); assert.doesNotMatch(notes, /Do not include/);
   const attributed = JSON.parse(notes.split('\n')[1]);

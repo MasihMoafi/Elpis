@@ -1384,7 +1384,8 @@ export class DesktopClient extends EventEmitter {
   /** `agents`: the chat runs the agents canvas's graph, so the multi-agent runtime is on for it alone; the Ledger's
    * SUBAGENTS switch (features.multi_agent) keeps deciding whether a model may delegate in every other chat. */
   async createThread(body) {
-    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents']);
+    object(body, ['cwd', 'model', 'provider', 'name', 'instructions', 'permissions', 'worktree', 'agents', 'automatic']);
+    if (body.automatic !== undefined && typeof body.automatic !== 'boolean') throw new BridgeError('automatic must be true or false');
     if (body.worktree !== undefined && typeof body.worktree !== 'boolean') throw new BridgeError('worktree must be true or false');
     if (body.agents !== undefined && typeof body.agents !== 'boolean') throw new BridgeError('agents must be true or false');
     if (body.worktree && body.cwd === undefined) throw new BridgeError('A worktree needs the project\'s folder');
@@ -1415,7 +1416,7 @@ export class DesktopClient extends EventEmitter {
     try {
       result = await this.#rpc('thread/start', { ...(cwd ? { cwd } : {}), ...(model ? { model } : {}),
         ...(body.provider ? { modelProvider: body.provider } : {}), ...(instructions ? { developerInstructions: instructions } : {}), ...permissionSetting(permissions),
-        elpisPermissionSource: body.permissions ? 'chat' : body.agents ? 'automatic' : 'default',
+        elpisPermissionSource: body.permissions ? 'chat' : body.agents || body.automatic ? 'automatic' : 'default',
         ...(Object.keys(config).length ? { config } : {}) });
       threadId(result.thread?.id);
     } catch (error) { this.#browserConfig?.close?.(browserSession); if (made) await undoChatWorktree(made); throw error; }
@@ -1775,7 +1776,8 @@ export class DesktopClient extends EventEmitter {
     }
   }
   async #send(id, body) {
-    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'mentions', 'permissions', 'mode']);
+    object(body, ['text', 'model', 'effort', 'continueAs', 'attachments', 'mentions', 'permissions', 'mode', 'automatic']);
+    if (body.automatic !== undefined && typeof body.automatic !== 'boolean') throw new BridgeError('automatic must be true or false');
     const input = attachmentInput(typeof body.text === 'string' && body.text.trim() ? ragMessage(text(body.text, 'message')) : body.text, body.attachments, body.mentions);
     const effort = this.#effort(body.effort), permissions = permissionMode(body.permissions);
     return this.#mutate(id, async () => {
@@ -1783,7 +1785,7 @@ export class DesktopClient extends EventEmitter {
       if (!thread.desktopAccess.writable && !body.continueAs) throw new BridgeError(`${AGENT_RUN_NOTICE}. Choose Continue here after it finishes (continued conversation name required).`, 409);
       if (!thread.desktopAccess.writable && !thread.desktopAccess.canContinue) throw new BridgeError('Wait for this background run to finish before continuing here.', 409);
       const model = await this.#providerModel(body.model, thread.modelProvider);
-      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...permissionSetting(permissions), ...(permissions ? { elpisPermissionSource: 'chat' } : {}), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
+      const overrides = { ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...permissionSetting(permissions), ...(permissions ? { elpisPermissionSource: 'chat' } : body.automatic ? { elpisPermissionSource: 'automatic' } : {}), ...collaborationMode(body.mode, model ?? thread.model, effort ?? thread.reasoningEffort) };
       if (thread.desktopAccess.mode === 'continue') {
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, 'continued conversation name', 200).trim();

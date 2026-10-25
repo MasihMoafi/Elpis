@@ -275,7 +275,7 @@ export function createLoveSpotTalk({ client, store }) {
         if (threadId && thread && provider && thread.modelProvider && provider !== thread.modelProvider) { stale = threadId; threadId = null; thread = null; entries = []; }
         if (!threadId) {
           threadId = await store.chat(async cwd => {
-            const made = await client.createThread({ cwd, name: 'Love Spot', model, ...(body.provider ? { provider: body.provider } : {}), instructions: INSTRUCTIONS });
+            const made = await client.createThread({ cwd, name: 'Love Spot', model, ...(body.provider ? { provider: body.provider } : {}), instructions: INSTRUCTIONS, automatic: true });
             thread = made.thread; return made.thread.id;
           }, stale);
           if (!thread) thread = (await client.readThread(threadId)).thread;
@@ -288,7 +288,7 @@ export function createLoveSpotTalk({ client, store }) {
         }
         sendingPage = board.scene.page;
         begin(null);
-        const result = await client.send(threadId, { text: body.text, model, effort: 'low', attachments });
+        const result = await client.send(threadId, { text: body.text, model, effort: 'low', attachments, automatic: true });
         writing.id ??= result.turn.id;
         turnPages.set(result.turn.id, sendingPage);
         // Some local providers finish before send returns; do not revive their completed turn.

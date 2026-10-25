@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { defaultPermissionMode, permissionAllowed, permissionMode, permissionSettings, permissionSettingsAllowed } from '../permission-policy.mjs';
+import { defaultPermissionMode, defaultPermissionSettings, permissionAllowed, permissionMode, permissionSettings, permissionSettingsAllowed } from '../permission-policy.mjs';
 import { PermissionChoices } from '../permission-choices.mjs';
 import { forAll } from './property.mjs';
 
@@ -26,6 +26,14 @@ test('a scoped automatic task is checked by its actual never policy, separately 
   const scoped = { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':read-only' };
   assert.equal(permissionSettingsAllowed(scoped, { allowedApprovalPolicies: ['never'], allowedSandboxModes: ['read-only'] }), true);
   assert.equal(permissionSettingsAllowed(scoped, { allowedApprovalPolicies: ['never'], allowedSandboxModes: ['workspace-write'] }), false);
+});
+test('automatic agents follow the configured access scope and never ask or inherit Bypass', async () => {
+  await forAll(200, g => {
+    const approval = g.pick(['never', 'on-request']), profile = g.pick([':workspace', ':read-only', ':danger-full-access', ':bypass-permissions']);
+    const automatic = defaultPermissionSettings({ config: { approval_policy: approval, default_permissions: profile } }, true);
+    assert.equal(automatic.approvalPolicy, 'never');
+    assert.equal(automatic.permissions, profile === ':bypass-permissions' ? ':danger-full-access' : profile);
+  });
 });
 test('preset round trips and managed restrictions hold for arbitrary allowed sets', async () => {
   await forAll(300, g => {
