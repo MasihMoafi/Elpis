@@ -49,6 +49,7 @@ async function fixture(t, { modelFailure = false, holdModels = false, descendant
       if (pathname.endsWith('/delete')) { deleted.add(id); const children = threads.filter(item => item.parentThreadId === id).map(item => item.id); for (const child of children) deleted.add(child); return json({ deleted: true, alsoDeleted: [] }); }
       errors.push(`Unexpected POST ${pathname}`); return json({ error: 'Unexpected fixture mutation' }, 400);
     }
+    if (pathname === '/api/workflows/history') return json({ data: [] });
     if (pathname === '/api/health') return json({ connected: true });
     if (pathname === '/api/voice') return json({ available: false });
     if (pathname === '/api/personal') return json({ path: '/tmp/availability-fixture/skills/personal/SKILL.md', showTip: false });

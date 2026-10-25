@@ -1423,7 +1423,7 @@ export default function Home() {
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable ? () => live.current.setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Keep the conversation's context providers outside composer-only renders.
-  const chatConversation = useMemo(() => selected ? <ReadAloud key={selected.id} threadId={selected.id} enabled={connected}>{agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud> : conversation, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation]);
+  const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected}>{selected && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation]);
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
   function editQueued(item: FollowUp) {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
@@ -1947,8 +1947,17 @@ export default function Home() {
   /** Ctrl+[ and Ctrl+]: the open chat goes to the top or the bottom of the list it is in (Pinned, its group, its project or Recents). */
   function moveToEdge(id: string, top: boolean) {
     if (searchTerm || !ordinaryThreads.some(thread => thread.id === id && !isAgent(thread))) return;
-    const section = sectionOf(id), chats = sectionChats(section), edge = top ? chats[0] : chats.at(-1);
-    if (edge && edge.id !== id) placeDragged(id, section, { target: edge.id, after: !top });
+    const tier = (thread: Thread) => needsYou(thread) ? "waiting" : ["working", "unread"].includes(sidebarState(thread)) ? sidebarState(thread) : "idle";
+    const chats = prioritizeChats(sectionChats(sectionOf(id)), tier);
+    const target = chats.find(thread => thread.id === id);
+    if (!target) return;
+    const peers = chats.filter(thread => tier(thread) === tier(target));
+    const edge = top ? peers[0] : peers.at(-1);
+    const ordered = edge ? move(chats.map(thread => thread.id), id, { target: edge.id, after: !top }) : chats.map(thread => thread.id);
+    const inSection = new Set(ordered);
+    let index = 0;
+    const order = ordinaryThreads.filter(thread => !isAgent(thread)).map(thread => inSection.has(thread.id) ? ordered[index++] : thread.id);
+    updateGroups(state => placeChat(state, order, id));
   }
   /** `inOrigin`: the row sits in the group named for its origin, so the origin is not written again beside its title. */
   function threadRow(thread: Thread, depth = 0, inOrigin = false, recordedRun?: WorkflowRun) {

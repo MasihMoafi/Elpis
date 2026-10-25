@@ -120,6 +120,7 @@ test('every kind of step is one kind of row: the same head, the same card, a sen
   const turn = page.locator('.turn').nth(2);
   await turn.locator('.activity-group > summary').first().click();
   const steps = turn.locator('.step');
+  await steps.nth(4).waitFor();
   assert.equal(await steps.count(), 5);
   const titles = await steps.locator('> .step-head').evaluateAll(heads => heads.map(head => [...head.querySelectorAll(':scope > .step-title, :scope > .step-meta')].map(part => part.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ')));
   assert.deepEqual(titles, ['Ran ls notes', 'Ran npm test 0.8s', 'Used rag search 1.4s', 'Searched two-pass parser design', 'Edited app.ts …/parity-fixture/src +1 −1'], 'sentences, with a duration only from 0.1 s');

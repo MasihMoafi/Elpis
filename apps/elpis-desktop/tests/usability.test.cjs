@@ -60,7 +60,7 @@ async function fixture(run, { desktop = false } = {}) {
     const shot = async name => { if (process.env.ELPIS_USABILITY_SHOTS) { await fs.mkdir(process.env.ELPIS_USABILITY_SHOTS, { recursive: true }); await page.screenshot({ path: path.join(process.env.ELPIS_USABILITY_SHOTS, `${name}.png`) }); } };
     await run({ page, calls, shot });
     assert.deepEqual(errors, [], 'the actual screen must have no uncaught renderer errors');
-    assert.equal(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && !call.path.endsWith('/resume') && !(call.path.endsWith('/rewind') && call.data?.action === 'status')).length, 0, 'inspecting choices and navigating must not send messages or save account settings');
+    assert.equal(calls.filter(call => call.method === 'POST' && call.path !== '/api/session' && call.path !== '/api/voice/read-aloud/warm' && !call.path.endsWith('/resume') && !(call.path.endsWith('/rewind') && call.data?.action === 'status')).length, 0, 'inspecting choices and navigating must not send messages or save account settings');
   } finally { await browser?.close(); for (const response of streams) response.end(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 

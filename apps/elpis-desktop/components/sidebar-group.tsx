@@ -2,6 +2,7 @@
 
 import type { HTMLAttributes, ReactElement, ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 /** The class names each kind adds beside the shared `sidebar-group*` ones (a project's are the ones it always had). */
 const KIND = {
@@ -33,5 +34,5 @@ export function SidebarGroup({ kind, name, title, icon, open, active, onToggle, 
 
 /** A section heading (Projects, Pinned, Recents) that folds its list, with the chevron a project row has. */
 export function SectionToggle({ name, open, onToggle }: { name: string; open: boolean; onToggle: () => void }) {
-  return <div className="section-label"><button type="button" className="section-toggle" aria-expanded={open} onClick={onToggle}><ChevronRight size={14} className="section-chevron" aria-hidden="true" />{name}</button></div>;
+  return <div className="section-label"><Button type="button" variant="ghost" size="logo" className="section-toggle" aria-expanded={open} onClick={onToggle}><ChevronRight size={14} className="section-chevron" aria-hidden="true" />{name}</Button></div>;
 }

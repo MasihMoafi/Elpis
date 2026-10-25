@@ -166,6 +166,7 @@ test('a thread row expands and collapses its agents by click and keyboard', asyn
   try {
     const parentRow = row(page, parent.id);
     await parentRow.locator('.thread-link').click();
+    await parentRow.getByRole('button', { name: `Expand agents in ${parent.name}`, exact: true }).click();
     await row(page, child.id).waitFor();
     const childRow = row(page, child.id);
     const expand = childRow.getByRole('button', { name: `Expand agents in ${child.name}` });

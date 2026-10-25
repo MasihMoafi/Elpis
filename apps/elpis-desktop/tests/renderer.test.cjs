@@ -45,7 +45,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
   try{
     const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
-    await page.getByRole('button',{name:'Choose project',exact:true}).click();await page.getByRole('menuitem',{name:'New project…',exact:true}).click();await page.getByLabel('Workspace directory').fill('/tmp/elpis-fixture');await page.getByRole('button',{name:'Save project',exact:true}).click();
+    await page.getByRole('button',{name:'Choose project',exact:true}).click();await page.getByRole('menuitem',{name:'New project…',exact:true}).click();await page.getByText('Advanced: custom folder',{exact:true}).click();await page.getByLabel('Workspace directory').fill('/tmp/elpis-fixture');await page.getByRole('button',{name:'Save project',exact:true}).click();
     await chooseOption(page.getByLabel('Model',{exact:true}), 'gpt-6-luna');
     await page.getByLabel('Message Elpis').fill('Check token accounting.');await page.getByRole('button',{name:'Send message',exact:true}).click();
     await page.getByText('I will inspect the cache path.',{exact:true}).waitFor({timeout:5000});
