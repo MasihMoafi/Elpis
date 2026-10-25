@@ -24,7 +24,7 @@ const groupToggle = (page, name) => group(page, name).locator('.sidebar-group-to
 const recents = page => aside(page).locator('section[aria-label="Recents"]');
 const idsIn = locator => locator.locator('.thread-row').evaluateAll(rows => rows.map(element => element.dataset.threadId));
 const groupNames = page => aside(page).locator('.chat-group .sidebar-group-toggle .sidebar-group-name').allTextContents();
-/** Opens the chat's "Move to group" submenu: by right-click, by its "…" button, or by keys (Shift+F10, type "Mo", →).
+/** Opens the chat's "Move to group" submenu: by right-click, by its "…" button, or by keys (Shift+F10, type a unique "Move to g" prefix, →).
  * The pointer moves onto the item in steps, as a hand does; the submenu opens on hover. */
 async function moveMenu(page, id, how = 'right-click') {
   const name = /^Move (\d+ chats )?to group/;
@@ -32,7 +32,8 @@ async function moveMenu(page, id, how = 'right-click') {
     await row(page, id).locator('.thread-link').focus();
     await page.keyboard.press('Shift+F10');
     await page.getByRole('menu').first().waitFor();
-    await page.keyboard.type('Mo');
+    await page.keyboard.type('Move to g');
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Move to group');
     await page.keyboard.press('ArrowRight');
   } else {
     if (how === 'right-click') await row(page, id).click({ button: 'right' });

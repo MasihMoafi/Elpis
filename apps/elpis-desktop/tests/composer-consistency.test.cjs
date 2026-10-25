@@ -55,12 +55,17 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
   });
 }
 
-test('Ask for approval shares the row with Plan mode in a narrow running chat', async t => {
-  const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running: true });
+test('Plan, Fast and voice controls fit beside permissions and model in a narrow running chat', async t => {
+  const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running: true, routes: {
+    '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
+    '/api/voice': () => ({ available: true }),
+  } });
   t.after(async () => { await f.close(); assert.deepEqual(f.errors, []); });
   await f.open('chat-a');
   await f.page.getByRole('button', { name: 'Add files and more' }).click();
   await f.page.getByRole('menuitem', { name: /Plan mode/ }).click();
+  await f.page.getByRole('button', { name: 'Fast mode', exact: true }).waitFor();
+  await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
   for (const width of [1100, 760, 500, 390]) {
     await f.page.setViewportSize({ width, height: 700 });
     const m = await probe(f.page);
