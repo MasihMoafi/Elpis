@@ -46,11 +46,15 @@ enum UpdateScenario {
     Future,
     Current,
     Rejected,
+    FastOn,
+    FastOff,
 }
 
 #[test_case(UpdateScenario::Future; "future-only A A B")]
 #[test_case(UpdateScenario::Current; "turn-only A B A")]
 #[test_case(UpdateScenario::Rejected; "rejected turn update changes neither owner")]
+#[test_case(UpdateScenario::FastOn; "Fast on changes the next request without model switching")]
+#[test_case(UpdateScenario::FastOff; "Fast off changes the next request without model switching")]
 #[tokio::test]
 async fn settings_updates_report_results_and_preserve_the_target_on_saved_threads(
     scenario: UpdateScenario,
@@ -96,9 +100,13 @@ async fn settings_updates_report_results_and_preserve_the_target_on_saved_thread
     )
     .await;
     let codex_home = TempDir::new()?;
-    mock_config(codex_home.path(), &server.uri())?
-        .enable_feature(Feature::StepModelSwitching)
-        .write(codex_home.path())?;
+    let config = mock_config(codex_home.path(), &server.uri())?;
+    let config = if matches!(scenario, UpdateScenario::FastOn | UpdateScenario::FastOff) {
+        config
+    } else {
+        config.enable_feature(Feature::StepModelSwitching)
+    };
+    config.write(codex_home.path())?;
     if matches!(scenario, UpdateScenario::Rejected) {
         let path = codex_home.path().join("step-models.json");
         let mut catalog: ModelsResponse = serde_json::from_slice(&std::fs::read(&path)?)?;
@@ -114,6 +122,8 @@ async fn settings_updates_report_results_and_preserve_the_target_on_saved_thread
     let request_id = app
         .send_thread_start_request_with_auto_env(ThreadStartParams {
             model: Some(MODEL_A.to_string()),
+            service_tier: matches!(scenario, UpdateScenario::FastOff)
+                .then(|| Some("priority".to_string())),
             ..Default::default()
         })
         .await?;
@@ -128,13 +138,18 @@ async fn settings_updates_report_results_and_preserve_the_target_on_saved_thread
     };
     assert_eq!(params.thread_id, thread.id);
 
+    let fast_only = matches!(scenario, UpdateScenario::FastOn | UpdateScenario::FastOff);
     let patch = TurnSettingsUpdateParams {
         thread_id: thread.id.clone(),
         turn_id: turn_id.clone(),
-        model: Some(MODEL_B.to_string()),
-        effort: Some(ReasoningEffort::High),
-        summary: Some(ReasoningSummary::Detailed),
-        service_tier: Some(Some("priority".to_string())),
+        model: (!fast_only).then(|| MODEL_B.to_string()),
+        effort: (!fast_only).then_some(ReasoningEffort::High),
+        summary: (!fast_only).then_some(ReasoningSummary::Detailed),
+        service_tier: Some(Some(if matches!(scenario, UpdateScenario::FastOff) {
+            "default".to_string()
+        } else {
+            "priority".to_string()
+        })),
         ..Default::default()
     };
     match scenario {
@@ -158,7 +173,7 @@ async fn settings_updates_report_results_and_preserve_the_target_on_saved_thread
             .await??;
             assert_eq!(updated.thread_settings.model, MODEL_B);
         }
-        UpdateScenario::Current => {
+        UpdateScenario::Current | UpdateScenario::FastOn | UpdateScenario::FastOff => {
             let outcome: TurnSettingsUpdateResponse = app
                 .request(|request_id| ClientRequest::TurnSettingsUpdate {
                     request_id,
@@ -171,18 +186,20 @@ async fn settings_updates_report_results_and_preserve_the_target_on_saved_thread
                     status: TurnSettingsUpdateStatus::Applied,
                 }
             );
-            // Null keeps public effort/model/summary selections, but clears tier.
-            let id = app
-                .send_request(
-                    "turn/settings/update",
-                    Some(json!({
-                        "threadId": thread.id, "turnId": turn_id,
-                        "model": null, "effort": null, "summary": null, "serviceTier": null,
-                    })),
-                )
-                .await?;
-            let outcome: Value = timeout(DEFAULT_TIMEOUT, app.read_response(id)).await??;
-            assert_eq!(outcome, json!({ "status": "applied" }));
+            if matches!(scenario, UpdateScenario::Current) {
+                // Null keeps public effort/model/summary selections, but clears tier.
+                let id = app
+                    .send_request(
+                        "turn/settings/update",
+                        Some(json!({
+                            "threadId": thread.id, "turnId": turn_id,
+                            "model": null, "effort": null, "summary": null, "serviceTier": null,
+                        })),
+                    )
+                    .await?;
+                let outcome: Value = timeout(DEFAULT_TIMEOUT, app.read_response(id)).await??;
+                assert_eq!(outcome, json!({ "status": "applied" }));
+            }
         }
         UpdateScenario::Rejected => {
             for field in [
@@ -273,6 +290,16 @@ async fn settings_updates_report_results_and_preserve_the_target_on_saved_thread
             vec![initial.clone(), continued, initial]
         }
         UpdateScenario::Rejected => vec![initial.clone(), initial.clone(), initial],
+        UpdateScenario::FastOn => {
+            let mut fast = initial.clone();
+            fast["service_tier"] = json!("priority");
+            vec![initial.clone(), fast, initial]
+        }
+        UpdateScenario::FastOff => {
+            let mut fast = initial.clone();
+            fast["service_tier"] = json!("priority");
+            vec![fast.clone(), initial, fast]
+        }
     };
     assert_eq!(actual, expected);
     Ok(())
@@ -384,30 +411,31 @@ async fn disabled_turn_settings_update_reports_rejection_without_changing_future
     let ThreadStartResponse { thread, .. } =
         timeout(DEFAULT_TIMEOUT, app.read_response(request_id)).await??;
 
-    let id = app
-        .send_request(
-            "turn/settings/update",
-            Some(serde_json::to_value(TurnSettingsUpdateParams {
-                thread_id: thread.id.clone(),
-                turn_id: "idle".to_string(),
-                model: Some(MODEL_B.to_string()),
-                ..Default::default()
-            })?),
+    for patch in [
+        json!({ "model": MODEL_B }),
+        json!({ "effort": "high" }),
+        json!({ "summary": "detailed" }),
+        json!({ "model": MODEL_B, "serviceTier": "priority" }),
+        json!({ "serviceTier": "flex" }),
+    ] {
+        let mut params = patch;
+        params["threadId"] = json!(thread.id);
+        params["turnId"] = json!("idle");
+        let id = app.send_request("turn/settings/update", Some(params)).await?;
+        let error = timeout(
+            DEFAULT_TIMEOUT,
+            app.read_stream_until_error_message(RequestId::Integer(id)),
         )
-        .await?;
-    let error = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_error_message(RequestId::Integer(id)),
-    )
-    .await??;
-    assert_eq!(
-        error.error,
-        JSONRPCErrorError {
-            code: -32600,
-            message: "turn settings updates require the step_model_switching feature".to_string(),
-            data: None,
-        }
-    );
+        .await??;
+        assert_eq!(
+            error.error,
+            JSONRPCErrorError {
+                code: -32600,
+                message: "turn settings updates require the step_model_switching feature".to_string(),
+                data: None,
+            }
+        );
+    }
 
     start_turn(&mut app, &thread.id).await?;
     let completed: TurnCompletedNotification =
@@ -415,10 +443,13 @@ async fn disabled_turn_settings_update_reports_rejection_without_changing_future
     assert_eq!(completed.thread_id, thread.id);
     assert_eq!(completed.turn.status, TurnStatus::Completed);
     assert_eq!(completed.turn.error, None);
+    let request = requests.single_request().body_json();
+    assert_eq!(request["model"], Value::String(MODEL_A.to_string()));
     assert_eq!(
-        requests.single_request().body_json()["model"],
-        Value::String(MODEL_A.to_string())
+        request["reasoning"],
+        json!({ "effort": "low", "summary": "concise" })
     );
+    assert!(request.get("service_tier").is_none());
     Ok(())
 }
 
