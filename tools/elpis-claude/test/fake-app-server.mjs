@@ -148,6 +148,7 @@ function handle(msg, socket) {
     case "model/list": return reply({ data: [{ id: "luna-test", model: "luna-test", displayName: "Test GPT", supportedReasoningEfforts: [] }], nextCursor: null });
     case "config/read": return reply(process.env.FAKE_ENGINE_CONFIG ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_CONFIG, "utf8")) : { config: { features: { multi_agent: false } } });
     case 'configRequirements/read': return reply({ requirements: null });
+    case 'thread/loaded/list': return reply({ data: [...threads].filter(([, thread]) => thread.status?.type !== 'notLoaded').map(([id]) => id) });
     case "config/batchWrite": {
       if (!process.env.FAKE_ENGINE_CONFIG) return reply({});
       const read = JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_CONFIG, "utf8"));

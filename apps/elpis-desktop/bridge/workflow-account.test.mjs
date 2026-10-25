@@ -16,6 +16,7 @@ test('Claude nodes use the account selected in Elpis and respect its sign-out', 
   const install = path.join(f.home, 'installation'), tools = path.join(install, 'tools/elpis-claude'), engine = path.join(install, 'elpis');
   const adapter = path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js');
   fs.mkdirSync(path.dirname(adapter), { recursive: true }); fs.writeFileSync(engine, ''); fs.symlinkSync(FAKE, adapter);
+  fs.symlinkSync(FAKE, path.join(tools, 'elpis-acp-agent.mjs'));
   for (const file of ['claude-accounts.mjs', 'anthropic-signout.mjs']) fs.symlinkSync(fileURLToPath(new URL(`../../../tools/elpis-claude/${file}`, import.meta.url)), path.join(tools, file));
   const home = path.join(f.home, 'elpis'), state = path.join(home, 'elpis-claude'), id = '11111111-1111-1111-1111-111111111111';
   fs.mkdirSync(state, { recursive: true }); fs.writeFileSync(path.join(state, 'claude-accounts.json'), JSON.stringify({ activeId: id, ids: [id] }));

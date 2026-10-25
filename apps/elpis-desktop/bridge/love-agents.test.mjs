@@ -107,14 +107,12 @@ test('oversized handoffs fail visibly before a successor starts', { timeout: 300
   assert.equal(f.log('b').length, 0);
 });
 
-test('a permission request waits on its card until answered from the panel', { timeout: 30000 }, async t => {
+test('an automatic Love Spot agent answers tool permissions without waiting on its card', { timeout: 30000 }, async t => {
   const f = fixture(t, [card('a', '[permission] write it')]);
   assert.throws(() => f.runner.answer({ id: 'a', optionId: 'allow_once' }), /No permission request/);
   const run = f.runner.run({ id: 'a', cwd: f.dir });
-  while (f.loveAgent('a').status !== 'waiting') await pause(10);
-  assert.deepEqual(f.loveAgent('a').permission, { title: 'Write notes.txt', options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }, { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' }] });
-  assert.throws(() => f.runner.answer({ id: 'a', optionId: 'allow_always' }), /offered/);
-  assert.deepEqual(f.runner.answer({ id: 'a', optionId: 'allow_once' }), { answered: true });
+  while (!['completed', 'failed', 'waiting'].includes(f.loveAgent('a').status)) await pause(10);
+  assert.notEqual(f.loveAgent('a').status, 'waiting', 'an automatic agent must never ask the person for tool approval');
   const { results } = await run;
   assert.match(results[0].output, /permission: allow_once/);
   assert.deepEqual(f.log('a').find(m => m.permission).permission, { outcome: 'selected', optionId: 'allow_once' });
@@ -133,8 +131,7 @@ for (const packaged of [false, true]) test(`each card finds its ACP agent in a $
   const env = { ELPIS_HOME: home, ELPIS_ENGINE_BIN: path.join(dir, 'elpis-next'), ELPIS_NODE_BIN: '/usr/bin/node', CLAUDE_CODE_EXECUTABLE: '/opt/claude' };
   const node = (model, provider = 'openai') => ({ name: 'Ada', prompt: 'Be precise', model, provider });
   assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: home }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
-  assert.deepEqual(loveNodeSpec(node('claude/opus'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js')], env: { CLAUDE_CODE_EXECUTABLE: '/opt/claude' }, model: 'opus' });
-  assert.deepEqual(loveNodeSpec(node('agy/gemini-3.8-flash-high'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'agy-acp.mjs')], model: 'gemini-3.8-flash-high' });
+  for (const model of ['claude/opus', 'agy/gemini-3.8-flash-high']) assert.deepEqual(loveNodeSpec(node(model), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', model], env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: home }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: 'fx', args: ['acp'] } }));
   assert.deepEqual(loveNodeSpec(node('openai/gpt-5', 'fx'), env), { name: 'Ada', instructions: 'Be precise', instructionsInPrompt: true, command: 'fx', args: ['acp'], env: {}, model: 'openai/gpt-5' });
   assert.deepEqual(loveNodeSpec(node('', 'fx'), env).model, undefined, 'without a model the agent keeps its own');
