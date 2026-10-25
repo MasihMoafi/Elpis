@@ -162,7 +162,7 @@ test('a thread row expands and collapses its agents by click and keyboard', asyn
     const ancestor = url.searchParams.get('ancestorThreadId');
     return { data: ancestor === parent.id ? [child] : ancestor === child.id ? [grandchild] : ancestor ? [] : [parent, ...LISTED.slice(1)], nextCursor: null };
   } };
-  const f = await fixture({ routes }), { page } = f;
+  const f = await fixture({ threads: [parent, ...LISTED.slice(1)], routes }), { page } = f;
   try {
     const parentRow = row(page, parent.id);
     await parentRow.locator('.thread-link').click();
