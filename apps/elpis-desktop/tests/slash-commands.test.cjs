@@ -37,7 +37,7 @@ before(async () => {
     if (route.pathname === '/api/session') return json({ authenticated: true });
     if (route.pathname === '/api/health') return json({ connected: true });
     if (route.pathname === '/api/models') return json({ data: models, nextCursor: null });
-    if (route.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, options: { approvalPolicy: null, sandboxMode: null }, managed: {}, write: { available: true } });
+    if (route.pathname === '/api/settings') return json({ version: 'v1', main: { model: 'gpt-6-luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, options: { defaultPermissions: 'full' }, managed: {}, write: { available: true } });
     if (route.pathname === '/api/threads/chat/service-tier') return json({ serviceTier: JSON.parse(body || '{}').enabled === false ? 'default' : 'priority' });
     if (route.pathname === '/api/threads' && req.method === 'POST') return json({ thread: created });
     if (route.pathname === '/api/threads') return json({ data: route.searchParams.get('ancestorThreadId') === 'chat' ? [child] : route.searchParams.has('ancestorThreadId') ? [] : [chat], nextCursor: null });
@@ -50,7 +50,7 @@ before(async () => {
     if (route.pathname === '/api/threads/chat/review') { turnAfter('chat', 'review-turn', [{ id: 'review-done', type: 'exitedReviewMode', review: 'No problems found in the cache.' }]); return json({ turn: { id: 'review-turn' }, reviewThreadId: 'chat' }); }
     if (route.pathname === '/api/threads/chat/turns' || route.pathname === '/api/threads/created/turns') { const id = `turn-${posts.filter(post => post.path.endsWith('/turns')).length + 1}`; turnAfter(route.pathname.split('/')[3], id); return json({ turn: { id } }); }
     const read = route.pathname.match(/^\/api\/threads\/(chat|fork|created)(\/resume)?$/);
-    if (read) return json({ thread: read[1] === 'fork' ? fork : read[1] === 'created' ? created : chat, data: read[1] === 'created' ? [] : history, nextCursor: null, activeTurnId: null, planMode: false });
+    if (read) return json({ thread: read[1] === 'fork' ? fork : read[1] === 'created' ? created : chat, data: read[1] === 'created' ? [] : history, nextCursor: null, activeTurnId: null, planMode: false, permissions: read[1] === 'created' ? 'full' : 'ask' });
     if (route.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, route.pathname === '/' ? 'index.html' : route.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
   });
@@ -339,7 +339,7 @@ test('/status and /usage show the session: model, provider, effort, permissions,
     await page.locator('.new-chat').click();
     await run('/status'); await panel.waitFor();
     const fresh = await card(panel);
-    assert.equal(fresh.Model, 'Luna 6'); assert.equal(fresh.Chat, 'Not started yet'); assert.equal(fresh.Permissions, 'Ask for approval');
+    assert.equal(fresh.Model, 'Luna 6'); assert.equal(fresh.Chat, 'Not started yet'); assert.equal(fresh.Permissions, 'Full access');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }
 });
