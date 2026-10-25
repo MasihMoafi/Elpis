@@ -264,7 +264,8 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     return { x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)), y: Math.max(labelHeight + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - LABEL.gap)) };
   };
   for (const place of [...places].sort((a, b) => Number(kept(b)) - Number(kept(a)))) {
-    const width = renaming === place.id ? LABEL.max : Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : place.kind === "mother" && workflowIdentity ? 20 : 5));
+    // A pillar adds 5px of left padding; the workflow mark also occupies 9px + 6px margins + the 6px gap.
+    const width = renaming === place.id ? LABEL.max : Math.min(LABEL.max, textWidth(titleOf(place.id), family) + LABEL.chrome + (place.kind === "agent" ? LABEL.badge : 5 + (place.kind === "mother" && workflowIdentity ? 21 : 0)));
     const labelHeight = renaming === place.id ? 36 : LABEL.height;
     let at = labelAt(place, width, labelHeight), box = labelBox(at, width, labelHeight);
     if (place.id === hot || (selected.length === 1 && selected.includes(place.id)) || (!taken.some(other => meet(other, box)) && !places.some(other => other !== place && meet(block(other), box)))) full.add(place.id);

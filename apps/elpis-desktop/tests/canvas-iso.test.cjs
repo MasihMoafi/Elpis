@@ -194,6 +194,9 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     const overlapping = () => board.locator('.iso-label').evaluateAll(list => { const box = item => item.getBoundingClientRect(), meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       return list.flatMap((a, index) => list.slice(index + 1).filter(b => meet(box(a), box(b))).map(b => `${a.textContent} / ${b.textContent}`)); });
     assert.deepEqual(await overlapping(), [], 'dense graph: no title covers another');
+    await chooseTheme(page, 'dark');
+    assert.deepEqual(await overlapping(), [], 'dense graph: no title covers another in dark');
+    await chooseTheme(page, 'light');
     const short = await board.locator('.iso-label[data-short]').evaluateAll(list => list.map(item => item.dataset.for));
     await shoot('iso-light-hierarchical-1130');
     if (short.length) {
