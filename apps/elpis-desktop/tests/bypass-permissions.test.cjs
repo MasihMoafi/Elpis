@@ -45,7 +45,7 @@ test('Bypass permissions is red, asks once, and only then applies', async () => 
       const color = getComputedStyle(probe).color; probe.remove(); return color;
     });
     const color = locator => locator.evaluate(element => getComputedStyle(element).color);
-    assert.match(await pill.innerText(), /Ask for approval/);
+    assert.match(await pill.innerText(), /Full access/, 'an unavailable Settings snapshot still shows the Full access default');
 
     // Offered fourth, after Full access, in red; the other modes are not red.
     await pill.click();
@@ -66,7 +66,7 @@ test('Bypass permissions is red, asks once, and only then applies', async () => 
     if (shots) await page.screenshot({ path: path.join(shots, 'bypass-confirm.png') });
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
-    assert.match(await pill.innerText(), /Ask for approval/);
+    assert.match(await pill.innerText(), /Full access/, 'cancelling Bypass keeps the inherited mode');
 
     // Confirming applies it, and the active mode stays red.
     await pill.click();
