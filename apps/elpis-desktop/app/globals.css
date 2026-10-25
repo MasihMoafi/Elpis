@@ -995,7 +995,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-dot { width:8px; height:8px; border-radius:50%; background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 25%, transparent); }
 .canvas-dot[data-status="failed"], .canvas-dot[data-status="cancelled"] { background:var(--destructive); box-shadow:none; }
 .canvas-dot[data-status="succeeded"], .canvas-dot[data-status="completed"] { background:var(--success); box-shadow:none; }
-.canvas-template { display:grid; justify-content:stretch; align-items:start; gap:3px; height:auto; padding:9px 10px; color:var(--foreground); text-align:left; white-space:normal; font-size:0.8125rem; font-weight:400; cursor:pointer; }
+.canvas-template { display:grid; justify-content:stretch; align-items:start; gap:3px; padding:9px 10px; text-align:left; cursor:pointer; }
 .canvas-template:hover { background:var(--hover); border-color:var(--hairline); }
 .canvas-template:focus-visible { outline:1.5px solid var(--ring); }
 .canvas-template small { color:var(--muted-foreground); font-size:0.75rem; line-height:1.35; }
