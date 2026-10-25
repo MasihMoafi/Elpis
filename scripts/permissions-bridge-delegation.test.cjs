@@ -1,8 +1,8 @@
 'use strict';
-// A bridge helper runs on its delegate tool's own connection, with its own engine. It must stay
-// within the permissions its parent chat's engine confirmed: at its start, on a follow-up, from
-// the next tool after a reduction while it runs, and when a fresh delegate server reopens it. A
-// reduction is sticky; the chat's grants reach only new helpers, never beyond what they asked.
+// A233/A251, R59/R60; desktop SPEC P2/P3: automatic helpers follow the shared default,
+// independently of their parent's chat menu, and never ask the person for tool approval.
+// Explicit read-only task scopes and the helper's own choices remain bounded across running
+// turns, follow-ups, fresh delegate servers and the TUI. Managed restrictions still fail closed.
 // Real bridge, engine and elpis-agents server, isolated home. Claude and Gemini helpers use the
 // fixtures in permissions-bridge.test.cjs; engine helpers use a local Responses fixture and the
 // real sandbox, behind a pass-through that can refuse or ignore the bridge's own restrictions.
@@ -17,7 +17,7 @@ const WebSocket = require('../tools/elpis-claude/node_modules/ws');
 const { Provider, message, call } = require('./lib/mock-provider.js');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 // The TUI's permission modes: profile and approval policy.
-const MODES = { default: [':workspace', 'on-request'], readOnly: [':read-only', 'on-request'], full: [':danger-full-access', 'never'] };
+const MODES = { default: [':workspace', 'on-request'], readOnly: [':read-only', 'on-request'], readOnlyNever: [':read-only', 'never'], full: [':danger-full-access', 'never'] };
 
 if (process.argv.includes('--engine-fault')) engineFault();
 else main().catch(error => { console.error(error.stack); process.exitCode = 1; });
@@ -43,8 +43,13 @@ function engineFault() {
     let msg = null;
     try { msg = JSON.parse(line); } catch {}
     const control = JSON.parse(fs.readFileSync(process.env.ENGINE_FAULT_CONTROL, 'utf8'));
+    if (msg?.method === 'configRequirements/read' && control.requirements) {
+      fs.appendFileSync(`${process.env.ENGINE_FAULT_CONTROL}.requirements.jsonl`, JSON.stringify({ id: msg.id, method: msg.method }) + '\n');
+      out(JSON.stringify({ id: msg.id, result: { requirements: control.requirements } })); return;
+    }
     if (msg?.method === 'thread/start' && String(msg.id).startsWith('agents-') && control.holdStart) heldStarts.set(msg.id, control.holdStart);
-    const fault = msg?.method === 'thread/settings/update' && String(msg.id).startsWith('acp-bridge-engine-') && control.settings;
+    const fault = msg?.method === 'thread/settings/update' && String(msg.id).startsWith('acp-bridge-engine-')
+      && (!control.settingsThreadId || msg.params?.threadId === control.settingsThreadId) && control.settings;
     if (fault === 'reject') out(JSON.stringify({ id: msg.id, error: { code: -32600, message: 'Fixture engine refuses the update' } }));
     else if (fault !== 'hang') engine.stdin.write(line + '\n');
   }).on('close', () => engine.stdin.end());
@@ -71,21 +76,21 @@ async function main() {
   const storeDir = path.join(root, 'store');
   fs.mkdirSync(storeDir);
   const faultControl = path.join(root, 'engine-fault.json');
-  const fault = (settings, holdStart) => fs.writeFileSync(faultControl, JSON.stringify({ settings, holdStart }));
+  const fault = (settings, holdStart, requirements, settingsThreadId) => fs.writeFileSync(faultControl, JSON.stringify({ settings, holdStart, requirements, settingsThreadId }));
   fault(null);
   const engineShim = path.join(root, 'engine'), agyShim = path.join(root, 'agy');
   fs.writeFileSync(engineShim, `#!/usr/bin/env node\nprocess.argv.splice(2, 0, '--engine-fault'); require(${JSON.stringify(__filename)});\n`, { mode: 0o755 });
   fs.writeFileSync(agyShim, `#!/usr/bin/env node\nprocess.argv.push('--agy-fixture'); require(${JSON.stringify(path.join(__dirname, 'permissions-bridge.test.cjs'))});\n`, { mode: 0o755 });
   const checks = [], failures = [], approvals = [], messages = [], servers = [], controls = [], observations = [];
-  let files = 0, currentGroup;
+  let files = 0, currentGroup, defaultMode = 'full';
   const waitFor = async (check, label, ms = 30000) => {
     const deadline = Date.now() + ms;
     while (!check()) { assert(Date.now() < deadline, `${label} timed out`); await pause(20); }
   };
   const pass = name => { checks.push(name); console.log(`PASS ${name}`); };
   const observe = (kind, result) => {
-    const { threadId, status, prompts, wrote, refused, permissionResult } = result;
-    const observation = { group: currentGroup, kind, threadId, status, prompts, wrote, ...(refused && { refused }), ...(permissionResult && { permissionResult }) };
+    const { threadId, status, prompts, wrote, refused, permissionResult, providerModes } = result;
+    const observation = { group: currentGroup, kind, threadId, status, prompts, wrote, ...(refused && { refused }), ...(permissionResult && { permissionResult }), ...(providerModes && { providerModes }) };
     observations.push(observation);
     console.log(`OBSERVED ${JSON.stringify(observation)}`);
   };
@@ -128,6 +133,21 @@ async function main() {
       const applied = notification('thread/settings/updated', threadId);
       await request('thread/settings/update', { threadId, approvalPolicy, permissions });
       assert.equal((await applied).threadSettings.approvalPolicy, approvalPolicy);
+    }
+    async function setDefault(mode) {
+      const [permissions, approvalPolicy] = MODES[mode];
+      defaultMode = mode;
+      await request('config/batchWrite', { edits: [
+        { keyPath: 'approval_policy', value: approvalPolicy, mergeStrategy: 'replace' },
+        { keyPath: 'approvals_reviewer', value: 'user', mergeStrategy: 'replace' },
+        { keyPath: 'default_permissions', value: permissions, mergeStrategy: 'replace' },
+      ] });
+    }
+    async function runningHelper(parentId) {
+      const listed = await request('thread/list', { ancestorThreadId: parentId, modelProviders: [], archived: false, limit: 100, useStateDbOnly: true });
+      const running = listed.data.filter(thread => thread.status?.type === 'active');
+      assert.equal(running.length, 1, 'this parent has one running helper');
+      return running[0].id;
     }
     // A Claude chat (the delegate tool is offered to Claude and Antigravity chats) in a confirmed mode.
     async function parent(mode) {
@@ -191,7 +211,8 @@ async function main() {
       controls.push(ctl);
       fs.writeFileSync(control, JSON.stringify(ctl));
       const t = await turn(delegate, { model: 'claude/haiku', ...args }, () => fs.existsSync(ctl.ready), () => fs.writeFileSync(ctl.release, 'release'), during);
-      const result = { ...t, wrote: fs.existsSync(ctl.marker), permissionResult: fs.existsSync(ctl.permissionResult) ? JSON.parse(fs.readFileSync(ctl.permissionResult, 'utf8')) : null };
+      const result = { ...t, wrote: fs.existsSync(ctl.marker), permissionResult: fs.existsSync(ctl.permissionResult) ? JSON.parse(fs.readFileSync(ctl.permissionResult, 'utf8')) : null,
+        providerModes: fs.existsSync(ctl.modeChanges) ? fs.readFileSync(ctl.modeChanges, 'utf8').trim().split('\n') : [] };
       observe(args.model?.startsWith('agy/') ? 'gemini' : 'claude', result);
       return result;
     }
@@ -255,6 +276,9 @@ async function main() {
       } finally {
         // Each group's parents have their own elpis-agents server; its helper connections close with it.
         for (const proc of servers.splice(0)) proc.kill();
+        fault(null);
+        if (fs.existsSync(path.join(home, 'permission-choices'))) fs.chmodSync(path.join(home, 'permission-choices'), 0o700);
+        if (defaultMode !== 'full') await setDefault('full');
       }
     }
 
@@ -362,10 +386,14 @@ async function main() {
       const delegate = await delegateServer(await parent('default'));
       const writable = await claudeHelper(delegate, { allow_writes: true });
       assert.equal(writable.status, 'completed'); assert.equal(writable.prompts, 0, 'prompts'); assert.equal(writable.wrote, true, 'write');
+      assert.equal(writable.permissionResult?.outcome?.optionId, 'allow', 'Full access answers the actual provider permission callback');
+      assert(!writable.providerModes.includes('bypassPermissions'), 'R59: Full access never selects provider Bypass');
       pass('Default parent: a writable Claude helper edits without prompting');
       const readOnly = await claudeHelper(delegate, { allow_writes: false });
-      assert.equal(readOnly.prompts, 1, 'its question reaches the parent TUI'); assert.equal(readOnly.wrote, false, 'write');
-      pass('Default parent: a read-only Claude helper asks, and the declined edit stays absent');
+      assert.equal(readOnly.wrote, false, 'an explicit read-only task cannot edit');
+      assert.equal(readOnly.prompts, 0, 'P3: a scoped automatic helper never asks the person');
+      assert.equal(readOnly.permissionResult?.outcome?.optionId, 'deny', 'the actual ACP permission callback denies the edit');
+      pass('an explicitly read-only Claude helper denies its edit without prompting');
     });
     await group('engine helper controls', async () => {
       const delegate = await delegateServer(await parent('default'));
@@ -374,59 +402,88 @@ async function main() {
       pass('Default parent: a writable engine helper writes in its workspace');
       const readOnly = await engineHelper(delegate, { allow_writes: false });
       assert.equal(readOnly.wrote, false, 'the read-only sandbox must block the write');
+      assert.equal(readOnly.prompts, 0, 'P3: a scoped automatic engine helper never asks the person');
       pass('Default parent: a read-only engine helper is sandboxed');
       // Masih, 20 Oct: "read-only agents are of no use to us"; a helper writes unless told not to.
       const unspecified = await engineHelper(delegate, {});
       assert.equal(unspecified.prompts, 0, 'prompts'); assert.equal(unspecified.wrote, true, 'a helper may write by default');
       pass('Default parent: a helper started without allow_writes writes');
     });
-    // A helper may not exceed its parent's confirmed permissions when it starts.
-    await group('Read Only parent, writable Claude helper', async () => {
+    // P2/P3: the parent's own choice does not replace an automatic helper's shared default.
+    await group('Read Only parent, inherited Claude helper', async () => {
       const delegate = await delegateServer(await parent('readOnly'));
       const t = await claudeHelper(delegate, { allow_writes: true });
-      assert.equal(t.wrote, false, 'a Read Only parent must not start a helper that edits without approval');
-      pass('Read Only parent: allow_writes does not let a Claude helper edit');
+      assert.equal(t.wrote, true, 'the helper inherits the Full access default, independently of the parent menu');
+      assert.equal(t.prompts, 0, 'the automatic helper does not prompt');
+      pass('a Claude helper follows the Full access default below a manually read-only parent');
     });
-    await group('Read Only parent, writable engine helper', async () => {
+    await group('Read Only parent, inherited engine helper', async () => {
       const delegate = await delegateServer(await parent('readOnly'));
       const t = await engineHelper(delegate, { allow_writes: true });
-      assert.equal(t.wrote, false, 'a Read Only parent must not start a helper with a writable sandbox');
-      pass('Read Only parent: allow_writes does not let an engine helper write');
+      assert.equal(t.wrote, true, 'the helper inherits the Full access default, independently of the parent menu');
+      assert.equal(t.prompts, 0, 'the automatic helper does not prompt');
+      pass('an engine helper follows the Full access default below a manually read-only parent');
     });
-    // A parent reduction applies to its helpers from their next tool; a refused change fails closed.
+    await group('managed helper restrictions', async () => {
+      const delegate = await delegateServer(await parent('default'));
+      fault(null, undefined, { allowedApprovalPolicies: ['never', 'on-request'], allowedSandboxModes: ['read-only'], allowedApprovalsReviewers: ['user'] });
+      const requirementsLog = `${faultControl}.requirements.jsonl`;
+      const requirementReads = () => fs.existsSync(requirementsLog) ? fs.readFileSync(requirementsLog, 'utf8').trim().split('\n').length : 0;
+      const beforeRequirements = requirementReads();
+      const before = provider.requests.length;
+      const blocked = await engineHelper(delegate, { allow_writes: true });
+      assert(requirementReads() > beforeRequirements, 'the new helper reads the managed requirements proxy at its start');
+      assert.equal(blocked.wrote, false, 'P4: an automatic helper cannot use a managed-forbidden Full access default');
+      assert.equal(blocked.prompts, 0, 'a managed refusal does not become a user approval');
+      assert.match(blocked.text, /restricted by managed settings/i, 'the refused permission mode is reported');
+      assert.equal(provider.requests.length, before, 'a forbidden mode is refused before inference');
+      const beforeScopedRequirements = requirementReads();
+      const scoped = await claudeHelper(delegate, { allow_writes: false });
+      assert(requirementReads() > beforeScopedRequirements, 'the scoped helper also rechecks current managed requirements at its start');
+      assert.equal(scoped.wrote, false, 'the managed-allowed explicit read-only task still cannot edit');
+      assert.equal(scoped.prompts, 0, 'an allowed scoped task does not ask the person');
+      assert.equal(scoped.permissionResult?.outcome?.optionId, 'deny', 'the allowed scoped task denies its actual edit');
+      pass('managed restrictions refuse a forbidden automatic mode and preserve allowed explicit scopes');
+    });
+    // P2/P3: a helper's own explicit restriction applies on its next turn and survives reopening.
     const followUp = (name, fixture) => group(name, async () => {
       const parentId = await parent('default');
       const delegate = await delegateServer(parentId);
       const first = await claudeHelper(delegate, { allow_writes: true });
       assert.equal(first.wrote, true, 'the helper edits before the reduction');
-      await select(parentId, 'readOnly');
+      await select(first.threadId, 'readOnlyNever');
       const t = await claudeHelper(delegate, { thread_id: first.threadId }, undefined, fixture);
-      assert.equal(t.wrote, false, 'the follow-up must use the parent\'s reduced permissions');
+      assert.equal(t.wrote, false, 'the follow-up must keep the helper\'s explicit restricted choice');
+      assert.equal(t.prompts, 0, 'the restriction must not become a user approval');
       pass(name);
     });
-    await followUp('a Claude helper\'s follow-up after the parent becomes Read Only does not edit');
-    await followUp('a Claude helper whose provider refuses the restriction does not edit', { rejectMode: 'default' });
-    await group('running Claude helper, parent reduced', async () => {
+    await followUp('a Claude helper\'s follow-up keeps its own Read Only choice');
+    await followUp('a Claude helper whose provider refuses its own restriction does not edit', { rejectMode: 'plan' });
+    await group('running Claude helper, own permissions reduced', async () => {
       const parentId = await parent('default');
       const delegate = await delegateServer(parentId);
-      const t = await claudeHelper(delegate, { allow_writes: true }, () => select(parentId, 'readOnly'));
-      assert.equal(t.wrote, false, 'the next edit after the confirmed reduction must not run');
-      pass('a running Claude helper adopts the parent\'s Read Only at its next tool');
+      const t = await claudeHelper(delegate, { allow_writes: true }, async () => select(await runningHelper(parentId), 'readOnlyNever'));
+      assert.equal(t.wrote, false, 'the next edit after the helper\'s own confirmed reduction must not run');
+      pass('a running Claude helper adopts its own Read Only choice before its next tool');
     });
-    await group('running engine helper, parent reduced', async () => {
+    await group('running engine helper, shared default reduced', async () => {
       const parentId = await parent('default');
       const delegate = await delegateServer(parentId);
-      const t = await engineHelper(delegate, { allow_writes: true }, () => select(parentId, 'readOnly'));
+      const t = await engineHelper(delegate, { allow_writes: true }, () => setDefault('readOnlyNever'));
       assert.equal(t.wrote, false, 'the next tool after the confirmed reduction must not write');
-      pass('a running engine helper adopts the parent\'s Read Only at its next tool');
+      pass('a running inherited engine helper adopts the shared Read Only default before its next tool');
     });
-    // Full Access is the parent's alone.
+    // P3: explicit task scopes survive parent-menu and shared-default grants.
     await group('parent Full Access does not promote helpers', async () => {
       const parentId = await parent('default');
       const delegate = await delegateServer(parentId);
       const running = await claudeHelper(delegate, { allow_writes: false }, () => select(parentId, 'full'));
       assert.equal(running.wrote, false, 'a running read-only helper must not gain Full Access');
       pass('a running read-only Claude helper stays read-only when the parent gains Full Access');
+      await setDefault('default'); await setDefault('full');
+      const resumed = await claudeHelper(delegate, { thread_id: running.threadId });
+      assert.equal(resumed.wrote, false, 'an explicit read-only task scope survives shared-default grants');
+      assert.equal(resumed.prompts, 0, 'an explicit read-only task still does not prompt');
       const fresh = await claudeHelper(delegate, { allow_writes: false });
       assert.equal(fresh.prompts, 0, 'prompts'); assert.equal(fresh.wrote, false, 'write');
       pass('a Full Access parent starts a read-only Claude helper read-only');
@@ -434,34 +491,36 @@ async function main() {
       assert.equal(engine.wrote, false, 'write');
       pass('a Full Access parent starts a read-only engine helper sandboxed');
     });
-    // A48 (Masih, 20 Oct: "Full access by default for everyone; subagents never ask"): a writing helper of a
-    // Full Access chat gets Full Access. The workspace sandbox refuses a local server (listen EPERM); Full Access does not.
-    await group('Full Access parent gives a writing helper Full Access', async () => {
+    // R59/R60 and P2/P3 replace the former A48 parent cap: the shared default owns automatic writers.
+    await group('Full Access default gives a writing helper Full Access independently of its parent', async () => {
       const listen = `'${process.execPath}' -e "require('net').createServer().listen(0, '127.0.0.1', () => process.exit(0)).on('error', () => process.exit(1))" && `;
       const full = await parent('full');
       const engine = await engineHelper(await delegateServer(full), { allow_writes: true }, undefined, listen);
       assert.equal(engine.wrote, true, 'a writing helper of a Full Access chat opens a local server');
       pass('a Full Access parent starts a writing engine helper with Full Access');
       const workspace = await parent('default');
-      const capped = await engineHelper(await delegateServer(workspace), { allow_writes: true }, undefined, listen);
-      assert.equal(capped.wrote, false, 'a writing helper of a Workspace chat stays in the workspace sandbox');
-      pass('a Workspace parent keeps a writing engine helper in the workspace sandbox');
+      await select(workspace, 'default');
+      const independent = await engineHelper(await delegateServer(workspace), { allow_writes: true }, undefined, listen);
+      assert.equal(independent.wrote, true, 'a parent\'s Workspace choice does not replace its helper\'s Full access default');
+      assert.equal(independent.prompts, 0, 'the helper opens the local server without a user approval');
+      pass('a Workspace parent leaves an inherited helper in the shared Full access default');
     });
-    // A reduction is sticky; a later grant reaches only new helpers, up to what they ask for.
-    await group('sticky reduction', async () => {
+    // P2: the helper's own explicit choice survives later shared-default changes.
+    await group('explicit helper restriction survives default changes', async () => {
       const parentId = await parent('default');
       const delegate = await delegateServer(parentId);
       const first = await engineHelper(delegate, { allow_writes: true });
       assert.equal(first.wrote, true, 'the helper writes before the reduction');
-      await select(parentId, 'readOnly'); await select(parentId, 'default');
+      await select(first.threadId, 'readOnlyNever');
+      await setDefault('default'); await setDefault('full');
       const followUp = await engineHelper(delegate, { thread_id: first.threadId });
-      assert.equal(followUp.wrote, false, 'a reduced helper must not regain write access');
-      pass('an engine helper reduced by its chat stays read-only after the chat regains write access');
+      assert.equal(followUp.wrote, false, 'an explicit helper choice wins over later shared-default changes');
+      pass('an explicitly restricted engine helper stays read-only after a shared-default grant');
       const fresh = await engineHelper(delegate, { allow_writes: true });
       assert.equal(fresh.wrote, true, 'a new helper gets the scope it asks for');
       pass('a chat that regains write access starts new writable helpers');
     });
-    await group('fast revoke and grant', async () => {
+    await group('fast parent revoke and grant do not change a helper default', async () => {
       const parentId = await parent('default');
       const delegate = await delegateServer(parentId);
       const first = await engineHelper(delegate, { allow_writes: true });
@@ -474,8 +533,9 @@ async function main() {
       await waitFor(() => seen().length >= before + 2, 'both confirmations');
       assert.deepEqual(seen().slice(before), ['on-request', 'never'], 'the TUI hears the revoke, then the grant');
       const followUp = await engineHelper(delegate, { thread_id: first.threadId });
-      assert.equal(followUp.wrote, false, 'the grant must not undo the revoke for the helper');
-      pass('a fast revoke and grant reach the TUI in order and leave the helper read-only');
+      assert.equal(followUp.wrote, true, 'the parent\'s menu choices do not detach a helper from the shared default');
+      assert.equal(followUp.prompts, 0, 'the automatic helper does not prompt');
+      pass('a fast parent revoke and grant reach the TUI in order without replacing a helper\'s default');
     });
     await group('fresh delegate server', async () => {
       const parentId = await parent('default');
@@ -488,35 +548,45 @@ async function main() {
       assert.equal(reopened.wrote, true, 'a reopened helper keeps its write scope');
       pass('a helper reopened by a fresh delegate server keeps its write scope');
       await delegate.stop();
-      await select(parentId, 'readOnly'); await select(parentId, 'default');
+      await select(first.threadId, 'readOnlyNever');
       delegate = await delegateServer(parentId);
       const reduced = await engineHelper(delegate, { thread_id: first.threadId });
-      assert.equal(reduced.wrote, false, 'a reduction made while the helper was closed must apply');
-      pass('a reduction made while a helper was closed applies when a fresh delegate server reopens it');
+      assert.equal(reduced.wrote, false, 'the helper\'s own restriction made while closed must apply');
+      assert.equal(reduced.prompts, 0, 'the reopened restricted helper does not prompt');
+      pass('the helper\'s explicit restriction made while closed applies on a fresh delegate server');
     });
-    await group('rejected chat update', async () => {
-      const parentId = await parent('readOnly');
-      await assert.rejects(request('thread/settings/update', { threadId: parentId, approvalPolicy: 'never', permissions: ':missing-profile' }));
-      const t = await engineHelper(await delegateServer(parentId), { allow_writes: true });
-      assert.equal(t.wrote, false, 'a rejected grant must not let a helper write');
-      pass('a rejected chat update does not let a new helper write');
+    await group('rejected helper update', async () => {
+      const delegate = await delegateServer(await parent('default'));
+      const first = await engineHelper(delegate, { allow_writes: false });
+      assert.equal(first.wrote, false, 'the helper starts explicitly read-only');
+      await assert.rejects(request('thread/settings/update', { threadId: first.threadId, approvalPolicy: 'never', permissions: ':missing-profile' }));
+      const t = await engineHelper(delegate, { thread_id: first.threadId });
+      assert.equal(t.wrote, false, 'a rejected grant must not lift the helper\'s explicit scope');
+      assert.equal(t.prompts, 0, 'a refused grant does not become a user approval');
+      pass('a rejected helper update preserves its explicit read-only scope');
     });
-    // The helper's engine refuses its restriction, or never confirms it: the helper stops. Reopened,
-    // it is read-only from the reopening itself, which does not need that refused update.
+    // P3/P4: failed application of a shared-default restriction stops the affected helper.
     const refused = (name, mode) => group(name, async () => {
       const parentId = await parent('default');
       let delegate = await delegateServer(parentId);
-      const t = await engineHelper(delegate, { allow_writes: true }, () => { fault(mode); return select(parentId, 'readOnly'); });
-      assert.equal(t.wrote, false, 'the helper must not write after its chat\'s reduction');
+      const t = await engineHelper(delegate, { allow_writes: true }, async () => {
+        fault(mode, undefined, undefined, await runningHelper(parentId));
+        await assert.rejects(setDefault('readOnlyNever'), /could not be updated|could not apply|refus/i, 'a failed default application is reported');
+      });
+      assert.equal(t.wrote, false, 'the helper must not write after the shared default restricts it');
       assert.equal(t.status, 'failed', 'the helper is stopped');
       pass(name);
       if (mode !== 'reject') { fault(null); return; }
       await delegate.stop();
       delegate = await delegateServer(parentId);
       const reopened = await engineHelper(delegate, { thread_id: t.threadId });
-      assert.equal(reopened.status, 'completed', `status: ${reopened.text}`); assert.equal(reopened.wrote, false, 'write');
-      pass('the stopped helper, reopened while its engine still refuses updates, runs read-only');
+      assert.equal(reopened.wrote, false, 'reopening while its engine refuses the restriction cannot write');
+      assert.notEqual(reopened.status, 'completed', 'the refused restriction is not reported as a successful turn');
+      pass('the stopped helper fails closed while its engine still refuses the restricted default');
       fault(null);
+      const recovered = await engineHelper(delegate, { thread_id: t.threadId });
+      assert.equal(recovered.status, 'completed', `status: ${recovered.text}`);
+      assert.equal(recovered.wrote, false, 'the recovered helper keeps the restricted default');
     });
     await refused('a helper whose engine refuses its restriction is stopped before its next tool', 'reject');
     await refused('a helper whose engine does not confirm its restriction is stopped before its next tool', 'hang');
@@ -527,48 +597,58 @@ async function main() {
       const inner = await delegateServer(outer.threadId);
       const first = await engineHelper(inner, { allow_writes: true });
       assert.equal(first.wrote, true, 'a writable helper\'s writable helper writes');
-      const t = await engineHelper(inner, { thread_id: first.threadId }, () => select(parentId, 'readOnly'));
-      assert.equal(t.wrote, false, 'the chat\'s reduction must reach its helper\'s helper');
-      pass('a chat\'s reduction reaches a running nested helper at its next tool');
+      const t = await engineHelper(inner, { thread_id: first.threadId }, () => setDefault('readOnlyNever'));
+      assert.equal(t.wrote, false, 'the shared-default reduction must reach a running nested helper');
+      assert.equal(t.prompts, 0, 'the nested automatic helper does not prompt');
+      pass('a shared-default restriction reaches a running nested helper before its next tool');
     });
     // Antigravity has no native-edit mode below Full Access, so this guards rather than separates.
     await group('Gemini helper', async () => {
-      const t = await claudeHelper(await delegateServer(await parent('readOnly')), { model: 'agy/gemini-3.8-flash-medium', allow_writes: true });
-      assert.equal(t.prompts, 1, 'its question reaches the parent TUI'); assert.equal(t.wrote, false, 'write');
-      pass('Read Only parent: a writable Gemini helper asks, and the declined write stays absent');
+      const delegate = await delegateServer(await parent('readOnly'));
+      const writable = await claudeHelper(delegate, { model: 'agy/gemini-3.8-flash-medium', allow_writes: true });
+      assert.equal(writable.wrote, true, 'a Gemini helper follows the shared default independently of the parent menu');
+      assert.equal(writable.prompts, 0, 'the automatic Gemini helper does not prompt');
+      const scoped = await claudeHelper(delegate, { model: 'agy/gemini-3.8-flash-medium', allow_writes: false });
+      assert.equal(scoped.wrote, false, 'a Gemini helper must respect its explicit read-only scope');
+      assert.equal(scoped.prompts, 0, 'a scoped Gemini helper denies instead of asking');
+      pass('Gemini helpers follow the shared default and retain explicit read-only scopes without prompts');
     });
-    // A helper start the engine has not answered yet keeps a reduction made meanwhile.
-    await group('helper start pending across a revoke and grant', async () => {
-      const parentId = await parent('default');
-      const delegate = await delegateServer(parentId);
-      const hold = { held: path.join(root, `${++files}.start-held`), release: path.join(root, `${files}.start-release`) };
-      fault(null, hold);
-      const starting = engineHelper(delegate, { allow_writes: true }).then(t => t, e => e);
-      await waitFor(() => fs.existsSync(hold.held), 'held helper start');
-      fault(null);
-      await select(parentId, 'readOnly'); await select(parentId, 'default');
-      fs.writeFileSync(hold.release, 'release');
-      const t = await starting;
-      if (t instanceof Error) throw t;
-      assert.equal(t.wrote, false, 'a helper whose start straddled a revoke must not write');
-      pass('a helper starting while its chat is revoked and regranted starts read-only');
-      const fresh = await engineHelper(delegate, { allow_writes: true });
-      assert.equal(fresh.wrote, true, 'a helper started after the grant writes');
-      pass('a helper started after the grant still writes');
+    // P2/P3: a pending automatic start follows the last shared default, without sticky parent revocations.
+    await group('helper start pending across shared-default changes', async () => {
+      for (const mode of ['readOnlyNever', 'full']) {
+        const parentId = await parent('default');
+        const delegate = await delegateServer(parentId);
+        const hold = { held: path.join(root, `${++files}.start-held`), release: path.join(root, `${files}.start-release`) };
+        fault(null, hold);
+        const starting = engineHelper(delegate, { allow_writes: true }).then(t => t, e => e);
+        await waitFor(() => fs.existsSync(hold.held), 'held helper start');
+        fault(null);
+        await setDefault('readOnlyNever');
+        if (mode === 'full') await setDefault('full');
+        fs.writeFileSync(hold.release, 'release');
+        const t = await starting;
+        if (t instanceof Error) throw t;
+        assert.equal(t.wrote, mode === 'full', `a pending inherited helper follows the final ${mode} default`);
+        assert.equal(t.prompts, 0, 'the pending helper does not ask after the default changes');
+        const fresh = await engineHelper(delegate, { allow_writes: true });
+        assert.equal(fresh.wrote, mode === 'full', 'a newly started helper follows the same final default');
+        await setDefault('full');
+      }
+      pass('pending and fresh inherited helpers follow the last shared default without prompting');
     });
-    // The TUI opening a helper (as from the agents page) gets no more than the helper's ceiling.
+    // P2/P3: cached TUI fields cannot replace the helper's explicit choice or its inherited default.
     await group('helper opened in the TUI', async () => {
       const keptParent = await parent('default'), reducedParent = await parent('default');
       const keptServer = await delegateServer(keptParent), reducedServer = await delegateServer(reducedParent);
       const kept = await engineHelper(keptServer, { allow_writes: true }), reduced = await engineHelper(reducedServer, { allow_writes: true });
       assert.equal(kept.wrote && reduced.wrote, true, 'both helpers write before');
       await keptServer.stop(); await reducedServer.stop();
-      await select(reducedParent, 'readOnly'); await select(reducedParent, 'default');
+      await select(reduced.threadId, 'readOnlyNever');
       assert.equal(profileOf(await request('thread/resume', { threadId: reduced.threadId })), ':read-only', 'the TUI is shown the reduced helper read-only');
       const t = await tuiTurn(reduced.threadId);
       assert.equal(t.wrote, false, 'the TUI\'s own permission fields must not raise the helper');
       pass('a reduced helper opened in the TUI stays read-only, also under the TUI\'s permission fields');
-      assert.equal(profileOf(await request('thread/resume', { threadId: kept.threadId })), ':workspace', 'an unreduced helper keeps its scope');
+      assert.equal(profileOf(await request('thread/resume', { threadId: kept.threadId })), ':danger-full-access', 'an inherited helper keeps the shared Full access default');
       const k = await tuiTurn(kept.threadId);
       assert.equal(k.wrote, true, 'write');
       pass('an unreduced helper opened in the TUI keeps its write scope');
@@ -580,11 +660,14 @@ async function main() {
       const h = await engineHelper(server, { allow_writes: true });
       await server.stop();
       await request('thread/resume', { threadId: h.threadId });
-      const t = await tuiTurn(h.threadId, () => { fault('reject'); return select(parentId, 'readOnly'); });
-      assert.equal(t.wrote, false, 'the helper must not write after its chat\'s reduction');
+      const t = await tuiTurn(h.threadId, async () => {
+        fault('reject', undefined, undefined, h.threadId);
+        await assert.rejects(setDefault('readOnlyNever'), /could not be updated|could not apply|refus/i);
+      });
+      assert.equal(t.wrote, false, 'the helper must not write after the shared default restricts it');
       assert.equal(ws.readyState, WebSocket.OPEN, 'the TUI connection stays open');
       await request('thread/read', { threadId: parentId });
-      assert.match((await tuiTurn(h.threadId)).refused ?? '', /stopped/, 'the helper does not run until its restriction applies');
+      assert.match((await tuiTurn(h.threadId)).refused ?? '', /stopped|refus|could not apply/i, 'the helper does not run until its restriction applies');
       pass('a refused restriction stops a TUI-hosted helper without closing the TUI');
       fault(null);
       const applied = await tuiTurn(h.threadId);
@@ -600,27 +683,24 @@ async function main() {
       const reopened = await engineHelper(second, { thread_id: h.threadId });
       assert.doesNotMatch(reopened.text, /already has an active writer/);
       assert.equal(reopened.wrote, true, `the second server writes before the reduction: ${reopened.text}`);
-      await select(parentId, 'readOnly');
+      await select(h.threadId, 'readOnlyNever');
       assert.equal((await engineHelper(first, { thread_id: h.threadId })).wrote, false, 'the first server\'s copy');
       assert.equal((await engineHelper(second, { thread_id: h.threadId })).wrote, false, 'the second server\'s turn');
-      pass('a reduction reaches the helper controlled by either delegate server');
+      pass('a helper\'s own explicit restriction reaches either delegate server');
     });
-    // A reduction the store could not save is reported, and holds while the bridge runs.
-    await group('reduction not saved', async () => {
+    // P2: a failed explicit-choice save is reported; no follow-up may silently regain write access.
+    await group('helper choice not saved', async () => {
       const parentId = await parent('default');
       let delegate = await delegateServer(parentId);
       const h = await engineHelper(delegate, { allow_writes: true });
       await delegate.stop();
-      fs.chmodSync(storeDir, 0o555);
-      const warned = notification('warning', parentId);
-      await select(parentId, 'readOnly');
-      assert.match((await warned).message, /could not save/, 'the TUI is told the reduction was not saved');
-      fs.chmodSync(storeDir, 0o755);
-      await select(parentId, 'default');
+      fs.chmodSync(path.join(home, 'permission-choices'), 0o500);
+      await assert.rejects(select(h.threadId, 'readOnlyNever'), /could not be saved/, 'the TUI is told its helper choice was not saved');
+      fs.chmodSync(path.join(home, 'permission-choices'), 0o700);
       delegate = await delegateServer(parentId);
       const reopened = await engineHelper(delegate, { thread_id: h.threadId });
-      assert.equal(reopened.wrote, false, 'the unsaved reduction still holds');
-      pass('a reduction the store could not save is reported, and holds while the bridge runs');
+      assert.equal(reopened.wrote, false, 'a failed helper-choice save must not silently restore write access');
+      pass('a failed helper-choice save is reported and does not silently restore writes');
     });
     if (failures.length) process.exitCode = 1;
   } finally {
@@ -630,4 +710,3 @@ async function main() {
     ws?.close(); bridge.kill(); provider.close();
   }
 }
-
