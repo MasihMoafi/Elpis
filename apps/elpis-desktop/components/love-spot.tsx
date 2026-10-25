@@ -3,12 +3,13 @@
 import "@/lib/love-spot-assets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Heart, Plus, Trash2, Volume2, VolumeX, X } from "lucide-react";
+import { Check, ChevronDown, Heart, Info, Plus, Trash2, Volume2, VolumeX, X } from "lucide-react";
 import { CaptureUpdateAction, Excalidraw, MainMenu, newElementWith, convertToExcalidrawElements, exportToBlob, serializeAsJSON, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI, ExcalidrawInitialDataState, PointerDownState } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ReadAloud, useReadAloud } from "@/components/read-aloud";
 import { useDrawingStyle } from "@/components/drawing-style";
 import { Input } from "@/components/ui/input";
@@ -449,6 +450,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     save(true);
   }
 
+  const voiceProblem = voiceError || speech?.error?.message || voice?.error;
   const tools = <div className="navbar love-spot-tools">
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
@@ -476,10 +478,10 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
       <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
         <label className="flex items-center gap-2" title="Matilda speaks each reply in your ChatGPT voice. It may use your ChatGPT allowance."><span aria-hidden="true">{voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Voice<Switch aria-label="Voice" checked={!!voice?.enabled} disabled={!voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
+        {voice && !voice.available && <Tooltip content={voice.reason || "ChatGPT voice is unavailable."}><Button variant="ghost" size="icon-xs" aria-label="Why Voice is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
         <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
-        {calling && <span className="text-muted-foreground">Live voice uses ChatGPT</span>}
-        {/* Only a reason or a problem is written out; on and off are the switch itself, so the bar stays one row (R6). */}
-        {(() => { const why = voiceSaving ? "Saving Voice…" : voiceError || speech?.error?.message || voice?.error || (!voice ? "" : !voice.available ? voice.reason : !voice.enabled ? "Voice is off." : ""); return why ? <span className="text-muted-foreground" role="status">{why}</span> : null; })()}
+        {voiceSaving && <span className="sr-only" role="status">Saving Voice…</span>}
+        {voiceProblem && <span className="text-destructive" role="alert">{voiceProblem}</span>}
       </div>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}

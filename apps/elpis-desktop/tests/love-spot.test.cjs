@@ -101,6 +101,10 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
     const before = await sidebar.boundingBox();
     assert.equal(before.width, 320, 'the check must preserve a user-resized sidebar');
     await f.open(page);
+    const voiceInfo = page.getByRole('button', { name: 'Why Voice is unavailable', exact: true });
+    await voiceInfo.focus();
+    await page.getByRole('tooltip').getByText('Connect ChatGPT in Settings → Connections.', { exact: true }).waitFor();
+    await voiceInfo.blur();
     for (const width of [1600, 1280, 1024, 820]) {
       await page.setViewportSize({ width, height: 960 });
       await page.waitForTimeout(200);
