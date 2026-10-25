@@ -24,6 +24,66 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/night-workflows.test.cjs": {
+      "blob": "b7a51ea7c95482c50d29d9c0fd67ee0e360eece7",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Retain the installed workflow simplification from 141be35a2d4e0ff10691bf670b759eecba52947d: plain agents replace removed character artwork. Preserve all five numbered patterns, editable prompts, Escape/typing, colour and no-portrait checks in both canvas views."
+    },
+    "tests/side-panel-fit.test.cjs": {
+      "blob": "4aaab9ec786c3ccc4f66793023e1f6c83c01ef44",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "A217 starts the panel at sidebar width. Expand before testing a full interior retreat so the test is not measuring its 200px minimum clamp; preserve cancellation, retreat, minimum and keyboard checks."
+    },
+    "tests/mode-cycle.test.cjs": {
+      "blob": "99d7b5310fd5c4e6a58a82153c0c261ecb62a79a",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "A233/A251 makes Full access the shared initial default. Preserve the complete Shift+Tab Ask, Approve and Plan cycle and composer focus."
+    },
+    "tests/menus.test.cjs": {
+      "blob": "74fe5b7ac62917739dadb7f534cea343a28294e8",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Approved live effort selection persists immediately through the effort route. Preserve pending model choice, immediate effort write and exact next-message payload, plus all model/menu/no-send assertions."
+    },
+    "tests/ux-everyday.test.cjs": {
+      "blob": "714e4229cca37f06db68667a544ddc3be7e13fde",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Approved live effort selection persists immediately through the effort route. Preserve queue model, effort and Plan choices and all focus, send and everyday-use assertions."
+    },
+    "tests/effort-shortcuts.test.cjs": {
+      "blob": "57d89105f4ad958373917637b136ab9fb7052000",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Approved live effort selection persists immediately through the effort route. Keep keyboard/manual selector agreement and reload proof; subsequent turns do not duplicate an already saved override."
+    },
+    "tests/composer-keys.test.cjs": {
+      "blob": "1523a01cb5fdef7b35d63f309a39b6523890650b",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Historical turns defer off-screen content. Scroll the actual visible placeholder before requiring its message; keep newest drawn, oldest skipped, navigation and no-send assertions."
+    },
+    "tests/follow-up-queue.test.cjs": {
+      "blob": "dc96a06c9ed8415f75b66d86de2f58f47ee18a93",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "S35 persistent menubar items are separate from popup choices. Keep exact send choices and all queue stack, send-now, remove and clear behavior checks."
+    },
+    "tests/claude-composer.test.cjs": {
+      "blob": "cd00617e4219835bb46d26180f2af7a230e6aef3",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "S35 persistent menubar items are separate from popup choices. Keep the exact composer actions and all command, plan, keyboard and no-send checks."
+    },
+    "tests/attachments-ui.test.cjs": {
+      "blob": "2ff5c5456372c9a7d9cb912730f8329b7eda7c2e",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "S35 persistent menubar items are separate from popup choices. Scope the exact attachment menu inventory to the open popup, preserving every file, image, cap and send assertion."
+    },
+    "tests/bypass-permissions.test.cjs": {
+      "blob": "d7a671a20e6c94a584c931d6fdf69615280ee1ce",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "A233/A251 makes Full access the shared default. Keep Bypass red, distinct and confirmed, Cancel lossless, managed refusals and immediate apply. Scope exact popup choices away from the S35 persistent menubar."
+    },
+    "tests/canvas-iso.test.cjs": {
+      "blob": "d64a29438b28f5ffec4056a66407f931d2de17fb",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Keep the dense node collision checks and extend them to dark mode after reserving the complete Mother workflow mark width."
+    },
     "tests/sidebar-creators.test.cjs": {
       "blob": "21f7ae074660ae529bc05d619b5fcab749512163",
       "approval": "0ff5340483d4f94b7baa1de092fcd06cf4b5b4e2",
@@ -50,14 +110,14 @@ export const retainedUpdates = {
       "reason": "S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/workflow-polish.test.cjs": {
-      "blob": "8f0b26e59e598694bbb71a3522cb05720f6942fc",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions."
+      "blob": "f5493e652078dad9eb1f5bf2244c0f1f445c5325",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion."
     },
     "tests/sidebar-groups.test.cjs": {
-      "blob": "1be6db6a14ffb2819e6501e3450b93010ff05277",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
+      "blob": "00c7b3b58cb4e4fe97ff059cce18820b12914cd3",
+      "approval": "1cfd51e4409aea37add77c5d6a70590c46c6d30f",
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion."
     },
     "tests/workflow-observer.test.cjs": {
       "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
@@ -125,9 +185,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
     "tests/view-boundaries.test.cjs": {
-      "blob": "345650a3abb3d055ae51e1c5acbbd1d3f047434b",
-      "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
-      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
+      "blob": "ad77f2a2298ae388279ba3a26b20f0b63a1b408d",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). S35, Masih 25 Oct screenshot: the close control belongs at the right of the Elpis brand. Measure brand/close bounds in that order, retaining SVG, width and both-theme clipping checks."
     },
     "tests/parity-fixture.cjs": {
       "blob": "6d85357f059f385a73fc55a30dcc1cf5d2c0979f",
@@ -165,9 +225,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/sidebar.test.cjs": {
-      "blob": "cfd20637d8dbd17302619ebe577e5a3d7a7766ff",
-      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
-      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984). Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can't, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged. A248: Bookmark belongs beside Pin and Archive; retain every deletion, selection, keyboard and hover assertion."
+      "blob": "713f46529c23e8062527f0c1fd8f25fde0374f59",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984). Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can't, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged. A248: Bookmark belongs beside Pin and Archive; retain every deletion, selection, keyboard and hover assertion. S35, Masih 25 Oct screenshot: close beside the Elpis brand and reopen in the title bar. Assert the actual aligned position and retain all keyboard, draft, project, delete and selection checks."
     },
     "tests/desktop-small-fixes.test.cjs": {
       "blob": "f02b388191828cac085bcbd12a80f994762ef192",
@@ -200,9 +260,9 @@ export const retainedUpdates = {
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
     },
     "tests/claude-chat.test.cjs": {
-      "blob": "58b0d904f76474ec33ee76f5079ea0be6c6de8a0",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
+      "blob": "f30777d3e11dc0f82ad033b605ff70d3a0e4233b",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks."
     },
     "tests/command-menu.test.cjs": {
       "blob": "335dcdab0114fafb0e45c3af362501bc7c8f13d2",
@@ -214,9 +274,9 @@ export const retainedUpdates = {
       "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
     },
     "tests/desktop-polish.test.cjs": {
-      "blob": "f99963a4166d01d245cd7b6d6e7a0db3cd83ecab",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+      "blob": "4d1df081303101817e4857fc702768ec8f5d331b",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. S34 reconnect status stays at the workspace bottom even while a drawer or floating panel hides the chat. Restore the hidden chat before inspecting its preserved draft; keep bottom geometry and reconnection checks."
     },
     "tests/desktop-sweep.test.cjs": {
       "blob": "ab7b9ecdd8cae06cc0d13681d7e51786e57b548a",
@@ -258,9 +318,9 @@ export const retainedUpdates = {
       "reason": "OBSRM page removal (see pageRemovalApproval) plus SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Two shortcut tests added; no existing assertion removed. Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" (efb597b8b) The send-hint assertion goes with sendHint, which nothing calls."
     },
     "tests/renderer.test.cjs": {
-      "blob": "5b8c4296ccdba31be41bd93cefc000570f23b4bd",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions."
+      "blob": "e53cbff337db8e2d815405626cf8252097c25f12",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Masih 24 Oct: all chats start collapsed. Explicitly expand the parent before checking its child; preserve real exported renderer send, steer, interrupt, writable-history, theme and mobile journeys."
     },
     "tests/sidebar-attention.test.cjs": {
       "blob": "c889f4da05279b38c5308c0ab1f0dd03037b0809",
@@ -285,9 +345,9 @@ export const retainedUpdates = {
       "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The negative colour probe must use the former, now unapproved Send orange; every diff assertion stays."
     },
     "tests/config-defaults.test.cjs": {
-      "blob": "4baf2d4ce89b8f0e36cc55a3b1c43249fc359993",
-      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
-      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
+      "blob": "15c56a22a2ad611904762824c314fbef9b2ccd04",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" The default is now an inline editor; assert the exact unset and externally saved values and zero writes. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks. S33 consolidates the shared Main model in Configuration. Open that actual setting and preserve external-write reload, unset state and no-write-on-open checks."
     },
     "tests/customize.test.cjs": {
       "blob": "e7478d146149e0be40694c1b2c7a125f4a15b7c8",
@@ -310,9 +370,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/settings-rows.test.cjs": {
-      "blob": "dc9760e9d4454c1e78e4b4536a63ba1a8443ba19",
-      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
-      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
+      "blob": "c612c885b89ebc336f3f078d56764ac971bebd2f",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks. The independent height/font/offset mutation checks target a visible audited select control, rather than an unrelated file-reference button. Every drift assertion remains."
     },
     "tests/sidebar-indent.test.cjs": {
       "blob": "5bb88e37e24230393592abe93c2e3d46ef669805",
@@ -320,9 +380,9 @@ export const retainedUpdates = {
       "reason": "V1, Masih's approved request in GATE11: \"every chat row uses the project-chat layout, all chevrons in one column\". Retain exact circle/title coordinates, hover, expansion, selection and reload checks in both themes."
     },
     "tests/tabs.test.cjs": {
-      "blob": "f975865ef14cac12eb7907ad69222be3756d571f",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
+      "blob": "88c32fd2532d21726cb507f4d8c98bb18b220be6",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks."
     },
     "tests/sidebar-parity.test.cjs": {
       "blob": "02943d2f19811a05e53e63a20c0417d777bdfe1a",
@@ -345,9 +405,9 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "27421d4d36879c01db55e30317bce034a2f10cd7",
-      "approval": "6c55175a10129526a7b1fcb3f92c55b529fcea14",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions."
+      "blob": "dded14b5e5d94056f7b059215ce76675333e24db",
+      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks."
     },
     "tests/love-dock.test.cjs": {
       "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",
@@ -373,8 +433,9 @@ export const retainedUpdates = {
 // The Talk panel (Masih, 23 Oct: "remove the talk and matilda buttons. I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda."): its test file is
 // split into tests/love-spot-board.test.cjs (what reaches her, where her reply lands, the microphone, navigating away, the toolbar fit); the
 // Talk-only checks (the panel, its model picker and hover buttons, quoting a note, its fit) go with the panel.
+// Workflow artwork picker was removed in installed source 141be35a2; night-workflows retains pattern, prompt, keyboard and colour proof.
 export const retiredPaths = {
-  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs'],
+  '988aad0e78bd264c00e435be07598e79f08941e8': ['tests/settings-reorder.test.cjs', 'tests/observability.test.cjs', 'tests/temp-root-ui.test.cjs', 'tests/love-agents.test.cjs', 'tests/love-agents-v2.test.cjs', 'tests/love-spot-standalone.test.cjs', 'tests/love-spot-talk.test.cjs', 'tests/workflow-characters.test.cjs'],
 };
 export const receiptName = '.elpis-ui-receipt.json';
 const stateTest = 'desktop/state.test.cjs';
