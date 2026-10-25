@@ -53,7 +53,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   const mode = () => page.getByRole('button', { name: 'Change permissions', exact: true });
   const choose = async label => { await mode().click(); await page.getByRole('menuitem').filter({ hasText: label }).first().click(); await page.waitForFunction(label => document.querySelector('[aria-label="Change permissions"]')?.getAttribute('aria-description') === label, label); };
   const deny = () => page.getByRole('button').filter({ hasText: /^\s*\d*\s*Deny/ }).first();
-  const command = async (tag, asks = false, claude = false) => {
+  const command = async (tag, asks = false, claude = false, options = {}) => {
     const file = path.join(root, tag);
     const text = `${claude ? '[permission] ' : ''}PERMISSION_FILE:${file}`;
     await page.getByLabel('Message Elpis', { exact: true }).fill(text); await page.getByLabel('Message Elpis', { exact: true }).press('Enter');
@@ -64,7 +64,9 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
         assert.ok(Date.now() < deadline, `${tag}: approval was shown`);
         await new Promise(r => setTimeout(r, 50));
       }
-      await assert.rejects(fs.stat(file)); await deny().click();
+      await assert.rejects(fs.stat(file));
+      if (options.hold) return file;
+      await deny().click();
     }
     else if (claude) { await page.getByText(new RegExp(`permission: allow_once[\\s\\S]*${tag}`)).last().waitFor({ timeout: 30000 }); assert.equal(await deny().count(), 0); assert.equal(await fs.readFile(file, 'utf8'), 'permission-ran'); }
     else { await page.waitForFunction(async tag => { const r = await fetch('/api/threads?limit=100'); return r.ok; }, tag); const end = Date.now() + 45000; for (;;) { if (await fs.stat(file).then(() => true, () => false)) break; assert.equal(await deny().count(), 0, `${tag}: inherited Full access asked for approval`); assert.ok(Date.now() < end, `${tag}: command did not run`); await new Promise(r => setTimeout(r, 50)); } }
@@ -87,9 +89,20 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   await page.keyboard.press('Control+n'); await command('gui-full');
   const normal = await page.locator('.thread-row[aria-current="page"],.thread-row[aria-selected="true"],.thread-row.active').first().getAttribute('data-thread-id');
   await choose('Ask for approval'); await command('explicit-ask', true);
+  const ownHeld = await command('explicit-pending', true, false, { hold: true });
   const setDefault = async label => { await openSettings(page, 'Configuration'); await chooseOption(page.getByLabel('Default permissions', { exact: true }), { label }); await page.getByText('Default permissions saved.', { exact: false }).waitFor(); await leaveSettings(page); };
-  await setDefault('Ask for approval'); await select(id); await command('inherited-ask', true);
-  await setDefault('Full access'); await select(id); await command('inherited-full-again');
+  await setDefault('Ask for approval'); await select(id); const held = await command('inherited-ask', true, false, { hold: true });
+  await setDefault('Full access'); await select(id);
+  const released = Date.now() + 30000;
+  while (!await fs.stat(held).then(() => true, () => false)) { assert.ok(Date.now() < released, 'changing the default to Full access releases an inherited pending approval'); await new Promise(r => setTimeout(r, 50)); }
+  await deny().waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  t.diagnostic('pending inherited approval: Full access released the command');
+  await command('inherited-full-again');
+  await select(normal); assert.equal(await fs.stat(ownHeld).then(() => true, () => false), false);
+  await deny().waitFor(); await deny().click();
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  t.diagnostic('pending explicit Ask: stayed held after the default changed');
   await select(normal); await command('explicit-ask-kept', true);
   await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached', timeout: 60000 });
   await select(normal); await command('reload-explicit-ask', true);
@@ -130,8 +143,14 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   await page.getByRole('option').filter({ hasText: /haiku/i }).first().click();
   await command('claude-full', false, true);
   const claudeId = await page.locator('.thread-row.active').first().getAttribute('data-thread-id');
-  await setDefault('Ask for approval'); await select(claudeId); await command('claude-inherited-ask', true, true);
-  await setDefault('Full access'); await select(claudeId); await command('claude-inherited-full', false, true);
+  await setDefault('Ask for approval'); await select(claudeId); const claudeHeld = await command('claude-inherited-ask', true, true, { hold: true });
+  await setDefault('Full access'); await select(claudeId);
+  const claudeReleased = Date.now() + 30000;
+  while (!await fs.stat(claudeHeld).then(() => true, () => false)) { assert.ok(Date.now() < claudeReleased, 'Full access releases a pending Claude tool permission'); await new Promise(r => setTimeout(r, 50)); }
+  await deny().waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
+  t.diagnostic('pending Claude approval: Full access released the command through its normal permission hook');
+  await command('claude-inherited-full', false, true);
   const modes = (await fs.readFile(path.join(root, 'acp.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(x => x.method === 'session/set_mode');
   assert.ok(modes.some(x => x.params.modeId === 'default'), 'Full access uses Claude permission checks with automatic answers');
   assert.equal(modes.some(x => x.params.modeId === 'bypassPermissions'), false, 'Full access never selects Bypass');
