@@ -17,6 +17,7 @@ import { parseArgs } from "node:util";
 import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 import { redactSecrets } from "./log-redaction.mjs";
 import { runtimeDir } from "./shared-runtime.mjs";
+import { permissionSettingsAllowed } from './permission-policy.mjs';
 import WebSocket from "ws";
 
 const VERSION = "0.1.0";
@@ -339,12 +340,16 @@ const app = agent({ name: "elpis" })
     const ephemeral = params._meta?.elpis?.ephemeral === true;
     const policy = workflowPolicy(params._meta?.elpis?.workflow, params.cwd);
     const config = mcpConfig(params.mcpServers);
+    const access = { approvalPolicy: 'never', permissions: policy?.turn.permissions ?? ':danger-full-access' };
+    const requirements = (await engine.call('configRequirements/read', {})).requirements ?? {};
+    if (!permissionSettingsAllowed(access, requirements)) throw new RequestError(-32602, 'Managed settings forbid these automatic agent permissions.');
     const started = await engine.call("thread/start", {
       cwd: params.cwd,
       ...(ephemeral ? { ephemeral: true } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(provider ? { modelProvider: provider } : {}),
-      approvalPolicy: policy ? "never" : "on-request", ...(policy ? { permissions: policy.turn.permissions } : { sandbox: "workspace-write" }),
+      ...access,
+      elpisPermissionSource: 'automatic',
       ...(policy?.profile || Object.keys(config).length ? { config: { ...config, ...(policy?.profile ? { "permissions.elpis-workflow": policy.profile } : {}) } } : {}),
       ...(typeof append === "string" && append.trim() ? { developerInstructions: append } : {}),
     });

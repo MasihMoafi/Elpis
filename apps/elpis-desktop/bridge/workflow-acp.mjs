@@ -100,8 +100,8 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     await save(record); return entry.optionId;
   };
   const fullAccess = spec => {
-    // This is the ACP mode a chat uses for Full access; no engine bypass profile or CLI flag.
-    if (!spec.elpis && !spec.instructionsInPrompt) spec.mode = 'bypassPermissions';
+    // Keep the provider's checks active; the permission callback answers automatic agents.
+    if (!spec.elpis && !spec.instructionsInPrompt) spec.mode = 'default';
     return spec;
   };
   async function reviewAndMerge(record, signal) {
