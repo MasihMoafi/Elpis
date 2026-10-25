@@ -450,7 +450,7 @@ const helperThreads = new Set();
 const helperConns = new WeakSet();
 const workflowToolConns = new WeakSet(); // a chat's workflow tool: its launches need the person's request (WR6)
 const relayed = new Map(); // id sent to the TUI -> answers the helper's request
-const chatAccess = new Map(); // a chat's confirmed approval policy and profile, for the helpers it starts
+const chatAccess = new Map(); // confirmed approval policy and profile for automatic tool decisions
 const automaticThreads = new Set(), blockedAutomaticThreads = new Set();
 const explicitChatChoices = new Set();
 // Automatic helpers follow the shared default. An explicitly requested read-only
@@ -878,7 +878,6 @@ wss.on("connection", (ws) => {
     threadAccess.set(threadId, { profile: profile ?? prev.profile, reviewer: s.approvalsReviewer ?? prev.reviewer });
     chatAccess.set(threadId, { policy: threadPolicy.get(threadId), profile: threadAccess.get(threadId).profile });
     for (const confirm of confirmations.get(threadId) ?? []) confirm(threadAccess.get(threadId).profile);
-    return null;
   };
   // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
   // Ask uses Accept edits, Approve for me uses Auto. Full access keeps normal
@@ -1677,10 +1676,6 @@ wss.on("connection", (ws) => {
     if (!claudeModel.has(tid)) await withAgents(msg.params, !!d);
     engine.stdin.write(JSON.stringify(msg) + "\n");
   }
-  // A thread/settings/updated that waits for helpers to apply a reduction keeps its place: any
-  // later one for this connection waits behind it, so a fast revoke and grant arrive in order.
-  let settingsQueue = null;
-
   lineReader(engine.stdout, async (line) => {
     let parsed = null;
     try { parsed = JSON.parse(line); } catch {}
@@ -1786,15 +1781,8 @@ wss.on("connection", (ws) => {
     if (parsed?.method === "thread/settings/updated") {
       const tid = parsed.params?.threadId;
       const previousAccess = accessModeOf(tid, "claude", threadPolicy.get(tid) !== "never");
-      const reducing = noteAccess(tid, parsed.params?.threadSettings);
+      noteAccess(tid, parsed.params?.threadSettings);
       stopIfReduced(tid, previousAccess);
-      // The TUI hears of a reduction only once the chat's helpers have applied it.
-      if (reducing || settingsQueue) {
-        const prior = settingsQueue;
-        const mine = settingsQueue = Promise.resolve(prior).then(() => reducing).catch((e) => log(`helper restriction: ${e?.message ?? e}`));
-        await mine;
-        if (settingsQueue === mine) settingsQueue = null;
-      }
     }
     shareHelper(parsed);
     notePlan(parsed);
