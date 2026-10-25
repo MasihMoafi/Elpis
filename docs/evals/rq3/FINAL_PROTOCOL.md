@@ -1,6 +1,6 @@
 # RQ3 paired task-correctness study
 
-25 October 2026. **The six-arm Sol/Luna feasibility pilot finished with four official grades and two verifier timeouts.** Only one pair has both grades, and that pair lacks reliable ON admission evidence. See the [pilot result](SOL_LUNA_PILOT_20261025.md). The launcher is closed; main-study tasks, sample size and quota budget remain unfrozen. **RQ3 remains future work. Astra and paid OpenRouter remain forbidden; any authorized inference must use the saved ChatGPT login.**
+25 October 2026. **The six-arm Sol/Luna feasibility pilot finished with four official grades and two verifier timeouts.** Only one pair has both grades, and that pair lacks reliable ON admission evidence. See the [pilot result](SOL_LUNA_PILOT_20261025.md). The launcher is closed; main-study tasks, sample size and quota budget remain unfrozen. **The larger RQ3 study remains future work. Astra and paid OpenRouter remain forbidden; any authorized inference must use the saved ChatGPT login.**
 
 Masih then requested reruns or continuation ASAP. The [four-run recovery](RECOVERY_20261025.md)
 completed both affected task pairs: web-server 0/0 OFF/ON; SQLite 1/1, with seven

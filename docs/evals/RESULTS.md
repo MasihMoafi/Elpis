@@ -175,7 +175,7 @@ directly.
 
 ---
 
-## Future work — RQ3 task performance
+## RQ3 task performance — exploratory results and future work
 
 Exploratory Terminal-Bench tests did not establish a clear, consistent task-performance
 difference in either direction. The preserved report records eight paired comparisons
@@ -204,7 +204,7 @@ regex ON's pruning receipts were lost through an export error. Only one pair has
 both grades, with its pruning exposure unknown. Two earlier setup incidents and
 all known usage are retained separately. These results establish neither unchanged
 task performance nor a directional effect. The pilot is excluded from confirmatory
-inference; RQ3 remains future work.
+inference; the larger task-performance study remains future work.
 
 The subsequent [grading recovery](rq3/RECOVERY_20261025.md) ran four new agent
 executions on the two affected tasks with matched 4 GiB/two-CPU limits. Web-server
@@ -214,6 +214,13 @@ another model call; the original error and unchanged test/configuration hashes a
 retained. Exact public bootstrap files were cached to remove the download stall.
 The original six runs remain separate. No score difference was observed in these
 two rerun pairs; this descriptive result does not establish performance equivalence.
+
+The recovery recorded **703,692 tokens OFF versus 1,250,509 ON**, counting main
+input plus output and all pruner usage, including cached input once. The ON total
+includes **37,321 Luna tokens**. ON used **77.7% more tokens** overall (web-server
+138.4% more; SQLite 24.2% more). Different agent rollouts and shared cache state
+limit interpretation. Dollar cost was not measured through the saved login.
+These runs demonstrated no token or monetary savings.
 
 ---
 
