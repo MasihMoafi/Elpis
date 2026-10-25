@@ -174,6 +174,30 @@ test('workflow names reject duplicates beside the field; colour and duplication 
   } finally { await f.close(); }
 });
 
+test('a rename in the sidebar is no board edit: Ctrl+Z on the board undoes his mute and keeps the new name', async () => {
+  const f = await open('light'), { page } = f;
+  try {
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true }), name = canvas.getByRole('textbox', { name: 'Graph name', exact: true });
+    const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')));
+    const muted = async () => (await saved()).nodes.find(node => node.id === 'writer').data.muted;
+    const off = () => page.evaluate(() => document.activeElement?.blur());
+    await canvas.locator('.react-flow__node[data-id="writer"]').click(); await off(); await page.keyboard.press('m');
+    await eventually(async () => assert.equal(await muted(), true));
+    await row(page, 'chat-a').locator('.thread-actions').click();
+    await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+    const rename = page.getByRole('alertdialog', { name: 'Rename conversation', exact: true });
+    await rename.getByLabel('Conversation name', { exact: true }).fill('Fix checkout');
+    await rename.getByRole('button', { name: 'Save', exact: true }).click(); await rename.waitFor({ state: 'detached' });
+    await eventually(async () => assert.equal(await name.inputValue(), 'Fix checkout'));
+    await off(); await page.keyboard.press('Control+z');
+    await eventually(async () => assert.equal(await muted(), undefined, 'Ctrl+Z undoes the mute'));
+    assert.equal((await saved()).name, 'Fix checkout'); assert.equal(await name.inputValue(), 'Fix checkout');
+    assert.equal(await row(page, 'chat-a').locator('.thread-title').innerText(), 'Fix checkout');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('saved chat nesting keeps a workflow and its own collapse control visible', async () => {
   const saved = runs.map(run => run.id === 'run-2' ? { ...run, status: 'running' } : run);
   const f = await open('light', saved), { page } = f;
