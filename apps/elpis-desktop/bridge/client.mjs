@@ -1861,8 +1861,7 @@ export class DesktopClient extends EventEmitter {
     const mode = permissionMode(body.permissions);
     if (!mode) throw new BridgeError('Choose a permission mode: ask, auto, full or bypass');
     return this.#mutate(id, async () => {
-      const thread = await this.#current(id);
-      if (thread.desktopAccess.mode === 'continue') throw new BridgeError("Only this agent's parent can change its permissions.", 409);
+      await this.#current(id);
       let resolveApplied;
       const applied = new Promise(resolve => { resolveApplied = resolve; });
       const waiters = this.#settingsWaiters.get(id) ?? new Set();

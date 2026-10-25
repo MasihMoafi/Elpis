@@ -849,10 +849,7 @@ wss.on("connection", (ws) => {
   const dispatchOwned = (msg, client) => {
     const id = `forward-${randomUUID()}`;
     forwarded.set(id, { client, id: msg.id, owner: ws });
-    if (msg.method === 'thread/settings/update' && ['approvalPolicy', 'permissions', 'sandboxPolicy'].some(k => msg.params?.[k] != null)) {
-      permissionWrites.set(id, { threadId: msg.params.threadId, settings: Object.fromEntries(['approvalPolicy', 'approvalsReviewer', 'permissions', 'sandboxPolicy'].filter(k => msg.params[k] != null).map(k => [k, msg.params[k]])) });
-    }
-    handleMessage(JSON.stringify({ ...msg, id }));
+    void withPermissions(JSON.stringify({ ...msg, id }));
   };
   function claimProvider(tid, result) {
     if (!claudeModel.has(tid)) return;
@@ -1231,6 +1228,8 @@ wss.on("connection", (ws) => {
     let msg;
     try { msg = JSON.parse(String(data)); } catch { handleMessage(data); return; }
     const p = msg.params ?? {}, method = msg.method;
+    const owner = providerOwners.get(p.threadId);
+    if (owner && owner.ws !== ws && ['thread/resume', 'thread/settings/update', 'turn/start'].includes(method)) { owner.dispatch(msg, ws); return; }
     if (method === 'config/batchWrite' && p.edits?.some(edit => ['approval_policy', 'approvals_reviewer', 'default_permissions', 'sandbox_mode'].includes(edit.keyPath))) permissionRefreshes.add(msg.id);
     if (!['thread/start', 'thread/resume', 'thread/fork', 'thread/settings/update', 'turn/start'].includes(method)) { handleMessage(data); return; }
     const source = p.elpisPermissionSource;
@@ -1247,6 +1246,9 @@ wss.on("connection", (ws) => {
         if (explicit && (!providerOwners.has(p.threadId) || providerOwners.get(p.threadId).ws === ws)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: Object.fromEntries(fields.filter(k => p[k] != null).map(k => [k, p[k]])) });
       } else {
         const record = p.threadId ? await permissionChoices.read(p.threadId) : null;
+        const scope = helperScope.get(p.threadId) ?? (method === 'thread/resume' ? (await loadStoreSnapshot())._delegations?.[p.threadId] : null);
+        if (scope) automatic = true;
+        let loaded = false;
         if (explicit || (record && !record.inherit && !record.automatic)) automatic = false;
         let chosen = record?.inherit ? null : record;
         if (chosen?.automatic) {
@@ -1268,22 +1270,30 @@ wss.on("connection", (ws) => {
           // Preserve distinguishable old chat choices; new records carry provenance.
           if (!record && p.threadId && method === 'thread/resume' && !automatic) {
             const prior = await engineCall('thread/resume', { threadId: p.threadId, excludeTurns: true });
+            loaded = true;
             const old = permissionMode(prior), profile = prior.activePermissionProfile?.id;
-            const own = old === 'bypass' || old === 'auto' || (old === 'ask' && profile === ':workspace' && mode === 'full');
+            if (prior.thread?.parentThreadId || prior.thread?.source?.subAgent) { automatic = true; chosen = defaultPermissionSettings(read, true); }
+            const own = !automatic && (old === 'bypass' || old === 'auto' || (old === 'ask' && profile === ':workspace' && mode === 'full'));
             if (own) chosen = permissionSettings(old);
-            await permissionChoices.write(p.threadId, own ? chosen : { inherit: true });
+            await permissionChoices.write(p.threadId, own || automatic ? { ...chosen, ...(automatic ? { automatic: true } : {}) } : { inherit: true });
           }
         }
         const requirements = (await engineCall('configRequirements/read', {})).requirements ?? {};
         if (!permissionSettingsAllowed(chosen, requirements)) throw new Error('This permission mode is restricted by managed settings. Choose an allowed default in Settings.');
+        if (automatic) { chosen = { ...chosen, approvalPolicy: 'never', permissions: chosen.permissions === ':bypass-permissions' ? ':danger-full-access' : chosen.permissions }; }
+        if (scope) boundAccess(chosen, helperScope.has(p.threadId) ? scope.ceiling : ceilingOf(p.threadId, scope), 'sandboxPolicy');
+        // A loaded native thread ignores resume profile overrides. Apply the
+        // confirmed settings before it resumes or starts either provider's turn.
+        if (method === 'thread/resume' || method === 'turn/start') {
+          if (method === 'thread/resume' && !loaded) await engineCall('thread/resume', { threadId: p.threadId, excludeTurns: true });
+          await engineCall('thread/settings/update', { threadId: p.threadId, ...chosen });
+        }
         for (const key of fields) delete p[key];
         Object.assign(p, chosen);
         if (automatic) { p.approvalPolicy = 'never'; if (p.permissions === ':bypass-permissions') p.permissions = ':danger-full-access'; }
         if (method === 'thread/start') permissionWrites.set(msg.id, { settings: explicit || automatic ? { ...chosen, ...(automatic ? { automatic: true } : {}) } : { inherit: true }, ephemeral: p.ephemeral === true });
         if (method === 'turn/start' && (explicit || automatic) && !claudeModel.has(p.threadId)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: { ...chosen, ...(automatic ? { automatic: true } : {}) } });
-        // Claude turns use confirmed engine settings, not unconfirmed turn overrides.
         if (method === 'turn/start' && claudeModel.has(p.threadId)) {
-          await engineCall('thread/settings/update', { threadId: p.threadId, ...chosen });
           if (explicit || automatic) await permissionChoices.write(p.threadId, { ...chosen, ...(automatic ? { automatic: true } : {}) });
         }
       }
@@ -3275,6 +3285,8 @@ wss.on("connection", (ws) => {
     if (msg.method === "thread/settings/update") {
       const p = msg.params ?? {};
       if (ownHelpers.has(p.threadId)) boundAccess(p, helperScope.get(p.threadId).ceiling, "sandboxPolicy");
+      const choice = permissionWrites.get(msg.id);
+      if (choice?.settings.permissions && choice.settings.permissions !== p.permissions) permissionWrites.delete(msg.id);
       if (isBridged(p.model)) { claudeModel.set(p.threadId, p.model); claimProvider(p.threadId); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
       else if (typeof p.model === "string") {
         if (activeTurns.has(p.threadId)) { toTui({ id: msg.id, error: { code: -32600, message: "Wait for the active provider turn to finish before switching this conversation to a native model." } }); return; }
