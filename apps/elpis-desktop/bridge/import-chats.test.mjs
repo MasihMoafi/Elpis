@@ -70,3 +70,60 @@ test('a Codex chat is copied under its own name and registered; the original is 
     assert.deepEqual((await f.imports.list()).sources.find(source => source.id === 'codex'), { id: 'codex', name: 'Codex', chats: 1 }, 'only the refused one is offered again');
   } finally { await fs.rm(f.root, { recursive: true }); }
 });
+
+// A267, 25 Oct: "Imported 0 chats from Codex. 2 skipped: rollout-…08-55-47-01a1716d-…_01a17185-….jsonl: Elpis rejected the operation
+// (-32603)". Codex 0.164 continues a chat in a second file (rollout-…-<id>_<segment>.jsonl, "paginated" history that starts from the first
+// file), and the engine registers a continuation only once its first file is there (-32603 "invalid paginated history lineage: missing
+// source rollout"). The fake engine below keeps that rule.
+const ID = '01a1716d-8d9c-7fd2-ac47-11955fb2d94b', SEGMENT = '01a17185-aafd-74d2-af29-b92c2b43dcd4';
+async function continuedChat({ refuse = false } = {}) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-import-continued-'));
+  const codexHome = path.join(root, 'codex'), elpisHome = path.join(root, 'elpis'), from = path.join(codexHome, 'sessions');
+  const write = async (relative, payload, modified) => {
+    const file = path.join(from, relative);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `${JSON.stringify({ type: 'session_meta', payload: { id: ID, source: 'vscode', cwd: '/p', history_mode: 'paginated', ...payload } })}\n{"type":"response_item"}\n`);
+    await fs.utimes(file, modified, modified);
+    return file;
+  };
+  // The first file is in the day before and was written to last, so neither the folder nor the time decides which file leads.
+  const first = await write(`2026/10/24/rollout-2026-10-24T23-50-00-${ID}.jsonl`, {}, new Date(Date.now() - 60_000));
+  const second = await write(`2026/10/25/rollout-2026-10-25T08-55-47-${ID}_${SEGMENT}.jsonl`, { history_base: { thread_id: ID, end_ordinal_exclusive: 2, end_byte_offset: 120 } }, new Date(Date.now() - 120_000));
+  const registered = [], into = path.join(elpisHome, 'sessions');
+  const client = {
+    externalSessions: async () => [],
+    registerRollout: async file => {
+      registered.push(file);
+      if (refuse) throw new Error('engine refused it');
+      const meta = JSON.parse((await fs.readFile(file, 'utf8')).split('\n')[0]).payload;
+      const present = (await fs.readdir(into, { recursive: true })).some(name => path.basename(name) === `rollout-2026-10-24T23-50-00-${ID}.jsonl`);
+      if (meta.history_base && !present) throw new Error(`invalid paginated history lineage for ${ID}: missing source rollout`);
+    },
+  };
+  return { root, first, second, registered, imports: createImportChats({ client, codexHome, elpisHome }), copy: file => path.join(into, path.relative(from, file)) };
+}
+const codexCount = async imports => (await imports.list()).sources.find(source => source.id === 'codex').chats;
+
+test('A267: a Codex chat continued in a second file comes in as one chat: both files copied, only the newest registered', async () => {
+  const f = await continuedChat();
+  try {
+    assert.equal(await codexCount(f.imports), 1, 'one chat, not two');
+    const originals = [await fs.readFile(f.first), await fs.readFile(f.second)];
+    assert.deepEqual(await f.imports.run({ source: 'codex' }), { imported: 1, skipped: [] });
+    assert.deepEqual(f.registered, [f.copy(f.second)]);
+    assert.deepEqual([await fs.readFile(f.copy(f.first)), await fs.readFile(f.copy(f.second))], originals);
+    assert.deepEqual([await fs.readFile(f.first), await fs.readFile(f.second)], originals);
+    assert.equal(await codexCount(f.imports), 0, 'an imported chat is not offered again');
+  } finally { await fs.rm(f.root, { recursive: true }); }
+});
+
+test('A267: a continued chat the engine refuses leaves none of its files behind and is offered again', async () => {
+  const f = await continuedChat({ refuse: true });
+  try {
+    const outcome = await f.imports.run({ source: 'codex' });
+    assert.equal(outcome.imported, 0);
+    assert.equal(outcome.skipped.length, 1); assert.match(outcome.skipped[0], new RegExp(`${ID}_${SEGMENT}\\.jsonl: engine refused it`));
+    for (const file of [f.first, f.second]) await assert.rejects(fs.access(f.copy(file)), /ENOENT/);
+    assert.equal(await codexCount(f.imports), 1);
+  } finally { await fs.rm(f.root, { recursive: true }); }
+});
