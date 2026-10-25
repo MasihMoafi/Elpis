@@ -7,8 +7,8 @@
 // Approvals: agy has no approval channel in print mode, but runs PreToolUse hooks from each
 // workspace's .agents/hooks.json. While Elpis asks before acting, the wrapper adds its own hooks
 // folder as a workspace; the hook (agy-gate.mjs) asks the Elpis user through a local socket and
-// this wrapper's session/request_permission. Full Access passes --dangerously-skip-permissions,
-// Plan mode --mode plan.
+// this wrapper's session/request_permission. Full access keeps those hooks active;
+// only explicit Bypass passes --dangerously-skip-permissions. Plan mode uses --mode plan.
 import { spawn, execFile } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -248,7 +248,7 @@ async function handle(msg) {
         const conv = await startProcess(sess);
         if (!conv) throw { code: -32603, message: "Antigravity did not start (is `agy` installed and signed in?)" };
         sessions.delete(id); sess.id = conv; sessions.set(conv, sess);
-        return { sessionId: conv, configOptions: await configOptions(sess), modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }, { id: "bypassPermissions", name: "Full access" }] } };
+        return { sessionId: conv, configOptions: await configOptions(sess), modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }, { id: "bypassPermissions", name: "Bypass permissions" }] } };
       }
       return { configOptions: await configOptions(sess) };
     }
