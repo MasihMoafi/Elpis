@@ -467,6 +467,17 @@ jobs:
           node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
           node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared
           node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared --gemini
+      - name: Preserve helper and checkout evidence
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: helper-checkout-evidence
+          path: |
+            /tmp/elpis-wf-*/evidence.json
+            /tmp/elpis-wf-*/*.txt
+            /tmp/elpis-bridge-delegation-*/evidence.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Real runtime evals and failing controls, without outside network
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: sudo --preserve-env=PATH unshare -n sh -c 'ip link set lo up; bash scripts/release-runtime-evals.sh "$PWD/codex-rs/target/release/elpis"'
