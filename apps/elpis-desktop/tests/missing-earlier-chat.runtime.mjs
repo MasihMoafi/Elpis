@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { startApp, stopApp, skipFirstRun } = require('./real-app.cjs');
-const { uuid7 } = require('./seed-chats.cjs');
+const { uuid7, seedMissingEarlierChat } = require('./seed-chats.cjs');
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const port = process.env.ELPIS_TEST_PORT || '9483';
 const refused = /missing source rollout|invalid paginated history|-32600|ELPIS_RUNTIME_ERROR|temporarily unavailable/;
@@ -21,19 +21,8 @@ test('a chat whose earlier part was deleted opens in the desktop, with a note', 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'missing-earlier-')), seed = path.join(root, 'seed');
   const shots = process.env.ELPIS_TEST_SHOTS || path.join(root, 'shots'); await fs.mkdir(shots, { recursive: true });
   const now = Date.now(), at = new Date(now - 60000).toISOString(), thread = uuid7(now - 3 * 86400000), missing = uuid7(now - 86400000), segment = uuid7(now - 60000);
-  const dir = path.join(seed, 'sessions', at.slice(0, 4), at.slice(5, 7), at.slice(8, 10)), work = path.join(seed, 'work');
-  await fs.mkdir(dir, { recursive: true }); await fs.mkdir(work, { recursive: true });
-  const base = 45271, line = (offset, type, payload) => JSON.stringify({ timestamp: at, ordinal: base + offset, type, payload });
-  const rows = [
-    line(0, 'session_meta', { id: thread, session_id: thread, timestamp: at, cwd: work, originator: 'elpis-desktop', cli_version: '0.162.0', source: 'vscode', thread_source: 'user', model_provider: 'openai', history_mode: 'paginated', history_base: { thread_id: missing, end_ordinal_exclusive: base, end_byte_offset: 41901968 } }),
-    line(1, 'event_msg', { type: 'task_started', turn_id: 'turn-remaining', started_at: Math.floor(now / 1000) - 60 }),
-    line(2, 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'REMAINING QUESTION about the vault' }] }),
-    line(3, 'event_msg', { type: 'user_message', message: 'REMAINING QUESTION about the vault', images: [], local_images: [], text_elements: [] }),
-    line(4, 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'REMAINING ANSWER kept after the gap' }] }),
-    line(5, 'event_msg', { type: 'agent_message', message: 'REMAINING ANSWER kept after the gap' }),
-    line(6, 'event_msg', { type: 'task_complete', turn_id: 'turn-remaining', last_agent_message: 'REMAINING ANSWER kept after the gap' }),
-  ];
-  await fs.writeFile(path.join(dir, `rollout-${at.slice(0, 19).replace(/:/g, '-')}-${thread}_${segment}.jsonl`), rows.join('\n') + '\n');
+  const work = path.join(seed, 'work'); await fs.mkdir(work, { recursive: true });
+  seedMissingEarlierChat(seed, { thread, missing, segment, cwd: work, at });
   const app = await startApp({ app: path.resolve(process.env.ELPIS_TEST_APP), port, seed, engine: process.env.ELPIS_TEST_ENGINE });
   t.after(async () => {
     await app.page.screenshot({ path: path.join(shots, 'missing-earlier-last.png') }).catch(() => {});

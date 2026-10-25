@@ -13,7 +13,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as pause } from 'node:timers/promises';
+import { createRequire } from 'node:module';
 import { model } from './responses-standin.mjs';
+
+const { seedMissingEarlierChat } = createRequire(import.meta.url)('./seed-chats.cjs');
 
 const bin = process.env.ELPIS_TUI_BIN;
 const skip = !bin ? 'set ELPIS_TUI_BIN to the elpis binary under test' : false;
@@ -90,22 +93,7 @@ test('a chat whose earlier part was deleted still opens, with a note', { skip, t
   const thread = '01a157ef-aa4b-70a1-92ff-11c1e7b29875', missing = '01a16216-d22a-7173-8b94-a4baf5234a47';
   const tui = await terminal(t, {
     args: ['resume', thread],
-    prepare: ({ elpis, work }) => {
-      const dir = path.join(elpis, 'sessions/2026/10/22');
-      fs.mkdirSync(dir, { recursive: true });
-      const line = (ordinal, type, payload) => JSON.stringify({ timestamp: '2026-10-22T10:10:49.862Z', ordinal, type, payload });
-      const base = 45271;
-      const rows = [
-        line(base, 'session_meta', { id: thread, session_id: thread, timestamp: '2026-10-22T10:10:49.862Z', cwd: work, originator: 'elpis-desktop', cli_version: '0.162.0', source: 'vscode', thread_source: 'user', model_provider: 'mock', history_mode: 'paginated', history_base: { thread_id: missing, end_ordinal_exclusive: base, end_byte_offset: 41901968 } }),
-        line(base + 1, 'event_msg', { type: 'task_started', turn_id: 'turn-remaining', started_at: 1792577449 }),
-        line(base + 2, 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'REMAINING QUESTION about the vault' }] }),
-        line(base + 3, 'event_msg', { type: 'user_message', message: 'REMAINING QUESTION about the vault', images: [], local_images: [], text_elements: [] }),
-        line(base + 4, 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'REMAINING ANSWER kept after the gap' }] }),
-        line(base + 5, 'event_msg', { type: 'agent_message', message: 'REMAINING ANSWER kept after the gap' }),
-        line(base + 6, 'event_msg', { type: 'task_complete', turn_id: 'turn-remaining', last_agent_message: 'REMAINING ANSWER kept after the gap' }),
-      ];
-      fs.writeFileSync(path.join(dir, `rollout-2026-10-22T13-40-49-${thread}_01a16317-8b86-7a70-941d-bda980843230.jsonl`), rows.join('\n') + '\n');
-    },
+    prepare: ({ elpis, work }) => seedMissingEarlierChat(elpis, { thread, missing, segment: '01a16317-8b86-7a70-941d-bda980843230', cwd: work, at: '2026-10-22T10:10:49.862Z', provider: 'mock' }),
   });
   const opened = await tui.until(text => (text.includes('REMAINING ANSWER') || /missing source rollout|invalid paginated history/.test(text)) && text, 'the chat opens or fails');
   assert.doesNotMatch(opened, /missing source rollout|invalid paginated history/, 'the chat must not be refused');
