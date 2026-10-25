@@ -116,7 +116,7 @@ export async function createImprovements({ client, sourceRoot, appRoot = default
     records.set(id, row); await save(row);
     await linkDependencies(root, cwd);
     try {
-      const { thread } = await client.createThread({ cwd, model: 'gpt-6-luna', name: `Improve Elpis · ${request.slice(0, 90)}`, instructions: IMPROVE_INSTRUCTIONS, permissions: 'full' });
+      const { thread } = await client.createThread({ cwd, model: 'gpt-6-luna', name: `Improve Elpis · ${request.slice(0, 90)}`, instructions: IMPROVE_INSTRUCTIONS, automatic: true });
       row.thread = thread; row.status = 'working'; await save(row);
       try { await client.send(thread.id, { text: `Improve Elpis: ${request}\n\nPointed component: ${selected.component}\nElpis source file: ${selected.file}\nVisible label: ${label}\nThe attached image shows the pointed region. Follow the isolated-worktree instructions and commit the result.`, attachments }); }
       catch (error) { row.status = 'send-error'; row.error = `First message was not confirmed: ${error.message}. Inspect this chat before resending.`; await save(row); }

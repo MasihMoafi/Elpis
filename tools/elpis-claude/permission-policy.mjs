@@ -42,3 +42,9 @@ export function defaultPermissionMode(read) {
     return p.approval === config.approval_policy && p.sandbox === sandbox && (mode === 'full' || p.reviewer === reviewer);
   }) ?? 'custom';
 }
+export function defaultPermissionSettings(read, automatic = false) {
+  const config = read?.config ?? {};
+  const settings = permissionSettings(defaultPermissionMode(read)) ?? { approvalPolicy: config.approval_policy, approvalsReviewer: config.approvals_reviewer ?? 'user',
+    permissions: config.default_permissions ?? PROFILES[config.sandbox_mode] };
+  return automatic ? { ...settings, approvalPolicy: 'never', permissions: settings.permissions === ':bypass-permissions' ? ':danger-full-access' : settings.permissions } : settings;
+}

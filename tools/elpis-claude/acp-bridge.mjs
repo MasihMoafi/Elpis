@@ -17,7 +17,7 @@ import { appendLog, redactSecrets, redactedLines } from "./log-redaction.mjs";
 import { homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
-import { defaultPermissionMode, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mjs';
+import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mjs';
 import { PermissionChoices } from './permission-choices.mjs';
 
 const HOME = process.env.HOME;
@@ -1247,8 +1247,13 @@ wss.on("connection", (ws) => {
         if (explicit && (!providerOwners.has(p.threadId) || providerOwners.get(p.threadId).ws === ws)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: Object.fromEntries(fields.filter(k => p[k] != null).map(k => [k, p[k]])) });
       } else {
         const record = p.threadId ? await permissionChoices.read(p.threadId) : null;
+        if (explicit || (record && !record.inherit && !record.automatic)) automatic = false;
         let chosen = record?.inherit ? null : record;
-        if (chosen?.automatic) { automatic = true; chosen = { ...chosen }; delete chosen.automatic; }
+        if (chosen?.automatic) {
+          automatic = true;
+          chosen = chosen.permissions === ':read-only' || !chosen.permissions?.startsWith(':') ? { ...chosen } : null;
+          if (chosen) delete chosen.automatic;
+        }
         if (explicit) chosen = Object.fromEntries(fields.filter(k => p[k] != null).map(k => [k, p[k]]));
         // A deliberately scoped task (read-only or a named workflow profile) keeps
         // that scope. It still never asks the person for permission.
@@ -1257,10 +1262,8 @@ wss.on("connection", (ws) => {
         }
         if (!chosen) {
           const read = await engineCall('config/read', { includeLayers: true, ...(p.cwd ? { cwd: p.cwd } : {}) });
-          const mode = automatic ? 'full' : defaultPermissionMode(read);
-          const config = read.config ?? {};
-          chosen = permissionSettings(mode) ?? { approvalPolicy: config.approval_policy, approvalsReviewer: config.approvals_reviewer ?? 'user',
-            permissions: config.default_permissions ?? ({ 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' }[config.sandbox_mode]) };
+          const mode = defaultPermissionMode(read);
+          chosen = defaultPermissionSettings(read, automatic);
           // Legacy TUI's on-request + Full access was an inherited engine fallback.
           // Preserve distinguishable old chat choices; new records carry provenance.
           if (!record && p.threadId && method === 'thread/resume' && !automatic) {
@@ -1277,11 +1280,11 @@ wss.on("connection", (ws) => {
         Object.assign(p, chosen);
         if (automatic) { p.approvalPolicy = 'never'; if (p.permissions === ':bypass-permissions') p.permissions = ':danger-full-access'; }
         if (method === 'thread/start') permissionWrites.set(msg.id, { settings: explicit || automatic ? { ...chosen, ...(automatic ? { automatic: true } : {}) } : { inherit: true }, ephemeral: p.ephemeral === true });
-        if (method === 'turn/start' && explicit && !claudeModel.has(p.threadId)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: chosen });
+        if (method === 'turn/start' && (explicit || automatic) && !claudeModel.has(p.threadId)) permissionWrites.set(msg.id, { threadId: p.threadId, settings: { ...chosen, ...(automatic ? { automatic: true } : {}) } });
         // Claude turns use confirmed engine settings, not unconfirmed turn overrides.
         if (method === 'turn/start' && claudeModel.has(p.threadId)) {
           await engineCall('thread/settings/update', { threadId: p.threadId, ...chosen });
-          if (explicit) await permissionChoices.write(p.threadId, chosen);
+          if (explicit || automatic) await permissionChoices.write(p.threadId, { ...chosen, ...(automatic ? { automatic: true } : {}) });
         }
       }
       handleMessage(JSON.stringify(msg));
@@ -1704,9 +1707,9 @@ wss.on("connection", (ws) => {
         const loaded = new Set((await engineCall('thread/loaded/list', {})).data ?? []);
         for (const tid of chatAccess.keys()) {
           const choice = await permissionChoices.read(tid);
-          if (!loaded.has(tid) || helperThreads.has(tid) || (choice && !choice.inherit)) continue;
+          if (!loaded.has(tid) || helperThreads.has(tid) || (choice && !choice.inherit && !choice.automatic)) continue;
           const read = await engineCall('config/read', { includeLayers: true, ...(threadCwd.get(tid) ? { cwd: threadCwd.get(tid) } : {}) });
-          const settings = permissionSettings(defaultPermissionMode(read));
+          const settings = defaultPermissionSettings(read, choice?.automatic === true);
           if (settings) await engineCall('thread/settings/update', { threadId: tid, ...settings });
         }
       } catch (error) { parsed = { id: parsed.id, error: { code: -32603, message: `The default was saved, but an open chat could not be updated: ${error.message ?? error}` } }; }
@@ -1735,7 +1738,7 @@ wss.on("connection", (ws) => {
       automaticThreads.add(th.id);
       try {
         const requirements = (await engineCall('configRequirements/read', {})).requirements ?? {};
-        const settings = permissionSettings('full');
+        const settings = defaultPermissionSettings(await engineCall('config/read', { includeLayers: true, ...(th.cwd ? { cwd: th.cwd } : {}) }), true);
         if (!permissionSettingsAllowed(settings, requirements)) throw new Error('Managed settings forbid Full access for this automatic agent.');
         await engineCall('thread/settings/update', { threadId: th.id, ...settings });
         await permissionChoices.write(th.id, { ...settings, automatic: true });
@@ -1749,8 +1752,11 @@ wss.on("connection", (ws) => {
     }
     if (parsed?.id !== undefined && ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(parsed.method)
       && (automaticThreads.has(parsed.params?.threadId) || helperScope.has(parsed.params?.threadId))) {
-      engine.stdin.write(JSON.stringify({ id: parsed.id, result: { decision: !blockedAutomaticThreads.has(parsed.params.threadId) && fullFor(parsed.params.threadId) ? 'accept' : 'decline' } }) + '\n');
-      return;
+      const own = await permissionChoices.read(parsed.params.threadId);
+      if (!own || own.inherit || own.automatic) {
+        engine.stdin.write(JSON.stringify({ id: parsed.id, result: { decision: !blockedAutomaticThreads.has(parsed.params.threadId) && fullFor(parsed.params.threadId) ? 'accept' : 'decline' } }) + '\n');
+        return;
+      }
     }
     if (th?.id && parsed?.result?.approvalPolicy) { noteAccess(th.id, parsed.result); resumeResults.set(th.id, { ...parsed.result, thread: { ...th } }); }
     if (parsed?.method === "thread/name/updated") {
