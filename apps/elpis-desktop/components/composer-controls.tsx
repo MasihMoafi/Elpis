@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { FollowUpChoice } from "@/lib/preferences";
+import type { PermissionRequirements } from "@/lib/api";
 import { permissionAllowed } from "../bridge/permission-presets.mjs";
 
 export type PermissionMode = "ask" | "auto" | "full" | "bypass";
@@ -24,7 +25,7 @@ export const permissionLabel = (mode: PermissionMode) => (PERMISSION_MODES.find(
 /** Bypass permissions is root access: red wherever it is offered or active. `!` outranks the pill's own colour. */
 const dangerous = (id: PermissionMode) => id === "bypass" ? "text-destructive!" : "";
 
-export function PermissionsMenu({ mode, disabled, managed, onChange }: { mode: PermissionMode; disabled?: boolean; managed?: { allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null }; onChange: (mode: PermissionMode) => void }) {
+export function PermissionsMenu({ mode, disabled, managed, onChange }: { mode: PermissionMode; disabled?: boolean; managed?: PermissionRequirements; onChange: (mode: PermissionMode) => void }) {
   const [confirming, setConfirming] = useState(false);
   const current = PERMISSION_MODES.find(item => item.id === mode) ?? PERMISSION_MODES[0];
   return <>

@@ -144,7 +144,10 @@ export function settingsSnapshot(read, requirementsRead, prunerRead = null, save
       available: requirementsRead !== null,
       modelProvider: string(requirements?.modelProvider),
       allowedApprovalPolicies: strings(requirements?.allowedApprovalPolicies),
+      allowedApprovalsReviewers: strings(requirements?.allowedApprovalsReviewers),
       allowedSandboxModes: strings(requirements?.allowedSandboxModes),
+      allowedPermissionProfiles: requirements?.allowedPermissionProfiles && typeof requirements.allowedPermissionProfiles === 'object'
+        ? Object.fromEntries(Object.entries(requirements.allowedPermissionProfiles).filter(([, value]) => typeof value === 'boolean')) : null,
       allowedWebSearchModes: strings(requirements?.allowedWebSearchModes),
     },
     version: string(userLayer?.version),

@@ -178,6 +178,28 @@ test('settings pages appear in order and each control writes only its own backin
     assert.equal(await page.getByRole('menuitem').filter({ hasText: 'Full access' }).getAttribute('aria-disabled'), 'true', 'the chat menu enforces the same managed restriction');
     await page.keyboard.press('Escape');
     await openSettings(page, 'Configuration'); panel = page.getByRole('tabpanel', { name: 'Configuration', exact: true });
+    for (const [requirements, label] of [
+      [{ allowedApprovalPolicies: null, allowedPermissionProfiles: { ':workspace': true }, allowedApprovalsReviewers: null }, 'Full access'],
+      [{ allowedPermissionProfiles: null, allowedApprovalsReviewers: ['user'] }, 'Approve for me'],
+    ]) {
+      Object.assign(managed, requirements);
+      await open('General'); panel = await open('Configuration');
+      await panel.getByLabel('Default permissions', { exact: true }).click();
+      assert.equal(await page.getByRole('option', { name: label, exact: true }).getAttribute('aria-disabled'), 'true', `${label} respects the profile and reviewer restrictions`);
+      await page.keyboard.press('Escape'); await leaveSettings(page);
+      await page.getByRole('button', { name: 'Change permissions', exact: true }).click();
+      assert.equal(await page.getByRole('menuitem').filter({ hasText: label }).getAttribute('aria-disabled'), 'true', 'the chat menu uses the same restriction');
+      await page.keyboard.press('Escape'); await openSettings(page, 'Configuration');
+    }
+    Object.assign(managed, { allowedApprovalsReviewers: null, allowedPermissionProfiles: { ':workspace': true, ':danger-full-access': true, ':bypass-permissions': false } });
+    await open('General'); panel = await open('Configuration');
+    await panel.getByLabel('Default permissions', { exact: true }).click();
+    assert.equal(await page.getByRole('option', { name: 'Full access', exact: true }).getAttribute('aria-disabled'), null, 'Full access can be allowed while Bypass is forbidden');
+    await page.keyboard.press('Escape'); await leaveSettings(page);
+    await page.getByRole('button', { name: 'Change permissions', exact: true }).click();
+    assert.equal(await page.getByRole('menuitem').filter({ hasText: 'Bypass permissions' }).getAttribute('aria-disabled'), 'true');
+    await page.keyboard.press('Escape'); await openSettings(page, 'Configuration');
+    panel = page.getByRole('tabpanel', { name: 'Configuration', exact: true });
     await panel.getByText('/home/person/.elpis-next/config.toml', { exact: true }).waitFor();
 
     // MCP points to Voice for the transcription route.

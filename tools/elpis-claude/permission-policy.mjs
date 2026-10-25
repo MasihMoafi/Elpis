@@ -26,6 +26,7 @@ export function permissionSettingsAllowed(settings, requirements = {}) {
   const mode = sandbox === 'bypass-permissions' ? 'danger-full-access' : sandbox;
   return (!settings.approvalPolicy || !Array.isArray(requirements.allowedApprovalPolicies) || requirements.allowedApprovalPolicies.includes(settings.approvalPolicy))
     && (!mode || !Array.isArray(requirements.allowedSandboxModes) || requirements.allowedSandboxModes.includes(mode))
+    && (!settings.permissions || !requirements.allowedPermissionProfiles || requirements.allowedPermissionProfiles[settings.permissions] === true)
     && (!settings.approvalsReviewer || !Array.isArray(requirements.allowedApprovalsReviewers) || requirements.allowedApprovalsReviewers.includes(settings.approvalsReviewer));
 }
 // config/read returns layers from highest to lowest precedence. An absent approval policy

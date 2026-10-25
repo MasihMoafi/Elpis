@@ -1829,6 +1829,12 @@ test('settings pages read and write only listed native options, respecting manag
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { projectRootMarkers: [] } }), /one to sixteen/);
   requirementsRead.requirements = { allowedSandboxModes: ['read-only'] };
   await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error.status === 403 && /managed/.test(error.message));
+  requirementsRead.requirements = { allowedPermissionProfiles: { ':workspace': true } };
+  assert.deepEqual((await client.settings()).managed.allowedPermissionProfiles, { ':workspace': true });
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'full' } }), error => error.status === 403 && /managed/.test(error.message));
+  requirementsRead.requirements = { allowedApprovalsReviewers: ['user'] };
+  assert.deepEqual((await client.settings()).managed.allowedApprovalsReviewers, ['user']);
+  await assert.rejects(client.saveSettings({ version: 'user-version', options: { defaultPermissions: 'auto' } }), error => error.status === 403 && /managed/.test(error.message));
   assert.equal(writes(), before, 'refused options write nothing');
   client.close();
 });
