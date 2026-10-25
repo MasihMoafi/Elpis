@@ -93,6 +93,18 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
     assert.ok(processes.length && processes.every(process => Number.isFinite(process.cpuTime)), 'renderer CPU counters must be available');
     return { atMs: (before + after) / 2, uncertaintyMs: (after - before) / 2, processes };
   };
+  const idleState = () => page.evaluate(() => ({
+    focus: document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName,
+    animations: document.getAnimations().filter(animation => animation.playState === 'running').map(animation => {
+      const target = animation.effect?.target, timing = animation.effect?.getTiming();
+      return { name: animation.animationName ?? animation.transitionProperty, target: target?.getAttribute?.('class') ?? target?.tagName,
+        duration: timing?.duration, iterations: String(timing?.iterations) };
+    }),
+    // SVG image animations live outside document.getAnimations(); retain the exact visible assets too.
+    brandImages: [...document.images].filter(image => image.currentSrc.includes('/branding/') && image.checkVisibility()).map(image => ({
+      source: new URL(image.currentSrc).pathname, loaded: image.complete && image.naturalWidth > 0,
+    })),
+  }));
   const paint = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const report = { label, large, at: new Date().toISOString(), items: history.length, bytes: Buffer.byteLength(JSON.stringify(history)), browser: page.context().browser().version(), phases: {} };
   const phase = async (name, action) => {
@@ -182,9 +194,11 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
       await paint();
       assert.equal(await page.getByText('FOREIGN DELTA MUST STAY ABSENT').count(), 0);
     });
+    report.idleStateBefore = await idleState();
     const cpuBefore = await rendererCpu();
     await phase('idle', () => page.waitForTimeout(10_000));
     const cpuAfter = await rendererCpu();
+    report.idleStateAfter = await idleState();
     report.idleCpu = { before: cpuBefore, after: cpuAfter, measurement: 'SystemInfo cumulative CPU seconds, all renderer processes and threads in the private fixture browser' };
     assert.deepEqual(cpuAfter.processes.map(process => process.id), cpuBefore.processes.map(process => process.id), 'renderer processes must remain the same throughout the CPU observation');
     report.idleCpu.ms = cpuAfter.processes.reduce((total, process, index) => total + (process.cpuTime - cpuBefore.processes[index].cpuTime) * 1000, 0);
