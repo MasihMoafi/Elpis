@@ -89,6 +89,11 @@ const normalized = (keys: string) => keys.replace(/Super|Command|Cmd/g, "Ctrl")
 export function shortcutHint(id: string, preferences: Pick<Preferences, "shortcutBindings"> = readPreferences()): string | undefined {
   return configuredShortcuts(preferences).find(item => item.id === id)?.keys[0];
 }
+/** A control's native tooltip follows the same saved binding as menus, including no key when disabled. */
+export function shortcutTitle(label: string, id: string, preferences: Pick<Preferences, "shortcutBindings">): string {
+  const hint = shortcutHint(id, preferences);
+  return hint ? `${label} (${hint})` : label;
+}
 export function shortcutConflict(id: string, binding: string, preferences: Pick<Preferences, "shortcutBindings">): string | undefined {
   return configuredShortcuts(preferences).find(item => item.id !== id && item.keys.some(key => normalized(key) === normalized(binding)))?.label;
 }
