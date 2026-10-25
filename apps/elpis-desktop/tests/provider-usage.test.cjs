@@ -63,8 +63,9 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     // A chat configured for "Never ask" and "Full access" starts in Full access.
     assert.equal(await page.locator('.composer-pill.permissions-full').count(), 1);
 
-    // Startup shares one account read. Opening Settings must keep that same answer.
-    await settled(1);
+    // A125: subscribing reconciles any account changes after the initial read.
+    // Opening Settings then shares that fresh answer.
+    await settled(2);
     const startupRequests = requests;
     await openSettings(page);
     await page.getByRole('tab', { name: 'Usage & limits', exact: true }).click();

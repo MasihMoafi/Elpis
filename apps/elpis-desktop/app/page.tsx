@@ -621,12 +621,11 @@ export default function Home() {
       const ids = new Set(tabsRef.current.tabs.flatMap(tab => tab.threadId ? [tab.threadId] : []));
       if (thread) ids.add(thread.id);
       const current = () => !disposed && attempt === recovery;
-      if (!initial) {
-        setAccountRefresh(value => value + 1);
-        void refreshModels();
-        void refreshThreads().catch(error => { if (current()) setError(String(error)); });
-        void reloadSettings().catch(() => null);
-      }
+      // Reconcile the gap between the initial reads and subscribing, without holding up navigation.
+      setAccountRefresh(value => value + 1);
+      void refreshModels();
+      void refreshThreads().catch(error => { if (current()) setError(String(error)); });
+      void reloadSettings().catch(() => null);
       // A list page can omit open chats or fail; each tab still needs its own authoritative turn state.
       await Promise.all([...ids].map(async id => {
         const open = () => current() && !hidden.current.has(id) && (selectedRef.current?.id === id || tabsRef.current.tabs.some(tab => tab.threadId === id));
