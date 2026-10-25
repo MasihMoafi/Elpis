@@ -26,7 +26,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     { id: 'api-lm-studio', name: 'My LM Studio', baseUrl: 'http://127.0.0.1:1234/v1', gateway: false, wireApi: 'responses', editable: true, auth: { source: 'none', keySet: false, envKey: null } }] };
   const settings = { version: 'v1', main: { model: 'luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
     smartPrune: { enabled: null, explicitOverride: { available: false, reason: 'Not available' } }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null },
-    options: { approvalPolicy: 'never', sandboxMode: 'danger-full-access' }, managed: {}, write: { available: true } };
+    options: { defaultPermissions: 'full' }, managed: {}, write: { available: true } };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://local'); for await (const chunk of req) void chunk;
     const json = value => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -111,7 +111,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
 
     // Configuration shows the full-access default as saved.
     await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
-    assert.match(await page.getByRole('tabpanel', { name: 'Configuration', exact: true }).getByLabel('Default sandbox', { exact: true }).innerText(), /Full access/);
+    assert.match(await page.getByRole('tabpanel', { name: 'Configuration', exact: true }).getByLabel('Default permissions', { exact: true }).innerText(), /Full access/);
 
     // The search text keeps clear space from its magnifier, and focus outlines the whole field, not the text alone,
     // as in the ChatGPT app's settings.

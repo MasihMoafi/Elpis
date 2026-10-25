@@ -1,4 +1,4 @@
-const { chooseOption, controlValue, optionsCut, openSettings } = require('./controls.cjs');
+const { chooseOption, controlValue, optionsCut, openSettings, leaveSettings } = require('./controls.cjs');
 // Every Settings page against a local adapter: page order, what each control writes, and narrow layouts. No runtime or model calls.
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
@@ -7,10 +7,11 @@ const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP ser
 
 test('settings pages appear in order and each control writes only its own backing setting', async () => {
   let version = 1;
-  const options = { approvalPolicy: 'on-request', sandboxMode: null, webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: null, developerInstructions: null, projectRootMarkers: null, worktreeRoot: null };
+  const options = { defaultPermissions: 'ask', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: null, developerInstructions: null, projectRootMarkers: null, worktreeRoot: null };
+  const managed = { allowedApprovalPolicies: null, allowedSandboxModes: ['read-only', 'workspace-write'] };
   const settings = () => ({ version: `v${version}`, main: { model: 'main-model', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
     smartPrune: { enabled: true, explicitOverride: { available: true, model: null, provider: null, version: 'p1' } }, memory: { enabled: false, generate: null, use: null, skipExternalContext: null, extractionModel: null, consolidationModel: null },
-    options, managed: { allowedApprovalPolicies: null, allowedSandboxModes: ['read-only', 'workspace-write'] }, write: { available: true, reason: 'Applies to new conversations.' } });
+    options, managed, write: { available: true, reason: 'Applies to new conversations.' } });
   let hooks = { version: 'h1', write: { available: true }, warnings: [], errors: [], hooks: [{ key: 'user:hooks.json:pre_tool_use:0:0', event: 'preToolUse', handler: 'command', command: 'rtk hook claude', matcher: '^Bash$', timeoutSec: 5, source: 'user', sourcePath: '/home/person/.elpis-next/hooks.json', pluginId: null, enabled: true, managed: false, trust: 'untrusted' }] };
   let whispertype = { backend: 'openrouter', model: null };
   const mcp = () => ({ version: `m${version}`, configPath: '/home/person/.elpis-next/config.toml', write: { available: true }, servers: [{ name: 'whispertype', enabled: true, transport: 'stdio', command: 'whispertype-mcp', url: null, credentials: [], whispertype }] });
@@ -163,10 +164,20 @@ test('settings pages appear in order and each control writes only its own backin
     await chooseOption(panel.getByLabel('Web search', { exact: true }), 'live');
     await panel.getByRole('status').filter({ hasText: 'Web search saved' }).waitFor();
     assert.deepEqual(lastPost(), { path: '/api/settings', body: { version: 'v8', options: { webSearch: 'live' } } });
-    await panel.getByLabel('Default sandbox', { exact: true }).click();
+    await panel.getByLabel('Default permissions', { exact: true }).click();
     const fullAccess = page.getByRole('option', { name: 'Full access', exact: true });
     assert.ok(await fullAccess.getAttribute('aria-disabled') === 'true' || await fullAccess.getAttribute('data-disabled') !== null, 'a managed restriction disables Full access');
     await page.keyboard.press('Escape');
+    managed.allowedApprovalPolicies = ['on-request']; managed.allowedSandboxModes = null;
+    await open('General'); panel = await open('Configuration');
+    await panel.getByLabel('Default permissions', { exact: true }).click();
+    assert.equal(await page.getByRole('option', { name: 'Full access', exact: true }).getAttribute('aria-disabled'), 'true', 'the approval restriction alone also disables Full access');
+    await page.keyboard.press('Escape');
+    await leaveSettings(page);
+    await page.getByRole('button', { name: 'Change permissions', exact: true }).click();
+    assert.equal(await page.getByRole('menuitem').filter({ hasText: 'Full access' }).getAttribute('aria-disabled'), 'true', 'the chat menu enforces the same managed restriction');
+    await page.keyboard.press('Escape');
+    await openSettings(page, 'Configuration'); panel = page.getByRole('tabpanel', { name: 'Configuration', exact: true });
     await panel.getByText('/home/person/.elpis-next/config.toml', { exact: true }).waitFor();
 
     // MCP points to Voice for the transcription route.

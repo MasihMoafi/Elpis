@@ -10,6 +10,7 @@ import { Choice, SaveFeedback, SettingRow, SettingsActions, SettingsGroup, Setti
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
 import { PERMISSION_MODES } from "@/components/composer-controls";
+import { permissionAllowed } from "../../bridge/permission-presets.mjs";
 import { ModelSettings, CatalogNotice, PrunerSettings, useModelCatalog } from "@/components/settings/maintenance";
 
 const OPTIONS: { name: keyof ConfigOptions; title: string; description: string; values: { value: string; label: string }[] }[] = [
@@ -36,10 +37,10 @@ function ConfigFile() {
  * sandbox together. Full access is the default when the config names none; Bypass permissions is chosen per chat. */
 function DefaultPermissions({ settings, disabled, onSave }: { settings: ElpisSettings; disabled: boolean; onSave: (mode: string) => void }) {
   const value = settings.options?.defaultPermissions ?? "full";
-  const options: { value: string; label: string; disabled?: boolean }[] = PERMISSION_MODES.filter(mode => mode.id !== "bypass").map(mode => ({ value: mode.id, label: mode.label }));
+  const options: { value: string; label: string; disabled?: boolean }[] = PERMISSION_MODES.filter(mode => mode.id !== "bypass").map(mode => ({ value: mode.id, label: mode.label, disabled: !permissionAllowed(mode.id, settings.managed) }));
   if (!options.some(option => option.value === value)) options.push({ value, label: "Custom (set in the config file)", disabled: true });
   const current = PERMISSION_MODES.find(mode => mode.id === value);
-  return <SettingRow title="Default permissions" description={`${current ? `${current.description}. ` : ""}New chats, agents and workflows start with this; the terminal reads it too. The composer’s permissions menu changes one chat, and Bypass permissions is chosen there.`}>
+  return <SettingRow title="Default permissions" description={`${current ? `${current.description}. ` : ""}Applies to chats without their own choice, including existing chats and the terminal. Automatic agents never ask for approval. The composer’s permissions menu changes one chat; Bypass permissions is chosen there.`}>
     <Choice label="Default permissions" value={value} options={options} disabled={disabled} onChange={next => { if (next !== value) onSave(next); }} />
   </SettingRow>;
 }
@@ -47,9 +48,9 @@ function DefaultPermissions({ settings, disabled, onSave }: { settings: ElpisSet
 function ConfigOptionsGroup({ settings }: { settings: ElpisSettings }) {
   const saver = useSaver();
   const writable = editable(settings);
-  return <SettingsGroup title="Defaults for new chats" description={writable ? "Saved in the Elpis config. Changes apply to new conversations." : settings.write.reason}>
+  return <SettingsGroup title="Conversation defaults" description={writable ? "Saved in the Elpis config. Permissions follow chats without their own choice; other defaults apply to new chats." : settings.write.reason}>
     <DefaultPermissions settings={settings} disabled={!writable || saver.pending !== null}
-      onSave={mode => void saver.run("defaultPermissions", () => saveOptions(settings, { defaultPermissions: mode }), "Default permissions saved. Applies to new chats.")} />
+      onSave={mode => void saver.run("defaultPermissions", () => saveOptions(settings, { defaultPermissions: mode }), "Default permissions saved. Applies to chats without their own choice.")} />
     {OPTIONS.map(option => <ConfigChoice key={option.name} settings={settings} {...option} disabled={!writable || saver.pending !== null}
       allowed={option.name === "webSearch" ? settings.managed?.allowedWebSearchModes : null}
       onSave={patch => void saver.run(option.name, () => saveOptions(settings, patch), `${option.title} saved. Applies to new conversations.`)} />)}

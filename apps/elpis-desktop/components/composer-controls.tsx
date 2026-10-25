@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { FollowUpChoice } from "@/lib/preferences";
+import { permissionAllowed } from "../bridge/permission-presets.mjs";
 
 export type PermissionMode = "ask" | "auto" | "full" | "bypass";
 
@@ -23,7 +24,7 @@ export const permissionLabel = (mode: PermissionMode) => (PERMISSION_MODES.find(
 /** Bypass permissions is root access: red wherever it is offered or active. `!` outranks the pill's own colour. */
 const dangerous = (id: PermissionMode) => id === "bypass" ? "text-destructive!" : "";
 
-export function PermissionsMenu({ mode, disabled, onChange }: { mode: PermissionMode; disabled?: boolean; onChange: (mode: PermissionMode) => void }) {
+export function PermissionsMenu({ mode, disabled, managed, onChange }: { mode: PermissionMode; disabled?: boolean; managed?: { allowedApprovalPolicies?: string[] | null; allowedSandboxModes?: string[] | null }; onChange: (mode: PermissionMode) => void }) {
   const [confirming, setConfirming] = useState(false);
   const current = PERMISSION_MODES.find(item => item.id === mode) ?? PERMISSION_MODES[0];
   return <>
@@ -33,7 +34,7 @@ export function PermissionsMenu({ mode, disabled, onChange }: { mode: Permission
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
         <p className="hud-menu-title">How should Elpis's actions be approved?</p>
-        {PERMISSION_MODES.map(item => <DropdownMenuItem key={item.id} onClick={() => item.id === "bypass" && mode !== "bypass" ? setConfirming(true) : onChange(item.id)} className={`hud-menu-item ${dangerous(item.id)}`}>
+        {PERMISSION_MODES.map(item => <DropdownMenuItem key={item.id} disabled={!permissionAllowed(item.id, managed)} title={!permissionAllowed(item.id, managed) ? "Restricted by managed settings" : undefined} onClick={() => item.id === "bypass" && mode !== "bypass" ? setConfirming(true) : onChange(item.id)} className={`hud-menu-item ${dangerous(item.id)}`}>
           <item.Icon aria-hidden="true" className={dangerous(item.id)} />
           <span className="grid gap-0.5"><span>{item.label}</span><small>{item.description}</small></span>
           {item.id === mode && <Check className="ml-auto" aria-label="Current" />}
