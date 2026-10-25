@@ -1,5 +1,7 @@
 import { acceptsPastedKey, BUILT_IN_KEY_PROVIDERS } from './provider-settings.mjs';
-import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mjs';
+import { PERMISSION_PRESETS, PROFILES, permissionAllowed } from './permission-presets.mjs';
+import { defaultPermissionMode } from './resources/permission-policy.mjs';
+export { defaultPermissionMode } from './resources/permission-policy.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -37,16 +39,9 @@ function usesPermissionProfiles(read) {
 /** New chats' mode: the preset the config names, Full access when it names no approval policy (Masih, 24 Oct: "default
  * permission be full access"), or `custom` for any other combination, which new chats then take from the config. */
 function defaultPermissions(config, profiles) {
-  const approval = config.approval_policy;
-  if (approval == null) return 'full';
-  const profile = string(config.default_permissions);
-  const sandbox = !profiles ? string(config.sandbox_mode) : profile && Object.keys(PROFILES).find(mode => PROFILES[mode] === profile);
-  const reviewer = config.approvals_reviewer === 'guardian_subagent' ? 'auto_review' : config.approvals_reviewer ?? 'user';
-  return Object.keys(PERMISSION_PRESETS).find(mode => { const preset = PERMISSION_PRESETS[mode];
-    return preset.approval === approval && preset.sandbox === sandbox && (mode === 'full' || preset.reviewer === reviewer); }) ?? 'custom';
+  return defaultPermissionMode({ config, layers: [{ config: profiles ? { default_permissions: config.default_permissions } : { sandbox_mode: config.sandbox_mode } }] });
 }
 /** The mode new chats start in, from a config/read (with layers): `ask`, `auto` or `full`, or `custom`. */
-export const defaultPermissionMode = read => defaultPermissions(read?.config ?? {}, usesPermissionProfiles(read));
 function optionSnapshot(config, profiles) {
   const tier = string(config.service_tier);
   return {
@@ -69,8 +64,7 @@ export function optionEdits(input, managed = {}, profiles = false) {
     if (name === 'defaultPermissions') {
       const preset = PERMISSION_PRESETS[value];
       if (!option.values.includes(value) || !preset) throw new Error('Choose one of the listed values');
-      if ((Array.isArray(managed.allowedApprovalPolicies) && !managed.allowedApprovalPolicies.includes(preset.approval))
-        || (Array.isArray(managed.allowedSandboxModes) && !managed.allowedSandboxModes.includes(preset.sandbox))) throw new Error('This choice is restricted by managed settings');
+      if (!permissionAllowed(value, managed)) throw new Error('This choice is restricted by managed settings');
       return [{ keyPath: 'approval_policy', value: preset.approval, mergeStrategy: 'replace' }, { keyPath: 'approvals_reviewer', value: preset.reviewer, mergeStrategy: 'replace' },
         profiles ? { keyPath: 'default_permissions', value: PROFILES[preset.sandbox], mergeStrategy: 'replace' } : { keyPath: 'sandbox_mode', value: preset.sandbox, mergeStrategy: 'replace' }];
     }
