@@ -478,8 +478,20 @@ impl ChatWidget {
                 self.restore_composer_state(combined);
             }
         } else if compact_now {
-            // Later queued inputs follow the compaction as usual.
             if let Some((compact, _)) = self.pop_next_queued_user_message() {
+                // The stopped turn discarded these steers. Retry them after the compaction,
+                // before later queued inputs, preserving their order and history records.
+                for pending in self.input_queue.pending_steers.drain(..).rev() {
+                    self.input_queue
+                        .queued_user_messages
+                        .push_front(QueuedUserMessage {
+                            source: pending.source,
+                            ..QueuedUserMessage::from(pending.user_message)
+                        });
+                    self.input_queue
+                        .queued_user_message_history_records
+                        .push_front(pending.history_record);
+                }
                 self.submit_queued_slash_prompt(compact);
             }
         } else if let Some(combined) = self.drain_pending_messages_for_restore() {
@@ -686,6 +698,7 @@ impl ChatWidget {
             submit_pending_steers_after_interrupt: self
                 .input_queue
                 .submit_pending_steers_after_interrupt,
+            compact_after_interrupt: self.input_queue.compact_after_interrupt,
             current_collaboration_mode: self.current_collaboration_mode.clone(),
             active_collaboration_mask: self.active_collaboration_mask.clone(),
             plan_mode_reasoning_effort: self.config.plan_mode_reasoning_effort.clone(),
@@ -720,6 +733,8 @@ impl ChatWidget {
                 input_state.pending_user_message_client_id;
             self.input_queue.submit_pending_steers_after_interrupt =
                 preserve_in_flight_turn && input_state.submit_pending_steers_after_interrupt;
+            self.input_queue.compact_after_interrupt =
+                preserve_in_flight_turn && input_state.compact_after_interrupt;
             self.update_collaboration_mode_indicator();
             self.refresh_model_dependent_surfaces();
             self.restore_composer_state(input_state.composer.unwrap_or_default());
