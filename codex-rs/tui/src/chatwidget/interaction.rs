@@ -272,7 +272,7 @@ impl ChatWidget {
             && !self.blocks_direct_input
             && self.input_queue.pending_steers.is_empty()
             && self.input_queue.next_queued_input_is_compact()
-            && self.bottom_pane.is_task_running()
+            && self.turn_lifecycle.agent_turn_running
             && self.bottom_pane.no_modal_or_popup_active()
         {
             if self.input_queue.compact_after_interrupt {

@@ -168,6 +168,29 @@ fn reasoning_matches_what_the_provider_reported_in_his_chats() {
 }
 
 #[test]
+fn reasoning_cost_holds_on_responses_after_the_fit_window() {
+    // Independent 25 Oct gpt-6.1-sol responses, after the 20-24 Oct fit window.
+    // From read-only rollouts: collect response_item reasoning encrypted_content lengths,
+    // then pair with the next token_count's last_token_usage.reasoning_output_tokens.
+    // Restrict row timestamps to 25 Oct and deduplicate reasoning IDs across forks.
+    // No message text, encrypted content, IDs or paths are retained in the fixture.
+    let responses: Vec<Vec<u64>> =
+        serde_json::from_str(include_str!("elpis_reasoning_cost_heldout.json")).expect("fixture");
+    let (mut reported, mut estimated) = (0u64, 0u64);
+    for response in &responses {
+        reported += response[0];
+        for &len in &response[1..] {
+            let item = reasoning(usize::try_from(len).expect("length"));
+            estimated += classify(&prompt(), std::slice::from_ref(&item)).reasoning;
+        }
+    }
+    assert_eq!(responses.len(), 846);
+    assert_eq!(reported, 564_199);
+    let ratio = estimated as f64 / reported as f64;
+    assert!((0.97..1.03).contains(&ratio), "held-out responses at {ratio:.3}");
+}
+
+#[test]
 fn reasoning_is_counted_by_its_measured_cost_not_the_history_estimate() {
     let item = reasoning(7_287);
     let snapshot = classify(&prompt(), std::slice::from_ref(&item));

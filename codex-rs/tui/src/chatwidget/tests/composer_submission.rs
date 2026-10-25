@@ -1908,6 +1908,7 @@ async fn restore_thread_input_state_applies_running_state_policy() {
         user_turn_pending_start: true,
         pending_user_message_client_id: None,
         submit_pending_steers_after_interrupt: true,
+        compact_after_interrupt: false,
         current_collaboration_mode: chat.current_collaboration_mode.clone(),
         active_collaboration_mask: chat.active_collaboration_mask.clone(),
         plan_mode_reasoning_effort: chat.config.plan_mode_reasoning_effort.clone(),

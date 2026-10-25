@@ -1675,6 +1675,24 @@ test('encrypted reasoning weighs what the model is sent, as the engine counts it
   }
 });
 
+test('reasoning cost holds on held-out responses after the fit window', async () => {
+  const { sizedItem } = await import('./elpis-features.mjs');
+  // Independent 25 Oct gpt-6.1-sol replies; numeric-only extraction documented in the core test.
+  const responses = JSON.parse(await fs.readFile(new URL('../../../codex-rs/core/src/elpis_reasoning_cost_heldout.json', import.meta.url), 'utf8'));
+  let reported = 0, estimated = 0;
+  for (const [count, ...lengths] of responses) {
+    reported += count;
+    for (const length of lengths) {
+      const [key, bytes] = sizedItem({ type: 'reasoning', encrypted_content: 'g'.repeat(length) });
+      assert.equal(key, 'reasoning');
+      estimated += Math.ceil(bytes / 4);
+    }
+  }
+  assert.equal(responses.length, 846);
+  assert.equal(reported, 564199);
+  assert.ok(Math.abs(estimated / reported - 1) < 0.03, `held-out responses at ${(estimated / reported).toFixed(3)}`);
+});
+
 test('an old chat shows category shares estimated from its saved transcript, until the engine sends its own', async () => {
   const { rolloutShares, contextLedger } = await import('./elpis-features.mjs');
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-rollout-shares-'));
