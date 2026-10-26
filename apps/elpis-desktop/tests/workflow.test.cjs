@@ -11,6 +11,12 @@ let browser,server,url,reconnectFixture;const clients=new Set();
 before(async()=>{
  server=http.createServer(async(req,res)=>{
   const route=new URL(req.url,'http://local').pathname;
+  if(route==='/api/session'&&reconnectFixture?.auth){
+   const auth=reconnectFixture.auth;let body='';for await(const chunk of req)body+=chunk;auth.calls.push(JSON.parse(body));
+   if(auth.invalid||auth.calls.length<=(auth.failures??1)){res.writeHead(auth.invalid?401:503,{'content-type':'application/json'});res.end(JSON.stringify({error:auth.invalid?'Invalid token':'Bridge is starting'}));return;}
+   await auth.wait;auth.accepted=true;res.writeHead(200,{'content-type':'application/json'});res.end('{}');return;
+  }
+  if(route.startsWith('/api/')&&reconnectFixture?.auth&&!reconnectFixture.auth.accepted){reconnectFixture.auth.premature.push({route,method:req.method});res.writeHead(401,{'content-type':'application/json'});res.end(JSON.stringify({error:'Authentication required'}));return;}
   if(route==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write(`event: connection\ndata: ${JSON.stringify({connected:reconnectFixture?.connected!==false})}\n\n`);clients.add(res);req.on('close',()=>clients.delete(res));return;}
   if(reconnectFixture&&route.startsWith('/api/')){
    const f=reconnectFixture;f.calls.push({route,method:req.method});
@@ -21,6 +27,7 @@ before(async()=>{
    if(route==='/api/threads')data={data:[f.thread],nextCursor:null};
    if(route==='/api/threads/reconnect')data={thread:f.thread,data:[{turnId:'turn',item:{id:'reply',type:'agentMessage',text:f.reply}}],nextCursor:null};
    if(route==='/api/threads/reconnect/resume')data={thread:f.thread,activeTurnId:null};
+   if(route==='/api/threads/reconnect/rewind'&&f.rewind)data={action:f.rewind};
    if(route==='/api/threads/reconnect/turns'){res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'Delivery is unknown. Review the history.'}}));return;}
    res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(data));return;
   }
@@ -94,6 +101,57 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   const refreshed=reconnectFixture.calls.slice(calls).map(call=>call.route);
   for(const route of ['/api/threads','/api/models','/api/settings','/api/threads/reconnect','/api/threads/reconnect/resume'])assert(refreshed.includes(route),route);
   assert.equal(reconnectFixture.calls.filter(call=>call.route==='/api/threads/reconnect/turns').length,1,'unknown delivery is never replayed');
+ }finally{await context.close();reconnectFixture=null;}
+});
+
+test('a transient launch sign-in recovers automatically without replacing the restored chat draft or replaying a send',async()=>{
+ let release;const auth={failures:2,calls:[],premature:[],accepted:false,wait:new Promise(resolve=>{release=resolve;})};
+ reconnectFixture={thread:{id:'reconnect',name:'Restored launch chat',model:'fixture-model',modelProvider:'fixture',status:{type:'idle'},desktopAccess:{writable:true}},reply:'History after sign-in',rewind:'undo',calls:[],auth};
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});
+ await guardDesktopStore(context);await context.addInitScript(fakeDesktop);
+ await context.addInitScript(()=>{localStorage.setItem('elpis-last-chat','reconnect');localStorage.setItem('elpis-draft-v1:reconnect','Saved before launch');});
+ const page=await context.newPage();page.setDefaultTimeout(5000);
+ try{
+  await page.goto(`${url}/#token=launch-fixture-token`);
+  await eventually(()=>assert.equal(auth.calls.length,3,'mounted initialization retries repeated transient failures'));
+  const composer=page.getByLabel('Message Elpis',{exact:true});
+  await eventually(async()=>assert.equal(await controlValue(composer),'Saved before launch'));
+  assert.equal(await composer.isEnabled(),true);
+  const edited='Edited during sign-in\nKeep this draft';await composer.fill(edited);await composer.press('Enter');
+  assert.equal(await controlValue(composer),edited);
+  assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true);
+  assert.deepEqual(auth.premature,[],'neither data reads nor the live subscription bypass authentication');
+  assert.deepEqual(auth.calls,Array.from({length:3},()=>({token:'launch-fixture-token'})));
+  release();
+  await page.getByText('History after sign-in',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Undo rewind',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Undo rewind',exact:true}).isEnabled(),true,'recovery restores the idle chat’s saved rewind action');
+  await eventually(async()=>assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isEnabled(),true));
+  assert.equal(await controlValue(composer),edited,'the initial restoration cannot replace an edit after authentication');
+  assert.equal(await page.evaluate(()=>localStorage.getItem('elpis-draft-v1:reconnect')),edited,'the edit stays bound to the restored chat');
+  assert.equal(new URL(page.url()).hash,'','only the successful exchange removes the launch token');
+  assert.equal(reconnectFixture.calls.filter(call=>call.method==='POST'&&/\/(turns|steer|shell|side-chat|compact|interrupt)$/.test(call.route)).length,0,'recovery never sends the offline draft');
+  assert.equal(auth.calls.length,3,'all readers share the successful session');
+  assert.deepEqual(auth.premature,[]);
+ }finally{release();await context.close();reconnectFixture=null;}
+});
+
+test('an invalid launch token asks to reopen the window without retrying or blocking draft editing',async()=>{
+ const auth={invalid:true,calls:[],premature:[],accepted:false};
+ reconnectFixture={thread:{id:'reconnect',name:'Restored launch chat'},reply:'Unused',calls:[],auth};
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});
+ await guardDesktopStore(context);await context.addInitScript(fakeDesktop);
+ const page=await context.newPage();page.setDefaultTimeout(5000);await page.clock.install();
+ try{
+  await page.goto(`${url}/#token=invalid-fixture-token`);
+  await page.getByRole('alert').filter({hasText:'Reopen this window'}).waitFor();
+  const composer=page.getByLabel('Message Elpis',{exact:true});await composer.fill('Keep this unsigned draft');await composer.press('Enter');
+  await page.clock.runFor(30000);
+  assert.equal(await controlValue(composer),'Keep this unsigned draft');
+  assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true);
+  assert.equal(auth.calls.length,1,'a refused token is not retried on a timer');
+  assert.deepEqual(auth.premature,[],'a bad token cannot cause unauthenticated reads or sends');
+  assert.equal(new URL(page.url()).hash,'#token=invalid-fixture-token');
  }finally{await context.close();reconnectFixture=null;}
 });
 

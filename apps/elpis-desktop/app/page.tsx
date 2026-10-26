@@ -114,7 +114,7 @@ import { scanDeletionThreads } from "@/lib/thread-deletion";
 import { changesModelCatalog } from "@/lib/account-events";
 import { loadConversationPage } from "@/lib/conversation-page";
 import { activityOf, api, unreadable, chatProvider, choiceById, choiceOf, effortsOf, isAgent, isAgentRun, AGENT_RUN_NOTICE, modelLabel, providerChoices, providerLabel, title, agentName,
-  mediaUrl, sessionReady, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+  mediaUrl, sessionReady, retryableSessionError, type Approval, type Entry, type Item, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 
 const approvalDraftKey = (approval: Approval) => JSON.stringify([approval.ownerThreadId, approval.id]);
 
@@ -567,7 +567,7 @@ export default function Home() {
       // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
       // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
       unread = !result.data.length && !result.nextCursor;
-    } catch (e) { if (request.current === id) setError(String(e)); return; }
+    } catch (e) { if (request.current === id && !retryableSessionError(e)) setError(String(e)); return; }
     finally { if (request.current === id) setLoading(false); }
     // Follow it live in this app: subscribe, and learn the turn it is running now.
     try {
@@ -622,6 +622,7 @@ export default function Home() {
   }, []);
   useEffect(() => {
     let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined, retryDelay = 500;
     function disconnected() { wasConnected = false; recovery++; setConnected(false); setConnectionStatus("Elpis is disconnected. Reconnecting to Elpis… Your draft is saved."); setApprovals([]); }
     async function reconnect() {
       const attempt = ++recovery, thread = selectedRef.current, requestId = request.current;
@@ -667,6 +668,7 @@ export default function Home() {
       }));
     }
     async function initialize() {
+      if (disposed) return;
       try {
         // Bind the restored chat and its draft before waiting for the connection. loadThread's API reads already
         // wait for sessionReady; an early edit must belong to this chat rather than be replaced after sign-in.
@@ -676,7 +678,7 @@ export default function Home() {
         if (last && !selectedRef.current && request.current === 0) {
           initialRestoration.current = { threadId: last, promise: loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread) };
         }
-        await sessionReady();
+        await sessionReady(true);
         if (disposed) return;
         setReady(true);
         // No data read gates navigation or the live connection. A busy bridge fills each part as it arrives.
@@ -782,9 +784,19 @@ export default function Home() {
         events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
         events.addEventListener("unsupportedApproval", event => { const { method } = JSON.parse(event.data); setError(`Elpis requested an unsupported approval (${method}). Update the app to answer this request.`); });
         events.addEventListener("account", event => { setAccountRefresh(n => n + 1); if (changesModelCatalog(JSON.parse(event.data).method)) void refreshModels(); });
-      } catch (e) { if (!disposed) { disconnected(); setError(String(e)); } }
+      } catch (e) {
+        if (disposed) return;
+        disconnected();
+        if (retryableSessionError(e)) {
+          retryTimer = setTimeout(() => void initialize(), retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 10000);
+        } else {
+          setConnectionStatus("Elpis could not connect. Your draft is saved.");
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      }
     }
-    initialize(); return () => { disposed = true; catalogRequest.current++; events?.close(); };
+    initialize(); return () => { disposed = true; clearTimeout(retryTimer); catalogRequest.current++; events?.close(); };
   }, [refreshThreads, patchThread, upsertThread, removeThreads, select, liveKeysAfter, clearApprovalDraft, refreshModels, reconcileLiveThread, noteHistoryGap]);
 
   const loadChildren = useCallback(async (id: string, cursor?: string, expand = false) => {
@@ -800,7 +812,7 @@ export default function Home() {
     } catch (e) { setError(String(e)); }
     finally { childPaging.current.delete(id); setLoadingChildren(prev => ({ ...prev, [id]: false })); }
   }, []);
-  useEffect(() => { if (selected?.id && !selected.parentThreadId) loadChildren(selected.id); }, [selected?.id, selected?.parentThreadId, loadChildren]);
+  useEffect(() => { if (ready && selected?.id && !selected.parentThreadId) loadChildren(selected.id); }, [ready, selected?.id, selected?.parentThreadId, loadChildren]);
   // Chats this app could not subscribe to are refreshed by reading them instead.
   const selectedLiveError = selected ? liveError[selected.id] : undefined;
   useEffect(() => {
@@ -845,13 +857,13 @@ export default function Home() {
 
   const activeTurn = selected ? activeTurns[selected.id] : undefined;
   useEffect(() => {
-    const id = selected?.id; if (!id || activeTurn) return;
+    const id = selected?.id; if (!ready || !connected || !id || activeTurn) return;
     let disposed = false;
     api<{ action?: "undo" | "redo" } | null>(`/threads/${encodeURIComponent(id)}/rewind`, { action: "status" }).then(result => {
       if (!disposed) setRewindActions(prev => ({ ...prev, [id]: result?.action }));
     }).catch(() => {});
     return () => { disposed = true; };
-  }, [selected?.id, activeTurn]);
+  }, [ready, connected, selected?.id, activeTurn]);
   // A new chat starts in Settings' default permissions (Full access unless the config names an approval policy) until a
   // mode is chosen, so the button shows that; a config that matches no preset shows Ask.
   const defaultMode = providerSettings?.options?.defaultPermissions;
@@ -2264,7 +2276,7 @@ export default function Home() {
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
-      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={workflowFolder} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}

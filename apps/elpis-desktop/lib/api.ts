@@ -24,10 +24,19 @@ export type Approval = { id: string; ownerThreadId: string; thread?: Thread; met
 export const unreadable = (what: string) => new Error(`Elpis sent a reply the app could not read (${what}). Update Elpis and try again.`);
 /** Every bridge reply is a JSON object; anything else is refused before a view can read from it. */
 const isObject = (value: unknown): value is object => typeof value === "object" && value !== null && !Array.isArray(value);
+class RequestError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) { super(message); this.status = status; }
+}
+class SessionError extends Error {
+  readonly retryable: boolean;
+  constructor(message: string, retryable: boolean) { super(message); this.retryable = retryable; }
+}
+export const retryableSessionError = (error: unknown) => error instanceof SessionError && error.retryable;
 async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try { response = await fetch(`/api${path}`, body === undefined ? (signal ? { signal } : undefined) : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal }); }
-  catch { throw new Error("Could not reach Elpis. Check the connection and try again."); }
+  catch { throw new RequestError("Could not reach Elpis. Check the connection and try again.", 0); }
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = typeof result?.error?.message === "string" ? result.error.message : typeof result?.error === "string" ? result.error : "";
@@ -36,24 +45,36 @@ async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Prom
     const message = detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback;
     const code = typeof result?.code === "string" && /^ELPIS_[A-Z_]{1,64}$/.test(result.code) ? result.code : "";
     const requestId = typeof result?.requestId === "string" && /^[a-f0-9-]{36}$/.test(result.requestId) ? result.requestId : "";
-    throw new Error(`${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`);
+    throw new RequestError(`${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`, response.status);
   }
   if (!isObject(result)) throw unreadable(path.split("?")[0]);
   return result as T;
 }
-/** The page's #token is traded for a session cookie once, as the app loads, and every request waits for that, so a part
- * of the app that asks early is not refused and left empty (as the features under the message box once were). */
+/** Keep the original launch token until its exchange succeeds. Only mounted initialization retries a transient
+ * failure; all other callers share that exchange, and a refused action is never sent or replayed. */
 const token = typeof location === "undefined" ? null : new URLSearchParams(location.hash.slice(1)).get("token");
-const session: Promise<void> = token
-  ? call("/session", { token }).then(() => history.replaceState(null, "", location.pathname + location.search))
-  : Promise.resolve();
-session.catch(() => {}); // The page reports a failed exchange (sessionReady); requests then show their own errors.
-export const sessionReady = () => session;
+let mayRetrySession = false;
+function exchangeSession(): Promise<void> {
+  const pending = token ? call("/session", { token }).then(() => history.replaceState(null, "", location.pathname + location.search)).catch(error => {
+    const status = error instanceof RequestError ? error.status : undefined;
+    mayRetrySession = status === 0 || status === 408 || status === 429 || status !== undefined && status >= 500;
+    throw new SessionError(status === 401 || status === 403
+      ? "Could not sign in to Elpis. Reopen this window to refresh its connection token."
+      : error instanceof Error ? error.message : String(error), mayRetrySession);
+  }) : Promise.resolve();
+  pending.catch(() => {}); // Initialization owns reporting; do not create an unhandled rejection before it mounts.
+  return pending;
+}
+let session = exchangeSession();
+export function sessionReady(retry = false) {
+  if (retry && mayRetrySession) { mayRetrySession = false; session = exchangeSession(); }
+  return session;
+}
 /** The bridge refuses a second action on one chat while another runs, and refuses it before doing anything, so asking again a
  * moment later is safe. A send that overlaps another action on the chat (22 Oct: annotating a page, then Enter) waits for it. */
 const BUSY = /Another operation on this conversation is pending/, BUSY_RETRIES = 5, BUSY_WAIT_MS = 150;
 export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  await session.catch(() => {});
+  await sessionReady();
   for (let attempt = 0; ; attempt++) {
     try { return await call<T>(path, body, signal); }
     catch (error) {
