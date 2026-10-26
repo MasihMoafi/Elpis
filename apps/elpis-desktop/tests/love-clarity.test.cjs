@@ -12,6 +12,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
     { id: 'review-chat', name: 'Review', source: 'cli', status: { type: 'idle' } },
     { id: 'matilda-chat', name: 'Love Spot', source: 'cli', status: { type: 'idle' } },
     { id: 'ordinary-chat', name: 'My conversation', source: 'cli', status: { type: 'idle' } },
+    { id: 'workflow-chat', name: 'Workflow coordinator', source: 'cli', status: { type: 'idle' } },
   ];
   const f = await loveSpotFixture({ colorScheme,
     prepareDirectory: async directory => { await fs.mkdir(directory, { recursive: true }); await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ elements: [card], files: {}, appState: {} })); },
@@ -19,7 +20,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
       client.listThreads = async () => ({ data: chats, nextCursor: null });
       client.readThread = async id => ({ thread: chats.find(chat => chat.id === id), data: [], nextCursor: null });
       client.resume = async id => ({ thread: chats.find(chat => chat.id === id), activeTurnId: null });
-      client.workflowHistory = async () => ({ data: [{ id: 'team-one', rootThreadId: 'ordinary-chat', name: 'Review the example', status: 'running', tasks: [{ status: 'succeeded' }, { status: 'running' }] }] });
+      client.workflowHistory = async () => ({ data: [{ id: 'team-one', rootThreadId: 'workflow-chat', name: 'Review the example', status: 'running', tasks: [{ status: 'succeeded' }, { status: 'running' }] }] });
     },
   });
   try {

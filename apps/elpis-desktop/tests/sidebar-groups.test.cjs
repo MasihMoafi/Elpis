@@ -31,7 +31,9 @@ async function moveMenu(page, id, how = 'right-click') {
   if (how === 'keys') {
     await row(page, id).locator('.thread-link').focus();
     await page.keyboard.press('Shift+F10');
-    await page.getByRole('menu').first().waitFor();
+    const menu = page.getByRole('menu').first();
+    await menu.waitFor();
+    await page.waitForFunction(menu => menu.contains(document.activeElement), await menu.elementHandle());
     await page.keyboard.type('Move to g');
     await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Move to group');
     await page.keyboard.press('ArrowRight');

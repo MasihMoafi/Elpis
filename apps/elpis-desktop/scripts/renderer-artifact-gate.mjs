@@ -24,6 +24,21 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/provider-model-pairs.test.cjs": {
+      "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
+      "approval": "56ab914e564a4900c93d6e03323c5aa02db45210",
+      "reason": "Wait for the configured provider default, its actual credits and enabled Send before exercising routing. Do not reselect a model. Preserve every default, provider, model, pointer, keyboard and request assertion; the earlier generic Model-visible check ran before settings and connection finished."
+    },
+    "tests/love-clarity.test.cjs": {
+      "blob": "6c3dda6ccf1a6d670c3d92a3ad7e9f4c524f1712",
+      "approval": "902db1c847c47042ca4514c2ac634dbd91dc6c76",
+      "reason": "Masih 26 Oct: visiting Love Spot or its chat acknowledges its badge; ordinary chats do not, and later replies notify again. Unverified audio stays unavailable. Give workflow history its own coordinator so the ordinary chat remains ordinary. History and Workflow history follow recoverable history in 902db1c84; retain progress, palette, no-load-notification and both-theme checks."
+    },
+    "tests/workflow.test.cjs": {
+      "blob": "b16d929435bf0c19eec6e577a1ce5f7f1686060e",
+      "approval": "8e197bb8618ce51993244e06ff588db3506115c8",
+      "reason": "S34, Masih 26 Oct: disconnected Elpis must still allow typing and saved drafts. Supersede the disabled-composer expectation; retain uncertain delivery, stale approvals, authoritative history, bottom notice geometry and all six A125 recovery cases. Exercise the real desktop store through an explicit shared browser context, clear the slash draft before empty-draft shell entry, and assert offline permissions, effort, folder and Stop cannot mutate the runtime. Keep every existing assertion and timeout."
+    },
     "tests/chat-activity.test.cjs": {
       "blob": "b764612da30e5c3f5da30fdd9b1cde08d176abe8",
       "approval": "81dd022e9dd5d055cbb15110fb2649751f8578f6",
@@ -145,9 +160,9 @@ export const retainedUpdates = {
       "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion. Wait on stable disclosure owners: a :not([open]) locator changes identity after the click. Keep all reasoning, tool, copy and discovered-agent assertions after their bodies mount."
     },
     "tests/sidebar-groups.test.cjs": {
-      "blob": "45377165997c1c5758c3e64d49f56135edee25d8",
+      "blob": "13cdaf9f6acc5b70406464464aa03042a7e8d32b",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions."
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions. Wait for the open root menu to own focus before native typeahead. Preserve the exact move target, real submenu keyboard journey and all grouping/persistence assertions."
     },
     "tests/workflow-observer.test.cjs": {
       "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
@@ -301,9 +316,9 @@ export const retainedUpdates = {
       "reason": pageRemovalApproval.reason + " Wait for the existing animation-frame search focus before checking it; preserve all command, saved-text and focus-return assertions."
     },
     "tests/composer-files.test.cjs": {
-      "blob": "9cfb1e0156430f9236d847c4ea22d4366f758a14",
+      "blob": "554d67113298a5a0616014375e6db96d3f7d7505",
       "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks."
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. Offline editing becomes available before hydration. Wait for the actual loaded chat list before counting drop navigation, retaining exact zero-navigation and unchanged-URL assertions. Record exact navigation URLs only as failure evidence; retain all attachment bytes, draft, persistence, PDF, failure and no-send checks."
     },
     "tests/desktop-polish.test.cjs": {
       "blob": "4d1df081303101817e4857fc702768ec8f5d331b",
@@ -437,9 +452,9 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "b2032d6c9d557fe79f0c4ff45a96645a83b9d41d",
+      "blob": "94499d6a2dee334bfe07795f9fccd8f987da049d",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks. Love Spot, Masih 26 Oct: “its audio doesn't work; if you don't know how to do it - disable it” and “forget that functionality for now”. The temporary text-only gate supplies the unavailable reason; preserve all keyboard, tooltip association, layout and theme assertions."
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks. Love Spot, Masih 26 Oct: “its audio doesn't work; if you don't know how to do it - disable it” and “forget that functionality for now”. The temporary text-only gate supplies the unavailable reason; preserve all keyboard, tooltip association, layout and theme assertions. Resolve the focused information control's actual aria-describedby association instead of matching two equal tooltip texts. Preserve keyboard Tab/Escape, exact unavailable reason and every toolbar/theme/fit assertion."
     },
     "tests/love-dock.test.cjs": {
       "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",

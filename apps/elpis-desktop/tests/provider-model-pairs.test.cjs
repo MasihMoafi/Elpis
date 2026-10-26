@@ -102,9 +102,10 @@ test('a changed API default offers its own models and keeps the selected provide
       try {
         const page = await context.newPage(); page.setDefaultTimeout(7000);
         await page.goto(origin);
-        await page.getByLabel('Model', { exact: true }).waitFor();
+        await page.getByLabel('Model', { exact: true }).filter({ hasText: 'Anthropic credits' }).waitFor();
         await page.evaluate(dark => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-shell').classList.toggle('dark', dark); }, theme === 'dark');
         await page.getByLabel('Message Elpis', { exact: true }).fill('INHERITED_DEFAULT_SENTINEL');
+        await page.waitForFunction(() => { const send = document.querySelector('button[aria-label="Send message"]'); return send && !send.disabled; });
         assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).isEnabled(), true, 'the configured API default does not require reselecting its model');
         await page.getByLabel('Message Elpis', { exact: true }).fill('');
         await page.getByLabel('Model', { exact: true }).click();
