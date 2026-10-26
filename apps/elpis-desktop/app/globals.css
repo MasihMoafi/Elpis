@@ -769,7 +769,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .section-label { line-height:1; color:var(--muted-foreground); padding:16px 8px 6px; }
 .thread-row { position:relative; }
 /* Match the group chevron's center (6px inset + half its 13px icon); only circles and names indent for agents. */
-.thread-row > button[aria-expanded]:first-child { position:absolute; left:6.5px; width:12px; background:transparent; box-shadow:none; }
+.thread-row > button[aria-expanded]:first-child { position:absolute; left:calc(6.5px + var(--thread-depth, 0) * 14px); width:12px; background:transparent; box-shadow:none; }
 /* The cropped viewBox keeps the same drawn caret inside an 8px box, clear of the active rail. */
 .thread-row > button[aria-expanded]:first-child svg { width:8px; height:8px; }
 .thread-row > span[aria-hidden="true"]:first-child { display:none; }

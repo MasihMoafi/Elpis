@@ -62,6 +62,191 @@ const shot = async (page, name) => {
   await page.screenshot({ path: path.join(dir, `organize-${name}.png`) });
 };
 
+for (const colorScheme of ['light', 'dark']) test(`native agent generations drag out, reparent with descendants and keep folds and drafts (${colorScheme})`, async () => {
+  const make = (id, name, parentThreadId) => ({ id, name, ...(parentThreadId ? { parentThreadId } : {}), source: 'cli', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true } });
+  const tree = [make('tree-root', 'Tree root'), make('tree-worker', 'Tree worker', 'tree-root'), make('tree-grandchild', 'Tree grandchild', 'tree-worker'),
+    { ...make('tree-leaf', 'Tree leaf', 'tree-grandchild'), source: { subAgent: { thread_spawn: { parent_thread_id: 'tree-grandchild' } } } },
+    make('tree-peer', 'Tree peer', 'tree-grandchild'), make('tree-sibling', 'Tree sibling', 'tree-root'), make('tree-other', 'Other root'), make('tree-orphan', 'Orphan worker', 'not-loaded')];
+  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree,
+    storage: { 'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], branches: { 'tree-root': true, 'tree-worker': true, 'tree-grandchild': true } }) } });
+  const { page } = f;
+  const depth = async (id, expected) => eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), String(expected), id));
+  try {
+    for (const [id, level] of [['tree-root', 0], ['tree-worker', 1], ['tree-grandchild', 2], ['tree-leaf', 3]]) await depth(id, level);
+    for (const id of ['tree-leaf', 'tree-peer', 'tree-sibling', 'tree-orphan']) assert.equal(await row(page, id).getByRole('button', { name: /^(Expand|Collapse) / }).count(), 0, 'leaves have no expansion control');
+    const sidebarBox = await aside(page).boundingBox();
+    const geometry = await Promise.all(['tree-root', 'tree-worker', 'tree-grandchild', 'tree-leaf'].map(async id => {
+      const item = row(page, id), chevron = item.getByRole('button', { name: /^(Expand|Collapse) / });
+      return { id, row: await item.boundingBox(), name: await item.locator('.thread-title').boundingBox(), dot: await item.locator('.thread-dot').boundingBox(),
+        chevron: await chevron.count() ? await chevron.locator('svg').boundingBox() : null };
+    }));
+    const right = box => box.x + box.width, bottom = box => box.y + box.height, centerY = box => box.y + box.height / 2;
+    const inside = (box, container) => box && box.width > 0 && box.height > 0 && box.x >= container.x - 1 && right(box) <= right(container) + 1 && box.y >= container.y - 1 && bottom(box) <= bottom(container) + 1;
+    const nameIndent = geometry[1].name.x - geometry[0].name.x;
+    assert.ok(nameIndent > 1, 'a child name is visibly indented from its parent');
+    for (let index = 0; index < geometry.length; index++) {
+      const current = geometry[index], previous = geometry[index - 1];
+      assert.ok(inside(current.row, sidebarBox), `${current.id}: row stays within the sidebar`);
+      for (const [part, box] of [['name', current.name], ['status dot', current.dot], ...(current.chevron ? [['chevron', current.chevron]] : [])]) {
+        assert.ok(inside(box, current.row), `${current.id}: ${part} stays within its row`);
+        if (part !== 'name') assert.ok(Math.abs(centerY(box) - centerY(current.row)) < 2, `${current.id}: ${part} aligns vertically with its row`);
+      }
+      assert.ok(right(current.dot) < current.name.x, `${current.id}: status and name do not overlap`);
+      if (current.chevron) assert.ok(right(current.chevron) < current.dot.x && right(current.chevron) < current.name.x, `${current.id}: the chevron stays clear of its status and name`);
+      if (previous) {
+        assert.ok(bottom(previous.row) <= current.row.y + 1, 'successive generations do not overlap vertically');
+        for (const part of ['name', 'dot']) {
+          const indent = current[part].x - previous[part].x;
+          assert.ok(indent > 1 && Math.abs(indent - nameIndent) < 1, `${current.id}: rendered ${part} advances by the shared generation indent`);
+        }
+        if (current.chevron) assert.ok(Math.abs(current.chevron.x - previous.chevron.x - nameIndent) < 1, `${current.id}: its rendered chevron follows the same tree indent`);
+      }
+    }
+    await row(page, 'tree-worker').getByRole('button', { name: /^Collapse / }).click();
+    await page.reload();
+    await row(page, 'tree-worker').waitFor(); assert.equal(await row(page, 'tree-grandchild').count(), 0);
+    const expand = row(page, 'tree-worker').getByRole('button', { name: /^Expand / });
+    await expand.focus(); await page.keyboard.press('Enter'); await depth('tree-leaf', 3);
+    await f.open('tree-grandchild'); await f.composer.fill('Keep my nested chat draft');
+    await drag(page, 'tree-grandchild', 'tree-other', 'top');
+    await depth('tree-grandchild', 0); await depth('tree-leaf', 1);
+    assert.equal(await f.shown(), 'tree-grandchild'); assert.equal(await f.composer.inputValue(), 'Keep my nested chat draft');
+    await page.reload(); await depth('tree-grandchild', 0); await depth('tree-leaf', 1);
+    assert.equal(await f.composer.inputValue(), 'Keep my nested chat draft');
+    assert.equal(await page.evaluate(() => JSON.parse(window.elpisDesktop.storage.getItem('elpis-chat-groups-v1')).parents['tree-grandchild']), null, 'taking a native grandchild out saves an explicit root override');
+    await drag(page, 'tree-grandchild', 'tree-sibling'); await depth('tree-grandchild', 2); await depth('tree-leaf', 3);
+    await drag(page, 'tree-sibling', 'tree-other'); await depth('tree-sibling', 1); await depth('tree-grandchild', 2); await depth('tree-leaf', 3);
+    await drag(page, 'tree-other', 'tree-leaf'); await depth('tree-other', 0); await depth('tree-leaf', 3);
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await row(page, 'tree-other').locator('.thread-link').click({ modifiers: ['Control'] });
+    await row(page, 'tree-grandchild').locator('.thread-link').click({ modifiers: ['Control'] });
+    await drag(page, 'tree-other', 'tree-leaf'); await depth('tree-other', 0); await depth('tree-grandchild', 2);
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
+    await row(page, 'tree-leaf').locator('.thread-link').focus(); await page.keyboard.press('Alt+ArrowDown');
+    await eventually(async () => { const visible = await ids(recents(page)); assert.equal(visible.indexOf('tree-peer') + 1, visible.indexOf('tree-leaf')); });
+    await page.reload(); await depth('tree-leaf', 3);
+    await eventually(async () => { const visible = await ids(recents(page)); assert.equal(visible.indexOf('tree-peer') + 1, visible.indexOf('tree-leaf')); });
+    await row(page, 'tree-orphan').waitFor();
+    for (const thread of tree) assert.equal(await aside(page).locator(`.thread-row[data-thread-id="${thread.id}"]`).count(), 1, 'each loaded chat remains reachable once');
+    await assertUiFit(aside(page), 'recursive native agent tree fits'); await shot(page, `recursive-${colorScheme}`);
+    assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false, 'display moves do not mutate runtime threads');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('workflow descendants and manual branches use the same recursive placement and corrupt cycles stay visible', async () => {
+  const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'manual-root', 'manual-child', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
+    ...(id === 'flow-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : {}) }));
+  const f = await fixture({ desktop: true, threads: tree,
+    storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }),
+      'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'manual-child': 'manual-root', 'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a' }, branches: { 'workflow:flow-run': true, 'flow-step': true, 'manual-root': true } }) },
+    routes: { '/api/workflows/history': () => ({ data: [{ id: 'flow-run', rootThreadId: 'flow-root', name: 'Nested workflow', status: 'succeeded', tasks: [{ id: 'step', title: 'flow-step', assignedThreadId: 'flow-step' }, { id: 'grandchild', title: 'flow-grandchild', assignedThreadId: 'flow-grandchild' }] }] }) } });
+  const { page } = f;
+  try {
+    await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '2'));
+    await row(page, 'manual-child').waitFor(); await row(page, 'cycle-a').waitFor(); await row(page, 'cycle-b').waitFor();
+    await drag(page, 'manual-child', 'flow-step');
+    await eventually(async () => assert.equal(await row(page, 'manual-child').getAttribute('data-depth'), '2'));
+    await action(page, 'flow-grandchild', 'Take out');
+    await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '0'));
+    await page.reload();
+    await eventually(async () => assert.equal(await row(page, 'manual-child').getAttribute('data-depth'), '2'));
+    assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '0');
+    await page.getByLabel('Search conversations', { exact: true }).fill('flow');
+    const results = aside(page).locator('section[aria-label="Results"]');
+    await eventually(async () => assert.equal(await results.locator('.thread-row').count(), 3));
+    assert.equal(await results.locator('.thread-row.child').count(), 0, 'recursive matches stay flat while searching');
+    assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('ordinary recursive branches expose the second child and grandchild pages without Background runs', async () => {
+  const make = (id, name, parentThreadId) => ({ id, name, ...(parentThreadId ? { parentThreadId } : {}), source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } });
+  const root = make('paged-root', 'Pagination root');
+  const workers = Array.from({ length: 101 }, (_, i) => make(`paged-worker-${i}`, `Pagination worker ${i}`, root.id));
+  const grandchildren = Array.from({ length: 101 }, (_, i) => make(`paged-grandchild-${i}`, `Pagination grandchild ${i}`, workers[0].id));
+  const reads = [];
+  const f = await fixture({ desktop: true, threads: [root], width: 1440, height: 900,
+    storage: { 'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], branches: { [root.id]: true } }) },
+    routes: { '/api/threads': (_body, url) => {
+      const parent = url.searchParams.get('ancestorThreadId'), cursor = url.searchParams.get('cursor');
+      if (!parent) return { data: url.searchParams.get('archived') === 'true' ? [] : [root], nextCursor: null };
+      reads.push({ parent, cursor, limit: url.searchParams.get('limit') });
+      const children = parent === root.id ? workers : parent === workers[0].id ? grandchildren : [];
+      return { data: cursor ? children.slice(100) : children.slice(0, 100), nextCursor: !cursor && children.length > 100 ? 'second-page' : null };
+    } } });
+  const { page } = f;
+  try {
+    await row(page, workers[99].id).waitFor();
+    const moreRoot = aside(page).getByRole('button', { name: 'More agents from Pagination root', exact: true });
+    await moreRoot.waitFor(); assert.equal(await row(page, workers[100].id).count(), 0);
+    assert.equal(await aside(page).getByRole('region', { name: 'Agent runs', exact: true }).count(), 0);
+    await moreRoot.click(); await row(page, workers[100].id).waitFor();
+    assert.equal(await row(page, workers[100].id).getAttribute('data-depth'), '1');
+    assert.equal(await moreRoot.count(), 0);
+    await row(page, workers[0].id).getByRole('button', { name: /^Expand agents/ }).click();
+    await row(page, grandchildren[99].id).waitFor();
+    const moreGrandchildren = aside(page).getByRole('button', { name: 'More agents from Pagination worker 0', exact: true });
+    await moreGrandchildren.click(); await row(page, grandchildren[100].id).waitFor();
+    assert.equal(await row(page, grandchildren[100].id).getAttribute('data-depth'), '2');
+    assert.equal(await moreGrandchildren.count(), 0);
+    for (const parent of [root.id, workers[0].id]) assert.ok(reads.some(read => read.parent === parent && read.cursor === 'second-page' && read.limit === '100'));
+    assert.equal(await aside(page).locator('.thread-row').count(), 203, 'both pages at both generations stay visible once');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('several roots from malformed native lineage can be put under one chat and survive reload', async () => {
+  const tree = [{ id: 'native-cycle-a', name: 'Native cycle A', parentThreadId: 'native-cycle-b' }, { id: 'native-cycle-b', name: 'Native cycle B', parentThreadId: 'native-cycle-a' }, { id: 'native-cycle-target', name: 'Safe parent' }]
+    .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
+  const f = await fixture({ desktop: true, threads: tree }), { page } = f;
+  try {
+    await row(page, 'native-cycle-a').waitFor(); await row(page, 'native-cycle-b').waitFor();
+    await mark(page, ['native-cycle-a', 'native-cycle-b']); await putUnder(page, 'native-cycle-a', 'Safe parent');
+    for (const id of ['native-cycle-a', 'native-cycle-b']) assert.equal(await row(page, id).getAttribute('data-depth'), '1');
+    await page.reload();
+    for (const id of ['native-cycle-a', 'native-cycle-b']) await eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), '1'));
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('a refused final order save leaves the subtree, projects, order and selection unchanged', async () => {
+  const tree = [{ id: 'save-parent', name: 'Project parent' }, { id: 'save-child', name: 'Moving child', parentThreadId: 'save-parent' }, { id: 'save-grandchild', name: 'Moving grandchild', parentThreadId: 'save-child' }, { id: 'save-target', name: 'Recent target' }]
+    .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
+  const f = await fixture({ desktop: true, threads: tree, storage: { ...storage,
+    'elpis-project-chats-v1': JSON.stringify({ 'save-parent': 'existing', 'save-child': 'existing', 'save-grandchild': 'existing' }),
+    'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: ['save-target', 'save-parent', 'save-child', 'save-grandchild'], branches: { 'save-parent': true, 'save-child': true } }) } });
+  const { page } = f;
+  try {
+    await mark(page, ['save-child', 'save-grandchild']);
+    const before = await page.evaluate(() => ({ groups: window.elpisDesktop.storage.getItem('elpis-chat-groups-v1'), projects: window.elpisDesktop.storage.getItem('elpis-project-chats-v1') }));
+    await page.evaluate(() => {
+      const store = window.elpisDesktop.storage, setItem = store.setItem;
+      window.restorePlacementStore = () => { store.setItem = setItem; };
+      store.setItem = (key, value) => {
+        // The old two-stage drag saved its parent first, then failed while saving Manual order.
+        if (key === 'elpis-chat-groups-v1' && JSON.parse(value).sortBy === 'manual') throw Error('Final order write refused');
+        return setItem(key, value);
+      };
+    });
+    await drag(page, 'save-child', 'save-target', 'top');
+    await page.getByRole('alert').filter({ hasText: 'Could not save chat placement' }).waitFor();
+    assert.equal(await row(page, 'save-child').getAttribute('data-depth'), '1');
+    assert.equal(await row(page, 'save-grandchild').getAttribute('data-depth'), '2');
+    assert.equal(await aside(page).locator('.thread-row.selected').count(), 2, 'a refused placement keeps the selected branch');
+    const after = await page.evaluate(() => ({ groups: window.elpisDesktop.storage.getItem('elpis-chat-groups-v1'), projects: window.elpisDesktop.storage.getItem('elpis-project-chats-v1') }));
+    assert.deepEqual(after, before, 'no intermediate placement or project membership was committed');
+    assert.deepEqual((await ids(project(page, 'Existing project'))).sort(), ['save-child', 'save-grandchild', 'save-parent']);
+    await page.evaluate(() => window.restorePlacementStore());
+    await drag(page, 'save-child', 'save-target', 'top');
+    await eventually(async () => assert.equal(await row(page, 'save-child').getAttribute('data-depth'), '0'));
+    assert.equal(await row(page, 'save-grandchild').getAttribute('data-depth'), '1');
+    await page.reload(); await eventually(async () => assert.equal(await row(page, 'save-child').getAttribute('data-depth'), '0'));
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 for (const colorScheme of ['light', 'dark']) test(`six chats nest, fold, persist, take out, then form a new project (${colorScheme})`, async () => {
   const f = await open({ colorScheme }), { page } = f;
   try {
@@ -80,8 +265,11 @@ for (const colorScheme of ['light', 'dark']) test(`six chats nest, fold, persist
     await row(page, 'chat-a').getByRole('button', { name: /^Expand .*car-scraper-pro/ }).click();
     await row(page, children[0]).waitFor();
     await page.reload();
-    await row(page, 'chat-a').getByRole('button', { name: /^Expand .*car-scraper-pro/ }).click();
     await row(page, children[0]).waitFor();
+    await row(page, 'chat-a').getByRole('button', { name: /^Collapse .*car-scraper-pro/ }).click();
+    await page.reload();
+    assert.equal(await row(page, children[0]).count(), 0, 'the folded branch survives reload');
+    await row(page, 'chat-a').getByRole('button', { name: /^Expand .*car-scraper-pro/ }).click();
     await page.getByLabel('Search conversations', { exact: true }).fill('BoomDeal');
     const results = aside(page).locator('section[aria-label="Results"]');
     await eventually(async () => assert.equal(await results.locator('.thread-row').count(), 6));
@@ -112,7 +300,7 @@ for (const colorScheme of ['light', 'dark']) test(`six chats nest, fold, persist
   } finally { await f.close(); }
 });
 
-test('middle drag nests every marked chat; edge and keyboard moves reorder; cycles and deeper nesting are refused', async () => {
+test('middle drag nests every marked chat; edge and keyboard moves reorder; cycles are refused and nested parents are available', async () => {
   const f = await open(), { page } = f;
   try {
     await mark(page);
@@ -125,7 +313,7 @@ test('middle drag nests every marked chat; edge and keyboard moves reorder; cycl
     const dialog = page.getByRole('alertdialog', { name: 'Put chats under a chat' });
     await dialog.getByRole('combobox', { name: 'Parent chat', exact: true }).click();
     assert.equal(await page.getByRole('option', { name: 'Unrelated chat', exact: true }).count(), 0, 'self is excluded');
-    assert.equal(await page.getByRole('option', { name: /^BoomDeal/ }).count(), 0, 'nested chats cannot be parents');
+    assert.equal(await page.getByRole('option', { name: /^BoomDeal/ }).count(), 6, 'nested chats can parent another branch');
     await page.getByRole('option', { name: 'car-scraper-pro', exact: true }).click();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await drag(page, 'chat-g', 'chat-c', 'top');
@@ -222,7 +410,7 @@ for (const desktop of [true, false]) test(`single-chat organizing actions are sh
     await row(page, 'chat-a').getByRole('button', { name: /^Expand agents/ }).click();
     await row(page, 'native-agent').getByRole('button', { name: 'Actions for Native worker', exact: true }).click();
     await page.getByRole('menu').waitFor();
-    for (const name of ['Put under…', 'Move to project…', 'New project from these…', 'Take out']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 0, 'native agent relationships cannot be reorganized');
+    for (const name of ['Put under…', 'Move to project…', 'New project from these…', 'Take out']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1, 'native agents share the same display organization actions');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

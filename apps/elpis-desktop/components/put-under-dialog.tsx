@@ -22,7 +22,7 @@ export function PutUnderDialog({ chats, candidates, onPutUnder, onClose }: {
     <label className="field">Parent chat<OptionSelect aria-label="Parent chat" value={parent} onChange={event => setParent(event.target.value)} disabled={busy}>
       <option value="" disabled>Choose a chat</option>{candidates.map(chat => <option key={chat.id} value={chat.id}>{title(chat)}</option>)}
     </OptionSelect></label>
-    {!candidates.length && <p className="text-sm text-muted-foreground">No other top-level chat is available. Take out this chat’s nested chats first.</p>}
+    {!candidates.length && <p className="text-sm text-muted-foreground">No other chat is available outside the selected branches.</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <AlertDialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button disabled={busy || !valid} disabledReason={busy ? "Saving chat placement…" : "Choose a parent chat."} onClick={() => void save()}>Put under</Button></AlertDialogFooter>
   </AlertDialogContent></AlertDialog>;

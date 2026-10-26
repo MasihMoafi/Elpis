@@ -1,11 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS_KEY, addGroup, deleteGroup, emptyGroups, groupNameProblem, groupSections, holdChatOrder, isDefaultView, moveChats, placeChat, prioritizeChats, readGroups, renameGroup, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
+import { GROUPS_KEY, addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupNameProblem, groupSections, holdChatOrder, isDefaultView, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
 
 const storage = (initial = {}) => { const values = new Map(Object.entries(initial)); return { values, getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }; };
 const chat = (id, name, createdAt) => ({ id, name, ...(createdAt === undefined ? {} : { createdAt }) });
 const nameOf = thread => thread.name;
 const ids = list => list.map(thread => thread.id);
+
+test('recursive placements override native parents and survive storage, including explicit roots and folds', () => {
+  const native = { worker: 'root', grandchild: 'worker', leaf: 'grandchild', orphan: 'not-loaded' };
+  const known = ['root', 'worker', 'grandchild', 'leaf', 'other', 'orphan'];
+  const tree = state => sidebarParents(known, state, native);
+  let state = putChatsUnder(emptyGroups(), ['grandchild'], null, native);
+  assert.deepEqual(tree(state), { worker: 'root', leaf: 'grandchild' });
+  state = putChatsUnder(state, ['grandchild'], 'other', native);
+  state = { ...state, branches: { root: true, worker: false, other: true } };
+  const store = storage(); assert.equal(writeGroups(state, store), true);
+  const restored = readGroups(store);
+  assert.deepEqual(restored, state);
+  assert.deepEqual(chatSubtree(['other'], tree(restored)), ['other', 'grandchild', 'leaf']);
+  assert.deepEqual(chatSelectionRoots(['grandchild', 'leaf'], tree(restored)), ['grandchild']);
+  const detached = putChatsUnder(restored, ['worker', 'leaf'], null, native);
+  assert.equal(tree(detached).worker, undefined); assert.equal(tree(detached).leaf, undefined);
+  assert.equal(detached.parents.grandchild, 'other', 'unselected placements remain intact');
+});
+
+test('mixed native/display cycles are refused atomically and corrupt saved cycles leave every chat reachable', () => {
+  const native = { child: 'root', grandchild: 'child' }, state = emptyGroups();
+  for (const selected of [['root'], ['root', 'child'], ['other', 'root']]) assert.equal(putChatsUnder(state, selected, 'grandchild', native), state);
+  const nested = putChatsUnder(state, ['other'], 'grandchild', native);
+  assert.equal(putChatsUnder(nested, ['child'], 'other', native), nested);
+  const saved = { ...emptyGroups(), parents: { a: 'b', b: 'a', self: 'self', child: 'root', outside: 'not-loaded', root: null }, branches: { a: true, b: 'bad' } };
+  const restored = readGroups(storage({ [GROUPS_KEY]: JSON.stringify(saved) }));
+  assert.equal(restored.parents.a, null); assert.equal(restored.parents.b, null); assert.equal(restored.parents.self, null);
+  assert.equal(restored.parents.outside, 'not-loaded', 'unloaded relationships are kept for later pages');
+  assert.deepEqual(restored.branches, { a: true });
+  assert.deepEqual(sidebarParents(['root', 'child', 'a', 'b', 'self', 'outside'], restored, native), { child: 'root' });
+  assert.deepEqual(sidebarParents(['root', 'child', 'grandchild'], { ...state, parents: { root: 'grandchild' } }, native), {}, 'saved and native edges cannot jointly hide a cycle');
+  const cyclicNative = { a: 'b', b: 'a', leaf: 'a', c: null };
+  const repaired = putChatsUnder(state, ['a', 'b'], 'c', cyclicNative);
+  assert.deepEqual(sidebarParents(['a', 'b', 'leaf', 'c'], repaired, cyclicNative), { a: 'c', b: 'c', leaf: 'a' }, 'both visible roots of a malformed native cycle can move together');
+  assert.deepEqual(chatSubtree(['c'], sidebarParents(['a', 'b', 'leaf', 'c'], repaired, cyclicNative)), ['c', 'a', 'b', 'leaf']);
+});
 
 test('A102: recency uses bridge timestamps after merges, with stable ties and no timestamps', () => {
   const list = [{ id: 'old', updatedAt: 10 }, { id: 'new', updatedAt: 30 }, { id: 'run', updatedAt: 100, recencyAt: 5 }, { id: 'tie', updatedAt: 30 }, { id: 'unknown' }];

@@ -27,7 +27,8 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
     };
     const over = (event: DragEvent<HTMLElement>) => {
       const id = dragging.current;
-      if (!id || !event.dataTransfer.types.includes(dragType) || !allowed(id, key)) return;
+      if (!id || !event.dataTransfer.types.includes(dragType)) return;
+      if (!allowed(id, key)) { event.stopPropagation(); return; }
       event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move";
       const mark = markAt(event);
       setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
@@ -44,7 +45,8 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
         const id = dragging.current, mark = id ? markAt(event) : null;
         const accept = !!id && event.dataTransfer.types.includes(dragType) && allowed(id, key);
         clear();
-        if (!id || !accept) return;
+        if (!id || !event.dataTransfer.types.includes(dragType)) return;
+        if (!accept) { event.stopPropagation(); return; }
         event.preventDefault(); event.stopPropagation();
         onMove(id, { target: key, after: mark === "after", into: mark === "into" });
       },

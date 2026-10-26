@@ -11,7 +11,7 @@ export type GroupBy = "none" | "custom";
 export type SortBy = "recency" | "created" | "name" | "manual";
 /** `members`: chat id → group id; `collapsed`: groups drawn closed; `order`: chat ids in the person's order, which Pinned,
  * each group and Recents each show in turn (kept when another sort is chosen, used when "manual" is). */
-export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[]; parents?: Record<string, string> };
+export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[]; parents?: Record<string, string | null>; branches?: Record<string, boolean> };
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
@@ -40,25 +40,67 @@ export function readGroups(storage: Storage): ChatGroups {
   const collapsed = [...new Set((Array.isArray(value.collapsed) ? value.collapsed : []).filter((id: unknown): id is string => typeof id === "string" && known.has(id)))];
   const order = [...new Set((Array.isArray(value.order) ? value.order : []).filter((id: unknown): id is string => typeof id === "string" && !!id))];
   const savedParents = record(value.parents) ? value.parents : {};
-  const parents = Object.fromEntries(Object.entries(savedParents).filter((entry): entry is [string, string] => {
-    const [child, parent] = entry;
-    return !!child && typeof parent === "string" && !!parent && child !== parent && !savedParents[parent];
-  }));
+  const parents = withoutParentCycles(Object.fromEntries(Object.entries(savedParents).filter((entry): entry is [string, string | null] =>
+    !!entry[0] && (entry[1] === null || typeof entry[1] === "string" && !!entry[1]))));
+  const branches = Object.fromEntries(Object.entries(record(value.branches) ? value.branches : {}).filter((entry): entry is [string, boolean] => !!entry[0] && typeof entry[1] === "boolean"));
   return {
     groups, members, collapsed, order,
     ...(Object.keys(parents).length ? { parents } : {}),
+    ...(Object.keys(branches).length ? { branches } : {}),
     groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? value.groupBy as GroupBy : "none",
     sortBy: SORT_BY.includes(value.sortBy as SortBy) ? value.sortBy as SortBy : "recency",
   };
 }
 
-/** Display nesting only: a parent cannot itself be nested, and a chat with display children stays a root. */
-export function putChatsUnder(state: ChatGroups, ids: string[], parent: string | null): ChatGroups {
+/** Break malformed cycles at their members; explicit roots also override any native lineage. */
+function withoutParentCycles(parents: Record<string, string | null>): Record<string, string | null> {
+  const safe = { ...parents }, checked = new Set<string>();
+  for (const id of Object.keys(safe)) {
+    const chain: string[] = [], at = new Map<string, number>();
+    let current: string | null = id;
+    while (current && !checked.has(current)) {
+      const cycle = at.get(current);
+      if (cycle !== undefined) { for (const member of chain.slice(cycle)) safe[member] = null; break; }
+      at.set(current, chain.length); chain.push(current); current = safe[current] ?? null;
+    }
+    chain.forEach(member => checked.add(member));
+  }
+  return safe;
+}
+
+/** One visible tree: explicit display choices, including null, win over runtime parents. Missing parents stay visible. */
+export function sidebarParents(ids: readonly string[], state: ChatGroups, native: Readonly<Record<string, string | null | undefined>>): Record<string, string> {
+  const known = new Set(ids), parents = withoutParentCycles({ ...native, ...state.parents } as Record<string, string | null>);
+  return Object.fromEntries(Object.entries(parents).filter((entry): entry is [string, string] => known.has(entry[0]) && typeof entry[1] === "string" && known.has(entry[1])));
+}
+
+/** All descendants travel with a moved branch; selected descendants keep their place within it. */
+export function chatSubtree(ids: readonly string[], parents: Readonly<Record<string, string | null | undefined>>): string[] {
+  const included = new Set(ids), children = new Map<string, string[]>();
+  for (const [child, parent] of Object.entries(parents)) if (parent) children.set(parent, [...(children.get(parent) ?? []), child]);
+  const pending = [...included];
+  for (let index = 0; index < pending.length; index++) for (const child of children.get(pending[index]) ?? []) if (!included.has(child)) { included.add(child); pending.push(child); }
+  return [...included];
+}
+
+export function chatSelectionRoots(ids: readonly string[], parents: Readonly<Record<string, string | null | undefined>>): string[] {
+  const selected = new Set(ids);
+  return [...selected].filter(id => {
+    const seen = new Set([id]); let parent = parents[id];
+    while (parent && !seen.has(parent)) { if (selected.has(parent)) return false; seen.add(parent); parent = parents[parent]; }
+    return true;
+  });
+}
+
+/** Display placement only. Reject cycles against native and saved lineage before changing any selected branch. */
+export function putChatsUnder(state: ChatGroups, ids: string[], parent: string | null, native: Readonly<Record<string, string | null | undefined>> = {}): ChatGroups {
+  const effective = withoutParentCycles({ ...native, ...state.parents } as Record<string, string | null>);
+  if (!ids.length || parent !== null && chatSubtree(ids, effective).includes(parent)) return state;
+  const roots = chatSelectionRoots(ids, effective);
   const parents = { ...state.parents };
-  if (parent && (parents[parent] || ids.includes(parent) || Object.values(parents).some(id => ids.includes(id)))) return state;
-  for (const id of ids) { if (parent) parents[id] = parent; else delete parents[id]; }
-  const { parents: _previous, ...rest } = state;
-  return Object.keys(parents).length ? { ...rest, parents } : rest;
+  if (roots.every(id => Object.hasOwn(parents, id) && parents[id] === parent)) return state;
+  for (const id of roots) parents[id] = parent;
+  return { ...state, parents };
 }
 
 /** False when the store refused it. */
