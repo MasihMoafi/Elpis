@@ -225,9 +225,9 @@ export const retainedUpdates = {
       "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion."
     },
     "tests/windows-split.test.cjs": {
-      "blob": "f371968667c8d9a764f9a91471ffc955f75b2419",
-      "approval": "e848a1dca89c80945da8b7abcf4d3d8cd2060a53",
-      "reason": "SPLIT, Masih 22 Oct (R44): Ctrl+[ and Ctrl+] move the open chat in its list, so split-view focus is Ctrl+Alt+[ and Ctrl+Alt+]."
+      "blob": "7e2255fda610c61f43c27f52f24e98b4219dd38f",
+      "approval": "0a00c2cc125aebb2794e5da274463c5a3f97d57d",
+      "reason": "SPLIT, Masih 22 Oct (R44): Ctrl+[ and Ctrl+] move the open chat in its list, so split-view focus is Ctrl+Alt+[ and Ctrl+Alt+]. Keep every split/composer/keyboard check; hold resume while both panes receive the event, persist its matching completed item before emission, and verify both real SSE subscribers. A child-only event-drop negative control fails at the retained child reply assertion."
     },
     "tests/sidebar-focus.test.cjs": {
       "blob": "9c637b66d2fa18fe710fcd05ae395074a7ba3055",
@@ -295,8 +295,10 @@ export const retainedUpdates = {
       "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks."
     },
     "tests/command-menu.test.cjs": {
-      "blob": "335dcdab0114fafb0e45c3af362501bc7c8f13d2",
-      ...pageRemovalApproval
+      "blob": "b5ee4928b92b7c915bc7a78b33fc75c848e8bf06",
+      ...pageRemovalApproval,
+      "approval": "0a00c2cc125aebb2794e5da274463c5a3f97d57d",
+      "reason": pageRemovalApproval.reason + " Wait for the existing animation-frame search focus before checking it; preserve all command, saved-text and focus-return assertions."
     },
     "tests/composer-files.test.cjs": {
       "blob": "9cfb1e0156430f9236d847c4ea22d4366f758a14",
