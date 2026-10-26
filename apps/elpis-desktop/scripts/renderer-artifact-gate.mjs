@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/chat-organize.test.cjs": {
+      "blob": "6d6d7e96559aaefb0950437ac482a5c0de70a9c5",
+      "approval": "70e669c0731370e7cfe18f1070b6704de40c0a9d",
+      "reason": "R73, Masih 26 Oct: drag a sub-sub agent outside its parent and grow the tree with an indentation for every generation. Supersede the former one-level and native-move prohibitions. Preserve all existing organization, grouping, draft, search, persistence, failure and no-runtime-mutation checks. Add real native/workflow/manual recursive drag-out and subtree reparenting, light/dark measured visual geometry, collapse/reload, cycle and multi-selection guards, parent/grandchild pagination without Background runs, and refused final-save rollback."
+    },
     "tests/provider-model-pairs.test.cjs": {
       "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
       "approval": "56ab914e564a4900c93d6e03323c5aa02db45210",
