@@ -71,8 +71,9 @@ async function answer(prompt, marker, target = 'test') {
   return provider.requests.at(-1).body;
 }
 const worktrees = () => git('worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).map(line => line.slice(9));
-// A saved fork exists before the event loop attaches its widget. Wait for its native header, not only its DB row.
-const showsDirectory = (screen, directory) => screen.includes(directory.startsWith(`${userHome}${path.sep}`) ? `~${directory.slice(userHome.length)}` : directory);
+// A saved fork exists before the event loop attaches its widget. Wait for its native cwd confirmation, not only its DB row.
+// The footer abbreviates home; the successful attachment notice shows the absolute path when the footer is truncated.
+const showsDirectory = (screen, directory) => screen.includes(directory) || directory.startsWith(`${userHome}${path.sep}`) && screen.includes(`~${directory.slice(userHome.length)}`);
 async function reviewMenu(label) {
   await submit('/review');
   return screenWhen(screen => ['Select a review preset', 'Review against a base branch', 'Review uncommitted changes', 'Review a commit', 'Custom review instructions'].every(text => screen.includes(text)), label);
