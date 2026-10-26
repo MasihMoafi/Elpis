@@ -11,7 +11,7 @@ export type GroupBy = "none" | "custom";
 export type SortBy = "recency" | "created" | "name" | "manual";
 /** `members`: chat id → group id; `collapsed`: groups drawn closed; `order`: chat ids in the person's order, which Pinned,
  * each group and Recents each show in turn (kept when another sort is chosen, used when "manual" is). */
-export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[]; parents?: Record<string, string | null>; branches?: Record<string, boolean> };
+export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[]; parents?: Record<string, string | null> };
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
@@ -42,11 +42,9 @@ export function readGroups(storage: Storage): ChatGroups {
   const savedParents = record(value.parents) ? value.parents : {};
   const parents = withoutParentCycles(Object.fromEntries(Object.entries(savedParents).filter((entry): entry is [string, string | null] =>
     !!entry[0] && (entry[1] === null || typeof entry[1] === "string" && !!entry[1]))));
-  const branches = Object.fromEntries(Object.entries(record(value.branches) ? value.branches : {}).filter((entry): entry is [string, boolean] => !!entry[0] && typeof entry[1] === "boolean"));
   return {
     groups, members, collapsed, order,
     ...(Object.keys(parents).length ? { parents } : {}),
-    ...(Object.keys(branches).length ? { branches } : {}),
     groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? value.groupBy as GroupBy : "none",
     sortBy: SORT_BY.includes(value.sortBy as SortBy) ? value.sortBy as SortBy : "recency",
   };

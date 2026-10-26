@@ -45,12 +45,15 @@ async function putUnder(page, id = children[0], target = 'car-scraper-pro', them
   await dialog.getByRole('button', { name: 'Put under', exact: true }).click();
   await dialog.waitFor({ state: 'detached' });
 }
+async function expandPath(page, ids) {
+  for (const id of ids) await row(page, id).getByRole('button', { name: /^Expand / }).click();
+}
 async function drag(page, from, to, where = 'middle', during) {
   const start = await row(page, from).locator('.thread-link').boundingBox();
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();
   await page.mouse.move(start.x + start.width / 2 + 5, start.y + start.height / 2 + 5, { steps: 3 });
-  const end = await row(page, to).boundingBox();
+  const end = await (typeof to === 'string' ? row(page, to) : to).boundingBox();
   await page.mouse.move(end.x + end.width / 2, where === 'top' ? end.y + 2 : where === 'bottom' ? end.y + end.height - 2 : end.y + end.height / 2, { steps: 10 });
   if (during) await during();
   await page.mouse.up();
@@ -62,16 +65,17 @@ const shot = async (page, name) => {
   await page.screenshot({ path: path.join(dir, `organize-${name}.png`) });
 };
 
-for (const colorScheme of ['light', 'dark']) test(`native agent generations drag out, reparent with descendants and keep folds and drafts (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`native agent generations keep placement and drafts but start collapsed after reload (${colorScheme})`, async () => {
   const make = (id, name, parentThreadId) => ({ id, name, ...(parentThreadId ? { parentThreadId } : {}), source: 'cli', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true } });
   const tree = [make('tree-root', 'Tree root'), make('tree-worker', 'Tree worker', 'tree-root'), make('tree-grandchild', 'Tree grandchild', 'tree-worker'),
     { ...make('tree-leaf', 'Tree leaf', 'tree-grandchild'), source: { subAgent: { thread_spawn: { parent_thread_id: 'tree-grandchild' } } } },
     make('tree-peer', 'Tree peer', 'tree-grandchild'), make('tree-sibling', 'Tree sibling', 'tree-root'), make('tree-other', 'Other root'), make('tree-orphan', 'Orphan worker', 'not-loaded')];
-  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree,
-    storage: { 'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], branches: { 'tree-root': true, 'tree-worker': true, 'tree-grandchild': true } }) } });
+  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree });
   const { page } = f;
   const depth = async (id, expected) => eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), String(expected), id));
   try {
+    await row(page, 'tree-root').waitFor(); assert.equal(await row(page, 'tree-worker').count(), 0, 'native branches start collapsed');
+    await expandPath(page, ['tree-root', 'tree-worker', 'tree-grandchild']);
     for (const [id, level] of [['tree-root', 0], ['tree-worker', 1], ['tree-grandchild', 2], ['tree-leaf', 3]]) await depth(id, level);
     for (const id of ['tree-leaf', 'tree-peer', 'tree-sibling', 'tree-orphan']) assert.equal(await row(page, id).getByRole('button', { name: /^(Expand|Collapse) / }).count(), 0, 'leaves have no expansion control');
     const sidebarBox = await aside(page).boundingBox();
@@ -104,16 +108,22 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations drag
     }
     await row(page, 'tree-worker').getByRole('button', { name: /^Collapse / }).click();
     await page.reload();
-    await row(page, 'tree-worker').waitFor(); assert.equal(await row(page, 'tree-grandchild').count(), 0);
+    await row(page, 'tree-root').waitFor(); assert.equal(await row(page, 'tree-worker').count(), 0, 'even the previously open root starts collapsed after reload');
+    await expandPath(page, ['tree-root']); assert.equal(await row(page, 'tree-grandchild').count(), 0);
     const expand = row(page, 'tree-worker').getByRole('button', { name: /^Expand / });
-    await expand.focus(); await page.keyboard.press('Enter'); await depth('tree-leaf', 3);
+    await expand.focus(); await page.keyboard.press('Enter');
+    assert.equal(await row(page, 'tree-leaf').count(), 0, 'the grandchild branch also starts collapsed');
+    await expandPath(page, ['tree-grandchild']); await depth('tree-leaf', 3);
     await f.open('tree-grandchild'); await f.composer.fill('Keep my nested chat draft');
     await drag(page, 'tree-grandchild', 'tree-other', 'top');
     await depth('tree-grandchild', 0); await depth('tree-leaf', 1);
     assert.equal(await f.shown(), 'tree-grandchild'); assert.equal(await f.composer.inputValue(), 'Keep my nested chat draft');
-    await page.reload(); await depth('tree-grandchild', 0); await depth('tree-leaf', 1);
+    await page.reload(); await depth('tree-grandchild', 0);
+    assert.equal(await row(page, 'tree-leaf').count(), 0, 'a detached branch keeps its placement but starts collapsed');
+    await expandPath(page, ['tree-grandchild']); await depth('tree-leaf', 1);
     assert.equal(await f.composer.inputValue(), 'Keep my nested chat draft');
     assert.equal(await page.evaluate(() => JSON.parse(window.elpisDesktop.storage.getItem('elpis-chat-groups-v1')).parents['tree-grandchild']), null, 'taking a native grandchild out saves an explicit root override');
+    await expandPath(page, ['tree-root']);
     await drag(page, 'tree-grandchild', 'tree-sibling'); await depth('tree-grandchild', 2); await depth('tree-leaf', 3);
     await drag(page, 'tree-sibling', 'tree-other'); await depth('tree-sibling', 1); await depth('tree-grandchild', 2); await depth('tree-leaf', 3);
     await drag(page, 'tree-other', 'tree-leaf'); await depth('tree-other', 0); await depth('tree-leaf', 3);
@@ -124,7 +134,9 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations drag
     await page.getByRole('button', { name: 'New chat', exact: true }).click();
     await row(page, 'tree-leaf').locator('.thread-link').focus(); await page.keyboard.press('Alt+ArrowDown');
     await eventually(async () => { const visible = await ids(recents(page)); assert.equal(visible.indexOf('tree-peer') + 1, visible.indexOf('tree-leaf')); });
-    await page.reload(); await depth('tree-leaf', 3);
+    await page.reload(); await row(page, 'tree-other').waitFor();
+    assert.equal(await row(page, 'tree-sibling').count(), 0, 'reparented branches also start collapsed');
+    await expandPath(page, ['tree-other', 'tree-sibling', 'tree-grandchild', 'tree-root']); await depth('tree-leaf', 3);
     await eventually(async () => { const visible = await ids(recents(page)); assert.equal(visible.indexOf('tree-peer') + 1, visible.indexOf('tree-leaf')); });
     await row(page, 'tree-orphan').waitFor();
     for (const thread of tree) assert.equal(await aside(page).locator(`.thread-row[data-thread-id="${thread.id}"]`).count(), 1, 'each loaded chat remains reachable once');
@@ -135,26 +147,55 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations drag
 });
 
 test('workflow descendants and manual branches use the same recursive placement and corrupt cycles stay visible', async () => {
-  const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'manual-root', 'manual-child', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
-    ...(id === 'flow-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : {}) }));
+  const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'latest-step', 'manual-root', 'manual-child', 'manual-branch', 'manual-leaf', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
+    ...(id === 'flow-step' || id === 'latest-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : {}) }));
   const f = await fixture({ desktop: true, threads: tree,
     storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }),
-      'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'manual-child': 'manual-root', 'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a' }, branches: { 'workflow:flow-run': true, 'flow-step': true, 'manual-root': true } }) },
-    routes: { '/api/workflows/history': () => ({ data: [{ id: 'flow-run', rootThreadId: 'flow-root', name: 'Nested workflow', status: 'succeeded', tasks: [{ id: 'step', title: 'flow-step', assignedThreadId: 'flow-step' }, { id: 'grandchild', title: 'flow-grandchild', assignedThreadId: 'flow-grandchild' }] }] }) } });
+      'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'manual-child': 'manual-root', 'manual-branch': 'manual-root', 'manual-leaf': 'manual-branch', 'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a' } }) },
+    routes: { '/api/workflows/history': () => ({ data: [
+      { id: 'flow-run', rootThreadId: 'flow-root', name: 'Older workflow', startedAt: 1, status: 'succeeded', tasks: [{ id: 'step', title: 'flow-step', assignedThreadId: 'flow-step' }, { id: 'grandchild', title: 'flow-grandchild', assignedThreadId: 'flow-grandchild' }] },
+      { id: 'latest-run', rootThreadId: 'flow-root', name: 'Latest workflow', startedAt: 2, status: 'succeeded', tasks: [{ id: 'latest', title: 'latest-step', assignedThreadId: 'latest-step' }] },
+    ] }), '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : tree.filter(thread => thread.name.toLowerCase().includes((url.searchParams.get('searchTerm') ?? '').toLowerCase())), nextCursor: null }) } });
   const { page } = f;
+  const runRow = id => aside(page).locator(`.thread-row[data-thread-id="flow-root"][data-workflow-run="${id}"]`);
   try {
+    for (const id of ['flow-run', 'latest-run']) await runRow(id).getByRole('button', { name: /^Expand / }).waitFor();
+    assert.equal(await row(page, 'flow-step').count(), 0, 'workflow branches start collapsed');
+    assert.equal(await row(page, 'manual-child').count(), 0, 'manual branches start collapsed');
+    await runRow('flow-run').getByRole('button', { name: /^Expand / }).click();
+    await expandPath(page, ['flow-step', 'manual-root', 'manual-branch']);
     await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '2'));
     await row(page, 'manual-child').waitFor(); await row(page, 'cycle-a').waitFor(); await row(page, 'cycle-b').waitFor();
     await drag(page, 'manual-child', 'flow-step');
     await eventually(async () => assert.equal(await row(page, 'manual-child').getAttribute('data-depth'), '2'));
     await action(page, 'flow-grandchild', 'Take out');
     await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '0'));
+    await runRow('flow-run').getByRole('button', { name: /^Collapse / }).click();
+    assert.equal(await row(page, 'flow-step').count(), 0);
+    await putUnder(page, 'cycle-a', 'flow-step');
+    await eventually(async () => assert.equal(await row(page, 'cycle-a').getAttribute('data-depth'), '2', 'Put under opens the hidden destination and its workflow ancestor'));
+    assert.equal(await runRow('flow-run').getByRole('button', { name: /^Collapse / }).count(), 1, 'an older step opens its owning run');
+    assert.equal(await runRow('latest-run').getByRole('button', { name: /^Expand / }).count(), 1, 'opening an older step does not open the newer run');
+    await runRow('flow-run').getByRole('button', { name: /^Collapse / }).click();
+    await drag(page, 'manual-root', runRow('latest-run'));
+    await runRow('latest-run').getByRole('button', { name: /^Collapse / }).waitFor();
+    assert.equal(await runRow('flow-run').getByRole('button', { name: /^Expand / }).count(), 1);
+    assert.equal(await runRow('latest-run').getByRole('button', { name: /^Collapse / }).count(), 1, 'a direct root drop opens the latest run');
+    for (const [id, level] of [['manual-root', 1], ['manual-branch', 2], ['manual-leaf', 3]]) await eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), String(level), 'a successful drop opens the collapsed workflow run and shows the moved subtree'));
     await page.reload();
+    for (const id of ['flow-run', 'latest-run']) await runRow(id).getByRole('button', { name: /^Expand / }).waitFor();
+    assert.equal(await row(page, 'manual-child').count(), 0, 'reloading keeps the new relationship without reopening its ancestors');
+    assert.equal(await row(page, 'manual-root').count(), 0, 'the workflow run starts collapsed again after reload');
+    await runRow('flow-run').getByRole('button', { name: /^Expand / }).click();
+    await expandPath(page, ['flow-step']);
+    await runRow('latest-run').getByRole('button', { name: /^Expand / }).click();
+    await expandPath(page, ['manual-root', 'manual-branch']);
     await eventually(async () => assert.equal(await row(page, 'manual-child').getAttribute('data-depth'), '2'));
+    assert.equal(await row(page, 'manual-leaf').getAttribute('data-depth'), '3', 'the moved subtree keeps its saved placement after explicit expansion');
     assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '0');
     await page.getByLabel('Search conversations', { exact: true }).fill('flow');
     const results = aside(page).locator('section[aria-label="Results"]');
-    await eventually(async () => assert.equal(await results.locator('.thread-row').count(), 3));
+    await eventually(async () => assert.equal(await results.locator('.thread-row').count(), 4, 'both runs of the matching root and its two matching step chats remain searchable'));
     assert.equal(await results.locator('.thread-row.child').count(), 0, 'recursive matches stay flat while searching');
     assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false);
     assert.deepEqual(f.errors, []);
@@ -167,17 +208,17 @@ test('ordinary recursive branches expose the second child and grandchild pages w
   const workers = Array.from({ length: 101 }, (_, i) => make(`paged-worker-${i}`, `Pagination worker ${i}`, root.id));
   const grandchildren = Array.from({ length: 101 }, (_, i) => make(`paged-grandchild-${i}`, `Pagination grandchild ${i}`, workers[0].id));
   const reads = [];
-  const f = await fixture({ desktop: true, threads: [root], width: 1440, height: 900,
-    storage: { 'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], branches: { [root.id]: true } }) },
+  const f = await fixture({ desktop: true, threads: [root, workers[0]], width: 1440, height: 900,
     routes: { '/api/threads': (_body, url) => {
       const parent = url.searchParams.get('ancestorThreadId'), cursor = url.searchParams.get('cursor');
-      if (!parent) return { data: url.searchParams.get('archived') === 'true' ? [] : [root], nextCursor: null };
+      if (!parent) return { data: url.searchParams.get('archived') === 'true' ? [] : [root, workers[0]], nextCursor: null };
       reads.push({ parent, cursor, limit: url.searchParams.get('limit') });
       const children = parent === root.id ? workers : parent === workers[0].id ? grandchildren : [];
       return { data: cursor ? children.slice(100) : children.slice(0, 100), nextCursor: !cursor && children.length > 100 ? 'second-page' : null };
     } } });
   const { page } = f;
   try {
+    await expandPath(page, [root.id]);
     await row(page, workers[99].id).waitFor();
     const moreRoot = aside(page).getByRole('button', { name: 'More agents from Pagination root', exact: true });
     await moreRoot.waitFor(); assert.equal(await row(page, workers[100].id).count(), 0);
@@ -206,6 +247,9 @@ test('several roots from malformed native lineage can be put under one chat and 
     await mark(page, ['native-cycle-a', 'native-cycle-b']); await putUnder(page, 'native-cycle-a', 'Safe parent');
     for (const id of ['native-cycle-a', 'native-cycle-b']) assert.equal(await row(page, id).getAttribute('data-depth'), '1');
     await page.reload();
+    await row(page, 'native-cycle-target').waitFor();
+    for (const id of ['native-cycle-a', 'native-cycle-b']) assert.equal(await row(page, id).count(), 0, 'saved placement does not restore open branches');
+    await expandPath(page, ['native-cycle-target']);
     for (const id of ['native-cycle-a', 'native-cycle-b']) await eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), '1'));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -216,9 +260,10 @@ test('a refused final order save leaves the subtree, projects, order and selecti
     .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
   const f = await fixture({ desktop: true, threads: tree, storage: { ...storage,
     'elpis-project-chats-v1': JSON.stringify({ 'save-parent': 'existing', 'save-child': 'existing', 'save-grandchild': 'existing' }),
-    'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: ['save-target', 'save-parent', 'save-child', 'save-grandchild'], branches: { 'save-parent': true, 'save-child': true } }) } });
+    'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: ['save-target', 'save-parent', 'save-child', 'save-grandchild'] }) } });
   const { page } = f;
   try {
+    await expandPath(page, ['save-parent', 'save-child']);
     await mark(page, ['save-child', 'save-grandchild']);
     const before = await page.evaluate(() => ({ groups: window.elpisDesktop.storage.getItem('elpis-chat-groups-v1'), projects: window.elpisDesktop.storage.getItem('elpis-project-chats-v1') }));
     await page.evaluate(() => {
@@ -243,6 +288,9 @@ test('a refused final order save leaves the subtree, projects, order and selecti
     await eventually(async () => assert.equal(await row(page, 'save-child').getAttribute('data-depth'), '0'));
     assert.equal(await row(page, 'save-grandchild').getAttribute('data-depth'), '1');
     await page.reload(); await eventually(async () => assert.equal(await row(page, 'save-child').getAttribute('data-depth'), '0'));
+    assert.equal(await row(page, 'save-grandchild').count(), 0);
+    await expandPath(page, ['save-child']);
+    assert.equal(await row(page, 'save-grandchild').getAttribute('data-depth'), '1', 'the saved subtree returns when explicitly expanded');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -265,10 +313,13 @@ for (const colorScheme of ['light', 'dark']) test(`six chats nest, fold, persist
     await row(page, 'chat-a').getByRole('button', { name: /^Expand .*car-scraper-pro/ }).click();
     await row(page, children[0]).waitFor();
     await page.reload();
+    await row(page, 'chat-a').waitFor();
+    assert.equal(await row(page, children[0]).count(), 0, 'saved relationships return with the chat branch collapsed');
+    await expandPath(page, ['chat-a']);
     await row(page, children[0]).waitFor();
     await row(page, 'chat-a').getByRole('button', { name: /^Collapse .*car-scraper-pro/ }).click();
     await page.reload();
-    assert.equal(await row(page, children[0]).count(), 0, 'the folded branch survives reload');
+    assert.equal(await row(page, children[0]).count(), 0, 'every reload starts chat branches collapsed');
     await row(page, 'chat-a').getByRole('button', { name: /^Expand .*car-scraper-pro/ }).click();
     await page.getByLabel('Search conversations', { exact: true }).fill('BoomDeal');
     const results = aside(page).locator('section[aria-label="Results"]');

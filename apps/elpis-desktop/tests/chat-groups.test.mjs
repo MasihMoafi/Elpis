@@ -7,14 +7,13 @@ const chat = (id, name, createdAt) => ({ id, name, ...(createdAt === undefined ?
 const nameOf = thread => thread.name;
 const ids = list => list.map(thread => thread.id);
 
-test('recursive placements override native parents and survive storage, including explicit roots and folds', () => {
+test('recursive placements override native parents and survive storage, including explicit roots', () => {
   const native = { worker: 'root', grandchild: 'worker', leaf: 'grandchild', orphan: 'not-loaded' };
   const known = ['root', 'worker', 'grandchild', 'leaf', 'other', 'orphan'];
   const tree = state => sidebarParents(known, state, native);
   let state = putChatsUnder(emptyGroups(), ['grandchild'], null, native);
   assert.deepEqual(tree(state), { worker: 'root', leaf: 'grandchild' });
   state = putChatsUnder(state, ['grandchild'], 'other', native);
-  state = { ...state, branches: { root: true, worker: false, other: true } };
   const store = storage(); assert.equal(writeGroups(state, store), true);
   const restored = readGroups(store);
   assert.deepEqual(restored, state);
@@ -34,7 +33,7 @@ test('mixed native/display cycles are refused atomically and corrupt saved cycle
   const restored = readGroups(storage({ [GROUPS_KEY]: JSON.stringify(saved) }));
   assert.equal(restored.parents.a, null); assert.equal(restored.parents.b, null); assert.equal(restored.parents.self, null);
   assert.equal(restored.parents.outside, 'not-loaded', 'unloaded relationships are kept for later pages');
-  assert.deepEqual(restored.branches, { a: true });
+  assert.equal('branches' in restored, false, 'old open-state data cannot reopen chats after restart');
   assert.deepEqual(sidebarParents(['root', 'child', 'a', 'b', 'self', 'outside'], restored, native), { child: 'root' });
   assert.deepEqual(sidebarParents(['root', 'child', 'grandchild'], { ...state, parents: { root: 'grandchild' } }, native), {}, 'saved and native edges cannot jointly hide a cycle');
   const cyclicNative = { a: 'b', b: 'a', leaf: 'a', c: null };

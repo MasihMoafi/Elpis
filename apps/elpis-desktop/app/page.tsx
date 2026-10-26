@@ -436,8 +436,7 @@ export default function Home() {
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [childCursors, setChildCursors] = useState<Record<string, string | null>>({});
-  const expanded = chatGroups.branches ?? {};
-  const setExpanded = (change: (previous: Record<string, boolean>) => Record<string, boolean>) => updateGroups(state => ({ ...state, branches: change(state.branches ?? {}) }));
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [itemCursor, setItemCursor] = useState<string | null>(null);
   // Chats whose earliest part is gone (the record it continued was deleted): they open with what remains and say so.
   const [historyGaps, setHistoryGaps] = useState<ReadonlySet<string>>(() => new Set());
@@ -987,7 +986,6 @@ export default function Home() {
       const latestParents = sidebarParents(Object.keys(nativeParents), state, nativeParents);
       if (parentId && chatSubtree(roots, latestParents).includes(parentId)) { if (destination !== undefined) await saveProjectChats(previous); throw Error("A chat cannot be put under one of its descendants."); }
       let groups = putChatsUnder(state, parentId ? roots : roots.filter(id => !!latestParents[id]), parentId ?? null, nativeParents);
-      if (parentId) groups = { ...groups, branches: { ...groups.branches, [parentId]: true } };
       if (arrangeGroups) groups = arrangeGroups(groups, roots);
       if (!writeGroups(groups, appStorage())) { if (destination !== undefined) await saveProjectChats(previous); throw Error("Could not save chat placement on this device."); }
       chatListOrder.release(); chatGroupsRef.current = groups; setChatGroups(groups);
@@ -1927,8 +1925,21 @@ export default function Home() {
   function canNest(ids: string[], parent: string) {
     return ordinaryIds.has(parent) && ids.length > 0 && ids.every(id => ordinaryIds.has(id)) && !chatSubtree(ids, treeParents).includes(parent);
   }
+  function openPlacementPath(parent: string) {
+    const parents = sidebarParents(Object.keys(nativeParents), chatGroupsRef.current, nativeParents), seen = new Set<string>(), opened: Record<string, boolean> = {};
+    let child: string | undefined;
+    for (let id: string | undefined = parent; id && !seen.has(id); id = parents[id]) {
+      seen.add(id);
+      const owner = child ? workflowSteps.get(child) : undefined;
+      const runId = owner?.parent === id ? owner.runId : workflowRoots.get(id)?.id;
+      opened[runId ? `workflow:${runId}` : id] = true;
+      child = id;
+    }
+    setExpanded(previous => ({ ...previous, ...opened }));
+  }
   async function nestChats(ids: string[], parent: string) {
     await assignProject(ids, projectChatsRef.current[parent] ?? null, parent);
+    openPlacementPath(parent);
     if (!checkedChildren.current.has(parent)) void loadChildren(parent, undefined, false);
   }
   function organizationActions(thread: Thread) {
@@ -1964,6 +1975,7 @@ export default function Home() {
         }
         return next;
       });
+      if (parent) openPlacementPath(parent);
     } catch (cause) { setError(String(cause)); }
   }
   const chatReorder = useReorder({ dragType: CHAT_DRAG_TYPE,
