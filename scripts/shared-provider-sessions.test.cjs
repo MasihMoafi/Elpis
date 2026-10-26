@@ -9,6 +9,8 @@ const WebSocket = require('../tools/elpis-claude/node_modules/ws');
 const { Provider, message } = require('./lib/mock-provider.js');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const wait = async (f, label) => { const until = Date.now() + 20000; while (!f()) { assert(Date.now() < until, `timed out: ${label}`); await pause(20); } };
+const missingThread = threadId => error => error.message === `thread not found: ${threadId}`
+  || error.message === `no rollout found for thread id ${threadId}`;
 async function main() {
   const binary = process.argv[2];
   const gemini = process.argv.includes('--gemini');
@@ -172,13 +174,13 @@ async function main() {
     fs.writeFileSync(deleteHold.release, 'release'); await pause(300);
     assert(!fs.existsSync(deleteHold.marker), 'deleting a provider chat must stop its running tools');
     assert.equal(history().filter(m => m.method === (gemini ? 'agy/prompt' : 'session/prompt')).length, promptsBeforeDelete, 'deleted queue cannot start');
-    await assert.rejects(later.req('thread/read', { threadId: deleted.id, includeTurns: true }), /not found|no rollout|does not exist|unable to find/i);
-    await assert.rejects(later.req('thread/resume', { threadId: deleted.id }), /not found/i);
-    await assert.rejects(helper.req('thread/read', { threadId: deleteChild.id, includeTurns: true }), /not found/i);
+    await assert.rejects(later.req('thread/read', { threadId: deleted.id, includeTurns: true }), missingThread(deleted.id));
+    await assert.rejects(later.req('thread/resume', { threadId: deleted.id }), missingThread(deleted.id));
+    await assert.rejects(helper.req('thread/read', { threadId: deleteChild.id, includeTurns: true }), missingThread(deleteChild.id));
     const savedAfterDelete = JSON.parse(fs.readFileSync(path.join(home, 'elpis-claude/sessions.json'), 'utf8'));
     assert(!savedAfterDelete[deleted.id] && !savedAfterDelete[deleteChild.id] && !savedAfterDelete._delegations?.[deleteChild.id]);
     const freshReader = await connect();
-    await assert.rejects(freshReader.req('thread/resume', { threadId: deleted.id }), /not found/i);
+    await assert.rejects(freshReader.req('thread/resume', { threadId: deleted.id }), missingThread(deleted.id));
     pass('deletion stops provider tools and queued work and removes child/history caches');
     const ephemeral = (await later.req('thread/start', { cwd, model, ephemeral: true })).thread;
     await assert.rejects(unrelated.req('thread/delete', { threadId: ephemeral.id }), /not persisted/i);
@@ -259,7 +261,7 @@ async function main() {
 
     await unrelated.req('thread/delete', { threadId: mixed.id });
     assert(!JSON.parse(fs.readFileSync(path.join(home, 'elpis-claude/sessions.json'), 'utf8'))[mixed.id]);
-    await assert.rejects(subscriber.req('thread/resume', { threadId: mixed.id }), /not found/i);
+    await assert.rejects(subscriber.req('thread/resume', { threadId: mixed.id }), missingThread(mixed.id));
     pass('deleting a chat switched back to native also removes its saved provider transcript');
     const engineDir = fs.readdirSync(root).find(n => n.startsWith('engine-'));
     const engine = JSON.parse(fs.readFileSync(path.join(root, engineDir, 'engine.json'), 'utf8'));
