@@ -5,6 +5,14 @@ const { openCanvas } = require('./canvas-fixture.cjs');
 const { chooseTheme } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
+async function placementGeometry(f, iso) {
+  return f.canvas.evaluate((canvas, iso) => {
+    const area = canvas.querySelector(iso ? '.iso-board' : '.react-flow'), world = canvas.querySelector(iso ? '.iso-world' : '.react-flow__viewport');
+    const box = area.getBoundingClientRect(), matrix = iso ? world.getScreenCTM() : new DOMMatrix(getComputedStyle(world).transform);
+    return { board: { x: box.x, y: box.y, width: box.width, height: box.height }, camera: { a: matrix.a, d: matrix.d, e: matrix.e, f: matrix.f }, targetTransform: world.getAttribute('transform'), nodes: JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')).nodes.map(({id, position, isoPosition}) => ({id, position, isoPosition})) };
+  }, iso);
+}
+
 const graph = { name: 'Editing', nodes: ['a', 'b', 'c'].map((id, i) => ({ id, type: 'agent', position: { x: i === 2 ? 480 : 240, y: i * 140 }, data: { title: ['Kivo', 'Orun', 'Vela'][i], instruction: 'Write the result', model: null, writeScopes: [['src'], ['docs'], ['tests']][i], acceptanceCriteria: [] } })), edges: [{ id: 'a->c', source: 'a', target: 'c' }, { id: 'b->c', source: 'b', target: 'c' }] };
 async function mode(f, iso) { await f.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit(); }
 async function wireClick(f, selector) {
@@ -90,6 +98,7 @@ for (const iso of [true, false]) test(`wire noun labels persist and reach receiv
 test('starter and + names are distinctive and unique; eight additions never overlap; arrange toolbar/menu fit both views', async () => {
   const f = await openCanvas();
   try {
+    await f.canvas.getByText('More patterns', { exact: true }).click();
     await f.canvas.getByRole('button', { name: /^Voting/ }).click();
     assert.ok((await f.titles()).every(name => /^[A-Z][a-z]+ · /u.test(name)));
     await f.canvas.getByRole('button', { name: /Blank playground/ }).click();
@@ -112,8 +121,11 @@ test('starter and + names are distinctive and unique; eight additions never over
         assert.notEqual(during, after, 'Arrange animates the camera'); assert.equal(after, fitted, 'Arrange restores the fitted camera');
       }
       await f.fit();
-      const boxes = await f.canvas.locator(iso ? '.iso-node, .iso-label' : '.react-flow__node-agent').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { id: el.getAttribute('data-id') || el.getAttribute('data-for'), x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));
-      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i], b = boxes[j]; assert.ok(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y, `overlap ${a.id} ${b.id}`); }
+      const boxes = await f.canvas.locator(iso ? '.iso-node, .iso-label' : '.react-flow__node-agent').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { id: el.getAttribute('data-id') || el.getAttribute('data-for'), kind: el.classList.contains('iso-label') ? 'label' : 'node', x: r.x, y: r.y, right: r.right, bottom: r.bottom }; }));
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j], apart = a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y;
+        assert.ok(apart, `overlap ${a.id} ${b.id}${apart ? '' : ` ${JSON.stringify({ iso, a, b, geometry: await placementGeometry(f, iso) })}`}`);
+      }
       const board = await f.canvas.locator(iso ? '.iso-board' : '.react-flow').boundingBox(); await f.page.mouse.click(board.x + 8, board.y + 8, { button: 'right' });
       await f.canvas.getByRole('menuitem', { name: 'Arrange by run order', exact: true }).click();
       if (iso) {
@@ -158,7 +170,8 @@ async function added(f, iso, count, source, wanted) {
   assert.equal(await name.inputValue(), made.data.title);
   if (wanted) {
     const at = iso ? made.isoPosition : { x: made.position.x + 105, y: made.position.y + 48 };
-    assert.ok(Math.abs(at.x - wanted.x) < 15 && Math.abs(at.y - wanted.y) < 15, 'free-space creation preserves the pointer position with auto-arrange on');
+    const retained = Math.abs(at.x - wanted.x) < 15 && Math.abs(at.y - wanted.y) < 15;
+    assert.ok(retained, `free-space creation preserves the pointer position with auto-arrange on${retained ? '' : ` ${JSON.stringify({ wanted, actual: at, made, geometry: await placementGeometry(f, iso) })}`}`);
   }
   if (source) assert.ok(saved.edges.some(edge => edge.source === source && edge.target === made.id), 'already wired');
   else assert.equal(saved.edges.length, 0, 'empty-board add has no explicit dependency');

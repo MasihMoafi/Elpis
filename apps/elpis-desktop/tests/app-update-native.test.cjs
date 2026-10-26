@@ -201,7 +201,9 @@ test('source-file edits block real Quit and Restart, failed Save stays blocked, 
 }));
 
 test('pending workflow debounce is explicitly saved before Quit; rejected native graph storage keeps editing and retry', t => using(t, { theme: 'dark' }, async ({ root, desktop, page, click, key, capture }) => {
-  await click(page.getByRole('button', { name: 'Workflows', exact: true })); const graphName = page.getByRole('textbox', { name: 'Graph name', exact: true }); await graphName.waitFor();
+  await click(page.getByRole('button', { name: 'Workflows', exact: true }));
+  await click(page.getByRole('button', { name: 'Rename workflow', exact: true }));
+  const graphName = page.getByRole('textbox', { name: 'Graph name', exact: true }); await graphName.waitFor();
   await until(() => desktop.evaluate(() => global.updateTest.control.store.read()['elpis-workflow-draft-v1']), 'Initial graph was not saved');
   await page.clock.install(); await page.clock.pauseAt(new Date());
   await desktop.evaluate(() => { global.updateTest.control.failWorkflowWrites = true; });

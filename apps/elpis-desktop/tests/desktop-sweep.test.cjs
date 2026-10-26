@@ -135,6 +135,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await check('guide', () => command(page, 'Guide'));
       for (const name of TOPICS) await check(`Guide ${name}`, () => page.getByRole('region', { name: 'Guide to managing agents' }).getByRole('button', { name, exact: true }).click());
       await check('Canvas 2D', () => command(page, 'Workflows'));
+      await check('Canvas patterns', () => page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click());
       await check('Canvas Voting', () => page.getByRole('button', { name: /^Voting/ }).click());
       await check('Canvas selected agent', () => page.locator('.react-flow__node-agent').first().click());
       await page.getByRole('button', { name: 'Done', exact: true }).click();

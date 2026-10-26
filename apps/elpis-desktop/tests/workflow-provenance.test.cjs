@@ -86,6 +86,7 @@ test('every starter opens its Sources in the side panel without replacing the bo
   const f = await openCanvas();
   try {
     const before = await f.saved();
+    await f.canvas.getByText('More patterns', { exact: true }).click();
     const sources = f.canvas.getByRole('link', { name: /^Sources for / });
     assert.equal(await sources.count(), 10);
     for (let index = 0; index < 10; index++) {
@@ -166,6 +167,8 @@ test('Sources and Lab stay readable in light/dark at Masih’s window size', asy
     await fs.mkdir('/tmp/elpis-provenance-screens', { recursive: true });
     for (const theme of ['light', 'dark']) {
       if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+      const summary = f.canvas.locator('summary').filter({ hasText: /^More patterns$/ });
+      if (await summary.locator('..').getAttribute('open') === null) await summary.click();
       await f.canvas.getByRole('link', { name: 'Sources for Voting', exact: true }).click();
       await f.page.screenshot({ path: `/tmp/elpis-provenance-screens/sources-${theme}.png` });
       await f.canvas.getByRole('button', { name: 'Back to patterns', exact: true }).click();

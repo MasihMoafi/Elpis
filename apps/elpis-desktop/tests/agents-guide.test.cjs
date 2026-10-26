@@ -72,6 +72,7 @@ test('Canvas help opens the guide and returns to the board', async () => {
   const f = await fixture(), { page } = f;
   try {
     await command(page, 'Workflows');
+    await page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click();
     await page.getByRole('button', { name: /^Voting/ }).click();
     const help = page.getByRole('region', { name: 'Guide', exact: true });
     await page.locator('.react-flow__node-agent').first().click();
@@ -81,6 +82,7 @@ test('Canvas help opens the guide and returns to the board', async () => {
     await guide(page).waitFor();
     await guide(page).getByRole('button', { name: 'Back to Workflows' }).click();
     await help.waitFor();
+    await page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click();
     assert.match(await page.getByRole('button', { name: /^Voting/ }).innerText(), /on the board/i);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

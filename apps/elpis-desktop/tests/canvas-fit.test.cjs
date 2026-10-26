@@ -35,6 +35,7 @@ for (const theme of ['light', 'dark']) test(`a finished run's board fits in both
   const f = await openCanvas({ width: 1440, height: 900 }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => /Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''), null, { timeout: 20000 });

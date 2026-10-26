@@ -4,7 +4,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { Background, BackgroundVariant, BaseEdge, Controls, Handle, MarkerType, MiniMap, Position, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi, type Edge, type EdgeProps, type EdgeChange, type FinalConnectionState, type Node, type NodeChange, type NodeProps, type XYPosition } from "@xyflow/react";
-import { Check, ChevronRight, Copy, ExternalLink, ListOrdered, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { Check, ChevronRight, Copy, ExternalLink, ListOrdered, Pencil, Play, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { AgentsIcon } from "@/components/elpis-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { MenuRow } from "@/components/ui/menu-row";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowHistory } from "@/components/workflow-history";
-import { WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
+import { WorkflowColourMenu, WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowIdentity } from "@/lib/workflow-identity";
 import { WorkflowSources } from "@/components/workflow-sources";
 import { summarize, workedFor } from "@/components/transcript";
@@ -58,6 +58,7 @@ const GUIDE = [
 /** Fit the graph inside the available board, on opening and after layout changes. */
 const FIT = { padding: 0.06, maxZoom: 1, minZoom: 0.3 };
 const OVERVIEW = { padding: 0.08, maxZoom: 1 };
+const ENTRY_PATTERNS = [{ id: "split-parts", label: "Parallel" }, { id: "sequential", label: "Sequential" }, { id: "research", label: "Research" }];
 
 /** An agent on the canvas: it writes. Its run-order wave, name, model and state, with an input on the left (what it
  * waits for) and an output on the right (what waits for it), as Deus Ex's hacking screen links its nodes. The ring at
@@ -312,22 +313,23 @@ function CountField({ label, value, min, max, why, onChange }: { label: string; 
 /** One agent's info panel (Enter or double-click): what it is, what it waits for and feeds, and, once it runs, what it
  * has done so far from its own chat, refreshed while it works. */
 /** What a chat has done so far, read from it, and again every 2 s while it works: an agent's, or the Mother's. */
-function LiveFeed({ chat, working, idle }: { chat: string | null; working: boolean; idle: string }) {
+function LiveFeed({ chat, working, idle, ready }: { chat: string | null; working: boolean; idle: string; ready: boolean }) {
   const [entries, setEntries] = useState<Entry[] | null>(null), [error, setError] = useState("");
   useEffect(() => {
-    if (!chat) return;
+    if (!ready || !chat) return;
     let live = true;
     const read = () => api<{ data: Entry[] }>(`/threads/${encodeURIComponent(chat)}?limit=100`).then(result => { if (live) { setEntries(result.data); setError(""); } }).catch(cause => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
     void read();
     const timer = working ? setInterval(() => void read(), 2000) : undefined;
     return () => { live = false; if (timer) clearInterval(timer); };
-  }, [chat, working]);
+  }, [chat, working, ready]);
   const items = entries?.map(entry => entry.item) ?? [];
   const said = [...items].reverse().find(item => item.type === "agentMessage" && typeof item.text === "string")?.text;
   return <section className="agent-dashboard-live" aria-label="Live">
     <p className="hud-menu-title">Live</p>
     {!chat ? <p>{idle}</p>
-      : error ? <p role="alert">{error}</p>
+      : !ready && !entries ? <p>Reconnect to read its chat.</p>
+      : ready && error ? <p role="alert">{error}</p>
       : !entries ? <p>Reading its chat…</p>
       : <><p>{workedFor(entries)} · {summarize(items) || "nothing yet"}</p>{said && <blockquote>{said}</blockquote>}</>}
   </section>;
@@ -379,7 +381,7 @@ function RunClock({ since, until }: { since: number; until?: number }) {
 /** A span of time as mm:ss. */
 const clock = (ms: number) => { const seconds = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; };
 
-function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; own: string; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
+function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor, feeds, modelLabel, ready, onOpenChat, onSettings, onClose }: { node: Extract<CanvasNode, { type: "agent" }>; own: string; wave?: number; status: TaskStatus | "idle"; check: TaskStatus | "idle"; clash?: string[]; chat: string | null; waitsFor: string[]; feeds: string[]; modelLabel: string; ready: boolean; onOpenChat: (id: string) => void; onSettings: () => void; onClose: () => void }) {
   const data = node.data, panel = useRef<HTMLDivElement>(null);
   // A click anywhere else on the page closes it, as Escape does.
   useEffect(() => {
@@ -405,7 +407,7 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
       {clash && <div><dt>Merge clash</dt><dd>{clash.join("\n")}</dd></div>}
     </dl>
     <Button variant="outline" size="sm" onClick={onSettings}>Settings</Button>
-    <LiveFeed chat={chat} working={status === "running"} idle="Not started. What it does shows here once the graph runs." />
+    <LiveFeed chat={chat} working={status === "running"} ready={ready} idle="Not started. What it does shows here once the graph runs." />
     {chat && <Button variant="outline" size="sm" onClick={() => onOpenChat(chat)}><ExternalLink size={14} />Open its chat</Button>}
   </div>;
 }
@@ -413,23 +415,33 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
-type Props = { workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode };
+type Props = { workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
 }
 
 /** Models listed by a provider other than the engine's own, fetched once per provider and settings version. */
 const catalogs = new Map<string, { version: string; models?: Model[]; error?: string }>();
+const OFFLINE_WORKFLOW = "Reconnect to design or run workflows. Your draft stays editable.";
 
 function runFailure(detail: string) {
   if (/EACCES|EPERM|permission|write.*(?:refused|denied)|not writable/i.test(detail)) return `Elpis could not write the run's files. Choose a project you can write to or allow the requested write, then run again. ${detail}`;
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }: Props) {
+function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCatalog }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(initialGraph);
+  const connection = useRef({ ready, generation: 0 });
+  if (connection.current.ready !== ready) connection.current = { ready, generation: connection.current.generation + 1 };
+  const runtimeAttempt = () => {
+    const generation = connection.current.generation;
+    return () => connection.current.ready && connection.current.generation === generation;
+  };
+  const [renamingPreset, setRenamingPreset] = useState(false), [morePatterns, setMorePatterns] = useState(false);
+  const presetName = TEMPLATES.some(template => template.id === graph.template && template.name === graph.name.replace(/ \d+$/, ""));
+  const requestText = typeof graph.request === "string" ? graph.request : "";
   const identity = graph.workflowId ? workflowCatalog.identities[graph.workflowId] : undefined;
   const previousIdentity = useRef<WorkflowIdentity | undefined>(undefined);
   useEffect(() => {
@@ -469,7 +481,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
   const project = useProjectFolders(cwd);
   const own = useMemo(() => ownFolders(graph), [graph]);
   const [notice, setNotice] = useState("");
-  const runReasonId = useId();
+  const runReasonId = useId(), offlineReasonId = useId();
   const [deleted, setDeleted] = useState<string | null>(null);
   useEffect(() => { if (!deleted) return; const timer = setTimeout(() => setDeleted(null), 4000); return () => clearTimeout(timer); }, [deleted]);
   const [flowEdit, setFlowEdit] = useState<{ edge: CanvasEdge; left: number; top: number } | null>(null);
@@ -544,9 +556,10 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
 
   // Follow a run: Elpis reports each task's state; stop once the graph has finished.
   useEffect(() => {
-    if (!run || over(run)) return;
+    if (!ready || !run || over(run)) return;
     let live = true, polling = false;
     const read = async (threadId: string, graphId: string) => {
+      if (!live) return;
       const listed = await api<Listed>(`/workflows?threadId=${encodeURIComponent(threadId)}`), found = listed.data.find(item => item.id === graphId);
       if (found && live) {
         // A merge clash (lib/canvas-isolation.ts) stops the run on an agent: it shows as failed, though its own task may have succeeded.
@@ -608,7 +621,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
     void poll();
     const timer = setInterval(() => void poll(), 1500);
     return () => { live = false; clearInterval(timer); };
-  }, [run]);
+  }, [run, ready]);
 
   const agents = graph.nodes.filter((node): node is Extract<CanvasNode, { type: "agent" }> => node.type === "agent");
   const chosen = agents.filter(node => selection.includes(node.id)), selected = chosen.length === 1 ? chosen[0] : undefined;
@@ -744,8 +757,16 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
   const boxes = () => graph.nodes.map(node => ({ x: node.position.x, y: node.position.y, w: (node as { measured?: { width?: number } }).measured?.width ?? NODE_W, h: (node as { measured?: { height?: number } }).measured?.height ?? NODE_H }));
   const isoBoxes = (scene = isoLayout(graph, order, split.father.length ? FATHER : undefined)) => scene.map(item => ({ x: item.at.x - ISO_NODE.w / 2, y: item.at.y - ISO_NODE.top, w: ISO_NODE.w, h: ISO_NODE.h }));
   const freeAt = (x: number, y: number, taken = boxes(), size = { w: NODE_W, h: NODE_H }) => taken.every(item => x + size.w + GAP <= item.x || x >= item.x + item.w + GAP || y + size.h + GAP <= item.y || y >= item.y + item.h + GAP);
-  const place = (near?: XYPosition, taken = boxes(), size = { w: NODE_W, h: NODE_H }) => {
-    const start = near ?? firstColumn(), x = Math.round(start.x / 20) * 20;
+  const place = (near?: XYPosition, taken = boxes(), size = { w: NODE_W, h: NODE_H }, closest = false) => {
+    const start = near ?? firstColumn(), x = closest ? start.x : Math.round(start.x / 20) * 20;
+    // A point gesture stays where requested, or at the nearest clear vertical boundary. Scanning only down can
+    // jump past a whole row even when there is room just above the pointer.
+    if (closest) {
+      const ys = [start.y, ...taken.flatMap(item => [item.y - size.h - GAP, item.y + item.h + GAP])];
+      ys.sort((a, b) => Math.abs(a - start.y) - Math.abs(b - start.y));
+      const y = ys.find(y => freeAt(x, y, taken, size));
+      if (y !== undefined) return { x, y };
+    }
     for (let y = Math.round(start.y / 20) * 20; ; y += 20) if (freeAt(x, y, taken, size)) return { x, y };
   };
   const firstColumn = (): XYPosition => {
@@ -766,7 +787,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
       const scene = isoLayout(graph, order, split.father.length ? FATHER : undefined), occupied = isoBoxes(scene);
       const origin = scene.find(item => item.id === from?.id)?.at;
       const at = where.isoAt ?? (origin ? { x: origin.x + (from?.as === "source" ? -COLUMN : COLUMN), y: origin.y } : { x: 300, y: 0 });
-      for (const node of made) { const slot = place({ x: at.x - ISO_NODE.w / 2, y: at.y - ISO_NODE.top }, occupied, ISO_NODE); node.isoPosition = { x: slot.x + ISO_NODE.w / 2, y: slot.y + ISO_NODE.top }; occupied.push({ ...slot, w: ISO_NODE.w, h: ISO_NODE.h }); }
+      for (const node of made) { const slot = place({ x: at.x - ISO_NODE.w / 2, y: at.y - ISO_NODE.top }, occupied, ISO_NODE, Boolean(where.isoAt)); node.isoPosition = { x: slot.x + ISO_NODE.w / 2, y: slot.y + ISO_NODE.top }; occupied.push({ ...slot, w: ISO_NODE.w, h: ISO_NODE.h }); }
       pinned = new Map(scene.map(item => [item.id, item.at])); isoController.current?.keepView();
     }
     const wire = (source: string, target: string) => ({ id: `${source}->${target}`, source, target });
@@ -794,7 +815,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
       const origin = scene.find(item => item.id === from?.id)?.at;
       const wanted = client ? isoController.current!.position(client)
         : origin ? { x: origin.x + (from?.as === "source" ? -COLUMN : COLUMN), y: origin.y } : { x: 300, y: 0 };
-      const position = place({ x: wanted.x - ISO_NODE.w / 2, y: wanted.y - ISO_NODE.top }, isoBoxes(scene), ISO_NODE);
+      const position = place({ x: wanted.x - ISO_NODE.w / 2, y: wanted.y - ISO_NODE.top }, isoBoxes(scene), ISO_NODE, Boolean(client));
       made.isoPosition = { x: position.x + ISO_NODE.w / 2, y: position.y + ISO_NODE.top };
       // Freeze the existing scene so adding a wave does not recenter its neighbours or move the camera.
       nodes = graph.nodes.map(node => { const at = scene.find(item => item.id === node.id)?.at; return at ? { ...node, isoPosition: at } : node; });
@@ -902,7 +923,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
   });
-  const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, template: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
+  const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setRenamingPreset(false); setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, request: current.request, template: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   const tidy = () => { checkpoint(); setGraph(current => arrange(current)); setTimeout(() => { if (iso) isoController.current?.fit(); else void flow.fitView({ ...FIT, duration: 250 }); }, 60); };
@@ -1279,29 +1300,38 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
   // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
-  async function letElpis(goal: string, scope?: CanvasGraph): Promise<CanvasGraph | null> {
+  async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false): Promise<CanvasGraph | null> {
+    const current = runtimeAttempt();
+    if (!current()) return null;
+    if (planning || newWorkflow && (startingRun.current || run && !over(run))) { setNotice("Wait for the current design or run to finish."); return null; }
     if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
+    const base = newWorkflow ? withMother({ name: "Workflow", request: goal, nodes: [], edges: [], maxAgents: graph.maxAgents, mother: { ...mother, brief: goal } }) : graph;
     setPlanning(goal); setNotice(""); setMenu(null);
     try {
-      const plan = await api<Plan>("/canvas/plan", { goal, cwd, folders: project.folders ?? [], agents: boardForPlan(scope ?? graph), maxAgents: limit });
+      const plan = await api<Plan>("/canvas/plan", { goal, cwd, folders: project.folders ?? [], agents: boardForPlan(scope ?? base), maxAgents: limit });
+      if (!current()) return null;
+      if (editKey(latest.current) !== editKey(graph)) throw Error("The current workflow changed while Elpis was designing. Your changes are kept; try again.");
       // A scoped run may fill its missing instructions, but cannot redesign the board behind its scope preview.
       const next = scope ? { ...graph, nodes: graph.nodes.map(node => {
         const item = scope.nodes.some(item => item.id === node.id) && plan.agents.find(item => item.key === node.id);
         return node.type === "agent" && item ? { ...node, data: { ...node.data, instruction: node.data.instruction.trim() ? node.data.instruction : item.prompt, writeScopes: node.data.writeScopes.length ? node.data.writeScopes : item.folders, acceptanceCriteria: node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : item.doneWhen } } : node;
-      }) } : applyPlan(graph, plan);
+      }) } : applyPlan(base, plan);
+      if (newWorkflow) { checkpoint(); setRun(null); setStates({}); setDashboardId(null); setUndoLoad(null); }
       setGraph(next); setSelection([]);
       setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
       return next;
-    } catch (error) { setNotice(`Elpis could not fill in the team: ${error instanceof Error ? error.message : String(error)}`); return null; }
+    } catch (error) { if (current()) setNotice(`Elpis could not fill in the team: ${error instanceof Error ? error.message : String(error)}`); return null; }
     finally { setPlanning(""); }
   }
 
   // The Father's part: his own chat, on her model, told who he is; it starts once hers has succeeded.
   /** The Father's part as the bridge starts it after hers: his chat (her model, the goal and his role as instructions)
    * and his tasks, in worktrees when he has several writers in a git repository. */
-  async function fatherPart(tasks: RunTask[]) {
+  async function fatherPart(tasks: RunTask[], current: () => boolean) {
+    if (!current()) throw Error(OFFLINE_WORKFLOW);
     const goal = mother.brief.trim(), name = `Father · ${graph.name || "Workflows"}`.slice(0, 120);
     const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
+    if (!current()) throw Error(OFFLINE_WORKFLOW);
     const { rootThreadId: _root, name: _name, ...stage } = runPayload("", name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository);
     return { ...stage, name, thread: { name, instructions: [goal && `Goal of the whole run: ${goal}`, "You are the Father: you run the agents past the Mother's ten, after her part has succeeded, and you report to her."].filter(Boolean).join("\n\n"),
       ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}) } };
@@ -1309,12 +1339,16 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
 
   // Sends one part of the run. With several writing agents in a git repository, each works in its own worktree and
   // Elpis merges them into the project's branch after the run; without a repository Elpis refuses that, so it isn't asked.
-  async function runPart(rootThreadId: string, name: string, tasks: RunTask[], next?: Awaited<ReturnType<typeof fatherPart>>) {
+  async function runPart(rootThreadId: string, name: string, tasks: RunTask[], current: () => boolean, next?: Awaited<ReturnType<typeof fatherPart>>) {
+    if (!current()) throw Error(OFFLINE_WORKFLOW);
     const repository = Boolean(cwd) && wantsIsolation(tasks) && await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(result => result.repository === true, () => false);
+    if (!current()) throw Error(OFFLINE_WORKFLOW);
     return api<{ graphId: string }>("/workflows/run", { ...(graph.template === "recursive" ? { roundLimit: graph.roundLimit } : {}), ...runPayload(rootThreadId, name, tasks, Math.max(1, Math.min(maxAtOnce, allowed.atOnce)), repository), ...(next ? { next } : {}) });
   }
 
   async function start(targets?: string[]) {
+    const current = runtimeAttempt();
+    if (!current()) return;
     if (startingRun.current || planning || run && !over(run)) { setNotice("Wait for this run to finish before starting another."); return; }
     if (!cwd) { setNotice("Choose the project the agents work in, then run again."); return; }
     startingRun.current = true; setStarting(true);
@@ -1323,18 +1357,18 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
       const scope = executionGraph(graph, targets);
       const empty = scope.nodes.some(node => node.type === "agent" && (!node.data.instruction.trim() || !node.data.writeScopes.length && Boolean(project.folders?.length)));
       const planned = empty ? await letElpis(mother.brief.trim() || DRAWN, targets || agents.some(node => node.data.muted) ? scope : undefined) : graph;
-      if (!planned) return;
+      if (!planned || !current()) return;
       const ready = executionGraph(planned, targets), built = runParts(ready);
       if ("error" in built) { setNotice(built.error); return; }
       setNotice(""); setUndoLoad(null); setStates({}); setClashes({}); setLog([]); said.current = {}; reports.current.clear(); followLog.current = true;
       const runIdentity = workflowCatalog.ensure(identity?.rootThreadId ? crypto.randomUUID() : graph.workflowId || crypto.randomUUID(), ready.name);
       const created = await api<{ thread: Thread }>("/threads", { ...(cwd ? { cwd } : {}), agents: true, name: runIdentity.name,
         ...(mother.model ? { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } : {}), ...(mother.brief.trim() ? { instructions: mother.brief.trim() } : {}) });
-      const result = await runPart(created.thread.id, runIdentity.name, built.mother, built.father.length ? await fatherPart(built.father) : undefined);
+      const result = await runPart(created.thread.id, runIdentity.name, built.mother, current, built.father.length ? await fatherPart(built.father, current) : undefined);
       workflowCatalog.attach(runIdentity.id, result.graphId, created.thread.id);
       setIdentity({ workflowId: result.graphId, name: runIdentity.name });
       setRun({ rootThreadId: created.thread.id, graphId: result.graphId, status: "running", startedAt: Date.now(), ...(built.father.length ? { father: { tasks: built.father, status: "pending" } } : {}) });
-    } catch (error) { setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
+    } catch (error) { if (current()) setNotice(runFailure(error instanceof Error ? error.message : String(error))); }
     finally { startingRun.current = false; setStarting(false); }
   }
 
@@ -1346,8 +1380,21 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
   const scope = runTargets ? executionGraph(graph, runTargets).nodes.filter(node => node.type === "agent") : [];
   return <section className="agents-canvas" aria-label="Workflows" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
+      <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
+        <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
+        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))}>{planning ? "Designing…" : "New workflow"}</Button>
+        <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
+        {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
+      </form>
       <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} />
-      {identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
+      {presetName && !renamingPreset ? <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-2">
+        <OptionSelect aria-label="Workflow pattern" value={ENTRY_PATTERNS.some(pattern => pattern.id === graph.template) ? graph.template : ""} disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => {
+          if (event.target.value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
+          const template = TEMPLATES.find(item => item.id === event.target.value); if (template) loadTemplate(template);
+        }}><option value="" disabled>Choose a pattern</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}<option value="more">More patterns…</option></OptionSelect>
+        {identity && <WorkflowColourMenu identity={identity} catalog={workflowCatalog} onError={setNotice} />}
+        <Button variant="ghost" size="icon-sm" aria-label="Rename workflow" title="Rename workflow" onClick={() => setRenamingPreset(true)}><Pencil size={14} /></Button>
+      </div> : identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
       <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
       {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
@@ -1358,7 +1405,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
       <Button variant="ghost" size="sm" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} />Auto-arrange</Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
       <div className="canvas-run-control">
-        <Button size="sm" onClick={() => void start()} aria-describedby={notice || starting || run && !over(run) ? runReasonId : undefined} disabled={starting || Boolean(run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
+        <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
         {notice ? <div id={runReasonId} className="canvas-notice" role="alert"><span>{notice}</span><Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button></div>
           : (starting || run && !over(run)) && <span id={runReasonId} className="canvas-run-status" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
       </div>
@@ -1491,14 +1538,14 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
         <p className="hud-menu-title">Run selected <kbd>Ctrl+Shift+Enter</kbd></p>
         <p className="quick-add-note">Selected targets and their required ancestors, each with its check:</p>
         <ul className="quick-add-list">{scope.map(node => <li key={node.id}>{node.type === "agent" ? node.data.title : ""} · {runTargets.includes(node.id) ? "target" : "required ancestor"}</li>)}</ul>
-        <Button autoFocus size="sm" onClick={() => { const targets = runTargets; setRunTargets(null); focusBoard(); void start(targets); }}>Run selected</Button>
+        <Button autoFocus size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready} onClick={() => { const targets = runTargets; setRunTargets(null); focusBoard(); void start(targets); }}>Run selected</Button>
         <Button variant="ghost" size="sm" onClick={() => { setRunTargets(null); focusBoard(); }}>Cancel <kbd>Esc</kbd></Button>
       </div>}
       {adding && <CommandBar adding={adding} room={room} limit={limit} catalog={catalog} providers={providers} onClose={() => setAdding(null)}
         onAgents={command => { checkpoint(); addAgents(Math.max(1, command.count ?? 1), { model: command.model?.model ?? null, provider: command.model?.provider ?? null, effort: command.effort }, adding, command.tasks); setAdding(null); }}
         onNote={text => { checkpoint(); addNote(adding.at, text); setAdding(null); }} onAsk={text => { setAdding(null); void letElpis(text); }} />}
       {menu && (view => <CanvasMenu at={menu} {...view} onClose={() => setMenu(null)} />)(menuView(menu))}
-      {dashboard && <AgentDashboard node={dashboard} own={own.get(dashboard.id) ?? ""} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)}
+      {dashboard && <AgentDashboard node={dashboard} own={own.get(dashboard.id) ?? ""} wave={order.get(dashboard.id)} status={states[dashboard.id]?.status ?? "idle"} check={states[checkOf(dashboard.id)]?.status ?? "idle"} clash={clashes[dashboard.id]} chat={states[dashboard.id]?.chat ?? null} modelLabel={modelLabel(dashboard.data)} ready={ready}
         waitsFor={inputsNeeded(dashboard.id)} feeds={graph.edges.filter(edge => waits(edge) && edge.source === dashboard.id).map(edge => titleOf(edge.target))}
         onOpenChat={onOpenChat} onSettings={() => { setSelection([dashboard.id]); showPanel(true); setDashboardId(null); }} onClose={() => setDashboardId(null)} />}
       {flowEdit && <div className="canvas-flow-edit" style={{ left: flowEdit.left, top: flowEdit.top }}><CanvasTextEdit key={flowEdit.edge.id} label="Flow label" maxLength={60} value={flowEdit.edge.source === MOTHER ? graph.motherFlow ?? "" : graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? ""} onSave={saveFlow} onCancel={() => setFlowEdit(null)} /></div>}
@@ -1550,7 +1597,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
       <p className="hud-menu-title">Mother · the run&rsquo;s chat</p>
       <p className="canvas-help">Every agent is her child: she starts the ones that wait for no one, and every report comes back to her. These settings apply to the whole run.</p>
       <label>Goal (every agent gets it)<Textarea aria-label="Goal" rows={4} value={mother.brief} placeholder="What should this run achieve? Elpis can design the team from it." onChange={event => setMother({ brief: event.target.value })} /></label>
-      <Button size="sm" onClick={() => void letElpis(mother.brief)} disabled={!mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
+      <Button size="sm" onClick={() => void letElpis(mother.brief)} aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !mother.brief.trim() || Boolean(planning)} title="Elpis designs the team from the goal: how many agents, their prompts, folders and wiring; Ctrl+Z undoes it">{planning ? "Elpis is designing…" : "Let Elpis design the team"}</Button>
       <label>Her model<OptionSelect aria-label="Her model" value={mother.model ? `${mother.provider ?? ""}|${mother.model}` : ""} onChange={event => { const patch = modelPatch(event.target.value); setMother({ model: patch.model ?? null, provider: patch.provider ?? null }); }}>{modelOptions()}</OptionSelect></label>
       <div className="canvas-mother-counts">
         <CountField label="Max agents" value={limit} min={Math.max(1, agents.length)} max={Math.floor(allowed.graph / TASKS_PER_AGENT)} onChange={count => setGraph(current => ({ ...current, maxAgents: count }))}
@@ -1560,7 +1607,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
       </div>
       {run && <p className="canvas-help" role="status">{(["running", "succeeded", "pending", "failed", "blocked"] as const).map(status => [status, agents.filter(node => states[node.id]?.status === status).length] as const).filter(([, count]) => count).map(([status, count]) => `${count} ${STATUS_LABEL[status]}`).join(" · ") || "Starting…"}</p>}
       {split.father.length > 0 && <p className="canvas-help" role="note">The Father runs {split.father.length} more {split.father.length === 1 ? "agent" : "agents"} in his own chat once her part has succeeded, and reports to her{run?.father ? `: ${run.father.threadId ? STATUS_LABEL[(run.father.status as TaskStatus)] ?? run.father.status : run.father.status === "cancelled" ? "not started, her part failed" : "waiting for her part"}` : "."}</p>}
-      <LiveFeed chat={run?.rootThreadId ?? null} working={runState === "running"} idle="Not started. Every agent's report arrives here once the graph runs." />
+      <LiveFeed chat={run?.rootThreadId ?? null} working={runState === "running"} ready={ready} idle="Not started. Every agent's report arrives here once the graph runs." />
       <div className="canvas-inspector-actions">
         {run && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open her chat</Button>}
         {run?.father?.threadId && <Button variant="outline" size="sm" onClick={() => onOpenChat(run.father!.threadId!)}><ExternalLink size={14} />Open the Father&rsquo;s chat</Button>}
@@ -1569,6 +1616,8 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
     </aside> : <aside className="canvas-side" aria-label="Architectures">
       {critical.length > 1 && <p className="canvas-critical" onMouseEnter={() => setShowCritical(true)} onMouseLeave={() => setShowCritical(false)} title="The longest chain: the run takes at least this many rounds, however many agents run at once">
           <span>Critical path · {critical.length} rounds</span>{critical.map(titleOf).join(" → ")}</p>}
+      <details open={morePatterns} onToggle={event => { if (event.target === event.currentTarget) setMorePatterns(event.currentTarget.open); }}>
+        <DisclosureSummary>More patterns</DisclosureSummary>
       {(["Patterns", "Research", "Start"] as const).map(group => <section key={group} className="canvas-templates" aria-label={group}>
         <p className="hud-menu-title">{group === "Start" ? "Start fresh" : group}</p>
         {TEMPLATES.filter(template => template.group === group).map(template => <div key={template.id}><Button variant="ghost" size="content" className="canvas-template w-full" aria-current={graph.template === template.id || undefined} onClick={() => loadTemplate(template)}>
@@ -1578,6 +1627,7 @@ function Canvas({ models, cwd, dark, onOpenChat, projectMenu, workflowCatalog }:
           {template.source && <small className="canvas-template-source">{template.source}</small>}</Button>
           <a className={buttonVariants({ variant: "link", size: "xs" })} href={`#workflow-sources-${template.id}`} aria-label={`Sources for ${template.name}`} onClick={event => { event.preventDefault(); setSelection([]); setSourceId(template.id); }}>Sources</a></div>)}
       </section>)}
+      </details>
       <section className="canvas-guide" aria-label="Guide">
         <p className="hud-menu-title">Guide</p>
         <ul>{GUIDE.map(item => <li key={item.href}><a href={item.href} target="_blank" rel="noreferrer">{item.title}</a><small>{item.note}</small></li>)}</ul>

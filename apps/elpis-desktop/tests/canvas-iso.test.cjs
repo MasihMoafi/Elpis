@@ -186,6 +186,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await chooseTheme(page, 'light');
 
     // Loading an architecture redraws the board in its run order; Flat brings the editor back.
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /Hierarchical/ }).click();
     await agent('Lumaro · Team B worker 2').waitFor();
     assert.equal(await board.locator('.iso-node[data-kind="agent"]').count(), 8);

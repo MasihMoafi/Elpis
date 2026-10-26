@@ -1257,7 +1257,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .iso-controls { left:12px; display:flex; align-items:center; gap:6px; }
 .iso-keys b { color:var(--foreground); font-weight:500; }
 .iso-status { right:12px; --cut:10px; display:grid; gap:2px; min-width:0; width:min(320px, calc(100% - 180px)); padding:7px 14px 7px 15px; border-left-color:var(--kind, var(--border)); }
-.iso-status strong { min-width:0; overflow-wrap:anywhere; font-size:0.84375rem; font-weight:600; color:var(--foreground); }
+.iso-status strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.84375rem; font-weight:600; color:var(--foreground); }
 .iso-status small { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.75rem; color:var(--muted-foreground); }
 @container iso-board (max-width:760px) { .iso-keys { display:none; } }
 @media (prefers-reduced-motion:reduce) { .iso-glow, .iso-ring, .iso-chevron { animation:none; } .iso-lift { transition:none; } }

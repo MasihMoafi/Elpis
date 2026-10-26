@@ -105,6 +105,7 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
   await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click(); await page.getByText('web-dev', { exact: true }).waitFor();
   await visit('Customize');
   await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.locator('.react-flow__node-agent').first().waitFor();
+  await page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click();
   await visit('canvas');
   await t.test('one chamfer and one edge per role; the send button shares the control cuts', () => {
     const seen = { buttons: 0, floating: 0, panels: new Set() };

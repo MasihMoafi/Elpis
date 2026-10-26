@@ -42,8 +42,12 @@ const savedBoard = custom ? { name: `Live ${plan}`, maxAgents: 12, mother: { bri
     return { id: `writer-${number}`, type: 'agent', position: { x: 260 + Math.floor(i / 6) * 270, y: (i % 6) * 130 },
       data: { title: `Writer ${number}`, instruction, model: 'gpt-6-luna', writeScopes: [folder], acceptanceCriteria: [`${folder}/result.txt contains writer-${number}`] } };
   }) } : null;
-const bridgeScript = path.join(path.dirname(realpathSync(engine)), 'tools', 'elpis-claude', 'acp-bridge.mjs');
-assert(existsSync(bridgeScript), `No provider bridge beside ${engine}`);
+const engineDirectory = path.dirname(realpathSync(engine));
+const bridgeScript = [
+  ...(path.basename(engineDirectory) === 'bin' && path.basename(path.dirname(engineDirectory)) === 'package' ? [path.resolve(engineDirectory, '../../tools/elpis-claude/acp-bridge.mjs')] : []),
+  path.join(engineDirectory, 'tools/elpis-claude/acp-bridge.mjs'),
+].find(candidate => existsSync(candidate));
+assert(bridgeScript, `No installed provider bridge for ${engine}`);
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
 // A short root: the engine's socket lives under it and a Unix socket path has 108 bytes.
 const root = await fs.mkdtemp('/tmp/cl-'), runtimeDir = path.join(root, 'rt');
@@ -116,7 +120,7 @@ try {
   };
 
   say(`engine models: ${(await api('/models')).data.map(model => model.model).join(', ')}`);
-  if (!custom) await canvas.getByRole('button', { name: chosen.template }).click();
+  if (!custom) { await canvas.getByText('More patterns', { exact: true }).click(); await canvas.getByRole('button', { name: chosen.template }).click(); }
   await canvas.getByRole('button', { name: 'Mother', exact: true }).click();
   const mother = canvas.getByRole('complementary', { name: 'Mother', exact: true });
   await mother.getByRole('textbox', { name: 'Goal', exact: true }).fill(chosen.goal);
@@ -135,7 +139,7 @@ try {
   // The planner fills the empty folders first; then the run starts and the header follows it.
   let last = '';
   for (;;) {
-    const statusChip = canvas.locator('.canvas-header [role=status]');
+    const statusChip = canvas.locator('.canvas-header > .canvas-chip[role=status]');
     const chip = await statusChip.count() ? (await statusChip.innerText()).trim() : '';
     // An alert is a refusal; the planner's "Elpis is on it" is a status.
     const alert = canvas.locator('.canvas-notice[role=alert]');

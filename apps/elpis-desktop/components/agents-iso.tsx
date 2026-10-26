@@ -255,7 +255,11 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   // another agent's block shows only its wave badge, until it is pointed at, focused or selected, or zoomed into room;
   // the Mother's and those always show in full.
   const anchor = (place: IsoPlace) => { const shape = shapeOf(place); return screen({ x: place.at.x, y: place.at.y - shape.core / 2 - height(shape) }); };
-  const block = (place: IsoPlace): Box => { const shape = shapeOf(place), top = anchor(place), half = shape.core * Math.cos(Math.PI / 6) * view.zoom; return { left: top.x - half, top: top.y, right: top.x + half, bottom: screen({ x: place.at.x, y: place.at.y - shape.baseHeight }).y }; };
+  // Labels must clear the whole pedestal, including its ground plate and check ring.
+  const block = (place: IsoPlace): Box => {
+    const box = bounds([place]), top = screen({ x: box.left, y: box.top }), bottom = screen({ x: box.right, y: box.bottom });
+    return { left: top.x, top: top.y, right: bottom.x, bottom: bottom.y };
+  };
   const kept = (place: IsoPlace) => place.kind !== "agent" || place.id === hot || selected.includes(place.id);
   const full = new Set<string>(), taken: Box[] = [], labelPositions = new Map<string, Point>();
   const labelBox = (at: Point, width: number, labelHeight = LABEL.height): Box => ({ left: at.x - width / 2, top: at.y - labelHeight, right: at.x + width / 2, bottom: at.y });

@@ -66,6 +66,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
 
     // A fresh canvas starts split by parts, as Anthropic advises. The list marks what is on the board and draws each
     // architecture's shape: the Mother, then a column per wave. Every agent writes.
+    await canvas.getByText('More patterns', { exact: true }).click();
     const loaded = canvas.locator('.canvas-template[aria-current="true"]');
     assert.match(await loaded.innerText(), /^Split by parts\s*On the board/i);
     assert.deepEqual(await nodes.locator('.agent-node-title').allInnerTexts(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts']);
@@ -75,8 +76,10 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.doesNotMatch(await voting.innerText(), /handoff/);
 
     // Loading another architecture replaces the board, so Undo is offered.
+    await canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Keep this request while choosing a pattern');
     await canvas.getByRole('button', { name: /Plan → Build/ }).click();
     await node('Write the plan').waitFor();
+    assert.equal(await canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).inputValue(), 'Keep this request while choosing a pattern', 'pattern selection retains the request draft');
     assert.match(await loaded.innerText(), /^Plan → Build\s*On the board/i);
     await canvas.getByRole('status').filter({ hasText: 'Loaded Plan → Build.' }).getByRole('button', { name: 'Undo', exact: true }).click();
     await node('Quillon · Part 1').waitFor();

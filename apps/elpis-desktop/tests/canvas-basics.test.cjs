@@ -3,7 +3,180 @@
 // menus on agents, the board and wires, F2 to rename, and Home to fit the whole graph.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
+const { openCanvas, planFor } = require('./canvas-fixture.cjs');
+const { assertUiFit } = require('./ui-fit.cjs');
+const { captureReview, chooseTheme } = require('./controls.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cjs');
+
+test('offline workflows keep the exact request editable, block callbacks, and design after reconnecting', async () => {
+  const f = await fixture({ width: 1440, height: 900, cwd: '/tmp/demo', storage: {
+    'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }),
+  }, routes: { '/api/folders': () => ({ data: ['src'] }), '/api/canvas/plan': body => planFor(body) } });
+  let releasePlan;
+  try {
+    const { page } = f;
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    await request.waitFor();
+    f.emit('connection', { connected: false });
+    const offline = canvas.getByRole('status').filter({ hasText: 'Reconnect to design or run workflows. Your draft stays editable.' });
+    await offline.waitFor();
+    for (const name of ['New workflow', 'Update current', 'Run graph']) assert.equal(await canvas.getByRole('button', { name, exact: true }).isDisabled(), true, name);
+    const goal = 'Fix login — keep these exact words';
+    await request.fill(goal);
+    await canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.react-flow__node-agent').length === 5);
+    const before = f.posts.length;
+    // A form submit and the run shortcut must also be guarded, independently of disabled buttons.
+    await canvas.getByRole('form', { name: 'New workflow', exact: true }).evaluate(form => form.requestSubmit());
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Control+Enter');
+    await page.waitForFunction(value => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.request === value, goal);
+    assert.deepEqual(f.posts.slice(before).filter(post => /^\/api\/(canvas\/plan|workflows\/run|threads)$/.test(post.path)), [], 'offline callbacks send no runtime mutations');
+    assert.equal(await request.inputValue(), goal);
+    f.emit('connection', { connected: true });
+    await offline.waitFor({ state: 'detached' });
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.nodes.filter(node => node.type === 'agent').length === 5);
+    const savedBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')));
+    const heldPlan = new Promise(resolve => { releasePlan = resolve; });
+    await page.route('**/api/canvas/plan', async route => { await heldPlan; await route.continue(); });
+    const pendingPlan = page.waitForRequest(req => req.url().endsWith('/api/canvas/plan'));
+    await canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await pendingPlan;
+    f.emit('connection', { connected: false }); await offline.waitFor();
+    f.emit('connection', { connected: true }); await offline.waitFor({ state: 'detached' });
+    releasePlan();
+    await canvas.getByRole('button', { name: 'New workflow', exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))), savedBefore, 'a plan from the previous connection cannot replace an unchanged saved board');
+    assert.equal(await canvas.locator('.react-flow__node-agent').count(), 5);
+    assert.equal(f.posts.some(post => /^\/api\/(threads|workflows\/run)$/.test(post.path)), false);
+    await page.unroute('**/api/canvas/plan');
+    await canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.react-flow__node-agent').length === 1);
+    const plan = f.posts.filter(post => post.path === '/api/canvas/plan').at(-1);
+    assert.equal(plan.body.goal, goal);
+    assert.deepEqual(plan.body.agents, []);
+    assert.equal(await request.inputValue(), goal);
+    assert.equal(f.posts.some(post => post.path === '/api/workflows/run'), false);
+    assert.deepEqual(f.errors, []);
+  } finally { releasePlan?.(); await f.close(); }
+});
+
+test('reconnecting during run preparation cannot submit the old run and keeps edits for an explicit retry', async () => {
+  let created = 0, releaseRepository;
+  const graph = { name: 'Connection retry', request: 'Keep this request', nodes: ['a', 'b'].map((id, index) => ({
+    id, type: 'agent', position: { x: 260, y: index * 180 }, data: { title: `Writer ${id}`, instruction: `Write evidence for ${id}`, model: null, writeScopes: ['src'], acceptanceCriteria: ['Evidence exists'] },
+  })), edges: [] };
+  const f = await fixture({ width: 1440, height: 900, cwd: '/tmp/demo', storage: {
+    'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }),
+    'elpis-workflow-draft-v1': JSON.stringify(graph),
+  }, routes: {
+    '/api/folders': () => ({ data: ['src'] }), '/api/repository': () => ({ repository: true }),
+    '/api/threads': body => body ? { thread: { ...THREADS[0], id: `created-${++created}`, cwd: '/tmp/demo' } } : { data: THREADS, nextCursor: null },
+    '/api/workflows/run': () => ({ graphId: 'retried-run' }),
+    '/api/workflows': () => ({ data: [{ id: 'retried-run', status: 'succeeded', tasks: [] }] }),
+  } });
+  try {
+    const { page } = f;
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    await request.waitFor();
+    const heldRepository = new Promise(resolve => { releaseRepository = resolve; });
+    await page.route('**/api/repository**', async route => { await heldRepository; await route.continue(); });
+    const pendingRepository = page.waitForRequest(req => new URL(req.url()).pathname === '/api/repository');
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await pendingRepository;
+    assert.equal(created, 1, 'the original online attempt created its root before the connection changed');
+    const offline = canvas.getByRole('status').filter({ hasText: 'Reconnect to design or run workflows. Your draft stays editable.' });
+    f.emit('connection', { connected: false }); await offline.waitFor();
+    const edited = 'Keep the edit made during interrupted preparation';
+    await request.fill(edited);
+    f.emit('connection', { connected: true }); await offline.waitFor({ state: 'detached' });
+    releaseRepository();
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).waitFor();
+    await page.waitForFunction(value => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1'))?.request === value, edited);
+    assert.equal(f.posts.some(post => post.path === '/api/workflows/run'), false, 'reconnection cannot continue the old attempt after its repository read');
+    assert.equal(await canvas.locator('.react-flow__node-agent').count(), 2);
+    await page.unroute('**/api/repository**');
+    const retried = page.waitForResponse(response => new URL(response.url()).pathname === '/api/workflows/run' && response.ok());
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await retried;
+    const sent = f.posts.filter(post => post.path === '/api/workflows/run');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].body.rootThreadId, 'created-2', 'only the explicit new attempt starts the run');
+    assert.equal(sent[0].body.isolation, 'worktree');
+    assert.equal(await request.inputValue(), edited);
+    assert.deepEqual(f.errors, []);
+  } finally { releaseRepository?.(); await f.close(); }
+});
+
+test('New workflow stays available with a closed panel, starts from empty context, and keeps current work recoverable', async () => {
+  const f = await openCanvas({ desktop: true });
+  const request = () => f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+  let releasePlan;
+  try {
+    await request().waitFor();
+    assert.equal(await f.canvas.getByRole('textbox', { name: 'Graph name', exact: true }).count(), 0, 'a preset is selected rather than edited as a name');
+    await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
+    await f.canvas.locator('.canvas-side').waitFor({ state: 'detached' });
+    await f.saved();
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await request().waitFor();
+    assert.equal(await f.canvas.locator('.canvas-side').count(), 0, 'the closed panel preference survives');
+    for (const theme of ['light', 'dark']) for (const width of [1440, 960]) {
+      await f.page.setViewportSize({ width, height: 900 });
+      if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(f.page, theme);
+      await f.page.evaluate(() => document.fonts.ready);
+      await f.fit();
+      await assertUiFit(f.canvas.locator('.canvas-header'), `workflow entry fits at ${width} in ${theme}`);
+      assert.equal(await request().isVisible(), true, 'the primary request does not depend on the side panel');
+      assert.equal(await f.canvas.locator('.canvas-side').count(), 0, 'the entry remains available with the panel closed');
+      await captureReview(f.page, `workflow-entry-closed-${width}-${theme}`);
+    }
+    await request().fill('Fix the login bug');
+    const before = await f.saved();
+    await f.page.route('**/api/canvas/plan', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Planning refused for this attempt.' }) }));
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await f.canvas.getByRole('alert').filter({ hasText: 'Planning refused for this attempt.' }).waitFor();
+    assert.equal(await request().inputValue(), 'Fix the login bug');
+    assert.deepEqual(await f.saved(), before, 'refusal keeps the saved starter and request');
+    await f.page.unroute('**/api/canvas/plan');
+    const heldPlan = new Promise(resolve => { releasePlan = resolve; });
+    await f.page.route('**/api/canvas/plan', async route => { await heldPlan; await route.continue(); });
+    const asked = f.page.waitForRequest(req => req.url().endsWith('/api/canvas/plan'));
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await asked;
+    await f.canvas.getByRole('button', { name: 'Add agent', exact: true }).click();
+    await f.agentCount(5, 'the person edited the board while a plan was pending');
+    await f.canvas.locator('.canvas-side').waitFor();
+    await f.canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
+    await f.canvas.locator('.canvas-side').waitFor({ state: 'detached' });
+    const edited = await f.saved();
+    releasePlan();
+    await f.canvas.getByRole('alert').filter({ hasText: 'The current workflow changed while Elpis was designing.' }).waitFor();
+    assert.deepEqual(await f.saved(), edited, 'a late plan cannot overwrite the person’s intervening work');
+    await f.page.unroute('**/api/canvas/plan');
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await f.agentCount(1, 'the new workflow uses the assistant’s team');
+    assert.deepEqual(f.plans.at(-1).agents, [], 'even an unmarked saved starter supplies no team to New workflow');
+    assert.equal(f.runs.length, 0, 'designing a workflow does not start it');
+    const designed = await f.saved();
+    await f.page.evaluate(() => document.activeElement?.blur()); await f.page.keyboard.press('Control+z');
+    await f.agentCount(5, 'Undo recovers the prior board');
+    await f.page.keyboard.press('Control+Shift+z'); await f.agentCount(1, 'Redo restores the new workflow');
+    await f.saved();
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await request().waitFor();
+    await f.agentCount(1, 'the designed team survives reload');
+    assert.deepEqual((await f.saved()).nodes, designed.nodes);
+    assert.equal(await f.canvas.locator('.canvas-side').count(), 0);
+    await request().fill('Fix another login bug');
+    await f.canvas.getByRole('button', { name: 'Update current', exact: true }).click();
+    await f.agentCount(2, 'Update current keeps the saved team');
+    assert.deepEqual(f.plans.at(-1).agents.map(agent => agent.key), designed.nodes.filter(node => node.type === 'agent').map(node => node.id));
+    assert.deepEqual(f.errors, []);
+  } finally { releasePlan?.(); await f.close(); }
+});
 
 test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping the flow, menus, rename, fit', async () => {
   const { page, canvas, node, wires, saved, titles, agentCount, fit, errors, plans, runs, close } = await openCanvas();
@@ -133,6 +306,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await agentCount(6, 'duplicate undone');
 
     // Delete keeping the flow (Ctrl+Delete): what waited for the agent now waits for what it waited for.
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Sequential/ }).click();
     await node('Veyra · Step 2: build on it').waitFor();
     await node('Veyra · Step 2: build on it').click();
@@ -194,6 +368,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.deepEqual(await titles(), ['Build the theme', 'Use the theme']);
     assert.ok(wired(await saved(), 'Build the theme', 'Use the theme'), 'the team is wired as designed');
     assert.equal(plans.at(-1).goal, 'Build a dark theme from scratch');
+    assert.equal(plans.at(-1).agents.length, 3, 'existing-board planning keeps the team the person edited');
     await off(); await page.keyboard.press('Control+z');
     await agentCount(3, 'the design undone');
     // Free text in the command line that is no command goes to Elpis, which acts on the board.

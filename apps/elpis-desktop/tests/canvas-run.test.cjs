@@ -25,6 +25,7 @@ test('Voting finishes every agent; Tally receives all answers after their checks
   } });
   const { page, canvas, runs, errors, close } = fixture;
   try {
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.agent-node-mark[data-check="succeeded"]').length === 4, null, { timeout: 20000 });
@@ -59,6 +60,7 @@ test('a project with no folders runs: every agent and its check write their repo
   const fixture = await openCanvas({ folders: [] });
   const { page, canvas, runs, node, errors, close } = fixture;
   try {
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     // The tally may write the whole project: the folder menu offers it even when the project has no folders.
     await node('Nuvani · Tally the answers').click();

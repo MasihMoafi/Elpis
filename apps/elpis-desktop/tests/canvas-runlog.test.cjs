@@ -21,6 +21,7 @@ async function staged(options = {}) {
 test('the complete chronological log retains starts, tasks, checks and actual reports; click and Enter open its agent', async () => {
   const f = await staged(); const { canvas, page } = f;
   try {
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const log = canvas.getByRole('log', { name: 'Run log', exact: true });
@@ -69,6 +70,7 @@ test('the timer advances in either view and stops on completion, including a new
 test('Kahn waves stay visible with the sidebar closed; waiting inputs clear only after checks pass in either view', async () => {
   const f = await staged(); const { canvas } = f;
   try {
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
     const order = canvas.getByRole('region', { name: 'Run order', exact: true }); await order.waitFor();
@@ -136,6 +138,7 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
   const f = await staged({ width, height }); const { canvas, page } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
+    await canvas.getByText('More patterns', { exact: true }).click();
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await fs.mkdir('/tmp/canvas-runlog', { recursive: true });
     for (const state of ['before', 'during', 'after']) {
