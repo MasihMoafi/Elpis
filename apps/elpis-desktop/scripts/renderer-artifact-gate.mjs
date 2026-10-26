@@ -166,8 +166,8 @@ export const retainedUpdates = {
     },
     "tests/sidebar-groups.test.cjs": {
       "blob": "53cdeee4621adb6cd757de78cfdf9ad4f62d801f",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions. Wait for the open root menu to own focus before native typeahead. Preserve the exact move target, real submenu keyboard journey and all grouping/persistence assertions."
+      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
+      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions. Wait for the open root menu to own focus before native typeahead. Preserve the exact move target, real submenu keyboard journey and all grouping/persistence assertions. R73, Masih 26 Oct: recorded native agents share their recursive parent tree. Open a linked leaf through its parent; use a real unlinked run to retain history-toggle uniqueness checks. Keep all grouping, storage, keyboard, no-write and exact indentation assertions."
     },
     "tests/workflow-observer.test.cjs": {
       "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
