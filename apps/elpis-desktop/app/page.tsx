@@ -1970,7 +1970,7 @@ export default function Home() {
     if (!ordinaryIds.has(thread.id)) return {};
     return { onMoveToProject: setProjectMove, onNewProject: newProjectFrom, onPutUnder: setNestTargets,
       onTakeOut: movingIds(thread.id).some(id => treeParents[id]) ? (chats: Thread[]) => {
-        if (updateGroups(state => putChatsUnder(state, chats.map(chat => chat.id), null, nativeParents))) setMarked([]);
+        void assignProject(chats.map(chat => chat.id), undefined).catch(cause => setError(String(cause)));
       } : undefined };
   }
   async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
