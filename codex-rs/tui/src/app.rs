@@ -732,18 +732,66 @@ enum RuntimePermissionProfileTurnOverride {
 
 impl RuntimePermissionProfileOverride {
     fn from_config(config: &Config) -> Self {
-        Self {
-            permission_profile: config.permissions.permission_profile().clone(),
-            active_permission_profile: config.permissions.active_permission_profile(),
-            network: config.permissions.network.clone(),
-            turn_override: RuntimePermissionProfileTurnOverride::LegacySandbox,
-        }
+        Self::from_config_with_turn_override(
+            config,
+            RuntimePermissionProfileTurnOverride::LegacySandbox,
+        )
     }
 
     fn from_restored_config(config: &Config) -> Self {
+        Self::from_config_with_turn_override(config, RuntimePermissionProfileTurnOverride::Preserve)
+    }
+
+    fn from_config_with_turn_override(
+        config: &Config,
+        turn_override: RuntimePermissionProfileTurnOverride,
+    ) -> Self {
+        let active_permission_profile = config.permissions.active_permission_profile();
+        let mut permission_profile = config.permissions.permission_profile().clone();
+        if turn_override == RuntimePermissionProfileTurnOverride::LegacySandbox
+            && active_permission_profile.is_none()
+            && config.permissions.network.is_none()
+        {
+            let source = permission_profile
+                .clone()
+                .materialize_project_roots_with_workspace_roots(&config.workspace_roots);
+            // A legacy server snapshot expands default metadata at its source cwd.
+            // Only an exact projected builtin may be carried forward symbolically.
+            if let Some(builtin) = [
+                PermissionProfile::read_only(),
+                PermissionProfile::workspace_write(),
+                PermissionProfile::Disabled,
+            ]
+            .into_iter()
+            .find(|builtin| {
+                builtin
+                    .clone()
+                    .materialize_project_roots_with_workspace_roots(&config.workspace_roots)
+                    .to_legacy_sandbox_policy(config.cwd.as_path())
+                    .ok()
+                    .is_some_and(|sandbox| {
+                        let projected = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
+                            &sandbox,
+                            config.cwd.as_path(),
+                        );
+                        source.enforcement() == projected.enforcement()
+                            && source.network_sandbox_policy() == projected.network_sandbox_policy()
+                            && source
+                                .file_system_sandbox_policy()
+                                .is_semantically_equivalent_to(
+                                    &projected.file_system_sandbox_policy(),
+                                    config.cwd.as_path(),
+                                )
+                    })
+            }) {
+                permission_profile = builtin;
+            }
+        }
         Self {
-            turn_override: RuntimePermissionProfileTurnOverride::Preserve,
-            ..Self::from_config(config)
+            permission_profile,
+            active_permission_profile,
+            network: config.permissions.network.clone(),
+            turn_override,
         }
     }
 
