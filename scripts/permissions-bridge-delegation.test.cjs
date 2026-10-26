@@ -47,7 +47,7 @@ function engineFault() {
       fs.appendFileSync(`${process.env.ENGINE_FAULT_CONTROL}.requirements.jsonl`, JSON.stringify({ id: msg.id, method: msg.method }) + '\n');
       out(JSON.stringify({ id: msg.id, result: { requirements: control.requirements } })); return;
     }
-    if (msg?.method === 'thread/start' && String(msg.id).startsWith('agents-') && control.holdStart) heldStarts.set(msg.id, control.holdStart);
+    if (msg?.method === 'thread/start' && String(msg.id).startsWith('elpis-agents-') && control.holdStart) heldStarts.set(msg.id, control.holdStart);
     const fault = msg?.method === 'thread/settings/update' && String(msg.id).startsWith('acp-bridge-engine-')
       && (!control.settingsThreadId || msg.params?.threadId === control.settingsThreadId) && control.settings;
     if (fault === 'reject') out(JSON.stringify({ id: msg.id, error: { code: -32600, message: 'Fixture engine refuses the update' } }));
@@ -167,7 +167,10 @@ async function main() {
     }
     // A Claude chat (the delegate tool is offered to Claude and Antigravity chats) in a confirmed mode.
     async function parent(mode) {
-      const { thread } = await request('thread/start', { cwd, model: 'claude/haiku', approvalPolicy: 'on-request', permissions: ':workspace' });
+      const started = await request('thread/start', { cwd, model: 'claude/haiku', approvalPolicy: 'on-request', permissions: ':workspace', elpisPermissionSource: 'chat' });
+      assert.equal(profileOf(started), ':workspace', 'the fixture starts from an explicit Workspace choice');
+      assert.equal(started.approvalPolicy, 'on-request', 'the parent transition starts with Workspace approvals');
+      const { thread } = started;
       if (mode !== 'default') await select(thread.id, mode);
       return thread.id;
     }
@@ -518,7 +521,6 @@ async function main() {
       assert.equal(engine.wrote, true, 'a writing helper of a Full Access chat opens a local server');
       pass('a Full Access parent starts a writing engine helper with Full Access');
       const workspace = await parent('default');
-      await select(workspace, 'default');
       const independent = await engineHelper(await delegateServer(workspace), { allow_writes: true }, undefined, listen);
       assert.equal(independent.wrote, true, 'a parent\'s Workspace choice does not replace its helper\'s Full access default');
       assert.equal(independent.prompts, 0, 'the helper opens the local server without a user approval');
