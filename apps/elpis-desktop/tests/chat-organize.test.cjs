@@ -49,17 +49,21 @@ async function expandPath(page, ids) {
   for (const id of ids) await row(page, id).getByRole('button', { name: /^Expand / }).click();
 }
 async function drag(page, from, to, where = 'middle', during) {
-  const start = await row(page, from).locator('.thread-link').boundingBox();
+  const source = row(page, from).locator('.thread-link'), target = typeof to === 'string' ? row(page, to) : to;
+  await source.scrollIntoViewIfNeeded();
+  await source.hover();
+  const start = await source.boundingBox();
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();
-  await page.mouse.move(start.x + start.width / 2 + 5, start.y + start.height / 2 + 5, { steps: 3 });
-  const end = await (typeof to === 'string' ? row(page, to) : to).boundingBox();
+  await page.mouse.move(start.x + start.width / 2 + 12, start.y + start.height / 2, { steps: 6 });
+  await target.scrollIntoViewIfNeeded();
+  const end = await target.boundingBox();
   await page.mouse.move(end.x + end.width / 2, where === 'top' ? end.y + 2 : where === 'bottom' ? end.y + end.height - 2 : end.y + end.height / 2, { steps: 10 });
   if (during) await during();
   await page.mouse.up();
 }
 const shot = async (page, name) => {
-  const dir = process.env.ELPIS_PARITY_SHOTS;
+  const dir = process.env.ELPIS_REVIEW_SHOTS || process.env.ELPIS_PARITY_SHOTS;
   if (!dir) return;
   await fs.mkdir(dir, { recursive: true });
   await page.screenshot({ path: path.join(dir, `organize-${name}.png`) });
@@ -166,7 +170,9 @@ test('workflow descendants and manual branches use the same recursive placement 
     await expandPath(page, ['flow-step', 'manual-root', 'manual-branch']);
     await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '2'));
     await row(page, 'manual-child').waitFor(); await row(page, 'cycle-a').waitFor(); await row(page, 'cycle-b').waitFor();
-    await drag(page, 'manual-child', 'flow-step');
+    await drag(page, 'manual-child', 'flow-step', 'middle', async () => {
+      await eventually(async () => assert.equal(await row(page, 'flow-step').getAttribute('data-drop'), 'into', 'the workflow step accepts the middle drop before release'));
+    });
     await eventually(async () => assert.equal(await row(page, 'manual-child').getAttribute('data-depth'), '2'));
     await action(page, 'flow-grandchild', 'Take out');
     await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '0'));
@@ -275,7 +281,9 @@ test('a refused final order save leaves the subtree, projects, order and selecti
         return setItem(key, value);
       };
     });
-    await drag(page, 'save-child', 'save-target', 'top');
+    await drag(page, 'save-child', 'save-target', 'top', async () => {
+      await eventually(async () => assert.equal(await row(page, 'save-target').getAttribute('data-drop'), 'before', 'the visible recent row accepts the edge drop before the store refuses it'));
+    });
     await page.getByRole('alert').filter({ hasText: 'Could not save chat placement' }).waitFor();
     assert.equal(await row(page, 'save-child').getAttribute('data-depth'), '1');
     assert.equal(await row(page, 'save-grandchild').getAttribute('data-depth'), '2');

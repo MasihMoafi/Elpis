@@ -2018,6 +2018,7 @@ export default function Home() {
     const state = run ? run.status === "running" ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
     const origin = workflowSteps.has(thread.id) ? null : chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
+    const parentLabel = isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) ? `from ${runParent ? title(runParent) : "parent conversation"}` : null;
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
     const hasAgents = (run ? ordinaryThreads.some(child => sidebarParent(child) === thread.id && (workflowSteps.get(child.id)?.runId === run.id || workflowRoots.get(thread.id)?.id === run.id && !workflowSteps.has(child.id))) : agentParents.has(thread.id)) || !!childCursors[thread.id];
     const canExpandAgents = !searchTerm && hasAgents, branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
@@ -2044,7 +2045,7 @@ export default function Home() {
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <span className="thread-title" title={name}>{name}</span>
-        {isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) && <span className="text-xs text-muted-foreground">from {runParent ? title(runParent) : "parent conversation"}</span>}
+        {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
