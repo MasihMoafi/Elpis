@@ -215,6 +215,7 @@ jobs:
         run: |
           bash tests/install/test_install.sh
           bash tests/install/test_cache_source_times.sh
+          node --test --test-concurrency=1 tests/install/install-engine.test.mjs
       - name: Install locked bridge dependencies
         working-directory: tools/elpis-claude
         run: npm ci --ignore-scripts

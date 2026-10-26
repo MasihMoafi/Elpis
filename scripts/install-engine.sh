@@ -2,8 +2,10 @@
 # Local engine bundles retain bridge dependencies outside the daemon's CLI package.
 set -euo pipefail
 
+WITH_FRONTEND=false
+if [ "${1:-}" = --with-frontend ]; then WITH_FRONTEND=true; shift; fi
 if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[[:alnum:]][[:alnum:]_.-]*$ ]]; then
-    printf 'usage: %s <bundle-name> (letters, digits, dots, underscores and hyphens)\n' "$0" >&2
+    printf 'usage: %s [--with-frontend] <bundle-name> (letters, digits, dots, underscores and hyphens)\n' "$0" >&2
     exit 2
 fi
 R=${ELPIS_SOURCE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}
@@ -69,19 +71,49 @@ while IFS= read -r -d '' file; do
     cp -a "$R/$file" "$NEW/$file"
 done < <(git -C "$R" ls-files -z tools/elpis-claude)
 # The live launcher is the template: the bundle's own copy can be older (21 Oct: it lacked the
-# pinned TUI frontend and the shared bridge). Only its engine and bridge paths move to the new bundle.
+# pinned TUI frontend and the shared bridge). Frontend changes require the explicit flag below.
 grep -qF "$OLD/" "$HOME/.local/bin/elpis" || { printf 'the live launcher does not use %s\n' "$OLD" >&2; exit 1; }
 # Literal replacement also supports paths containing sed delimiters or ampersands.
-node - "$HOME/.local/bin/elpis" "$NEW/elpis-wrapper" "$OLD" "$NEW" "$R/tools/elpis-claude/elpis-wrapper" <<'NODE'
+node - "$HOME/.local/bin/elpis" "$NEW/elpis-wrapper" "$OLD" "$NEW" "$R/tools/elpis-claude/elpis-wrapper" "$WITH_FRONTEND" "$R" "$HEADC" <<'NODE'
 const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const live = fs.readFileSync(process.argv[2], 'utf8');
+let frontendLine;
+if (process.argv[7] === 'true') {
+    const assignments = live.match(/^FRONTEND=.*$/gm) ?? [];
+    if (assignments.length !== 1) throw new Error('The installed frontend has no unique literal path');
+    const value = assignments[0].slice('FRONTEND='.length);
+    const single = value.match(/^'((?:[^']|'\\'')*)'$/);
+    const double = value.match(/^"((?:[^"\\$`]|\\["\\$`])*)"$/);
+    const plain = value.match(/^[^\s"'$`\\;|&()<>]+$/);
+    const frontend = single?.[1].replace(/'\\''/g, "'") ?? (double && double[1].replace(/\\(["\\$`])/g, '$1')) ?? (plain && value);
+    if (!frontend || !path.isAbsolute(frontend) || !fs.statSync(frontend).isFile()) throw new Error('The installed frontend path is unknown');
+    fs.accessSync(frontend, fs.constants.X_OK);
+    let bundle = path.dirname(fs.realpathSync(frontend));
+    while (!fs.existsSync(path.join(bundle, 'source.json')) && !fs.existsSync(path.join(bundle, 'verification.json')) && path.dirname(bundle) !== bundle) bundle = path.dirname(bundle);
+    const sourceReceipt = path.join(bundle, 'source.json');
+    const legacyReceipt = path.join(bundle, 'verification.json');
+    const receipt = JSON.parse(fs.readFileSync(fs.existsSync(sourceReceipt) ? sourceReceipt : legacyReceipt, 'utf8'));
+    const source = fs.existsSync(sourceReceipt) ? receipt.source_head : receipt.head;
+    if (typeof source !== 'string' || !/^[a-f0-9]{7,40}$/i.test(source)) throw new Error('The installed frontend source commit is unknown');
+    try {
+        const commit = execFileSync('git', ['-C', process.argv[8], 'rev-parse', '--verify', `${source}^{commit}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        execFileSync('git', ['-C', process.argv[8], 'merge-base', '--is-ancestor', commit, process.argv[9]], { stdio: 'pipe' });
+    } catch {
+        throw new Error('The installed frontend source must be a known ancestor of the new source');
+    }
+    frontendLine = `FRONTEND='${`${process.argv[5]}/elpis-next`.replace(/'/g, "'\\''")}'`;
+}
 const direct = fs.readFileSync(process.argv[6], 'utf8').match(/^direct\(\) \{[\s\S]*?^\}/m)?.[0];
 if (!direct) throw new Error('The launcher permission policy is missing');
-const previous = fs.readFileSync(process.argv[2], 'utf8').split(process.argv[4]).join(process.argv[5]);
+const previous = live.split('\n').map(line => line.startsWith('FRONTEND=')
+    ? frontendLine ?? line : line.split(process.argv[4]).join(process.argv[5])).join('\n');
 const updated = previous.replace(/^direct\(\) \{[^\n]*\}$|^direct\(\) \{\n[\s\S]*?^\}/m, direct);
 if (updated === previous && !previous.includes(direct)) throw new Error('The installed launcher has no recognized direct entry point');
 fs.writeFileSync(process.argv[3], updated, { mode: 0o755 });
+fs.writeFileSync(path.join(process.argv[5], 'previous-wrapper'), live, { mode: 0o755 });
 NODE
-cp "$HOME/.local/bin/elpis" "$NEW/previous-wrapper"
 git -C "$R" diff HEAD -- codex-rs tools/elpis-claude > "$NEW/source.patch"
 PATCH_SHA=$(sha256sum "$NEW/source.patch"); PATCH_SHA=${PATCH_SHA%% *}
 node - "$NEW/source.json" "$HEADC" "$PATCH_SHA" "$SHA" "$OLD" <<'NODE'
@@ -102,6 +134,7 @@ NODE
     printf 'readlink "$HOME/.local/bin/elpis-next"\n'
 } > "$NEW/rollback.sh"
 chmod 755 "$NEW/rollback.sh"
+cmp -s "$HOME/.local/bin/elpis" "$NEW/previous-wrapper" || { printf 'the live launcher changed during installation\n' >&2; exit 1; }
 # Preserve rollback files if either launcher selection fails during activation.
 activated=true
 cp "$NEW/elpis-wrapper" "$HOME/.local/bin/elpis.new"
