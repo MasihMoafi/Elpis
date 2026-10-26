@@ -876,6 +876,35 @@ mod tests {
                 active
             ));
         }
+        metadata_config
+            .permissions
+            .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
+                actual.clone(),
+            ))?;
+        assert_eq!(
+            RuntimePermissionProfileOverride::from_config(&metadata_config).permission_profile,
+            workspace,
+            "legacy capture must retarget default source metadata through the builtin"
+        );
+        assert_eq!(
+            RuntimePermissionProfileOverride::from_restored_config(&metadata_config)
+                .permission_profile,
+            actual,
+            "restored rules remain the raw server snapshot"
+        );
+        for id in [":workspace", "configured-workspace", ":bypass-permissions"] {
+            metadata_config
+                .permissions
+                .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+                    actual.clone(),
+                    ActivePermissionProfile::new(id),
+                ))?;
+            assert_eq!(
+                RuntimePermissionProfileOverride::from_config(&metadata_config).permission_profile,
+                actual,
+                "an active identity must retain its rules: {id}"
+            );
+        }
         for access in [FileSystemAccessMode::Read, FileSystemAccessMode::Deny] {
             let mut file_system = expected.file_system_sandbox_policy();
             file_system.entries.push(FileSystemSandboxEntry::new(
@@ -889,11 +918,51 @@ mod tests {
             metadata_config
                 .permissions
                 .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
-                    custom,
+                    custom.clone(),
                 ))?;
+            for captured in [
+                RuntimePermissionProfileOverride::from_config(&metadata_config),
+                RuntimePermissionProfileOverride::from_restored_config(&metadata_config),
+            ] {
+                assert_eq!(captured.permission_profile, custom);
+            }
             assert!(
                 !directory_permission_profile_matches(&metadata_config, &actual, None),
                 "legacy projection must not erase a custom {access:?} carveout"
+            );
+        }
+        for unmatched in [
+            PermissionProfile::workspace_write_with(
+                &[],
+                NetworkSandboxPolicy::Enabled,
+                false,
+                false,
+            ),
+            PermissionProfile::workspace_write_with(
+                &[],
+                NetworkSandboxPolicy::Restricted,
+                true,
+                true,
+            ),
+            PermissionProfile::workspace_write_with(
+                &[metadata_config.cwd.join("extra-root")],
+                NetworkSandboxPolicy::Restricted,
+                false,
+                false,
+            ),
+            PermissionProfile::External {
+                network: NetworkSandboxPolicy::Enabled,
+            },
+        ] {
+            metadata_config
+                .permissions
+                .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
+                    unmatched.clone(),
+                ))?;
+            assert_eq!(
+                RuntimePermissionProfileOverride::from_config(&metadata_config).permission_profile,
+                unmatched,
+                "non-builtin source rules must remain unchanged"
             );
         }
         std::fs::write(
@@ -905,6 +974,17 @@ mod tests {
             .build()
             .await?;
         assert!(proxied.permissions.network.is_some());
+        metadata_config
+            .permissions
+            .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
+                actual.clone(),
+            ))?;
+        metadata_config.permissions.network = proxied.permissions.network.clone();
+        assert_eq!(
+            RuntimePermissionProfileOverride::from_config(&metadata_config).permission_profile,
+            actual,
+            "a proxy-backed source must retain its raw snapshot"
+        );
         config.permissions.network = proxied.permissions.network;
         assert!(!directory_permission_profile_matches(
             &config,
