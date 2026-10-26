@@ -40,9 +40,9 @@ export const retainedUpdates = {
       "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/canvas-run.test.cjs": {
-      "blob": "a71f616dab5e5c7c5547b0c94e108bd754baffa0",
-      "approval": "8a0ebd28ea989a0fda794d1fb65d8c9eb8eea533",
-      "reason": "Masih: errors must stay at the bottom rather than cover the page. Extend the existing failed-writer case with long details, bottom containment, full keyboard-scrolled text, Dismiss and accessible Run description in both views, themes and window sizes. Wait for actual native scroll completion before the original exact final-line visibility assertion; preserve the existing run, descendant and catalogue journeys."
+      "blob": "982301976d112c67f5a6b5a4c9e2b85ab79e77ed",
+      "approval": "008cc33a1b57789dbd1857ed8f86e657a240940c",
+      "reason": "Masih: errors must stay at the bottom and the workflow must remain safe and understandable. Preserve long-detail containment, complete keyboard-scrolled text, Dismiss, Run description, both views/themes/sizes and all existing run journeys. Extend the same failed-writer case so selecting error text cannot select all agents, Backspace cannot delete agents, and Home scrolls the details instead of changing the graph view."
     },
     "tests/canvas-fit.test.cjs": {
       "blob": "68d1bd78b5a8b0d4c2aca6850354a47fb1f7a1f2",
