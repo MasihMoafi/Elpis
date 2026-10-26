@@ -987,10 +987,13 @@ export default function Home() {
       if (parentId && chatSubtree(roots, latestParents).includes(parentId)) { if (destination !== undefined) await saveProjectChats(previous); throw Error("A chat cannot be put under one of its descendants."); }
       let groups = putChatsUnder(state, parentId ? roots : roots.filter(id => !!latestParents[id]), parentId ?? null, nativeParents);
       if (arrangeGroups) groups = arrangeGroups(groups, roots);
+      const reveals = parentId ? [placementReveal(parentId, groups, next, roots)] : roots.map(root => placementReveal(root, groups, next, []));
+      const revealGroups = new Set(reveals.map(reveal => reveal.group));
+      if (groups.collapsed.some(id => revealGroups.has(id))) groups = { ...groups, collapsed: groups.collapsed.filter(id => !revealGroups.has(id)) };
       if (!writeGroups(groups, appStorage())) { if (destination !== undefined) await saveProjectChats(previous); throw Error("Could not save chat placement on this device."); }
       chatListOrder.release(); chatGroupsRef.current = groups; setChatGroups(groups);
       projectChatsRef.current = next; setProjectChats(next); setMarked([]);
-      if (destination) setCollapsedProjects(previous => ({ ...previous, [destination]: false }));
+      revealPlacement(reveals);
     });
     projectChatSave.current = saved; return saved;
   }
@@ -1682,6 +1685,11 @@ export default function Home() {
   const originOf = (thread: Thread) => workflowRoots.has(thread.id) || workflowSteps.has(thread.id) ? "Workflows" : chatOrigin(thread, loveActivity.threads);
   const branchOpen = (id: string) => expanded[id] ?? false;
   const workflowOpen = (run: WorkflowRun) => expanded[`workflow:${run.id}`] ?? false;
+  const workflowChild = (child: Thread, run: WorkflowRun) => {
+    const owner = workflowSteps.get(child.id);
+    return sidebarParent(child) === run.rootThreadId && (owner?.parent === run.rootThreadId
+      ? owner.runId === run.id : workflowRoots.get(run.rootThreadId)?.id === run.id);
+  };
   const previousRuns = useRef(new Map<string, string>());
   useEffect(() => {
     const ended = workflowCatalog.runs.filter(run => previousRuns.current.get(run.id) === "running" && run.status !== "running");
@@ -1925,21 +1933,37 @@ export default function Home() {
   function canNest(ids: string[], parent: string) {
     return ordinaryIds.has(parent) && ids.length > 0 && ids.every(id => ordinaryIds.has(id)) && !chatSubtree(ids, treeParents).includes(parent);
   }
-  function openPlacementPath(parent: string) {
-    const parents = sidebarParents(Object.keys(nativeParents), chatGroupsRef.current, nativeParents), seen = new Set<string>(), opened: Record<string, boolean> = {};
-    let child: string | undefined;
-    for (let id: string | undefined = parent; id && !seen.has(id); id = parents[id]) {
-      seen.add(id);
-      const owner = child ? workflowSteps.get(child) : undefined;
-      const runId = owner?.parent === id ? owner.runId : workflowRoots.get(id)?.id;
-      opened[runId ? `workflow:${runId}` : id] = true;
-      child = id;
+  function placementReveal(target: string, state: ChatGroups, memberships: Record<string, string>, moved: string[]) {
+    const parents = sidebarParents(Object.keys(nativeParents), state, nativeParents), opened: Record<string, boolean> = {};
+    let root = target;
+    for (let child of moved.length ? moved : [undefined]) {
+      const seen = new Set<string>();
+      for (let id: string | undefined = target; id && !seen.has(id); id = parents[id]) {
+        seen.add(id); root = id;
+        const owner = child ? workflowSteps.get(child) : undefined;
+        const runId = owner?.parent === id ? owner.runId : workflowRoots.get(id)?.id;
+        if (moved.length) opened[runId ? `workflow:${runId}` : id] = true;
+        child = id;
+      }
     }
-    setExpanded(previous => ({ ...previous, ...opened }));
+    const thread = sidebarThreads.find(thread => thread.id === root), project = pins.includes(root) ? undefined : memberships[root];
+    const orphan = thread && !Object.hasOwn(state.parents ?? {}, root) && agentParentId(thread) && !ordinaryIds.has(agentParentId(thread)!);
+    const group = !pins.includes(root) && !project && !orphan && state.groupBy === "custom" ? state.groups.find(group => group.id === state.members[root])?.id : undefined;
+    const origin = thread && originOf(thread);
+    const section = pins.includes(root) ? "pinned" : project ? "projects" : orphan ? "unlinked" : group ? "groups" : origin === "Workflows" ? "workflows" : origin === "Love Spot" ? "love" : "recents";
+    return { opened, section, project, group };
+  }
+  function revealPlacement(paths: ReturnType<typeof placementReveal>[]) {
+    const opened = Object.fromEntries(paths.flatMap(path => Object.entries(path.opened)));
+    if (Object.keys(opened).length) setExpanded(previous => ({ ...previous, ...opened }));
+    if (paths.some(({ section, project }) => foldsRef.current.sections[section] || project && foldsRef.current.projects[project])) changeFolds(previous => {
+      const next = { sections: { ...previous.sections }, projects: { ...previous.projects } };
+      for (const { section, project } of paths) { next.sections[section] = false; if (project) next.projects[project] = false; }
+      return next;
+    });
   }
   async function nestChats(ids: string[], parent: string) {
     await assignProject(ids, projectChatsRef.current[parent] ?? null, parent);
-    openPlacementPath(parent);
     if (!checkedChildren.current.has(parent)) void loadChildren(parent, undefined, false);
   }
   function organizationActions(thread: Thread) {
@@ -1975,7 +1999,6 @@ export default function Home() {
         }
         return next;
       });
-      if (parent) openPlacementPath(parent);
     } catch (cause) { setError(String(cause)); }
   }
   const chatReorder = useReorder({ dragType: CHAT_DRAG_TYPE,
@@ -2020,7 +2043,7 @@ export default function Home() {
     const runParent = find(thread.parentThreadId);
     const parentLabel = isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) ? `from ${runParent ? title(runParent) : "parent conversation"}` : null;
     const subtitle = attentionLine(approvals.find(approval => (approval.params.threadId ?? approval.ownerThreadId) === thread.id), !!attention.plans[thread.id]);
-    const hasAgents = (run ? ordinaryThreads.some(child => sidebarParent(child) === thread.id && (workflowSteps.get(child.id)?.runId === run.id || workflowRoots.get(thread.id)?.id === run.id && !workflowSteps.has(child.id))) : agentParents.has(thread.id)) || !!childCursors[thread.id];
+    const hasAgents = (run ? ordinaryThreads.some(child => workflowChild(child, run)) : agentParents.has(thread.id)) || !!childCursors[thread.id];
     const canExpandAgents = !searchTerm && hasAgents, branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
     return <ThreadActions key={thread.id} thread={{ ...thread, name }} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={(thread, name) => renameDisplayedThread(thread, name, identity?.id)} onArchive={archiveChats} pinned={pinned} onPin={togglePin} onOpenInTui={hasTerminal ? openInTui : undefined} onOpenSplit={!split.pane ? openSplit : undefined} onOpenWindow={windowAvailable ? openSessionWindow : undefined}
       bookmarked={bookmarked} onBookmark={toggleBookmark}
@@ -2099,8 +2122,7 @@ export default function Home() {
     if (seen.has(thread.id)) return null;
     const next = new Set(seen).add(thread.id);
     return workflowRuns.filter(run => run.rootThreadId === thread.id).map(run => {
-      const ids = new Set(workflowMembers(run).map(member => member.threadId));
-      const children = ordinaryThreads.filter(child => sidebarParent(child) === thread.id && (ids.has(child.id) || workflowRoots.get(thread.id)?.id === run.id && !workflowSteps.has(child.id)));
+      const children = ordinaryThreads.filter(child => workflowChild(child, run));
       return <div key={run.id}>{threadRow(thread, depth, true, run)}{!searchTerm && workflowOpen(run) && <>{children.map(child => threadBranch(child, depth + 1, next))}{workflowRoots.get(thread.id)?.id === run.id && moreChildren(thread.id, depth + 1)}</>}</div>;
     });
   }

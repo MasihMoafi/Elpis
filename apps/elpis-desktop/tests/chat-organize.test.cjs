@@ -151,17 +151,19 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations keep
 });
 
 test('workflow descendants and manual branches use the same recursive placement and corrupt cycles stay visible', async () => {
-  const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'latest-step', 'manual-root', 'manual-child', 'manual-branch', 'manual-leaf', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
-    ...(id === 'flow-step' || id === 'latest-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : {}) }));
+  const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'latest-step', 'other-root', 'other-step', 'older-step', 'manual-root', 'manual-child', 'manual-branch', 'manual-leaf', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
+    ...(id === 'flow-step' || id === 'latest-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : id === 'other-step' || id === 'older-step' ? { parentThreadId: 'other-root' } : {}) }));
   const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'flow-root',
     storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }),
       'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'manual-child': 'manual-root', 'manual-branch': 'manual-root', 'manual-leaf': 'manual-branch', 'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a' } }) },
     routes: { '/api/workflows/history': () => ({ data: [
       { id: 'flow-run', rootThreadId: 'flow-root', name: 'Older workflow', startedAt: 1, status: 'succeeded', tasks: [{ id: 'step', title: 'flow-step', assignedThreadId: 'flow-step' }, { id: 'grandchild', title: 'flow-grandchild', assignedThreadId: 'flow-grandchild' }] },
       { id: 'latest-run', rootThreadId: 'flow-root', name: 'Latest workflow', startedAt: 2, status: 'succeeded', tasks: [{ id: 'latest', title: 'latest-step', assignedThreadId: 'latest-step' }] },
+      { id: 'other-old-run', rootThreadId: 'other-root', name: 'Earlier destination', startedAt: 1, status: 'succeeded', tasks: [{ id: 'older', title: 'older-step', assignedThreadId: 'older-step' }] },
+      { id: 'other-run', rootThreadId: 'other-root', name: 'Current destination', startedAt: 2, status: 'succeeded', tasks: [{ id: 'other', title: 'other-step', assignedThreadId: 'other-step' }] },
     ] }), '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : tree.filter(thread => thread.name.toLowerCase().includes((url.searchParams.get('searchTerm') ?? '').toLowerCase())), nextCursor: null }) } });
   const { page } = f;
-  const runRow = id => aside(page).locator(`.thread-row[data-thread-id="flow-root"][data-workflow-run="${id}"]`);
+  const runRow = id => aside(page).locator(`.thread-row[data-workflow-run="${id}"]`);
   try {
     for (const id of ['flow-run', 'latest-run']) await runRow(id).getByRole('button', { name: /^Expand / }).waitFor();
     assert.equal(await row(page, 'flow-step').count(), 0, 'workflow branches start collapsed');
@@ -174,6 +176,27 @@ test('workflow descendants and manual branches use the same recursive placement 
       await eventually(async () => assert.equal(await row(page, 'flow-step').getAttribute('data-drop'), 'into', 'the workflow step accepts the middle drop before release'));
     });
     await eventually(async () => assert.equal(await row(page, 'manual-child').getAttribute('data-depth'), '2'));
+    await putUnder(page, 'flow-grandchild', 'other-root');
+    await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '1', 'a step moved to another workflow root remains visible'));
+    assert.equal(await runRow('other-run').getByRole('button', { name: /^Collapse / }).count(), 1, 'a foreign step is admitted by the latest destination run');
+    assert.equal(await runRow('other-old-run').getByRole('button', { name: /^Expand / }).count(), 1, 'the destination older run keeps its own members');
+    assert.equal(await aside(page).locator('.thread-row[data-thread-id="flow-grandchild"]').count(), 1);
+    await page.reload();
+    assert.equal(await row(page, 'flow-grandchild').count(), 0, 'a cross-workflow placement reloads collapsed');
+    await runRow('other-run').getByRole('button', { name: /^Expand / }).click();
+    await row(page, 'flow-grandchild').waitFor();
+    assert.equal(await aside(page).locator('.thread-row[data-thread-id="flow-grandchild"]').count(), 1, 'the moved step is restored once under its new root');
+    assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '1');
+    await putUnder(page, 'flow-grandchild', 'flow-root');
+    await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '1', 'moving directly back to its original root reveals its owning older run'));
+    assert.equal(await runRow('flow-run').getByRole('button', { name: /^Collapse / }).count(), 1);
+    assert.equal(await runRow('latest-run').getByRole('button', { name: /^Expand / }).count(), 1);
+    await putUnder(page, 'flow-grandchild', 'flow-step');
+    await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '2', 'moving back reveals the original workflow run and native parent'));
+    assert.equal(await runRow('flow-run').getByRole('button', { name: /^Collapse / }).count(), 1);
+    assert.equal(await runRow('latest-run').getByRole('button', { name: /^Expand / }).count(), 1, 'restoring an older step does not open the newer source run');
+    assert.equal(await aside(page).locator('.thread-row[data-thread-id="flow-grandchild"]').count(), 1);
+    await expandPath(page, ['manual-root', 'manual-branch']);
     await action(page, 'flow-grandchild', 'Take out');
     await eventually(async () => assert.equal(await row(page, 'flow-grandchild').getAttribute('data-depth'), '0'));
     await runRow('flow-run').getByRole('button', { name: /^Collapse / }).click();
@@ -203,6 +226,46 @@ test('workflow descendants and manual branches use the same recursive placement 
     const results = aside(page).locator('section[aria-label="Results"]');
     await eventually(async () => assert.equal(await results.locator('.thread-row').count(), 4, 'both runs of the matching root and its two matching step chats remain searchable'));
     assert.equal(await results.locator('.thread-row.child').count(), 0, 'recursive matches stay flat while searching');
+    assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('successful placement reveals folded workflow, project and group destinations; refusal preserves their folds', async () => {
+  const tree = ['chat-a', 'workflow-parent', 'workflow-step', 'project-parent', 'group-parent', 'untouched-parent'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
+  const f = await fixture({ desktop: true, threads: tree, width: 1440, height: 900, storage: { ...storage,
+    'elpis-project-chats-v1': JSON.stringify({ 'project-parent': 'existing' }),
+    'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: true, projects: true, groups: true }, projects: { existing: true } }),
+    'elpis-chat-groups-v1': JSON.stringify({ groups: [{ id: 'target', name: 'Target group' }, { id: 'untouched', name: 'Untouched group' }], members: { 'group-parent': 'target', 'untouched-parent': 'untouched' }, groupBy: 'custom', sortBy: 'recency', collapsed: ['target', 'untouched'], order: [] }) },
+    routes: { '/api/workflows/history': () => ({ data: [{ id: 'folded-run', rootThreadId: 'workflow-parent', name: 'Folded workflow', status: 'succeeded', tasks: [{ id: 'step', assignedThreadId: 'workflow-step' }] }] }) } });
+  const { page } = f, section = name => aside(page).locator('.thread-list').getByRole('button', { name, exact: true });
+  try {
+    const before = await page.evaluate(() => ({ groups: window.elpisDesktop.storage.getItem('elpis-chat-groups-v1'), folds: window.elpisDesktop.storage.getItem('elpis-sidebar-folds-v1') }));
+    await page.evaluate(() => { const store = window.elpisDesktop.storage, save = store.setItem; window.restorePlacementStore = () => { store.setItem = save; }; store.setItem = (key, value) => { if (key === 'elpis-chat-groups-v1') throw Error('Placement refused'); return save(key, value); }; });
+    await action(page, 'chat-a', 'Put under…');
+    const dialog = page.getByRole('alertdialog', { name: 'Put chats under a chat' });
+    await dialog.getByRole('combobox', { name: 'Parent chat', exact: true }).click();
+    await page.getByRole('option', { name: 'workflow-parent', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Put under', exact: true }).click();
+    await dialog.getByRole('alert').filter({ hasText: 'Could not save chat placement' }).waitFor();
+    for (const name of ['Workflows', 'Projects', 'Groups']) assert.equal(await section(name).getAttribute('aria-expanded'), 'false', 'a refused placement does not unfold a section');
+    assert.deepEqual(await page.evaluate(() => ({ groups: window.elpisDesktop.storage.getItem('elpis-chat-groups-v1'), folds: window.elpisDesktop.storage.getItem('elpis-sidebar-folds-v1') })), before);
+    await page.evaluate(() => window.restorePlacementStore());
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    for (const [target, name] of [['workflow-parent', 'Workflows'], ['project-parent', 'Projects'], ['group-parent', 'Groups']]) {
+      await putUnder(page, 'chat-a', target);
+      await eventually(async () => assert.equal(await row(page, 'chat-a').getAttribute('data-depth'), '1', `${name} reveals its destination after the placement saves`));
+      assert.equal(await section(name).getAttribute('aria-expanded'), 'true');
+      assert.equal(await aside(page).locator('.thread-row[data-thread-id="chat-a"]').count(), 1);
+    }
+    assert.equal(await project(page, 'Existing project').getByRole('button', { name: 'Existing project', exact: true }).getAttribute('aria-expanded'), 'true');
+    assert.equal(await project(page, 'Target group').getByRole('button', { name: 'Target group', exact: true }).getAttribute('aria-expanded'), 'true');
+    assert.equal(await project(page, 'Untouched group').getByRole('button', { name: 'Untouched group', exact: true }).getAttribute('aria-expanded'), 'false');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(window.elpisDesktop.storage.getItem('elpis-chat-groups-v1')).collapsed), ['untouched']);
+    await page.reload(); await row(page, 'group-parent').waitFor();
+    assert.equal(await row(page, 'chat-a').count(), 0, 'revealing section and group folds does not persist an expanded chat branch');
+    await expandPath(page, ['group-parent']); await row(page, 'chat-a').waitFor();
+    assert.equal(await aside(page).locator('.thread-row[data-thread-id="chat-a"]').count(), 1);
     assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
