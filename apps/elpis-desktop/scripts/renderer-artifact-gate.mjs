@@ -24,11 +24,6 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
-    "tests/chat-organize.test.cjs": {
-      "blob": "6d6d7e96559aaefb0950437ac482a5c0de70a9c5",
-      "approval": "70e669c0731370e7cfe18f1070b6704de40c0a9d",
-      "reason": "R73, Masih 26 Oct: drag a sub-sub agent outside its parent and grow the tree with an indentation for every generation. Supersede the former one-level and native-move prohibitions. Preserve all existing organization, grouping, draft, search, persistence, failure and no-runtime-mutation checks. Add real native/workflow/manual recursive drag-out and subtree reparenting, light/dark measured visual geometry, collapse/reload, cycle and multi-selection guards, parent/grandchild pagination without Background runs, and refused final-save rollback."
-    },
     "tests/provider-model-pairs.test.cjs": {
       "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
       "approval": "56ab914e564a4900c93d6e03323c5aa02db45210",
@@ -285,9 +280,9 @@ export const retainedUpdates = {
       "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/chat-groups.test.mjs": {
-      "blob": "2df494abc42feb2c83e34ea9259c25050ebfad6b",
-      "approval": "767050d573b68387feea4bf67f90df69f7ec96d8",
-      "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed."
+      "blob": "5c5bf59b2f6b13bf8caad7b805757d2813e494a8",
+      "approval": "70e669c0731370e7cfe18f1070b6704de40c0a9d",
+      "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed. R73, Masih 26 Oct: recursive agent trees replace the old one-level nesting limit. Preserve valid multigeneration saved parents, explicit null root overrides, persisted branch expansion and malformed-cycle normalization. Keep existing grouping, sort, storage and failure checks; verify native-cycle multi-selection uses the same effective tree as rendering."
     },
     "tests/composer-corner.test.cjs": {
       "blob": "d77e771f90a41d538ad3deee2a22ac52f62cc7de",
