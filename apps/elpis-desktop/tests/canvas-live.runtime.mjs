@@ -88,7 +88,7 @@ try {
     if (attempt > 200) throw Error('The provider bridge did not listen within 20 s');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  app = await startDesktopServer({ staticDir: path.join(appRoot, 'out'), socketPath });
+  app = await startDesktopServer({ staticDir: process.env.CANVAS_LIVE_RENDERER || path.join(appRoot, 'out'), socketPath });
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } }); page.setDefaultTimeout(20000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
