@@ -864,8 +864,8 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
     const keydown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (!board.current?.getClientRects().length || target && target !== document.body && !target.closest(".agents-canvas")) return;
-      // Fields and popup owners consume their own keys, including Escape and navigation.
-      if (target?.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='dialog'], [role='menu'], [role='listbox']")) return;
+      // Fields, readable errors and popup owners consume their own keys, including navigation and copying.
+      if (target?.closest("input, textarea, select, .canvas-error-details, [contenteditable]:not([contenteditable='false']), [role='dialog'], [role='menu'], [role='listbox']")) return;
       const onBoard = !target || target === document.body || Boolean(target.closest(".react-flow, .iso-board"));
       const editingKey = (event.ctrlKey || event.metaKey) && ["KeyA", "KeyZ", "KeyY", "KeyC", "KeyX", "KeyV", "KeyD"].includes(event.code) || ["Delete", "Backspace", "Home", "F2"].includes(event.key);
       if (!onBoard && !editingKey) return;

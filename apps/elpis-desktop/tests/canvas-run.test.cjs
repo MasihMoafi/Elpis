@@ -57,6 +57,16 @@ test('a failed writer explains why its descendants did not start', async () => {
     await fixture.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const notice = fixture.canvas.getByRole('alert').filter({ hasText: 'Writable success requires changed files' }); await notice.waitFor();
     const run = fixture.canvas.getByRole('button', { name: 'Run graph', exact: true });
+    await fixture.agents.first().click();
+    const selected = fixture.canvas.locator('.react-flow__node-agent.selected');
+    assert.equal(await selected.count(), 1);
+    const ids = await fixture.agents.evaluateAll(nodes => nodes.map(node => node.dataset.id));
+    const initialDetails = notice.getByRole('region', { name: 'Workflow error details', exact: true });
+    await initialDetails.focus(); await initialDetails.press('Control+a');
+    assert.equal(await selected.count(), 1, 'selecting error text does not select every agent');
+    await initialDetails.press('Backspace');
+    assert.deepEqual(await fixture.agents.evaluateAll(nodes => nodes.map(node => node.dataset.id)), ids, 'reading an error cannot delete agents');
+    await fixture.page.evaluate(() => window.getSelection()?.removeAllRanges());
     for (const width of [960, 1440]) for (const theme of ['light', 'dark']) {
       await fixture.page.setViewportSize({ width, height: 900 });
       if (await fixture.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(fixture.page, theme);
@@ -81,6 +91,8 @@ test('a failed writer explains why its descendants did not start', async () => {
           const tail = range.getBoundingClientRect(), box = el.getBoundingClientRect();
           return el.scrollTop > 0 && tail.top >= box.top - 1 && tail.bottom <= box.bottom + 1;
         }, end), true, 'keyboard scrolling reaches the final readable line');
+        await details.press('Home');
+        await fixture.page.waitForFunction(el => el.scrollTop === 0, await details.elementHandle());
         await assertUiFit(notice, `bottom workflow failure ${width} ${theme} ${iso ? '3D' : '2D'}`);
         await captureReview(fixture.page, `workflow-failure-${width}-${theme}-${iso ? '3d' : '2d'}`);
       }
