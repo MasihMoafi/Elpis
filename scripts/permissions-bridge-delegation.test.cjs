@@ -81,7 +81,7 @@ async function main() {
   const engineShim = path.join(root, 'engine'), agyShim = path.join(root, 'agy');
   fs.writeFileSync(engineShim, `#!/usr/bin/env node\nprocess.argv.splice(2, 0, '--engine-fault'); require(${JSON.stringify(__filename)});\n`, { mode: 0o755 });
   fs.writeFileSync(agyShim, `#!/usr/bin/env node\nprocess.argv.push('--agy-fixture'); require(${JSON.stringify(path.join(__dirname, 'permissions-bridge.test.cjs'))});\n`, { mode: 0o755 });
-  const checks = [], failures = [], approvals = [], messages = [], servers = [], controls = [], observations = [];
+  const checks = [], failures = [], approvals = [], messages = [], servers = [], controls = [], observations = [], notificationWaits = new Set();
   let files = 0, currentGroup, defaultMode = 'full';
   const waitFor = async (check, label, ms = 30000) => {
     const deadline = Date.now() + ms;
@@ -89,8 +89,8 @@ async function main() {
   };
   const pass = name => { checks.push(name); console.log(`PASS ${name}`); };
   const observe = (kind, result) => {
-    const { threadId, status, prompts, wrote, refused, permissionResult, providerModes } = result;
-    const observation = { group: currentGroup, kind, threadId, status, prompts, wrote, ...(refused && { refused }), ...(permissionResult && { permissionResult }), ...(providerModes && { providerModes }) };
+    const { threadId, status, prompts, wrote, refused, permissionResult, providerModes, isError, text } = result;
+    const observation = { group: currentGroup, kind, threadId, status, prompts, wrote, ...(isError && { error: text }), ...(refused && { refused }), ...(permissionResult && { permissionResult }), ...(providerModes && { providerModes }) };
     observations.push(observation);
     console.log(`OBSERVED ${JSON.stringify(observation)}`);
   };
@@ -120,19 +120,35 @@ async function main() {
     const request = (method, params) => new Promise((resolve, reject) => {
       const id = nextId++; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params }));
     });
-    const notification = (method, threadId) => new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { events.off(method, receive); reject(Error(`${method} timed out`)); }, 20000);
-      function receive(params) { if (threadId && params?.threadId !== threadId) return; clearTimeout(timer); events.off(method, receive); resolve(params); }
-      events.on(method, receive);
-    });
+    const notification = (method, threadId) => {
+      let cancel;
+      const promise = new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (params, error) => {
+          if (settled) return;
+          settled = true; clearTimeout(timer); events.off(method, receive); notificationWaits.delete(cancel);
+          error ? reject(error) : resolve(params);
+        };
+        const timer = setTimeout(() => finish(null, Error(`${method} timed out`)), 20000);
+        function receive(params) { if (!threadId || params?.threadId === threadId) finish(params); }
+        cancel = () => finish(null);
+        notificationWaits.add(cancel); events.on(method, receive);
+      });
+      promise.cancel = cancel;
+      return promise;
+    };
     await request('initialize', { clientInfo: { name: 'bridge_delegation_fixture', version: '1' }, capabilities: { experimentalApi: true } });
     ws.send(JSON.stringify({ method: 'initialized' }));
-    // Applies a mode to the parent and waits until its engine confirms it.
+    // The UI opens/subscribes a chat before choosing its mode. This also loads a closed native helper.
     async function select(threadId, mode) {
       const [permissions, approvalPolicy] = MODES[mode];
+      const opened = await request('thread/resume', { threadId, excludeTurns: true });
+      assert.equal(opened.thread?.id, threadId, 'the settings client opens the chat it changes');
       const applied = notification('thread/settings/updated', threadId);
-      await request('thread/settings/update', { threadId, approvalPolicy, permissions });
-      assert.equal((await applied).threadSettings.approvalPolicy, approvalPolicy);
+      try {
+        const [, confirmed] = await Promise.all([request('thread/settings/update', { threadId, approvalPolicy, permissions }), applied]);
+        assert.equal(confirmed.threadSettings.approvalPolicy, approvalPolicy);
+      } finally { applied.cancel(); }
     }
     async function setDefault(mode) {
       const [permissions, approvalPolicy] = MODES[mode];
@@ -179,8 +195,9 @@ async function main() {
       await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'bridge_delegation_fixture', version: '1' } });
       proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
       const delegate = async args => {
-        const text = (await rpc('tools/call', { name: 'delegate', arguments: { task: 'Fixture write.', cwd, wait: true, ...args } })).content[0].text;
-        return { text, threadId: text.match(/Elpis thread (\S+)\)/)?.[1], status: text.match(/status: (\S+)/)?.[1] };
+        const result = await rpc('tools/call', { name: 'delegate', arguments: { task: 'Fixture write.', cwd, wait: true, ...args } });
+        const text = result.content[0].text;
+        return { text, isError: result.isError === true, threadId: text.match(/Elpis thread (\S+)\)/)?.[1], status: text.match(/status: (\S+)/)?.[1] };
       };
       // Ends the server and waits until the bridge has closed its connections (none are left
       // when the bridge stopped its helper already).
@@ -274,6 +291,7 @@ async function main() {
         provider.hanging.clear(); provider.actions.length = 0; fault(null); fs.chmodSync(storeDir, 0o755);
         await pause(1000);
       } finally {
+        for (const cancel of [...notificationWaits]) cancel();
         // Each group's parents have their own elpis-agents server; its helper connections close with it.
         for (const proc of servers.splice(0)) proc.kill();
         fault(null);
@@ -435,6 +453,7 @@ async function main() {
       assert(requirementReads() > beforeRequirements, 'the new helper reads the managed requirements proxy at its start');
       assert.equal(blocked.wrote, false, 'P4: an automatic helper cannot use a managed-forbidden Full access default');
       assert.equal(blocked.prompts, 0, 'a managed refusal does not become a user approval');
+      assert.equal(blocked.isError, true, 'a managed-forbidden mode returns a failed tool call');
       assert.match(blocked.text, /restricted by managed settings/i, 'the refused permission mode is reported');
       assert.equal(provider.requests.length, before, 'a forbidden mode is refused before inference');
       const beforeScopedRequirements = requirementReads();
@@ -704,6 +723,7 @@ async function main() {
     });
     if (failures.length) process.exitCode = 1;
   } finally {
+    for (const cancel of [...notificationWaits]) cancel();
     fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, failures, observations, approvals, messages, requests: provider.requests }, null, 2));
     console.log(`Evidence: ${root}`);
     for (const proc of servers) proc.kill();
