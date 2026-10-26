@@ -19,26 +19,31 @@ export function useMatilda({ ready, told, send, onError }: {
   latest.current = { ready, told, send, onError, persona };
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
   const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const mounted = useRef(false), poll = useRef(0);
   /** Asks the bridge whether she is still writing, once a second while she is: no stream stays open, because each window's streams share the browser's six connections. */
   const ask = useCallback(async () => {
+    if (!mounted.current) return;
+    clearTimeout(asking.current);
+    const request = ++poll.current;
     try {
       const state = await api<{ busy?: boolean; error?: string }>("/love-spot/talk");
+      if (!mounted.current || request !== poll.current) return;
       busy.current = !!state.busy; setReplying(busy.current);
       // An error left from an earlier visit is not news.
       if (said.current !== null && state.error && state.error !== said.current) latest.current.onError(state.error);
       said.current = state.error ?? "";
       if (busy.current) asking.current = setTimeout(ask, 1000);
-    } catch { /* The next look asks again. */ }
+    } catch { if (mounted.current && request === poll.current) asking.current = setTimeout(ask, 1000); }
   }, []);
   const look = useCallback(async () => {
-    if (!ids.current.size) return;
+    if (!mounted.current || !ids.current.size) return;
     const now = latest.current;
     if (!now.ready || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
     const text = now.told(ids.current); ids.current = new Set();
     if (!text) return;
     working.current = true; said.current = "";
-    try { await now.send(text, now.persona.trim() || PROTOCOL); clearTimeout(asking.current); ask(); }
-    catch (cause) { now.onError(cause instanceof Error ? cause.message : "Matilda could not answer."); }
+    try { await now.send(text, now.persona.trim() || PROTOCOL); ask(); }
+    catch (cause) { if (mounted.current) now.onError(cause instanceof Error ? cause.message : "Matilda could not answer."); }
     finally { working.current = false; }
   }, [ask]);
   const notice = useCallback((found: string[]) => {
@@ -46,7 +51,7 @@ export function useMatilda({ ready, told, send, onError }: {
     for (const id of found) ids.current.add(id);
     clearTimeout(timer.current); timer.current = setTimeout(look, QUIET);
   }, [look]);
-  useEffect(() => { ask(); return () => { clearTimeout(timer.current); clearTimeout(asking.current); }; }, [ask]);
+  useEffect(() => { mounted.current = true; ask(); return () => { mounted.current = false; poll.current++; clearTimeout(timer.current); clearTimeout(asking.current); }; }, [ask]);
   return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice };
 }
 

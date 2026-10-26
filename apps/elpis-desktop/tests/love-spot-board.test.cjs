@@ -87,6 +87,28 @@ test('a reply reaches the board after navigating away', async () => {
   } finally { await f.close(); }
 });
 
+test('Matilda recovers from a failed busy poll and answers later board notes', async () => {
+  const f = await loveSpotFixture({ replyDelay: 2500 });
+  let sawBusy = false, refused = false;
+  try {
+    await f.page.route('**/api/love-spot/talk', async route => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      if (sawBusy && !refused) { refused = true; return route.fulfill({ status: 503, json: { error: 'Temporarily disconnected' } }); }
+      const response = await route.fetch(), state = await response.json();
+      if (state.busy) sawBusy = true;
+      await route.fulfill({ response });
+    });
+    await f.open(f.page); await note(f, 'First thought before the connection wavers');
+    await f.waitFor(() => refused, 'the busy poll was not interrupted', 20000);
+    await f.waitFor(s => s.elements.some(e => e.id === 'love-reply-turn-1'), 'the first reply was not saved');
+    await f.page.getByText('Matilda is writing…', { exact: true }).waitFor({ state: 'hidden', timeout: 8000 });
+    await note(f, 'A later thought after reconnecting');
+    await f.waitFor(() => f.turns.length === 2, 'a failed poll left later notes blocked', 20000);
+    assert.match(f.turns[1].attachments.find(a => a.type === 'text').text, /A later thought after reconnecting/);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a long non-Latin reply avoids obstacles after the editor restores its actual font dimensions', async () => {
   const f = await loveSpotFixture({ reply: '天地玄黄宇宙洪荒'.repeat(32) });
   try {
