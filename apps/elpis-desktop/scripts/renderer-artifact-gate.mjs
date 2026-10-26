@@ -282,7 +282,7 @@ export const retainedUpdates = {
     "tests/chat-groups.test.mjs": {
       "blob": "5c5bf59b2f6b13bf8caad7b805757d2813e494a8",
       "approval": "70e669c0731370e7cfe18f1070b6704de40c0a9d",
-      "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed. R73, Masih 26 Oct: recursive agent trees replace the old one-level nesting limit. Preserve valid multigeneration saved parents, explicit null root overrides, persisted branch expansion and malformed-cycle normalization. Keep existing grouping, sort, storage and failure checks; verify native-cycle multi-selection uses the same effective tree as rendering."
+      "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed. R73, Masih 26 Oct: recursive agent trees replace the old one-level nesting limit. Preserve valid multigeneration saved parents, explicit null root overrides, initially collapsed branches (A177) and malformed-cycle normalization. Keep existing grouping, sort, storage and failure checks; verify native-cycle multi-selection uses the same effective tree as rendering."
     },
     "tests/composer-corner.test.cjs": {
       "blob": "d77e771f90a41d538ad3deee2a22ac52f62cc7de",
