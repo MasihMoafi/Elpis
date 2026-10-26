@@ -13,12 +13,12 @@ const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map
 }));
 const base = (id, name, active = false) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: active ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const graph = { workflowId: 'run-0', name: 'Fix a bug', nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} }, { id: 'writer', type: 'agent', position: { x: 400, y: 0 }, data: { title: 'Build', instruction: 'Return the requested evidence.', model: null, writeScopes: ['.'], acceptanceCriteria: ['Return evidence'] } }], edges: [] };
-const open = async (colorScheme, savedRuns = runs, state = {}, names = {}) => {
+const open = async (colorScheme, savedRuns = runs, state = {}, names = {}, routes = {}) => {
   const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : [])]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name }));
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: listed,
   // The fixture waits for chat-a, a workflow here, so the Workflows section is open (it starts folded: sidebar-organize.runtime.mjs).
   storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }), 'elpis-workflow-draft-v1': JSON.stringify(graph), 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p', name: 'Fixture', cwd: CWD }], selectedId: 'p' }), ...state },
-  routes: { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : listed, nextCursor: null }), '/api/workflows/history': () => ({ data: savedRuns }), '/api/folders': () => ({ data: [] }), '/api/workflows': () => ({ data: [] }) } });
+  routes: { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : listed, nextCursor: null }), '/api/workflows/history': () => ({ data: savedRuns }), '/api/folders': () => ({ data: [] }), '/api/workflows': () => ({ data: [] }), ...routes } });
   return f;
 };
 const sidebar = page => page.locator('aside.sidebar');
@@ -27,6 +27,41 @@ const row = (page, id) => sidebar(page).locator(`.thread-row[data-thread-id="${i
 const markColor = locator => locator.evaluate(el => getComputedStyle(el).backgroundColor);
 async function eventually(check) { const deadline = Date.now() + 5000; for (;;) { try { return await check(); } catch (e) { if (Date.now() > deadline) throw e; await new Promise(resolve => setTimeout(resolve, 40)); } } }
 async function shot(page, name) { const dir = process.env.ELPIS_PARITY_SHOTS || path.join(os.homedir(), '.cache/elpis-shots'); await fs.mkdir(dir, { recursive: true }); await page.screenshot({ path: path.join(dir, `wfident-${name}.png`) }); }
+
+for (const colorScheme of ['light', 'dark']) test(`workflow history keeps running work visible, reports a failed Remove and restores with Undo (${colorScheme})`, async () => {
+  const saved = [{ ...runs[0], removable: false, removalReason: 'Finish this workflow before removing it from history.' }, { ...runs[2], removable: true }];
+  const removed = []; let refuse = true;
+  const f = await open(colorScheme, saved, {}, {}, {
+    '/api/workflows/history': () => ({ data: saved.filter(run => !removed.includes(run.id)), canUndo: removed.length > 0 }),
+    '/api/workflows/history/run-2/remove': () => { if (refuse) return { __http: 503, error: 'Could not save workflow history. Nothing was removed.' }; removed.push('run-2'); return { removed: 'run-2', canUndo: true }; },
+    '/api/workflows/history/undo': () => ({ restored: removed.pop(), canUndo: removed.length > 0 }),
+  });
+  const { page } = f;
+  const show = async () => { await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.getByRole('button', { name: 'History', exact: true }).click(); return page.getByRole('region', { name: 'Workflow history', exact: true }); };
+  try {
+    let history = await show();
+    const active = history.locator('li').filter({ hasText: 'Fix a bug' });
+    await active.getByRole('button', { name: /Remove .* from history/ }).waitFor();
+    assert.equal(await active.getByRole('button', { name: /Remove .* from history/ }).isDisabled(), true);
+    assert.match(await active.innerText(), /Finish this workflow/);
+    await assertUiFit(history, 'history actions and running-work reason fit');
+    const finished = () => history.locator('li').filter({ hasText: 'Research pricing' });
+    await finished().getByRole('button', { name: /Remove .* from history/ }).click();
+    await history.getByRole('alert').filter({ hasText: 'Nothing was removed' }).waitFor();
+    assert.equal(await finished().count(), 1, 'a failed persistence request keeps the entry');
+    await assertUiFit(history, 'history persistence failure fits beside its actions');
+    refuse = false;
+    await finished().getByRole('button', { name: /Remove .* from history/ }).click();
+    await eventually(async () => assert.equal(await finished().count(), 0));
+    assert.equal(await active.count(), 1, 'removing history cannot hide ongoing work');
+    await page.reload(); history = await show();
+    assert.equal(await finished().count(), 0);
+    await history.getByRole('button', { name: 'Undo history removal', exact: true }).click();
+    await finished().waitFor();
+    assert.equal(f.posts.some(post => /\/(?:archive|delete|interrupt|stop)$/.test(post.path)), false, 'Remove and Undo do not archive chats or stop work');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 for (const colorScheme of ['light', 'dark']) test(`four saved workflows have distinct names/colours and twelve nested legacy step chats (${colorScheme})`, async () => {
   const f = await open(colorScheme), { page } = f;

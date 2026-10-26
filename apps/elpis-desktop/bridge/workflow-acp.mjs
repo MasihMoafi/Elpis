@@ -10,6 +10,60 @@ const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
 const writer = task => ['implement', 'fix'].includes(task.kind);
 const alive = pid => { if (!Number.isSafeInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
 
+/** History visibility only. Run files, chats and execution are never changed; Undo survives an app restart. */
+export function createWorkflowHistory(file) {
+  let removed, loading, changing = Promise.resolve();
+  const terminal = new Set([...ended, 'completed', 'stopped']);
+  const finished = run => terminal.has(run.status)
+    && (!run.next || terminal.has(run.next.status))
+    && !run.tasks?.some(task => task.status === 'running')
+    && !['running', 'reviewing'].includes(run.mother?.status) && run.review?.status !== 'reviewing';
+  const load = () => loading ??= fs.readFile(file, 'utf8').then(raw => {
+    const saved = JSON.parse(raw);
+    if (saved.version !== 1 || !Array.isArray(saved.removed) || saved.removed.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) throw Error('Invalid workflow history');
+    removed = [...new Set(saved.removed)];
+  }).catch(error => {
+    if (error.code === 'ENOENT') { removed = []; return; }
+    loading = null; throw new BridgeError('Could not read workflow history. Nothing was removed.', 503);
+  });
+  const change = action => {
+    const pending = changing.catch(() => {}).then(async () => {
+      await load();
+      const next = [...removed], result = await action(next);
+      const temp = `${file}.${process.pid}.tmp`;
+      try {
+        await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+        await fs.writeFile(temp, JSON.stringify({ version: 1, removed: next }), { mode: 0o600 });
+        await fs.rename(temp, file);
+      } catch {
+        await fs.unlink(temp).catch(() => {});
+        throw new BridgeError('Could not save workflow history. Nothing was removed or restored.', 503);
+      }
+      removed = next;
+      return { ...result, canUndo: removed.length > 0 };
+    });
+    changing = pending; return pending;
+  };
+  return {
+    async list(runs) {
+      await changing.catch(() => {}); await load();
+      return { data: runs.filter(run => !removed.includes(run.id) || !finished(run)).map(run => ({ ...run, removable: finished(run),
+        ...(!finished(run) ? { removalReason: 'Finish this workflow before removing it from history.' } : {}) })), canUndo: removed.length > 0 };
+    },
+    remove(id, readRuns) {
+      return change(async next => {
+        const runs = await readRuns();
+        const run = runs.find(run => run.id === id);
+        if (!run) throw new BridgeError('Workflow not found', 404);
+        if (!finished(run)) throw new BridgeError('Finish this workflow before removing it from history. Running work stays visible.', 409);
+        if (!next.includes(id)) next.push(id);
+        return { removed: id };
+      });
+    },
+    undo() { return change(next => ({ restored: next.pop() ?? null })); },
+  };
+}
+
 /** A write scope as a folder inside `base`, made when missing (each agent's own folder is new on its first run). The
  * nearest folder that exists must already be inside `base`, so a link out of the project creates nothing. */
 async function projectFolder(base, scope) {

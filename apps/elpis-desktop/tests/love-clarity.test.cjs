@@ -73,8 +73,8 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
     assert.ok(tool.color[0] > tool.color[2] && tool.fill[0] > tool.fill[2], `Selected canvas tool is red, including its visible fill: ${JSON.stringify(tool)}`);
     await page.screenshot({ path: path.join(shots, `${colorScheme}-love.png`) });
     await page.locator('[data-nav-page="canvas"]').click();
-    await page.getByRole('button', { name: 'Current workflows', exact: true }).click();
-    const history = page.getByRole('region', { name: 'Current workflows', exact: true });
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    const history = page.getByRole('region', { name: 'Workflow history', exact: true });
     await history.getByText('Review the example', { exact: true }).waitFor();
     assert.match(await history.textContent(), /running.*1\/2 tasks complete/);
     await page.screenshot({ path: path.join(shots, `${colorScheme}-workflows.png`) });

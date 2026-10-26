@@ -11,6 +11,7 @@ import net from 'node:net';
 import { DesktopClient, existingSocket } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const CHILD = '00000000-0000-0000-0000-000000000002';
@@ -72,7 +73,7 @@ test('A32 missing or disabled writable config layers explain why and write nothi
     assert.equal(socket.sent.filter(row => row.method === 'config/batchWrite').length, 0);
   } finally { client.close(); }
 });
-function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`) } = {}) {
+function fixture({ prunerSupported = false, omitWorkflowParentInList = false, replacementPages, promptPages, browserConfig, threadListPaging = false, archiveDirectory = path.join(os.tmpdir(), `bridge-archives-${randomUUID()}`), clientOptions = {} } = {}) {
   const workflowRecords = [];
   let pruner = {model:"optimizer-original",provider:"openai",version:"pruner-v1",providers:[{id:"openai",displayName:"OpenAI"}],systemPrompt:"PRIVATE CONFIG SECRET"};
   const configRead = { config: {
@@ -174,7 +175,8 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
   };
   socket.close = () => { socket.closed = true; socket.emit('close'); };
   // 156e765a4 adds optional gh instructions. Provider routing tests must not read the operator's connector or credentials.
-  const client = new DesktopClient(socket, { browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`), nodeSpec: node => ({ name: node.name, command: process.execPath, args: [fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url))], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) } });
+  const workflowHome = path.join(os.tmpdir(), `bridge-workflows-${randomUUID()}`);
+  const client = new DesktopClient(socket, { home: workflowHome, browserConfig, archiveDirectory, githubConnector: { instructions: async () => null }, workflowOptions: { stateDir: workflowHome, nodeSpec: node => ({ name: node.name, command: process.execPath, args: [fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url))], env: { FAKE_ACP_MODELS: node.model }, model: node.model }) }, ...clientOptions });
   return { socket, client, threads, configRead, requirementsRead, workflowRecords, hooksList, engineSettings };
 }
 
@@ -1058,6 +1060,123 @@ test('workflow history includes native teams discovered through their task chats
     assert.equal(result.data[0].id, id);
     assert.equal(result.data[0].rootThreadId, ROOT);
   } finally { client.close(); }
+});
+
+test('workflow history Remove and restart Undo are profile-scoped; active work and chats are preserved', async t => {
+  const dir = createTestTempDir(path.join(os.tmpdir(), 'elpis-history-'));
+  const home = path.join(dir, 'profile'), ambient = path.join(dir, 'ambient');
+  const savedId = '00000000-0000-0000-0000-000000000098', activeId = '00000000-0000-0000-0000-000000000099', nativeId = '00000000-0000-0000-0000-000000000096';
+  const saved = { id: savedId, rootThreadId: ROOT, name: 'Finished team', status: 'cancelled', tasks: [{ id: 'not-started', status: 'pending' }] };
+  const seed = async (profile, record) => {
+    await fs.mkdir(path.join(profile, 'desktop-workflows'), { recursive: true });
+    const file = path.join(profile, 'desktop-workflows', `${record.id}.json`), bytes = JSON.stringify(record);
+    await fs.writeFile(file, bytes); return { file, bytes };
+  };
+  const original = await seed(home, saved), untouched = await seed(ambient, { ...saved, name: 'Other profile' });
+  const beforeHome = process.env.ELPIS_HOME, connect = DesktopClient.connect;
+  let app, first, second;
+  const open = async client => {
+    const result = await startDesktopServer({ ...(client ? { client } : {}), elpisHome: home, trashFile: path.join(home, 'chat-trash.json'),
+      loveSpot: { directory: path.join(home, 'drawing'), screenshots: path.join(home, 'screenshots') } });
+    const url = new URL(result.url), origin = url.origin;
+    const auth = await fetch(`${origin}/api/session`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: new URLSearchParams(url.hash.slice(1)).get('token') }) });
+    assert.equal(auth.status, 200);
+    const headers = { Origin: origin, 'Content-Type': 'application/json', Cookie: auth.headers.get('set-cookie').split(';')[0] };
+    return { app: result, request: (route = '', method = 'GET') => fetch(`${origin}/api/workflows/history${route}`, { method, headers, ...(method === 'POST' ? { body: '{}' } : {}) }) };
+  };
+  try {
+    process.env.ELPIS_HOME = ambient;
+    // Stand in only for the Unix transport: the server's actual options construct the real client and storage.
+    DesktopClient.connect = async options => {
+      first = fixture({ clientOptions: { ...options, home: options.home, workflowOptions: {} } }); await first.client.initialize();
+      first.threads.get(CHILD).source = { subAgent: { other: `work_graph:${activeId}:review` } };
+      first.workflowRecords.push({ id: activeId, rootThreadId: ROOT, name: 'Still working', status: 'running', tasks: [] });
+      return first.client;
+    };
+    let opened = await open(); app = opened.app; let request = opened.request;
+    DesktopClient.connect = connect;
+    let history = await (await request()).json();
+    assert.deepEqual(history.data.map(run => run.name).sort(), ['Finished team', 'Still working']);
+    assert.equal(history.canUndo, false);
+    const refused = await request(`/${activeId}/remove`, 'POST');
+    assert.equal(refused.status, 409); assert.match((await refused.json()).error, /finish|running/i);
+    assert.equal((await request('/00000000-0000-0000-0000-000000000097/remove', 'POST')).status, 404);
+    const continuation = { ...saved, id: nativeId, status: 'succeeded', next: { status: 'waiting' } };
+    first.workflowRecords.push(continuation);
+    for (const status of ['waiting', 'starting', 'running', 'unknown', undefined]) {
+      continuation.next.status = status;
+      const blocked = await request(`/${nativeId}/remove`, 'POST');
+      assert.equal(blocked.status, 409, `a succeeded parent cannot hide a ${status ?? 'missing-status'} continuation`);
+      const visible = (await (await request()).json()).data.find(run => run.id === nativeId);
+      assert.ok(visible); assert.equal(visible.removable, false);
+    }
+    continuation.next.status = 'succeeded';
+    assert.equal((await request(`/${nativeId}/remove`, 'POST')).status, 200, 'only a terminal continuation permits removal');
+    assert.equal((await request('/undo', 'POST')).status, 200);
+    first.workflowRecords.pop();
+    // A second Remove waits behind a held metadata write. Its native run resumes before that queue advances.
+    const resumed = { ...saved, id: nativeId, status: 'completed' }; first.workflowRecords.push(resumed);
+    const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+    const writing = gate(), releaseWrite = gate(), queued = gate();
+    const renameBeforeQueue = fs.rename, removeBeforeQueue = first.client.removeWorkflowHistory;
+    let holdWrite = true, firstRemoval, queuedRemoval;
+    fs.rename = async (source, target) => {
+      if (holdWrite && target === path.join(home, 'desktop-workflow-history.json')) { holdWrite = false; writing.resolve(); await releaseWrite.promise; }
+      return renameBeforeQueue(source, target);
+    };
+    first.client.removeWorkflowHistory = function(id, body) {
+      const pending = removeBeforeQueue.call(this, id, body);
+      if (id === nativeId) queued.resolve();
+      return pending;
+    };
+    try {
+      firstRemoval = request(`/${savedId}/remove`, 'POST'); await writing.promise;
+      queuedRemoval = request(`/${nativeId}/remove`, 'POST'); await queued.promise;
+      // The fixture transport replies in microtasks; drain any eager reads while the first write stays held.
+      await new Promise(resolve => setImmediate(resolve));
+      resumed.status = 'running'; releaseWrite.resolve();
+      assert.equal((await firstRemoval).status, 200);
+      assert.equal((await queuedRemoval).status, 409, 'the queued action must read resumed state, not a pre-queue snapshot');
+      assert.ok((await (await request()).json()).data.some(run => run.id === nativeId), 'resumed work stays in history');
+    } finally {
+      releaseWrite.resolve(); fs.rename = renameBeforeQueue; first.client.removeWorkflowHistory = removeBeforeQueue;
+      await Promise.allSettled([firstRemoval, queuedRemoval].filter(Boolean));
+    }
+    assert.equal((await request('/undo', 'POST')).status, 200);
+    first.workflowRecords.pop();
+    const rename = fs.rename;
+    fs.rename = (source, target) => target === path.join(home, 'desktop-workflow-history.json') ? Promise.reject(Object.assign(new Error('Disk full'), { code: 'ENOSPC' })) : rename(source, target);
+    try {
+      const failed = await request(`/${savedId}/remove`, 'POST');
+      assert.equal(failed.status, 503); assert.match((await failed.json()).error, /Nothing was removed/);
+    } finally { fs.rename = rename; }
+    history = await (await request()).json();
+    assert.ok(history.data.some(run => run.id === savedId)); assert.equal(history.canUndo, false);
+    assert.equal((await request(`/${savedId}/remove`, 'POST')).status, 200);
+    history = await (await request()).json();
+    assert.deepEqual(history.data.map(run => run.id), [activeId]); assert.equal(history.canUndo, true);
+    // Even an external resume must make a removed record visible again while it works.
+    const native = { ...saved, id: nativeId, status: 'completed' }; first.workflowRecords.push(native);
+    assert.equal((await request(`/${nativeId}/remove`, 'POST')).status, 200);
+    native.status = 'running';
+    assert.ok((await (await request()).json()).data.some(run => run.id === nativeId), 'removal cannot conceal resumed work');
+    assert.equal((await request('/undo', 'POST')).status, 200);
+    first.workflowRecords.pop();
+    await app.close(); app = null;
+    second = fixture({ clientOptions: { home, workflowOptions: {} } }); await second.client.initialize();
+    opened = await open(second.client); app = opened.app; request = opened.request;
+    history = await (await request()).json(); assert.deepEqual(history.data, []); assert.equal(history.canUndo, true);
+    assert.equal((await request('/undo', 'POST')).status, 200);
+    history = await (await request()).json();
+    assert.deepEqual(history.data.map(run => run.name), ['Finished team']); assert.equal(history.canUndo, false);
+    assert.equal(await fs.readFile(original.file, 'utf8'), original.bytes, 'history removal never rewrites the run');
+    assert.equal(await fs.readFile(untouched.file, 'utf8'), untouched.bytes, 'the ambient profile is untouched');
+    for (const f of [first, second]) assert.deepEqual(f.socket.sent.filter(row => /thread\/(?:archive|unarchive|delete)|workGraph\/(?:run|stop)|workflowRun\/(?:start|stop|resume)/.test(row.method)), [], 'history actions never mutate chats or execution');
+  } finally {
+    DesktopClient.connect = connect;
+    if (beforeHome === undefined) delete process.env.ELPIS_HOME; else process.env.ELPIS_HOME = beforeHome;
+    await app?.close(); first?.client.close(); second?.client.close(); removeTestTempDir(dir);
+  }
 });
 
 test('manual workflows require an idle root and dispatch the reviewed graph through ACP', async () => {

@@ -42,7 +42,7 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 ## Follow-up requests — 26 October 2026
 
 - Fix: Love Spot unread acknowledgment and unverified audio follow the [Love Spot text-only fallback](#love-spot-text-only-fallback--26-october-2026) contract below; remote verification is pending.
-- Fix: workflow history must not present leaked test runs as user-created work. Make history entries removable with recovery, preserve actual project chats, replace the confusing editable pattern name with a few short selections, and let Elpis prepare a workflow from a plain request. Existing G3 work and Blender references must be inspected before integration. Confirmed smoke-data leak; implementation pending.
+- Fix: workflow history must not present leaked test runs as user-created work. Make history entries removable with recovery, preserve actual project chats, replace the confusing editable pattern name with a few short selections, and let Elpis prepare a workflow from a plain request. Existing G3 work and Blender references must be inspected before integration. Confirmed smoke-data leak. History-only Remove/Undo, active-work guards, a truthful History label and explicit profile isolation are coded; remote verification pending. Pattern selections, primary request flow and recovery of leaked test records are still pending.
 - Improve: use Elpis's existing browser capabilities through an appropriate native skill and a Browser settings section, with practical import of existing connection details. The cached ChatGPT-specific browser skill is not a suitable native browser integration. Reference product and intended key-import format remain unconfirmed; audit complete, implementation pending.
 
 ## Live voice — 23 October 2026

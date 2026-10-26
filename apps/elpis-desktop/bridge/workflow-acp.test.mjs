@@ -16,7 +16,7 @@ const FATHER = '00000000-0000-0000-0000-00000000000f';
 const FAKE = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mjs', import.meta.url));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const task = (id, dependsOn = [], instruction = 'Seed workflow-acp-739') => ({ id, title: id, instruction, kind: 'explore', dependsOn, writeScopes: [], acceptanceCriteria: ['Return evidence'] });
-function fixture(t, overrides = {}) {
+function fixture(t, overrides = {}, clientOptions = {}) {
   const tempRoot = createTestTempDir(path.join(os.homedir(), '.cache/elpis-tests/workflow-acp-'));
   const dir = path.join(tempRoot, 'project'); fs.mkdirSync(dir);
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
@@ -39,7 +39,7 @@ function fixture(t, overrides = {}) {
     const p = path.join(dir, `${id}.jsonl`);
     return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
   };
-  const client = new DesktopClient(socket, { rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother' ? 'opus' : node.model }), ...overrides } });
+  const client = new DesktopClient(socket, { home: overrides.env?.ELPIS_HOME ?? path.join(dir, 'profile'), rewindHome: path.join(dir, 'rewind'), reportRetryMs: 20, workflowOptions: { stateDir: path.join(dir, 'state'), nodeSpec: (node, env) => ({ name: node.name, instructions: node.prompt, elpis: true, command: process.execPath, args: [FAKE], env: { FAKE_ACP_NAME: node.name, FAKE_ACP_MODELS: node.name === 'Mother' ? 'opus' : 'm-fast', FAKE_ACP_LOG: path.join(dir, `${node.name}.jsonl`), ...(node.prompt.includes('Return only JSON:') ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: !node.prompt.includes('[fail-check]'), summary: 'Observed the planted evidence' }) } : {}), ...(env.workflowFake?.[node.name] ?? {}) }, model: node.name === 'Mother' ? 'opus' : node.model }), ...overrides }, ...clientOptions });
   t.after(() => { client.close(); removeTestTempDir(tempRoot); });
   const run = (tasks, extra = {}) => client.runWorkflow({ rootThreadId: ROOT, name: 'ACP team', tasks, maxConcurrency: 2, ...extra });
   const finished = async id => {
@@ -52,6 +52,18 @@ function fixture(t, overrides = {}) {
   };
   return { client, socket, dir, root, run, log, finished, fakeEnv: overrides.env };
 }
+
+test('an explicit desktop profile reaches the actual workflow agent despite an ambient profile', async t => {
+  const home = createTestTempDir(path.join(os.tmpdir(), 'workflow-profile-'));
+  t.after(() => removeTestTempDir(home));
+  const f = fixture(t, { env: { ...process.env, ELPIS_HOME: path.join(home, 'ambient') }, nodeSpec: (node, env) => ({
+    name: node.name, command: process.execPath, args: [FAKE], model: 'm-fast',
+    env: { ...env, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_EXPECT_ENV: JSON.stringify({ ELPIS_HOME: home }) },
+  }) }, { home });
+  await f.client.initialize();
+  const started = await f.run([task('profile')]);
+  assert.equal((await f.finished(started.graphId)).status, 'succeeded', 'the agent itself refuses a different ELPIS_HOME');
+});
 
 test('Restart waits through local workflow admission and final persistence while engine threads stay idle', { timeout: 20000 }, async t => {
   const f = fixture(t); await f.client.initialize();

@@ -22,7 +22,7 @@ import { changedFiles, createChatWorktree, currentBranch, discardFile, fileDiff,
 import { recordedChanges } from './recorded-changes.mjs';
 import { elicitationResponse, grantedPermissions, permissionsResponse } from '../lib/approvals.ts';
 import { RewindSnapshots } from './rewind-snapshots.mjs';
-import { createWorkflowRuns } from './workflow-acp.mjs';
+import { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mjs';
 import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mjs';
 import { RewindHistory } from './rewind-history.mjs';
 import { SpawnLinks, createdThread } from './spawn-links.mjs';
@@ -182,7 +182,7 @@ export class DesktopClient extends EventEmitter {
   #sideChats = new Map();
   #interviewThreads = new Set();
   #workflowTitles = new Map(); #workflowLookups = new Map();
-  #workflowRuns;
+  #workflowRuns; #workflowHistory;
   #checkingApprovals = new Map();
   #settingsWaiters = new Map();
   #turnRevisions = new Map();
@@ -192,15 +192,20 @@ export class DesktopClient extends EventEmitter {
   #browserConfig;
   #archiveHistory; #spawnLinks; #appHome;
   #rewindSnapshots; #rewindHistory; #githubConnector; #customize;
-  constructor(socket, { timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory = path.join(elpisHome(), 'desktop-archives'), rewindHome = path.join(elpisHome(), 'desktop-rewind'), spawnLinksFile = path.join(elpisHome(), 'desktop-spawn-links.json'), appHome = os.homedir(), githubConnector = createGithubConnector({ home: elpisHome() }), skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
+  constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
+    const workflowEnv = { ...process.env, ...workflowOptions?.env };
+    const profileHome = path.resolve(home ?? elpisHome(workflowEnv));
+    if (home !== undefined) workflowEnv.ELPIS_HOME = profileHome;
+    archiveDirectory ??= path.join(profileHome, 'desktop-archives'); rewindHome ??= path.join(profileHome, 'desktop-rewind');
+    spawnLinksFile ??= path.join(profileHome, 'desktop-spawn-links.json'); githubConnector ??= createGithubConnector({ home: profileHome });
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
     this.#browserConfig = browserConfig;
     this.#archiveHistory = new ArchiveHistory(archiveDirectory);
     this.#spawnLinks = new SpawnLinks(spawnLinksFile, { home: path.dirname(spawnLinksFile), appHome }); this.#appHome = appHome;
     this.#githubConnector = githubConnector;
     this.#customize = new CustomizePage({ rpc: (method, params) => this.#rpc(method, params), mcp: () => this.mcp(), settings: () => this.settings(), saveSettings: input => this.saveSettings(input),
-      githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: elpisHome });
+      githubConnector, skillTrash: new SkillTrash(skillTrashOptions), appHome, home: () => profileHome });
     this.#rewindSnapshots = new RewindSnapshots(rewindHome);
     this.#rewindHistory = new RewindHistory(rewindHome, async (method, params) => {
       const result = await this.#rpc(method, params);
@@ -208,8 +213,10 @@ export class DesktopClient extends EventEmitter {
       return result;
     });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
-    this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(elpisHome(), 'desktop-workflows'),
-      onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record), ...workflowOptions });
+    this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'),
+      onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record), ...workflowOptions,
+      env: workflowEnv });
+    this.#workflowHistory = createWorkflowHistory(path.join(profileHome, 'desktop-workflow-history.json'));
     this.#bind(socket);
   }
   #bind(socket) {
@@ -221,7 +228,9 @@ export class DesktopClient extends EventEmitter {
     const { default: WebSocket } = await import('ws');
     const openSocket = async () => {
       await options.beforeConnect?.();
-      const socketPath = existingSocket(options.socketPath);
+      // An explicitly isolated profile must not inherit another profile's ambient socket override.
+      const socketEnv = options.home === undefined ? process.env : { ...process.env, ELPIS_HOME: options.home, ELPIS_APP_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_SOCKET: undefined };
+      const socketPath = existingSocket(options.socketPath, socketEnv);
       const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: MAX_BRIDGE_MESSAGE_BYTES });
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => { socket.terminate(); reject(new BridgeError('Bridge connection timed out', 504)); }, 10000);
@@ -1226,7 +1235,7 @@ export class DesktopClient extends EventEmitter {
     }
     return this.#model(model);
   }
-  async workflowHistory() {
+  async #workflowRecords() {
     const saved = await this.#workflowRuns.list();
     const threads = (await this.listThreads({ limit: 100, includeAgentRuns: true })).data ?? [];
     const roots = new Set(threads.filter(thread => typeof thread.source?.subAgent?.other === 'string' && thread.source.subAgent.other.startsWith('work_graph:')).map(thread => thread.parentThreadId).filter(Boolean));
@@ -1236,8 +1245,11 @@ export class DesktopClient extends EventEmitter {
       native.push(...(listed.data ?? []).map(record => ({ ...record, rootThreadId })));
     }
     const byId = new Map([...native, ...saved].map(record => [record.id, record]));
-    return { data: [...byId.values()].sort((a, b) => (b.startedAt ?? b.createdAt ?? 0) - (a.startedAt ?? a.createdAt ?? 0)) };
+    return [...byId.values()].sort((a, b) => (b.startedAt ?? b.createdAt ?? 0) - (a.startedAt ?? a.createdAt ?? 0));
   }
+  async workflowHistory() { return this.#workflowHistory.list(await this.#workflowRecords()); }
+  async removeWorkflowHistory(id, body) { threadId(id); object(body, []); return this.#workflowHistory.remove(id, () => this.#workflowRecords()); }
+  async undoWorkflowHistory(body) { object(body, []); return this.#workflowHistory.undo(); }
   async workflows(id) {
     threadId(id);
     const current=await this.#rpc('thread/read',{threadId:id,includeTurns:false});

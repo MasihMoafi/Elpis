@@ -91,7 +91,7 @@ function json(response, status, value) {
 /** Starts only this UI server; connects to an existing Elpis runtime and never starts/stops it. `trashFile` keeps the
  * chats deleted from the sidebar until they are deleted for good (bridge/trash.mjs): what a crash left is deleted now. */
 export async function startDesktopServer(options = {}) {
-  const client = options.client ?? await DesktopClient.connect({ socketPath: options.socketPath });
+  const client = options.client ?? await DesktopClient.connect({ socketPath: options.socketPath, home: options.elpisHome });
   const trash = await createTrash({ client, file: options.trashFile });
   // The last session's deleted chats go for good once the runtime is reachable, which may be after the window opened.
   const purge = () => trash.purge().catch(() => {});
@@ -344,6 +344,9 @@ export async function startDesktopServer(options = {}) {
           if ([...url.searchParams.keys()].length) throw new BridgeError('Unexpected workflow history parameters');
           return json(response, 200, await client.workflowHistory());
         }
+        if (url.pathname === '/api/workflows/history/undo' && method === 'POST') return json(response, 200, await client.undoWorkflowHistory(await body(request)));
+        const removeHistory = url.pathname.match(/^\/api\/workflows\/history\/([a-f0-9-]{36})\/remove$/i);
+        if (removeHistory && method === 'POST') return json(response, 200, await client.removeWorkflowHistory(removeHistory[1], await body(request)));
         if (url.pathname === '/api/workflows' && method === 'GET') {
           if([...url.searchParams.keys()].some(key=>key!=='threadId')||url.searchParams.getAll('threadId').length!==1)throw new BridgeError('Choose one workflow conversation');
           return json(response,200,await client.workflows(url.searchParams.get('threadId')));
