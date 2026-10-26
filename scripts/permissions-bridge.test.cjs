@@ -276,8 +276,8 @@ async function main() {
       await approvalRace(false, true);
       await approvalRace(true, true);
       await approvalRace(true, false);
-      await probe('Full Access prepares the mode-refusal regression', true, undefined, 0, true, false, { autoEdit: true });
-      await probe('refused restriction never starts a provider prompt with stale bypass', 'workspaceNever', undefined, 0, false, false, { autoEdit: true, rejectMode: 'default', setupFailure: true });
+      await probe('Accept edits prepares the mode-refusal regression', false, undefined, 0, true, false, { autoEdit: true });
+      await probe('refused restriction never starts a provider prompt with stale Accept edits', 'workspaceNever', undefined, 0, false, false, { autoEdit: true, rejectMode: 'default', setupFailure: true });
     });
     // The TUI attaches its own, unconfirmed permission choice to every turn/start, before (or
     // without) the engine accepting it. Only the engine's confirmed settings may grant access.

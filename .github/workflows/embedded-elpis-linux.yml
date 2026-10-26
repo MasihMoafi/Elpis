@@ -146,6 +146,9 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.verification == 'full' || inputs.verification == 'ui' || inputs.verification == 'build'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
     env:
       CODEX_SKIP_BWRAP_BUILD: '1'
       CARGO_BUILD_JOBS: ${{ inputs.verification == 'build' && '4' || '2' }}
@@ -221,6 +224,7 @@ jobs:
           node scripts/history-list.test.cjs
           node --test tools/elpis-claude/test/resume-list.test.mjs
           node --test tools/elpis-claude/test/bridge-idle.test.mjs
+          node --test --test-concurrency=1 tools/elpis-claude/test/approval-review.test.mjs tools/elpis-claude/test/delegate-start.test.mjs
           node scripts/bridge-launcher.test.cjs
           node scripts/agy-steering.test.cjs
           node scripts/build-elpis-local.test.cjs

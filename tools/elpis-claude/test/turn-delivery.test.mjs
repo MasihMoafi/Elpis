@@ -254,8 +254,12 @@ test("A224/A255: /compact forced during a Claude reply stops the reply, then com
   const cancel = f.agent().findIndex(e => e.method === "session/cancel"), compact = f.agent().findLastIndex(e => e.method === "session/prompt");
   assert.ok(cancel >= 0 && cancel < compact, "the reply is cancelled before the compaction starts");
   await until(() => f.events.filter(e => e.method === "turn/completed").length === 2, "the compaction ends");
-  const engine = fs.readFileSync(f.env.FAKE_ENGINE_LOG, "utf8");
-  assert.ok(!engine.includes("thread/compact/start"), "a Claude chat's compaction never falls through to the engine");
+  // The contract carrier logs RPCs; the real carrier is independently guarded by
+  // fixture teardown, which rejects any native inference for a provider turn.
+  if (!process.env.A124_ENGINE) {
+    const engine = fs.readFileSync(f.env.FAKE_ENGINE_LOG, "utf8");
+    assert.ok(!engine.includes("thread/compact/start"), "a Claude chat's compaction never falls through to the engine");
+  }
 });
 
 test("A128: desktop reload while a tool has waiting messages keeps their order and answer", { timeout: 20000 }, async t => {
