@@ -25,9 +25,9 @@ const pageRemovalApproval = {
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
     "tests/canvas-keys.test.cjs": {
-      "blob": "95f145345482944fc0dab585e97151e8a43c4e7d",
-      "approval": "612a8bfe2c3394b123afc7e2786ab2aa692bd8cc",
-      "reason": "Masih overnight workflow usability: grouping must reveal its newly created frame handle. Retain exact pointer drag, cancellation, common member delta, grid and Undo assertions; require the actual visible title as the hit target and await its stable hover before measuring pointer coordinates. The old raw point hit the header after the taller entry row."
+      "blob": "1f0db1128833104cc1943dcaf16e6115174a2857",
+      "approval": "14e9c8f30d3f59b6b6f457821774032c1e031fd4",
+      "reason": "Masih 27 Oct: all errors belong at the bottom. Replace the superseded under-Run placement assertion with contained bottom placement and accessible Run description; keep the original unchanged-toolbar and unchanged-button assertions. Retain all keys, frame hover/drag/cancellation, common member delta, grid and Undo assertions from the earlier verified frame repair."
     },
     "tests/canvas.test.cjs": {
       "blob": "942e566c66a40bc63e8bed115e1bb9cd6d7decf9",
