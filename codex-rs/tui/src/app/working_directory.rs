@@ -27,15 +27,49 @@ fn directory_permission_profile_matches(
     if config.permissions.network.is_some() {
         return false;
     }
-    let matches_rules = |expected: &PermissionProfile| {
-        expected.network_sandbox_policy() == actual.network_sandbox_policy()
-            && expected
+    let same_rules = |left: &PermissionProfile, right: &PermissionProfile| {
+        left.network_sandbox_policy() == right.network_sandbox_policy()
+            && left
                 .file_system_sandbox_policy()
-                .materialize_project_roots_with_workspace_roots(&config.workspace_roots)
                 .is_semantically_equivalent_to(
-                    &actual.file_system_sandbox_policy(),
+                    &right.file_system_sandbox_policy(),
                     config.cwd.as_path(),
                 )
+    };
+    let matches_rules = |expected: &PermissionProfile| {
+        let expected = expected
+            .clone()
+            .materialize_project_roots_with_workspace_roots(&config.workspace_roots);
+        if same_rules(&expected, actual) {
+            return true;
+        }
+        // The legacy response adds cwd metadata protections to canonical builtins.
+        // Never project arbitrary rules: that could erase a custom read/deny carveout.
+        let builtin = [
+            PermissionProfile::read_only(),
+            PermissionProfile::workspace_write(),
+            PermissionProfile::Disabled,
+        ]
+        .into_iter()
+        .any(|profile| {
+            same_rules(
+                &expected,
+                &profile.materialize_project_roots_with_workspace_roots(&config.workspace_roots),
+            )
+        });
+        builtin
+            && expected
+                .to_legacy_sandbox_policy(config.cwd.as_path())
+                .ok()
+                .is_some_and(|sandbox| {
+                    same_rules(
+                        &PermissionProfile::from_legacy_sandbox_policy_for_cwd(
+                            &sandbox,
+                            config.cwd.as_path(),
+                        ),
+                        actual,
+                    )
+                })
     };
     if let Some(active) = active {
         if active.extends.is_some() {
@@ -695,6 +729,8 @@ mod tests {
     use super::*;
     use codex_protocol::config_types::SandboxMode;
     use codex_protocol::models::PermissionProfileSnapshot;
+    use codex_protocol::permissions::FileSystemAccessMode;
+    use codex_protocol::permissions::FileSystemSandboxEntry;
     use codex_protocol::permissions::NetworkSandboxPolicy;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
@@ -771,6 +807,94 @@ mod tests {
                 &actual,
                 Some(&ActivePermissionProfile::new(id))
             ));
+        }
+        // Real metadata expands the legacy response below broader writable /tmp,
+        // unlike the empty-directory fixture above. Keep this comparison red on
+        // the direct-only admission guard while retaining the lifecycle tests.
+        let metadata = tempfile::tempdir()?;
+        let source = metadata.path().join("source");
+        let checkout = metadata.path().join("checkout");
+        std::fs::create_dir_all(source.join(".codex"))?;
+        std::fs::write(source.join(".codex/fixture.txt"), "committed metadata")?;
+        for args in [
+            vec!["init", "--quiet"],
+            vec!["add", "."],
+            vec!["commit", "--quiet", "--no-gpg-sign", "-m", "fixture"],
+            vec![
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                checkout.to_str().expect("UTF-8 checkout path"),
+            ],
+        ] {
+            let result = std::process::Command::new("git")
+                .current_dir(&source)
+                .args([
+                    "-c",
+                    "user.name=Worktree Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                ])
+                .args(args)
+                .output()?;
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+        assert!(checkout.join(".git").is_file());
+        assert!(checkout.join(".codex").is_dir());
+        let mut metadata_config = ConfigBuilder::default()
+            .codex_home(metadata.path().join("home"))
+            .harness_overrides(ConfigOverrides {
+                cwd: Some(checkout),
+                permission_profile: Some(workspace.clone()),
+                ..ConfigOverrides::default()
+            })
+            .build()
+            .await?;
+        let expected = metadata_config.permissions.effective_permission_profile();
+        let actual = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
+            &expected.to_legacy_sandbox_policy(metadata_config.cwd.as_path())?,
+            metadata_config.cwd.as_path(),
+        );
+        assert!(
+            !expected
+                .file_system_sandbox_policy()
+                .is_semantically_equivalent_to(
+                    &actual.file_system_sandbox_policy(),
+                    metadata_config.cwd.as_path(),
+                ),
+            "worktree metadata must reproduce the failed direct comparison"
+        );
+        for active in [None, Some(&builtin)] {
+            assert!(directory_permission_profile_matches(
+                &metadata_config,
+                &actual,
+                active
+            ));
+        }
+        for access in [FileSystemAccessMode::Read, FileSystemAccessMode::Deny] {
+            let mut file_system = expected.file_system_sandbox_policy();
+            file_system.entries.push(FileSystemSandboxEntry::new(
+                metadata_config.cwd.join("private").into(),
+                access,
+            ));
+            let custom = PermissionProfile::from_runtime_permissions(
+                &file_system,
+                expected.network_sandbox_policy(),
+            );
+            metadata_config
+                .permissions
+                .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
+                    custom,
+                ))?;
+            assert!(
+                !directory_permission_profile_matches(&metadata_config, &actual, None),
+                "legacy projection must not erase a custom {access:?} carveout"
+            );
         }
         std::fs::write(
             home.path().join("config.toml"),
