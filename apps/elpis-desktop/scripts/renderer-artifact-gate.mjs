@@ -70,9 +70,9 @@ export const retainedUpdates = {
       "reason": "Wait for restored comparison results before asserting the saved stop choice after reload; retain exact restored choice, request and provenance assertions."
     },
     "tests/step-sentences.test.cjs": {
-      "blob": "93d149058192dac1a5811ef7feffe45a913637c4",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains."
+      "blob": "a137478ac4839fba2417d8274369404c0971fb2c",
+      "approval": "08d2e147eb2abd091cac7532bc62ceabf1e10bd9",
+      "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains. S36/R74, Masih 26 Oct: hide empty Reasoning and missing-summary placeholders. Replace obsolete empty-disclosure pointer/keyboard cases with saved-empty to streamed-summary to recorded-content lifecycle proof; preserve real-summary pointer/keyboard in both themes, working status, disclosure and exact code-copy assertions. Raw history remains unchanged."
     },
     "tests/night-workflows.test.cjs": {
       "blob": "b7a51ea7c95482c50d29d9c0fd67ee0e360eece7",
