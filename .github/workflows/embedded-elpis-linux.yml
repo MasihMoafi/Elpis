@@ -465,13 +465,16 @@ jobs:
       - name: Shared launcher, native transport, and provider session ownership
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
-          node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher
-          node scripts/continuity-workflows-terminal.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
-          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared
-          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared --gemini
+          # These fixtures own isolated homes and processes; collect every failure in one run.
+          failed=0
+          node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" || failed=1
+          node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher || failed=1
+          node scripts/continuity-workflows-terminal.test.cjs "$PWD/codex-rs/target/release/elpis" || failed=1
+          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" || failed=1
+          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini || failed=1
+          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared || failed=1
+          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared --gemini || failed=1
+          exit "$failed"
       - name: Preserve helper and checkout evidence
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

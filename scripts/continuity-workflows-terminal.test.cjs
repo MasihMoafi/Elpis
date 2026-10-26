@@ -165,7 +165,8 @@ async function worktreeMenu(label) {
   await screenWhen(screen => screen.includes('Working directory') && screen.includes('Use session directory'), 'resume-directory-picker', 'resumed');
   key('Enter', 'resumed'); // Native default: restore the saved session directory.
   await ready('resumed');
-  await screenWhen(screen => showsDirectory(screen, forked.cwd), 'resumed-checkout-attached', 'resumed');
+  // Replayed history can hide the cwd header; the next request verifies the exact saved cwd.
+  await screenWhen(screen => screen.includes('FORK_READY') && screen.includes('Ask Elpis to do anything') && !screen.includes('esc to interrupt'), 'resumed-history-ready', 'resumed');
   const resumed = await answer('Confirm the resumed fork still has its context.', 'RESUME_READY', 'resumed');
   assert(JSON.stringify(resumed).includes('SOURCE_CONVERSATION_TOKEN'));
   assert(JSON.stringify(resumed).includes(forked.cwd), 'native directory choice restores the saved worktree cwd');
