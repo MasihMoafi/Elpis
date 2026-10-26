@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/browser-sessions-electron.test.cjs": {
+      "blob": "378ee80c3fb69cd7bbd5148ae9d0d708a83b5a78",
+      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
+      "reason": "A121/A70 timing correction already committed 21 Oct: native sendInputEvent click is asynchronous. Wait for the real h1[data-saved] mutation in all three session pages before reading the marker. Preserve every exact background marker, session switch, navigation, history, restart, tool isolation, and close-with-chat assertion. The candidate copy passed while retained baseline raced its click."
+    },
     "tests/agent-runs.test.cjs": {
       "blob": "c1fb99d08cf66e7a4bd8090fc3d9252c3319a51a",
       "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
