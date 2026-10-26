@@ -190,7 +190,7 @@ test('a thread row expands and collapses its agents by click and keyboard', asyn
 });
 
 // Recorded spawned agents use subAgent.thread_spawn with snake_case lineage inside the source.
-// The native list also supplies parentThreadId; these are background runs, unlike the legacy fixture above.
+// The native list also supplies parentThreadId; recorded runs share the same recursive chat tree.
 for (const colorScheme of ['light', 'dark']) test(`recorded spawned agents nest under their chat without duplicate rows (${colorScheme})`, async () => {
   const parent = { ...LISTED[0], name: 'Recovery and chat priorities', source: 'vscode' };
   const spawned = (id, name, owner, depth) => ({ ...LISTED[1], id, name, parentThreadId: owner,
@@ -200,7 +200,8 @@ for (const colorScheme of ['light', 'dark']) test(`recorded spawned agents nest 
   grandchild.parentThreadId = null; // Lineage survives list rows that omit the top-level parent field.
   const helper = { ...LISTED[2], name: 'Desktop helper', source: 'appServer', parentThreadId: child.id };
   const leaf = { ...LISTED[3], name: 'Independent chat', source: 'vscode' };
-  const data = [parent, child, grandchild, helper, leaf];
+  const orphan = { ...LISTED[1], id: 'orphan-history', name: 'Unlinked background history', source: 'exec', parentThreadId: null };
+  const data = [parent, child, grandchild, helper, leaf, orphan];
   const routes = { '/api/threads': (_body, url) => {
     const ancestor = url.searchParams.get('ancestorThreadId');
     return { data: ancestor === parent.id ? [child, grandchild, helper] : ancestor === child.id ? [grandchild] : ancestor ? [] : data, nextCursor: null };
@@ -227,10 +228,12 @@ for (const colorScheme of ['light', 'dark']) test(`recorded spawned agents nest 
     }
     assert.equal(await row(page, grandchild.id).getByRole('button', { name: /agents in/ }).count(), 0, 'an agent without children has no chevron');
     // Opening the history group must not duplicate the agents already visible in the chat tree.
-    await aside(page).getByRole('button', { name: 'Agent runs (2)', exact: true }).click();
+    await aside(page).getByRole('button', { name: 'Agent runs (1)', exact: true }).click();
+    await allRows(orphan.id).waitFor();
     assert.equal(await allRows(child.id).count(), 1);
     assert.equal(await allRows(grandchild.id).count(), 1);
-    await aside(page).getByRole('button', { name: 'Agent runs (2)', exact: true }).click();
+    await aside(page).getByRole('button', { name: 'Agent runs (1)', exact: true }).click();
+    assert.equal(await allRows(orphan.id).count(), 0, 'closing history hides the unlinked run');
     if (shots) { await require('node:fs/promises').mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `a88-expanded-${colorScheme}.png`) }); }
     await row(page, parent.id).getByRole('button', { name: `Collapse agents in ${parent.name}` }).press('Space');
     assert.deepEqual(await idsIn(recents(page)), [parent.id, leaf.id], 'collapse hides the whole agent branch');
@@ -244,7 +247,7 @@ test('a background agent without children has no expansion chevron', async () =>
   const routes = { '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [LISTED[0], agent], nextCursor: null }) };
   const f = await fixture({ routes }), { page } = f;
   try {
-    await aside(page).getByRole('button', { name: 'Agent runs (1)', exact: true }).click();
+    await row(page, LISTED[0].id).getByRole('button', { name: `Expand agents in ${LISTED[0].name}`, exact: true }).click();
     await row(page, agent.id).waitFor();
     assert.equal(await row(page, agent.id).getByRole('button', { name: /agents in/ }).count(), 0);
     assert.deepEqual(f.errors, []);

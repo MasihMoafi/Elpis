@@ -70,7 +70,7 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations keep
   const tree = [make('tree-root', 'Tree root'), make('tree-worker', 'Tree worker', 'tree-root'), make('tree-grandchild', 'Tree grandchild', 'tree-worker'),
     { ...make('tree-leaf', 'Tree leaf', 'tree-grandchild'), source: { subAgent: { thread_spawn: { parent_thread_id: 'tree-grandchild' } } } },
     make('tree-peer', 'Tree peer', 'tree-grandchild'), make('tree-sibling', 'Tree sibling', 'tree-root'), make('tree-other', 'Other root'), make('tree-orphan', 'Orphan worker', 'not-loaded')];
-  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree });
+  const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: tree, readyThreadId: 'tree-root' });
   const { page } = f;
   const depth = async (id, expected) => eventually(async () => assert.equal(await row(page, id).getAttribute('data-depth'), String(expected), id));
   try {
@@ -149,7 +149,7 @@ for (const colorScheme of ['light', 'dark']) test(`native agent generations keep
 test('workflow descendants and manual branches use the same recursive placement and corrupt cycles stay visible', async () => {
   const tree = ['flow-root', 'flow-step', 'flow-grandchild', 'latest-step', 'manual-root', 'manual-child', 'manual-branch', 'manual-leaf', 'cycle-a', 'cycle-b'].map(id => ({ id, name: id, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
     ...(id === 'flow-step' || id === 'latest-step' ? { parentThreadId: 'flow-root' } : id === 'flow-grandchild' ? { parentThreadId: 'flow-step' } : {}) }));
-  const f = await fixture({ desktop: true, threads: tree,
+  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'flow-root',
     storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }),
       'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: [], parents: { 'manual-child': 'manual-root', 'manual-branch': 'manual-root', 'manual-leaf': 'manual-branch', 'cycle-a': 'cycle-b', 'cycle-b': 'cycle-a' } }) },
     routes: { '/api/workflows/history': () => ({ data: [
@@ -208,7 +208,7 @@ test('ordinary recursive branches expose the second child and grandchild pages w
   const workers = Array.from({ length: 101 }, (_, i) => make(`paged-worker-${i}`, `Pagination worker ${i}`, root.id));
   const grandchildren = Array.from({ length: 101 }, (_, i) => make(`paged-grandchild-${i}`, `Pagination grandchild ${i}`, workers[0].id));
   const reads = [];
-  const f = await fixture({ desktop: true, threads: [root, workers[0]], width: 1440, height: 900,
+  const f = await fixture({ desktop: true, threads: [root, workers[0]], readyThreadId: root.id, width: 1440, height: 900,
     routes: { '/api/threads': (_body, url) => {
       const parent = url.searchParams.get('ancestorThreadId'), cursor = url.searchParams.get('cursor');
       if (!parent) return { data: url.searchParams.get('archived') === 'true' ? [] : [root, workers[0]], nextCursor: null };
@@ -241,7 +241,7 @@ test('ordinary recursive branches expose the second child and grandchild pages w
 test('several roots from malformed native lineage can be put under one chat and survive reload', async () => {
   const tree = [{ id: 'native-cycle-a', name: 'Native cycle A', parentThreadId: 'native-cycle-b' }, { id: 'native-cycle-b', name: 'Native cycle B', parentThreadId: 'native-cycle-a' }, { id: 'native-cycle-target', name: 'Safe parent' }]
     .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
-  const f = await fixture({ desktop: true, threads: tree }), { page } = f;
+  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'native-cycle-target' }), { page } = f;
   try {
     await row(page, 'native-cycle-a').waitFor(); await row(page, 'native-cycle-b').waitFor();
     await mark(page, ['native-cycle-a', 'native-cycle-b']); await putUnder(page, 'native-cycle-a', 'Safe parent');
@@ -258,7 +258,7 @@ test('several roots from malformed native lineage can be put under one chat and 
 test('a refused final order save leaves the subtree, projects, order and selection unchanged', async () => {
   const tree = [{ id: 'save-parent', name: 'Project parent' }, { id: 'save-child', name: 'Moving child', parentThreadId: 'save-parent' }, { id: 'save-grandchild', name: 'Moving grandchild', parentThreadId: 'save-child' }, { id: 'save-target', name: 'Recent target' }]
     .map(thread => ({ ...thread, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } }));
-  const f = await fixture({ desktop: true, threads: tree, storage: { ...storage,
+  const f = await fixture({ desktop: true, threads: tree, readyThreadId: 'save-parent', storage: { ...storage,
     'elpis-project-chats-v1': JSON.stringify({ 'save-parent': 'existing', 'save-child': 'existing', 'save-grandchild': 'existing' }),
     'elpis-chat-groups-v1': JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], order: ['save-target', 'save-parent', 'save-child', 'save-grandchild'] }) } });
   const { page } = f;
@@ -363,6 +363,7 @@ test('middle drag nests every marked chat; edge and keyboard moves reorder; cycl
     await action(page, 'chat-z', 'Put under…');
     const dialog = page.getByRole('alertdialog', { name: 'Put chats under a chat' });
     await dialog.getByRole('combobox', { name: 'Parent chat', exact: true }).click();
+    await page.getByRole('option', { name: 'car-scraper-pro', exact: true }).waitFor();
     assert.equal(await page.getByRole('option', { name: 'Unrelated chat', exact: true }).count(), 0, 'self is excluded');
     assert.equal(await page.getByRole('option', { name: /^BoomDeal/ }).count(), 6, 'nested chats can parent another branch');
     await page.getByRole('option', { name: 'car-scraper-pro', exact: true }).click();

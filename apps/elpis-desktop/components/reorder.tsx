@@ -8,7 +8,7 @@ type Options = {
   dragType: string;
   order: (id: string) => readonly string[];
   onMove: (id: string, place: Place) => void | Promise<void>;
-  canDrop?: (id: string, target: string) => boolean;
+  canDrop?: (id: string, target: string, place: Place) => boolean;
   dropInto?: (id: string, target: string) => boolean | "middle";
 };
 
@@ -18,7 +18,7 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
   const dragging = useRef<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; mark: Mark } | null>(null);
   const clear = () => { dragging.current = null; setDrop(null); };
-  const allowed = (id: string, target: string) => id !== target && canDrop(id, target);
+  const allowed = (id: string, place: Place) => id !== place.target && canDrop(id, place.target, place);
   function targetProps(key: string, into = false) {
     const markAt = (event: DragEvent<HTMLElement>): Mark => {
       const box = event.currentTarget.getBoundingClientRect(), fraction = (event.clientY - box.top) / box.height;
@@ -28,9 +28,9 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
     const over = (event: DragEvent<HTMLElement>) => {
       const id = dragging.current;
       if (!id || !event.dataTransfer.types.includes(dragType)) return;
-      if (!allowed(id, key)) { event.stopPropagation(); return; }
+      const mark = markAt(event), place = { target: key, after: mark === "after", into: mark === "into" };
+      if (!allowed(id, place)) { setDrop(null); event.stopPropagation(); return; }
       event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move";
-      const mark = markAt(event);
       setDrop(previous => previous?.id === key && previous.mark === mark ? previous : { id: key, mark });
     };
     return {
@@ -43,12 +43,13 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
       },
       onDrop: (event: DragEvent<HTMLElement>) => {
         const id = dragging.current, mark = id ? markAt(event) : null;
-        const accept = !!id && event.dataTransfer.types.includes(dragType) && allowed(id, key);
+        const place = { target: key, after: mark === "after", into: mark === "into" };
+        const accept = !!id && event.dataTransfer.types.includes(dragType) && allowed(id, place);
         clear();
         if (!id || !event.dataTransfer.types.includes(dragType)) return;
         if (!accept) { event.stopPropagation(); return; }
         event.preventDefault(); event.stopPropagation();
-        onMove(id, { target: key, after: mark === "after", into: mark === "into" });
+        onMove(id, place);
       },
     };
   }
@@ -69,9 +70,11 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
         event.preventDefault(); event.stopPropagation();
         const ids = order(id), at = ids.indexOf(id), by = event.key === "ArrowUp" ? -1 : 1;
         const target = at < 0 ? undefined : ids[at + by];
-        if (!target || !allowed(id, target)) return;
+        if (!target) return;
+        const place = { target, after: by > 0, into: dropInto(id, target) === true };
+        if (!allowed(id, place)) return;
         const focused = document.activeElement;
-        const saved = onMove(id, { target, after: by > 0, into: dropInto(id, target) === true });
+        const saved = onMove(id, place);
         void Promise.resolve(saved).then(() => requestAnimationFrame(() => {
           if (focused instanceof HTMLElement && document.activeElement === document.body) {
             const next = focused.isConnected ? focused : focused.id ? document.getElementById(focused.id) : null;

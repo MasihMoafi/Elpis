@@ -33,8 +33,9 @@ async function mixed({ continueError = false, restoredRun = false, pagedChildren
   return { ...f, run, child, threads };
 }
 const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id="${id}"]`).first();
+const expandParent = page => row(page, 'chat-a').getByRole('button', { name: 'Expand agents in Fix the parser', exact: true }).click();
 
-test('mixed chats keep ordinary rows, projects, pins, tabs and searches while background runs fold at the end', async () => {
+test('mixed chats keep projects, pins, tabs and searches while linked agents fold under their parent and unlinked runs fold at the end', async () => {
   const f = await mixed(), { page } = f;
   try {
     const aside = page.locator('aside.sidebar');
@@ -43,9 +44,9 @@ test('mixed chats keep ordinary rows, projects, pins, tabs and searches while ba
     assert.equal(await row(page, 'exec-run').count(), 0);
     assert.equal(await row(page, 'child-run').count(), 0);
     const project = aside.locator('.project-group').filter({ hasText: 'Parser project' });
-    assert.equal(await project.locator('.thread-row').count(), 2, 'projects keep only the two personal chats');
-    assert.equal(await aside.locator('section[aria-label="Pinned"] .thread-row').count(), 0, 'previously pinned runs stay in the folded group');
-    const toggle = aside.getByRole('button', { name: 'Agent runs (3)', exact: true });
+    assert.equal(await project.locator('.thread-row').count(), 2, 'the collapsed parent keeps its agents out of the project root list');
+    assert.equal(await aside.locator('section[aria-label="Pinned"] .thread-row').count(), 0, 'previously pinned agents stay under their parent without a duplicate row');
+    const toggle = aside.getByRole('button', { name: 'Agent runs (1)', exact: true });
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     f.emit('message', { method: 'turn/completed', params: { threadId: 'exec-run', turn: { id: 'done', status: 'completed' } } });
     await page.waitForTimeout(150);
@@ -59,15 +60,25 @@ test('mixed chats keep ordinary rows, projects, pins, tabs and searches while ba
     await page.getByRole('tab', { name: /Worker · my own chat/ }).waitFor();
     await toggle.click();
     const group = aside.getByRole('region', { name: 'Agent runs', exact: true });
-    assert.equal(await group.locator('.thread-row').count(), 3);
+    await row(page, 'orphan-run').waitFor();
+    assert.equal(await group.locator('.thread-row').count(), 1, 'only the unlinked run belongs to the background group');
+    await expandParent(page);
+    await row(page, 'exec-run').waitFor();
+    assert.equal(await project.locator('.thread-row[data-thread-id="exec-run"]').count(), 1, 'the linked agent appears once under its project parent');
+    assert.equal(await row(page, 'child-run').count(), 1);
     assert.equal(await row(page, 'exec-run').getByText('from Fix the parser', { exact: true }).count(), 1);
     await toggle.press('Enter');
-    assert.equal(await row(page, 'exec-run').count(), 0, 'keyboard folds the group');
+    assert.equal(await row(page, 'orphan-run').count(), 0, 'keyboard folds the background group');
+    assert.equal(await row(page, 'exec-run').count(), 1, 'the linked branch is independent of the background group');
+    await row(page, 'chat-a').getByRole('button', { name: 'Collapse agents in Fix the parser', exact: true }).click();
+    assert.equal(await row(page, 'exec-run').count(), 0, 'collapsing the parent hides its linked agents');
     const search = aside.getByRole('textbox', { name: /Search/ });
     await search.fill('Worker');
-    await page.waitForTimeout(400);
+    await row(page, 'exec-run').waitFor();
     assert.equal(await row(page, 'chat-b').count(), 1);
-    assert.equal(await row(page, 'exec-run').count(), 0, 'server matches cannot leak runs into chat search');
+    assert.equal(await row(page, 'exec-run').count(), 1, 'search finds a linked agent even when its parent is collapsed');
+    assert.equal(await row(page, 'exec-run').getAttribute('data-depth'), '0', 'search results are flat rather than repeating the parent branch');
+    assert.equal(await aside.getByRole('region', { name: 'Agent runs', exact: true }).count(), 0, 'search does not mix in the background group');
     await search.fill('');
     await page.keyboard.press('Control+k');
     const dialog = page.getByRole('dialog', { name: 'Command menu' });
@@ -90,7 +101,7 @@ test('a background run restored in a tab shows the read-only notice instead of t
   } finally { await f.close(); }
 });
 
-test('Show agents opens the folded group, which owns child pagination and folds it with the runs', async () => {
+test('Show agents opens the background group while child pagination belongs to the linked parent branch', async () => {
   const f = await mixed({ pagedChildren: true }), { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
@@ -98,18 +109,23 @@ test('Show agents opens the folded group, which owns child pagination and folds 
     await row(page, 'chat-a').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Show agents', exact: true }).click();
     const group = page.getByRole('region', { name: 'Agent runs', exact: true });
-    const more = group.getByRole('button', { name: 'More agents from Fix the parser', exact: true });
+    await group.getByText('Unlinked background run', { exact: true }).waitFor();
+    await expandParent(page);
+    const more = page.locator('aside.sidebar .project-group').getByRole('button', { name: 'More agents from Fix the parser', exact: true });
     await more.waitFor();
-    const toggle = page.getByRole('button', { name: 'Agent runs (3)', exact: true });
-    await toggle.click();
-    assert.equal(await more.count(), 0, 'pagination folds with the group');
+    await row(page, 'chat-a').getByRole('button', { name: 'Collapse agents in Fix the parser', exact: true }).click();
+    assert.equal(await more.count(), 0, 'pagination folds with its parent branch');
     assert.equal(await page.locator('aside.sidebar').getByRole('button', { name: 'More agents', exact: true }).count(), 0);
-    await toggle.click(); await more.click();
-    await page.getByRole('button', { name: 'Agent runs (4)', exact: true }).waitFor();
+    await expandParent(page); await more.click();
+    await row(page, 'more-run').waitFor();
+    assert.equal(await page.locator('aside.sidebar .thread-row[data-thread-id="more-run"]').count(), 1, 'the next page appears once in the parent branch');
+    assert.equal(await row(page, 'more-run').getAttribute('data-depth'), '1');
+    assert.equal(await page.getByRole('button', { name: 'Agent runs (1)', exact: true }).count(), 1, 'loading linked agents does not add them to the background group');
     assert.equal(await row(page, 'more-run').getByText('from Fix the parser', { exact: true }).isVisible(), true);
     await row(page, 'chat-a').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Hide agents', exact: true }).click();
     assert.equal(await group.count(), 0);
+    assert.equal(await row(page, 'more-run').count(), 1, 'hiding the background group preserves the expanded parent branch');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -117,8 +133,7 @@ test('Show agents opens the folded group, which owns child pagination and folds 
 test('a background run expands and collapses its nested agents', async () => {
   const f = await mixed({ nestedChildren: true }), { page } = f;
   try {
-    const toggle = page.getByRole('button', { name: 'Agent runs (3)', exact: true });
-    await toggle.click();
+    await expandParent(page);
     const run = row(page, 'exec-run'), expand = run.getByRole('button', { name: 'Expand agents in Worker · inspect' });
     assert.equal(await expand.getAttribute('aria-expanded'), 'false');
     await expand.click();
@@ -141,7 +156,7 @@ for (const colorScheme of ['light', 'dark']) test(`runs open read-only, parent n
   const f = await mixed({ colorScheme, height: 950 }), { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: 'Agent runs (3)', exact: true }).click();
+    await expandParent(page);
     await row(page, 'child-run').locator('.thread-link').click();
     await page.getByText(notice, { exact: true }).waitFor();
     assert.equal(await f.composer.count(), 0);
@@ -175,7 +190,7 @@ test('a refused continuation keeps the run read-only and shows the engine error'
   const f = await mixed({ continueError: true }), { page } = f;
   try {
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: 'Agent runs (3)', exact: true }).click();
+    await expandParent(page);
     await row(page, 'exec-run').locator('.thread-link').click();
     await page.getByRole('button', { name: 'Continue here', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: 'The engine cannot continue this run.' }).waitFor();

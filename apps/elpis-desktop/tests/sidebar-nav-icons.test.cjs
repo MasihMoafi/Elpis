@@ -80,6 +80,7 @@ test('Agents is absent from workspace navigation and commands; Workflows and sid
   const f = await fixture({ routes: { '/api/threads': (_, url) => ({ data: url.searchParams.has('ancestorThreadId') ? [] : [
     { id: 'chat-a', name: 'Parent chat', status: { type: 'idle' } },
     { id: 'run-a', name: 'Retained agent run', parentThreadId: 'chat-a', source: { subAgent: { thread_spawn: { agent_path: '/root/check' } } }, status: { type: 'idle' } },
+    { id: 'orphan-run', name: 'Unlinked background run', source: 'exec', status: { type: 'idle' } },
   ], nextCursor: null }) } });
   try {
     const { page } = f;
@@ -87,8 +88,13 @@ test('Agents is absent from workspace navigation and commands; Workflows and sid
     const nav = page.locator('.nav-list');
     assert.equal(await nav.getByRole('button', { name: /^Agents\b/ }).count(), 0);
     for (const name of ['Workflows', 'Love Spot']) assert.equal(await nav.getByRole('button', { name, exact: true }).count(), 1);
+    await page.locator('aside.sidebar .thread-row[data-thread-id="chat-a"]').getByRole('button', { name: 'Expand agents in Parent chat', exact: true }).click();
+    const linkedRun = page.locator('aside.sidebar .thread-row[data-thread-id="run-a"]');
+    await linkedRun.getByText('Retained agent run', { exact: true }).waitFor();
+    assert.equal(await linkedRun.count(), 1, 'the linked agent appears once under its parent');
+    assert.equal(await linkedRun.getAttribute('data-depth'), '1');
     await page.getByRole('button', { name: 'Agent runs (1)', exact: true }).click();
-    await page.getByRole('region', { name: 'Agent runs', exact: true }).getByText('Retained agent run', { exact: true }).waitFor();
+    await page.getByRole('region', { name: 'Agent runs', exact: true }).getByText('Unlinked background run', { exact: true }).waitFor();
     await page.keyboard.press('Control+k');
     await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Agents');
     assert.equal(await page.getByRole('option', { name: 'Agents', exact: true }).count(), 0);

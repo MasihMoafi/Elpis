@@ -61,7 +61,7 @@ function checkSidebar(actual, label) {
   for (const empty of actual.emptyLabels) near(empty.x, actual.circle, 'empty group label inset');
   for (const row of actual.rows) {
     const name = `${row.id} depth ${row.depth}`;
-    if (row.icon) near(row.icon.center, actual.project.center, `${name} chevron center`);
+    if (row.icon) near(row.icon.center, actual.project.center + row.depth * 14, `${name} chevron center within its generation`);
     near(row.circle.x, actual.circle + row.depth * 14, `${name} circle column`);
     near(row.title.x, actual.title + row.depth * 14, `${name} name column`);
     assert.ok(row.title.width > 0 && row.title.right <= row.actions.x + 0.5, `${label}: ${name} name fits before its actions`);

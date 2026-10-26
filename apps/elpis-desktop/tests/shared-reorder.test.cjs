@@ -102,9 +102,12 @@ test('A70/R29: a refused chat save retains its order', async () => {
     const rows = f.page.locator('aside.sidebar section[aria-label="Recents"] .thread-row');
     const ids = () => rows.evaluateAll(elements => elements.map(element => element.dataset.threadId));
     const original = await ids();
-    await f.page.evaluate(() => { window.elpisDesktop.storage.setItem = () => { throw Error('A70 chat disk unavailable'); }; });
+    await f.page.evaluate(() => {
+      const storage = window.elpisDesktop.storage, setItem = storage.setItem.bind(storage);
+      storage.setItem = (key, value) => { if (key === 'elpis-chat-groups-v1') throw Error('A70 chat disk unavailable'); return setItem(key, value); };
+    });
     await rows.last().locator('.thread-link').focus(); await f.page.keyboard.press('Alt+ArrowUp');
-    await f.page.getByRole('alert').filter({ hasText: 'Could not save chat groups on this device.' }).waitFor();
+    await f.page.getByRole('alert').filter({ hasText: 'Could not save chat placement on this device.' }).waitFor();
     assert.deepEqual(await ids(), original, 'failed chat save leaves the rendered order unchanged');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

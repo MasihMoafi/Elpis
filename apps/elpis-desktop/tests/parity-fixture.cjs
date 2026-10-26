@@ -26,12 +26,13 @@ const TURNS = [
 ];
 
 /** Starts the bridge and a browser page. `running` makes the first chat run a turn; `desktop` is the fake desktop;
- * `threads` replaces the chat list; `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
+ * `threads` replaces the chat list; `readyThreadId` names a visible initial root (default: chat-a);
+ * `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. `nativeClipboard` uses Chromium's clipboard
  * with read/write permissions instead of the default writeText recorder. `showScrollbars` keeps native scrollbar
  * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. `loveScene: null` holds the
  * initial board snapshot until emitLove sends it, for origin-resolution checks. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, readyThreadId = 'chat-a', routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set(), loveBoardStreams = new Set();
   const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
@@ -106,7 +107,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   if (clockTime) await page.clock.install({ time: clockTime });
   await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
-  await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().waitFor();
+  await page.locator(`.thread-row[data-thread-id="${readyThreadId}"] .thread-link`).first().waitFor();
   const deadline = Date.now() + 6000;
   while (streams.size === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   if (streams.size === 0) throw new Error('The fixture did not connect to /api/events');
