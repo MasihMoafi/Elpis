@@ -31,7 +31,7 @@ test('speech chunks preserve long ASCII, Persian and astral text below 900 engin
   }
 });
 
-async function fixture(t) {
+async function fixture(t, { loveSpotAudio } = {}) {
   const controls = [];
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-read-aloud-'));
   const socket = new EventEmitter(); socket.sent = []; socket.close = () => {};
@@ -88,7 +88,7 @@ async function fixture(t) {
     return server;
   });
   let app;
-  try { app = await startDesktopServer({ client, elpisHome: root, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'board'), screenshots: path.join(root, 'shots') } }); }
+  try { app = await startDesktopServer({ client, elpisHome: root, loveSpotAudio, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'board'), screenshots: path.join(root, 'shots') } }); }
   finally { create.mock.restore(); }
   t.after(async () => { state.finishStart?.(); state.finishCleanup?.(); await app.close(); await fs.rm(root, { recursive: true, force: true }); });
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
@@ -130,7 +130,7 @@ async function fixture(t) {
 
 test('Matilda streams through the shared HTTP transport for native and Claude text; mute retires the speaker while text continues', async t => {
   for (const provider of ['openai', 'anthropic']) {
-    const f = await fixture(t); f.state.provider = provider;
+    const f = await fixture(t, { loveSpotAudio: { available: true } }); f.state.provider = provider;
     Object.assign(f.client, {
       settings: async () => ({ main: { model: 'text', provider } }),
       models: async () => ({ data: [{ model: 'text', inputModalities: ['text'] }] }),
