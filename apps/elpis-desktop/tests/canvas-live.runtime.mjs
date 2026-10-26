@@ -229,7 +229,7 @@ try {
   if (chosen.agents) assert.equal(graph.tasks.length, chosen.agents * 2);
   assert.match(await canvas.locator('.canvas-header').innerText(), new RegExp(`Finished · ${graph.tasks.length / 2} of ${graph.tasks.length / 2} done`));
   // The last agent got every answer it waits for: each one's reported summary is in its first message.
-  const last_ = graph.tasks.find(task => task.kind === 'implement' && task.dependencies.length === Math.max(...graph.tasks.map(item => item.dependencies.length)));
+  const last_ = graph.tasks.find(task => task.kind === 'implement' && task.dependsOn.length === Math.max(...graph.tasks.map(item => item.dependsOn.length)));
   const pages = [];
   for (let cursor = null, n = 0; n < 20; n++) {
     const items = await api(`/threads/${encodeURIComponent(last_.assignedThreadId)}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
@@ -237,11 +237,11 @@ try {
   }
   await fs.writeFile(path.join(evidence, `${plan}-last-agent-items.json`), JSON.stringify(pages, null, 1));
   const asked = JSON.stringify(pages.filter(row => row.item?.type === 'userMessage'));
-  for (const id of last_.dependencies) {
+  for (const id of last_.dependsOn) {
     const summary = graph.tasks.find(task => task.id === id).result?.summary;
     assert.ok(typeof summary === 'string' && asked.includes(JSON.stringify(JSON.stringify(summary).slice(1, -1)).slice(1, -1)), `${last_.title} did not receive ${id}'s result`);
   }
-  say(`${last_.title} received ${last_.dependencies.length} results`);
+  say(`${last_.title} received ${last_.dependsOn.length} results`);
   assert.deepEqual(errors, []);
   say('PASS');
   }
