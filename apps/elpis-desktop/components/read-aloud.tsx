@@ -11,13 +11,13 @@ const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
 /** One player with generated silence as input. Closing its request also retires its native session. */
-export function ReadAloud({ threadId, enabled, children }: { threadId?: string; enabled: boolean; children: ReactNode }) {
+export function ReadAloud({ threadId, enabled, unavailableReason, children }: { threadId?: string; enabled: boolean; unavailableReason?: string; children: ReactNode }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
   const call = useRef<Playback | null>(null), warmed = useRef("");
   /** Once a chat's reply actions show, its speech thread is made ahead (bridge: warmSpeechThread). */
   function warm() {
-    if (!enabled || !threadId || warmed.current === threadId) return;
+    if (!enabled || unavailableReason || !threadId || warmed.current === threadId) return;
     warmed.current = threadId;
     void api("/voice/read-aloud/warm", { threadId }).catch(() => { if (warmed.current === threadId) warmed.current = ""; });
   }
@@ -38,9 +38,10 @@ export function ReadAloud({ threadId, enabled, children }: { threadId?: string; 
     const close = () => stop(); window.addEventListener("pagehide", close);
     return () => { window.removeEventListener("pagehide", close); stop(); };
   }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!enabled) stop(); }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!enabled || unavailableReason) stop(); }, [enabled, unavailableReason]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function play(id: string, text?: string) {
+    if (unavailableReason) return;
     const open = call.current;
     // A call kept open after a read takes this reply's text; it reads it as soon as it arrives.
     if (open?.idle && open.session && text !== undefined && enabled && threadId) {
@@ -173,5 +174,5 @@ export function ReadAloud({ threadId, enabled, children }: { threadId?: string; 
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
   }
-  return <SpeechContext.Provider value={{ active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }

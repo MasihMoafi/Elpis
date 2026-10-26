@@ -10,11 +10,11 @@ let browser,server,url,reconnectFixture;const clients=new Set();
 before(async()=>{
  server=http.createServer(async(req,res)=>{
   const route=new URL(req.url,'http://local').pathname;
-  if(route==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;}
+  if(route==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write(`event: connection\ndata: ${JSON.stringify({connected:reconnectFixture?.connected!==false})}\n\n`);clients.add(res);req.on('close',()=>clients.delete(res));return;}
   if(reconnectFixture&&route.startsWith('/api/')){
    const f=reconnectFixture;f.calls.push({route,method:req.method});
    let data={data:[],nextCursor:null};
-   if(route==='/api/health')data={connected:true};
+   if(route==='/api/health')data={connected:f.connected!==false};
    if(route==='/api/settings')data={main:{model:'fixture-model',provider:'fixture'},providers:[]};
    if(route==='/api/threads')data={data:[f.thread],nextCursor:null};
    if(route==='/api/threads/reconnect')data={thread:f.thread,data:[{turnId:'turn',item:{id:'reply',type:'agentMessage',text:f.reply}}],nextCursor:null};
@@ -50,18 +50,38 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   await page.getByRole('button',{name:'Back to app',exact:true}).click();
   event('approval',{id:'stale',params:{threadId:'reconnect',reason:'Stale approval',availableDecisions:['accept']}});
   await page.getByText('Stale approval',{exact:true}).waitFor();
-  event('connection',{connected:false});
+  reconnectFixture.connected=false;event('connection',{connected:false});
   await page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).waitFor();
   const recovery=await page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).boundingBox();
   const workspace=await page.locator('main.workspace').boundingBox();
   assert.ok(recovery&&workspace&&recovery.y>workspace.y+workspace.height*0.7,'reconnecting status stays near the bottom');
-  assert.equal(await page.getByLabel('Message Elpis',{exact:true}).isDisabled(),true);
+  const composer=page.getByLabel('Message Elpis',{exact:true});
+  assert.equal(await composer.isEnabled(),true,'disconnection leaves draft editing available');
+  const mutations=()=>reconnectFixture.calls.filter(call=>call.method==='POST'&&/\/(turns|steer|shell|side-chat|compact)$/.test(call.route)).length;
+  const sent=mutations();
+  for(const draft of ['Edit while Elpis is away','/btw Keep this as a draft','/compact']){
+   await composer.fill(draft);await composer.press('Enter');
+   assert.equal(await composer.inputValue(),draft,'offline Enter cannot send or run a slash action');
+   assert.equal(await page.getByRole('listbox',{name:'Slash commands',exact:true}).count(),0,'offline commands cannot be invoked by pointer either');
+   assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true);
+  }
+  await composer.fill('!printf offline');await composer.press('Enter');
+  assert.equal(await page.getByRole('button',{name:'Run shell command',exact:true}).isDisabled(),true);
+  assert.equal(await composer.inputValue(),'printf offline');await composer.press('Escape');
+  const draft='Edited while offline\nKeep the new line';await composer.fill('Edited while offline');await composer.press('Shift+Enter');await composer.press('End');await composer.pressSequentially('Keep the new line');
+  assert.equal(await composer.inputValue(),draft,'editing and newlines work while offline');
+  const restored=await page.context().newPage();
+  try{
+   await restored.goto(`${url}/?session=reconnect`);
+   await eventually(async()=>assert.equal(await controlValue(restored.getByLabel('Message Elpis',{exact:true})),draft,'a fresh view restores the offline edit'));
+  }finally{await restored.close();}
+  assert.equal(mutations(),sent,'offline keyboard actions never attempt a runtime mutation');
   assert.equal(await page.getByText('Stale approval',{exact:true}).count(),0);
   reconnectFixture.reply='Recovered history';const calls=reconnectFixture.calls.length;
-  event('connection',{connected:true});
+  reconnectFixture.connected=true;event('connection',{connected:true});
   await page.getByText('Recovered history',{exact:true}).waitFor();
   await page.waitForFunction(()=>!document.querySelector('textarea[aria-label="Message Elpis"]').disabled);
-  assert.equal(await controlValue(page.getByLabel('Message Elpis',{exact:true})),'Keep this draft');
+  assert.equal(await controlValue(page.getByLabel('Message Elpis',{exact:true})),draft);
   assert.equal(await page.getByRole('alert').filter({hasText:'Delivery is unknown'}).count(),1);
   await new Promise(resolve=>setTimeout(resolve,100));
   const refreshed=reconnectFixture.calls.slice(calls).map(call=>call.route);

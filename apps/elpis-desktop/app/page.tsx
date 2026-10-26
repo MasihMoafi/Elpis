@@ -92,6 +92,7 @@ import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList, type TaskPlan } from "@/components/task-list";
 import { chatOrigin } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
+import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
@@ -390,7 +391,10 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
-  const loveActivity = useLoveActivity(view === "loveSpot", ready);
+  const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
+  const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available
+    ? chatOrigin(selected, loveActivity.threads) === "Love Spot" ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
+    : undefined;
   const viewRef = useRef(view); viewRef.current = view;
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
@@ -662,6 +666,12 @@ export default function Home() {
     }
     async function initialize() {
       try {
+        // Bind the restored chat and its draft before waiting for the connection. loadThread's API reads already
+        // wait for sessionReady; an early edit must belong to this chat rather than be replaced after sign-in.
+        // The chat of the shown tab comes back; without saved tabs, the last chat does.
+        const launch = new URLSearchParams(location.search);
+        const last = launch.has("session") ? launch.get("session") : restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
+        if (last && !selectedRef.current && request.current === 0) restoring = loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
         await sessionReady();
         if (disposed) return;
         setReady(true);
@@ -674,10 +684,6 @@ export default function Home() {
         void refreshModels();
         void refreshThreads().catch(error => { if (!disposed) setError(String(error)); });
         void reloadSettings().catch(() => null);
-        // The chat of the shown tab comes back; without saved tabs, the last chat does.
-        const launch = new URLSearchParams(location.search);
-        const last = launch.has("session") ? launch.get("session") : restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
-        if (last && !selectedRef.current && request.current === 0) restoring = loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
         events = new EventSource("/api/events");
         events.addEventListener("sideChat", event => window.dispatchEvent(new CustomEvent("elpis:side-chat", { detail: JSON.parse(event.data) })));
         events.addEventListener("connection", event => {
@@ -1127,12 +1133,12 @@ export default function Home() {
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   async function send(own?: string, followUp?: Preferences["followUp"]) {
-    if (readOnlyRun) return;
+    if (!ready || !connected || readOnlyRun) return;
     if (own === undefined && shellMode) { await sendShell(); return; }
     const sideQuestion = own === undefined ? /^\/btw(?:[\s:,.]\s*([\s\S]*))?$/i.exec(textRef.current.trim()) : null;
     if (sideQuestion) { if (selected) editDraft(""); askSideQuestion(sideQuestion[1]); return; }
     const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
-    if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging || !connected) return;
+    if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging) return;
     if (imageBlocked && own === undefined) return; // the box already says why
     if (missingChoiceNotice) return;
     if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
@@ -1221,7 +1227,7 @@ export default function Home() {
   }
   async function sendShell() {
     const command = textRef.current, originalRequest = request.current;
-    if (!command.trim() || busy || !connected || projectChanging) return;
+    if (!command.trim() || busy || !ready || !connected || projectChanging) return;
     if (attachmentsRef.current.length) { setFileNotice("Bash mode is on. Return to chat to send attachments."); return; }
     setBusy(true); setError("");
     let thread = selectedRef.current;
@@ -1430,7 +1436,7 @@ export default function Home() {
             onFork={selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn ? () => void live.current.forkFrom(selected, e.turnId, e.item.id) : undefined} onRewind={!e.clientPending && replaceable ? () => live.current.setRewindTurn(e.turnId) : undefined}
             onRegenerate={regenerate && e.item.id === regenerate.replyId ? () => { live.current.replaceFrom(regenerate.turnId, regenerate.prompt).catch(error => live.current.setError(String(error instanceof Error ? error.message : error))); } : undefined} />; }} /></ViewBoundary>, [shownEntries, activeTurn, desktop, selected, side.openChanges, threads, messageEdits, pendingDrafts, replaceable, replacementOptionsKey, readOnlyRun, regenerate?.turnId, regenerate?.replyId, regenerate?.prompt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Keep the conversation's context providers outside composer-only renders.
-  const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected}>{selected && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation]);
+  const chatConversation = useMemo(() => <ReadAloud threadId={selected?.id} enabled={connected && !!selected} unavailableReason={loveSpotAudioReason}>{selected && !loveSpotAudioReason && agentName(selected) === "Matilda" && <MatildaAutoVoice key={selected.id} threadId={selected.id} activeTurnId={activeTurn ?? null} entries={shownEntries} disabled={!connected || voiceBusy} />}{conversation}</ReadAloud>, [selected, connected, activeTurn, shownEntries, voiceBusy, conversation, loveSpotAudioReason]);
   /** A queued message's Edit in composer, as in Claude: it returns to the box above whatever is typed, with its files and @-mentions. */
   function editQueued(item: FollowUp) {
     editDraft([item.text, textRef.current].filter(part => part.trim()).join("\n\n"));
@@ -1639,7 +1645,7 @@ export default function Home() {
     { name: "mcp", description: "list and manage MCP servers", run: () => openSettings("mcp") },
     { name: "rag", description: "use the configured RAG MCP server or manage it with /rag <request>", available: !continues && idle, run: () => void send("/rag") },
   ];
-  const slash = useSlashMenu(text, slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
+  const slash = useSlashMenu(ready && connected ? text : "", slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });
   const mention = useMentionMenu({ text, caret, cwd: chatFolder || undefined, threads, currentId: selected?.id,
     onPick: result => { pickedMentions.current.set(result.mention.path, result.mention); flushSync(() => editDraft(result.text)); setCaret(result.caret); composerRef.current?.setSelectionRange(result.caret, result.caret); } });
   // A panel belongs to the chat and page it was opened on; a notice goes when the person types again.
@@ -1844,6 +1850,11 @@ export default function Home() {
   }
   /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
   const arrowSelect = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    const cancel = () => { clearTimeout(arrowSelect.current); arrowSelect.current = undefined; };
+    document.addEventListener("focusout", cancel);
+    return () => { document.removeEventListener("focusout", cancel); cancel(); };
+  }, []);
   function sidebarKeys(event: React.KeyboardEvent<HTMLElement>) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -1860,7 +1871,10 @@ export default function Home() {
     // Selection follows focus, as in ChatGPT: a page or a chat opens as the arrow reaches it, after a pause so that holding the
     // key does not open every row on the way. New chat, the search field and the switches are only reached, never activated.
     clearTimeout(arrowSelect.current);
-    if (destination?.matches(".nav-list > button:not(.new-chat), .thread-row > .thread-link")) arrowSelect.current = setTimeout(() => destination.click(), 150);
+    if (destination?.matches(".nav-list > button:not(.new-chat), .thread-row > .thread-link")) arrowSelect.current = setTimeout(() => {
+      arrowSelect.current = undefined;
+      if (destination.isConnected && document.activeElement === destination) destination.click();
+    }, 150);
   }
   /** Keys on a focused chat row: D deletes, U changes attention, and Escape clears the marks. */
   function listKeys(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -2234,7 +2248,7 @@ export default function Home() {
             {attaching && <p role="status" className="px-3 py-2 text-sm text-muted-foreground">Reading files…</p>}
             {shellMode && <p role="status" className="bash-mode-notice"><span className="composer-pill">bash</span><span>Bash mode. Press Escape to return to chat.</span></p>}
             {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
-            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { const value = e.target.value; if (!shellMode && !textRef.current && value.startsWith("!") && !attachmentsRef.current.length) { setShellMode(true); promptKeys.cancel(); editDraft(value.slice(1)); setCaret(value.length - 1); } else { editDraft(value); setCaret(e.target.selectionStart); } }} onPaste={e => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={!ready || !connected || projectChanging} onKeyDown={e => { if (shellMode) { if (e.key === "Escape" || (e.key === "Backspace" && !textRef.current)) { e.preventDefault(); e.stopPropagation(); setShellMode(false); promptKeys.cancel(); return; } if (isSendKey(e, preferences)) { e.preventDefault(); void sendShell(); } return; } if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && turnEfforts.length && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); stepEffort(e.key === "ArrowUp" ? 1 : -1); return; } if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
+            <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { const value = e.target.value; if (!shellMode && !textRef.current && value.startsWith("!") && !attachmentsRef.current.length) { setShellMode(true); promptKeys.cancel(); editDraft(value.slice(1)); setCaret(value.length - 1); } else { editDraft(value); setCaret(e.target.selectionStart); } }} onPaste={e => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={projectChanging} onKeyDown={e => { if (shellMode && (e.key === "Escape" || (e.key === "Backspace" && !textRef.current))) { e.preventDefault(); e.stopPropagation(); setShellMode(false); promptKeys.cancel(); return; } if (!ready || !connected) { if (isSendKey(e, preferences)) e.preventDefault(); return; } if (shellMode) { if (isSendKey(e, preferences)) { e.preventDefault(); void sendShell(); } return; } if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && turnEfforts.length && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); stepEffort(e.key === "ArrowUp" ? 1 : -1); return; } if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
             {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
                 onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
@@ -2252,7 +2266,7 @@ export default function Home() {
               </OptionSelect>}
               {fastAvailable && <Button type="button" variant="ghost" size="icon-sm" className="fast-toggle" aria-label="Fast mode" aria-pressed={fastOn} title={fastOn ? "Fast is on. Turn off Fast." : "Turn on Fast. Applies from the next model request, including during this turn."} disabled={!ready || !connected || busy || projectChanging || readOnlyRun} onClick={() => void chooseFast(fastOn ? "off" : "on")}><Zap size={16} fill={fastOn ? "currentColor" : "none"} aria-hidden="true" /></Button>}
               <div className="composer-actions">
-              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} onBusy={setVoiceBusy} />}
+              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} unavailableReason={loveSpotAudioReason} onBusy={setVoiceBusy} />}
               {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging || voiceBusy} onBusy={setDictating}
                 selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
                 onTranscript={(selection, transcript) => {

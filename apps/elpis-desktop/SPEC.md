@@ -35,8 +35,15 @@ Goal: the base version works smoothly: correct, fast, no dead screens. Rules are
 
 |  | S32 | Fast can be switched during a native OpenAI turn, applying at its next model request; the choice also persists for later turns. The notice reports the applied state. | On and off reach the next request in the same turn; idle chats keep the choice; managed or unsupported routing is rejected clearly; model switching still needs its separate feature. No extra turn starts. | R37 | 25 Oct: future-only desktop route and notice reproduced. Repair in progress; native proof requires Actions. |
 |  | S33 | Settings categories group real pages as plain labels. They never open link-only overview pages; headings and scope descriptions reflect the controls' actual behavior. Personalization previews text without images for now. | Check every category, search and /config aliases; each destination has working settings. Linked instructions and memory load, edit, save and reload without a false loading/error state. | R36, R37, R38, R40 | Requested 25 Oct; repair in progress. |
-|  | S34 | Connection status and errors stay beside the affected controls, or in the existing bottom status area for app-wide problems. They never prepend page-top banners. | Disconnect/reconnect with a saved draft; a refused action remains actionable and dismissible near its owner, and successful recovery clears obsolete errors. | R3, R8, R20, R57 | Requested 25 Oct; repair in progress. |
+|  | S34 | Connection status and errors stay beside the affected controls, or in the existing bottom status area for app-wide problems. They never prepend page-top banners. Chat typing and draft saving stay available before connection and while disconnected, in every shared chat view. | Edit and reload an offline draft, then reconnect: retain the exact text without automatic replay. Enter, slash actions and shell commands cannot send offline. A refused action stays actionable near its owner; recovery clears obsolete connection errors. | R3, R8, R20, R57 | Requested 25–26 Oct; offline draft repair awaiting remote verification. |
 |  | S35 | Desktop navigation follows the reference: Back/Forward and File/Edit/View/Help menus at the top; the sidebar closes beside its brand and reopens from the title bar. Fast has a lightning toggle with an acknowledged active state. Composer controls use aligned, consistent spacing at wide and narrow pane widths. | Exercise each menu action and keyboard navigation; close/reopen preserves drafts; toggle Fast during a turn; inspect both themes at desktop, drawer and split-pane widths without clipping or overlapping controls. | R3, R8, R57 | Requested 25 Oct; repair in progress. |
+
+
+## Follow-up requests — 26 October 2026
+
+- Fix: Love Spot unread acknowledgment and unverified audio follow the [Love Spot text-only fallback](#love-spot-text-only-fallback--26-october-2026) contract below; remote verification is pending.
+- Fix: workflow history must not present leaked test runs as user-created work. Make history entries removable with recovery, preserve actual project chats, replace the confusing editable pattern name with a few short selections, and let Elpis prepare a workflow from a plain request. Existing G3 work and Blender references must be inspected before integration. Confirmed smoke-data leak; implementation pending.
+- Improve: use Elpis's existing browser capabilities through an appropriate native skill and a Browser settings section, with practical import of existing connection details. The cached ChatGPT-specific browser skill is not a suitable native browser integration. Reference product and intended key-import format remain unconfirmed; audit complete, implementation pending.
 
 ## Live voice — 23 October 2026
 
@@ -197,6 +204,14 @@ Masih: “I couldn't and can't hear your voice.” Reproduced: connected peer an
 ## Automatic Matilda chat voice — 24 October 2026
 
 Masih: “I wanted you to play as you write me ... do that voice fix too for me.” New live Matilda chat replies start the existing sentence-based voice stream automatically before completion. No historical replay, commentary reading, delta restarts or duplicate live-call audio. Respect Voice off; Stop works during streaming. Test no-click playback, mute, one start per turn, and actual non-silent audio before completion.
+
+## Love Spot text-only fallback — 26 October 2026
+
+Masih reports no working audio and explicitly permits disabling it. Until real playback and realtime-call acceptance pass, one capability gate disables automatic read-out, reply Read aloud actions and realtime launch on the board and recognized Love Spot chats, including legacy board-linked chats. Show the unavailable reason on keyboard focus and hover. These controls start no playback or microphone capture, read no disabled board-audio settings, and show no legacy audio errors. Preserve text messages, replies, persona, notes, saved audio preferences and the underlying audio implementation; ordinary chats' audio and dictation remain unchanged. This temporarily supersedes the Love Spot portions of RA3/RA14/RA17/RA21, without claiming the audio is fixed or adding a hidden paid-provider fallback.
+
+Opening the board or a recognized Love Spot chat acknowledges its separate unread badge. Ordinary chats leave it unread, and a later reply after leaving can notify again. Behavior checks: `tests/love-clarity.test.cjs`, `tests/love-spot-voice.test.cjs` and `tests/voice.test.cjs`; remote execution is pending. The existing opt-in `tests/love-spot-voice.runtime.mjs` remains the acceptance check for re-enabling audio.
+
+Legacy chat origins resolve only from a valid board scene. Before that scene arrives, or while it is malformed or unavailable, ordinary chat audio also waits with an explanation; text is unaffected. A valid empty or nonmatching scene releases ordinary audio, while named and board-linked Love Spot chats remain disabled. Origin identities and their resolution state update together so bootstrap cannot briefly expose audio to a legacy Love Spot chat.
 
 ## Organize existing chats — 24 October 2026
 

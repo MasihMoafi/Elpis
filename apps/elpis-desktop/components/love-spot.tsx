@@ -25,6 +25,7 @@ import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
 import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spot";
+import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cjs";
 import { upgradeAgentArt } from "@/lib/love-agents";
@@ -56,7 +57,7 @@ async function savePicture(data: Saved) {
 type LoveSpotProps = { dark: boolean; cwd?: string; onOpenChat?: (id: string) => void; toolbarHost?: HTMLElement | null };
 type MatildaVoice = { enabled: boolean; available: boolean; reason: string; error: string };
 export default function LoveSpot(props: LoveSpotProps) {
-  return <ReadAloud threadId="love-spot" enabled><LoveSpotBoard {...props} /></ReadAloud>;
+  return <ReadAloud threadId="love-spot" enabled unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}><LoveSpotBoard {...props} /></ReadAloud>;
 }
 function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
@@ -112,6 +113,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     return () => { active = false; };
   }, [report]);
   useEffect(() => {
+    if (!LOVE_SPOT_AUDIO.available) return;
     let active = true;
     void api<MatildaVoice>("/love-spot/voice/settings").then(value => {
       if (active) { setVoice(value); voiceEnabled.current = value.enabled; }
@@ -358,6 +360,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     }) });
 
   async function changeVoice(enabled: boolean) {
+    if (!LOVE_SPOT_AUDIO.available) return;
     voiceVersion.current++;
     voiceEnabled.current = enabled;
     setVoice(previous => previous ? { ...previous, enabled } : previous);
@@ -450,7 +453,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     save(true);
   }
 
-  const voiceProblem = voiceError || speech?.error?.message || voice?.error;
+  const voiceProblem = LOVE_SPOT_AUDIO.available ? voiceError || speech?.error?.message || voice?.error : "";
   const tools = <div className="navbar love-spot-tools">
       <div className="love-spot-pages">
         <DropdownMenu onOpenChange={open => { if (open) loadPages(); }}>
@@ -477,9 +480,9 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
       <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
-        <label className="flex items-center gap-2" title="Matilda speaks each reply in your ChatGPT voice. It may use your ChatGPT allowance."><span aria-hidden="true">{voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Voice<Switch aria-label="Voice" checked={!!voice?.enabled} disabled={!voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
-        {voice && !voice.available && <Tooltip content={voice.reason || "ChatGPT voice is unavailable."}><Button variant="ghost" size="icon-xs" aria-label="Why Voice is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
-        <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
+        <label className="flex items-center gap-2" title={LOVE_SPOT_AUDIO.available ? "Matilda reads each reply in your ChatGPT voice. It may use your ChatGPT allowance." : LOVE_SPOT_AUDIO.reason}><span aria-hidden="true">{LOVE_SPOT_AUDIO.available && voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Read replies aloud<Switch aria-label="Read replies aloud" checked={LOVE_SPOT_AUDIO.available && !!voice?.enabled} disabled={!LOVE_SPOT_AUDIO.available || !voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
+        {(!LOVE_SPOT_AUDIO.available || voice && !voice.available) && <Tooltip content={LOVE_SPOT_AUDIO.available ? voice?.reason || "ChatGPT voice is unavailable." : LOVE_SPOT_AUDIO.reason}><Button variant="ghost" size="icon-xs" aria-label="Why read aloud is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
+        <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
         {voiceSaving && <span className="sr-only" role="status">Saving Voice…</span>}
         {voiceProblem && <span className="text-destructive" role="alert">{voiceProblem}</span>}
       </div>

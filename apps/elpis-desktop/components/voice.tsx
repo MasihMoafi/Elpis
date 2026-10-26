@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioLines, MicOff, Mic, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { api, sessionReady } from "@/lib/api";
 
 type Heard = { events: Record<string, number>; bytes: number; packets: number; energy: number; mic: number; listened: boolean; began: number };
@@ -10,7 +11,7 @@ type Call = { controller: AbortController; peer: RTCPeerConnection | null; strea
 type VoiceEvent = { type: string; sdp?: string; message?: string; role?: string; text?: string; delta?: string };
 
 /** The streaming request owns the native call: aborting it ends voice even if this window disappears. */
-export function Voice({ threadId, disabled, onBusy, persona }: { threadId: string; disabled: boolean; onBusy: (busy: boolean) => void; persona?: string }) {
+export function Voice({ threadId, disabled, onBusy, persona, unavailableReason }: { threadId: string; disabled: boolean; onBusy: (busy: boolean) => void; persona?: string; unavailableReason?: string }) {
   const [available, setAvailable] = useState(false);
   const [phase, setPhase] = useState<"idle" | "connecting" | "listening">("idle");
   const [muted, setMuted] = useState(false);
@@ -36,13 +37,13 @@ export function Voice({ threadId, disabled, onBusy, persona }: { threadId: strin
   }
   useEffect(() => {
     const controller = new AbortController();
-    api<{ available: boolean }>("/voice", undefined, controller.signal).then(result => { if (!controller.signal.aborted) setAvailable(result.available === true); }).catch(() => {});
+    if (!unavailableReason) api<{ available: boolean }>("/voice", undefined, controller.signal).then(result => { if (!controller.signal.aborted) setAvailable(result.available === true); }).catch(() => {});
     return () => { controller.abort(); end(); };
-  }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [threadId, unavailableReason]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (disabled) end(); }, [disabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function start() {
-    if (disabled || !available || call.current) return;
+    if (disabled || unavailableReason || !available || call.current) return;
     const current: Call = { controller: new AbortController(), peer: null, stream: null, audio: null, timer: null, sampler: null, heard: { events: {}, bytes: 0, packets: 0, energy: 0, mic: 0, listened: false, began: Date.now() } };
     call.current = current; setError(""); setPhase("connecting"); busyCallback.current(true);
     current.timer = setTimeout(() => { if (call.current === current) end("Voice connection timed out. Try again."); }, 35000);
@@ -132,6 +133,7 @@ export function Voice({ threadId, disabled, onBusy, persona }: { threadId: strin
       end(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Microphone access was denied. Allow it and try again." : cause instanceof Error ? cause.message : "Voice could not start.");
     }
   }
+  if (unavailableReason) return <Tooltip content={unavailableReason}><Button type="button" size="icon" variant="ghost" className="opacity-50" aria-label="Voice unavailable" disabled focusableWhenDisabled title={unavailableReason}><AudioLines size={17} /></Button></Tooltip>;
   if (!available) return null;
   const active = phase !== "idle";
   // The same row, buttons and status as dictation, because it is the same kind of control.

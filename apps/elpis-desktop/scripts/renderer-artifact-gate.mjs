@@ -40,9 +40,9 @@ export const retainedUpdates = {
       "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added. Run40273131811 proved the target deleted while legitimate reply elements arrived: require the target tombstone on disk and absence live, preserve every other saved live element, and retain both Undo assertions."
     },
     "tests/arrow-keys.test.cjs": {
-      "blob": "f0d6f492707b3edfefadc8d1a29bb8c0d1876a2c",
+      "blob": "7744270606ce16f18018a5854429b851a15b2aa5",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure."
+      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure. R12: cancel a delayed sidebar selection when focus leaves or its destination disconnects. Preserve the complete original control sweep and closed-select behavior; add deterministic cancelled, leave-and-return, and held-focus navigation checks for the missing Sources anchor observed in run40277834091."
     },
     "tests/workflow-provenance.test.cjs": {
       "blob": "e8e88defb2ae4322a4488db2060a8838afd460f6",
@@ -220,9 +220,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). S35, Masih 25 Oct screenshot: the close control belongs at the right of the Elpis brand. Measure brand/close bounds in that order, retaining SVG, width and both-theme clipping checks."
     },
     "tests/parity-fixture.cjs": {
-      "blob": "6d85357f059f385a73fc55a30dcc1cf5d2c0979f",
+      "blob": "0826f35c06ea043a56d99dcba1cd702dbffa30e5",
       "approval": "dc7256e1672e6b15164fa01e39a48fb13d9cd03e",
-      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion."
+      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion. Love Spot, Masih 26 Oct: disable unavailable audio. Emit the actual server protocol's initial empty board scene, and allow a held scene/error event to verify that unknown legacy chat origins cannot warm or launch audio; keep ordinary chat audio proof after resolution and all existing fixture routes."
     },
     "tests/windows-split.test.cjs": {
       "blob": "7e2255fda610c61f43c27f52f24e98b4219dd38f",
@@ -437,9 +437,9 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "174c143c6bed32a9511951865ba981a938f2e95b",
+      "blob": "b2032d6c9d557fe79f0c4ff45a96645a83b9d41d",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks."
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks. Love Spot, Masih 26 Oct: “its audio doesn't work; if you don't know how to do it - disable it” and “forget that functionality for now”. The temporary text-only gate supplies the unavailable reason; preserve all keyboard, tooltip association, layout and theme assertions."
     },
     "tests/love-dock.test.cjs": {
       "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",

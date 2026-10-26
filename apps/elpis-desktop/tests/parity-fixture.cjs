@@ -29,9 +29,10 @@ const TURNS = [
  * `threads` replaces the chat list; `chat` replaces the first chat's turns: [turn id, prompt, reply, work items between them]; `routes` answers more
  * API paths: path → (body, url) → reply. `nativeClipboard` uses Chromium's clipboard
  * with read/write permissions instead of the default writeText recorder. `showScrollbars` keeps native scrollbar
- * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false } = {}) {
-  const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set();
+ * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. `loveScene: null` holds the
+ * initial board snapshot until emitLove sends it, for origin-resolution checks. */
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
+  const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set(), loveBoardStreams = new Set();
   const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
   // A turn may give its start time (ms) fifth, or null for a turn with no recorded times; otherwise turns are two
@@ -49,7 +50,14 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     const chat = threads.find(item => item.id === url.pathname.split('/')[3]);
     if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
-    if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(url.pathname)) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(': fixture\n\n'); loveStreams.add(res); req.on('close', () => loveStreams.delete(res)); return; }
+    if (/^\/api\/love-spot\/(?:talk\/)?events$/.test(url.pathname)) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      if (url.pathname === '/api/love-spot/events') {
+        loveBoardStreams.add(res);
+        res.write(loveScene === null ? ': fixture\n\n' : `data: ${JSON.stringify({ type: 'scene', scene: loveScene, revision: '0'.repeat(64) })}\n\n`);
+      } else res.write(': fixture\n\n');
+      loveStreams.add(res); req.on('close', () => { loveStreams.delete(res); loveBoardStreams.delete(res); }); return;
+    }
     if (url.pathname === '/api/health') return json({ connected: true });
     // A route answers with its value, or with { __http: status, error } for a refusal.
     if (routes[url.pathname]) {
@@ -116,6 +124,8 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   /** How many pages are listening to /api/events: an event emitted before a pane subscribes never reaches it. */
   const listening = () => streams.size;
   const disconnectEvents = () => { for (const stream of streams) stream.end(); };
-  return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening, disconnectEvents };
+  const emitLove = data => { for (const stream of loveBoardStreams) stream.write(`data: ${JSON.stringify(data)}\n\n`); };
+  const loveListening = () => loveBoardStreams.size;
+  return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening, disconnectEvents, emitLove, loveListening };
 }
 module.exports = { fixture, CWD, FILES, TURNS, THREADS };

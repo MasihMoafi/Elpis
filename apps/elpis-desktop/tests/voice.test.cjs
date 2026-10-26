@@ -112,45 +112,54 @@ test('voice controls release the microphone after denial, cancelled startup, mut
   } finally { for (const stream of streams) stream.end(); await f.close(); }
 });
 
-test('Matilda and ordinary chat replies offer Read aloud, warm once, send the displayed words and clear failures after navigation', async () => {
+test('Love Spot explains unavailable audio while ordinary replies still warm, read the displayed words and clear failures after navigation', async () => {
   const threads = [['chat-a', 'Love Spot'], ['chat-b', 'Other chat']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
-  const f = await fixture({ threads, routes: { '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
+  const f = await fixture({ threads, routes: { '/api/voice': () => ({ available: true }), '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
   try {
-    for (const id of ['chat-a', 'chat-b']) {
-      await f.open(id);
-      const reply = f.page.locator('.message.agent').last();
-      await reply.hover(); await f.page.locator('aside').hover(); await reply.hover();
-      // Showing a reply's actions makes the chat's speech thread ahead, once.
-      await eventually(() => assert.deepEqual(f.posts.filter(row => row.path === '/api/voice/read-aloud/warm').map(row => row.body.threadId).filter(chat => chat === id), [id]));
-      const speak = reply.getByRole('button', { name: 'Read aloud', exact: true });
-      await speak.waitFor();
-      await speak.click();
-      await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === id)));
-      const request = f.posts.find(row => row.path === '/api/voice/read-aloud' && row.body.threadId === id);
-      assert.equal(request.body.text, 'All green.');
-      // The fixture returns no speech stream: a failed read belongs only to this visit to this chat.
-      await reply.getByRole('alert').waitFor();
-    }
+    await f.open('chat-a');
+    const unavailable = f.page.getByRole('button', { name: 'Voice unavailable', exact: true });
+    await unavailable.waitFor(); assert.equal(await unavailable.isDisabled(), true);
+    await unavailable.focus(); await f.page.keyboard.press('Tab'); await f.page.keyboard.press('Shift+Tab');
+    await f.page.getByRole('tooltip').filter({ hasText: 'Love Spot audio is temporarily unavailable.' }).waitFor();
+    const matilda = f.page.locator('.message.agent').last();
+    await matilda.hover(); assert.equal(await matilda.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
+    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'Love Spot does not warm or start a speaker');
+    await f.open('chat-b');
+    const reply = f.page.locator('.message.agent').last();
+    await reply.hover(); await f.page.locator('aside').hover(); await reply.hover();
+    // Showing a reply's actions makes the chat's speech thread ahead, once.
+    await eventually(() => assert.deepEqual(f.posts.filter(row => row.path === '/api/voice/read-aloud/warm').map(row => row.body.threadId), ['chat-b']));
+    const speak = reply.getByRole('button', { name: 'Read aloud', exact: true });
+    await speak.waitFor(); await speak.click();
+    await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === 'chat-b')));
+    const request = f.posts.find(row => row.path === '/api/voice/read-aloud' && row.body.threadId === 'chat-b');
+    assert.equal(request.body.text, 'All green.');
+    // The fixture returns no speech stream: a failed read belongs only to this visit to this chat.
+    await reply.getByRole('alert').waitFor();
     await f.open('chat-a');
     assert.equal(await f.page.locator('.message.agent [role="alert"]').count(), 0, 'returning to a chat does not revive its previous speech failure');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
-test('Matilda automatically speaks new live prose once before completion, respects mute, and can stop while writing', async () => {
+test('Love Spot preserves typed messages and live replies without starting automatic audio, including a saved Voice-on preference', async () => {
   for (const enabled of [true, false]) {
-    let loaded = false; const streams = new Set();
     const f = await fixture({ threads: [{ id: 'chat-a', name: 'Love Spot', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }], routes: {
-      '/api/love-spot/talk': () => { loaded = true; return { thread: { id: 'chat-a' } }; },
+      '/api/love-spot/talk': () => ({ thread: { id: 'chat-a' } }),
+      '/api/voice': () => ({ available: true }),
       '/api/love-spot/voice/settings': () => ({ enabled, available: true }),
-      '/api/love-spot/voice': (_body, _url, response) => { response.writeHead(200, { 'Content-Type': 'application/x-ndjson' }); response.write(JSON.stringify({ type: 'session', id: 'automatic-speech' }) + '\n'); streams.add(response); response.on('close', () => streams.delete(response)); },
     } });
     try {
-      const { page } = f; await f.open('chat-a'); await eventually(() => assert.equal(loaded, true));
-      const requests = () => f.posts.filter(row => row.path === '/api/love-spot/voice');
-      assert.equal(requests().length, 0, 'history is not replayed');
-      const emit = (method, params) => f.emit('message', { method, params: { threadId: 'chat-a', turnId: 'new-turn', ...params } });
-      emit('turn/started', { turn: { id: 'new-turn' } });
+      const { page } = f; await f.open('chat-a');
+      const unavailable = page.getByRole('button', { name: 'Voice unavailable', exact: true });
+      await unavailable.waitFor(); assert.equal(await unavailable.isDisabled(), true);
+      await unavailable.evaluate(button => button.click());
+      await f.composer.fill('Please reply in text.'); await f.composer.press('Enter');
+      await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/threads/chat-a/turns' && row.body.text === 'Please reply in text.')));
+      const requests = () => f.posts.filter(row => /voice/.test(row.path));
+      assert.equal(requests().length, 0, 'history and the unavailable launch do not start audio');
+      const emit = (method, params) => f.emit('message', { method, params: { threadId: 'chat-a', turnId: 't-new', ...params } });
+      emit('turn/started', { turn: { id: 't-new' } });
       emit('item/started', { item: { id: 'thinking', type: 'agentMessage', phase: 'commentary', text: '' } });
       emit('item/agentMessage/delta', { itemId: 'thinking', delta: 'Checking things.' });
       await page.getByText('Checking things.', { exact: true }).waitFor(); assert.equal(requests().length, 0, 'commentary stays quiet');
@@ -158,15 +167,65 @@ test('Matilda automatically speaks new live prose once before completion, respec
       emit('item/agentMessage/delta', { itemId: 'live-reply', delta: 'Hello Masih. ' });
       const reply = page.locator('.message.agent').filter({ hasText: 'Hello Masih.' });
       await reply.waitFor();
-      if (enabled) {
-        await eventually(() => assert.equal(requests().length, 1), 8000);
-        await reply.hover(); await reply.getByRole('button', { name: 'Stop', exact: true }).click();
-      }
+      await reply.hover(); assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
       emit('item/agentMessage/delta', { itemId: 'live-reply', delta: 'Still here.' });
       await page.getByText('Hello Masih. Still here.', { exact: true }).waitFor();
-      emit('turn/completed', { turn: { id: 'new-turn', status: 'completed', items: [{ id: 'live-reply', type: 'agentMessage', phase: 'final_answer', text: 'Hello Masih. Still here.' }] } });
-      assert.equal(requests().length, enabled ? 1 : 0, 'deltas, Stop and completion never restart speech; muted turns stay quiet');
+      emit('turn/completed', { turn: { id: 't-new', status: 'completed', items: [{ id: 'live-reply', type: 'agentMessage', phase: 'final_answer', text: 'Hello Masih. Still here.' }] } });
+      await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' });
+      assert.equal(requests().length, 0, 'a saved Voice-on preference, deltas and completion cannot start unavailable audio');
       assert.deepEqual(f.errors, []);
-    } finally { for (const stream of streams) stream.end(); await f.close(); }
+    } finally { await f.close(); }
   }
+});
+
+test('delayed Love Spot origin discovery blocks legacy chat audio and releases only ordinary chats after a valid scene', async () => {
+  const threads = [['chat-a', 'Review'], ['chat-b', 'Other chat'], ['chat-c', 'Love Spot']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
+  const f = await fixture({ threads, loveScene: null, routes: {
+    '/api/voice': () => ({ available: true }),
+    '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'Ordinary text to read.' }, completedAtMs: Date.now() }], nextCursor: null }),
+  } });
+  try {
+    const { page } = f;
+    await page.evaluate(() => {
+      window.voiceLaunches = { microphone: 0, peers: 0 };
+      const microphone = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices), Peer = RTCPeerConnection;
+      navigator.mediaDevices.getUserMedia = (...args) => { window.voiceLaunches.microphone++; return microphone(...args); };
+      window.RTCPeerConnection = class extends Peer { constructor(...args) { super(...args); window.voiceLaunches.peers++; } };
+    });
+    await eventually(() => assert.equal(f.loveListening(), 1));
+    for (const id of ['chat-a', 'chat-b', 'chat-c', 'chat-a']) {
+      await f.open(id);
+      const unavailable = page.getByRole('button', { name: 'Voice unavailable', exact: true });
+      await unavailable.waitFor(); assert.equal(await unavailable.isDisabled(), true);
+      assert.equal(await unavailable.getAttribute('title'), id === 'chat-c' ? 'Love Spot audio is temporarily unavailable.' : 'Audio is unavailable while chat information loads.');
+      await unavailable.evaluate(button => button.click());
+      const reply = page.locator('.message.agent').last();
+      if (await reply.count()) { await reply.hover(); assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0); }
+    }
+    assert.deepEqual(await page.evaluate(() => window.voiceLaunches), { microphone: 0, peers: 0 });
+    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'unknown origins cannot warm or launch audio');
+
+    f.emitLove({ type: 'scene', scene: { elements: [{ id: 'review-card', customData: { loveAgent: { name: 'Review', threadId: 'chat-a' } } }] } });
+    await page.getByRole('button', { name: 'Voice unavailable', exact: true }).and(page.locator('[title="Love Spot audio is temporarily unavailable."]')).waitFor();
+    const legacyReply = page.locator('.message.agent').last();
+    await legacyReply.hover(); assert.equal(await legacyReply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
+    assert.equal(f.posts.filter(row => /voice/.test(row.path)).length, 0, 'the resolved legacy Love Spot chat stays gated');
+
+    await f.open('chat-b');
+    await page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
+    const reply = page.locator('.message.agent').last();
+    await reply.hover();
+    await eventually(() => assert.deepEqual(f.posts.filter(row => row.path === '/api/voice/read-aloud/warm').map(row => row.body.threadId), ['chat-b']));
+    await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
+    await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === 'chat-b' && row.body.text === 'Ordinary text to read.')));
+    await reply.getByRole('alert').waitFor();
+
+    f.emitLove({ type: 'error', message: 'The scene is unavailable.' });
+    await page.getByRole('button', { name: 'Voice unavailable', exact: true }).and(page.locator('[title="Audio is unavailable while chat information loads."]')).waitFor();
+    await reply.hover(); assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
+    f.emitLove({ type: 'scene', scene: { elements: [] } });
+    await page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.voiceLaunches.microphone), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
 });
