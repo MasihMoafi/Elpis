@@ -1,4 +1,5 @@
-const { controlValue } = require("./controls.cjs");
+const { controlValue, guardDesktopStore } = require("./controls.cjs");
+const { fakeDesktop } = require('./fake-desktop.cjs');
 // Browser contracts for the actual static app; fixtures never run model calls.
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
@@ -16,6 +17,7 @@ before(async()=>{
    let data={data:[],nextCursor:null};
    if(route==='/api/health')data={connected:f.connected!==false};
    if(route==='/api/settings')data={main:{model:'fixture-model',provider:'fixture'},providers:[]};
+   if(route==='/api/models')data={data:[{id:'fixture-model',model:'fixture-model',displayName:'Fixture',supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'high'}]}],nextCursor:null};
    if(route==='/api/threads')data={data:[f.thread],nextCursor:null};
    if(route==='/api/threads/reconnect')data={thread:f.thread,data:[{turnId:'turn',item:{id:'reply',type:'agentMessage',text:f.reply}}],nextCursor:null};
    if(route==='/api/threads/reconnect/resume')data={thread:f.thread,activeTurnId:null};
@@ -30,7 +32,9 @@ before(async()=>{
 after(async()=>{await browser?.close();for(const client of clients)client.end();await new Promise(resolve=>server.close(resolve));});
 test('connection recovery preserves draft and delivery error, clears stale approvals and reloads history',async()=>{
  reconnectFixture={thread:{id:'reconnect',name:'Reconnect conversation',model:'fixture-model',modelProvider:'fixture',status:{type:'idle'},desktopAccess:{writable:true}},reply:'Before reconnect',calls:[]};
- const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(5000);
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});
+ await guardDesktopStore(context);await context.addInitScript(fakeDesktop);
+ const page=await context.newPage();page.setDefaultTimeout(5000);
  const event=(name,data)=>{for(const client of clients)client.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);};
  try{
   await page.goto(url);await page.locator('.thread-link').filter({hasText:'Reconnect conversation'}).click();
@@ -57,7 +61,10 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   assert.ok(recovery&&workspace&&recovery.y>workspace.y+workspace.height*0.7,'reconnecting status stays near the bottom');
   const composer=page.getByLabel('Message Elpis',{exact:true});
   assert.equal(await composer.isEnabled(),true,'disconnection leaves draft editing available');
-  const mutations=()=>reconnectFixture.calls.filter(call=>call.method==='POST'&&/\/(turns|steer|shell|side-chat|compact)$/.test(call.route)).length;
+  const mutations=()=>reconnectFixture.calls.filter(call=>call.method==='POST'&&/\/(turns|steer|shell|side-chat|compact|permissions|effort|service-tier|interrupt|folder)$/.test(call.route)).length;
+  assert.equal(await page.getByRole('button',{name:'Change permissions',exact:true}).isDisabled(),true);
+  assert.equal(await page.getByRole('combobox',{name:'Reasoning effort',exact:true}).isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'Change folder',exact:true}).isDisabled(),true);
   const sent=mutations();
   for(const draft of ['Edit while Elpis is away','/btw Keep this as a draft','/compact']){
    await composer.fill(draft);await composer.press('Enter');
@@ -65,7 +72,7 @@ test('connection recovery preserves draft and delivery error, clears stale appro
    assert.equal(await page.getByRole('listbox',{name:'Slash commands',exact:true}).count(),0,'offline commands cannot be invoked by pointer either');
    assert.equal(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled(),true);
   }
-  await composer.fill('!printf offline');await composer.press('Enter');
+  await composer.fill('');await composer.fill('!printf offline');await composer.press('Enter');
   assert.equal(await page.getByRole('button',{name:'Run shell command',exact:true}).isDisabled(),true);
   assert.equal(await composer.inputValue(),'printf offline');await composer.press('Escape');
   const draft='Edited while offline\nKeep the new line';await composer.fill('Edited while offline');await composer.press('Shift+Enter');await composer.press('End');await composer.pressSequentially('Keep the new line');
@@ -75,7 +82,7 @@ test('connection recovery preserves draft and delivery error, clears stale appro
    await restored.goto(`${url}/?session=reconnect`);
    await eventually(async()=>assert.equal(await controlValue(restored.getByLabel('Message Elpis',{exact:true})),draft,'a fresh view restores the offline edit'));
   }finally{await restored.close();}
-  assert.equal(mutations(),sent,'offline keyboard actions never attempt a runtime mutation');
+  assert.equal(mutations(),sent,'offline composer actions never attempt a runtime mutation');
   assert.equal(await page.getByText('Stale approval',{exact:true}).count(),0);
   reconnectFixture.reply='Recovered history';const calls=reconnectFixture.calls.length;
   reconnectFixture.connected=true;event('connection',{connected:true});
@@ -87,7 +94,7 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   const refreshed=reconnectFixture.calls.slice(calls).map(call=>call.route);
   for(const route of ['/api/threads','/api/models','/api/settings','/api/threads/reconnect','/api/threads/reconnect/resume'])assert(refreshed.includes(route),route);
   assert.equal(reconnectFixture.calls.filter(call=>call.route==='/api/threads/reconnect/turns').length,1,'unknown delivery is never replayed');
- }finally{await page.close();reconnectFixture=null;}
+ }finally{await context.close();reconnectFixture=null;}
 });
 
 // A125: a lost event stream can miss the end of any open chat, including a chat outside the list's first page.
@@ -122,13 +129,15 @@ test('A125 reconnect re-reads the first, middle and last open chats and clears m
  const before=f.reads.length;
  f.emit('connection',{connected:false});
  await f.page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).waitFor();
+ const stop=f.page.getByRole('button',{name:'Stop response',exact:true});
+ assert.equal(await stop.isDisabled(),true);await stop.evaluate(button=>button.click());
  for(const thread of f.threads)f.turns.set(thread.id,null);
  f.recover();f.emit('connection',{connected:true});
  await f.page.getByText('Recovered chat-c',{exact:true}).waitFor();
  await eventually(()=>assert.deepEqual(new Set(f.reads.slice(before)),new Set(f.threads.map(t=>t.id)),'every open chat must be read after reconnect, including the off-page first tab'));
  for(const thread of f.threads){await f.tab(thread.id);await eventually(async()=>assert.equal(await f.page.getByRole('button',{name:'Stop response',exact:true}).count(),0));}
  assert.equal(await draftValue(f.composer),'Draft survives reconnect');
- assert.equal(f.posts.filter(post=>post.path.endsWith('/turns')).length,0,'recovery never resends messages');
+ assert.equal(f.posts.filter(post=>/\/(turns|interrupt)$/.test(post.path)).length,0,'offline Stop and recovery never send runtime mutations');
 }));
 
 test('A125 reopening a chat clears a turn whose end was missed while another chat was shown',()=>reconnectChats(async f=>{

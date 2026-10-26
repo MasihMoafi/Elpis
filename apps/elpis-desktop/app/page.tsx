@@ -455,6 +455,7 @@ export default function Home() {
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const restoreScroll = useRef<{ height: number; top: number } | null>(null);
   const request = useRef(0);
+  const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
   const liveRevision = useRef(0), liveVersions = useRef(new Map<string, number>());
   const liveKeysAfter = useCallback((revision: number) => new Set([...liveVersions.current].filter(([, version]) => version > revision).map(([key]) => key)), []);
 
@@ -620,9 +621,8 @@ export default function Home() {
   }, []);
   useEffect(() => {
     let disposed = false; let events: EventSource | undefined; let wasConnected = false; let receivedConnection = false; let recovery = 0;
-    let restoring = Promise.resolve();
     function disconnected() { wasConnected = false; recovery++; setConnected(false); setConnectionStatus("Elpis is disconnected. Reconnecting to Elpis… Your draft is saved."); setApprovals([]); }
-    async function reconnect(initial = false) {
+    async function reconnect() {
       const attempt = ++recovery, thread = selectedRef.current, requestId = request.current;
       const ids = new Set(tabsRef.current.tabs.flatMap(tab => tab.threadId ? [tab.threadId] : []));
       if (thread) ids.add(thread.id);
@@ -635,8 +635,9 @@ export default function Home() {
       // A list page can omit open chats or fail; each tab still needs its own authoritative turn state.
       await Promise.all([...ids].map(async id => {
         const open = () => current() && !hidden.current.has(id) && (selectedRef.current?.id === id || tabsRef.current.tabs.some(tab => tab.threadId === id));
-        // Close the gap between restoring this chat and subscribing, without holding up the app or other tabs.
-        if (initial && thread?.id === id) await restoring;
+        // The initial restore survives effect restarts. Its own resume must finish before this chat's recovery read.
+        const restoring = initialRestoration.current;
+        if (restoring?.threadId === id) await restoring.promise;
         if (!open()) return;
         const turnRevision = turnRevisions.current[id], modeRevision = modeRevisions.current[id];
         const historyRevision = liveRevision.current;
@@ -671,7 +672,9 @@ export default function Home() {
         // The chat of the shown tab comes back; without saved tabs, the last chat does.
         const launch = new URLSearchParams(location.search);
         const last = launch.has("session") ? launch.get("session") : restoredTabs.current ? activeTab(tabsRef.current).threadId : window.elpisDesktop?.storage?.getItem("elpis-last-chat");
-        if (last && !selectedRef.current && request.current === 0) restoring = loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread);
+        if (last && !selectedRef.current && request.current === 0) {
+          initialRestoration.current = { threadId: last, promise: loadThread({ id: last, ...(restoredTabs.current && activeTab(tabsRef.current).title ? { name: activeTab(tabsRef.current).title } : {}) } as Thread) };
+        }
         await sessionReady();
         if (disposed) return;
         setReady(true);
@@ -688,13 +691,13 @@ export default function Home() {
         events.addEventListener("sideChat", event => window.dispatchEvent(new CustomEvent("elpis:side-chat", { detail: JSON.parse(event.data) })));
         events.addEventListener("connection", event => {
           if (disposed) return;
-          const first = !receivedConnection; receivedConnection = true;
+          receivedConnection = true;
           const available = Boolean(JSON.parse(event.data).connected);
           if (!available) { disconnected(); return; }
           const recovered = !wasConnected; wasConnected = true; setConnected(true);
           // What failed only because Elpis was away is not an error once it is back (reconnect reads it again).
           setError(previous => refusedOffline(previous) ? "" : previous);
-          if (recovered) void reconnect(first);
+          if (recovered) void reconnect();
         });
         events.onerror = disconnected;
         events.addEventListener("message", event => {
@@ -1017,7 +1020,7 @@ export default function Home() {
   }
   /** Moves the open chat to a project's folder (A26): its next turns run there; earlier turns keep theirs. */
   async function moveChat(target: Project | null) {
-    if (!selected || !target) return;
+    if (!ready || !connected || !selected || !target) return;
     const { cwd: moved } = await api<{ cwd: string }>(`/threads/${encodeURIComponent(selected.id)}/folder`, { cwd: target.cwd });
     patchThread(selected.id, { cwd: moved });
   }
@@ -1091,7 +1094,7 @@ export default function Home() {
   }
   /** A chat's permission mode changes now, as the terminal's /permissions does: the engine applies it to the
    * running turn too, and the composer shows the mode the engine reports. A new chat's mode goes in its thread/start. */
-  const permissionsLocked = !ready || (busy && !selected) || projectChanging || changingPermissions;
+  const permissionsLocked = !ready || !connected || (busy && !selected) || projectChanging || changingPermissions;
   const choosePermissions = (next: PermissionMode) => selected ? void changePermissions(selected.id, next) : setNewMode(next);
   /** Shift+Tab in the message box, as in Claude Code: Ask for approval, then Approve for me, then Plan mode, then back.
    * Full access and Bypass are chosen from the menu only; Shift+Tab from them returns to Ask for approval. */
@@ -1104,6 +1107,7 @@ export default function Home() {
   /** A new chat shows the mode the engine started it in. */
   const noteStartedMode = (id: string, mode: PermissionMode | null | undefined) => { if (mode) setThreadModes(prev => ({ ...prev, [id]: mode })); };
   async function changePermissions(id: string, mode: PermissionMode) {
+    if (!ready || !connected) return;
     setChangingPermissions(true); setError("");
     try {
       const result = await api<{ permissions: PermissionMode }>(`/threads/${encodeURIComponent(id)}/permissions`, { permissions: mode });
@@ -1114,6 +1118,7 @@ export default function Home() {
   /** A chat's effort is saved the moment it is picked (menu, /effort, Shift+Up/Down): later turns, a restart and a
    * running turn take it. "Default" is not a saved level, so it changes nothing here. */
   async function saveEffort(id: string, value: string) {
+    if (!ready || !connected) return;
     const before = settingsOf.current[id]?.reasoningEffort ?? (selectedRef.current?.id === id ? selectedRef.current.reasoningEffort : null) ?? null;
     if (!value || value === before) return;
     const apply = (reasoningEffort: string | null) => { settingsOf.current[id] = { ...settingsOf.current[id], reasoningEffort }; patchThread(id, { reasoningEffort }); };
@@ -1246,6 +1251,7 @@ export default function Home() {
     finally { setBusy(false); if (request.current === originalRequest) focusComposer(); }
   }
   async function stop(thread: Thread) {
+    if (!ready || !connected) return;
     const originalFocus = document.activeElement, originalRequest = request.current;
     try { await api(`/threads/${encodeURIComponent(thread.id)}/interrupt`, activeTurns[thread.id] ? { turnId: activeTurns[thread.id] } : {}); }
     catch (e) { setError(String(e instanceof Error ? e.message : e)); }
@@ -1560,6 +1566,7 @@ export default function Home() {
     ["Chat", selected?.id ?? "Not started yet"],
   ];
   async function chooseFast(args?: string) {
+    if (!ready || !connected) return;
     const choice = args?.trim().toLowerCase();
     if (choice && choice !== 'on' && choice !== 'off') { setSlashNotice('Use /fast, /fast on or /fast off.'); return; }
     const provider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
@@ -2259,7 +2266,7 @@ export default function Home() {
               <ModelPicker choices={!selected ? choices : selectedChoice?.provider ? [selectedChoice] : choices.filter(choice => !choice.provider)} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} defaultModel={selected ? null : providerSettings?.main.model}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) setOverride(selected.id, { model: choice.model }); else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
-              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || busy}>
+              {turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || !connected || busy}>
                 <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
@@ -2273,10 +2280,10 @@ export default function Home() {
                   const result = insertTranscript(textRef.current, selection, transcript); editDraft(result.text);
                   requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(result.caret, result.caret); });
                 }} />}
-              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." onClick={() => selected && stop(selected)}><Square size={14} fill="currentColor" aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div></div>
+              {activeTurn && <Button type="button" size="sm" variant="secondary" className="stop-button shrink-0 gap-1.5" aria-label="Stop response" title="Stop response: stops the agent’s current turn." disabled={!ready || !connected} onClick={() => selected && stop(selected)}><Square size={14} fill="currentColor" aria-hidden="true" /><span className="composer-action-label">Stop response</span></Button>}<Button type="submit" variant="cutPrimary" className="send-button" size={activeTurn && !continues ? "sm" : "icon"} aria-label={shellMode ? "Run shell command" : activeTurn && !continues ? "Send follow-up" : "Send message"} title={activeTurn && !continues ? followUpTooltip(preferences) : undefined} disabled={sendBlocked}>{activeTurn && !continues && !shellMode ? <><span className="composer-action-label">Send follow-up</span><SendIcon size={18} className="followup-send-icon" aria-hidden="true" /></> : <SendIcon size={18} />}</Button>{activeTurn && !continues && !shellMode && <SendOptionsMenu choice={followUpChoices(preferences)[1]} disabled={sendBlocked} returnFocus={composerRef} onChoose={follow => void send(undefined, follow)} />}</div></div></div>
           </form>}
           <div className="composer-meta">
-            {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !!activeTurn || readOnlyRun}
+            {selected && <ProjectMenu variant="chip" label="Change folder" addLabel="Choose folder…" allowNone={false} projects={projects} disabled={!ready || !connected || !!activeTurn || readOnlyRun}
               selected={projects.find(item => item.cwd.replace(/\/+$/, "") === selected.cwd?.replace(/\/+$/, "")) ?? (selected.cwd ? { id: `folder:${selected.cwd}`, name: folder(selected.cwd), cwd: selected.cwd } : null)}
               onSelect={moveChat} onAdd={() => void moveChatToFolder()} />}
             {selected?.cwd && <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />}

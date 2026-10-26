@@ -72,11 +72,13 @@ async function fixture(t, options = {}) {
   await guardDesktopStore(page);
   await page.addInitScript(() => { window.elpisDesktop = { storage: { getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value), removeItem: key => localStorage.removeItem(key), onError: () => () => {} } }; });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  // Draft editing starts before hydration; count navigation only after the app loads its chats.
+  await page.locator('.thread-link').filter({ hasText: 'Chat A' }).waitFor();
   const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   await eventually(async () => assert.equal(await input.isEnabled(), true));
-  const initialUrl = page.url(); let navigations = 0;
-  page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
-  return { page, input, initialUrl, control, get navigations() { return navigations; }, posts, errors };
+  const initialUrl = page.url(), navigationUrls = [];
+  page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigationUrls.push(frame.url()); });
+  return { page, input, initialUrl, control, get navigations() { return navigationUrls.length; }, navigationUrls, posts, errors };
 }
 
 async function transfer(view, kind, { text = '', file, target = 'input' } = {}) {
@@ -147,7 +149,7 @@ test('PDF drop on the composer cancels navigation and attaches only the extracte
   const dropped = await transfer(view, 'drop', { file: 'document', text: 'File metadata must not replace draft', target: 'composer' });
   assert.equal(dropped.prevented, true); assert.equal(dropped.dragOverPrevented, true);
   await visibleFile(view, 'brief.pdf'); assert.equal(await view.input.inputValue(), 'Keep this document question'); await noSend(view);
-  assert.equal(view.page.url(), view.initialUrl); assert.equal(view.navigations, 0);
+  assert.equal(view.page.url(), view.initialUrl); assert.equal(view.navigations, 0, JSON.stringify(view.navigationUrls));
   assert.equal(view.posts.find(post => post.path === '/api/attachments/extract').body.mimeType, 'application/pdf');
   await view.page.getByRole('button', { name: 'Send message', exact: true }).click();
   await eventually(async () => assert.equal(sends(view).length, 1));
