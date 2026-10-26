@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { workflowWorktrees } from './workflow-worktrees.mjs';
+import { loveNodeSpec } from './love-agents.mjs';
 
 const ROOT = '00000000-0000-0000-0000-000000000001';
 const FATHER = '00000000-0000-0000-0000-00000000000f';
@@ -56,13 +57,22 @@ function fixture(t, overrides = {}, clientOptions = {}) {
 test('an explicit desktop profile reaches the actual workflow agent despite an ambient profile', async t => {
   const home = createTestTempDir(path.join(os.tmpdir(), 'workflow-profile-'));
   t.after(() => removeTestTempDir(home));
-  const f = fixture(t, { env: { ...process.env, ELPIS_HOME: path.join(home, 'ambient') }, nodeSpec: (node, env) => ({
-    name: node.name, command: process.execPath, args: [FAKE], model: 'm-fast',
-    env: { ...env, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_EXPECT_ENV: JSON.stringify({ ELPIS_HOME: home }) },
-  }) }, { home });
+  const endpoints = ['ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL'];
+  const ambient = Object.fromEntries(endpoints.map(key => [key, process.env[key]]));
+  t.after(() => { for (const [key, value] of Object.entries(ambient)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  for (const key of endpoints) process.env[key] = path.join(home, 'foreign-profile.sock');
+  const expected = { ELPIS_HOME: home, ...Object.fromEntries(endpoints.map(key => [key, null])) };
+  const f = fixture(t, { env: { ELPIS_HOME: path.join(home, 'ambient'), ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-app-server.mjs', import.meta.url)), ELPIS_ACP_AGENT: FAKE }, nodeSpec: (node, env) => {
+    const spec = loveNodeSpec(node, env);
+    return { ...spec, env: { ...spec.env, FAKE_ACP_EXPECT_ENV: spec.env.FAKE_ACP_EXPECT_ENV ?? JSON.stringify(expected) } };
+  } }, { home });
   await f.client.initialize();
   const started = await f.run([task('profile')]);
-  assert.equal((await f.finished(started.graphId)).status, 'succeeded', 'the agent itself refuses a different ELPIS_HOME');
+  assert.equal((await f.finished(started.graphId)).status, 'succeeded', 'the spawned agent itself refuses a different home or any ambient endpoint');
+  const explicit = { ...expected, ELPIS_HOME: path.join(home, 'node-profile'), ELPIS_APP_BRIDGE_SOCKET: path.join(home, 'node.sock') };
+  fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ external: { command: process.execPath, args: [FAKE], env: { ELPIS_HOME: explicit.ELPIS_HOME, ELPIS_APP_BRIDGE_SOCKET: explicit.ELPIS_APP_BRIDGE_SOCKET, FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_EXPECT_ENV: JSON.stringify(explicit) } } }));
+  f.root.modelProvider = 'external';
+  assert.equal((await f.finished((await f.run([task('explicit-node')])).graphId)).status, 'succeeded', 'explicit per-node environment overrides remain authoritative');
 });
 
 test('Restart waits through local workflow admission and final persistence while engine threads stay idle', { timeout: 20000 }, async t => {

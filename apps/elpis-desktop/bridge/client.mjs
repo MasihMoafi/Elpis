@@ -1,5 +1,6 @@
 import voiceHandoff from './voice-handoff.cjs';
 import { fastServiceTier } from '../lib/service-tier.mjs';
+import { profileEnvironment } from './profile-env.mjs';
 import { legacyInterview, interviewTurns } from './love-interview.mjs';
 import { EventEmitter } from 'node:events';
 import { agentParentId, isAgentRun, AGENT_RUN_NOTICE } from '../lib/agent-runs.mjs';
@@ -194,9 +195,8 @@ export class DesktopClient extends EventEmitter {
   #rewindSnapshots; #rewindHistory; #githubConnector; #customize;
   constructor(socket, { home, timeoutMs = 30000, openSocket, reconnectDelayMs = 500, settingsConfirmMs = 3000, browserConfig, archiveDirectory, rewindHome, spawnLinksFile, appHome = os.homedir(), githubConnector, skillTrashOptions, workflowOptions, reportAttempts = 4, reportRetryMs = 2000 } = {}) {
     super(); this.#socket = socket; this.timeoutMs = timeoutMs; this.#settingsConfirmMs = settingsConfirmMs;
-    const workflowEnv = { ...process.env, ...workflowOptions?.env };
+    const workflowEnv = profileEnvironment(home, workflowOptions?.env);
     const profileHome = path.resolve(home ?? elpisHome(workflowEnv));
-    if (home !== undefined) workflowEnv.ELPIS_HOME = profileHome;
     archiveDirectory ??= path.join(profileHome, 'desktop-archives'); rewindHome ??= path.join(profileHome, 'desktop-rewind');
     spawnLinksFile ??= path.join(profileHome, 'desktop-spawn-links.json'); githubConnector ??= createGithubConnector({ home: profileHome });
     this.#reportAttempts = reportAttempts; this.#reportRetryMs = reportRetryMs;
@@ -229,7 +229,7 @@ export class DesktopClient extends EventEmitter {
     const openSocket = async () => {
       await options.beforeConnect?.();
       // An explicitly isolated profile must not inherit another profile's ambient socket override.
-      const socketEnv = options.home === undefined ? process.env : { ...process.env, ELPIS_HOME: options.home, ELPIS_APP_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_SOCKET: undefined };
+      const socketEnv = profileEnvironment(options.home);
       const socketPath = existingSocket(options.socketPath, socketEnv);
       const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: MAX_BRIDGE_MESSAGE_BYTES });
       await new Promise((resolve, reject) => {

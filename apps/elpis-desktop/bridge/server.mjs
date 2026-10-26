@@ -4,6 +4,8 @@ import path from 'node:path';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BridgeError, DesktopClient, elpisHome, MAX_BRIDGE_MESSAGE_BYTES, object, text } from './client.mjs';
+import { profileEnvironment } from './profile-env.mjs';
+import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
@@ -103,9 +105,9 @@ export async function startDesktopServer(options = {}) {
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
   await loveSpot.start();
-  const loveTalk = createLoveSpotTalk({ client, store: loveSpot });
+  const loveTalk = createLoveSpotTalk({ client, store: loveSpot, audio: options.loveSpotAudio ?? LOVE_SPOT_AUDIO });
   // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mjs), not through this Elpis connection.
-  const loveAgents = createLoveAgents(loveSpot, { ...(options.elpisHome ? { env: { ...process.env, ELPIS_HOME: options.elpisHome } } : {}), ...options.loveAgents });
+  const loveAgents = createLoveAgents(loveSpot, { ...options.loveAgents, env: profileEnvironment(options.elpisHome, options.loveAgents?.env) });
   const devServers = createDevServers();
   const experimentLab = createExperimentLab({ client, ...(options.elpisHome ? { file: path.join(options.elpisHome, 'experiment-lab', 'latest.json') } : {}) });
   const loveStreams = new Set();

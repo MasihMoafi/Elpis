@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { BridgeError, elpisHome, object, text } from './client.mjs';
 import { runtimeTools } from './runtime-paths.mjs';
+import { BRIDGE_ENDPOINT_KEYS } from './profile-env.mjs';
 import { handoffText, runAcpNode } from './acp-nodes.mjs';
 import { interviewReply, INVALID_INTERVIEW_REPLY } from './love-interview.mjs';
 const require = createRequire(import.meta.url);
@@ -81,9 +82,10 @@ export function configuredAgents(env = process.env) {
  * external ACP command keeps its own protocol and provider. */
 export function loveNodeSpec(node, env = process.env) {
   const base = { name: node.name, instructions: node.prompt };
+  const profile = { ELPIS_HOME: elpisHome(env), ...Object.fromEntries(BRIDGE_ENDPOINT_KEYS.map(key => [key, env[key]])) };
   const agents = configuredAgents(env), configured = Object.hasOwn(agents, node.provider) ? agents[node.provider] : null;
   // Another program's ACP agent has no Elpis instructions channel; the card's prompt leads its prompt instead.
-  if (configured) return { ...base, instructionsInPrompt: true, command: configured.command, args: configured.args ?? [], env: configured.env ?? {}, ...(node.model ? { model: node.model } : {}) };
+  if (configured) return { ...base, instructionsInPrompt: true, command: configured.command, args: configured.args ?? [], env: { ...profile, ...configured.env }, ...(node.model ? { model: node.model } : {}) };
   const nodeBin = env.ELPIS_NODE_BIN || 'node';
   let accountEnv = {};
   if (node.model.startsWith('claude/')) {
@@ -101,7 +103,7 @@ export function loveNodeSpec(node, env = process.env) {
   }
   const { engine, tools } = installation(env);
   return { ...base, command: nodeBin, args: [present(env.ELPIS_ACP_AGENT || path.join(tools, 'elpis-acp-agent.mjs')), ...(node.model ? ['--model', node.model] : []), ...(node.provider && !/^(claude|agy)\//.test(node.model) ? ['--provider', node.provider] : [])],
-    env: { ...accountEnv, ELPIS_ENGINE_BIN: engine, ELPIS_HOME: elpisHome(env) }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
+    env: { ...accountEnv, ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
 }
 
 /** Runs a card's connected agents in order, each as its own ACP agent process (bridge/acp-nodes.mjs): a card's final

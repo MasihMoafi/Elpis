@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentGraph, createLoveAgents, loveNodeSpec } from './love-agents.mjs';
+import { EventEmitter } from 'node:events';
+import { startDesktopServer } from './server.mjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 // Every card runs as an ACP agent process. The fake agent is built on the official ACP SDK and logs what reaches it;
 // the end-to-end case uses the real Elpis ACP agent on a scripted app-server.
@@ -129,11 +132,12 @@ for (const packaged of [false, true]) test(`each card finds its ACP agent in a $
   fs.symlinkSync(engine, path.join(dir, 'elpis-next'));
   const home = path.join(dir, 'home'); fs.mkdirSync(home);
   const env = { ELPIS_HOME: home, ELPIS_ENGINE_BIN: path.join(dir, 'elpis-next'), ELPIS_NODE_BIN: '/usr/bin/node', CLAUDE_CODE_EXECUTABLE: '/opt/claude' };
+  const profile = { ELPIS_HOME: home, ELPIS_APP_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_URL: undefined };
   const node = (model, provider = 'openai') => ({ name: 'Ada', prompt: 'Be precise', model, provider });
-  assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: home }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
-  for (const model of ['claude/opus', 'agy/gemini-3.8-flash-high']) assert.deepEqual(loveNodeSpec(node(model), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', model], env: { ELPIS_ENGINE_BIN: engine, ELPIS_HOME: home }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
+  assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
+  for (const model of ['claude/opus', 'agy/gemini-3.8-flash-high']) assert.deepEqual(loveNodeSpec(node(model), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', model], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: 'fx', args: ['acp'] } }));
-  assert.deepEqual(loveNodeSpec(node('openai/gpt-5', 'fx'), env), { name: 'Ada', instructions: 'Be precise', instructionsInPrompt: true, command: 'fx', args: ['acp'], env: {}, model: 'openai/gpt-5' });
+  assert.deepEqual(loveNodeSpec(node('openai/gpt-5', 'fx'), env), { name: 'Ada', instructions: 'Be precise', instructionsInPrompt: true, command: 'fx', args: ['acp'], env: profile, model: 'openai/gpt-5' });
   assert.deepEqual(loveNodeSpec(node('', 'fx'), env).model, undefined, 'without a model the agent keeps its own');
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: ['fx'] } }));
   assert.throws(() => loveNodeSpec(node('m', 'fx'), env), /acp-agents\.json/);
@@ -156,4 +160,29 @@ test('end to end: two Elpis ACP agents hand off through Love Spot on a scripted 
   assert.equal(f.loveAgent('second').threadId, f.engine('second').find(m => m.method === 'turn/start').params.threadId, 'the card opens the Elpis chat that ran it');
   assert.equal(f.loveAgent('second').output, results[1].output);
   assert.equal(f.engine('first').some(m => m.method === 'turn/start' && m.params.input[0].text.includes('Repeat the source')), false);
+});
+
+test('an isolated desktop server runs the real Love Spot ACP agent in its own profile', { timeout: 30000 }, async t => {
+  const home = createTestTempDir(path.join(os.tmpdir(), 'love-profile-')), log = path.join(home, 'engine.jsonl');
+  let app;
+  t.after(async () => { await app?.close(); removeTestTempDir(home); });
+  const keys = ['ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL', 'FAKE_ENGINE_LOG'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  t.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  for (const key of keys.slice(0, 3)) process.env[key] = path.join(home, 'foreign-profile.sock');
+  process.env.FAKE_ENGINE_LOG = log;
+  const client = Object.assign(new EventEmitter(), { connected: true, pendingApprovals: [], close() {} });
+  app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'),
+    loveSpot: { directory: path.join(home, 'board'), screenshots: path.join(home, 'shots') },
+    loveAgents: { env: { ELPIS_NODE_BIN: process.execPath, ELPIS_ENGINE_BIN: FAKE_ENGINE, ELPIS_ACP_AGENT: ELPIS_AGENT } } });
+  const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+  const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+  const post = (route, body) => fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
+  const saved = await post('love-spot', { elements: [{ ...card('profile', 'Unique profile seed'), x: 0, y: 0, width: 240, height: 160 }] });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const reply = await post('love-spot/agents/run', { id: 'profile', cwd: home });
+  assert.equal(reply.status, 200, await reply.clone().text());
+  assert.match((await reply.json()).results[0].output, /Answer from gpt-6-luna: Unique profile seed/);
+  assert.equal(lines(log).find(row => 'engineHome' in row)?.engineHome, home, 'the real ACP process reaches only the selected profile engine');
 });

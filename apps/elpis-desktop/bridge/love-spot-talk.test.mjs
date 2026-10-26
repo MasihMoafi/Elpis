@@ -7,10 +7,13 @@ import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
+import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+
+const enabledAudio = { available: true };
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
-async function fixture(t, { refuseFast = false } = {}) {
+async function fixture(t, { refuseFast = false, audio = enabledAudio } = {}) {
   const base = os.tmpdir();
   const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(), created = [], sent = [], entries = [], speeds = [];
@@ -24,11 +27,32 @@ async function fixture(t, { refuseFast = false } = {}) {
     send: async (id, value) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
     setServiceTier: async (id, value) => { speeds.push({ id, ...value }); if (refuseFast) throw Error('no Fast here'); return { serviceTier: 'priority' }; },
   });
-  const talk = createLoveSpotTalk({ client, store });
+  const talk = createLoveSpotTalk({ client, store, audio });
   t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries, speeds };
 }
+test('text-only Matilda never reads voice preferences or status and still delivers board replies', async t => {
+  const f = await fixture(t, { audio: LOVE_SPOT_AUDIO });
+  const preferences = path.join(f.directory, '.voice.json'), saved = '{legacy malformed voice preference';
+  await fs.writeFile(preferences, saved);
+  let preferenceReads = 0, statusReads = 0;
+  f.store.voice = async () => { preferenceReads++; throw Error('Retired voice preferences must not be loaded'); };
+  f.client.voiceStatus = async () => { statusReads++; throw Error('Retired voice status must not be queried'); };
+  const unavailable = { enabled: false, available: false, reason: LOVE_SPOT_AUDIO.reason, error: '' };
+  assert.deepEqual((await f.talk.read()).voice, unavailable);
+  assert.deepEqual(await f.talk.voice(), unavailable);
+  await f.talk.send({ text: 'Keep writing', model: 'text' });
+  f.finish('turn-1', 'completed', 'The text reply still arrives.'); await f.talk.idle();
+  assert.equal((await f.store.read()).scene.elements.find(element => element.id === 'love-reply-turn-1').originalText, 'The text reply still arrives.');
+  for (const action of [() => f.talk.setVoice({ enabled: true }), () => f.talk.speech(), () => f.talk.conversation('Be kind.')]) {
+    await assert.rejects(action(), error => error.status === 403 && error.message === LOVE_SPOT_AUDIO.reason);
+  }
+  assert.deepEqual([preferenceReads, statusReads], [0, 0], 'startup, writing and refused audio actions never touch disabled audio');
+  assert.deepEqual((await f.talk.read()).voice, unavailable);
+  assert.equal(await fs.readFile(preferences, 'utf8'), saved, 'the fallback preserves saved preferences byte for byte');
+});
+
 test('Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models', async t => {
   const f = await fixture(t);
   await f.store.save({ elements: [note('masih', 'Apricot'), note('agent', 'Blue thought', '#1971c2'), note('love-reply-saved', 'Black reply', '#000000'), note('user-black', 'Black user note', '#000000'), note('gone', 'Do not include', '#e03131', { isDeleted: true })] });
@@ -48,7 +72,7 @@ test('Talk creates one persistent normal chat, attributes live notes by colour, 
   await f.talk.send({ text: 'Again', model: 'text', revision: current.revision });
   assert.equal(f.created.length, 1); assert.equal(f.sent[1].attachments.some(a => a.type === 'image'), false);
   f.finish('turn-2'); await f.talk.idle();
-  f.talk.close(); const second = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => second.close());
+  f.talk.close(); const second = createLoveSpotTalk({ client: f.client, store: f.store, audio: enabledAudio }); t.after(() => second.close());
   await second.read(); await second.send({ text: 'After restart', model: 'text' }); assert.equal(f.created.length, 1);
 });
 test('Talk is Matilda: who she is goes with every message, and only as text she can read', async t => {
@@ -151,7 +175,7 @@ test('simultaneous sends are refused and a missing saved chat is reported withou
   await assert.rejects(f.talk.send({ text: 'Duplicate', model: 'text' }), /already replying/);
   assert.equal(f.sent.length, 1);
   f.talk.close(); f.client.readThread = async () => { throw new Error('Chat was deleted'); };
-  const next = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => next.close());
+  const next = createLoveSpotTalk({ client: f.client, store: f.store, audio: enabledAudio }); t.after(() => next.close());
   await assert.rejects(next.send({ text: 'Hello', model: 'text' }), /Chat was deleted/);
   assert.equal(f.created.length, 1);
 });
@@ -187,7 +211,7 @@ for (const message of [id => `thread not loaded: ${id}`, () => 'Elpis rejected t
   f.talk.close();
   // Deleted from the sidebar and purged at quit: thread/read answers as the engine does for an unknown thread.
   f.client.readThread = async id => { throw new Error(message(id)); };
-  const next = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => next.close());
+  const next = createLoveSpotTalk({ client: f.client, store: f.store, audio: enabledAudio }); t.after(() => next.close());
   assert.deepEqual((await next.read()).entries, []);
   await next.send({ text: 'Are you still there?', model: 'text' });
   assert.equal(f.created.length, 2);
@@ -253,7 +277,7 @@ test('Mute stops the feed while writing continues, persists on restart, and unmu
   assert.equal(events.filter(e => e.type === 'text').length, count);
   assert.match(JSON.stringify((await f.talk.read()).entries), /MUTED/);
   f.finish(); await f.talk.idle(); f.talk.close();
-  const next = createLoveSpotTalk({ client: f.client, store: f.store }); t.after(() => next.close());
+  const next = createLoveSpotTalk({ client: f.client, store: f.store, audio: enabledAudio }); t.after(() => next.close());
   assert.equal((await next.read()).voice.enabled, false);
   await next.send({ text: 'Again', model: 'text' });
   delta(f, 'Before unmute. ');

@@ -7,12 +7,16 @@ import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { startDesktopServer } from './server.mjs';
+import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
+
+const enabledAudio = { available: true };
 
 test('live Matilda carries board/persona context and saves growing speech once; mute and hang-up reject later output', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-unit-'));
   const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(); client.voiceStatus = async () => ({ available: true });
-  const talk = createLoveSpotTalk({ client, store });
+  const talk = createLoveSpotTalk({ client, store, audio: enabledAudio });
   t.after(async () => { talk.close(); await talk.idle(); await store.close(); });
   await store.save({ elements: [{ id: 'user-note', type: 'text', text: 'Our secret is apricot lantern.', strokeColor: '#2f9e44', version: 1, versionNonce: 1, x: 20, y: 20, width: 240, height: 40 }] });
   const call = await talk.conversation('Be brief and friendly.');
@@ -52,7 +56,7 @@ test('the live microphone endpoint starts the saved subscription voice with cont
     startSpeechThread: async (...args) => { starts.push(args); client.emit('side', { method: 'thread/realtime/sdp', params: { threadId: 'speech', sdp: 'v=0\r\nanswer' } }); },
     closeSpeechThread: async () => {},
   });
-  const app = await startDesktopServer({ client, elpisHome: root, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'board'), screenshots: path.join(root, 'shots') } });
+  const app = await startDesktopServer({ client, elpisHome: root, loveSpotAudio: enabledAudio, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'board'), screenshots: path.join(root, 'shots') } });
   t.after(() => app.close());
   const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
   const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
@@ -69,4 +73,34 @@ test('the live microphone endpoint starts the saved subscription voice with cont
   assert.equal((await post('love-spot/voice/settings', { enabled: false })).status, 200);
   assert.equal((await post('love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' })).status, 409);
   assert.equal(starts.length, 1, 'refused requests must not start another subscription session');
+});
+
+test('the production text-only HTTP path skips legacy voice files, status and native audio', async t => {
+  const home = createTestTempDir(path.join(os.tmpdir(), 'lovevoice-disabled-'));
+  let app;
+  t.after(async () => { await app?.close(); removeTestTempDir(home); });
+  const directory = path.join(home, 'board'), file = path.join(directory, '.voice.json'), saved = '{legacy invalid voice preference';
+  await fs.mkdir(directory); await fs.writeFile(file, saved);
+  let reads = 0, statuses = 0, starts = 0;
+  const readFile = fs.readFile;
+  t.mock.method(fs, 'readFile', async (target, ...args) => { if (String(target) === file) reads++; return readFile(target, ...args); });
+  const client = Object.assign(new EventEmitter(), { connected: true, pendingApprovals: [], close() {},
+    voiceStatus: async () => { statuses++; throw Error('Disabled audio status must not load'); },
+    createSpeechThread: async () => { starts++; throw Error('Disabled audio must not warm'); },
+    startSpeechThread: async () => { starts++; throw Error('Disabled audio must not start'); } });
+  app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory, screenshots: path.join(home, 'shots') } });
+  const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
+  const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+  const headers = { origin: url.origin, cookie: auth.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' };
+  for (const route of ['love-spot/talk', 'love-spot/voice/settings']) {
+    const response = await fetch(new URL(`/api/${route}`, url), { headers });
+    assert.equal(response.status, 200);
+    const state = await response.json(); assert.equal((state.voice ?? state).reason, LOVE_SPOT_AUDIO.reason);
+  }
+  for (const [route, body] of [['love-spot/voice/settings', { enabled: true }], ['love-spot/voice', { sdp: 'v=0\r\n' }], ['love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' }]]) {
+    const response = await fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.equal(response.status, 403, route);
+  }
+  assert.deepEqual([reads, statuses, starts], [0, 0, 0], 'indirect startup and direct refused audio never consult or start the voice service');
+  assert.equal(await readFile(file, 'utf8'), saved);
 });

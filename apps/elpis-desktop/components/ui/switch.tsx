@@ -22,6 +22,8 @@ function Switch({
         className
       )}
       {...props}
+      // An explicit name must not also read a wrapping label containing this switch.
+      aria-labelledby={props["aria-labelledby"] ?? (props["aria-label"] ? "" : undefined)}
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
