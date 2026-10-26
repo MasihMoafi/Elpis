@@ -40,6 +40,12 @@ async function main() {
     const ws = new WebSocket(`ws+unix://${sock}:/`);
     await new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });
     const c = { ws, seen: [], pending: new Map(), next: 1, approvals: [] }; clients.push(c);
+    const disconnected = error => {
+      for (const pending of c.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
+      c.pending.clear();
+    };
+    ws.on('close', (code, reason) => disconnected(Error(`Elpis connection closed (${code}): ${String(reason)}`)));
+    ws.on('error', disconnected);
     ws.on('message', data => {
       const m = JSON.parse(String(data)); c.seen.push(m);
       if (m.method && m.id !== undefined) { c.approvals.push(m); ws.send(JSON.stringify({ id: m.id, result: { decision: 'decline' } })); }
@@ -266,9 +272,11 @@ async function main() {
     const engineDir = fs.readdirSync(root).find(n => n.startsWith('engine-'));
     const engine = JSON.parse(fs.readFileSync(path.join(root, engineDir, 'engine.json'), 'utf8'));
     process.kill(engine.pid, 'SIGSTOP');
-    const interruptedStart = later.req('thread/start', { cwd, model }).then(() => { throw Error('a stopped backend unexpectedly answered'); }, e => e.message);
+    const interruptedStart = later.req('thread/start', { cwd, model }).then(() => null, error => error);
     await pause(150); process.kill(engine.pid, 'SIGKILL');
-    assert(!/timeout/.test(await interruptedStart), 'a sent request must receive a disconnect error');
+    const disconnectError = await interruptedStart;
+    assert(disconnectError, 'a stopped backend unexpectedly answered');
+    assert.equal(disconnectError.message, 'Elpis connection closed (1011): Session backend disconnected', 'a sent request must receive the backend disconnect error');
     await wait(() => later.ws.readyState !== 1, 'failed connection closes');
     const fresh = await connect(), observer = await connect();
     const created = await fresh.req('thread/start', { cwd, model: 'gpt-5.5' });
