@@ -32,7 +32,7 @@ const key = (name, target = 'test') => tmux('send-keys', '-t', target, name);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const capture = (target = 'test') => tmux('capture-pane', '-p', '-t', target);
 const pass = label => { checks.push(label); console.log(`PASS ${label}`); };
-let original, forked, fresh;
+let original, forked, fresh, freshCheckout;
 function threads() {
   const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));
   if (!filename) return [];
@@ -142,13 +142,21 @@ async function worktreeMenu(label) {
   assert(JSON.stringify(forkRequest).includes('SOURCE_CONVERSATION_TOKEN'), 'fork inherits the saved conversation');
   assert(JSON.stringify(forkRequest).includes(forked.cwd), 'fork request uses the new checkout');
   pass('worktree Continue creates a real checkout and preserves conversation in its new cwd');
+  const beforeFresh = new Set(worktrees());
   await worktreeMenu('worktree-new'); key('Down'); key('Enter');
   await screenWhen(screen => {
-    fresh = threads().find(thread => thread.cwd !== cwd && thread.cwd !== forked.cwd && worktrees().includes(thread.cwd));
-    return fresh && worktrees().length === 3 && showsDirectory(screen, fresh.cwd) && !screen.includes('Start new conversation') && !screen.includes('Creating worktree');
+    const checkouts = worktrees();
+    freshCheckout = checkouts.find(directory => !beforeFresh.has(directory));
+    return freshCheckout && checkouts.length === 3 && showsDirectory(screen, freshCheckout) && screen.includes('Ask Elpis to do anything') && !screen.includes('Start new conversation') && !screen.includes('Creating worktree');
   }, 'fresh-checkout-created');
+  // Empty native threads materialize only on their first user message; check attachment before persistence.
   const freshRequest = await answer('NEW_CONVERSATION_ONLY: confirm this new checkout is ready.', 'FRESH_READY');
+  await screenWhen(() => {
+    fresh = threads().find(thread => thread.cwd === freshCheckout);
+    return !!fresh;
+  }, 'fresh-thread-persisted');
   assert(fresh, 'fresh thread is saved in a managed checkout');
+  assert.equal(fresh.cwd, freshCheckout, 'the persisted thread belongs to the new checkout');
   assert.notEqual(fresh.cwd, forked.cwd);
   assert(JSON.stringify(freshRequest).includes(fresh.cwd), 'fresh request uses its own checkout');
   assert(!JSON.stringify(freshRequest).includes('SOURCE_CONVERSATION_TOKEN'), 'fresh conversation does not inherit source history');
@@ -203,7 +211,7 @@ async function worktreeMenu(label) {
   } finally {
     if (savedRuntime === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = savedRuntime;
     if (provider.server) provider.close();
-    fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, original, forked, fresh, requests: provider.requests, titleRequests: provider.titleRequests }, null, 2));
+    fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, original, forked, fresh, freshCheckout, requests: provider.requests, titleRequests: provider.titleRequests }, null, 2));
     console.log(`Evidence: ${root}`);
   }
 });
