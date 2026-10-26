@@ -13,6 +13,7 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+const { createHash } = require('node:crypto');
 const WebSocket = require('../tools/elpis-claude/node_modules/ws');
 const { Provider, message } = require('./lib/mock-provider.js');
 
@@ -78,6 +79,7 @@ function wire(engine) {
 
 async function main() {
   const runtime = await import(pathToFileURL(runtimePath));
+  if (process.argv.includes('--launcher-only')) { await launcherGroup(runtime); return; }
   const home = path.join(root, 'home'), xdg = path.join(root, 'xdg');
   fs.mkdirSync(home); fs.mkdirSync(xdg, { mode: 0o700 });
   const fake = fakeEngine('engine-fake');
@@ -384,8 +386,8 @@ async function launcherGroup(runtime) {
     const rt = () => path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge', fs.readdirSync(path.join(env.XDG_RUNTIME_DIR, 'elpis-bridge'))[0]);
     return { env, starts: () => readLines(env.FAKE_BRIDGE_STARTS).map(Number), rt, state: () => JSON.parse(fs.readFileSync(path.join(rt(), 'state.json'), 'utf8')) };
   }
-  const helper = (script, env, args = []) => new Promise(resolve => {
-    const child = spawn(process.execPath, [runtimePath, script, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const helper = (script, env, args = [], launcher = runtimePath) => new Promise(resolve => {
+    const child = spawn(process.execPath, [launcher, script, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = '';
     child.stdout.on('data', d => { stdout += d; }); child.stderr.on('data', d => { stderr += d; });
     child.on('exit', code => resolve({ code, stdout, stderr }));
@@ -419,6 +421,51 @@ async function launcherGroup(runtime) {
     const r = await reply; ws.close(); return r.result;
   };
   const stop = async pid => { try { process.kill(pid, 'SIGTERM'); } catch {} await until(() => !alive(pid), `pid ${pid} stops`, 10000).catch(() => { try { process.kill(pid, 'SIGKILL'); } catch {} }); };
+
+  // Old deployed bridges launch the successor helper with their unchanged engine environment.
+  const versions = path.join(lroot, 'versions');
+  const installed = name => {
+    const bundle = path.join(versions, name), directory = path.join(bundle, 'tools/elpis-claude');
+    fs.mkdirSync(directory, { recursive: true });
+    const script = path.join(directory, 'acp-bridge.mjs'), launcher = path.join(directory, 'shared-runtime.mjs');
+    fs.copyFileSync(fakeBridgeDir(`installed-${name}`), script);
+    for (const file of ['shared-runtime.mjs', 'log-redaction.mjs']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
+    fs.symlinkSync(path.join(tools, 'node_modules'), path.join(directory, 'node_modules'));
+    const engine = path.join(bundle, 'package/bin/codex');
+    fs.mkdirSync(path.dirname(engine), { recursive: true });
+    fs.copyFileSync(fakeEngine(`engine-installed-${name}`), engine); fs.chmodSync(engine, 0o755);
+    fs.writeFileSync(path.join(bundle, 'package/codex-package.json'), JSON.stringify({ layoutVersion: 1, variant: 'elpis', entrypoint: 'bin/codex' }));
+    fs.writeFileSync(path.join(bundle, 'source.json'), JSON.stringify({ source_head: 'a'.repeat(40), runtime_sha256: createHash('sha256').update(fs.readFileSync(engine)).digest('hex') }));
+    return { bundle, script, launcher, engine };
+  };
+  const previous = installed('previous'), successor = installed('successor');
+  for (const mode of ['handoff', 'explicit', 'custom', 'development', 'mismatched-pair']) {
+    const owned = setup(), custom = fakeEngine(`engine-custom-${mode}`);
+    owned.env.ELPIS_ENGINE_BIN = previous.engine;
+    const first = await helper(previous.script, owned.env, [], previous.launcher);
+    const oldSocket = endpointOf(first), oldPid = owned.state().pid; tracked.add(oldPid);
+    await answers(oldSocket);
+    const script = mode === 'development' ? fakeBridgeDir('development-successor') : successor.script;
+    if (mode !== 'explicit') fs.writeFileSync(path.join(owned.rt(), 'successor'), script);
+    await stop(oldPid);
+    if (mode === 'custom') owned.env.ELPIS_ENGINE_BIN = custom;
+    const receipt = path.join(successor.bundle, 'source.json'), savedReceipt = fs.readFileSync(receipt);
+    if (mode === 'mismatched-pair') fs.writeFileSync(receipt, JSON.stringify({ source_head: 'a'.repeat(40), runtime_sha256: '0'.repeat(64) }));
+    const result = await helper(script, owned.env, [], mode === 'development' ? runtimePath : successor.launcher);
+    fs.writeFileSync(receipt, savedReceipt);
+    if (mode === 'mismatched-pair') {
+      assert.notEqual(result.code, 0, 'an unverified installed pair must not start');
+      assert.equal(result.stdout, ''); assert.match(result.stderr, /installed.*engine.*(match|checksum)/i);
+      continue;
+    }
+    const currentSocket = endpointOf(result), currentPid = owned.state().pid; tracked.add(currentPid);
+    const expected = mode === 'handoff' ? successor.engine : mode === 'custom' ? custom : previous.engine;
+    assert.equal(owned.state().engine, expected, `${mode}: runtime records the intended engine`);
+    const actual = await answers(currentSocket);
+    assert(fs.readFileSync(`/proc/${actual.pid}/cmdline`, 'utf8').split('\0').includes(expected), `${mode}: the child executes the intended engine`);
+    await stop(currentPid);
+  }
+  pass('an installed successor repairs inherited engine selection, preserves explicit/custom/development choices and rejects mismatched pairs');
 
   // one bridge for a race of launchers; it outlives them; a living socket is never replaced
   let s = setup();
