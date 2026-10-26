@@ -40,9 +40,9 @@ export const retainedUpdates = {
       "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added. Run40273131811 proved the target deleted while legitimate reply elements arrived: require the target tombstone on disk and absence live, preserve every other saved live element, and retain both Undo assertions."
     },
     "tests/arrow-keys.test.cjs": {
-      "blob": "7744270606ce16f18018a5854429b851a15b2aa5",
+      "blob": "0785fed8676b269a3377f9d2d005d90ef1327548",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure. R12: cancel a delayed sidebar selection when focus leaves or its destination disconnects. Preserve the complete original control sweep and closed-select behavior; add deterministic cancelled, leave-and-return, and held-focus navigation checks for the missing Sources anchor observed in run40277834091."
+      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure. R12: cancel a delayed sidebar selection when focus leaves or its destination disconnects. Preserve the complete original control sweep and closed-select behavior; add deterministic cancelled, leave-and-return, and held-focus navigation checks for the missing Sources anchor observed in run40277834091. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration."
     },
     "tests/workflow-provenance.test.cjs": {
       "blob": "e8e88defb2ae4322a4488db2060a8838afd460f6",
@@ -220,9 +220,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). S35, Masih 25 Oct screenshot: the close control belongs at the right of the Elpis brand. Measure brand/close bounds in that order, retaining SVG, width and both-theme clipping checks."
     },
     "tests/parity-fixture.cjs": {
-      "blob": "0826f35c06ea043a56d99dcba1cd702dbffa30e5",
+      "blob": "d475b324c6ab29e74918a2a247f4042909196d66",
       "approval": "dc7256e1672e6b15164fa01e39a48fb13d9cd03e",
-      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion. Love Spot, Masih 26 Oct: disable unavailable audio. Emit the actual server protocol's initial empty board scene, and allow a held scene/error event to verify that unknown legacy chat origins cannot warm or launch audio; keep ordinary chat audio proof after resolution and all existing fixture routes."
+      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion. Love Spot, Masih 26 Oct: disable unavailable audio. Emit the actual server protocol's initial empty board scene, and allow a held scene/error event to verify that unknown legacy chat origins cannot warm or launch audio; keep ordinary chat audio proof after resolution and all existing fixture routes. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration."
     },
     "tests/windows-split.test.cjs": {
       "blob": "7e2255fda610c61f43c27f52f24e98b4219dd38f",

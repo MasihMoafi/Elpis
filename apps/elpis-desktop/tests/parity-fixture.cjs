@@ -31,7 +31,7 @@ const TURNS = [
  * with read/write permissions instead of the default writeText recorder. `showScrollbars` keeps native scrollbar
  * geometry in headless Chromium, where Playwright otherwise passes --hide-scrollbars. `loveScene: null` holds the
  * initial board snapshot until emitLove sends it, for origin-resolution checks. */
-async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
+async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660, colorScheme = 'light', running = false, desktop = true, chat: start = TURNS, threads: initialThreads = THREADS, routes = {}, storage = {}, browserChannel, browserArgs, nativeClipboard = false, showScrollbars = false, clockTime, loveScene = { elements: [], files: {}, appState: {}, page: { name: 'Current page', session: 'fixture-page' } } } = {}) {
   const posts = [], turns = start.map(turn => [...turn]), streams = new Set(), loveStreams = new Set(), loveBoardStreams = new Set();
   const threads = initialThreads.map(item => ({ ...item, cwd }));
   let rewindSaved = null, rewindAction;
@@ -103,6 +103,7 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   if (desktop) await page.addInitScript(fakeDesktop);
   if (nativeClipboard) await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   else await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => { window.__copied = text; } } }); });
+  if (clockTime) await page.clock.install({ time: clockTime });
   await page.goto(`http://127.0.0.1:${server.address().port}/#token=fixture`);
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').first().waitFor();

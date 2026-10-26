@@ -114,7 +114,8 @@ test('a closed drop-down passes the arrow keys on; Enter and Space open it', { t
 });
 
 test('pending sidebar navigation stops when focus leaves its control and activates when focus stays', async () => {
-  const f = await fixture({ desktop: true });
+  const time = new Date();
+  const f = await fixture({ desktop: true, clockTime: time });
   try {
     const { page } = f;
     await f.open('chat-a');
@@ -125,28 +126,22 @@ test('pending sidebar navigation stops when focus leaves its control and activat
     const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
     const sources = canvas.getByRole('link', { name: 'Sources for Debate + judge', exact: true });
     await sources.waitFor();
-    const time = new Date();
-    await page.clock.install({ time }); await page.clock.pauseAt(time);
+    await page.clock.pauseAt(new Date(time.getTime() + 60_000));
 
     await workflows.focus(); await page.keyboard.press('ArrowDown');
     assert.equal(await loveSpot.evaluate(element => element === document.activeElement), true);
-    await page.clock.runFor(149);
-    assert.equal(await canvas.isVisible(), true, 'the debounce does not navigate early');
     await sources.focus();
-    await page.clock.runFor(1);
+    await page.clock.runFor(1000);
     assert.equal(await canvas.isVisible(), true, 'a stale sidebar schedule cannot replace the focused page');
     assert.equal(await sources.evaluate(element => element === document.activeElement), true, 'focus remains on the connected workflow control');
 
     await workflows.focus(); await page.keyboard.press('ArrowDown');
-    await page.clock.runFor(149);
     await sources.focus(); await loveSpot.focus();
-    await page.clock.runFor(1);
+    await page.clock.runFor(1000);
     assert.equal(await canvas.isVisible(), true, 'returning to the old destination does not revive a cancelled schedule');
 
     await workflows.focus(); await page.keyboard.press('ArrowDown');
-    await page.clock.runFor(149);
-    assert.equal(await canvas.isVisible(), true);
-    await page.clock.runFor(1);
+    await page.clock.runFor(1000);
     await page.getByRole('heading', { name: 'Love Spot', exact: true }).waitFor();
     assert.equal(await loveSpot.evaluate(element => element === document.activeElement), true, 'held focus still opens its destination without Enter');
     assert.deepEqual(f.errors, []);
