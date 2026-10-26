@@ -5,9 +5,9 @@
 // Claude Code's tool names, which the bridge already draws as Elpis items.
 //
 // Approvals: agy has no approval channel in print mode, but runs PreToolUse hooks from each
-// workspace's .agents/hooks.json. While Elpis asks before acting, the wrapper adds its own hooks
-// folder as a workspace; the hook (agy-gate.mjs) asks the Elpis user through a local socket and
-// this wrapper's session/request_permission. Full access keeps those hooks active;
+// workspace's .agents/hooks.json. The wrapper adds its own hooks folder as a workspace;
+// agy-gate.mjs forwards tool decisions through this wrapper's session/request_permission.
+// Full access and Plan keep those hooks active so the bridge can allow or deny within scope;
 // only explicit Bypass passes --dangerously-skip-permissions. Plan mode uses --mode plan.
 import { spawn, execFile } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -125,11 +125,11 @@ function startProcess(s) {
   if (s.mode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   if (s.mode === "plan") args.push("--mode", "plan");
   if (s.conversationId) args.push("--conversation", s.conversationId);
-  // Elpis asks before acting: its hooks folder joins the workspaces, after the chat's own.
-  const asks = s.mode === "default";
-  if (asks) { writeHooks(); s.gate ??= approvalSocket(s); args.push("--add-dir", s.cwd, "--add-dir", HOOKS_DIR); }
+  // Plan mode still needs the independent scope guard; only explicit Bypass omits it.
+  const gated = s.mode !== "bypassPermissions";
+  if (gated) { writeHooks(); s.gate ??= approvalSocket(s); args.push("--add-dir", s.cwd, "--add-dir", HOOKS_DIR); }
   args.push("--print=");
-  const env = asks ? { ...process.env, ELPIS_AGY_GATE: s.gate.path, ELPIS_AGY_CWD: s.cwd, ELPIS_AGY_HOOKS: HOOKS_DIR } : process.env;
+  const env = gated ? { ...process.env, ELPIS_AGY_GATE: s.gate.path, ELPIS_AGY_CWD: s.cwd, ELPIS_AGY_HOOKS: HOOKS_DIR } : process.env;
   const proc = spawn(AGY, args, { cwd: s.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   s.proc = proc; s.flags = `${s.model}|${s.mode}`;
   let buf = "";

@@ -25,6 +25,11 @@ if (role) {
   readline.createInterface({ input: process.stdin }).on("line", async line => {
     const msg = JSON.parse(line); record(msg);
     if (role === "agy") {
+      if (!process.env.ELPIS_AGY_GATE) {
+        record({ selection: { allowed: true } });
+        send({ event: "result", result: {} });
+        return;
+      }
       const socket = connect(process.env.ELPIS_AGY_GATE);
       await once(socket, "connect");
       socket.write(JSON.stringify({ toolCall: { name: "run_command", args: { CommandLine: "echo review-fixture" } } }) + "\n");
@@ -41,10 +46,12 @@ if (role) {
     if (msg.id === undefined) return;
     let result = {};
     if (role === "engine") {
+      if (process.env.APPROVAL_READ_ONLY === "1" && msg.method === "config/read") result = { config: { approval_policy: "never", default_permissions: ":read-only" } };
       // Full access is what a new chat gets by default (apps/elpis-desktop bridge/client.mjs createThread).
       if (msg.method === "thread/resume") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] }, model: "gpt-test", ...(process.env.APPROVAL_FULL === "1"
         ? { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: ":danger-full-access" } }
         : { approvalPolicy: "on-request", approvalsReviewer: process.env.APPROVAL_REVIEWER, sandbox: { type: "workspaceWrite" } }) };
+      if (process.env.APPROVAL_READ_ONLY === "1" && msg.method === "thread/resume") Object.assign(result, { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "readOnly" }, activePermissionProfile: { id: ":read-only" } });
       if (msg.method === "thread/read") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] } };
       if (msg.method === "thread/turns/list") result = { data: [], nextCursor: null };
       if (msg.method === "thread/approval/review") {
@@ -66,7 +73,7 @@ if (role) {
     send({ id: msg.id, result });
   });
 } else {
-  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "agy-full", "agy-approved", "agy-denied", "agy-error"]) {
+  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "agy-full", "agy-approved", "agy-denied", "agy-error", "agy-read-only"]) {
     const agy = label.startsWith("agy-"), scenario = label.replace(/^agy-/, "");
     test(`bridged permission review: ${label}`, { timeout: 15000 }, async t => {
       const root = createTestTempDir(path.join(os.tmpdir(), "elpis-approval-"));
@@ -86,6 +93,7 @@ if (role) {
           ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: adapter, ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: log,
           ELPIS_NO_AGY: agy ? "" : "1", AGY_BIN: agyBin, AGY_DEFAULT_MODEL: "fixture", ACP_BRIDGE_NO_AGENTS: "1", PORT: "0", APPROVAL_TRACE: trace,
           APPROVAL_REVIEWER: scenario === "manual" ? "user" : "auto_review", APPROVAL_PLAN: scenario === "plan" ? "1" : "0", APPROVAL_FULL: scenario === "full" ? "1" : "0",
+          APPROVAL_READ_ONLY: scenario === "read-only" ? "1" : "0",
           APPROVAL_DECISION: scenario === "malformed" ? "unexpected" : scenario },
       });
       let stderr = "", socket;
@@ -120,9 +128,9 @@ if (role) {
       await until(() => records().some(row => agy ? row.role === "agy" && row.selection : row.role === "acp" && row.id === "permission" && row.result), "permission result");
       const rows = records(), review = rows.filter(row => row.method === "thread/approval/review");
       const asks = seen.filter(row => row.method === "item/commandExecution/requestApproval");
-      assert.equal(review.length, ["plan", "manual", "full"].includes(scenario) ? 0 : 1);
-      assert.equal(asks.length, ["approved", "denied", "full"].includes(scenario) ? 0 : 1, "Full access never asks the person");
-      if (agy) assert.equal(rows.find(row => row.role === "agy" && row.selection).selection.allowed, scenario !== "denied");
+      assert.equal(review.length, ["plan", "manual", "full", "read-only"].includes(scenario) ? 0 : 1);
+      assert.equal(asks.length, ["approved", "denied", "full", "read-only"].includes(scenario) ? 0 : 1, "Full access and scoped never-ask modes never ask the person");
+      if (agy) assert.equal(rows.find(row => row.role === "agy" && row.selection).selection.allowed, !["denied", "read-only"].includes(scenario));
       else {
         const selection = rows.find(row => row.role === "acp" && row.id === "permission" && row.result).result.outcome;
         assert.equal(selection.optionId, scenario === "denied" ? "reject" : scenario === "plan" ? "exit-plan-default" : "allow");

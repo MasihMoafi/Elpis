@@ -208,13 +208,19 @@ if (process.env.ELPIS_AGENT_TOOLS !== "0") {
         log(`delegate model=${label} effort=${effort ?? "default"} writes=${allow_writes} cwd=${folder}`);
         // Each helper has its own connection, so helpers on the same model can run side by side.
         const conn = connect();
-        await conn.ready;
-        const started = await conn.call("thread/start", {
-          cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
-          sandbox: allow_writes ? "workspace-write" : "read-only",
-          ...(effort && { config: { model_reasoning_effort: effort } }),
-          ...(BRIDGE && parent && { elpisParentThreadId: parent }),
-        });
+        let started;
+        try {
+          await conn.ready;
+          started = await conn.call("thread/start", {
+            cwd: folder, model, ...(bridgedModel(model) ? {} : { modelProvider: provider }), approvalPolicy: "never",
+            sandbox: allow_writes ? "workspace-write" : "read-only",
+            ...(effort && { config: { model_reasoning_effort: effort } }),
+            ...(BRIDGE && parent && { elpisParentThreadId: parent }),
+          });
+        } catch (error) {
+          conn.close();
+          return { content: [{ type: "text", text: `Could not start helper: ${error.message ?? JSON.stringify(error)}` }], isError: true };
+        }
         threadId = started.thread.id;
         // Titled by its task: the agent list already shows it under the chat that started it.
         const firstLine = task.trim().split("\n")[0];
