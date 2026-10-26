@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/canvas-keys.test.cjs": {
+      "blob": "95f145345482944fc0dab585e97151e8a43c4e7d",
+      "approval": "612a8bfe2c3394b123afc7e2786ab2aa692bd8cc",
+      "reason": "Masih overnight workflow usability: grouping must reveal its newly created frame handle. Retain exact pointer drag, cancellation, common member delta, grid and Undo assertions; require the actual visible title as the hit target and await its stable hover before measuring pointer coordinates. The old raw point hit the header after the taller entry row."
+    },
     "tests/canvas.test.cjs": {
       "blob": "942e566c66a40bc63e8bed115e1bb9cd6d7decf9",
       "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
@@ -175,9 +180,9 @@ export const retainedUpdates = {
       "reason": "A233/A251 makes Full access the shared default. Keep Bypass red, distinct and confirmed, Cancel lossless, managed refusals and immediate apply. Scope exact popup choices away from the S35 persistent menubar."
     },
     "tests/canvas-iso.test.cjs": {
-      "blob": "548b29c82b58d3b5077b76b5b1cf80c1cb30691f",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Keep the dense node collision checks and extend them to dark mode after reserving the complete Mother workflow mark width. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "ec7a74fb7b3db3ba3dee8da6fce666d8c0af6ba5",
+      "approval": "612a8bfe2c3394b123afc7e2786ab2aa692bd8cc",
+      "reason": "Keep the dense node collision checks and extend them to dark mode after reserving the complete Mother workflow mark width. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks. Measure every visible workflow control. Exclude only the Base UI form backing input that is aria-hidden, non-tabbable and fully clipped at inset(50%); its intentional negative one-pixel box is not an offscreen interactive control. Keep all node, label, HUD, real-control, theme, run and overlap assertions; add failure-only element bounds."
     },
     "tests/sidebar-creators.test.cjs": {
       "blob": "21f7ae074660ae529bc05d619b5fcab749512163",
