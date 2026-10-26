@@ -238,7 +238,7 @@ test('successful placement reveals folded workflow, project and group destinatio
     'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: true, projects: true, groups: true }, projects: { existing: true } }),
     'elpis-chat-groups-v1': JSON.stringify({ groups: [{ id: 'target', name: 'Target group' }, { id: 'untouched', name: 'Untouched group' }], members: { 'group-parent': 'target', 'untouched-parent': 'untouched' }, groupBy: 'custom', sortBy: 'recency', collapsed: ['target', 'untouched'], order: [] }) },
     routes: { '/api/workflows/history': () => ({ data: [{ id: 'folded-run', rootThreadId: 'workflow-parent', name: 'Folded workflow', status: 'succeeded', tasks: [{ id: 'step', assignedThreadId: 'workflow-step' }] }] }) } });
-  const { page } = f, section = name => aside(page).locator('.thread-list').getByRole('button', { name, exact: true });
+  const { page } = f, section = name => aside(page).locator('.thread-list').getByRole('button', { name, exact: true, includeHidden: true });
   try {
     const before = await page.evaluate(() => ({ groups: window.elpisDesktop.storage.getItem('elpis-chat-groups-v1'), folds: window.elpisDesktop.storage.getItem('elpis-sidebar-folds-v1') }));
     await page.evaluate(() => { const store = window.elpisDesktop.storage, save = store.setItem; window.restorePlacementStore = () => { store.setItem = save; }; store.setItem = (key, value) => { if (key === 'elpis-chat-groups-v1') throw Error('Placement refused'); return save(key, value); }; });

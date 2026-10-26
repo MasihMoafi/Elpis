@@ -158,11 +158,15 @@ test('Reply from the … menu or the right-click menu leaves the cursor in the m
   const message = page.locator('.message.agent').first();
   await message.hover(); await message.getByRole('button', { name: 'More message actions' }).click();
   await page.getByRole('menuitem', { name: 'Reply' }).click(); await preview(page).waitFor();
+  await page.waitForFunction(element => document.activeElement === element, await composer.elementHandle(), { timeout: 6000 });
+  assert.equal(await composer.evaluate(element => document.activeElement === element), true, 'closing the menu leaves focus in the composer');
   await page.keyboard.type('From the menu');
   assert.equal(await composer.inputValue(), 'From the menu');
   await preview(page).getByRole('button', { name: 'Cancel reply' }).click(); await composer.fill('');
   await page.locator('.user-turn').first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Reply' }).click(); await preview(page).waitFor();
+  await page.waitForFunction(element => document.activeElement === element, await composer.elementHandle(), { timeout: 6000 });
+  assert.equal(await composer.evaluate(element => document.activeElement === element), true, 'closing the menu leaves focus in the composer');
   await page.keyboard.type('From right-click');
   assert.equal(await composer.inputValue(), 'From right-click');
 }));
