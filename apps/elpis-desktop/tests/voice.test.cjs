@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
+const { controlValue, openSettings } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 async function eventually(check, ms = 4000) { const end = Date.now() + ms; for (;;) { try { return await check(); } catch (error) { if (Date.now() > end) throw error; await new Promise(resolve => setTimeout(resolve, 50)); } } }
@@ -39,6 +39,116 @@ for (const colorScheme of ['light', 'dark']) test(`Settings → Voice saves a ca
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
+});
+
+test('Voice refreshes account and MCP setup while preserving unsaved transcription fields', async () => {
+  let version = 1, enabled = false, signedIn = false, catalogFailed = true, selectedVoice = 'cove';
+  let releaseVoice, voiceStarted, releaseStatus;
+  const voiceHeld = new Promise(resolve => { voiceStarted = resolve; }), voiceGate = new Promise(resolve => { releaseVoice = resolve; });
+  let transcription = { backend: 'local', model: null };
+  const config = () => ({ version: `m${version}`, write: { available: true }, servers: [{ name: 'whispertype', enabled, transport: 'stdio', command: 'whispertype-mcp', url: null, credentials: [], whispertype: transcription }] });
+  const f = await fixture({ routes: {
+    '/api/voice': () => ({ available: signedIn, voices: signedIn ? ['cove', 'arbor'] : [], voice: selectedVoice }),
+    '/api/voice/choice': async body => { selectedVoice = body.voice; const result = { available: signedIn, voices: ['cove', 'arbor'], voice: selectedVoice }; voiceStarted(); await voiceGate; return result; },
+    '/api/models': (_body, url) => url.searchParams.get('inputModality') === 'audio'
+      ? catalogFailed ? { __http: 503, error: 'Audio catalog temporarily unavailable' } : { data: [{ id: 'catalog/audio', model: 'catalog/audio', displayName: 'Recovered audio model' }] }
+      : { data: [{ id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol' }] },
+    '/api/mcp': body => {
+      if (body) {
+        if (body.version !== `m${version}`) return { __http: 409, error: 'Configuration changed' };
+        if (body.action === 'enable') enabled = body.enabled;
+        if (body.action === 'whispertype') transcription = { backend: body.backend, model: body.model };
+        version++;
+      }
+      return config();
+    },
+    '/api/tools/transcription': () => ({ available: enabled, reason: enabled ? '' : 'WhisperType is disabled.' }),
+  } });
+  try {
+    const { page } = f;
+    await openSettings(page, 'Voice');
+    const panel = page.getByRole('tabpanel', { name: 'Voice', exact: true });
+    const voice = panel.getByRole('combobox', { name: 'Voice chat voice', exact: true });
+    await panel.getByText('WhisperType is disabled.', { exact: true }).waitFor();
+    assert.equal(await voice.isDisabled(), true);
+    await panel.getByText('Advanced: transcription', { exact: true }).click();
+    await panel.getByRole('status').filter({ hasText: 'OpenRouter models unavailable: Audio catalog temporarily unavailable' }).waitFor();
+    await panel.getByText('Advanced: custom model', { exact: true }).click();
+    const model = panel.getByRole('textbox', { name: 'Custom OpenRouter transcription model', exact: true });
+    await model.fill('my/unsaved-audio-model');
+    signedIn = true; catalogFailed = false; f.emit('account', { method: 'account/updated' });
+    await eventually(async () => assert.equal(await voice.isEnabled(), true, 'account changes refresh the visible Voice settings'));
+    assert.equal(await model.inputValue(), 'my/unsaved-audio-model');
+    await panel.getByRole('combobox', { name: 'OpenRouter transcription model', exact: true }).click();
+    await page.getByRole('option', { name: 'Recovered audio model', exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await voice.click(); await page.getByRole('option', { name: 'Arbor', exact: true }).waitFor(); await page.keyboard.press('Escape');
+    await voice.focus();
+    const typedChoice = page.waitForRequest(request => new URL(request.url()).pathname === '/api/voice/choice');
+    await voice.press('a'); await typedChoice; await voiceHeld;
+    signedIn = false; f.emit('account', { method: 'account/updated' });
+    await voice.filter({ hasText: 'Unavailable' }).waitFor();
+    releaseVoice();
+    await panel.getByText('Voice saved.', { exact: true }).waitFor();
+    assert.equal(await voice.isDisabled(), true, 'a delayed save cannot restore an obsolete signed-in snapshot');
+    signedIn = true; f.emit('account', { method: 'account/updated' });
+    await eventually(async () => assert.equal(await voice.isEnabled(), true));
+    await page.getByRole('tab', { name: 'MCP servers', exact: true }).click();
+    const mcp = page.getByRole('tabpanel', { name: 'MCP servers', exact: true });
+    await mcp.getByRole('switch', { name: 'Enable whispertype', exact: true }).click();
+    await eventually(async () => assert.equal(await mcp.getByRole('switch', { name: 'Enable whispertype', exact: true }).getAttribute('aria-checked'), 'true'));
+    // A second config writer changes a clean field while this form's model remains unsaved.
+    transcription = { backend: 'codex', model: 'another/saved-model' }; version++;
+    await mcp.getByRole('button', { name: 'Open Voice settings', exact: true }).click();
+    await panel.getByText('Configured', { exact: true }).waitFor();
+    await eventually(async () => assert.equal(await controlValue(panel.getByRole('combobox', { name: 'Fallback transcription engine', exact: true })), 'codex'));
+    assert.equal(await model.inputValue(), 'my/unsaved-audio-model', 'setup refresh keeps the edited field');
+    const savedVersion = `m${version}`;
+    await panel.getByRole('button', { name: 'Save transcription settings', exact: true }).click();
+    await panel.getByText('Transcription settings saved.', { exact: true }).waitFor();
+    assert.deepEqual(f.posts.filter(post => post.path === '/api/mcp').at(-1).body, { version: savedVersion, name: 'whispertype', action: 'whispertype', backend: 'codex', model: 'my/unsaved-audio-model' });
+    transcription = { backend: 'local', model: 'latest/saved-model' }; version++;
+    await page.getByRole('tab', { name: 'General', exact: true }).click();
+    await page.getByRole('tab', { name: 'Voice', exact: true }).click();
+    await eventually(async () => assert.equal(await model.inputValue(), 'latest/saved-model', 'a clean field follows the refreshed config'));
+    let holdStatus = false, statusStarted;
+    const statusHeld = new Promise(resolve => { statusStarted = resolve; }), statusGate = new Promise(resolve => { releaseStatus = resolve; });
+    await page.route('**/api/mcp', async route => {
+      if (route.request().method() === 'POST' && route.request().postDataJSON().model === 'delayed/save-model') holdStatus = true;
+      await route.fallback();
+    });
+    await page.route('**/api/tools/transcription', async route => {
+      if (holdStatus) { holdStatus = false; statusStarted(); await statusGate; }
+      await route.fallback();
+    });
+    await model.fill('delayed/save-model');
+    const saveAcknowledged = page.waitForResponse(response => new URL(response.url()).pathname === '/api/mcp' && response.request().method() === 'POST');
+    await panel.getByRole('button', { name: 'Save transcription settings', exact: true }).click();
+    const savedReply = await saveAcknowledged;
+    assert.equal(savedReply.status(), 200, `the delayed save must be accepted before its status read: ${await savedReply.text()}`);
+    await statusHeld;
+    transcription = { backend: 'openrouter', model: 'newer/after-save' }; version++;
+    await page.getByRole('tab', { name: 'General', exact: true }).click();
+    await page.getByRole('tab', { name: 'Voice', exact: true }).click();
+    await eventually(async () => assert.equal(await controlValue(panel.getByRole('combobox', { name: 'Fallback transcription engine', exact: true })), 'openrouter'));
+    releaseStatus();
+    await panel.getByText('Transcription settings saved.', { exact: true }).waitFor().catch(async error => {
+      throw new Error(`${error.message}\nVoice after releasing the saved status: ${await panel.innerText()}\nLatest MCP write: ${JSON.stringify(f.posts.filter(post => post.path === '/api/mcp').at(-1))}`);
+    });
+    assert.equal(await model.inputValue(), 'newer/after-save', 'a delayed save cannot replace a newer activation snapshot');
+    await model.fill('saved/after-race');
+    const currentVersion = `m${version}`;
+    await panel.getByRole('button', { name: 'Save transcription settings', exact: true }).click();
+    await panel.getByText('Transcription settings saved.', { exact: true }).waitFor();
+    assert.equal(f.posts.filter(post => post.path === '/api/mcp').at(-1).body.version, currentVersion, 'the next save uses the newer config version');
+    await model.evaluate(input => {
+      const autofill = input.form.querySelector('input[aria-hidden="true"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(autofill, 'catalog/audio');
+      autofill.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await eventually(async () => assert.equal(await model.inputValue(), 'catalog/audio', 'native autofill still edits the shared select'));
+    assert.deepEqual(f.errors, []);
+  } finally { releaseVoice?.(); releaseStatus?.(); await f.close(); }
 });
 
 test('voice controls release the microphone after denial, cancelled startup, mute, End and navigation', async () => {

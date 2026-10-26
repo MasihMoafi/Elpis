@@ -56,7 +56,7 @@ const CONFIG_PAGES: Tab[] = ["general", "personalization", "git", "worktrees", "
 type Props = {
   initialTab?: SettingsDestination;
   navigationKey?: number;
-  /** Unused since Usage & limits no longer shows the selected chat; app/page.tsx still passes them. */
+  /** Retained controls refresh when Settings becomes visible again. */
   active?: boolean; threadId?: string;
   accountRefresh: number; onProvidersChanged?: () => Promise<void> | void;
   theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void;
@@ -66,7 +66,7 @@ type Props = {
   onChatPermissions?: () => void; onChatModel?: () => void; modelChangeReason?: string; currentModel?: string | null; currentPermission?: string | null;
 };
 
-export function SettingsView({ initialTab = "providers", navigationKey = 0, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onImported, onDeleteThread, onBack, onCustomize, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
+export function SettingsView({ initialTab = "providers", navigationKey = 0, active = true, accountRefresh, onProvidersChanged, theme, onTheme, onUnarchived, onImported, onDeleteThread, onBack, onCustomize, onChatContext, onChatPermissions, onChatModel, modelChangeReason, currentModel, currentPermission, threadId }: Props) {
   // One standard order, the same for everyone (Masih, 23 Oct: the section titles "wouldn't make sense if I could just change
   // the order"; "Don't make users change them"). Chats keep their drag order; Settings has none.
   const groups = SECTIONS, pages = TABS;
@@ -90,7 +90,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acco
       case "notifications": return <NotificationSettings />;
       case "appearance": return <AppearanceSettings theme={theme} onTheme={onTheme} />;
       case "shortcuts": return <ShortcutSettings />;
-      case "voice": return <VoiceSettings onOpenMcp={() => selectTab("mcp")} />;
+      case "voice": return <VoiceSettings active={active && tab === "voice"} refreshKey={accountRefresh} onOpenMcp={() => selectTab("mcp")} />;
       case "personalization": return <><PersonalizationSettings />{threadId && onChatContext && <SettingsGroup title="Current chat"><SettingRow title="Context Ledger" description="Choose what this chat admits into context." scope="this chat"><Button variant="outline" onClick={onChatContext}>Open Context Ledger</Button></SettingRow></SettingsGroup>}</>;
       case "providers": return <><ProvidersSettings refreshKey={accountRefresh} onChanged={onProvidersChanged} />{threadId && onChatModel && <SettingsGroup title="Current chat"><SettingRow title="Current chat model" description={modelChangeReason ?? currentModel ?? "Not reported"} scope="this chat"><Button variant="outline" disabled={!!modelChangeReason} onClick={onChatModel}>Change this chat model</Button></SettingRow></SettingsGroup>}</>;
       case "mcp": return <><McpSettings onOpenVoice={() => selectTab("voice")} />{onCustomize && <SettingsGroup title="Plugins & skills"><SettingRow title="Plugins & skills" description="Manage plugins and skills in Customize." scope="this device"><Button variant="outline" onClick={onCustomize}>Open Customize</Button></SettingRow></SettingsGroup>}</>;
