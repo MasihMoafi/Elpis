@@ -152,7 +152,10 @@ for (const recover of [false, true]) test(`${recover ? 'recovering' : 'saving'} 
   const store = f.store();
   const turns = Array.from({ length: 205 }, (_, index) => ({ id: `earlier-${index}`, startedAt: index + 1, status: 'completed', items: [{ id: `prompt-${index}`, type: 'userMessage', content: [{ type: 'text', text: `Earlier prompt ${index}` }] }] }));
   store[f.id] = { ...store[f.id], turns };
-  fs.writeFileSync(f.env.ACP_BRIDGE_STORE, JSON.stringify(store));
+  // The live bridge may still read startup events while this independent writer seeds history.
+  const replacement = `${f.env.ACP_BRIDGE_STORE}.replacement`;
+  fs.writeFileSync(replacement, JSON.stringify(store));
+  fs.renameSync(replacement, f.env.ACP_BRIDGE_STORE);
   const { turn } = await f.client.send(f.id, { text: `${recover ? '[wait] [record-only] ' : ''}Continue the long chat` });
   let reader = f.client;
   if (recover) {
