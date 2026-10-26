@@ -2509,14 +2509,17 @@ fn display_permission_profile_from_thread_response(
 ) -> PermissionProfile {
     match thread_params_mode {
         ThreadParamsMode::Embedded
-            if matches!(
-                config.permissions.effective_permission_profile(),
-                PermissionProfile::Disabled
-            ) && !matches!(
-                sandbox,
-                codex_app_server_protocol::SandboxPolicy::DangerFullAccess
-            ) =>
+            if config.permissions.active_permission_profile().is_none()
+                || matches!(
+                    config.permissions.effective_permission_profile(),
+                    PermissionProfile::Disabled
+                ) && !matches!(
+                    sandbox,
+                    codex_app_server_protocol::SandboxPolicy::DangerFullAccess
+                ) =>
         {
+            // Legacy requests have no profile identity to confirm. Preserve the
+            // actual server policy so directory admission can compare its rules.
             PermissionProfile::from_legacy_sandbox_policy_for_cwd(&sandbox.to_core(), cwd)
         }
         ThreadParamsMode::Embedded => config.permissions.effective_permission_profile(),
@@ -4358,6 +4361,42 @@ mod tests {
             ),
             PermissionProfile::read_only()
         );
+
+        let legacy = ConfigBuilder::default()
+            .codex_home(temp_dir.path().join("legacy"))
+            .harness_overrides(ConfigOverrides {
+                sandbox_mode: Some(codex_protocol::config_types::SandboxMode::WorkspaceWrite),
+                ..ConfigOverrides::default()
+            })
+            .build()
+            .await
+            .expect("legacy config should build");
+        assert_eq!(legacy.permissions.active_permission_profile(), None);
+        // A legacy request has no stable profile identity. Its actual sandbox
+        // must remain observable, including a server that broadens or restricts it.
+        for (sandbox, expected) in [
+            (
+                codex_app_server_protocol::SandboxPolicy::DangerFullAccess,
+                PermissionProfile::Disabled,
+            ),
+            (
+                PermissionProfile::read_only()
+                    .to_legacy_sandbox_policy(cwd.as_path())
+                    .expect("read-only projection")
+                    .into(),
+                PermissionProfile::read_only(),
+            ),
+        ] {
+            assert_eq!(
+                display_permission_profile_from_thread_response(
+                    &sandbox,
+                    cwd.as_path(),
+                    &legacy,
+                    ThreadParamsMode::Embedded,
+                ),
+                expected
+            );
+        }
     }
 
     #[tokio::test]
