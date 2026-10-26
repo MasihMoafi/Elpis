@@ -91,13 +91,11 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
 }));
 
-for (const value of [
-  { name: 'recorded', summary: ['The recorded fixture summary.'], content: [], expected: 'The recorded fixture summary.' },
-  { name: 'missing', summary: [], content: [], expected: 'No reasoning summary was recorded for this step.' },
-]) for (const input of ['pointer', 'keyboard']) {
-  test(`Thought exposes ${value.name} reasoning with one ${input} activation`, async () => {
+for (const input of ['pointer', 'keyboard']) {
+  test(`Thought exposes recorded reasoning with one ${input} activation`, async () => {
+    const expected = 'The recorded fixture summary.';
     const f = await fixture({ running: true, chat: [['t4', 'Check the recorded step.', 'I will check the record.',
-      [{ id: 'reasoning-fixture', type: 'reasoning', status: 'completed', summary: value.summary, content: value.content }]]] });
+      [{ id: 'reasoning-fixture', type: 'reasoning', status: 'completed', summary: [expected], content: [] }]]] });
     try {
       await f.open('chat-a');
       const group = f.page.locator('.activity-group'), head = group.locator('> summary');
@@ -108,17 +106,55 @@ for (const value of [
         await group.locator('> summary[aria-expanded="true"]').waitFor();
         if (input === 'pointer') {
           await fs.mkdir(captures, { recursive: true });
-          await f.page.screenshot({ path: path.join(captures, `thought-${value.name}-${scheme}.png`) });
+          await f.page.screenshot({ path: path.join(captures, `thought-recorded-${scheme}.png`) });
         }
-        assert.equal(await group.getByText(value.expected, { exact: true }).isVisible(), true, `${scheme}: the first activation exposes recorded text or its honest absence`);
+        assert.equal(await group.getByText(expected, { exact: true }).isVisible(), true, `${scheme}: the first activation exposes recorded text`);
         if (input === 'keyboard') await head.press('Space'); else await head.click();
         await group.locator('> summary[aria-expanded="false"]').waitFor();
-        assert.equal(await group.getByText(value.expected, { exact: true }).isVisible(), false, 'closing the outer group hides its contents');
+        assert.equal(await group.getByText(expected, { exact: true }).isVisible(), false, 'closing the outer group hides its contents');
       }
       assert.deepEqual(f.errors, []);
     } finally { await f.close(); }
   });
 }
+
+test('empty reasoning stays hidden while real streamed summaries and recorded content remain readable and copyable', async () => {
+  const f = await fixture({ running: true, chat: [
+    ['t1', 'Read the earlier result.', 'Earlier result.', [
+      { id: 'empty-reasoning', type: 'reasoning', status: 'completed', summary: [], content: [] },
+      { id: 'blank-reasoning', type: 'reasoning', status: 'completed', summary: ['', ' \n '], content: ['\t'] },
+    ]],
+    ['t4', 'Check the live step.', 'I will check it.', [
+      { id: 'streamed-reasoning', type: 'reasoning', status: 'inProgress', summary: ['  '], content: [] },
+    ]],
+  ] });
+  try {
+    await f.open('chat-a');
+    await f.page.getByText('Earlier result.', { exact: true }).waitFor();
+    assert.equal(await f.page.locator('.worked-for').count(), 0, 'empty recorded reasoning does not create an empty work disclosure');
+    assert.equal(await f.page.locator('.activity-group').count(), 0, 'empty and whitespace-only reasoning have no activity row');
+    assert.equal(await f.page.locator('.step-title').filter({ hasText: /^Reasoning$/ }).count(), 0);
+    await f.page.locator('.turn-working[role="status"]').waitFor();
+    assert.equal(await f.page.locator('.turn-working[role="status"]').count(), 1, 'a running turn still reports that it is working');
+    f.emit('message', { method: 'item/reasoning/summaryTextDelta', params: { threadId: 'chat-a', turnId: 't4', itemId: 'streamed-reasoning', summaryIndex: 0,
+      delta: 'The recorded streamed summary.\n\n```text\nkeep_exact()\n```' } });
+    const group = f.page.locator('.activity-group'), head = group.locator('> summary');
+    await head.waitFor(); await head.focus(); await head.press('Enter');
+    await group.getByText('The recorded streamed summary.', { exact: true }).waitFor();
+    assert.equal(await group.locator('.step-title').filter({ hasText: /^Reasoning$/ }).count(), 1);
+    assert.equal(await f.page.locator('.turn-working').count(), 0, 'recorded live reasoning owns the working indicator');
+    await group.getByRole('button', { name: 'Copy code', exact: true }).click();
+    await f.page.waitForFunction(() => window.__copied === 'keep_exact()');
+    assert.equal(await f.copied(), 'keep_exact()');
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: {
+      id: 'streamed-reasoning', type: 'reasoning', status: 'completed', summary: [], content: ['The recorded content fallback.'],
+    } } });
+    await group.getByText('The recorded content fallback.', { exact: true }).waitFor();
+    assert.equal(await group.count(), 1, 'completion updates the same visible reasoning group');
+    assert.equal(await group.getByText('The recorded streamed summary.', { exact: true }).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 for (const scheme of ['light', 'dark']) for (const input of ['pointer', 'keyboard']) {
   test(`long tool groups stay collapsible after scrolling (${scheme}, ${input})`, async () => {

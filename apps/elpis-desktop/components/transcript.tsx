@@ -138,7 +138,8 @@ function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf
       {entry.item.type === "userMessage" && <span hidden className="message user">{entry.item.content?.filter(part => part.type === "text").map(part => part.text).join("\n")}</span>}
     </div>)}
   </section>;
-  const ordered = withPrunes(turn.entries);
+  // Empty reasoning remains in the recorded turn, but has no visible step or disclosure to open.
+  const ordered = withPrunes(turn.entries).filter(entry => entry.item.type !== "reasoning" || reasoningOf(entry.item));
   // Older Claude saves represented /compact as a prompt and a synthetic tool call.
   // Its summary changes the model's context, while the conversation remains intact.
   const compact = ordered.find(entry => isCompaction(entry.item));
@@ -209,9 +210,6 @@ function ActivityGroup({ entries, renderItem, mediaOf, wrapItem, live }: { entri
   const running = live ? entries.find(entry => entry.item.status === "inProgress") : undefined;
   const views = entries.filter(entry => entry.item.type === "imageView" && typeof entry.item.path === "string" && mediaOf?.(entry)).slice(0, 3);
   const edits = running ? null : turnEdits(items);
-  // A blank reasoning step says "no summary recorded" only when the group has no recorded reasoning to show.
-  const recorded = items.some(item => item.type === "reasoning" && reasoningOf(item));
-  const shown = recorded ? entries.filter(entry => entry.item.type !== "reasoning" || reasoningOf(entry.item)) : entries;
   return <details className="activity-group" onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
     <DisclosureSummary aria-expanded={open}>
       {running
@@ -220,7 +218,7 @@ function ActivityGroup({ entries, renderItem, mediaOf, wrapItem, live }: { entri
       {edits && edits.added + edits.removed > 0 && <Counts added={edits.added} removed={edits.removed} />}
       {views.map(entry => { const image = <ImageThumb src={`${mediaOf!(entry)}/0`} name={fileKind(String(entry.item.path)).name} />; return <Fragment key={entry.item.id}>{wrapItem ? wrapItem(entry, image) : image}</Fragment>; })}
     </DisclosureSummary>
-    {open && <div className="activity-group-body">{shown.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}<CollapseDetails label="Collapse tool calls" /></div>}
+    {open && <div className="activity-group-body">{entries.map(entry => <div key={entry.item.id}>{renderItem(entry)}</div>)}<CollapseDetails label="Collapse tool calls" /></div>}
   </details>;
 }
 

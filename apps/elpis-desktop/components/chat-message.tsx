@@ -171,7 +171,7 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   }
   if(item.type==="reasoning"){
     const reasoning=reasoningOf(item);
-    return <Activity label="Reasoning" open>{reasoning?<MarkdownText text={reasoning}/>:<p className="step-note">No reasoning summary was recorded for this step.</p>}</Activity>;
+    return reasoning?<Activity label="Reasoning" open><MarkdownText text={reasoning}/></Activity>:null;
   }
   if(item.type==="webSearch"){
     const results=list(item.results);
