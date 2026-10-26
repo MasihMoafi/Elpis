@@ -1134,6 +1134,8 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
     const nodeIds = graph.nodes.filter(node => node.type !== "mother" && ids.includes(node.id)).map(node => node.id); if (!nodeIds.length) return;
     const id = newId("frame"); checkpoint();
     setGraph(current => ({ ...current, frames: [...(current.frames ?? []).map(frame => ({ ...frame, nodeIds: frame.nodeIds.filter(id => !nodeIds.includes(id)) })).filter(frame => frame.nodeIds.length), { id, title: "Frame", nodeIds }] })); setSelection([...nodeIds, id]);
+    // The title extends above its members; keep the new frame's drag handle inside the board.
+    reveal([id]);
   };
   const ungroup = () => {
     const frames = graph.frames?.filter(frame => !selection.includes(frame.id) && !frame.nodeIds.some(id => selection.includes(id)));

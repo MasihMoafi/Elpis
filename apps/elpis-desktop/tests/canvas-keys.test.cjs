@@ -107,7 +107,14 @@ test('a frame moves all its members on the grid in one undo step, and Escape can
   try {
     await pick(f, 'a'); await f.canvas.locator('.react-flow__node[data-id="b"]').click({ modifiers: ['Shift'] }); await off(f); await f.page.keyboard.press('Control+g'); const before = await f.saved();
     const drag = async cancel => {
-      const box = await f.canvas.locator('.canvas-frame-title').boundingBox(); await f.page.mouse.move(box.x + 30, box.y + box.height / 2); await f.page.mouse.down();
+      const title = f.canvas.locator('.canvas-frame-title'); await title.hover();
+      const box = await title.boundingBox(), start = { x: box.x + 30, y: box.y + box.height / 2 };
+      const hit = await f.page.evaluate(at => {
+        const target = document.elementFromPoint(at.x, at.y), flow = document.querySelector('.canvas-board > .react-flow')?.getBoundingClientRect();
+        return { title: !!target?.closest('.canvas-frame-title'), target: target?.outerHTML.slice(0, 400), flow: flow?.toJSON(), at };
+      }, start);
+      assert.ok(hit.title, `frame drag must start on its visible title: ${JSON.stringify(hit)}`);
+      await f.page.mouse.move(start.x, start.y); await f.page.mouse.down();
       await f.page.mouse.move(box.x + 80, box.y + box.height / 2 + 50, { steps: 10 }); if (cancel) await f.page.keyboard.press('Escape'); await f.page.mouse.up();
     };
     await drag(true); assert.deepEqual(geometry(await f.saved()), geometry(before)); await drag(false); const after = await f.saved();

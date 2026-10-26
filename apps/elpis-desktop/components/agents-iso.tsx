@@ -302,6 +302,8 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   const subjectNode = subjectPlace ? nodes.get(subjectPlace.id) : undefined;
   const subjectModel = subjectNode?.type === "agent" ? `${modelLabel(subjectNode.data)}${subjectNode.data.effort ? ` · ${subjectNode.data.effort} thinking` : ""}` : null;
 
+  const waveCount = new Set(wave.values()).size;
+  const overview = `${agents.length} ${agents.length === 1 ? "agent" : "agents"} in ${waveCount} ${waveCount === 1 ? "wave" : "waves"}`;
   return <div ref={root} className="iso-board" role="region" aria-label="Isometric board" tabIndex={-1} data-panning={panning || undefined}
     onDoubleClick={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .iso-note, .iso-frame")) onAdd({ x: event.clientX, y: event.clientY }); }}
     onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .iso-note, .iso-frame")) onBoardMenu(event); }}
@@ -468,7 +470,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>
         <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
-        : <><strong>{agents.length} {agents.length === 1 ? "agent" : "agents"} in {new Set(wave.values()).size} {new Set(wave.values()).size === 1 ? "wave" : "waves"}</strong><small title="Click an agent to select it · Enter opens it">Click an agent to select it · Enter opens it</small></>}
+        : <><strong title={overview}>{overview}</strong><small title="Click an agent to select it · Enter opens it">Click an agent to select it · Enter opens it</small></>}
     </section>
   </div>;
 }

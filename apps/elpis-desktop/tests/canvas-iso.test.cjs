@@ -143,10 +143,15 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
         const window_ = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
         const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
         const agents = [...document.querySelectorAll('.iso-node')], labels = [...document.querySelectorAll('.iso-label')], hud = [...document.querySelectorAll('.iso-hud')];
-        const header = [...document.querySelectorAll('.canvas-header button, .canvas-header input')];
+        // Select's form backing input is fully clipped and cannot receive keyboard focus;
+        // its intentional -1px box is not a displayed control. Keep every visible input/button.
+        const clippedBackingInput = element => element.matches('input[aria-hidden="true"][tabindex="-1"]') && getComputedStyle(element).clipPath === 'inset(50%)';
+        const header = [...document.querySelectorAll('.canvas-header button, .canvas-header input')].filter(element => !clippedBackingInput(element));
+        const outsideWindow = [...header, ...hud.flatMap(element => [element, ...element.querySelectorAll('button')])].filter(element => !inside(window_, box(element)));
         return {
           outsideBoard: [...agents, ...labels, ...hud].filter(element => !inside(area, box(element))).map(name),
-          outsideWindow: [...header, ...hud.flatMap(element => [element, ...element.querySelectorAll('button')])].filter(element => !inside(window_, box(element))).map(name),
+          outsideWindow: outsideWindow.map(name),
+          outsideWindowDetails: outsideWindow.map(element => ({ name: name(element), tag: element.tagName, type: element.getAttribute('type'), role: element.getAttribute('role'), ariaHidden: element.getAttribute('aria-hidden'), tabIndex: element.tabIndex, bounds: box(element), position: getComputedStyle(element).position, clipPath: getComputedStyle(element).clipPath })),
           covered: hud.flatMap(panel => [...agents, ...labels].filter(element => meet(box(panel), box(element))).map(element => `${name(panel)} covers ${name(element)}`)),
           hudOverlap: hud.length === 2 && meet(box(hud[0]), box(hud[1])),
           labelsOverlap: labels.flatMap((a, index) => labels.slice(index + 1).filter(b => meet(box(a), box(b))).map(b => `${a.textContent} / ${b.textContent}`)),
@@ -154,6 +159,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
       });
       assert.deepEqual(report.labelsOverlap, [], `titles overlap at ${width}×${height}`);
       assert.deepEqual(report.outsideBoard, [], `outside the board at ${width}×${height}`);
+      if (report.outsideWindow.length) console.error('outside-window controls', JSON.stringify({ width, height, elements: report.outsideWindowDetails }));
       assert.deepEqual(report.outsideWindow, [], `outside the window at ${width}×${height}`);
       assert.deepEqual(report.covered, [], `the controls cover the graph at ${width}×${height}`);
       assert.equal(report.hudOverlap, false, `the controls and the status panel overlap at ${width}×${height}`);
