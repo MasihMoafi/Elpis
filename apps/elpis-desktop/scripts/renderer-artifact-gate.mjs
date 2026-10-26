@@ -35,9 +35,9 @@ export const retainedUpdates = {
       "reason": "S35 keeps permissions beside the model while voice/send actions wrap together only when needed. The existing narrow Plan journey additionally includes supported Fast and voice controls; every no-overlap, fit and alignment assertion remains."
     },
     "tests/love-spot-sync.test.cjs": {
-      "blob": "712b03d600f6c236f4555533ca87804c3293e864",
+      "blob": "48eaf184b0b76f7279186c538310a5e5c0130e4d",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added."
+      "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added. Run40273131811 proved the target deleted while legitimate reply elements arrived: require the target tombstone on disk and absence live, preserve every other saved live element, and retain both Undo assertions."
     },
     "tests/arrow-keys.test.cjs": {
       "blob": "f0d6f492707b3edfefadc8d1a29bb8c0d1876a2c",
@@ -412,9 +412,9 @@ export const retainedUpdates = {
       "reason": "V1, Masih's approved request in GATE11: \"every chat row uses the project-chat layout, all chevrons in one column\". Retain exact circle/title coordinates, hover, expansion, selection and reload checks in both themes."
     },
     "tests/tabs.test.cjs": {
-      "blob": "88c32fd2532d21726cb507f4d8c98bb18b220be6",
+      "blob": "2932bf023d601e4eb1972ee620c2644cf41ddc20",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks."
+      "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks. Await that popup's visibility before reading the same exact five choices; run40273131811 exposed the immediate empty snapshot."
     },
     "tests/sidebar-parity.test.cjs": {
       "blob": "02943d2f19811a05e53e63a20c0417d777bdfe1a",

@@ -219,9 +219,12 @@ test('a remote delete inside a real embedded arrow-key batch stays outside Undo'
     }, { once: true }));
     await other.bringToFront(); await other.keyboard.press('ArrowRight');
     assert.equal(await other.evaluate(() => window.__syncIncomingTrace.key?.key === 'ArrowRight' && !!window.__syncIncomingTrace.released), true, 'ArrowRight listener did not release the held deletion');
-    await f.waitFor(async () => {
+    await f.waitFor(async scene => {
       const elements = await copied(other); lastVisible = metadata(elements);
-      return elements.length === 0;
+      // Replies may arrive while the deletion is held: only the target disappears, and other saved drawing stays.
+      return scene.elements.find(e => e.id === original.id)?.isDeleted === true
+        && !elements.some(e => e.id === original.id)
+        && scene.elements.filter(e => !e.isDeleted).every(saved => elements.some(e => e.id === saved.id));
     }, 'receiver did not apply the deletion');
     await other.keyboard.press('ControlOrMeta+z'); await other.waitForTimeout(600);
     assert.equal((await f.scene()).elements.find(e => e.id === original.id)?.isDeleted, true, 'Undo captured the remote deletion during the key batch');
