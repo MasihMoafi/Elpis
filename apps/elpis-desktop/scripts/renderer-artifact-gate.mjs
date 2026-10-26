@@ -24,6 +24,46 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/canvas.test.cjs": {
+      "blob": "942e566c66a40bc63e8bed115e1bb9cd6d7decf9",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/canvas-runlog.test.cjs": {
+      "blob": "2f64d2f33960ec25a7037dd08bee48e5aca128b7",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/canvas-run.test.cjs": {
+      "blob": "16188b9197bd98eb87935290921334dd31af6d99",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/canvas-fit.test.cjs": {
+      "blob": "68d1bd78b5a8b0d4c2aca6850354a47fb1f7a1f2",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/canvas-editing.test.cjs": {
+      "blob": "ba030a49f833cfec4cf825e8d90d355e5cf51307",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/canvas-basics.test.cjs": {
+      "blob": "b194f149beb9f14bc5fb4790f71d2f336381a1c5",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/agents-guide.test.cjs": {
+      "blob": "3fea4f19a19a338fc4861a189965b3d67448b2d2",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+    },
+    "tests/message-replies.test.cjs": {
+      "blob": "6a9bf9d261534b0c6f556dba8383330f0b2d5ff5",
+      "approval": "47b64a186f51fb3512125ed1acef2cc247327291",
+      "reason": "Wait for the actual composer focus after menu dismissal before typing immediately; keep exact text and add focused-element assertions for both Reply menu paths. This removes the browser input race without weakening the focus requirement."
+    },
     "tests/browser-sessions-electron.test.cjs": {
       "blob": "378ee80c3fb69cd7bbd5148ae9d0d708a83b5a78",
       "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
@@ -45,9 +85,9 @@ export const retainedUpdates = {
       "reason": "Masih 26 Oct: visiting Love Spot or its chat acknowledges its badge; ordinary chats do not, and later replies notify again. Unverified audio stays unavailable. Give workflow history its own coordinator so the ordinary chat remains ordinary. History and Workflow history follow recoverable history in 902db1c84; retain progress, palette, no-load-notification and both-theme checks."
     },
     "tests/workflow.test.cjs": {
-      "blob": "b16d929435bf0c19eec6e577a1ce5f7f1686060e",
-      "approval": "8e197bb8618ce51993244e06ff588db3506115c8",
-      "reason": "S34, Masih 26 Oct: disconnected Elpis must still allow typing and saved drafts. Supersede the disabled-composer expectation; retain uncertain delivery, stale approvals, authoritative history, bottom notice geometry and all six A125 recovery cases. Exercise the real desktop store through an explicit shared browser context, clear the slash draft before empty-draft shell entry, and assert offline permissions, effort, folder and Stop cannot mutate the runtime. Keep every existing assertion and timeout."
+      "blob": "dc6fe5ff3626c0363b97c62e6972c5a9a08e640e",
+      "approval": "7a19cf90b5ce045120324b91b7279fbd89fa5964",
+      "reason": "S34, Masih 26 Oct: disconnected Elpis must still allow typing and saved drafts. Supersede the disabled-composer expectation; retain uncertain delivery, stale approvals, authoritative history, bottom notice geometry and all six A125 recovery cases. Exercise the real desktop store through an explicit shared browser context, clear the slash draft before empty-draft shell entry, and assert offline permissions, effort, folder and Stop cannot mutate the runtime. Keep every existing assertion and timeout. Masih overnight stability request, 26 Oct: exercise transient launch-token recovery, exact saved/edited draft ownership and restored Undo. Preserve all six A125 recovery cases and all prior refusal, delivery and offline-mutation assertions."
     },
     "tests/chat-activity.test.cjs": {
       "blob": "b764612da30e5c3f5da30fdd9b1cde08d176abe8",
@@ -65,14 +105,14 @@ export const retainedUpdates = {
       "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added. Run40273131811 proved the target deleted while legitimate reply elements arrived: require the target tombstone on disk and absence live, preserve every other saved live element, and retain both Undo assertions."
     },
     "tests/arrow-keys.test.cjs": {
-      "blob": "0785fed8676b269a3377f9d2d005d90ef1327548",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure. R12: cancel a delayed sidebar selection when focus leaves or its destination disconnects. Preserve the complete original control sweep and closed-select behavior; add deterministic cancelled, leave-and-return, and held-focus navigation checks for the missing Sources anchor observed in run40277834091. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration."
+      "blob": "b1b75ec08ec928efb7997e605712daed25a3a14d",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure. R12: cancel a delayed sidebar selection when focus leaves or its destination disconnects. Preserve the complete original control sweep and closed-select behavior; add deterministic cancelled, leave-and-return, and held-focus navigation checks for the missing Sources anchor observed in run40277834091. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/workflow-provenance.test.cjs": {
-      "blob": "e8e88defb2ae4322a4488db2060a8838afd460f6",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Wait for restored comparison results before asserting the saved stop choice after reload; retain exact restored choice, request and provenance assertions."
+      "blob": "e8c987075e17eb0bac5e5129abc55aa2fab6a91b",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Wait for restored comparison results before asserting the saved stop choice after reload; retain exact restored choice, request and provenance assertions. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/step-sentences.test.cjs": {
       "blob": "a137478ac4839fba2417d8274369404c0971fb2c",
@@ -135,9 +175,9 @@ export const retainedUpdates = {
       "reason": "A233/A251 makes Full access the shared default. Keep Bypass red, distinct and confirmed, Cancel lossless, managed refusals and immediate apply. Scope exact popup choices away from the S35 persistent menubar."
     },
     "tests/canvas-iso.test.cjs": {
-      "blob": "d64a29438b28f5ffec4056a66407f931d2de17fb",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "Keep the dense node collision checks and extend them to dark mode after reserving the complete Mother workflow mark width."
+      "blob": "548b29c82b58d3b5077b76b5b1cf80c1cb30691f",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "Keep the dense node collision checks and extend them to dark mode after reserving the complete Mother workflow mark width. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/sidebar-creators.test.cjs": {
       "blob": "21f7ae074660ae529bc05d619b5fcab749512163",
@@ -220,9 +260,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
     "tests/hud-language.test.cjs": {
-      "blob": "649ff6c3a09569c7fc89c2a8b9e60bdaadec828a",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). Wait for opened lazy activity bodies before checking their HUD geometry; retain every theme, menu, dialog and surface assertion."
+      "blob": "93c89bb4f79df91378b27738bd2b2ae7f6bed42f",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). Wait for opened lazy activity bodies before checking their HUD geometry; retain every theme, menu, dialog and surface assertion. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/ledger-page.test.cjs": {
       "blob": "3f08e4309e6681b9b8b861bc234fa259486a97bb",
@@ -270,9 +310,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. Footer, Masih 22 Oct: \"theme should be next to settings\". The helpers open Settings with the gear and switch the theme with its button (c88df8e6d). A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/input-hints.test.cjs": {
-      "blob": "8709043fe7d186dde635579ca33e30fe481ba62f",
-      "approval": "81bb605d3b191da40fe95d499505acd12234f8b5",
-      "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model."
+      "blob": "92ac3d5207622f5b5e70877b3593a5355ef28809",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/sidebar-order.test.cjs": {
       "blob": "b67ceb9a7c0dd52adc5f9ebf6fe0d6e486b5664b",
@@ -336,9 +376,9 @@ export const retainedUpdates = {
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. S34 reconnect status stays at the workspace bottom even while a drawer or floating panel hides the chat. Restore the hidden chat before inspecting its preserved draft; keep bottom geometry and reconnection checks."
     },
     "tests/desktop-sweep.test.cjs": {
-      "blob": "ab7b9ecdd8cae06cc0d13681d7e51786e57b548a",
-      "approval": "eb6da27de8b27d7b8aaf461cc9078d0ba7444081",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route)."
+      "blob": "78fdd5cbc72421b5b541276f42ead6e351312e36",
+      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/love-spot-pages.test.cjs": {
       "blob": "5e6bb4c0b87a64d9cf1d7217e2c583fbab199a2b",
