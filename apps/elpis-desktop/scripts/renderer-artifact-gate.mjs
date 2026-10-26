@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/agent-runs.test.cjs": {
+      "blob": "c1fb99d08cf66e7a4bd8090fc3d9252c3319a51a",
+      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
+      "reason": "R73, Masih 26 Oct: native agents share their recursive parent tree. Navigate linked runs via their collapsed parent and keep only real unlinked runs in Background runs. Retain pagination, read-only, Continue, refusal, no-send, no-interrupt, seeded unread, project and pin checks; linked search results stay flat."
+    },
     "tests/provider-model-pairs.test.cjs": {
       "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
       "approval": "56ab914e564a4900c93d6e03323c5aa02db45210",
@@ -160,7 +165,7 @@ export const retainedUpdates = {
       "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion. Wait on stable disclosure owners: a :not([open]) locator changes identity after the click. Keep all reasoning, tool, copy and discovered-agent assertions after their bodies mount."
     },
     "tests/sidebar-groups.test.cjs": {
-      "blob": "13cdaf9f6acc5b70406464464aa03042a7e8d32b",
+      "blob": "53cdeee4621adb6cd757de78cfdf9ad4f62d801f",
       "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
       "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions. Wait for the open root menu to own focus before native typeahead. Preserve the exact move target, real submenu keyboard journey and all grouping/persistence assertions."
     },
@@ -235,9 +240,9 @@ export const retainedUpdates = {
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). S35, Masih 25 Oct screenshot: the close control belongs at the right of the Elpis brand. Measure brand/close bounds in that order, retaining SVG, width and both-theme clipping checks."
     },
     "tests/parity-fixture.cjs": {
-      "blob": "d475b324c6ab29e74918a2a247f4042909196d66",
-      "approval": "dc7256e1672e6b15164fa01e39a48fb13d9cd03e",
-      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion. Love Spot, Masih 26 Oct: disable unavailable audio. Emit the actual server protocol's initial empty board scene, and allow a held scene/error event to verify that unknown legacy chat origins cannot warm or launch audio; keep ordinary chat audio proof after resolution and all existing fixture routes. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration."
+      "blob": "452378d2a59b8be11017e917a3bdbbd8fff70838",
+      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
+      "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion. Love Spot, Masih 26 Oct: disable unavailable audio. Emit the actual server protocol's initial empty board scene, and allow a held scene/error event to verify that unknown legacy chat origins cannot warm or launch audio; keep ordinary chat audio proof after resolution and all existing fixture routes. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration. R73, Masih 26 Oct: custom recursive-tree fixtures can name their visible initial root for startup readiness. Existing chat-a default, connection, hydration and all bridge/browser behavior remain unchanged."
     },
     "tests/windows-split.test.cjs": {
       "blob": "7e2255fda610c61f43c27f52f24e98b4219dd38f",
@@ -280,8 +285,8 @@ export const retainedUpdates = {
       "reason": "The Session Manager row is a switch. Masih 22 Oct: \"people should be able to turn on and off the session manager right there\". The arrow-key walk still stops on the row, now a switch; every other step is unchanged. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
     },
     "tests/chat-groups.test.mjs": {
-      "blob": "5c5bf59b2f6b13bf8caad7b805757d2813e494a8",
-      "approval": "70e669c0731370e7cfe18f1070b6704de40c0a9d",
+      "blob": "001cd63dac038dcd666cce877a4468ea7fe0b45e",
+      "approval": "cbaaca06147f92877b5f1843c133cd7fc2b74c17",
       "reason": "Running chats come after waiting ones and before unseen replies. Masih 22 Oct: \"I already told you the orange marked ones (the sessions that are running) must be on top\". Only the priority-order assertions changed. R73, Masih 26 Oct: recursive agent trees replace the old one-level nesting limit. Preserve valid multigeneration saved parents, explicit null root overrides, initially collapsed branches (A177) and malformed-cycle normalization. Keep existing grouping, sort, storage and failure checks; verify native-cycle multi-selection uses the same effective tree as rendering."
     },
     "tests/composer-corner.test.cjs": {
@@ -374,8 +379,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/sidebar-nav-icons.test.cjs": {
-      "blob": "f80177d99236af40b5204bd71c0f6ec83ade884b",
-      ...pageRemovalApproval
+      "blob": "764daea50569416e6f0ada062786112bafbd82b5",
+      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
+"reason": "OBSRM, Masih 21 Oct 22:45: \"remove it; remove the observability page - keep its logo icon as it looks good. the rest, remove.\" Preserve the remaining navigation checks. R73, Masih 26 Oct: linked native runs appear once under their parent. Keep genuine unlinked history accessible, and preserve every workspace-navigation, command, icon, pixel, geometry and fit assertion."
     },
     "tests/usability.test.cjs": {
       "blob": "e5cb1ba443f4983879427b0a4ff10b9cdb8d28a5",
