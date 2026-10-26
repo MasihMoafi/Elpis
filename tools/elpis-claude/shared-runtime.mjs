@@ -461,6 +461,40 @@ function usable(file) { try { fs.accessSync(file, fs.constants.X_OK); return tru
 const versionOf = (script) => /\/versions\/([^/]+)\//.exec(script ?? "")?.[1] ?? path.dirname(script ?? "");
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } }
 
+// A standard installed package records the exact engine paired with its provider tools.
+async function installedEngine(bundle) {
+  const manifestFile = path.join(bundle, "package/codex-package.json");
+  if (!exists(manifestFile)) return null; // Legacy/development layouts keep their configured engine.
+  const manifest = readJson(manifestFile), source = readJson(path.join(bundle, "source.json"));
+  if (manifest?.layoutVersion !== 1 || manifest.variant !== "elpis" || manifest.entrypoint !== "bin/codex"
+    || !/^[a-f0-9]{40}$/i.test(source?.source_head ?? "") || !/^[a-f0-9]{64}$/i.test(source?.runtime_sha256 ?? "")) {
+    throw new Error("The installed engine package has no valid source/pair receipt.");
+  }
+  const engine = path.join(bundle, "package/bin/codex");
+  if (!usable(engine) || fs.realpathSync(engine) !== engine || !fs.statSync(engine).isFile()) throw new Error("The installed engine package has no usable paired executable.");
+  const hash = createHash("sha256");
+  for await (const chunk of fs.createReadStream(engine)) hash.update(chunk);
+  if (hash.digest("hex") !== source.runtime_sha256.toLowerCase()) throw new Error("The installed engine does not match its source receipt checksum.");
+  return engine;
+}
+
+async function selectSuccessorEngine(rt, bridgeScript) {
+  let successor;
+  try { successor = fs.realpathSync(fs.readFileSync(rt.successor, "utf8").trim()); } catch { return; }
+  if (successor !== fs.realpathSync(bridgeScript) || fs.realpathSync(path.dirname(bridgeScript)) !== fs.realpathSync(here)) return;
+  const bundle = path.resolve(here, "../..");
+  if (!exists(path.join(bundle, "package/codex-package.json"))) return;
+  if (process.env.ELPIS_ENGINE_BIN) {
+    let inherited;
+    try { inherited = fs.realpathSync(process.env.ELPIS_ENGINE_BIN); } catch { return; }
+    const previous = path.resolve(path.dirname(inherited), "../..");
+    // An explicit custom engine outside these managed versions remains a deliberate choice.
+    if (path.dirname(previous) !== path.dirname(bundle) || await installedEngine(previous) !== inherited) return;
+  }
+  // Old deployed bridges spawn this helper with their own engine still in the environment.
+  process.env.ELPIS_ENGINE_BIN = await installedEngine(bundle);
+}
+
 // A lock file naming its holder's pid and start token; one whose holder is gone is taken over.
 async function acquireLock(file) {
   const me = `${process.pid} ${startToken(process.pid)}`;
@@ -592,11 +626,14 @@ async function ensureBridge(rt, bridgeScript, identity) {
 async function launcherMain(bridgeScript) {
   if (!bridgeScript) throw new Error("usage: node shared-runtime.mjs <bridge script>");
   bridgeScript = path.resolve(bridgeScript);
-  const identity = codeIdentity(bridgeScript);
   const rt = runtimeDir();
   const release = await acquireLock(rt.lock);
-  let joined;
-  try { joined = await ensureBridge(rt, bridgeScript, identity); } finally { release(); }
+  let joined, identity;
+  try {
+    await selectSuccessorEngine(rt, bridgeScript);
+    identity = codeIdentity(bridgeScript);
+    joined = await ensureBridge(rt, bridgeScript, identity);
+  } finally { release(); }
   if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over in a few seconds; chats working now finish first.\n`);
   await new Promise((resolve) => process.stdout.write(`unix://${rt.sock}\n${joined ? `engine ${joined.engine}\n` : ""}`, resolve));
 }
