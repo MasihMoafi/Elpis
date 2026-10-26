@@ -1,5 +1,5 @@
 // Keys Masih presses on the board, end to end (24 Oct 2026: "test the keystrokes"): Escape clears a selection, as in
-// Blender and n8n; a reason Run cannot start stays under the button and never wraps the toolbar (R20).
+// Blender and n8n; Run explains refusals at the bottom without moving the toolbar (Masih, 27 Oct).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
@@ -413,7 +413,7 @@ test('Escape clears the selection made by Ctrl+A or a click; Escape in a field s
   } finally { await close(); }
 });
 
-test('without a project, Run says why under the button and the toolbar keeps one row', async () => {
+test('without a project, Run explains why at the bottom and the toolbar keeps its position', async () => {
   const { page, canvas, close } = await openCanvas();
   try {
     await page.evaluate(() => localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [], selectedId: null })));
@@ -424,7 +424,9 @@ test('without a project, Run says why under the button and the toolbar keeps one
     const reason = canvas.getByRole('alert').filter({ hasText: 'Choose the project the agents work in' }); await reason.waitFor();
     assert.equal((await header.boundingBox()).height, height, 'the toolbar did not grow');
     assert.deepEqual(await run.boundingBox(), before, 'Run did not move');
-    const box = await reason.boundingBox();
-    assert.ok(box.y >= before.y + before.height && box.y - (before.y + before.height) < 20, 'the reason sits just under Run');
+    const box = await reason.boundingBox(), workspace = await canvas.boundingBox();
+    assert.ok(box.x >= workspace.x && box.x + box.width <= workspace.x + workspace.width + 1, 'the reason stays inside the workflow workspace');
+    assert.ok(box.y >= before.y + before.height && Math.abs(box.y + box.height - workspace.y - workspace.height) <= 14, 'the reason sits at the bottom of the workflow workspace');
+    assert.equal(await run.getAttribute('aria-describedby'), await reason.getAttribute('id'), 'Run describes its refusal after the message moves');
   } finally { await close(); }
 });
