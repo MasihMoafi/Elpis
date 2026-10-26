@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { fixture } = require('./parity-fixture.cjs');
+const { fixture, THREADS } = require('./parity-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const secondary = page => page.frameLocator('iframe[title="Split session"]');
 async function split(page, id = 'chat-b') {
@@ -32,20 +32,29 @@ test('split chats keep separate composers, send to their own chat, focus with br
   } finally { await f.close(); }
 });
 test('Alt+click opens a split; one chat receives the same live reply in both panes', async () => {
-  const f = await fixture({ width: 1400, height: 850, desktop: false }); const { page } = f;
+  let releaseResume;
+  const resumed = new Promise(resolve => { releaseResume = resolve; });
+  const f = await fixture({ width: 1400, height: 850, desktop: false, routes: {
+    '/api/threads/chat-a/resume': async () => { await resumed; return { thread: THREADS[0], activeTurnId: null }; },
+  } }); const { page } = f;
   try {
     await f.open('chat-a');
-    await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click({ modifiers: ['Alt'] });
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/events'
+        && response.request().frame().parentFrame() === page.mainFrame()),
+      page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click({ modifiers: ['Alt'] }),
+    ]);
     await secondary(page).getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
     await secondary(page).getByText('All green.', { exact: true }).waitFor();
-    // Both panes must be listening before the reply is sent; under load the second pane subscribes after it renders.
-    for (let tries = 0; f.listening() < 2 && tries < 200; tries++) await page.waitForTimeout(50);
     assert.ok(f.listening() >= 2, 'the split pane never subscribed to live events');
-    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'shared', item: { id: 'shared-reply', type: 'agentMessage', text: 'Both panes receive this reply.' } } });
+    // Completed items are already recorded by the bridge. Keep resume held until both panes show this event,
+    // so a recovery history read cannot stand in for live delivery (or later discard a fixture-only item).
+    f.turns.push(['shared', 'Reply in both panes.', 'Both panes receive this reply.']);
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'shared', item: { id: 'a-shared', type: 'agentMessage', text: 'Both panes receive this reply.' } } });
     await page.getByText('Both panes receive this reply.', { exact: true }).waitFor();
     await secondary(page).getByText('Both panes receive this reply.', { exact: true }).waitFor();
     assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
+  } finally { releaseResume(); await f.close(); }
 });
 for (const colorScheme of ['light', 'dark']) for (const width of [1400, 900]) test(`split view fits in ${colorScheme} at ${width}px`, async () => {
   const f = await fixture({ width, height: 850, colorScheme, desktop: false }); const { page } = f;

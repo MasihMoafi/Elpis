@@ -16,6 +16,7 @@ const routes = { '/api/threads': (body, url) => body ? { thread: chat('chat-new'
 
 const menu = page => page.getByRole('dialog', { name: 'Command menu' });
 const input = page => menu(page).getByRole('combobox', { name: 'Search or start a chat' });
+const searchFocused = page => page.waitForFunction(() => document.activeElement?.matches('input[aria-label="Search conversations"]'));
 const typeInMenu = async (page, text) => {
   await page.waitForFunction(() => document.activeElement?.matches('[role="combobox"][aria-label="Search or start a chat"]'));
   await page.keyboard.type(text);
@@ -89,6 +90,7 @@ test('typing filters the actions; Enter runs one; text that matches nothing star
     assert.ok(f.posts.some(post => post.path.endsWith('/turns') && JSON.stringify(post.body).includes('Write a haiku about lexers')), 'with the typed text as its first message');
 
     await page.keyboard.press('Control+Shift+K');
+    await searchFocused(page);
     assert.ok(await page.getByLabel('Search conversations').evaluate(element => element === document.activeElement), 'Ctrl+Shift+K focuses the sidebar search');
     assert.equal(await menu(page).count(), 0);
     assert.deepEqual(f.errors, []);
@@ -170,16 +172,20 @@ test('menu search leaves Settings; Ctrl+Shift+K inside the menu searches; Ctrl+K
     await page.keyboard.press('Control+k'); await input(page).fill('Search chats'); await page.keyboard.press('Enter');
     const search = page.getByLabel('Search conversations');
     await search.waitFor();
+    await searchFocused(page);
     assert.ok(await search.evaluate(element => element === document.activeElement), 'Search chats reveals the sidebar and focuses it from Settings');
     await composer.click(); await page.keyboard.press('Control+k'); await input(page).waitFor(); await page.keyboard.press('Control+Shift+K');
     await menu(page).waitFor({ state: 'detached' });
+    await searchFocused(page);
     assert.ok(await search.evaluate(element => element === document.activeElement));
     await page.keyboard.press('Control+k'); await input(page).fill('unused'); await page.keyboard.press('Control+k');
     await menu(page).waitFor({ state: 'detached' });
+    await searchFocused(page);
     assert.ok(await search.evaluate(element => element === document.activeElement));
     await page.keyboard.press('Control+k'); assert.equal(await input(page).inputValue(), '');
     await menu(page).getByRole('button', { name: 'Close command menu' }).click();
     await menu(page).waitFor({ state: 'detached' });
+    await searchFocused(page);
     assert.ok(await search.evaluate(element => element === document.activeElement));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
