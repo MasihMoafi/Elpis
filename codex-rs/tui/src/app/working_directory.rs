@@ -14,6 +14,52 @@ enum DestinationConfig {
     Prepared(Box<Config>),
 }
 
+fn directory_permission_profile_matches(
+    config: &Config,
+    actual: &PermissionProfile,
+    active: Option<&ActivePermissionProfile>,
+) -> bool {
+    if let Some(expected) = config.permissions.active_permission_profile() {
+        return active == Some(&expected);
+    }
+    // The local bridge may normalize a legacy sandbox to a built-in identity.
+    // A named profile or proxy cannot be verified from a legacy sandbox response.
+    if config.permissions.network.is_some() {
+        return false;
+    }
+    let matches_rules = |expected: &PermissionProfile| {
+        expected.network_sandbox_policy() == actual.network_sandbox_policy()
+            && expected
+                .file_system_sandbox_policy()
+                .materialize_project_roots_with_workspace_roots(&config.workspace_roots)
+                .is_semantically_equivalent_to(
+                    &actual.file_system_sandbox_policy(),
+                    config.cwd.as_path(),
+                )
+    };
+    if let Some(active) = active {
+        if active.extends.is_some() {
+            return false;
+        }
+        let builtin = match active.id.as_str() {
+            codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY => {
+                PermissionProfile::read_only()
+            }
+            codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE => {
+                PermissionProfile::workspace_write()
+            }
+            codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS => {
+                PermissionProfile::Disabled
+            }
+            _ => return false,
+        };
+        if !matches_rules(&builtin) {
+            return false;
+        }
+    }
+    matches_rules(&config.permissions.effective_permission_profile())
+}
+
 /// Session and configuration prepared before the event loop attaches a managed checkout.
 pub(super) struct ManagedWorktreeAttach {
     started: AppServerStartedThread,
@@ -487,8 +533,11 @@ impl App {
         } else {
             session.approval_policy.to_core() == config.permissions.approval_policy.value()
                 && session.approvals_reviewer == config.approvals_reviewer
-                && session.active_permission_profile
-                    == config.permissions.active_permission_profile()
+                && directory_permission_profile_matches(
+                    &config,
+                    &session.permission_profile,
+                    session.active_permission_profile.as_ref(),
+                )
         };
         if session.thread_id == thread_id
             || crate::session_resume::cwds_differ(session.cwd.as_path(), cwd.as_path())
@@ -638,5 +687,123 @@ impl App {
             }
         }
         tui.frame_requester().schedule_frame();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_protocol::config_types::SandboxMode;
+    use codex_protocol::models::PermissionProfileSnapshot;
+    use codex_protocol::permissions::NetworkSandboxPolicy;
+    use codex_utils_absolute_path::test_support::PathBufExt;
+    use codex_utils_absolute_path::test_support::test_path_buf;
+
+    #[tokio::test]
+    async fn legacy_directory_admission_accepts_only_equivalent_builtin_permissions() -> Result<()>
+    {
+        let home = tempfile::tempdir()?;
+        let mut config = ConfigBuilder::default()
+            .codex_home(home.path().to_path_buf())
+            .harness_overrides(ConfigOverrides {
+                cwd: Some(home.path().to_path_buf()),
+                sandbox_mode: Some(SandboxMode::WorkspaceWrite),
+                ..ConfigOverrides::default()
+            })
+            .build()
+            .await?;
+        assert_eq!(config.permissions.active_permission_profile(), None);
+        let workspace = PermissionProfile::workspace_write();
+        let builtin = ActivePermissionProfile::new(":workspace");
+        assert!(directory_permission_profile_matches(
+            &config, &workspace, None
+        ));
+        assert!(directory_permission_profile_matches(
+            &config,
+            &workspace,
+            Some(&builtin)
+        ));
+        for id in [
+            "custom-workspace",
+            ":bypass-permissions",
+            ":read-only",
+            ":danger-full-access",
+        ] {
+            assert!(!directory_permission_profile_matches(
+                &config,
+                &workspace,
+                Some(&ActivePermissionProfile::new(id))
+            ));
+        }
+        let inherited = ActivePermissionProfile {
+            extends: Some(":workspace".into()),
+            ..builtin.clone()
+        };
+        assert!(!directory_permission_profile_matches(
+            &config,
+            &workspace,
+            Some(&inherited)
+        ));
+        for (actual, id) in [
+            (PermissionProfile::read_only(), ":read-only"),
+            (PermissionProfile::Disabled, ":danger-full-access"),
+            (
+                PermissionProfile::workspace_write_with(
+                    &[],
+                    NetworkSandboxPolicy::Enabled,
+                    false,
+                    false,
+                ),
+                ":workspace",
+            ),
+            (
+                PermissionProfile::workspace_write_with(
+                    &[test_path_buf("/extra-workspace").abs()],
+                    NetworkSandboxPolicy::Restricted,
+                    false,
+                    false,
+                ),
+                ":workspace",
+            ),
+        ] {
+            assert!(!directory_permission_profile_matches(
+                &config,
+                &actual,
+                Some(&ActivePermissionProfile::new(id))
+            ));
+        }
+        std::fs::write(
+            home.path().join("config.toml"),
+            "default_permissions = \"proxied\"\n[features]\nnetwork_proxy = true\n[permissions.proxied]\nextends = \":workspace\"\n[permissions.proxied.network]\nenabled = true\nproxy_url = \"http://127.0.0.1:43128\"\n",
+        )?;
+        let proxied = ConfigBuilder::default()
+            .codex_home(home.path().to_path_buf())
+            .build()
+            .await?;
+        assert!(proxied.permissions.network.is_some());
+        config.permissions.network = proxied.permissions.network;
+        assert!(!directory_permission_profile_matches(
+            &config,
+            &workspace,
+            Some(&builtin)
+        ));
+        config.permissions.network = None;
+        config
+            .permissions
+            .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::active(
+                workspace.clone(),
+                ActivePermissionProfile::new("configured-workspace"),
+            ))?;
+        assert!(!directory_permission_profile_matches(
+            &config,
+            &workspace,
+            Some(&builtin)
+        ));
+        assert!(directory_permission_profile_matches(
+            &config,
+            &workspace,
+            Some(&ActivePermissionProfile::new("configured-workspace"))
+        ));
+        Ok(())
     }
 }
