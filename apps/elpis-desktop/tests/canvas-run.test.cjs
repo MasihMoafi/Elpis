@@ -2,7 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme } = require('./controls.cjs');
+const { chooseOption, chooseTheme, captureReview } = require('./controls.cjs');
+const { assertUiFit } = require('./ui-fit.cjs');
 
 test('Voting finishes every agent; Tally receives all answers after their checks', async () => {
   const events = [], results = new Map();
@@ -47,12 +48,46 @@ test('Voting finishes every agent; Tally receives all answers after their checks
 });
 
 test('a failed writer explains why its descendants did not start', async () => {
+  const end = 'End of the complete workflow failure details.';
+  const reason = `Writable success requires changed files.\n${Array.from({ length: 40 }, (_, index) => `Check ${index + 1}: the filesystem command failed; review the agent's evidence before running again.`).join('\n')}\nRequest: ${'a'.repeat(180)}\n${end}`;
   const fixture = await openCanvas({ listed(run) {
-    return { id: run.graphId, status: 'failed', tasks: run.tasks.map((task, index) => ({ id: task.id, status: index === 0 ? 'failed' : 'blocked', assignedThreadId: null, failureReason: index === 0 ? 'Writable success requires changed files' : 'prerequisite did not succeed' })) };
+    return { id: run.graphId, status: 'failed', tasks: run.tasks.map((task, index) => ({ id: task.id, status: index === 0 ? 'failed' : 'blocked', assignedThreadId: null, failureReason: index === 0 ? reason : 'prerequisite did not succeed' })) };
   } });
   try {
     await fixture.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await fixture.canvas.getByRole('alert').filter({ hasText: 'Writable success requires changed files' }).waitFor();
+    const notice = fixture.canvas.getByRole('alert').filter({ hasText: 'Writable success requires changed files' }); await notice.waitFor();
+    const run = fixture.canvas.getByRole('button', { name: 'Run graph', exact: true });
+    for (const width of [960, 1440]) for (const theme of ['light', 'dark']) {
+      await fixture.page.setViewportSize({ width, height: 900 });
+      if (await fixture.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(fixture.page, theme);
+      for (const iso of [false, true]) {
+        await fixture.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
+        const at = await notice.boundingBox(), canvas = await fixture.canvas.boundingBox(), order = await fixture.canvas.getByRole('region', { name: 'Run order', exact: true }).boundingBox();
+        assert.ok(at.x >= canvas.x && at.x + at.width <= canvas.x + canvas.width + 1, 'a long failure stays inside its workspace');
+        assert.ok(at.y >= order.y + order.height && Math.abs(at.y + at.height - canvas.y - canvas.height) <= 14, 'failures occupy the bottom without covering the header or wave order');
+        assert.equal(await notice.evaluate(el => !!el.closest('.canvas-header')), false, 'no error popup remains under Run');
+        assert.equal(await run.getAttribute('aria-describedby'), await notice.getAttribute('id'), 'Run still describes its actual failure');
+        const details = notice.getByRole('region', { name: 'Workflow error details', exact: true });
+        assert.ok((await details.innerText()).includes(end), 'the complete failure remains available');
+        const scroll = await details.evaluate(el => ({ client: el.clientHeight, full: el.scrollHeight, fits: el.scrollWidth <= el.clientWidth + 1 }));
+        assert.ok(scroll.full > scroll.client && scroll.fits, 'long details scroll vertically and wrap unbroken text');
+        await details.focus(); await details.press('End');
+        // Native keyboard scrolling can finish after the key event returns. Wait for the actual scroll end;
+        // the following range assertion still proves that the complete final line is readable.
+        await fixture.page.waitForFunction(el => el.scrollTop > 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1, await details.elementHandle());
+        assert.equal(await details.evaluate((el, ending) => {
+          const text = el.firstChild, start = text.textContent.indexOf(ending), range = document.createRange();
+          range.setStart(text, start); range.setEnd(text, start + ending.length);
+          const tail = range.getBoundingClientRect(), box = el.getBoundingClientRect();
+          return el.scrollTop > 0 && tail.top >= box.top - 1 && tail.bottom <= box.bottom + 1;
+        }, end), true, 'keyboard scrolling reaches the final readable line');
+        await assertUiFit(notice, `bottom workflow failure ${width} ${theme} ${iso ? '3D' : '2D'}`);
+        await captureReview(fixture.page, `workflow-failure-${width}-${theme}-${iso ? '3d' : '2d'}`);
+      }
+    }
+    await notice.getByRole('button', { name: 'Dismiss', exact: true }).click(); await notice.waitFor({ state: 'hidden' });
+    assert.equal(await run.getAttribute('aria-describedby'), null, 'dismissal removes the stale error description');
+    assert.deepEqual(fixture.errors, []);
   } finally { await fixture.close(); }
 });
 

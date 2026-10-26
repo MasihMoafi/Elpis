@@ -978,12 +978,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-header { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 16px; border-bottom:1px solid var(--hairline); background:var(--background); }
 .canvas-header > * { flex-shrink:0; }
 .canvas-header > .canvas-name { flex:0 1 280px; min-width:140px; font-weight:600; }
-/* The reason Run cannot start sits just under the button (R20) and never pushes the toolbar onto a second row; the
-   run's status stays beside it, as before. */
-.canvas-header > .canvas-run-control { position:relative; display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
+/* Readiness stays beside Run; errors use a contained row at the workspace's bottom. */
+.canvas-header > .canvas-run-control { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
 .canvas-run-control > button { flex:none; }
-.canvas-run-control .canvas-notice { position:absolute; top:calc(100% + 6px); right:0; z-index:30; width:max-content; max-width:min(420px, 60vw); margin:0; }
-.canvas-run-control .canvas-notice > span { overflow:visible; white-space:normal; overflow-wrap:anywhere; }
 .canvas-run-status { color:var(--muted-foreground); font-size:0.75rem; }
 @container agents-canvas (max-width:760px) {
   .canvas-header > .canvas-name { flex-basis:140px; }
@@ -1155,6 +1152,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .dark .canvas-note textarea { background:#3a3518; color:#f1ead0; }
 .canvas-notice { flex:none; display:flex; align-items:center; gap:10px; margin:6px 12px; padding:8px 12px; border:1px solid var(--destructive); background:var(--card); color:var(--foreground); font-size:0.8125rem; box-shadow:var(--shadow); }
 .canvas-notice[data-tone="info"] { border-color:var(--border); }
+.canvas-error-notice { grid-column:1 / -1; min-width:0; align-items:flex-start; }
+.canvas-error-notice > button { flex:none; }
+.canvas-error-details { flex:1; min-width:0; max-height:min(24vh, 192px); overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; }
+.canvas-error-details:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
 .canvas-side { display:flex; flex-direction:column; gap:10px; padding:14px 14px; overflow:auto; border-left:1px solid var(--hairline); background:var(--sidebar); }
 .canvas-side .hud-menu-title { padding:2px 4px; }
 .canvas-side input { text-overflow:ellipsis; }

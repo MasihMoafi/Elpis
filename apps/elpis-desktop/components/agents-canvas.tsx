@@ -1408,8 +1408,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
       <div className="canvas-run-control">
         <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
-        {notice ? <div id={runReasonId} className="canvas-notice" role="alert"><span>{notice}</span><Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button></div>
-          : (starting || run && !over(run)) && <span id={runReasonId} className="canvas-run-status" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
+        {!notice && (starting || run && !over(run)) && <span id={runReasonId} className="canvas-run-status" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
       </div>
     </header>
     <div className="canvas-board" ref={board}
@@ -1635,5 +1634,9 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
         <ul>{GUIDE.map(item => <li key={item.href}><a href={item.href} target="_blank" rel="noreferrer">{item.title}</a><small>{item.note}</small></li>)}</ul>
       </section>
     </aside>}
+    {notice && <div id={runReasonId} className="canvas-notice canvas-error-notice" role="alert">
+      <div className="canvas-error-details" role="region" aria-label="Workflow error details" tabIndex={0}>{notice}</div>
+      <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button>
+    </div>}
   </section>;
 }
