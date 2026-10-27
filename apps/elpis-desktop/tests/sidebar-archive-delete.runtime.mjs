@@ -111,7 +111,7 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
     await settle(); await row('Nested').click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Put under…', exact: true }).click();
     await page.getByRole('combobox', { name: 'Parent chat' }).click(); await page.getByRole('option', { name: 'Host', exact: true }).click();
     await page.getByRole('button', { name: 'Put under', exact: true }).click();
-    await row('Host').hover(); await page.getByRole('button', { name: 'Archive Host', exact: true }).click(); await without('Host');
+    await row('Host').click({ button: 'right' }); await page.getByRole('menuitem', { name: /^Archive/ }).click(); await without('Host');
     assert.ok(!(await shown()).includes('Nested'), 'the nested chat is not left at the top of the list');
     assert.ok((await archived()).includes('Nested'), 'it is archived with its chat');
     await noError('nested chat');
@@ -119,7 +119,7 @@ test('sidebar archive and delete: one chat, a selection, by key and menu, with a
 
   await t.test('archiving a chat archives its agents; Unarchive brings it back with them', async () => {
     await settle(); await expand('Mother'); await row('Worker one').waitFor();
-    await row('Mother').hover(); await page.getByRole('button', { name: 'Archive Mother', exact: true }).click(); await without('Mother', 'Worker one', 'Worker two');
+    await row('Mother').click({ button: 'right' }); await page.getByRole('menuitem', { name: /^Archive/ }).click(); await without('Mother', 'Worker one', 'Worker two');
     assert.deepEqual(await agentsOf('Mother'), [], 'no agent of the archived chat stays listed');
     await page.keyboard.press('Control+,'); await page.getByText('Archived chats', { exact: true }).first().click();
     await page.getByRole('button', { name: 'Unarchive Mother', exact: true }).click();

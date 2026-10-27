@@ -118,20 +118,22 @@ for (const colorScheme of ['light', 'dark']) test(`archiving or deleting a chat 
 } }, async f => {
   const { page } = f;
   const row = id => page.locator(`.recents .thread-row[data-thread-id="${id}"], section[aria-label="Recents"] .thread-row[data-thread-id="${id}"]`).first();
-  await row('chat-a').hover(); await row('chat-a').getByRole('button', { name: 'Archive Fix the parser' }).click();
+  // The row's hover Archive button is gone (577d5a5ad; Masih, 27 Oct: "it moves when I hover over it", "this thing showing all
+  // of these is very ugly"); Archive and Delete are in the row's "…" menu.
+  const act = async (id, name, item) => { await row(id).hover(); await row(id).getByRole('button', { name: `Actions for ${name}` }).click(); await page.getByRole('menuitem', { name: item }).click(); };
+  await act('chat-a', 'Fix the parser', /^Archive/);
   const notice = page.locator('.worktree-notice');
   await notice.waitFor();
   assert.equal(await notice.innerText(), `“Fix the parser” was archived with 2 uncommitted changes. Its worktree is still on disk at ${KEPT} (branch ${BRANCH}). Unarchive the chat to keep working in it.`);
   await shoot(page, `worktree-kept-${colorScheme}`);
   await page.getByRole('button', { name: 'Dismiss worktree notice' }).click();
   await notice.waitFor({ state: 'detached' });
-  await row('chat-b').hover(); await row('chat-b').getByRole('button', { name: 'Actions for Write the docs' }).click();
-  await page.getByRole('menuitem', { name: /^Delete/ }).click();
+  await act('chat-b', 'Write the docs', /^Delete/);
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await notice.waitFor();
   assert.equal(await notice.innerText(), `“Write the docs” was deleted. Its worktree has 1 uncommitted change, so it is still on disk at ${KEPT}0 (branch ${BRANCH}0).`);
   await page.getByRole('button', { name: 'Dismiss worktree notice' }).click();
-  await row('chat-c').hover(); await row('chat-c').getByRole('button', { name: 'Archive Plan the release' }).click();
+  await act('chat-c', 'Plan the release', /^Archive/);
   await row('chat-c').waitFor({ state: 'detached' });
   assert.equal(await notice.count(), 0, 'a clean worktree goes without a word');
 }));
