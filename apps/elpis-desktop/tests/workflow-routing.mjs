@@ -74,6 +74,7 @@ test('a check is told the folders the agents it checks could write in',async t=>
   const run=await f.client.runWorkflow({...graph,tasks:[make,check]});
   await f.finished(run.graphId);
   const prompt=f.specs.find(spec=>spec.name==='Check the file')?.prompt??'';
-  assert.match(prompt,/agents you check could write only in: agents\/make\b/);
+  assert.match(prompt,/agents you check could write only in: agents\/make\b.*the workspace root included, is in the right place/s);
+  assert.match(f.specs.find(spec=>spec.name==='Make the file').prompt,/the workspace root included, goes in agents\/make\b/,'the writer puts a root file in its own folder');
   assert.doesNotMatch(f.specs.find(spec=>spec.name==='Make the file').prompt,/agents you check/,'only a check gets this');
 });
