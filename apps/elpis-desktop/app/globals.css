@@ -429,6 +429,19 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .settings-nav-group { display:grid; gap:1px; }
 .settings-nav-empty { padding:8px; font-size:0.75rem; color:var(--muted-foreground); }
 .settings-nav { display:grid; align-content:start; gap:2px; position:sticky; top:0; }
+/* Keep all settings destinations visible at desktop heights; very short windows retain scrolling. */
+@media (max-height:1200px) {
+ .settings-mode .settings-nav { padding:8px; gap:4px; }
+ .settings-mode .settings-nav button[role="tab"] { height:28px; }
+ .settings-mode .settings-nav .settings-title { margin:4px 8px 0; }
+ .settings-mode .settings-nav .settings-section-link { padding:4px 8px; }
+}
+@media (max-height:800px) {
+ .settings-mode .settings-nav { gap:3px; }
+ .settings-mode .settings-nav button[role="tab"] { height:26px; }
+ .settings-mode .settings-nav .settings-section-link { padding:2px 8px; }
+}
+
 .settings-page { min-width:0; max-width:820px; }
 .provider-note { font-size:0.8125rem; color:var(--muted-foreground); margin:0; }
 .provider-note code, .mcp-server code { font-size:0.75rem; background:var(--muted); color:var(--foreground); padding:1px 5px; border-radius:5px; }

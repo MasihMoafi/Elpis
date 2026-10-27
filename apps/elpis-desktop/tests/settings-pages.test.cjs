@@ -240,6 +240,7 @@ test('Claude MCP import previews selections and handles a stale source without c
   const mcp = { version: 'm1', configPath: '/tmp/elpis/config.toml', write: { available: true }, servers: [{ name: 'rag', enabled: true, transport: 'stdio', command: 'rag', url: null, credentials: [] }] };
   const f = await fixture({ routes: {
     '/api/mcp': () => mcp,
+    '/api/tools/rag': () => ({ stages: [], keys: { openrouter: false } }),
     '/api/mcp/import': body => body ? conflict ? { __http: 409, error: 'Settings changed. Preview the import again.' } : { imported: body.names.length } : source,
   } });
   try {

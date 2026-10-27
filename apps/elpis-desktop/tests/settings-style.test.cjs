@@ -1,4 +1,5 @@
 const { openSettings } = require('./controls.cjs');
+const { fakeDesktop } = require('./fake-desktop.cjs');
 // Settings pages share one control height and fit the pane: wide and narrow, light and dark. Local mock adapter; no model calls.
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
@@ -13,6 +14,7 @@ const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http:
 const json=v=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(v))};
 if(url.pathname==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');return}
 if(url.pathname==='/api/health')return json({connected:true});
+if(url.pathname==='/api/love-spot/companion')return json({pinned:false,favorite:null,music:null,reason:''});
 if(url.pathname==='/api/models')return json({data:[{id:'main-model',model:'main-model',displayName:'Main model'}]});
 if(url.pathname==='/api/threads')return json({data:[],nextCursor:null});
 if(url.pathname==='/api/settings')return json(settings());
@@ -27,8 +29,9 @@ try{const f=path.join(__dirname,'..','out',url.pathname==='/'?'index.html':url.p
   try {
     for (const [width, height] of [[1280, 900], [390, 844]]) for (const dark of [false, true]) {
       const page = await browser.newPage({ viewport: { width, height }, colorScheme: dark ? 'dark' : 'light' }); page.setDefaultTimeout(7000);
+      await page.addInitScript(fakeDesktop);
       await page.goto(`http://127.0.0.1:${server.address().port}`);
-      if (width < 500) await page.locator('header button').first().click();
+      if (!await page.locator('aside.sidebar').isVisible()) await page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
       await openSettings(page);
       await page.evaluate(on => document.documentElement.classList.toggle('dark', on), dark);
       for (const name of PAGES) {
@@ -49,4 +52,38 @@ try{const f=path.join(__dirname,'..','out',url.pathname==='/'?'index.html':url.p
       await page.close();
     }
   } finally { await browser.close(); server.close(); }
+});
+
+test('desktop settings navigation fits without scrolling and retains a short-window fallback', async () => {
+  const { fixture } = require('./parity-fixture.cjs');
+  for (const [width, height] of [[2048, 1159], [1280, 900], [1280, 760]]) {
+    const f = await fixture({ width, height });
+    try {
+      const { page } = f; await openSettings(page);
+      const nav = page.getByRole('navigation', { name: 'Settings navigation' });
+      const geometry = await nav.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const controls = [...element.querySelectorAll('[role="tab"], .back-link, input')];
+        return { client: element.clientHeight, scroll: element.scrollHeight, controls: controls.map(node => {
+          const rect = node.getBoundingClientRect();
+          return { top: rect.top - bounds.top, bottom: bounds.bottom - rect.bottom, font: parseFloat(getComputedStyle(node).fontSize) };
+        }) };
+      });
+      assert.equal(await nav.getByRole('tab').count(), 17);
+      assert.equal(await nav.getByRole('button', { name: 'Back to app' }).count(), 1);
+      assert.equal(await nav.getByLabel('Search settings', { exact: true }).count(), 1);
+      assert.ok(geometry.scroll <= geometry.client + 1, `${width}×${height}: navigation scrolls (${geometry.scroll} > ${geometry.client})`);
+      assert.ok(geometry.controls.every(item => item.top >= -1 && item.bottom >= -1 && item.font >= 12), `${width}×${height}: controls must fit and remain legible`);
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  }
+  const short = await fixture({ width: 1280, height: 540 });
+  try {
+    await openSettings(short.page);
+    const nav = short.page.getByRole('navigation', { name: 'Settings navigation' });
+    const result = await nav.evaluate(element => { element.scrollTop = element.scrollHeight; return { overflow: element.scrollHeight > element.clientHeight, bottom: element.scrollTop + element.clientHeight, total: element.scrollHeight }; });
+    assert.ok(result.overflow && result.bottom >= result.total - 1, 'short windows retain reachable navigation via scrolling');
+    await nav.getByRole('tab', { name: 'About', exact: true }).click();
+    assert.deepEqual(short.errors, []);
+  } finally { await short.close(); }
 });
