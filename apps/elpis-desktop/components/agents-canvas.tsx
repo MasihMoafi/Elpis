@@ -1355,11 +1355,12 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   // "Let Elpis handle it": a fast model designs the team from a goal, or does what was typed (POST /api/canvas/plan,
   // bridge/canvas-plan.mjs). The board it returns replaces this one in one step, so Ctrl+Z undoes it.
   const [planning, setPlanning] = useState("");
-  async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false): Promise<CanvasGraph | null> {
+  // `forRun`: Run graph's own fill of what agents lack, made while that run is starting.
+  async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false, forRun = false): Promise<CanvasGraph | null> {
     const current = runtimeAttempt();
     if (!current()) return null;
     if (recordedRun) return null;
-    if (planning || startingRun.current) { setNotice("Wait for the current design to finish."); return null; }
+    if (planning || startingRun.current && !forRun) { setNotice("Wait for the current design to finish."); return null; }
     if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
     const chosenPattern = newWorkflow ? TEMPLATES.find(item => item.id === graph.planningPattern) : undefined;
     const starter = chosenPattern?.build();
@@ -1425,7 +1426,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       // Fill only when work in this execution scope needs it; muted and unrelated agents never start it.
       const scope = executionGraph(graph, targets);
       const empty = scope.nodes.some(node => node.type === "agent" && (!node.data.instruction.trim() || !node.data.writeScopes.length && Boolean(project.folders?.length)));
-      const planned = empty ? await letElpis(mother.brief.trim() || DRAWN, targets || agents.some(node => node.data.muted) ? scope : undefined) : graph;
+      const planned = empty ? await letElpis(mother.brief.trim() || DRAWN, targets || agents.some(node => node.data.muted) ? scope : undefined, false, true) : graph;
       if (!planned || !current()) return;
       const ready = executionGraph(planned, targets), built = runParts(ready);
       if ("error" in built) { setNotice(built.error); return; }
