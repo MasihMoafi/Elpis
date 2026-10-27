@@ -31,6 +31,6 @@ export function chatOrigin(thread: { id: string; name?: string | null }, loveThr
   if (/^Workflows\s*[·:]/i.test(thread.name ?? "")) return "Workflows";
 }
 
-export function originLabel(origin: string | undefined, name: string): string | undefined {
+export function originLabel(origin: string | null | undefined, name: string): string | undefined {
   return origin && origin.trim().toLowerCase() !== name.trim().toLowerCase() ? origin : undefined;
 }
