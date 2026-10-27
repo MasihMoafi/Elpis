@@ -26,10 +26,10 @@ function fixture(t, options = {}) {
   git('init', '-q'); fs.mkdirSync(path.join(cwd, 'src')); fs.writeFileSync(path.join(cwd, 'src/seed'), 'base'); git('add', 'src/seed'); git('commit', '-qm', 'base');
   const log = id => { const file = path.join(home, `${id}.jsonl`); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : []; };
   const runnerOptions = { stateDir: path.join(home, 'state'), timeoutMs: 10000,
-    nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model?.replace(/^(claude|agy)\//, ''),
+    nodeSpec: node => { const spec = { name: node.name, command: process.execPath, args: [FAKE], model: node.model?.replace(/^(claude|agy)\//, ''),
       env: { FAKE_ACP_NAME: `${node.provider ?? 'default'}-${node.name}`, FAKE_ACP_MODELS: 'm-fast,m-slow,opus,gpt-6.1-sol,gemini-4-argon-high', FAKE_ACP_EFFORTS: 'low,high', FAKE_ACP_LOG: path.join(home, `${node.name}.jsonl`),
         ...(node.name === 'Mother' ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Reviewed the candidate diff and tests' }) } : {}),
-        ...(options.env?.[node.name] ?? {}) } }), ...options.runner };
+        ...(options.env?.[node.name] ?? {}) } }; return options.nodeSpec?.(node, spec) ?? spec; }, ...options.runner };
   const runs = createWorkflowRuns(runnerOptions);
   t.after(async () => { runs.close(); await until(() => runs.list(), list => list.every(record => record.status !== 'running')); execFileSync('gio', ['trash', home]); });
   const start = (tasks, extra = {}) => runs.start({ rootThreadId: 'root', name: 'Coding team', tasks, maxConcurrency: 2, ...extra }, { cwd, model: 'm-fast', modelProvider: 'openai' });
@@ -424,4 +424,163 @@ for (const activeMember of ['nested', 'next-stage', 'unrelated']) test(`recovery
     assert.ok(f.log('evidence').some(row => row.method === 'session/prompt'), 'unrelated live work cannot block recovery');
     assert.deepEqual(pages.map(page => page.cursor ?? null), [null, 'second']);
   }
+});
+
+
+const checkpointRoutes = async () => [
+  { model: 'm-fast', provider: 'openai', efforts: ['low', 'high'], defaultEffort: 'high' },
+  { model: 'claude/opus', provider: 'claude', exhausted: true, efforts: ['low'] },
+];
+const checkpointDecision = (action = 'steer') => ({ action, taskId: 'live', message: 'Include ACTIVE_MOTHER_EVIDENCE in the current report.', summary: 'Observed the completed read; the report still needs source evidence.', reason: 'The live checkpoint shows that the source check can be made more specific.' });
+
+test('active Mother observes a completed-tool checkpoint and injects useful guidance into the same child turn', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: { modelRoutes: checkpointRoutes } }), finish = path.join(f.home, 'finish');
+  env.live = { FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish };
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify(checkpointDecision()) };
+  const started = await f.start([task('live')]);
+  await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.kind === 'checkpoint' && decision.status === 'delivered'));
+  const working = await f.record(started.graphId);
+  assert.equal(working.status, 'running');
+  assert.equal(f.log('live').filter(row => row.method === 'session/prompt').length, 1, 'supervision never starts another child turn');
+  assert.equal(f.log('live').filter(row => row.method === '_session/steering').length, 1);
+  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 1);
+  assert.ok(f.log('Mother').some(row => row.method === 'session/set_config_option' && row.params.configId === 'model' && row.params.value === 'm-fast'), 'Mother uses the chosen connected subscription');
+  assert.ok(f.log('Mother').some(row => row.method === 'session/set_config_option' && row.params.configId === 'effort' && row.params.value === 'low'), 'Mother never inherits the expensive default effort');
+  fs.writeFileSync(finish, 'done');
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'succeeded');
+  assert.match(completed.tasks[0].result.summary, /ACTIVE_MOTHER_EVIDENCE/);
+  assert.equal(completed.supervisionReviews, 1);
+  assert.equal(completed.mother.decisions.find(decision => decision.kind === 'checkpoint').summary, checkpointDecision().summary);
+});
+
+for (const race of ['finished', 'cancelled', 'manual']) test(`active Mother discards ${race} guidance without creating or cancelling another child turn`, { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: { modelRoutes: checkpointRoutes } });
+  const finish = path.join(f.home, 'finish'), motherFinish = path.join(f.home, 'mother-finish');
+  env.live = { FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish };
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify(checkpointDecision()), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: motherFinish };
+  const started = await f.start([task('live')]);
+  await until(() => f.log('Mother'), log => log.some(row => row.method === 'session/prompt'));
+  if (race === 'manual') {
+    await f.runs.steer(started.graphId, 'live', { id: 'human-guidance', text: 'Keep HUMAN_PRIORITY in this report.' });
+    await until(() => f.record(started.graphId), record => record.tasks[0].messages?.some(message => message.id === 'human-guidance' && message.status === 'delivered'));
+    fs.writeFileSync(motherFinish, 'done');
+    await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.kind === 'checkpoint' && decision.status === 'not_delivered'));
+    assert.equal((await f.record(started.graphId)).status, 'running', 'discarding stale Mother advice does not stop the child');
+    fs.writeFileSync(finish, 'done');
+  } else if (race === 'cancelled') f.runs.cancel('root');
+  else fs.writeFileSync(finish, 'done');
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, race === 'cancelled' ? 'cancelled' : 'succeeded');
+  const decisions = completed.mother.decisions.filter(decision => decision.kind === 'checkpoint');
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].status, 'not_delivered');
+  const injected = f.log('live').filter(row => row.method === '_session/steering');
+  assert.equal(injected.length, race === 'manual' ? 1 : 0, 'only explicit human guidance can enter the stale target');
+  assert.equal(f.log('live').filter(row => row.method === 'session/prompt').length, 1);
+  if (race === 'manual') assert.match(completed.tasks[0].result.summary, /HUMAN_PRIORITY/);
+});
+
+for (const unavailable of ['mother-busy', 'no-low-effort']) test(`active Mother skips ${unavailable} without blocking productive child work`, { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: {
+    modelRoutes: unavailable === 'no-low-effort' ? async () => [{ model: 'm-fast', provider: 'openai', efforts: ['high'], defaultEffort: 'high' }] : checkpointRoutes,
+    observeThread: async id => ({ id, status: { type: unavailable === 'mother-busy' ? 'active' : 'idle' } }),
+  } });
+  const finish = path.join(f.home, 'finish'); env.live = { FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish };
+  const started = await f.start([task('live')]);
+  await until(() => f.record(started.graphId), record => record.tasks[0].activeReview?.status === 'skipped');
+  assert.equal(f.log('Mother').length, 0, 'an unavailable reviewer never starts a model turn');
+  assert.equal((await f.record(started.graphId)).status, 'running');
+  fs.writeFileSync(finish, 'done');
+  assert.equal((await f.finished(started.graphId)).status, 'succeeded');
+});
+
+test('active Mother review budget caps observation only and every child still completes', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: { modelRoutes: checkpointRoutes } }), finish = path.join(f.home, 'finish');
+  for (const id of ['one', 'two', 'three', 'four']) env[id] = { FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish };
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'continue', summary: 'Observed the live evidence; continue the current scoped work.', reason: 'The checkpoint is consistent with its acceptance criteria.' }) };
+  const started = await f.start(['one', 'two', 'three', 'four'].map(id => task(id)), { maxConcurrency: 4 });
+  await until(() => f.record(started.graphId), record => record.mother?.decisions?.filter(decision => decision.kind === 'checkpoint' && decision.status === 'observed').length === 3);
+  fs.writeFileSync(finish, 'done');
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.tasks.filter(task => task.status === 'succeeded').length, 4);
+  assert.equal(completed.supervisionReviews, 3);
+  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 3);
+  assert.equal(completed.mother.decisions.filter(decision => decision.kind === 'checkpoint').length, 3);
+});
+
+test('active Mother coalesces substantive report chunks without needing a tool or opening a second child turn', { timeout: 20000 }, async t => {
+  const textAgent = `const readline=require('node:readline');let held;const send=(v)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...v})+String.fromCharCode(10));const reply=(id,result)=>send({id,result});const update=(text)=>send({method:'session/update',params:{sessionId:'text-session',update:{sessionUpdate:'agent_message_chunk',messageId:'report',content:{type:'text',text}}}});readline.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);if(m.method==='initialize')reply(m.id,{protocolVersion:1});else if(m.method==='session/new')reply(m.id,{sessionId:'text-session',configOptions:[{id:'model',type:'select',options:[{value:'m-fast',name:'m-fast'}]}]});else if(m.method==='session/prompt'){held=m.id;for(let n=0;n<12;n++)update('Observed source evidence from the scoped report. ');}else if(m.method==='_session/steering'){reply(m.id,{outcome:'injected'});update(m.params.prompt[0].text);reply(held,{stopReason:'end_turn'});}else if(m.method==='session/cancel'){reply(held,{stopReason:'cancelled'});}else if(m.id!==undefined)reply(m.id,{});});`;
+  let f;
+  f = fixture(t, { runner: { modelRoutes: checkpointRoutes, nodeSpec: node => node.name === 'Mother'
+    ? { name: node.name, command: process.execPath, args: [FAKE], model: node.model, env: { FAKE_ACP_MODELS: 'm-fast', FAKE_ACP_EFFORTS: 'low', FAKE_ACP_LOG: path.join(f.home, 'Mother.jsonl'), FAKE_ACP_ANSWER: JSON.stringify(checkpointDecision()) } }
+    : { name: node.name, command: process.execPath, args: ['-e', textAgent], model: node.model } } });
+  const started = await f.start([task('live')]);
+  await until(() => f.record(started.graphId), record => record.tasks[0].progress?.some(entry => entry.kind === 'text' && entry.text.length >= 240));
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'succeeded', completed.error);
+  assert.equal(completed.supervisionReviews, 1);
+  assert.match(completed.tasks[0].result.summary, /ACTIVE_MOTHER_EVIDENCE/);
+  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 1, 'many chunks produce one review');
+});
+
+
+test('active Mother drops queued advice when human guidance arrives during the next foreground tool', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: { modelRoutes: checkpointRoutes }, nodeSpec: (node, spec) => node.name === 'live' ? { ...spec, instructionsInPrompt: true, instructions: '[tool-race]' } : spec });
+  const nextTool = path.join(f.home, 'next-tool'), finish = path.join(f.home, 'finish');
+  env.live = { FAKE_ACP_NEXT_TOOL_RELEASE: nextTool, FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish };
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify(checkpointDecision()) };
+  const started = await f.start([task('live', { instruction: 'Continue the scoped report.' })]);
+  await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.kind === 'checkpoint' && decision.summary));
+  assert.equal(f.log('live').some(row => row.method === '_session/steering'), false, 'automatic advice waits for the foreground tool');
+  await f.runs.steer(started.graphId, 'live', { id: 'human-during-tool', text: 'Follow HUMAN_AFTER_TOOL and preserve the working tool.' });
+  fs.writeFileSync(nextTool, 'done');
+  await until(() => f.record(started.graphId), record => record.tasks[0].messages?.some(message => message.id === 'human-during-tool' && message.status === 'delivered'));
+  fs.writeFileSync(finish, 'done');
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(completed.mother.decisions.find(decision => decision.kind === 'checkpoint').status, 'not_delivered');
+  assert.equal(f.log('live').filter(row => row.method === '_session/steering').length, 1, 'only human advice reaches the current turn');
+  assert.equal(f.log('live').some(row => row.interruptedTool), false);
+  assert.match(completed.tasks[0].result.summary, /HUMAN_AFTER_TOOL/);
+  assert.doesNotMatch(completed.tasks[0].result.summary, /ACTIVE_MOTHER_EVIDENCE/);
+});
+
+test('active Mother observes manual child-chat revisions without depending on workflow-node messaging', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: { modelRoutes: checkpointRoutes } });
+  const finish = path.join(f.home, 'finish'), motherFinish = path.join(f.home, 'mother-finish');
+  env.live = { FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish };
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify(checkpointDecision()), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: motherFinish };
+  const started = await f.start([task('live')]);
+  await until(() => f.log('Mother'), log => log.some(row => row.method === 'session/prompt'));
+  const observed = await f.record(started.graphId);
+  await f.runs.noteManualSteer('unrelated-chat');
+  assert.equal((await f.record(started.graphId)).tasks[0].manualRevision, undefined, 'unrelated manual chats cannot supersede this review');
+  await f.runs.noteManualSteer(observed.tasks[0].sessionId);
+  fs.writeFileSync(motherFinish, 'done');
+  await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.kind === 'checkpoint' && decision.status === 'not_delivered'));
+  assert.equal(f.log('live').some(row => row.method === '_session/steering'), false, 'the owner notification itself never sends a model turn');
+  fs.writeFileSync(finish, 'done');
+  assert.equal((await f.finished(started.graphId)).status, 'succeeded');
+});
+
+test('active Mother review budget remains separate from one useful failure-recovery decision', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env, runner: { modelRoutes: checkpointRoutes } }), finish = path.join(f.home, 'finish');
+  let childAttempts = 0, motherAttempts = 0;
+  Object.defineProperty(env, 'live', { get: () => ++childAttempts === 1
+    ? { FAKE_ACP_ANSWER: JSON.stringify({ passed: false, summary: 'Source evidence needs a focused correction.' }), FAKE_ACP_HOLD_TURN: '1', FAKE_ACP_RELEASE: finish }
+    : { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Observed the corrected source evidence.' }) } });
+  Object.defineProperty(env, 'Mother', { get: () => ({ FAKE_ACP_ANSWER: JSON.stringify(++motherAttempts === 1
+    ? { action: 'continue', summary: 'The source check is still running.', reason: 'Wait for its actual verification result.' }
+    : { action: 'retry', taskId: 'live', instruction: 'Correct the missing source evidence and verify it once.', reason: 'The observed failed verification identifies a specific missing source.' }) }) });
+  const started = await f.start([task('live', { kind: 'verify' })]);
+  await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.kind === 'checkpoint' && decision.status === 'observed'));
+  fs.writeFileSync(finish, 'done');
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'succeeded', completed.error);
+  assert.equal(completed.supervisionReviews, 1);
+  assert.equal(completed.mother.decisions.filter(decision => decision.kind === 'checkpoint').length, 1);
+  assert.equal(completed.mother.decisions.filter(decision => decision.decision === 'retry').length, 1);
+  assert.equal(f.log('live').filter(row => row.method === 'session/prompt').length, 2, 'only the explicit correction starts a replacement attempt');
 });

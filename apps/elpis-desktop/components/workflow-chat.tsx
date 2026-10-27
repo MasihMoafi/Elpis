@@ -22,7 +22,7 @@ export type RecordedTask = {
 };
 export type RecordedWorkflow = Omit<WorkflowRun, "tasks" | "mother"> & {
   tasks?: RecordedTask[]; error?: string | null; endedAt?: number;
-  mother?: WorkflowRun["mother"] & { status?: string; model?: string; provider?: string; decisions?: { at?: number; taskId?: string; decision: string; reasons?: string[] | string; delivery?: string }[] };
+  mother?: WorkflowRun["mother"] & { status?: string; model?: string; provider?: string; decisions?: { at?: number; taskId?: string; kind?: string; decision: string; summary?: string; status?: string; reasons?: string[] | string; delivery?: string }[] };
   next?: { threadId?: string; graphId?: string; status: string; reported?: boolean; tasks?: RecordedTask[] };
 };
 export type WorkflowRunRef = Pick<WorkflowRun, "id" | "rootThreadId">;

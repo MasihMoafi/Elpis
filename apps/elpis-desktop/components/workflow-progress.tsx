@@ -126,6 +126,8 @@ function status(thread?: Thread) {
 
 export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = false }: { run: RecordedWorkflow; team: Team; onOpenChat: (id: string) => void; onRefresh?: () => void; compact?: boolean }) {
   const active = team.agents.filter(workflowThreadActive).length;
+  const supervision = [...run.mother?.decisions ?? []].reverse().find(decision => decision.kind === "checkpoint");
+  const supervisionStatus = supervision?.status === "reviewing" ? "Reviewing current work" : supervision?.status === "delivered" ? "Guidance delivered" : supervision?.status === "observed" ? "Continue current work" : supervision?.status === "not_delivered" ? "Guidance was not delivered" : supervision?.status === "skipped" ? "Review skipped" : "Review unavailable";
   const byId = new Map(team.agents.map(thread => [thread.id, thread]));
   const depth = (thread: Thread) => {
     let level = 0, parent = agentParentId(thread); const seen = new Set([thread.id]);
@@ -142,7 +144,12 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = f
       <span className="workflow-progress-status" role="status">{status(team.mother)}</span>
       {team.motherId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(team.motherId!)}>Open Mother chat</Button>}
     </div>
-    {!run.mother && !compact && <p className="text-xs text-muted-foreground">Mother is the run’s parent chat. No separate supervisor was recorded.</p>}
+    {!run.mother?.assignedThreadId && !run.mother?.sessionId && !compact && <p className="text-xs text-muted-foreground">Mother is the run’s parent chat. No separate supervisor was recorded.</p>}
+    {supervision && <div className="workflow-progress-report space-y-1" role="status" aria-label="Mother supervision">
+      <p className="text-muted-foreground">Mother · {supervisionStatus}</p>
+      {supervision.summary && <p>{supervision.summary}</p>}
+      {supervision.reasons && <p className="text-xs text-muted-foreground">{Array.isArray(supervision.reasons) ? supervision.reasons.join("; ") : supervision.reasons}</p>}
+    </div>}
     {team.lastUpdate && <p className="workflow-progress-report"><span className="text-muted-foreground">Latest observed report · </span>{team.lastUpdate}</p>}
     {!team.lastUpdate && <p className="text-muted-foreground">{team.loading ? "Reading live progress…" : "No agent report observed yet."}</p>}
     {team.error && <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-destructive">{team.error}</p></div>}

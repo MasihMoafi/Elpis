@@ -266,7 +266,9 @@ test('a manually named step keeps its name while legacy names use recorded step 
 });
 
 test('saved failed workflow opens its live team in chat and both canvas views without replacing the draft', async () => {
+  const supervisionReport = 'Mother observed the source check and steered the current report toward verified evidence.';
   const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
+    mother: { decisions: [{ kind: 'checkpoint', taskId: 'evidence', decision: 'steer', status: 'delivered', summary: supervisionReport, reasons: 'The completed read lacked a source citation.' }] },
     tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.', routing: { actual: { model: 'gpt-6-luna', provider: 'openai' } } },
       { id: 'synthesis', kind: 'research', title: 'Write next steps', instruction: 'Summarize the evidence.', dependsOn: ['evidence'], writeScopes: [], acceptanceCriteria: ['Return next steps'], assignedThreadId: 'legal-synthesis', status: 'failed', failureReason: 'Claude (ACP) error: You have hit your weekly limit.', model: 'requested-only-model' }] };
   const draft = { ...graph, name: 'Unfinished personal draft', workflowId: 'draft-kept' };
@@ -281,6 +283,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await page.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
     const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await summary.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     await summary.getByText('Weekly usage limit reached.', { exact: true }).waitFor();
     assert.equal(await page.getByText('This conversation has no messages yet.', { exact: true }).count(), 0);
     const savedTasks = summary.getByRole('list', { name: 'Saved workflow tasks', exact: true });
@@ -307,6 +310,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="evidence"]').waitFor();
+    await board.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     const previousAttempt = board.locator('details.canvas-log-panel[aria-label="Previous attempt"]');
     await previousAttempt.locator('summary').click();
     await board.getByRole('region', { name: 'Run clock', exact: true }).getByText('Duration not recorded', { exact: true }).waitFor();
@@ -316,6 +320,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
+    await board.getByRole('status', { name: 'Mother supervision', exact: true }).getByText(supervisionReport, { exact: true }).waitFor();
     await iso.getByRole('button', { name: /^Inspect Pointt evidence:/ }).hover();
     await iso.locator('.iso-label[data-for="evidence"]').getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     await shot(page, 'workflow-recorded-isometric');

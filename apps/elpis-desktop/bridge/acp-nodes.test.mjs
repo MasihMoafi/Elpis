@@ -134,3 +134,28 @@ test('two nodes: the first final answer arrives in the second node\'s session/pr
   await runAcpNode(alone.spec, { task: 'Review the source' }, { cwd: alone.dir });
   assert.equal(alone.received().find(m => m.method === 'session/prompt').params.prompt[0].text.includes('9d2e'), false);
 });
+
+
+test('steering rechecks its current-target guard after a foreground tool before injecting', { timeout: 20000 }, async t => {
+  const controller = new AbortController(); let running;
+  t.after(async () => { controller.abort(); await running?.catch(() => {}); });
+  const a = agentSpec(t, 'Guarded');
+  const toolRelease = path.join(a.dir, 'tool-release'), finish = path.join(a.dir, 'finish');
+  Object.assign(a.spec.env, { FAKE_ACP_TOOL_RELEASE: toolRelease, FAKE_ACP_RELEASE: finish });
+  let control, toolStarted;
+  const started = new Promise(resolve => { toolStarted = resolve; });
+  running = runAcpNode(a.spec, { task: '[tool-flight] [wait]' }, { cwd: a.dir, signal: controller.signal,
+    onControl: value => { control = value; }, onUpdate: update => { if (update.sessionUpdate === 'tool_call' && update.status === 'in_progress') toolStarted(); },
+  });
+  await started;
+  let current = true;
+  const pending = control.steer('Stale automatic advice must not arrive.', { isCurrent: () => current });
+  const refused = assert.rejects(pending, /stale|superseded/i); refused.catch(() => {});
+  current = false;
+  fs.writeFileSync(toolRelease, 'done');
+  await refused;
+  assert.equal(a.received().some(row => row.method === '_session/steering'), false);
+  fs.writeFileSync(finish, 'done');
+  assert.doesNotMatch((await running).answer, /Stale automatic advice/);
+  assert.equal(a.received().filter(row => row.method === 'session/prompt').length, 1, 'a refused steer cannot create a replacement turn');
+});

@@ -198,11 +198,12 @@ export async function runAcpNode(spec, { task, inputs = [] } = {}, options = {})
     if (stopped) throw stopped;
     prompting = true;
     let sending = Promise.resolve();
-    onControl?.({ steer(message) {
+    onControl?.({ steer(message, { isCurrent } = {}) {
       const sent = sending.catch(() => {}).then(async () => {
         // An idle notification is a wake-up only: another tool may start in the same transport read.
         while (tools.size && prompting && !stopped && !node.gone) await new Promise(resolve => idle.add(resolve));
         if (stopped || !prompting || node.gone) throw new BridgeError(`${name} is not running`, 409);
+        if (isCurrent && !isCurrent()) throw new BridgeError(`${name}'s automatic guidance was superseded`, 409);
         const result = await Promise.race([node.call('_session/steering', { sessionId, prompt: [{ type: 'text', text: message }], _meta: { steering: { idleBehavior: 'promptRequired' } } }), stopping, node.ended.then(error => { throw error; })]);
         if (!['injected', 'queued'].includes(result?.outcome)) throw new BridgeError(`${name} ended before the message could be delivered`, 409);
         return { delivery: result?._meta?.delivery ?? 'currentTurn' };
