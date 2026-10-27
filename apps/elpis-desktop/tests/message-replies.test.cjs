@@ -134,7 +134,7 @@ test('a selection across messages offers no quote, and Escape dismisses the sele
   const { page } = f;
   await page.evaluate(() => {
     const start = document.querySelector('.message.agent p').firstChild;
-    const end = document.querySelectorAll('.user-turn .message.user')[1].firstChild;
+    const end = document.createTreeWalker(document.querySelectorAll('.user-turn .message.user')[1], NodeFilter.SHOW_TEXT).nextNode(); // its text sits inside the fold wrapper (540411af9)
     const range = document.createRange(); range.setStart(start, 0); range.setEnd(end, 3);
     getSelection().removeAllRanges(); getSelection().addRange(range);
   });
