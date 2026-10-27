@@ -30,7 +30,7 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: add real modal/popover annotation without activation or dismissal, and normal interaction after leaving; retain click, drag, text, Space, Escape, marker and inner scrolling checks."
     },
     "tests/matilda.test.cjs": {
-      "blob": "017932bb6a34c4e471d64f7e9b415a3df1c882cc",
+      "blob": "91b427823fa751477a298c386695d381a9103714",
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
       "reason": "Masih 27 Oct: an open editor is unfinished even after pasting and long pauses. Supersede forced closure by replies; prove complete dispatch after editing ends, focus during late reply and pending-note retention after cancelled queued picture dispatch. Retain drawing, persona and provider-failure checks."
     },
@@ -215,7 +215,7 @@ export const retainedUpdates = {
       "reason": "Isolated fixtures use the standard temporary directory on a fresh runner, without depending on a personal cache folder. All creator-history, folded-branch, keyboard, provider and persistence assertions remain."
     },
     "tests/browser-panel.test.cjs": {
-      "blob": "0769cc6170d5aad1bd2b1cb299d1378ccd2ef100",
+      "blob": "64f96cc9ac412ac5c18f19bf60e1648242f434fc",
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. Masih 27 Oct: add Shift/Ctrl/Cmd selection, grouped icon menu, close selected/other/right, real URL sidebar pins, rename/mute, compact empty pane after full view and preserved resized content. Retain previous panel and annotation checks."
     },

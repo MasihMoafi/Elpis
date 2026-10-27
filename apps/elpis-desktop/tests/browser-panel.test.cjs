@@ -446,3 +446,32 @@ test('browser Close other tabs preserves the context or selected group; Close ta
   }
   assert.deepEqual(errors, []);
 });
+
+
+test('closing a selected group containing the final active tab selects its surviving neighbour once', async t => {
+  const { page, errors } = await fixture(t);
+  await page.evaluate(() => {
+    const sample = window.__state.tabs[0];
+    window.__push({ activeId: 'survivor-a', tabs: ['A', 'B', 'C'].map(letter => ({ ...sample, id: `survivor-${letter.toLowerCase()}`, title: `Page ${letter}`, url: `https://example.com/${letter.toLowerCase()}` })) });
+  });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
+  await tabs.getByRole('tab', { name: 'Page B', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Page C', exact: true }).click({ modifiers: ['Shift'] });
+  await tabs.getByRole('tab', { name: 'Page C', exact: true }).click({ button: 'right' });
+  const before = await page.evaluate(() => window.__commands.length);
+  await page.getByRole('menuitem', { name: 'Close 2 tabs', exact: true }).click();
+  let delivered;
+  await eventually(async () => {
+    delivered = (await page.evaluate(() => window.__commands)).slice(before);
+    assert.equal(delivered.filter(item => item.action === 'close').length, 2);
+  });
+  const closed = new Set();
+  for (const command of delivered) {
+    if (command.action === 'close') closed.add(command.id);
+    if (command.action === 'select') assert.ok(!closed.has(command.id), 'a selected neighbour must still exist at delivery');
+  }
+  assert.deepEqual(delivered.filter(item => item.action === 'select'), [{ action: 'select', id: 'survivor-a' }], 'select the one surviving browser neighbour once');
+  assert.deepEqual([...closed], ['survivor-b', 'survivor-c']);
+  assert.equal(await tabs.getByRole('tab', { name: 'Page A', exact: true }).getAttribute('aria-selected'), 'true', 'the actual visible tab is the survivor');
+  assert.deepEqual(errors, []);
+});

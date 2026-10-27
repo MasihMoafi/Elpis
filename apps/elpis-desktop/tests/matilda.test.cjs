@@ -40,8 +40,17 @@ for (const colorScheme of ['light', 'dark']) test(`what Masih writes or draws on
     await page.getByText('Matilda is writing…').waitFor({ timeout: 15000 });
     const scene = await answered(f, 1), live = scene.elements.filter(e => !e.isDeleted);
     await editing.waitFor({ state: 'hidden' });
-    await page.keyboard.press('ControlOrMeta+a'); await page.evaluate(() => navigator.clipboard.writeText('')); await page.keyboard.press('ControlOrMeta+c');
-    assert.ok(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).elements.some(e => e.id === 'love-reply-turn-1'), 'her reply is on the board he is looking at');
+    // The bridge writes the scene before its event reaches this editor. Wait for
+    // the actual board clipboard, rather than treating the disk acknowledgement as UI admission.
+    let copied;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await page.keyboard.press('ControlOrMeta+a'); await page.evaluate(() => navigator.clipboard.writeText('')); await page.keyboard.press('ControlOrMeta+c');
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      try { copied = JSON.parse(text); } catch { copied = null; }
+      if (copied?.elements?.some(e => e.id === 'love-reply-turn-1')) break;
+      await page.waitForTimeout(50);
+    }
+    assert.ok(copied?.elements?.some(e => e.id === 'love-reply-turn-1'), 'her reply is on the board he is looking at');
     assert.equal(f.turns[0].text, completed, 'only the complete pasted and typed message is sent');
     assert.match(persona(f.turns[0]), /senior product designer/, 'the protocol she works by goes with it');
     assert.equal(f.chats[0].name, 'Love Spot'); assert.match(f.chats[0].instructions, /You are Matilda/); assert.match(f.chats[0].instructions, /no chat box/, 'she knows the board is where she talks');

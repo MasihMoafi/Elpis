@@ -187,7 +187,16 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
     setSelection(next);
     panel.select(next.includes(key) ? key : next.at(-1)!);
   }
-  const closePages = (keys: string[]) => { for (const key of keys) panel.close(key); setSelection(previous => previous.filter(key => !keys.includes(key))); };
+  const closePages = async (keys: string[]) => {
+    const closing = new Set(keys);
+    if (panel.shown && closing.has(panel.shown.key)) {
+      const at = panel.items.findIndex(item => item.key === panel.shown?.key);
+      const survivor = panel.items.slice(at + 1).find(item => !closing.has(item.key)) ?? panel.items.slice(0, at).findLast(item => !closing.has(item.key));
+      if (survivor) panel.select(survivor.key); else panel.closePanel();
+    }
+    setSelection(previous => previous.filter(key => !closing.has(key)));
+    for (const key of keys) if (!await browser.command("close", { id: key.slice(2) })) break;
+  };
   async function saveName() {
     if (!renaming || savingName) return;
     setSavingName(true); setRenameError("");
