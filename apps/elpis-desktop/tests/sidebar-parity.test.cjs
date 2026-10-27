@@ -105,20 +105,21 @@ test('every chat keeps automatic status at the left with a separate colour actio
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Error']);
     for (const id of ['t-run', 't-idle', 't-bad']) assert.ok((await dot(id).boundingBox()).x < (await colour(id).boundingBox()).x, 'automatic status precedes the distinct manual colour action');
     const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
-    const [run, idle, bad] = [await fill('t-run'), await paint(swatch('t-idle'), 'backgroundColor'), await fill('t-bad')];
+    const [run, idle, bad] = [await fill('t-run'), await fill('t-idle'), await fill('t-bad')];
     assert.ok(same(run, BASE), `a running chat's status is a ring, not a filled notification (${run})`);
-    assert.ok(!same(await ring('t-run'), await paint(swatch('t-idle'), 'borderTopColor')), 'the working ring differs from an unassigned conversation colour');
+    assert.ok(!same(await ring('t-run'), BASE), 'a working chat has a visible automatic ring');
     assert.equal(await dot('t-run').evaluate(element => getComputedStyle(element).animationName), 'none', 'a running status does not flash');
-    assert.ok(same(idle, BASE), `an unassigned conversation colour is hollow (${idle})`);
-    assert.ok(!same(await paint(swatch('t-idle'), 'borderTopColor'), BASE), 'an unassigned colour still has its ring');
+    assert.ok(same(idle, BASE), `a read idle chat keeps a hollow automatic marker (${idle})`);
+    assert.equal(await swatch('t-idle').evaluate(element => getComputedStyle(element).opacity), '0', 'an unassigned palette does not add another status dot');
     assert.ok(bad[0] > bad[1] + 60 && bad[0] > bad[2] + 60, `an error status is red (${bad})`);
-    // Persistent colour controls occupy one left column; activity no longer owns this position.
-    const boxes = await Promise.all(['t-run', 't-idle', 't-bad'].map(async id => ({ dot: await colour(id).boundingBox(), link: await row(id).locator('.thread-link').boundingBox() })));
+    // Automatic activity retains the original left column; manual colour has a separate action.
+    const boxes = await Promise.all(['t-run', 't-idle', 't-bad'].map(async id => ({ dot: await dot(id).boundingBox(), link: await row(id).locator('.thread-link').boundingBox() })));
     assert.ok(boxes.every(box => box.dot.width === boxes[0].dot.width && Math.abs(box.dot.x - boxes[0].dot.x) < 1), 'one size and one column');
     assert.ok(boxes.every(box => box.dot.x + box.dot.width <= box.link.x + 1), 'left of the title');
     assert.ok(boxes.every(box => box.dot.width >= 8), 'big enough to use');
     const running = await dot('t-run').boundingBox(), link = await row('t-run').locator('.thread-link').boundingBox();
-    assert.ok(running.x >= link.x + link.width - 1, 'activity stays separate after the conversation title');
+    assert.ok(running.x + running.width <= link.x + 1, 'automatic activity remains before the conversation title');
+    assert.ok((await colour('t-run').boundingBox()).x >= link.x + link.width - 1, 'manual colour remains separate after the title');
     emit('turn/started', { threadId: 't-idle', turn: { id: 'turn-9' } });
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'working'));
     assert.ok(same(await fill('t-idle'), BASE), 'still a ring while it works');
@@ -126,10 +127,10 @@ test('every chat keeps automatic status at the left with a separate colour actio
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'unread'));
     assert.ok(!same(await fill('t-idle'), BASE), 'filled once it finished unseen, like a notification');
     await row('t-idle').locator('.thread-link').click();
-    await eventually(async () => assert.equal(await dot('t-idle').count(), 0));
+    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'idle'));
+    assert.ok(same(await fill('t-idle'), BASE), 'reading clears the completion fill without removing the automatic marker');
     assert.equal(await colour('t-idle').count(), 1, 'reading clears activity while retaining its colour control');
-    assert.deepEqual(await oranges(page), [], 'light theme, sidebar dots: no orange');
-    assert.deepEqual(await row('t-idle').getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') || button.textContent.trim())).then(names => names.slice(0, 2)), ['Colour for Reread the statute', 'Reread the statute']);
+    assert.equal(await row('t-idle').getByRole('button', { name: 'Colour for Reread the statute', exact: true }).count(), 1, 'one manual colour action');
     await shoot('sidebar-dots-light');
   });
 });
