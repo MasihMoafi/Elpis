@@ -60,3 +60,29 @@ for (const colorScheme of ['light', 'dark']) {
     assert.deepEqual(f.errors, []);
   });
 }
+
+for (const colorScheme of ['light', 'dark']) test(`the reported saved drawing repairs on opening without another model turn (${colorScheme})`, { timeout: 30000 }, async t => {
+  const legacy = require('./fixtures/legacy-matilda-diagram.json');
+  const f = await loveSpotFixture({ colorScheme,
+    prepareDirectory: async directory => {
+      await fs.mkdir(directory, { recursive: true });
+      await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: legacy, files: {}, appState: {}, page: { name: 'Current page', session: 'legacy' } }));
+      await fs.writeFile(path.join(directory, '.love-spot-chat.json'), JSON.stringify({ threadId: 'legacy-chat' }));
+    },
+    configureClient: client => {
+      client.readThread = async () => ({ thread: { id: 'legacy-chat', name: 'Love Spot', modelProvider: 'openai' }, data: [{ turnId: 'legacy', item: { id: 'legacy-reply', type: 'agentMessage', text: reply } }], nextCursor: null });
+      client.resume = async () => ({ activeTurnId: null });
+    },
+  });
+  t.after(() => f.close());
+  await f.page.setViewportSize({ width: 1400, height: 1200 });
+  await f.open(f.page);
+  await f.waitFor(scene => {
+    const header = scene.elements.find(e => e.id === 'love-paint-legacy-0'), arrow = scene.elements.find(e => e.id === 'love-paint-legacy-2');
+    return arrow.x - header.x === 95 && arrow.y - header.y === 64;
+  }, 'The saved diagram was not repaired');
+  assert.equal(f.turns.length, 0, 'Repair does not call a model');
+  await f.page.keyboard.press('Shift+1');
+  await f.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (evidence) await f.page.locator('.love-spot-editor').screenshot({ path: path.join(evidence, `repaired-${colorScheme}.png`) });
+});
