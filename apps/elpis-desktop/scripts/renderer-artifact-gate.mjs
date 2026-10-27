@@ -245,10 +245,10 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/slash-commands.test.cjs": {
-      "blob": "3cd68e17fb41437e83d4ac00ccaa072b78c11b1f",
-      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
-      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
-    },
+      "blob": "b6b486313c74dece38a1043cde7aa98f2c226370",
+      "approval": "577d5a5ad4eba08326c323a18b5ca4579a12c53d",
+      "reason": "Masih 27 Oct: right-click Colour tints the row, no palette or duplicate inline actions; keep automatic status and hover geometry stable. Avatar opens an independent pet-size chat; music only mutes/unmutes. Keep chat navigation idempotent, workflow columns aligned, and /clear starts fresh context in the same folder without deleting history. Retain persistence, keyboard, drafts, failure and lifecycle assertions. Immutable baseline unchanged."
+},
     "tests/config-navigation.test.cjs": {
       "blob": "9fec23177956a4ec8f8b20b32eedc3410a5cab69",
       "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
@@ -534,9 +534,9 @@ export const retainedUpdates = {
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks. Await that popup's visibility before reading the same exact five choices; run40273131811 exposed the immediate empty snapshot."
     },
     "tests/sidebar-parity.test.cjs": {
-      "blob": "037563cddc0481b0ea2f670e2c499860bdb67a4b",
-      "approval": "171effbfaffbc916ac007c19b77abb00e5e4c05e",
-      "reason": "Masih 27 Oct: Settings must fit beside navigation; measure only the painted retained page. Automatic orange read/completion status stays left, manual palette stays separate. Retain idle/working/error/completion/read lifecycle and alignment checks; preserve the immutable baseline."
+      "blob": "235958532748a35819716106fab33206533657b1",
+      "approval": "577d5a5ad4eba08326c323a18b5ca4579a12c53d",
+      "reason": "Masih 27 Oct: right-click Colour tints the row, no palette or duplicate inline actions; keep automatic status and hover geometry stable. Avatar opens an independent pet-size chat; music only mutes/unmutes. Keep chat navigation idempotent, workflow columns aligned, and /clear starts fresh context in the same folder without deleting history. Retain persistence, keyboard, drafts, failure and lifecycle assertions. Immutable baseline unchanged."
 },
     "tests/reading-options.test.cjs": {
       "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
