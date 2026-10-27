@@ -312,6 +312,13 @@ for (const colorScheme of ['light', 'dark']) test(`long messages fold and expand
     await page.setViewportSize({ width: 1100, height: 900 });
   }
   for (const selector of ['.user-turn', '.message.agent']) assert.equal(await page.locator(selector).last().getByRole('button', { name: /^(?:Collapse|Expand) message$/ }).count(), 0, 'short messages have no extra control');
+  f.emit('message', { method: 'item/agentMessage/delta', params: { threadId: 'chat-a', turnId: 'short', itemId: 'a-short', delta: '\n\n' + f.turns[0][2] } });
+  const growing = page.locator('.message.agent').last().getByRole('button', { name: 'Collapse message', exact: true });
+  await growing.waitFor(); assert.equal(await growing.getAttribute('aria-expanded'), 'true', 'streaming growth becomes foldable without hiding the reply');
+  await growing.click();
+  f.emit('message', { method: 'item/agentMessage/delta', params: { threadId: 'chat-a', turnId: 'short', itemId: 'a-short', delta: '\n\nOne more streaming paragraph.' } });
+  await eventually(async () => assert.ok((await page.locator('.message.agent').last().textContent()).includes('One more streaming paragraph.')));
+  assert.equal(await page.locator('.message.agent').last().getByRole('button', { name: 'Expand message', exact: true }).getAttribute('aria-expanded'), 'false', 'streaming preserves the chosen collapsed state');
   assert.equal(await composer.inputValue(), 'Keep my unfinished draft');
   assert.equal(f.posts.filter(post => post.path.endsWith('/turns')).length, 0, 'folding never sends a turn');
 }));

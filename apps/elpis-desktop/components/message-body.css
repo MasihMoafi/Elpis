@@ -1,0 +1,4 @@
+.message-body { min-width:0; }
+.message-body-content { display:flow-root; }
+.message-fold-control { display:block; margin:0 0 6px auto; white-space:normal; }
+.message-body-preview { max-height:12lh; overflow:hidden; mask-image:linear-gradient(#000 75%, transparent); }

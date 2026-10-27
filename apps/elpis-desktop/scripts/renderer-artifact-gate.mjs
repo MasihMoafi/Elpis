@@ -405,9 +405,9 @@ export const retainedUpdates = {
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
     },
     "tests/claude-chat.test.cjs": {
-      "blob": "f30777d3e11dc0f82ad033b605ff70d3a0e4233b",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks."
+      "blob": "cef23d0c307153bc5423ae2a58db8f7c954448e3",
+      "approval": "d7892d47d94eacc2ca6d413e2656afdb79584bda",
+      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks. Masih 27 Oct: long messages need an option to collapse. Append both-theme shared user/reply folding, complete Copy, keyboard, short controls and streamed-growth checks; retain every existing test and assertion."
     },
     "tests/command-menu.test.cjs": {
       "blob": "b5ee4928b92b7c915bc7a78b33fc75c848e8bf06",
