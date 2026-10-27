@@ -198,4 +198,9 @@ async function threadMenuItem(page, name) {
   const wanted = name === 'New project from these…' ? /^New project from (?:this chat|\d+ chats)…$/ : opening[name] ?? name;
   return page.getByRole('menuitem', { name: wanted, exact: typeof wanted === 'string' });
 }
-module.exports = { threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
+// Workflows shows its patterns only when asked (27 Oct): from the pattern menu beside New workflow.
+async function openPatterns(scope) {
+  await chooseOption(scope.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'more');
+  await scope.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
+}
+module.exports = { openPatterns, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };

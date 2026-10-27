@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas, planFor } = require('./canvas-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { captureReview, chooseTheme } = require('./controls.cjs');
+const { captureReview, chooseTheme, openPatterns } = require('./controls.cjs');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 const reportPlan = body => ({ name: 'Pointt review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
 
@@ -372,8 +372,8 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
 
-    // A guide links Anthropic's and LangGraph's own advice on teams of agents.
-    assert.deepEqual(await canvas.getByRole('region', { name: 'Guide' }).getByRole('link').evaluateAll(links => links.map(link => new URL(link.href).hostname)), ['www.anthropic.com', 'claude.com', 'www.anthropic.com', 'code.claude.com', 'blog.langchain.com']);
+    // Done closes the agent's panel, and with nothing asked for no other panel takes its place.
+    await canvas.getByRole('complementary').waitFor({ state: 'detached' });
 
     // The header fits a small window: nothing runs past its edge or is cut off.
     for (const width of [1130, 960]) {
@@ -416,7 +416,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await agentCount(6, 'duplicate undone');
 
     // Delete keeping the flow (Ctrl+Delete): what waited for the agent now waits for what it waited for.
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /^Sequential/ }).click();
     await node('Veyra · Step 2: build on it').waitFor();
     await node('Veyra · Step 2: build on it').click();

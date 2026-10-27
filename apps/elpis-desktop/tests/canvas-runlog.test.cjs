@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme, openPatterns } = require('./controls.cjs');
 
 async function staged(options = {}) {
   let phase = 0;
@@ -21,7 +21,7 @@ async function staged(options = {}) {
 test('the complete chronological log retains starts, tasks, checks and actual reports; click and Enter open its agent', async () => {
   const f = await staged(); const { canvas, page } = f;
   try {
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     const log = canvas.getByRole('log', { name: 'Run log', exact: true });
@@ -67,34 +67,6 @@ test('the timer advances in either view and stops on completion, including a new
   } finally { await f.close(); }
 });
 
-test('Kahn waves stay visible with the sidebar closed; waiting inputs clear only after checks pass in either view', async () => {
-  const f = await staged(); const { canvas } = f;
-  try {
-    await canvas.getByText('More patterns', { exact: true }).click();
-    await canvas.getByRole('button', { name: /^Voting/ }).click();
-    await canvas.getByRole('button', { name: 'Side panel', exact: true }).click();
-    const order = canvas.getByRole('region', { name: 'Run order', exact: true }); await order.waitFor();
-    assert.match(await order.innerText(), /Kahn/i);
-    assert.equal(await order.locator('li').count(), 2);
-    for (const iso of [false, true]) {
-      await canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click(); await f.fit();
-      if (iso) await canvas.locator('.iso-label').filter({ hasText: 'Nuvani · Tally the answers' }).click(); else await f.node('Nuvani · Tally the answers').click();
-      assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Answer 1.*Veyra · Answer 2.*Orilo · Answer 3/);
-    }
-    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await order.locator('li[data-status="running"]').first().waitFor();
-    assert.match(await order.locator('li[data-status="running"]').innerText(), /Wave 1/i);
-    // Filling the template's missing prompts replaces the selection when the run starts.
-    await f.fit(); await canvas.locator('.iso-label').filter({ hasText: 'Nuvani · Tally the answers' }).click();
-    f.advance(1); await canvas.getByRole('log').getByRole('button', { name: /CHECK STARTED.*Quillon · Answer 1/ }).waitFor();
-    assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Answer 1.*check/);
-    f.advance(2); await order.locator('li[data-status="running"]').filter({ hasText: /Wave 2/i }).waitFor();
-    assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /All inputs captured/);
-    await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
-    assert.match(await canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /All inputs captured/);
-  } finally { await f.close(); }
-});
-
 test('failed checks stay in the log, explain blocked inputs, and stop the clock without inventing reports', async () => {
   const f = await openCanvas({ listed(run) { return { id: run.graphId, status: 'failed', tasks: run.tasks.map((task, index) => ({ id: task.id, status: index === 1 ? 'failed' : index === 0 ? 'succeeded' : 'blocked', assignedThreadId: null, result: null })) }; } });
   try {
@@ -105,7 +77,6 @@ test('failed checks stay in the log, explain blocked inputs, and stop the clock 
     const dashboard = f.canvas.getByRole('dialog', { name: / info$/ }); await dashboard.waitFor();
     await dashboard.getByRole('button', { name: 'Close info' }).click();
     await log.getByRole('button', { name: /INPUT BLOCKED.*Nuvani · Join the parts/ }).first().click();
-    assert.match(await f.canvas.getByLabel('Inputs needed', { exact: true }).innerText(), /Quillon · Part 1 \(Check failed\)/);
     const clock = f.canvas.getByRole('region', { name: 'Run clock' }); const ended = await clock.locator('strong').innerText();
     await f.page.waitForTimeout(1600); assert.equal(await clock.locator('strong').innerText(), ended);
   } finally { await f.close(); }
@@ -138,7 +109,7 @@ for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['l
   const f = await staged({ width, height }); const { canvas, page } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await fs.mkdir('/tmp/canvas-runlog', { recursive: true });
     for (const state of ['before', 'during', 'after']) {

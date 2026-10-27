@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme, captureReview } = require('./controls.cjs');
+const { chooseOption, chooseTheme, captureReview, openPatterns } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
 test('Voting finishes every agent; Tally receives all answers after their checks', async () => {
@@ -26,7 +26,7 @@ test('Voting finishes every agent; Tally receives all answers after their checks
   } });
   const { page, canvas, runs, errors, close } = fixture;
   try {
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.agent-node-mark[data-check="succeeded"]').length === 4, null, { timeout: 20000 });
@@ -72,9 +72,9 @@ test('a failed writer explains why its descendants did not start', async () => {
       if (await fixture.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(fixture.page, theme);
       for (const iso of [false, true]) {
         await fixture.canvas.getByRole('radio', { name: iso ? 'Isometric' : 'Flat', exact: true }).click();
-        const at = await notice.boundingBox(), canvas = await fixture.canvas.boundingBox(), order = await fixture.canvas.getByRole('region', { name: 'Run order', exact: true }).boundingBox();
+        const at = await notice.boundingBox(), canvas = await fixture.canvas.boundingBox(), header = await fixture.canvas.locator('.canvas-header').boundingBox();
         assert.ok(at.x >= canvas.x && at.x + at.width <= canvas.x + canvas.width + 1, 'a long failure stays inside its workspace');
-        assert.ok(at.y >= order.y + order.height && Math.abs(at.y + at.height - canvas.y - canvas.height) <= 14, 'failures occupy the bottom without covering the header or wave order');
+        assert.ok(at.y >= header.y + header.height && Math.abs(at.y + at.height - canvas.y - canvas.height) <= 14, 'failures occupy the bottom without covering the header');
         assert.equal(await notice.evaluate(el => !!el.closest('.canvas-header')), false, 'no error popup remains under Run');
         assert.equal(await run.getAttribute('aria-describedby'), await notice.getAttribute('id'), 'Run still describes its actual failure');
         const details = notice.getByRole('region', { name: 'Workflow error details', exact: true });
@@ -107,7 +107,7 @@ test('a project with no folders runs: every agent and its check write their repo
   const fixture = await openCanvas({ folders: [] });
   const { page, canvas, runs, node, errors, close } = fixture;
   try {
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     // The tally may write the whole project: the folder menu offers it even when the project has no folders.
     await node('Nuvani · Tally the answers').click();

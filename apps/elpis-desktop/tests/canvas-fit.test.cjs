@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
 const { uiFit, assertUiFit } = require('./ui-fit.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme, openPatterns } = require('./controls.cjs');
 
 for (const [width, height] of [[1280, 800], [900, 700]]) for (const theme of ['light', 'dark']) test(`text fits in both views, Add and settings: ${width}×${height} ${theme}`, async () => {
   const f = await openCanvas({ width, height }); const { page, canvas } = f;
@@ -35,7 +35,7 @@ for (const theme of ['light', 'dark']) test(`a finished run's board fits in both
   const f = await openCanvas({ width: 1440, height: 900 }); const { page, canvas } = f;
   try {
     if (await page.locator('html').evaluate(el => el.classList.contains('dark')) !== (theme === 'dark')) await chooseTheme(page, theme);
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /^Voting/ }).click();
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await page.waitForFunction(() => /Finished/.test(document.querySelector('.canvas-header')?.textContent ?? ''), null, { timeout: 20000 });

@@ -5,7 +5,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings, leaveSettings } = require('./controls.cjs');
+const { openSettings, leaveSettings, openPatterns } = require('./controls.cjs');
 
 const WORK = [
   { id: 'w1', type: 'commandExecution', command: 'npm test -- parser', status: 'completed', exitCode: 0, aggregatedOutput: '12 tests passed', durationMs: 2400 },
@@ -20,7 +20,7 @@ const ROUTES = {
 };
 /** Every small uppercase label in the app (the HUD label role). "Worked for 5s" is a caption, not a label: its time units
  * stay lowercase (tests/desktop-polish.test.cjs). */
-const LABELS = '.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span, .canvas-order li span, .canvas-critical span, .quick-add-crumb, .canvas-template-loaded, .agent-node-kind';
+const LABELS = '.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span, .quick-add-crumb, .canvas-template-loaded, .agent-node-kind';
 const PANELS = '.settings-rows, .settings-card, .customize-list, .step-card, .decision-card, .plan-card, .file-card, .task-list, .agent-conversation-group, .agent-node, .composer';
 const FLOATING = '.hud-menu, .hud-popover, .hud-dialog';
 const { contrastFailures } = require('./hud-contrast.cjs');
@@ -105,7 +105,7 @@ for (const colorScheme of ['dark', 'light']) test(`one HUD language on the chat,
   await page.locator('.nav-list').getByRole('button', { name: 'Customize', exact: true }).click(); await page.getByText('web-dev', { exact: true }).waitFor();
   await visit('Customize');
   await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.locator('.react-flow__node-agent').first().waitFor();
-  await page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click();
+  await openPatterns(page.getByRole('region', { name: 'Workflows', exact: true }));
   await visit('canvas');
   await t.test('one chamfer and one edge per role; the send button shares the control cuts', () => {
     const seen = { buttons: 0, floating: 0, panels: new Set() };

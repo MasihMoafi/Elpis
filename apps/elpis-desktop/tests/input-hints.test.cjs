@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { openSettings } = require('./controls.cjs');
+const { openSettings, openPatterns } = require('./controls.cjs');
 
 for (const colorScheme of ['light', 'dark']) test(`long input hints show an ellipsis and expose their complete text (${colorScheme})`, async () => {
   const f = await fixture({ width: 900, height: 700, colorScheme, routes: {
@@ -24,7 +24,7 @@ for (const colorScheme of ['light', 'dark']) test(`long input hints show an elli
     // A field with an explicit title (the selected agent's name) retains it.
     await page.getByRole('button', { name: 'Back to app', exact: true }).click();
     await page.getByRole('button', { name: 'Workflows', exact: true }).click();
-    await page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click();
+    await openPatterns(page.getByRole('region', { name: 'Workflows', exact: true }));
     await page.getByRole('button', { name: /^Voting/ }).click();
     await page.locator('.react-flow__node-agent').first().click();
     const name = page.getByRole('textbox', { name: 'Name', exact: true });

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme, openPatterns } = require('./controls.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 
 async function placementGeometry(f, iso) {
@@ -98,7 +98,7 @@ for (const iso of [true, false]) test(`wire noun labels persist and reach receiv
 test('starter and + names are distinctive and unique; eight additions never overlap; arrange toolbar/menu fit both views', async () => {
   const f = await openCanvas();
   try {
-    await f.canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(f.canvas);
     await f.canvas.getByRole('button', { name: /^Voting/ }).click();
     assert.ok((await f.titles()).every(name => /^[A-Z][a-z]+ · /u.test(name)));
     await f.canvas.getByRole('button', { name: /Blank playground/ }).click();

@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption, unapprovedOranges, chooseTheme } = require('./controls.cjs');
+const { chooseOption, unapprovedOranges, chooseTheme, openPatterns } = require('./controls.cjs');
 const shots = process.env.ELPIS_SHOTS;
 
 test('agents canvas, isometric: agents as buttons to select and open, run state, inside the window, only approved amber/orange accents in light', async () => {
@@ -84,7 +84,9 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).getByText(/^2 agents selected$/i).waitFor();
     const empty = await board.boundingBox();
     await page.mouse.click(empty.x + 8, empty.y + 8);
-    await canvas.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
+    // Nothing selected, nothing asked for: no side panel.
+    await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).waitFor({ state: 'detached' });
+    assert.equal(await canvas.locator('.canvas-side').count(), 0);
     // The Mother opens her panel.
     await board.getByRole('button', { name: /^Mother:/ }).click();
     await canvas.getByRole('complementary', { name: 'Mother', exact: true }).waitFor();
@@ -116,7 +118,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     // Hovering an agent lights it and its wires, and the status panel names it.
     await agent('Nuvani · Join the parts').hover();
     const status = board.getByRole('region', { name: 'Agent status', exact: true });
-    assert.match(await status.innerText(), /Nuvani · Join the parts[\s\S]*Wave 2/);
+    assert.match(await status.innerText(), /Nuvani · Join the parts[\s\S]*not run/i);
     assert.equal(await board.locator('.iso-link[data-hot]').count(), 3, 'the three wires into Nuvani · Join the parts light up');
 
     // The wheel zooms, a middle drag pans, Fit shows the whole graph again.
@@ -192,7 +194,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await chooseTheme(page, 'light');
 
     // Loading an architecture redraws the board in its run order; Flat brings the editor back.
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     await canvas.getByRole('button', { name: /Hierarchical/ }).click();
     await agent('Lumaro · Team B worker 2').waitFor();
     assert.equal(await board.locator('.iso-node[data-kind="agent"]').count(), 8);

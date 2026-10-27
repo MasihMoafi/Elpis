@@ -46,7 +46,7 @@ html { font-size:var(--interface-size, 16px); }
 :root:not(.dark):not([data-custom-palette]):is(:not([data-accent]), [data-accent="amber"], [data-accent="orange"]) {
   --accent-text:var(--foreground); --primary-foreground:var(--foreground);
   /* Ink text retains an orange cue; lines, fills and icons continue to use primary. */
-  & :is(.text-primary, .thread-links button, .agent-state.waiting, .worked-for > summary, .plan-card-heading, .shortcuts-list h3, .canvas-hud strong, .settings-section-link[aria-current="page"]):not(:where(.love-spot, .love-spot-tools) *) {
+  & :is(.text-primary, .thread-links button, .agent-state.waiting, .worked-for > summary, .plan-card-heading, .shortcuts-list h3, .canvas-telemetry .canvas-hud strong, .settings-section-link[aria-current="page"]):not(:where(.love-spot, .love-spot-tools) *) {
     text-decoration-line:underline; text-decoration-color:var(--primary); text-underline-offset:3px;
   }
 }

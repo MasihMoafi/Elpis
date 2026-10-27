@@ -8,7 +8,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
-const { leaveSettings, openSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings, openPatterns } = require('./controls.cjs');
 
 const HELPERS = `
   window.__arrows = (() => {
@@ -79,7 +79,7 @@ test('arrow keys move between the buttons of every page: chat, each Settings sec
     await leaveSettings(f.page);
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.page.getByRole('region', { name: 'Workflows', exact: true }).waitFor();
-    await f.page.getByRole('region', { name: 'Workflows', exact: true }).getByText('More patterns', { exact: true }).click();
+    await openPatterns(f.page.getByRole('region', { name: 'Workflows', exact: true }));
     results.push(await sweep(f.page, 'Workflows'));
     const checked = results.reduce((sum, result) => sum + result.count, 0), stuck = results.flatMap(result => result.stuck);
     console.log(`checked ${checked} controls; stuck ${stuck.length}`);
@@ -125,7 +125,7 @@ test('pending sidebar navigation stops when focus leaves its control and activat
     const loveSpot = nav.getByRole('button', { name: 'Love Spot', exact: true });
     await workflows.click();
     const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     const sources = canvas.getByRole('link', { name: 'Sources for Debate + judge', exact: true });
     await sources.waitFor();
     await page.clock.pauseAt(new Date(time.getTime() + 60_000));

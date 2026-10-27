@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme } = require('./controls.cjs');
+const { chooseOption, chooseTheme, openPatterns } = require('./controls.cjs');
 const fs = require('node:fs/promises');
 const { fixture } = require('./parity-fixture.cjs');
 
@@ -86,7 +86,7 @@ test('every starter opens its Sources in the side panel without replacing the bo
   const f = await openCanvas();
   try {
     const before = await f.saved();
-    await f.canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(f.canvas);
     const sources = f.canvas.getByRole('link', { name: /^Sources for / });
     assert.equal(await sources.count(), 10);
     for (let index = 0; index < 10; index++) {

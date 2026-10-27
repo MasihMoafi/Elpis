@@ -7,7 +7,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption, optionsCut } = require('./controls.cjs');
+const { chooseOption, optionsCut, openPatterns } = require('./controls.cjs');
 const { planFor } = require('./canvas-fixture.cjs');
 
 test('agents canvas: writers with automatic checks, architectures, wiring, persistence, a live run, the command bar', async () => {
@@ -66,7 +66,7 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
 
     // A fresh canvas starts split by parts, as Anthropic advises. The list marks what is on the board and draws each
     // architecture's shape: the Mother, then a column per wave. Every agent writes.
-    await canvas.getByText('More patterns', { exact: true }).click();
+    await openPatterns(canvas);
     const loaded = canvas.locator('.canvas-template[aria-current="true"]');
     assert.match(await loaded.innerText(), /^Split by parts\s*On the board/i);
     assert.deepEqual(await nodes.locator('.agent-node-title').allInnerTexts(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts']);
@@ -89,13 +89,13 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     assert.deepEqual(await nodes.evaluateAll(list => [...new Set(list.map(item => item.querySelector('[data-kind]')?.dataset.kind))]), ['agent']);
 
     // Nothing on the board covers anything else, down to a small window (Masih's is about 1130×660): the zoom buttons,
-    // the minimap and the Add bar, whose buttons all stay in the window.
+    // and the Add bar, whose buttons all stay in the window.
     for (const [width, height] of [[1130, 660], [960, 600], [1440, 900]]) {
       await page.setViewportSize({ width, height }); await page.waitForTimeout(200);
-      const boxes = await page.evaluate(() => Object.fromEntries(['.react-flow__controls', '.canvas-minimap', '.canvas-toolbar'].map(selector => {
+      const boxes = await page.evaluate(() => Object.fromEntries(['.react-flow__controls', '.canvas-toolbar'].map(selector => {
         const box = document.querySelector(selector).getBoundingClientRect(); return [selector, { left: box.left, top: box.top, right: box.right, bottom: box.bottom }]; })));
       const meet = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-      for (const [a, b] of [['.react-flow__controls', '.canvas-minimap'], ['.react-flow__controls', '.canvas-toolbar'], ['.canvas-minimap', '.canvas-toolbar']]) assert.ok(!meet(boxes[a], boxes[b]), `${a} and ${b} overlap at ${width}×${height}`);
+      for (const [a, b] of [['.react-flow__controls', '.canvas-toolbar']]) assert.ok(!meet(boxes[a], boxes[b]), `${a} and ${b} overlap at ${width}×${height}`);
       assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.canvas-toolbar button')].filter(button => { const box = button.getBoundingClientRect(); return box.left < 0 || box.right > innerWidth || box.bottom > innerHeight; }).map(button => button.textContent)), [], `toolbar buttons outside the window at ${width}×${height}`);
     }
 
@@ -117,17 +117,9 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await motherPanel.getByText('Not started. Every agent\'s report arrives here once the graph runs.').waitFor();
     await motherPanel.getByRole('button', { name: 'Done', exact: true }).click();
 
-    // Kahn's waves: each agent shows when it starts, and the run order lists them. Every wire carries chevrons
-    // pointing its way; none stream before a run.
-    const wave = async title => (await node(title).locator('.agent-node-kind').innerText()).match(/wave (\d+)/i)?.[1];
-    assert.deepEqual([await wave('Quillon · Part 1'), await wave('Orilo · Part 3'), await wave('Nuvani · Join the parts')], ['1', '1', '2']);
-    assert.deepEqual(await canvas.getByRole('region', { name: 'Run order' }).locator('li').allInnerTexts(), ['WAVE 1\nQuillon · Part 1, Veyra · Part 2, Orilo · Part 3', 'WAVE 2\nNuvani · Join the parts']);
-    // The critical path: the longest chain, which sets how many rounds the run takes; hovering it lights its wires.
-    const critical = canvas.locator('.canvas-critical');
-    assert.equal(await critical.innerText(), 'CRITICAL PATH · 2 ROUNDS\nQuillon · Part 1 → Nuvani · Join the parts');
-    await critical.hover();
-    assert.equal(await canvas.locator('.react-flow__edge.selected').count(), 1, 'its one wire is lit');
-    await page.mouse.move(0, 0);
+    // No run-order jargon on the board (Masih, 27 Oct: "showing all sorts of things it shouldn't"): an agent is an agent.
+    assert.match(await node('Quillon · Part 1').locator('.agent-node-kind').innerText(), /^agent$/i);
+    assert.equal(await canvas.getByRole('region', { name: 'Run order' }).count(), 0);
     assert.equal(await canvas.locator('.react-flow__edge-path[marker-end]').count(), 6);
     assert.equal(await canvas.locator('.canvas-edge-live').count(), 0);
 
@@ -417,7 +409,6 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     await page.waitForTimeout(400);
     const first = await saved(), firstId = title => first.nodes.find(item => (item.data?.title === title || item.data?.title?.endsWith(` · ${title}`))).id;
     assert.ok(first.edges.some(edge => edge.source === firstId('Read the issue') && edge.target === firstId('Orilo · Part 3')), 'Orilo · Part 3 waits for the new agent');
-    assert.match(await node('Orilo · Part 3').innerText(), /wave 2/i);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

@@ -219,10 +219,12 @@ test('a selected run fills missing prompts only inside its previewed scope and p
 test('Alt+Shift+M toggles the minimap, with no response in menus or fields', async () => {
   const f = await editing();
   try {
-    await off(f); await f.page.keyboard.press('Alt+Shift+m'); assert.equal(await f.canvas.locator('.react-flow__minimap').count(), 0);
-    await f.saved(); await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.canvas.waitFor(); assert.equal(await f.canvas.locator('.react-flow__minimap').count(), 0, 'the board remembers its minimap'); await off(f);
+    // The minimap starts hidden (27 Oct: its grey boxes were noise); the key shows it and the board remembers.
+    await off(f); assert.equal(await f.canvas.locator('.react-flow__minimap').count(), 0);
     await f.page.keyboard.press('Alt+Shift+m'); await f.canvas.locator('.react-flow__minimap').waitFor();
-    await pick(f, 'a'); await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).focus(); await f.page.keyboard.press('Alt+Shift+m'); assert.equal(await f.canvas.locator('.react-flow__minimap').count(), 1);
+    await f.saved(); await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.canvas.waitFor(); await f.canvas.locator('.react-flow__minimap').waitFor(); await off(f);
+    await f.page.keyboard.press('Alt+Shift+m'); assert.equal(await f.canvas.locator('.react-flow__minimap').count(), 0);
+    await pick(f, 'a'); await f.canvas.getByRole('textbox', { name: 'Name', exact: true }).focus(); await f.page.keyboard.press('Alt+Shift+m'); assert.equal(await f.canvas.locator('.react-flow__minimap').count(), 0);
   } finally { await f.close(); }
 });
 
