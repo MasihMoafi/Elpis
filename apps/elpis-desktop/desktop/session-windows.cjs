@@ -3,6 +3,7 @@ const path = require('node:path');
 const { createBrowserSessions } = require('./browser-sessions.cjs');
 const { registerState } = require('./state.cjs');
 const { registerFiles } = require('./files.cjs');
+const { createDocuments } = require('./documents.cjs');
 const { registerTerminal } = require('./terminal.cjs');
 const { attachContextMenu } = require('./context-menu.cjs');
 const { registerTheme } = require('./theme.cjs');
@@ -24,6 +25,8 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
   const openers = new Map();
   const windowIpc = createWindowIpc(globalIpc);
   const browsers = createBrowserSessions({ store, browserAgentSocket });
+  const documents = createDocuments();
+  browserAgentSocket?.setDocuments((id, name, args) => documents.call(id, name, args));
   let loveSpotWindow, openingLoveSpot;
   async function openLoveSpot() {
     if (loveSpotWindow && !loveSpotWindow.isDestroyed()) {
@@ -61,6 +64,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     if (onPrimary) onPrimary({ threads, newChats });
     const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
     const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
+    const disposeDocuments = documents.attach({ host: window, origin, ipcMain, session: () => browser.sessionId });
     const disposeTerminal = registerTerminal({ host: window, origin, ipcMain, clipboard });
     const disposeImprove = registerImprove({ host: window, origin, ipcMain });
     const disposeThreads = threads.attach({ host: window, origin, ipcMain });
@@ -111,7 +115,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const dispose = () => {
       if (disposed) return; disposed = true;
       ipcMain.removeHandler('elpis:session-window');
-      detachContextMenu(); disposeImprove(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeScreenshotPopup(); disposeUpdates(); disposeState(); browser.dispose(); disposeTheme();
+      detachContextMenu(); disposeImprove(); disposeDocuments(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeScreenshotPopup(); disposeUpdates(); disposeState(); browser.dispose(); disposeTheme();
     };
     let flushingText = false;
     window.on('close', event => {

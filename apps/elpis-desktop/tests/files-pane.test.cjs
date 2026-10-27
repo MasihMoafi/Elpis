@@ -154,6 +154,31 @@ async function openFilesTab(f) {
 }
 const lit = f => f.side.locator('.fe-line.hit').evaluateAll(lines => lines.map(line => line.textContent));
 
+test('a failed file refresh preserves text typed while the read was pending', async () => {
+  const f = await open();
+  let release;
+  try {
+    await f.ref('src/lib/parser.ts:2-3').click();
+    const editor = f.editor('src/lib/parser.ts');
+    await editor.waitFor();
+    let started;
+    const reading = new Promise(resolve => started = resolve), gate = new Promise(resolve => release = resolve);
+    await f.page.route('**/api/file?**', async route => {
+      if (new URL(route.request().url()).searchParams.get('path') !== 'src/lib/parser.ts') return route.continue();
+      started(); await gate;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'The file is temporarily unavailable.' }) });
+    });
+    await f.ref('src/lib/parser.ts:2-3').click(); await reading;
+    const draft = 'My unfinished change — متن فارسی\n';
+    await editor.fill(draft);
+    const response = f.page.waitForResponse(reply => reply.status() === 503);
+    release(); await response;
+    await eventually(async () => assert.equal(await editor.inputValue(), draft));
+    assert.equal(await fs.readFile(path.join(CWD, 'src/lib/parser.ts'), 'utf8'), PROJECT['src/lib/parser.ts']);
+    assert.equal(await f.page.evaluate(() => window.__elpisHasUnsavedFiles), true);
+  } finally { release?.(); await f.close(); }
+});
+
 test('Markdown opens as a document; source editing and relative links/images keep their file context', async () => {
   for (const colorScheme of ['light', 'dark']) {
     const f = await open({ colorScheme });

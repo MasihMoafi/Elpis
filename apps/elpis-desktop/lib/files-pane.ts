@@ -26,9 +26,10 @@ const set = (next: Partial<State>) => { state = { ...state, ...next }; for (cons
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 const enc = encodeURIComponent;
 
-export const docKey = (cwd: string, path: string) => `${cwd}\0${path}`;
+export const docKey = (cwd: string, path: string) => resolveRef({ path }, cwd).abs;
 export const dirKey = (cwd: string, dir: string, hidden: boolean) => `${cwd}\0${dir}\0${hidden ? 1 : 0}`;
 export const isDirty = (doc: Doc | undefined) => doc?.status === "ready" && doc.text !== doc.saved;
+const hasDraft = (doc: Doc | undefined) => isDirty(doc) || doc?.status === "ready" && doc.saving;
 // Quit inspects every project, even when its Files pane is hidden or detached. Source files are never autosaved here.
 if (typeof window !== "undefined") Object.defineProperty(window, "__elpisHasUnsavedFiles", { configurable: true,
   get: () => Object.values(state.docs).some(doc => isDirty(doc) || (doc.status === "ready" && doc.saving)),
@@ -114,12 +115,12 @@ const FRESH = (text: string) => text.replace(/\r\n/g, "\n");
 /** Reads the file into its tab. A file with unsaved edits is left as it is; one that has not changed keeps its text. */
 export async function loadDoc(cwd: string, path: string) {
   const key = docKey(cwd, path), known = state.docs[key];
-  if (isDirty(known)) return;
+  if (hasDraft(known)) return;
   if (!known || known.status !== "ready") set({ docs: { ...state.docs, [key]: { status: "loading" } } });
   try {
     const source = location(cwd, path);
     const result = await api<{ content?: string; image?: string; preview?: "pdf" | "image" | "text"; binary?: boolean; tooLarge?: boolean; size: number; limit?: number; mtimeMs?: number }>(`/file?cwd=${enc(source.cwd)}&path=${enc(source.path)}`);
-    if (isDirty(state.docs[key])) return;
+    if (hasDraft(state.docs[key])) return;
     if (result.preview === "pdf" || result.preview === "image") { set({ docs: { ...state.docs, [key]: { status: result.preview, src: fileAssetUrl(source.cwd, source.path) } } }); return; }
     if (typeof result.image === "string" && result.image.startsWith("data:image/")) { set({ docs: { ...state.docs, [key]: { status: "image", src: result.image } } }); return; }
     if (result.tooLarge) { set({ docs: { ...state.docs, [key]: { status: "large", size: result.size, limit: result.limit } } }); return; }
@@ -128,10 +129,10 @@ export async function loadDoc(cwd: string, path: string) {
     const text = FRESH(result.content), now = state.docs[key];
     if (now?.status === "ready" && now.saved === text && now.mtimeMs === result.mtimeMs) return;
     set({ docs: { ...state.docs, [key]: { status: "ready", text, saved: text, mtimeMs: result.mtimeMs, eol: result.content.includes("\r\n") ? "\r\n" : "\n", saving: false, saveError: "" } } });
-  } catch (cause) { set({ docs: { ...state.docs, [key]: { status: "error", message: message(cause) } } }); }
+  } catch (cause) { if (!hasDraft(state.docs[key])) set({ docs: { ...state.docs, [key]: { status: "error", message: message(cause) } } }); }
 }
 /** Shows `path` in a tab (a preview, unless asked to keep it) and reads it; `lines` marks and scrolls to them. */
-export function openFile(cwd: string, path: string, { preview = false, line, endLine, show = false }: { preview?: boolean; line?: number; endLine?: number; show?: boolean } = {}) {
+export function openFile(cwd: string, path: string, { preview = false, line, endLine, show = false, present = false }: { preview?: boolean; line?: number; endLine?: number; show?: boolean; present?: boolean } = {}) {
   const pane = paneOf(cwd), at = pane.open.findIndex(file => file.path === path), old = pane.open[at];
   const file: OpenFile = { path, preview: old ? old.preview && preview : preview, line, endLine, focus: (old?.focus ?? 0) + 1, view: line ? "source" : old?.view };
   let open: OpenFile[];
@@ -142,8 +143,10 @@ export function openFile(cwd: string, path: string, { preview = false, line, end
   const gone = pane.open.filter(item => !open.some(kept => kept.path === item.path) && !isDirty(state.docs[docKey(cwd, item.path)]));
   patchPane(cwd, { open, active: path, selected: path });
   if (gone.length) set({ docs: Object.fromEntries(Object.entries(state.docs).filter(([key]) => !gone.some(item => key === docKey(cwd, item.path)))) });
-  void loadDoc(cwd, path);
+  const loaded = loadDoc(cwd, path);
   if (show && !path.startsWith("/")) reveal(cwd, path);
+  if (present) for (const request of requests) request();
+  return loaded;
 }
 /** Opens a local reference in the chat's Files tab, including files outside its folder. */
 /** Where an HTML file opens as a page: the side panel registers the session's built-in browser here. */

@@ -317,3 +317,14 @@ Acceptance: targeted bridge and real-browser regressions, both themes for new la
 - File cards and opened document selections share Mark for agent, Suggest edit and Ask agent to remove. Each creates editable feedback attached to the unfinished composer; sending remains explicit. HTML selection messages are accepted only from that preview frame.
 - Composer controls stay on one row at 600/400/320px; secondary controls move into Plus. Active audio controls remain mounted.
 - Fast feedback follows confirmed state and initiating chat/tab/view. It never describes an off toggle as on.
+
+## Shared document editing from chat — 27 October 2026
+
+Masih approved implementing a document the agent can open beside the conversation for direct editing together.
+
+| ID | Behavior and acceptance | State |
+| --- | --- | --- |
+| DOC1 | `document_open` opens the exact existing text file in its own chat's Files pane, editable by default; Preview remains available. Report success after renderer acknowledgement. Missing, binary, oversized or unavailable files give an explicit error. | In progress |
+| DOC2 | `document_read` returns the saved file text, modification time and whether the editor has unsaved changes. User edits survive reopening; Save/Ctrl+S makes the new text readable by the agent. | In progress |
+| DOC3 | Host-owned thread metadata routes requests; another chat/window or embedded website cannot acknowledge them. A switched, disconnected or unresponsive renderer returns an error. | In progress |
+| DOC4 | Reuse the existing editor and stale-write guard. Reopening cannot replace unsaved text; a changed disk file rejects stale saves and keeps the local draft. Verify the shared flow in a packaged desktop on an isolated profile. | In progress |

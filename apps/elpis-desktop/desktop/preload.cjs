@@ -88,6 +88,16 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     ipcRenderer.on('elpis:file:requested',listener);
     return()=>ipcRenderer.removeListener('elpis:file:requested',listener);
   },
+  documents:{subscribe:callback=>{
+    const listener=(_event,request)=>{
+      void Promise.resolve().then(()=>callback(request)).then(
+        result=>ipcRenderer.send('elpis:document:reply',{id:request.id,result}),
+        error=>ipcRenderer.send('elpis:document:reply',{id:request.id,error:error instanceof Error?error.message:String(error)}),
+      );
+    };
+    ipcRenderer.on('elpis:document:request',listener);
+    return()=>ipcRenderer.removeListener('elpis:document:request',listener);
+  }},
   openExternalFile:target=>ipcRenderer.invoke('elpis:file:external',target).then(result=>{
     if(typeof result?.error==='string')throw Error(result.error);
     if(result?.opened!==true)throw Error('Could not open this file.');

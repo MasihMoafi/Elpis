@@ -17,7 +17,8 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { ChangesPanel } from "@/components/changes-panel";
 import { FilesPane } from "@/components/files-pane";
 import type { AttachToChat } from "@/components/browser-annotations";
-import { attach, detach, onOpenPage, onRequest, openRef } from "@/lib/files-pane";
+import { attach, detach, docKey, isDirty, onOpenPage, onRequest, openFile, openRef, setFileView, snapshot } from "@/lib/files-pane";
+import { resolveRef } from "@/lib/file-refs";
 import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import { api } from "@/lib/api";
 import type { BrowserTab } from "@/lib/desktop";
@@ -208,6 +209,24 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
   useEffect(() => { attach(cwd); }, [cwd]);
   useEffect(() => detach, []);
   useEffect(() => window.elpisDesktop?.onOpenFile?.(target => { openRef(target); }), []);
+  const documentSession = useRef({ cwd, threadId });
+  documentSession.current = { cwd, threadId };
+  useEffect(() => window.elpisDesktop?.documents?.subscribe(async request => {
+    const current = documentSession.current;
+    if (!current.threadId || current.threadId !== request.threadId) throw Error("Open this document's chat before continuing.");
+    const file = resolveRef({ path: request.path }, current.cwd);
+    if (request.action === "open") {
+      const loaded = openFile(current.cwd, file.rel, { show: true, present: true });
+      setFileView(current.cwd, file.rel, request.view === "preview" ? "preview" : "source");
+      await loaded;
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    }
+    if (documentSession.current.threadId !== request.threadId) throw Error("The document's chat changed before it could respond.");
+    if (request.action === "open" && !document.querySelector(".files-pane")?.getClientRects().length) throw Error("The document editor is not visible. Open this chat and try again.");
+    const doc = snapshot().docs[docKey(current.cwd, file.rel)];
+    if (request.action === "open" && doc?.status !== "ready") throw Error(doc?.status === "error" ? doc.message : "This file could not be opened for editing.");
+    return { unsavedChanges: !!(isDirty(doc) || doc?.status === "ready" && doc.saving) };
+  }), []);
   // An HTML file opens as a page in this session's browser, served from its folder so its CSS and images load; if the
   // page cannot be served, the file opens as text in the Files tab instead.
   const { api: browserApi, command } = browser;

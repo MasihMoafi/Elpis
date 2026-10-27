@@ -49,7 +49,7 @@ test('MCP lists typed tools and returns screenshots as images, failures as tool 
   assert.equal((await handleMcp(null,async()=>{})).error.code,-32600);
   const listed = await handleMcp({id:1,method:'tools/list'},async()=>{});
   assert.deepEqual(listed.result.tools.map(tool=>tool.name),tools.map(tool=>tool.name));
-  assert.equal(tools.length,11);
+  assert.ok(listed.result.tools.some(tool => tool.name === 'document_open'));
   const image = {content:[{type:'image',mimeType:'image/jpeg',data:'anBlZw=='}]};
   const request={id:2,method:'tools/call',params:{name:'browser_screenshot',arguments:{tabId:'one'}}};
   assert.deepEqual((await handleMcp(request,async()=>image)).result,image);
@@ -71,9 +71,12 @@ test('stdio MCP initializes, forwards tools over the socket, and fails closed wh
   try {
     const init=await rpc('initialize',{protocolVersion:'2024-11-05'});
     assert.equal(init.result.protocolVersion,'2024-11-05');
-    assert.equal((await rpc('tools/list')).result.tools.length,11);
+    assert.ok((await rpc('tools/list')).result.tools.some(tool => tool.name === 'document_read'));
     const call=await rpc('tools/call',{name:'browser_open',arguments:{url:'https://example.com'},_meta:{threadId:'fixture'}});
     assert.equal(JSON.parse(call.result.content[0].text).name,'browser_open');
+    endpoint.setDocuments(async (id, name, args) => ({ thread: id, name, path: args.path }));
+    const document = await rpc('tools/call', { name: 'document_open', arguments: { path: '/tmp/draft.md' }, _meta: { threadId: 'child' } });
+    assert.deepEqual(JSON.parse(document.result.content[0].text), { thread: 'child', name: 'document_open', path: '/tmp/draft.md' });
     endpoint.setResolver(()=>null);
     assert.equal((await rpc('tools/call',{name:'browser_tabs',arguments:{},_meta:{threadId:'fixture'}})).result.isError,true);
   } finally {child.stdin.end();child.kill();lines.close();await endpoint.close();}

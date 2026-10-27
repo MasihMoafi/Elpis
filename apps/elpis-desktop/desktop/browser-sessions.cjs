@@ -98,7 +98,7 @@ function createBrowserSessions({ store, browserAgentSocket }) {
     const pageMessage = (event, input) => { for (const entry of entries.values()) if (entry.host === host) entry.listeners.get('elpis:browser:page')?.(event, input); };
     const focus = () => { if (window.entry) void activate().catch(() => {}); };
     ipcMain.on('elpis:browser:layout', layout); ipcMain.on('elpis:browser:page', pageMessage); host.on('focus', focus);
-    return { open(url) {
+    return { get sessionId() { return window.id; }, open(url) {
         const target = browserUrl(url, origin), id = window.id;
         if (window.entry) return window.entry.browser.open(target);
         void activate(id).then(() => { if (window.id === id) window.entry?.browser.open(target); }).catch(() => {});

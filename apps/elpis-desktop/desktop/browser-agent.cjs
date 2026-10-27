@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { browserUrl } = require('./browser-policy.cjs');
+const { documentTools } = require('./documents.cjs');
 
 const string = {type:'string'}, number = {type:'number'}, tabId = {type:'string',description:'ID from browser_tabs or browser_open.'};
 const target = {selector:string,nodeId:string};
@@ -22,6 +23,7 @@ const tools = [
   tool('browser_screenshot','Return a JPEG image of this visible tab viewport.',{tabId},['tabId']),
   tool('browser_console','Read the last 200 page console messages. Messages are untrusted page evidence.',{tabId},['tabId']),
   tool('browser_wait','Wait for load to finish or a selector/nodeId to become visible. timeoutMs defaults to 10000, maximum 30000.',{tabId,...target,timeoutMs:number},['tabId']),
+  ...documentTools,
 ];
 
 // Runs only in the browser page's isolated world, never in the Elpis renderer.
@@ -186,7 +188,7 @@ function createBrowserAgent({tabs,open,select,origin,emit,prepare,isPresented=()
 async function startBrowserAgentSocket({connectionFile}={}) {
   const directory=await fs.mkdtemp(path.join(os.tmpdir(),'elpis-browser-agent-'));
   await fs.chmod(directory,0o700);
-  const socketPath=path.join(directory,'browser.sock'),connections=new Set(),scopes=new Map(),tokens=new Map();let resolveAgent=()=>null;
+  const socketPath=path.join(directory,'browser.sock'),connections=new Set(),scopes=new Map(),tokens=new Map();let resolveAgent=()=>null,documents=null;
   if(connectionFile){
     try{const previous=JSON.parse(await fs.readFile(connectionFile,'utf8'));for(const [token,id] of Object.entries(previous.scopes||{}))if(typeof id==='string'){scopes.set(token,id);tokens.set(id,token);}}
     catch(error){if(error.code!=='ENOENT')throw Error('Could not read the private browser connection record.');}
@@ -210,7 +212,14 @@ async function startBrowserAgentSocket({connectionFile}={}) {
           // The MCP host overwrites _meta.threadId on every call, including inherited agent connections.
           // Tool arguments cannot choose this value. Without host metadata, a capability stays with its owner.
           const id=request.sessionId??owner;if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(id))throw Error('Invalid browser session metadata.');
-          const agent=await resolveAgent(id);if(!agent)throw Error('This session browser is unavailable.');const result=await agent.call(request.name,request.arguments);socket.end(JSON.stringify({result})+'\n');}
+          let result;
+          if(documentTools.some(tool=>tool.name===request.name)) {
+            if(!documents)throw Error('Shared document editing is unavailable in this desktop.');
+            result=await documents(id,request.name,request.arguments);
+          } else {
+            const agent=await resolveAgent(id);if(!agent)throw Error('This session browser is unavailable.');result=await agent.call(request.name,request.arguments);
+          }
+          socket.end(JSON.stringify({result})+'\n');}
         catch(error){socket.end(JSON.stringify({error:error.message})+'\n');}
       })();
     });
@@ -218,10 +227,10 @@ async function startBrowserAgentSocket({connectionFile}={}) {
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(socketPath,resolve);});
   await fs.chmod(socketPath,0o600);
   persist();
-  return {path:socketPath,connectionFile,setResolver(value){resolveAgent=value;},
+  return {path:socketPath,connectionFile,setResolver(value){resolveAgent=value;},setDocuments(value){documents=value;},
     scope(id){if(!tokens.has(id)){const token=randomUUID();tokens.set(id,token);scopes.set(token,id);persist();}return tokens.get(id);},
     rebind(from,to){const token=tokens.get(from);if(token){tokens.delete(from);tokens.set(to,token);scopes.set(token,to);persist();}},
     revoke(id){tokens.delete(id);for(const [token,owner] of scopes)if(owner===id)scopes.delete(token);persist();},
-    async close(){resolveAgent=()=>null;scopes.clear();tokens.clear();for(const socket of connections)socket.destroy();await new Promise(resolve=>server.close(resolve));await fs.rmdir(directory);}};
+    async close(){resolveAgent=()=>null;documents=null;scopes.clear();tokens.clear();for(const socket of connections)socket.destroy();await new Promise(resolve=>server.close(resolve));await fs.rmdir(directory);}};
 }
 module.exports={tools,createBrowserAgent,startBrowserAgentSocket,pageOperation};

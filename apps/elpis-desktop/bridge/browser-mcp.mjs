@@ -8,7 +8,7 @@ export const tools=browserAgent.tools;
 
 // Thread-local override only: never writes the user's MCP configuration.
 export function browserMcpConfig(socketPath,node=process.env.ELPIS_NODE_BIN||'node',capability,connectionFile) {
-  return {'mcp_servers.elpis_browser':{command:node,args:[fileURLToPath(import.meta.url)],env:{ELPIS_BROWSER_SOCKET:socketPath,...(capability?{ELPIS_BROWSER_CAPABILITY:capability}:{}),...(connectionFile?{ELPIS_BROWSER_CONNECTION:connectionFile}:{})},startup_timeout_sec:10,tool_timeout_sec:35,default_tools_approval_mode:'approve',tools:{browser_open:{approval_mode:'auto'}}}};
+  return {'mcp_servers.elpis_browser':{command:node,args:[fileURLToPath(import.meta.url)],env:{ELPIS_BROWSER_SOCKET:socketPath,...(capability?{ELPIS_BROWSER_CAPABILITY:capability}:{}),...(connectionFile?{ELPIS_BROWSER_CONNECTION:connectionFile}:{})},startup_timeout_sec:10,tool_timeout_sec:35,default_tools_approval_mode:'approve',tools:{browser_open:{approval_mode:'auto'},document_open:{approval_mode:'auto'},document_read:{approval_mode:'auto'}}}};
 }
 
 export function callBrowser(socketPath,name,args,capability,sessionId) {
