@@ -1,0 +1,47 @@
+name: Report a bug
+description: Help make Elpis reliable with a small reproducible example.
+title: "[Bug]: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Elpis version
+      description: Run elpis --version. For the desktop app, add the version shown in Settings.
+    validations:
+      required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app
+      options:
+        - Terminal app (elpis)
+        - Desktop app
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Linux distribution and version, X11 or Wayland, and how Elpis was installed (installer, Debian package, source).
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      description: ChatGPT sign-in, Claude, Gemini, OpenRouter, an API key or a local model, and the model name. Never paste keys or tokens.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps and expected result
+      description: What you did, what you expected and what happened. Use a small synthetic project; keep private code and conversations out of reports.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or terminal output
+      description: Optional. Remove personal information and credentials before sharing.
