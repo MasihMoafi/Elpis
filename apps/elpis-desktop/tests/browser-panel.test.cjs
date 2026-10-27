@@ -376,7 +376,7 @@ for (const colorScheme of ['light', 'dark']) test(`browser tabs select a range, 
 });
 
 test('closing the last tab in full view reopens a compact empty chooser', async t => {
-  const { page, errors } = await fixture(t);
+  const { page, errors, shoot } = await fixture(t);
   const side = page.getByRole('region', { name: 'Side panel', exact: true });
   await widenSidePanel(page, 700);
   await side.getByRole('button', { name: 'Enter full view', exact: true }).click();
@@ -386,6 +386,7 @@ test('closing the last tab in full view reopens a compact empty chooser', async 
   await side.waitFor();
   assert.equal(await side.evaluate(element => element.classList.contains('full')), false, 'an empty panel never inherits full view');
   assert.ok((await side.boundingBox()).width <= 320, 'the empty chooser stays compact despite an earlier large content width');
+  await shoot('browser-compact-empty-chooser');
   await page.evaluate(() => window.__push({ visible: true, activeId: 'restored', tabs: [{ id: 'restored', title: 'Restored page', url: 'https://example.com/', zoom: 100 }] }));
   await page.getByRole('tab', { name: 'Restored page', exact: true }).waitFor();
   assert.ok((await side.boundingBox()).width >= 650, 'real content restores the person’s chosen width');
@@ -418,5 +419,30 @@ test('browser page pin, rename and mute use real controls; sidebar bookmarks sur
   assert.equal((await page.evaluate(() => window.__commands)).slice(before).filter(item => item.action === 'close').length, 0, 'unpinning never closes the person’s page');
   await page.reload();
   assert.equal(await pins.count(), 0, 'unpinning is persisted');
+  assert.deepEqual(errors, []);
+});
+
+
+test('browser Close other tabs preserves the context or selected group; Close tabs to the right preserves its left neighbours', async t => {
+  const { page, errors } = await fixture(t);
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
+  for (const scenario of [
+    { id: 'selected', grouped: true, action: 'Close other tabs', closed: [0, 4, 5] },
+    { id: 'context', grouped: false, action: 'Close other tabs', closed: [0, 1, 3, 4, 5] },
+    { id: 'right', grouped: false, action: 'Close tabs to the right', closed: [3, 4, 5] },
+  ]) {
+    await page.evaluate(id => {
+      const sample = window.__state.tabs[0];
+      window.__push({ visible: true, activeId: `${id}-0`, tabs: Array.from({ length: 6 }, (_, index) => ({ ...sample, id: `${id}-${index}`, title: `${id} reference ${index + 1}`, url: `https://example.com/${id}/${index + 1}` })) });
+    }, scenario.id);
+    const tab = number => tabs.getByRole('tab', { name: `${scenario.id} reference ${number}`, exact: true });
+    await tab(scenario.grouped ? 2 : 1).click();
+    if (scenario.grouped) await tab(4).click({ modifiers: ['Shift'] });
+    await tab(3).click({ button: 'right' });
+    assert.deepEqual(await tabs.getByRole('tab', { selected: true }).allTextContents(), (scenario.grouped ? [2, 3, 4] : [3]).map(number => `${scenario.id} reference ${number}`), 'right-click preserves an existing marked group and replaces a selection outside its target');
+    const before = await page.evaluate(() => window.__commands.length);
+    await page.getByRole('menuitem', { name: scenario.action, exact: true }).click();
+    await eventually(async () => assert.deepEqual((await page.evaluate(() => window.__commands)).slice(before).filter(item => item.action === 'close'), scenario.closed.map(index => ({ action: 'close', id: `${scenario.id}-${index}` })), `${scenario.action} closes exactly the requested neighbours`));
+  }
   assert.deepEqual(errors, []);
 });
