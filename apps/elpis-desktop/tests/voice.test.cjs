@@ -222,7 +222,7 @@ test('voice controls release the microphone after denial, cancelled startup, mut
   } finally { for (const stream of streams) stream.end(); await f.close(); }
 });
 
-test('Love Spot hides unavailable audio while ordinary replies still warm, read the displayed words and clear failures after navigation', async () => {
+test('Read aloud stays hidden in Love Spot and ordinary chats without warming or starting speech', async () => {
   const threads = [['chat-a', 'Love Spot'], ['chat-b', 'Other chat']].map(([id, name]) => ({ id, name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
   const f = await fixture({ threads, routes: { '/api/voice': () => ({ available: true }), '/api/threads/chat-b': () => ({ thread: threads[1], data: [{ turnId: 'other-turn', item: { id: 'other-answer', type: 'agentMessage', text: 'All green.' }, completedAtMs: Date.now() }], nextCursor: null }) } });
   try {
@@ -234,17 +234,11 @@ test('Love Spot hides unavailable audio while ordinary replies still warm, read 
     await f.open('chat-b');
     const reply = f.page.locator('.message.agent').last();
     await reply.hover(); await f.page.locator('aside').hover(); await reply.hover();
-    // Showing a reply's actions makes the chat's speech thread ahead, once.
-    await eventually(() => assert.deepEqual(f.posts.filter(row => row.path === '/api/voice/read-aloud/warm').map(row => row.body.threadId), ['chat-b']));
-    const speak = reply.getByRole('button', { name: 'Read aloud', exact: true });
-    await speak.waitFor(); await speak.click();
-    await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === 'chat-b')));
-    const request = f.posts.find(row => row.path === '/api/voice/read-aloud' && row.body.threadId === 'chat-b');
-    assert.equal(request.body.text, 'All green.');
-    // The fixture returns no speech stream: a failed read belongs only to this visit to this chat.
-    await reply.getByRole('alert').waitFor();
-    await f.open('chat-a');
-    assert.equal(await f.page.locator('.message.agent [role="alert"]').count(), 0, 'returning to a chat does not revive its previous speech failure');
+    assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
+    await reply.focus();
+    assert.equal(f.posts.filter(row => row.path.startsWith('/api/voice/read-aloud')).length, 0, 'hover and focus never warm or start read aloud');
+    await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
+    assert.ok(await f.page.getByRole('button', { name: /dictat/i }).count(), 'dictation remains available');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -322,10 +316,8 @@ test('delayed Love Spot origin discovery blocks legacy chat audio and releases o
     await page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
     const reply = page.locator('.message.agent').last();
     await reply.hover();
-    await eventually(() => assert.deepEqual(f.posts.filter(row => row.path === '/api/voice/read-aloud/warm').map(row => row.body.threadId), ['chat-b']));
-    await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
-    await eventually(() => assert.ok(f.posts.some(row => row.path === '/api/voice/read-aloud' && row.body.threadId === 'chat-b' && row.body.text === 'Ordinary text to read.')));
-    await reply.getByRole('alert').waitFor();
+    assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0, 'ordinary read aloud remains hidden after origins resolve');
+    assert.equal(f.posts.filter(row => row.path.startsWith('/api/voice/read-aloud')).length, 0);
 
     f.emitLove({ type: 'error', message: 'The scene is unavailable.' });
     await start.waitFor({ state: 'hidden' });

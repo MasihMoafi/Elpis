@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
+import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 
 type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string; ready: boolean; complete: boolean; idle?: boolean; reply: string };
 type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string) => void; stream: (id: string) => void; stop: () => void; warm: () => void };
@@ -174,5 +175,5 @@ export function ReadAloud({ threadId, enabled, unavailableReason, children }: { 
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(cause instanceof Error ? cause.message : "Read aloud could not start."); }
   }
-  return <SpeechContext.Provider value={unavailableReason ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason || !READ_ALOUD_AUDIO.available ? null : { active, error, play: (id, text) => void play(id, text), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
 }
