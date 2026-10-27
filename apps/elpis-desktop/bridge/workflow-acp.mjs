@@ -103,7 +103,7 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onSession, onEnd, modelRoutes } = {}) {
+  onSession, onEnd, modelRoutes, observeThread } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map(), supervision = new Map(), routeSnapshots = new Map(), exhaustedProviders = new Map();
   const mergingSources = new Set(), mergeControllers = new Map();
@@ -378,6 +378,17 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!record) throw new BridgeError('Workflow not found', 404);
       if (!['failed', 'blocked', 'cancelled'].includes(record.status)) throw new BridgeError('Only failed or stopped workflow nodes need recovery', 409);
       if (active.has(record.rootThreadId) || mergeControllers.has(record.rootThreadId)) throw new BridgeError('This workflow is already running', 409);
+      if (observeThread) {
+        const ids = [...new Set([record.rootThreadId, record.mother?.assignedThreadId, record.mother?.sessionId, ...record.tasks.map(task => task.assignedThreadId)].filter(Boolean))];
+        for (let offset = 0; offset < ids.length; offset += 3) {
+          let observed;
+          try { observed = await Promise.all(ids.slice(offset, offset + 3).map(id => observeThread(id))); }
+          catch { throw new BridgeError('Could not check the workflow’s current agents. Refresh live progress or open their chats before retrying recovery.', 409); }
+          if (observed.some(thread => ['active', 'running', 'inProgress'].includes(thread?.status?.type))) {
+            throw new BridgeError('A workflow agent is already working. Open its chat to follow or steer it; recovery has not started another copy.', 409);
+          }
+        }
+      }
       if (record.tasks.some(task => task.status === 'succeeded' && typeof task.result?.summary !== 'string')) throw new BridgeError('Completed workflow evidence is incomplete. Saved work was preserved; inspect the run before recovery.', 409);
       if ((record.round ?? 1) > 1) throw new BridgeError('This multi-round run lacks retained earlier-round evidence for recovery. Start a new workflow using its saved results; existing work was preserved.', 409);
       if (overrides.model) record.recovery = { model: overrides.model, ...(overrides.provider ? { provider: overrides.provider } : {}), at: Date.now() };

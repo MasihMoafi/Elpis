@@ -346,3 +346,17 @@ test('legacy later-round recovery refuses missing feedback evidence without chan
   assert.equal(fs.readFileSync(file, 'utf8'), before);
   assert.equal(f.log('legacy').length, 0, 'no node is replayed with missing feedback');
 });
+
+
+test('recovery refuses an independently resumed assigned agent without changing the saved run', async t => {
+  const f = fixture(t), id = randomUUID(), rootThreadId = randomUUID(), childId = randomUUID();
+  const retained = { id, rootThreadId, status: 'failed', round: 1, projectCwd: f.cwd, tasks: [task('evidence', { assignedThreadId: childId, status: 'failed' })] };
+  const file = path.join(f.home, 'state', `${id}.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(retained));
+  const before = fs.readFileSync(file, 'utf8');
+  const restored = createWorkflowRuns({ ...f.runnerOptions, observeThread: async threadId => ({ id: threadId, status: { type: threadId === childId ? 'active' : 'idle' } }) });
+  t.after(() => restored.close());
+  await assert.rejects(restored.resume(id, { cwd: f.cwd }), /already working/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before, 'status and recovery model remain untouched');
+  assert.equal(f.log('evidence').length, 0, 'recovery does not start another agent');
+});

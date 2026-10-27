@@ -347,3 +347,9 @@ Empty Files uses a compact tree width independent of the last browser/document w
 Right-panel paths and diff text wrap within their pane, preserving text and accessible actions. Shared diff rows keep line numbers aligned. Stop uses the composer’s hollow bevelled icon geometry. The live Working row sits 8px lower on the shared alignment grid without changing the composer or overall turn spacing. Verify light/dark screenshots, narrow controls and stop behavior; use only the affected owner checks before the standard install.
 
 The shared Load earlier messages control sits on its own row with a 24px gap before the transcript. Retain pagination, retry and scroll-position behavior; check both themes against the supplied spacing reference.
+
+## Workflow live progress — 27 October 2026
+
+The saved workflow chat and both canvas views share one observed live-team summary. Show the Mother/root chat truthfully, its latest actual report, current agents and recursively spawned descendants even with sidebar rows collapsed. Keep saved failures and task routing historical; never replace them with current child model settings. A live child cannot disappear behind a terminal saved-run status. Resume cannot launch duplicate work while a related agent is active. No model request starts merely by opening or refreshing progress. Check paginated lineage, cross-run isolation, live→idle transition, both views and unchanged draft.
+
+Sidebar status keeps its original automatic left-hand position and unread action; manual colour is a separate palette action. Bookmark changes must persist through native workspace IPC without losing existing state. Settings starts beside navigation at readable width, unsupported Flex is absent, and existing unsupported saved values are not silently rewritten. The sidebar settles on complete rows above its footer. Chat menus group organization and Open in actions; singular and multi-selection labels match their targets.

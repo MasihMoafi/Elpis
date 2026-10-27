@@ -283,10 +283,11 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     await summary.getByText('Weekly usage limit reached.', { exact: true }).waitFor();
     assert.equal(await page.getByText('This conversation has no messages yet.', { exact: true }).count(), 0);
-    const marks = await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
+    const savedTasks = summary.getByRole('list', { name: 'Saved workflow tasks', exact: true });
+    const marks = await savedTasks.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
     assert.equal(marks.length, 2); assert.equal(new Set(marks).size, 2, 'different agents have distinct stable marks');
-    await summary.getByText('openai · gpt-6-luna', { exact: true }).waitFor();
-    const legacy = summary.locator('li').filter({ has: page.getByText('Write next steps', { exact: true }) });
+    await savedTasks.getByText('openai · gpt-6-luna', { exact: true }).waitFor();
+    const legacy = savedTasks.locator('li').filter({ has: page.getByText('Write next steps', { exact: true }) });
     await legacy.getByText('Claude (ACP) error: You have hit your weekly limit.', { exact: true }).waitFor();
     assert.equal(await legacy.locator('.agent-model').count(), 0, 'a historical failure without recorded routing never borrows the assigned chat’s current OpenAI model');
     assert.equal(await summary.getByText('requested-only-model', { exact: false }).count(), 0, 'a configured model is not presented as an observed actual model');
@@ -299,7 +300,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await page.locator('.activity-group .step > summary').click(); await output.waitFor();
     await row(page, 'chat-a').locator('.thread-link').click();
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
-    assert.deepEqual(await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), marks, 'opening an agent chat does not change its identity');
+    assert.deepEqual(await savedTasks.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), marks, 'opening an agent chat does not change its identity');
 
     await shot(page, 'workflow-live-team');
     const before = await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1'));
@@ -320,6 +321,54 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await page.getByRole('textbox', { name: 'Workflow request', exact: true }).waitFor();
     assert.equal((await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')))).name, draft.name);
     assert.equal(f.posts.some(post => /^\/api\/workflows\/(?:run|(?:[^/]+\/)?(?:interrupt|cancel|resume))$/.test(post.path)), false, 'opening or leaving a run does not restart or stop it');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+
+test('failed workflow follows a resumed agent and paginated descendants without duplicate recovery', async () => {
+  const saved = { id: 'observed-run', rootThreadId: 'chat-a', name: 'Observed team', status: 'failed', tasks: [
+    { id: 'inspect', title: 'Inspect evidence', kind: 'research', assignedThreadId: 'observed-child', status: 'failed', failureReason: 'Previous attempt reached the weekly limit.', writeScopes: [], acceptanceCriteria: [], dependsOn: [] },
+  ] };
+  let working = true;
+  const mother = () => base('chat-a', saved.name, working);
+  const child = () => ({ ...base('observed-child', 'Evidence agent', working), parentThreadId: 'chat-a' });
+  const helper = () => ({ ...base('observed-helper', 'Source checker', working), parentThreadId: 'observed-child' });
+  const other = { ...base('other-run-child', 'Unrelated workflow worker', true), parentThreadId: 'other-root' };
+  const f = await open('light', [saved], {}, {}, {
+    '/api/workflows': () => ({ data: [saved] }),
+    '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? url.searchParams.has('cursor') ? [helper(), other] : [child()] : [mother(), child()], nextCursor: url.searchParams.has('ancestorThreadId') && !url.searchParams.has('cursor') ? 'second-page' : null }),
+    '/api/threads/chat-a': () => ({ thread: mother(), data: [{ turnId: 'mother-turn', item: { id: 'mother-update', type: 'agentMessage', text: 'The evidence agent is checking the source material.' }, completedAtMs: 200 }], nextCursor: null }),
+    '/api/threads/observed-child': () => ({ thread: child(), data: [], nextCursor: null }),
+    '/api/threads/observed-helper': () => ({ thread: helper(), data: [], nextCursor: null }),
+  });
+  try {
+    const { page } = f;
+    await row(page, 'chat-a').locator('.thread-link').click();
+    const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
+    const progress = page.getByRole('region', { name: 'Live workflow progress', exact: true });
+    await progress.getByText(/Live: 2 working/).waitFor();
+    await progress.getByText('Mother', { exact: true }).waitFor();
+    await progress.getByText('Source checker', { exact: true }).waitFor();
+    await progress.getByText(/Mother: The evidence agent is checking/).waitFor();
+    assert.equal(await progress.getByText('Unrelated workflow worker', { exact: true }).count(), 0, 'another run cannot enter this team');
+    assert.equal(await summary.getByRole('button', { name: 'Resume workflow', exact: true }).isDisabled(), true, 'a resumed child prevents duplicate recovery');
+    await shot(page, 'resumed-team-chat');
+    await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
+    const board = page.getByRole('region', { name: 'Workflows', exact: true });
+    await board.locator('.react-flow__node[data-id="live:observed-helper"]').waitFor();
+    assert.equal(await board.locator('.mother-node[data-status="running"]').count(), 1, 'Mother shows the observed active root');
+    assert.equal(await board.locator('.react-flow__node[data-id="inspect"] .agent-node').getAttribute('data-status'), 'running');
+    await shot(page, 'resumed-team-flat');
+    await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
+    await iso.getByRole('button', { name: /^Source checker:/ }).waitFor();
+    await shot(page, 'resumed-team-isometric');
+    working = false;
+    await board.getByRole('button', { name: 'Refresh live progress', exact: true }).click();
+    await board.getByRole('region', { name: 'Live workflow progress', exact: true }).getByText(/Live: 0 working/).waitFor();
+    assert.match(await board.innerText(), /Saved run: failed/, 'a live idle transition does not invent workflow success');
+    assert.equal(f.posts.some(post => /^\/api\/workflows\/(?:run|[^/]+\/resume)$/.test(post.path)), false, 'viewing and refreshing never starts a model request');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

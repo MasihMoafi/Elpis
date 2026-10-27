@@ -1764,7 +1764,7 @@ export default function Home() {
   // Follow agents whose parent is expanded in the sidebar. An expanded workflow is keyed `workflow:<run id>`: follow its
   // chat, as its Expand button does; the bridge refuses any other key as an invalid thread ID.
   const observedIds = JSON.stringify([...new Set(Object.keys(expanded).filter(id => expanded[id]).flatMap(id => id.startsWith("workflow:")
-    ? workflowRuns.filter(run => `workflow:${run.id}` === id).map(run => run.rootThreadId) : [id]))].sort());
+    ? workflowRuns.filter(run => `workflow:${run.id}` === id).map(run => run.rootThreadId) : [id]).concat(selectedWorkflow ? [selectedWorkflow.rootThreadId] : [], recordedWorkflow ? [recordedWorkflow.rootThreadId] : []))].sort());
   useEffect(() => {
     let disposed = false, inFlight = false;
     const refresh = async () => {
@@ -2103,7 +2103,7 @@ export default function Home() {
   function threadRow(thread: Thread, depth = 0, inOrigin = false, recordedRun?: WorkflowRun) {
     const run = recordedRun ?? workflowRoots.get(thread.id), identity = run ? workflowCatalog.identities[run.id] : undefined, name = identity?.name ?? sidebarTitle(thread);
     const expandId = run ? `workflow:${run.id}` : thread.id, open = run ? workflowOpen(run) : branchOpen(thread.id);
-    const state = run ? run.status === "running" ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
+    const state = run ? run.status === "running" || threads.some(child => workflowChild(child, run) && child.status?.type === "active") ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
     const origin = workflowSteps.has(thread.id) ? null : chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const parentLabel = isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) ? `from ${runParent ? title(runParent) : "parent conversation"}` : null;
@@ -2130,7 +2130,7 @@ export default function Home() {
         else { setExpanded(previous => ({ ...previous, [expandId]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
       }}><ChevronRight size={13} viewBox="4 4 16 16" className={open ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
-      <ConversationColour id={thread.id} name={name} />
+      <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <>{isAgent(thread) || workflowSteps.has(thread.id) ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={thread.model} provider={thread.modelProvider} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
@@ -2138,7 +2138,7 @@ export default function Home() {
         {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
-      {state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state !== "idle" && <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
+      <ConversationColour id={thread.id} name={name} />
       <span className="row-hover-actions">
         {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
         <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
@@ -2337,7 +2337,7 @@ export default function Home() {
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
-      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
         projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
       {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={newChatFolder(cwd || workflowProject?.cwd || "") || undefined} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}

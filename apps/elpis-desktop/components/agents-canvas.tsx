@@ -11,8 +11,10 @@ import { Input } from "@/components/ui/input";
 import { MenuRow } from "@/components/ui/menu-row";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkflowProgress, useWorkflowTeam, workflowThreadActive } from "@/components/workflow-progress";
+import { agentParentId } from "@/lib/agent-runs.mjs";
 import { WorkflowHistory } from "@/components/workflow-history";
-import { graphForWorkflow, readWorkflowRun, taskState, type WorkflowRunRef } from "@/components/workflow-chat";
+import { graphForWorkflow, readWorkflowRun, taskState, type WorkflowRunRef, type RecordedWorkflow } from "@/components/workflow-chat";
 import { WorkflowColourMenu, WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowIdentity } from "@/lib/workflow-identity";
 import { WorkflowSources } from "@/components/workflow-sources";
@@ -416,7 +418,7 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
-type Props = { workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void };
+type Props = { threads?: readonly Thread[]; workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void };
 export function AgentsCanvas(props: Props) {
   return <ReactFlowProvider><Canvas key={props.recordedRun?.id ?? "draft"} {...props} /></ReactFlowProvider>;
 }
@@ -430,7 +432,7 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun }: Props) {
+function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
   const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
@@ -497,7 +499,26 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
     const timer = setTimeout(() => { if (isoController.current) isoController.current.fit(); else void flow.fitView(FIT); }, 60);
     return () => clearTimeout(timer);
   }, [run?.graphId, flow]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [states, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null }>>({});
+  const [savedStates, setStates] = useState<Record<string, { status: TaskStatus; chat: string | null }>>({});
+  const [savedRecord, setSavedRecord] = useState<RecordedWorkflow>();
+  const liveTeam = useWorkflowTeam(savedRecord, ready, threads);
+  const states = useMemo(() => {
+    const next = { ...savedStates };
+    const assigned = new Map((savedRecord?.tasks ?? []).flatMap(task => task.assignedThreadId ? [[task.assignedThreadId, task.id] as const] : []));
+    for (const thread of liveTeam.agents) {
+      const id = assigned.get(thread.id) ?? `live:${thread.id}`;
+      if (workflowThreadActive(thread)) next[id] = { status: "running", chat: thread.id };
+      else if (!next[id]) next[id] = { status: "pending", chat: thread.id };
+    }
+    return next;
+  }, [savedStates, savedRecord, liveTeam.agents]);
+  const liveTopology = JSON.stringify(liveTeam.agents.map(thread => [thread.id, agentParentId(thread)]).sort(([a], [b]) => (a ?? "").localeCompare(b ?? "")));
+  useEffect(() => {
+    if (!recordedRun || !savedRecord) return;
+    setGraph(graphForWorkflow(savedRecord, liveTeam.agents));
+    const timer = setTimeout(() => { if (isoController.current) isoController.current.fit(); else void flow.fitView(FIT); }, 60);
+    return () => clearTimeout(timer);
+  }, [recordedRun?.id, savedRecord?.id, liveTopology, flow]);
   // Where the engine's merge clash stopped the run: the clashing files, by the agent whose work clashed.
   const [clashes, setClashes] = useState<Record<string, string[]>>({});
   // The run log, as Deus Ex's event cards: what started, finished, passed its check or failed, newest last.
@@ -514,13 +535,14 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
     let live = true;
     void readWorkflowRun(retainedRun).then(record => {
       if (!live) return;
+      setSavedRecord(record);
       if (recordedRun) setGraph(graphForWorkflow(record));
       const tasks = [...(record.tasks ?? []), ...(record.next?.tasks ?? [])];
       setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null }])));
       setRun({ rootThreadId: record.rootThreadId, graphId: record.id, status: record.status, startedAt: record.startedAt ?? record.createdAt ?? Date.now(),
         ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
       setLog(tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" })));
-      setNotice(record.error || tasks.find(task => task.failureReason)?.failureReason || "");
+      setNotice(recordedRun ? "" : record.error || tasks.find(task => task.failureReason)?.failureReason || "");
     }).catch(cause => { if (live) setNotice(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
   }, [retainedRun?.id, retainedRun?.rootThreadId, ready]);
@@ -653,7 +675,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   const limit = maxAgents(graph), room = Math.max(0, limit - agents.length), order = useMemo(() => waves(graph), [graph]);
   // An agent is done once its check passes, unless its work clashed in the merge.
   const done = agents.filter(node => states[checkOf(node.id)]?.status === "succeeded" && !clashes[node.id]).length;
-  const runState: MotherData["run"] = run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
+  const runState: MotherData["run"] = recordedRun ? workflowThreadActive(liveTeam.mother) ? "running" : "idle" : run ? (FINISHED.has(run.status) ? "finished" : "running") : "idle";
   const fatherState: MotherData["run"] = run?.father?.threadId ? (FINISHED.has(run.father.status) ? "finished" : "running") : "idle";
   const modelLabel = (data: AgentData) => {
     if (!data.model) return "Default model";
@@ -680,7 +702,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   // The Father, when the graph has more agents than the Mother runs: drawn left of the first agents he starts.
   // The critical path, highlighted on the board while the pointer is on it in the run order.
   const critical = useMemo(() => criticalPath(graph), [graph]), [showCritical, setShowCritical] = useState(false);
-  const split = useMemo(() => parents(graph), [graph]), his = new Set(split.father);
+  const split = useMemo(() => recordedRun ? { mother: graph.nodes.filter(node => node.type === "agent").map(node => node.id), father: [] } : parents(graph), [graph, recordedRun]), his = new Set(split.father);
   // React Flow shows a node once its size is known; the Father is not in the saved board, so his size is kept here.
   const [fatherSize, setFatherSize] = useState<{ width: number; height: number } | null>(null);
   const fatherRoots = agents.filter(node => his.has(node.id) && !graph.edges.some(edge => waits(edge) && edge.target === node.id && his.has(edge.source)));
@@ -1409,6 +1431,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
       </form>}
+      {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
       <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} onOpenCanvas={onOpenRecordedRun} />
       {presetName && !renamingPreset ? <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <OptionSelect aria-label="Workflow pattern" value={ENTRY_PATTERNS.some(pattern => pattern.id === graph.template) ? graph.template : ""} disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => {

@@ -1,0 +1,3 @@
+.workflow-progress { min-width: 0; }
+.workflow-progress-report { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
+.workflow-progress-agent { min-width: 0; }

@@ -216,6 +216,7 @@ export class DesktopClient extends EventEmitter {
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'),
       onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record),
+      observeThread: id => this.readThreadMetadata(id),
       modelRoutes: async () => {
         const [catalog, providers, policy] = await Promise.all([this.models(), this.providers(), this.#rpc('configRequirements/read', {}).catch(() => null)]);
         // Unknown managed policy cannot authorize a different connection.
