@@ -31,6 +31,13 @@ for (const colorScheme of ['light', 'dark']) {
       await f.page.locator('.prompt-rail[data-indexed="true"]').waitFor();
       const earlier = f.page.getByRole('button', { name: 'Load earlier messages', exact: true });
       assert.equal(await earlier.isVisible(), true, 'the prompt rail must not hide history pagination');
+      const gap = await earlier.evaluate(button => button.nextElementSibling.getBoundingClientRect().top - button.getBoundingClientRect().bottom);
+      assert.ok(gap >= 20, `history pagination keeps a clear gap before the transcript (${gap}px)`);
+      if (process.env.ELPIS_HISTORY_SPACING_SHOTS) {
+        await fs.mkdir(process.env.ELPIS_HISTORY_SPACING_SHOTS, { recursive: true });
+        await earlier.scrollIntoViewIfNeeded();
+        await f.page.screenshot({ path: path.join(process.env.ELPIS_HISTORY_SPACING_SHOTS, `history-spacing-${colorScheme}.png`) });
+      }
       assert.equal(await f.page.getByText('History prompt 0', { exact: true }).count(), 0, 'opening shows only the latest page');
       const latest = await f.page.locator('.message.user').allTextContents();
       await earlier.click();

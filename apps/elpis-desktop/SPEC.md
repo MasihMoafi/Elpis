@@ -345,3 +345,5 @@ Empty Files uses a compact tree width independent of the last browser/document w
 ## Focused visual corrections — 27 October 2026
 
 Right-panel paths and diff text wrap within their pane, preserving text and accessible actions. Shared diff rows keep line numbers aligned. Stop uses the composer’s hollow bevelled icon geometry. The live Working row sits 8px lower on the shared alignment grid without changing the composer or overall turn spacing. Verify light/dark screenshots, narrow controls and stop behavior; use only the affected owner checks before the standard install.
+
+The shared Load earlier messages control sits on its own row with a 24px gap before the transcript. Retain pagination, retry and scroll-position behavior; check both themes against the supplied spacing reference.

@@ -232,6 +232,7 @@ button:disabled { cursor:not-allowed; }
 .chat-content { max-width:var(--transcript-width, 740px); margin:auto; line-height:1.65; font-size:var(--transcript-size, 14.5px); }
 /* A quick read shows nothing; the notice fades in only when reading a chat takes longer. */
 .chat-loading { animation:appear .2s ease .6s both; }
+.load-earlier-messages { display:flex; width:fit-content; margin-bottom:24px; }
 @keyframes appear { from { opacity:0; } }
 .empty-state { min-height:45vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:6px; }
 .empty-state h2 { font-family:var(--serif); font-size:1.75rem; line-height:1.2; letter-spacing:-.02em; font-weight:500; margin:0; }
