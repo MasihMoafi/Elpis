@@ -2175,7 +2175,7 @@ export default function Home() {
   }
   function moreChildren(parentId: string, depth: number) {
     const cursor = childCursors[parentId];
-    return !searchTerm && cursor && !hidden.current.has(parentId) ? <Button variant="ghost" size="xs" className="w-full justify-start" style={{ paddingLeft: `${depth * 14}px` }} disabled={loadingChildren[parentId]} onClick={() => void loadChildren(parentId, cursor, false)}><span className="truncate">More agents from {find(parentId) ? sidebarTitle(find(parentId)!) : "parent conversation"}</span></Button> : null;
+    return !searchTerm && cursor && !hidden.current.has(parentId) ? <Button variant="ghost" size="xs" className="thread-more w-full justify-start" style={{ paddingLeft: `${depth * 14}px` }} disabled={loadingChildren[parentId]} onClick={() => void loadChildren(parentId, cursor, false)}><span className="truncate">More agents from {find(parentId) ? sidebarTitle(find(parentId)!) : "parent conversation"}</span></Button> : null;
   }
   function threadBranch(thread: Thread, depth = 0, seen = new Set<string>()) {
     if (seen.has(thread.id)) return null;
@@ -2283,7 +2283,7 @@ export default function Home() {
         {searchTerm && searchResults.query === searchTerm && searchResults.loading && <p role="status" className="px-2 py-3 text-xs text-muted-foreground">Searching saved conversations…</p>}
         {searchTerm && searchResults.query === searchTerm && searchResults.error && <p role="alert" className="px-2 py-3 text-xs text-destructive">Could not search saved conversations: {searchResults.error}</p>}
         {searchTerm && searchResults.query === searchTerm && !searchResults.loading && !searchResults.error && !filtered.length && <p className="px-2 py-3 text-xs text-muted-foreground">No matching conversations.</p>}
-        {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
+        {searchTerm ? searchResults.nextCursor && <Button variant="ghost" className="thread-more w-full" disabled={searchResults.loading} onClick={() => void loadMoreSearch()}>More search results</Button> : nextCursor && <Button variant="ghost" className="thread-more w-full" disabled={moreLoading} onClick={() => void loadMoreConversations()}>Load more</Button>}
         {!searchTerm && preferences.showAgentRuns && agentRuns.length > 0 && <section className="mt-4" aria-label="Background runs">
           <RightClickMenu actions={runActions} area={<div className="flex items-center" />}>
             <Button data-sidebar-stop variant="ghost" size="sm" className="min-w-0 flex-1 justify-start text-muted-foreground" aria-expanded={agentRunsOpen} aria-controls="agent-runs" onClick={() => setAgentRunsOpen(open => !open)}><ChevronRight size={13} className={agentRunsOpen ? "rotate-90" : undefined} /><AgentsIcon size={14} />Agent runs ({agentRuns.length})</Button>

@@ -2,6 +2,27 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cjs');
 
+// Fitting her into a narrow window is temporary: it never rewrites where she was put (27 Oct: she "jumps from top
+// right to that position when I opened something").
+test('a narrow window keeps Matilda on screen, then she returns to her place', { timeout: 60000 }, async t => {
+  const f = await loveSpotFixture({ colorScheme: 'light' });
+  t.after(() => f.close());
+  const page = f.page;
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.locator('.app-menus').waitFor();
+  await page.getByRole('button', { name: 'Pin Matilda', exact: true }).click();
+  const presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });
+  await presence.waitFor();
+  const home = await presence.boundingBox();
+  await page.setViewportSize({ width: 300, height: 760 });
+  await page.waitForFunction(() => { const r = document.querySelector('[aria-label="Pinned Matilda"]').getBoundingClientRect(); return r.x >= 0 && r.right <= innerWidth + 1; });
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.waitForTimeout(250);
+  const back = await presence.boundingBox();
+  assert.ok(Math.abs(back.x - home.x) < 1 && Math.abs(back.y - home.y) < 1, `she returns to her place: ${JSON.stringify({ home, back })}`);
+  assert.deepEqual(f.errors ?? [], []);
+});
+
 for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top across app pages, with global Unpin (${colorScheme})`, { timeout: 60000 }, async t => {
   const f = await loveSpotFixture({ colorScheme });
   t.after(() => f.close());

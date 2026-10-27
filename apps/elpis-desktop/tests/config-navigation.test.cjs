@@ -26,7 +26,7 @@ test('/config aliases open working pages; category labels never open link-only o
         clickable: group.querySelector('.section-label').matches('button, a, [role="button"], [tabindex]'),
         pages: group.querySelectorAll('[role="tab"]').length,
       })));
-      assert.deepEqual(groups.map(group => group.label), ['Models & accounts', 'Permissions & behavior', 'Context & maintenance', 'Connections & coding', 'App & terminal']);
+      assert.deepEqual(groups.map(group => group.label), ['Personal', 'Integrations', 'Coding', 'Archived']);
       assert.ok(groups.every(group => group.pages > 0 && !group.clickable), JSON.stringify(groups));
       assert.equal(await page.getByRole('button', { name: /^Open (Models & accounts|Configuration|Personalization|General)$/ }).count(), 0);
       await page.getByRole('button', { name: 'Back to app' }).click();

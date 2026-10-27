@@ -143,11 +143,13 @@ button:disabled { cursor:not-allowed; }
 .kbd-hint, [data-shortcut]::after { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
 [data-shortcut]::after { content:attr(data-shortcut); }
 .thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px 0 -8px; padding:0 4px 10px 8px; scroll-snap-type:y proximity; }
-.thread-list .thread-row { scroll-snap-align:end; }
+/* Rows and the "More …" buttons after them are snap points, so scrolling to the end can always reach those buttons. */
+.thread-list :is(.thread-row, .thread-more) { scroll-snap-align:end; }
 .thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:0.8125rem; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
-.thread-link .agent-identity { display:flex; align-items:center; gap:8px; }
+/* In the sidebar tree the agent mark follows the name, so names step by the same indent as their status dots. */
+.thread-link .agent-identity { display:flex; flex-direction:row-reverse; justify-content:flex-end; align-items:center; gap:8px; }
 .thread-link .agent-mark { display:inline-flex; flex-shrink:0; }
 .thread-link .agent-identity-text { display:flex; flex-direction:column; min-width:0; }
 .sidebar-footer { flex-shrink:0; display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
@@ -422,7 +424,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .settings-mode .settings-nav { position:static; height:100%; overflow:auto; align-content:start; background:var(--sidebar); border-right:1px solid var(--hairline); padding:10px 8px 16px; gap:6px; }
 .settings-mode .settings-page { max-width:none; height:100%; overflow:auto; padding:48px 32px 64px; }
 .settings-mode .settings-page { --settings-content-width:860px; }
-.settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:0; }
+/* The content column is centred in the space beside the navigation, as in ChatGPT and Claude (27 Oct). */
+.settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
 .settings-title { margin:10px 8px 4px; font:500 1.1875rem/1.3 var(--serif); }
 .settings-nav [role="tablist"] { display:grid; gap:1px; }

@@ -1,4 +1,10 @@
+// The navigation's groups, as ChatGPT's Settings groups them (27 Oct). The older category names after them remain
+// /config aliases; a group without pages is not shown.
 export const SECTIONS = [
+  { id: "personal", label: "Personal", tab: "general" },
+  { id: "integrations", label: "Integrations", tab: "mcp" },
+  { id: "coding", label: "Coding", tab: "hooks" },
+  { id: "archived", label: "Archived", tab: "archived" },
   { id: "models", label: "Models & accounts", tab: "providers" },
   { id: "permissions", label: "Permissions & behavior", tab: "configuration" },
   { id: "context", label: "Context & maintenance", tab: "personalization" },
