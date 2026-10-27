@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/session-windows-electron.test.cjs": {
+      "blob": "dc50c1cca505165bfc358dcc13d48f23a0655c85",
+      "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
+      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged."
+    },
     "tests/chat-files.test.cjs": {
       "blob": "585462a3d0f2a987f2a1c49283fce040dd4f94f6",
       "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
@@ -90,9 +95,9 @@ export const retainedUpdates = {
       "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/canvas-basics.test.cjs": {
-      "blob": "a0a0b8feda74903d71aebccc170706b474417b66",
-      "approval": "83d8782efe44951a031ad62e860228650d5d070f",
-      "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
+      "blob": "99559a6df14dd0872c09d6bfa63270cf8805165a",
+      "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
+      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged."
     },
     "tests/agents-guide.test.cjs": {
       "blob": "3fea4f19a19a338fc4861a189965b3d67448b2d2",
@@ -538,9 +543,9 @@ export const retainedUpdates = {
       "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
     },
     "tests/files-pane.test.cjs": {
-      "blob": "483fba4d84c7304add6abaaa3f7491c3b446eddd",
-      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
-      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
+      "blob": "d37069e57073356ece60572c3dfe030c161afbf2",
+      "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
+      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged."
     },
     "tests/love-spot.test.cjs": {
       "blob": "f5b82185db895c2a4dbf1414f0a5c0f3c1bd05f7",
