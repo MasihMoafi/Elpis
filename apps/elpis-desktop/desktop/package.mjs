@@ -17,7 +17,7 @@ export const productionFiles = [
   'bridge/profile-env.mjs', 'lib/love-spot-audio.mjs',
   'bridge/love-interview.mjs',
   'bridge/improve.mjs', 'bridge/improve-source.mjs', 'bridge/improve-check.mjs', 'desktop/improve.cjs',
-  'bridge/browser-mcp.mjs', 'desktop/browser-agent.cjs', 'desktop/documents.cjs', 'desktop/screen-capture.cjs',
+  'bridge/browser-mcp.mjs', 'bridge/claude-mcp-import.mjs', 'desktop/browser-agent.cjs', 'desktop/documents.cjs', 'desktop/screen-capture.cjs',
   'bridge/canvas-plan.mjs', 'bridge/experiment-lab.mjs', 'bridge/client.mjs', 'bridge/permission-presets.mjs', 'bridge/customize.mjs', 'bridge/skill-trash.mjs', 'bridge/github-connector.mjs', 'bridge/elpis-features.mjs', 'bridge/smart-prune.mjs', 'bridge/files.mjs', 'bridge/folders.mjs', 'bridge/git.mjs', 'bridge/recorded-changes.mjs', 'bridge/provider-keys.mjs', 'bridge/provider-settings.mjs', 'bridge/provider-models.mjs',
   'bridge/rag-command.mjs', 'bridge/rewind-history.mjs', 'bridge/rewind-snapshots.mjs', 'bridge/spawn-links.mjs', 'bridge/session-creators.mjs', 'bridge/app-catalogs.mjs', 'bridge/customize-page.mjs', 'bridge/validate.mjs', 'bridge/server.mjs', 'bridge/dev-servers.mjs', 'bridge/tools.mjs', 'bridge/runtime-paths.mjs', 'bridge/transcription.mjs', 'bridge/attachments.mjs', 'bridge/trash.mjs',
   'bridge/workflow-presets.mjs', 'bridge/resources/rag.md', 'bridge/resources/personal.md', 'bridge/personal.mjs', 'desktop/browser-policy.cjs', 'desktop/browser.cjs', 'desktop/browser-sessions.cjs', 'desktop/browser-annotations.cjs', 'desktop/browser-page-preload.cjs', 'desktop/context-menu.cjs',
