@@ -119,10 +119,12 @@ test('Settings content stays beside navigation at large UI size across window wi
         await visit(app.page, name);
         const geometry = await app.page.evaluate(() => {
           const pane = document.querySelector('.settings-page'), header = [...pane.querySelectorAll('.settings-page-header')].find(node => node.getClientRects().length);
-          const p = pane.getBoundingClientRect(), h = header.getBoundingClientRect();
-          return { inset: h.left - p.left, right: h.right, paneRight: p.right, overflow: pane.scrollWidth > pane.clientWidth + 1 };
+          const p = pane.getBoundingClientRect(), h = header.getBoundingClientRect(), left = p.left + pane.clientLeft;
+          return { nav: document.querySelector('.settings-nav').getBoundingClientRect().right, paneLeft: p.left, inset: h.left - left, after: left + pane.clientWidth - h.right, right: h.right, paneRight: p.right, overflow: pane.scrollWidth > pane.clientWidth + 1 };
         });
-        assert.equal(geometry.inset, 32, `${name} at ${width}: content starts beside the navigation`);
+        // Masih, 27 Oct (d79d50cbe): the content column is centred in the space beside the navigation, as in ChatGPT.
+        assert.ok(geometry.paneLeft >= geometry.nav && geometry.inset >= 32, `${name} at ${width}: content starts beside the navigation (${geometry.inset})`);
+        assert.ok(Math.abs(geometry.inset - geometry.after) <= 1, `${name} at ${width}: content is centred beside the navigation (${geometry.inset} vs ${geometry.after})`);
         assert.ok(geometry.right <= geometry.paneRight, `${name} at ${width}: content fits`);
         assert.equal(geometry.overflow, false, `${name} at ${width}: no pane overflow`);
       }

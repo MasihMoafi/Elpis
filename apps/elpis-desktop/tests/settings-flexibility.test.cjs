@@ -15,7 +15,8 @@ test('SETTINGS: one standard order that cannot be dragged or moved, and an order
   const fresh = await fixture({ height: 1080, routes });
   let standard;
   try { await openSettings(fresh.page); standard = await layout(fresh.page); } finally { await fresh.close(); }
-  assert.equal(standard[0].name, 'Models & accounts');
+  // Masih, 27 Oct: Settings grouped as ChatGPT's (d79d50cbe): Personal, Integrations, Coding, Archived.
+  assert.deepEqual(standard.map(item => item.name), ['Personal', 'Integrations', 'Coding', 'Archived']);
   assert.equal(new Set(standard.flatMap(item => item.pages)).size, standard.flatMap(item => item.pages).length);
   const f = await fixture({ height: 1080, routes, storage: { 'elpis-preferences-v1': JSON.stringify({
     settingsSectionOrder: 'advanced,app,models,permissions,context,connections', settingsPageOrder: 'about,general', settingsPageGroups: JSON.stringify({ general: 'advanced' }),
