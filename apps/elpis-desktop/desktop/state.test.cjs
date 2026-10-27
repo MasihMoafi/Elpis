@@ -46,8 +46,9 @@ test('saved project chat assignments preserve the workspace and remain writable 
 
 // The review's reproduction: two actual preloads and preference modules, routed
 // through production window IPC to one real store. Broadcasts can be delayed.
-function windows(t) {
+function windows(t, initial = {}) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-state-windows-')), 'workspace.json');
+  fs.writeFileSync(file, JSON.stringify(initial));
   const store = createStateStore(file), ipc = new EventEmitter(), handlers = new Map(), pending = [], broadcasts = [];
   ipc.handle = (key, handler) => handlers.set(key, handler);
   ipc.removeHandler = key => handlers.delete(key);
@@ -83,6 +84,23 @@ function windows(t) {
   };
   return { store, file, open, delay: value => { delay = value; }, deliver: () => { for (const send of broadcasts.splice(0)) send(); }, settle: async () => { await Promise.allSettled(pending.splice(0)); await new Promise(resolve => setImmediate(resolve)); } };
 }
+
+test('sidebar bookmarks save through native IPC and preserve existing workspace state', async t => {
+  const original = {
+    'elpis-bookmarked-chats-v1': '["chat-existing"]',
+    'elpis-pinned-chats-v1': '["chat-pinned"]',
+    'elpis-chat-attention-v1': '{"unread":["chat-unread"],"plans":{}}',
+    'elpis-draft-v1:chat-existing': 'Unsent draft',
+  };
+  const f = windows(t, original), a = f.open(1);
+  a.storage.setItem('elpis-bookmarked-chats-v1', '["chat-new","chat-existing"]');
+  await f.settle();
+  assert.deepEqual(a.errors, []);
+  assert.deepEqual(createStateStore(f.file).read(), { ...original, 'elpis-bookmarked-chats-v1': '["chat-new","chat-existing"]' });
+  a.storage.setItem('elpis-bookmarked-chats-v1', '["chat-existing"]');
+  await f.settle();
+  assert.deepEqual(createStateStore(f.file).read(), original);
+});
 
 test('SETTINGS2 sizing, corners and sleep preference persist through native IPC and reopening', async t => {
   const f = windows(t), a = f.open(1), b = f.open(2);
