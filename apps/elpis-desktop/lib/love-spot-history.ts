@@ -12,7 +12,8 @@ function ordered(elements: readonly ExcalidrawElement[]) {
 export function restoreRemoteElements(elements: readonly ExcalidrawElement[]) {
   // Restoration also repairs indices; order first so a different insertion
   // order cannot turn every received snapshot into a newer local edit.
-  return restoreElements(ordered(elements.map(element => ({ ...element }))), null, { refreshDimensions: true, repairBindings: true });
+  // Saved text bounds are valid before webfonts load; measuring the fallback font here clips labels.
+  return restoreElements(ordered(elements.map(element => ({ ...element }))), null, { refreshDimensions: false, repairBindings: true });
 }
 
 export function mergeRemoteElements(shown: Map<string, ExcalidrawElement>, incoming: readonly ExcalidrawElement[], isNewer: (incoming: ExcalidrawElement, current: ExcalidrawElement) => boolean) {
