@@ -1470,7 +1470,7 @@ export default function Home() {
   const focusComposer = () => composerRef.current?.focus();
   const chatWithMatilda = (id: string) => {
     showChat();
-    if (selectedRef.current?.id === id && viewRef.current === "chat") { focusComposer(); return; }
+    if (selectedRef.current?.id === id && viewRef.current === "chat") { requestAnimationFrame(focusComposer); return; }
     show("chat"); void openById(id).then(() => { if (selectedRef.current?.id === id) focusComposer(); });
   };
   function beginReply(entry: Entry, quote?: string) {
