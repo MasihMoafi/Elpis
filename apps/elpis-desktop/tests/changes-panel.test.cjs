@@ -247,11 +247,12 @@ for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: plai
 for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: long and binary recorded edits stay inside the panel (${colorScheme})`, async () => {
   await fixture(async ({ page, side, state, shoot }) => {
     state.recorded = true;
-    state.files = [{ path: 'long.txt', status: 'modified', added: 5000, removed: 0, binary: false },
+    const longPath = 'docs/reviews/a-very-long-directory-name/' + 'review-and-next-actions-'.repeat(5) + '.md';
+    state.files = [{ path: longPath, status: 'modified', added: 5000, removed: 0, binary: false },
       { path: 'picture.bin', status: 'added', added: 0, removed: 0, binary: true },
       ...Array.from({ length: 80 }, (_, i) => ({ path: `folder/file-${i}.txt`, status: 'modified', added: 1, removed: 0, binary: false }))];
-    state.diffs = { 'long.txt': '@@ -0,0 +1,5000 @@\n' + ('+' + 'long '.repeat(200) + '\n').repeat(5000) };
-    state.fileValues = { 'long.txt': { truncated: true }, 'picture.bin': { binary: true } };
+    state.diffs = { [longPath]: '@@ -0,0 +1,5000 @@\n' + ('+' + 'long '.repeat(200) + '\n').repeat(5000) };
+    state.fileValues = { [longPath]: { truncated: true }, 'picture.bin': { binary: true } };
     let release;
     const pending = new Promise(resolve => { release = resolve; });
     const delay = async route => { await pending; await route.continue(); };
@@ -265,6 +266,16 @@ for (const colorScheme of ['light', 'dark']) test(`Changes tab outside Git: long
     assert.equal(await side.locator('.change-list > li').count(), 82);
     assert.ok(await body.locator('.diff-line').count() <= 4000);
     assert.equal(await body.evaluate(el => getComputedStyle(el).overflowX), 'auto');
+    const fit = await side.evaluate(element => {
+      const body = element.querySelector('.diff-body'), text = element.querySelector('.diff-text');
+      const paths = [...element.querySelectorAll('.change-path, .diff-title')];
+      return { bodyFits: body.scrollWidth <= body.clientWidth + 1, lineWraps: text.getBoundingClientRect().height > parseFloat(getComputedStyle(text).lineHeight) * 2,
+        pathsFit: paths.every(path => path.scrollWidth <= path.clientWidth + 1), pathWraps: paths[0].getBoundingClientRect().height > parseFloat(getComputedStyle(paths[0]).lineHeight) * 2 };
+    });
+    assert.equal(fit.bodyFits, true, 'the full diff is readable without horizontal clipping');
+    assert.equal(fit.lineWraps, true, 'long diff lines wrap within the available panel width');
+    assert.equal(fit.pathsFit, true, 'list and selected-file paths remain readable inside the panel');
+    assert.equal(fit.pathWraps, true, 'a long filename wraps rather than disappearing behind an ellipsis');
     const bounds = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: innerWidth }));
     assert.ok(bounds.body <= bounds.viewport + 1, 'the long diff scrolls inside its panel');
     await shoot(`recorded-long-${colorScheme}`);

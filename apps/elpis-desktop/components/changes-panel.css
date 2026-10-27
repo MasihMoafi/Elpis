@@ -12,11 +12,12 @@
 .change-status { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; font:600 var(--text-small)/1 var(--mono); color:var(--muted-foreground); background:var(--muted); }
 .change-status[data-status="added"], .change-status[data-status="untracked"] { color:var(--success); background:color-mix(in oklch, var(--success) 14%, transparent); }
 .change-status[data-status="deleted"], .change-status[data-status="conflicted"] { color:var(--destructive); background:color-mix(in oklch, var(--destructive) 13%, transparent); }
-.change-path { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.change-path { flex:1; min-width:0; overflow-wrap:anywhere; white-space:normal; }
 .change-path .dir { color:var(--muted-foreground); }
-.diff-view { display:flex; flex-direction:column; flex:1 1 0; min-height:0; }
-.diff-head { display:flex; align-items:center; gap:6px; min-height:34px; flex-shrink:0; padding:0 8px 0 12px; font-size:12.5px; }
-.diff-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
+.diff-view { display:flex; flex-direction:column; flex:1 1 0; min-height:0; min-width:0; }
+.diff-head { display:flex; align-items:center; gap:6px; min-height:34px; flex-shrink:0; padding:6px 8px 6px 12px; font-size:12.5px; }
+.diff-title { flex:1; min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--muted-foreground); }
+.diff-head > button { flex-shrink:0; }
 
 .change-list > li { display:flex; align-items:center; gap:4px; }
 .change-list .change-row { display:flex; text-decoration:none; flex:1; min-width:0; }

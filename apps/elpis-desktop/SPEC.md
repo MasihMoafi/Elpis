@@ -341,3 +341,7 @@ Read-aloud reliability, explicit login/API-key options and playback-speed contro
 GUI `/resume` opens an explicit, searchable saved-conversation chooser even when the sidebar is closed or folded. Selecting a result opens its existing history without sending a model turn. Loading, empty, failed search and retry remain visible; Escape/outside dismissal returns focus to the composer.
 
 Empty Files uses a compact tree width independent of the last browser/document width. Opening a document restores the deliberate content width, or a readable default; closing its last file returns to the compact tree. Explicit resizing remains available.
+
+## Focused visual corrections — 27 October 2026
+
+Right-panel paths and diff text wrap within their pane, preserving text and accessible actions. Shared diff rows keep line numbers aligned. Stop uses the composer’s hollow bevelled icon geometry. The live Working row sits 8px lower on the shared alignment grid without changing the composer or overall turn spacing. Verify light/dark screenshots, narrow controls and stop behavior; use only the affected owner checks before the standard install.

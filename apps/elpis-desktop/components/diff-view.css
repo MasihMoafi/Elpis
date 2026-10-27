@@ -3,15 +3,15 @@
 .change-counts .add { color:var(--success); } .change-counts .del { color:var(--destructive); }
 .change-counts { flex-shrink:0; font:12px/1 var(--mono); color:var(--muted-foreground); white-space:nowrap; }
 .diff-body { flex:1; min-height:0; overflow:auto; padding-bottom:12px; font:var(--code-size, 12px)/1.6 var(--mono); }
-.diff-lines { width:max-content; min-width:100%; }  /* every line as wide as the longest, so the colours end together */
-.diff-line { display:grid; grid-template-columns:44px 44px 16px 1fr; }
-.diff-lines.plain .diff-line { grid-template-columns:16px 1fr; padding-inline-start:8px; }
+.diff-lines { width:100%; min-width:0; }  /* Shared width keeps wrapped lines and their colours within the pane. */
+.diff-line { display:grid; grid-template-columns:44px 44px 16px minmax(0, 1fr); }
+.diff-lines.plain .diff-line { grid-template-columns:16px minmax(0, 1fr); padding-inline-start:8px; }
 .diff-no { padding:0 8px; text-align:right; color:var(--subtle-foreground); user-select:none; }
 .diff-sign { text-align:center; user-select:none; }
-.diff-text { padding-inline-end:16px; white-space:pre; }
+.diff-text { min-width:0; padding-inline-end:16px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .diff-line.add { background:color-mix(in oklch, var(--success) 13%, transparent); }
 .diff-line.del { background:color-mix(in oklch, var(--destructive) 12%, transparent); }
 .diff-line.add .diff-no, .diff-line.add .diff-sign { background:color-mix(in oklch, var(--success) 20%, transparent); color:var(--success); }
 .diff-line.del .diff-no, .diff-line.del .diff-sign { background:color-mix(in oklch, var(--destructive) 18%, transparent); color:var(--destructive); }
-.diff-line.hunk { display:block; margin:6px 0 2px; padding:2px 12px; background:var(--recessed); color:var(--muted-foreground); }
+.diff-line.hunk { display:block; margin:6px 0 2px; padding:2px 12px; background:var(--recessed); color:var(--muted-foreground); overflow-wrap:anywhere; }
 .diff-line.note .diff-text { color:var(--muted-foreground); font-style:italic; }
