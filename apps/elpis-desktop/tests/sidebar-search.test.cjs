@@ -4,6 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cjs');
+const { rowAction } = require('./controls.cjs');
 
 const chat = (id, name, extra = {}) => ({ id, name, preview: name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });
 const threads = [
@@ -25,8 +26,7 @@ test('a search lists each matching chat, also one started from another or pinned
     const { page } = f;
     const rows = () => page.locator('.thread-row .thread-link .thread-title').allInnerTexts();
     // A pinned hit shows even while Pinned is folded, as a Recents hit does.
-    await page.locator('.thread-row[data-thread-id="obsidian"]').hover();
-    await page.getByRole('button', { name: 'Pin rust-obsidian', exact: true }).click();
+    await rowAction(page, page.locator('.thread-row[data-thread-id="obsidian"]'), 'rust-obsidian', 'Pin');
     await page.locator('section[aria-label="Pinned"] .section-toggle').click();
     assert.equal((await rows()).includes('rust-obsidian'), false, 'Pinned is folded');
     await page.getByRole('textbox', { name: 'Search conversations', exact: true }).fill('Rust');

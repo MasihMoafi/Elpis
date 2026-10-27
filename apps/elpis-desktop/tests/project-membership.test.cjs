@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fakeDesktop } = require('./fake-desktop.cjs');
+const { rowAction, threadMenuItem } = require('./controls.cjs');
 
 test('projects: explicit membership, drag, menu moves, persistence, and unscoped new chats', async () => {
   const root = process.env.ELPIS_RENDERER_OUT || path.resolve(__dirname, '../out');
@@ -52,11 +53,9 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     await first.locator('.thread-row[data-thread-id="alpha"]').waitFor();
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'a project chat must not also appear in global Recents');
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha-worker"]').count(), 0, 'children of a project chat must not become global root chats');
-    await row('alpha').hover();
-    await row('alpha').getByRole('button', { name: 'Pin Alpha', exact: true }).click();
+    await rowAction(page, row('alpha'), 'Alpha', 'Pin');
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'pinning a project chat must not duplicate it in the global list');
-    await row('alpha').hover();
-    await row('alpha').getByRole('button', { name: 'Unpin Alpha', exact: true }).click();
+    await rowAction(page, row('alpha'), 'Alpha', 'Unpin');
     await page.getByLabel('Search conversations', { exact: true }).fill('Alpha');
     await row('alpha').waitFor();
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'global search must still find a project chat');
@@ -67,7 +66,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     assert.equal(await first.locator('.thread-row[data-thread-id="bravo"]').count(), 0);
     assert.equal(await second.locator('.thread-row').count(), 0);
     await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Move to project…', exact: true }).click();
+    await (await threadMenuItem(page, 'Move to project…')).click();
     const picker = page.getByRole('alertdialog', { name: 'Move chat to project' });
     await page.evaluate(() => { window.elpisDesktop.storage.saveItem = async () => { throw Error('Project membership save failed'); }; });
     await picker.getByRole('button', { name: 'Second project', exact: true }).click();
@@ -84,7 +83,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     assert.equal(await sidebar.locator('.thread-row[data-thread-id="alpha"]').count(), 1, 'reload must preserve exclusive placement');
 
     await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Move to project…', exact: true }).click();
+    await (await threadMenuItem(page, 'Move to project…')).click();
     await picker.getByRole('button', { name: 'No project', exact: true }).click();
     await waitForCount('.project-group .thread-row[data-thread-id="alpha"]', 0);
     await row('alpha').dragTo(second.locator('.project-row'));
@@ -129,7 +128,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
         await page.reload(); await row('alpha').waitFor();
         await page.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'hidden', timeout: 15000 });
         await row('alpha').getByRole('button', { name: 'Actions for Alpha', exact: true }).click();
-        await page.getByRole('menuitem', { name: 'Move to project…', exact: true }).click();
+        await (await threadMenuItem(page, 'Move to project…')).click();
         await picker.waitFor();
         await page.screenshot({ path: process.env.ELPIS_PROJECT_SCREENSHOT.replace('.png', `-${theme}.png`) });
         await picker.getByRole('button', { name: 'Cancel', exact: true }).click();

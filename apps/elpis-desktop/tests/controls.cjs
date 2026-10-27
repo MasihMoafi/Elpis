@@ -185,6 +185,11 @@ async function assertDialogActionsExplained(dialog, expected) {
     if (expected) assert.match(reasons.join(' '), expected);
   }
 }
+/** Picks a row action (Pin, Bookmark, Archive, ...) from the chat's "…" menu: hover shows only that menu (R83, 27 Oct: no duplicate inline actions). */
+async function rowAction(page, row, chat, item) {
+  await row.hover(); await row.getByRole('button', { name: `Actions for ${chat}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
+}
 /** Opens the shared chat menu's named submenu before finding its action. */
 async function threadMenuItem(page, name) {
   const opening = { 'Open in Elpis TUI': 'Elpis TUI', 'Open session in split view': 'Split view', 'Open session in new window': 'New window' };
@@ -203,4 +208,4 @@ async function openPatterns(scope) {
   await chooseOption(scope.getByRole('combobox', { name: 'Workflow pattern', exact: true }), 'more');
   await scope.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
 }
-module.exports = { openPatterns, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
+module.exports = { openPatterns, rowAction, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
