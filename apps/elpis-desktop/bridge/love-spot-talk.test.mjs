@@ -116,7 +116,9 @@ test('reopening a recorded painting repairs legacy arrow origins while preservin
   await f.store.chat(async () => 'chat');
   for (const turnId of ['legacy', 'moved', 'deleted']) {
     await f.store.reply(turnId, 'Drawing', () => true, undefined, broken);
-    f.entries.push({ turnId, item: { id: 'reply-' + turnId, type: 'agentMessage', text: recorded } });
+    if (turnId === 'legacy') {
+      f.entries.push({ turnId, item: { id: 'part-one', type: 'agentMessage', text: source([rectangle]) } }, { turnId, item: { id: 'part-two', type: 'agentMessage', text: source([{ type: 'arrow', x: 110, y: 80, points: [[0, 0], [0, 40]] }]) } });
+    } else f.entries.push({ turnId, item: { id: 'reply-' + turnId, type: 'agentMessage', text: recorded } });
   }
   const drawing = await f.store.read();
   const moved = drawing.scene.elements.find(e => e.id === 'love-paint-moved-1');
