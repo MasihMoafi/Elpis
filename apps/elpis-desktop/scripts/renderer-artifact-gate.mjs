@@ -484,9 +484,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/changes-panel.test.cjs": {
-      "blob": "93f85266a3af15a37194b1bedfbb04e737587ba4",
-      "approval": "47a8a1712bb37dbf3df45f653d2678db9dd3a680",
-      "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The negative colour probe must use the former, now unapproved Send orange; every diff assertion stays."
+      "blob": "3fa7c4c1d1ce01f4963d9ec74dde4529f405ae33",
+      "approval": "e70ae1a895baf9ab67f87bea6b7ff9986520be02",
+      "reason": "Masih 27 Oct: right-panel text follows the supplied ChatGPT reference; extend the retained long/binary owner cases to catch horizontally clipped diff text and filenames in both themes. Pre-fix cases failed at the intended clipping assertion; preserve paging, binary, counts and selection coverage."
     },
     "tests/config-defaults.test.cjs": {
       "blob": "15c56a22a2ad611904762824c314fbef9b2ccd04",
