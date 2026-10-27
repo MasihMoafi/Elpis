@@ -44,7 +44,8 @@ test('unknown future approval still reports its method',async t=>{
 });
 test('browser config gates opening once per chat and approves interactions in the engine',()=>{
   const config=browserMcpConfig('/tmp/fixture.sock')['mcp_servers.elpis_browser'];
-  assert.equal(config.default_tools_approval_mode,'approve');assert.deepEqual(config.tools,{browser_open:{approval_mode:'auto'}});
+  assert.equal(config.default_tools_approval_mode,'approve');// The app's own browser and shared-document tools open or read inside Elpis without asking (84f35b9d4).
+  assert.deepEqual(config.tools,{browser_open:{approval_mode:'auto'},document_open:{approval_mode:'auto'},document_read:{approval_mode:'auto'}});
 });
 test('"Deny, and tell Elpis what to do instead" steers the waiting turn, then declines; nothing is sent when it cannot',async t=>{
   const f=await fixture(t);const text='Keep build/; clean only dist/.';

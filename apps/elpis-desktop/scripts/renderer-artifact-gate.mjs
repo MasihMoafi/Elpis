@@ -70,9 +70,9 @@ export const retainedUpdates = {
       "reason": "Masih: reconnect and other errors must not appear at the top. Replace only the superseded A30 header-placement expectations with contained bottom placement and an actual non-empty Run description. Preserve both themes, provider refusal, long permission refusal, actionable guidance, responsive toolbar fit, failed-agent explanation, successful retry and stale-error clearing. The real packaged-app refusal sibling follows the same policy; the immutable baseline is unchanged."
     },
     "tests/canvas-keys.test.cjs": {
-      "blob": "1f0db1128833104cc1943dcaf16e6115174a2857",
-      "approval": "14e9c8f30d3f59b6b6f457821774032c1e031fd4",
-      "reason": "Masih 27 Oct: all errors belong at the bottom. Replace the superseded under-Run placement assertion with contained bottom placement and accessible Run description; keep the original unchanged-toolbar and unchanged-button assertions. Retain all keys, frame hover/drag/cancellation, common member delta, grid and Undo assertions from the earlier verified frame repair."
+      "blob": "5d4842d2a26ae8fb50a3fc68fb7eba4d08425bc2",
+      "approval": "d832d506732216ca0c0137533def4db8e80a6975",
+      "reason": "Masih 27 Oct: all errors belong at the bottom (14e9c8f30), and Ctrl+A selects only within the focused area (C5, d832d5067): the keys journey focuses the board before Ctrl+A instead of blurring. Keep the original undo, copy and keyboard assertions."
     },
     "tests/canvas.test.cjs": {
       "blob": "942e566c66a40bc63e8bed115e1bb9cd6d7decf9",

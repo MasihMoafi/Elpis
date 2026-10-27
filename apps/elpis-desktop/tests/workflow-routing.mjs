@@ -53,7 +53,8 @@ test('an unavailable ACP agent fails closed without a native fallback',async t=>
   const run=await f.client.runWorkflow({...graph,tasks:[{...task,provider:'unavailable',model:'custom/model'}]});
   const result=await f.finished(run.graphId);
   assert.equal(result.status,'failed');assert.match(result.tasks[0].failureReason,/ENOENT/);
-  assert.equal(f.specs.length,1);assert.equal(f.socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
+  // Only Mother's read-only supervision of the failure follows (superviseNode); nothing retries the node natively.
+  assert.deepEqual(f.specs.map(spec=>spec.name),['Inspect','Mother']);assert.equal(f.socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
 });
 
 test('invalid routing is refused before starting any ACP or native execution',async t=>{

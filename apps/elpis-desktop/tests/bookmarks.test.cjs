@@ -12,6 +12,8 @@ function fixture() {
   let cursor = 0;
   const hooks = { ...React,
     useState(initial) { const key = cursor++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], next => { slots[key] = typeof next === 'function' ? next(slots[key]) : next; }]; },
+    // Shared stores (preferences, follow-ups) read their current snapshot; nothing here subscribes.
+    useSyncExternalStore(subscribe, getSnapshot) { return getSnapshot(); },
     useEffect(effect, deps) { const key = cursor++, previous = slots[key]; if (!previous || deps.some((value, index) => !Object.is(value, previous[index]))) { slots[key] = deps; pending.push(effect); } },
   };
   function load(relative) {
