@@ -85,3 +85,26 @@ test('dragging handles connects; a dropped output creates and wires the new agen
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 27 Oct, a real run in a short window: the run clock, the run log and the toolbar took all the board's height, the
+// board itself shrank to nothing and the toolbar covered the top of the error below. The board keeps room, and the
+// toolbar never covers the error.
+test('in a short window with a run log and an error, the board stays visible and nothing covers the error', async () => {
+  const f = await openCanvas({ width: 1100, height: 750 });
+  try {
+    const { page, canvas } = f;
+    // A finished run's log and a long check failure, as the real run produced (the log is rendered by a run; the notice by its failure).
+    await page.evaluate(() => {
+      const board = document.querySelector('.canvas-board'), toolbar = board.querySelector('.canvas-toolbar');
+      const log = document.createElement('div'); log.className = 'canvas-log-panel'; log.innerHTML = '<ol class="canvas-log">' + '<li>event</li>'.repeat(6) + '</ol>'; board.insertBefore(log, toolbar);
+      const notice = document.createElement('div'); notice.className = 'canvas-notice canvas-error-notice'; notice.setAttribute('role', 'alert');
+      notice.innerHTML = '<div class="canvas-error-details">' + 'Check failed: the file is not at the workspace root. '.repeat(14) + '</div>';
+      document.querySelector('.agents-canvas').append(notice);
+    });
+    const box = selector => canvas.locator(selector).first().boundingBox();
+    const flow = await box('.react-flow'), toolbar = await box('.canvas-toolbar'), notice = await box('.canvas-error-notice');
+    assert.ok(flow.height >= 100, `the board keeps room (${Math.round(flow.height)} px)`);
+    assert.ok(toolbar.y + toolbar.height <= notice.y + 1, `the toolbar ends above the error (${Math.round(toolbar.y + toolbar.height)} > ${Math.round(notice.y)})`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

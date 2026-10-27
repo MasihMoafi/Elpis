@@ -385,8 +385,12 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             // An isolated task runs in its own worktree, where the agent folders are new again.
             for (const scope of task.writeScopes) await projectFolder(cwd, scope);
             const scopes = task.writeScopes;
+            // A check looks for the files its criteria name where the checked agents could write (27 Oct: a correct file in
+            // the agent's own folder failed a check that looked only at the workspace root).
+            const checked = task.kind === 'verify' ? [...new Set(task.dependsOn.flatMap(id => byId.get(id)?.writeScopes ?? []))] : [];
             const instructions = [`Acceptance criteria:\n${task.acceptanceCriteria.map(c => `- ${c}`).join('\n')}`,
               scopes.length ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
+              ...checked.length ? [`The agents you check could write only in: ${checked.join(', ')}. Look for a file the criteria name there as well as at the path given.`] : [],
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
             const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),
               ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];

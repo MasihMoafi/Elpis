@@ -64,3 +64,16 @@ test('invalid routing is refused before starting any ACP or native execution',as
   }
   assert.equal(f.specs.length,0);assert.equal(f.socket.sent.some(row=>row.method.startsWith('workGraph/run')),false);
 });
+
+// 27 Oct, a real sandbox run: the agent wrote elpis-check.txt in its own folder, the only place it may write, and the
+// check failed because it looked only at the workspace root. A check is told where the agents it checks could write.
+test('a check is told the folders the agents it checks could write in',async t=>{
+  const f=fixture(t);
+  const make={...task,id:'make',title:'Make the file',instruction:'Create elpis-check.txt',kind:'implement',writeScopes:['agents/make'],acceptanceCriteria:['elpis-check.txt says hello']};
+  const check={...task,id:'check',title:'Check the file',instruction:'Check the file',kind:'verify',dependsOn:['make'],writeScopes:['agents/make/check'],acceptanceCriteria:['elpis-check.txt says hello']};
+  const run=await f.client.runWorkflow({...graph,tasks:[make,check]});
+  await f.finished(run.graphId);
+  const prompt=f.specs.find(spec=>spec.name==='Check the file')?.prompt??'';
+  assert.match(prompt,/agents you check could write only in: agents\/make\b/);
+  assert.doesNotMatch(f.specs.find(spec=>spec.name==='Make the file').prompt,/agents you check/,'only a check gets this');
+});
