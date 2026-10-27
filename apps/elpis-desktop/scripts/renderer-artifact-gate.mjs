@@ -140,9 +140,9 @@ export const retainedUpdates = {
       "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion."
     },
     "tests/composer-consistency.test.cjs": {
-      "blob": "0b7afac16415f3c75713fb3036703948717948d5",
-      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
-      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
+      "blob": "6ee214b7446ca8937cdbf4ad8718f68962ed4f2e",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/love-spot-sync.test.cjs": {
       "blob": "48eaf184b0b76f7279186c538310a5e5c0130e4d",
@@ -240,9 +240,9 @@ export const retainedUpdates = {
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/slash-commands.test.cjs": {
-      "blob": "119f55ff2c898bb19005aec469b186ba9c445ba0",
-      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
-      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
+      "blob": "3cd68e17fb41437e83d4ac00ccaa072b78c11b1f",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/config-navigation.test.cjs": {
       "blob": "9fec23177956a4ec8f8b20b32eedc3410a5cab69",
@@ -360,9 +360,9 @@ export const retainedUpdates = {
       "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/sidebar-order.test.cjs": {
-      "blob": "b67ceb9a7c0dd52adc5f9ebf6fe0d6e486b5664b",
-      "approval": "d855d3ccd5400a484a1897f903f4876e67798331",
-      "reason": "The Session Manager is a switch, not a chat; running chats sit above the others. Masih 22 Oct: \"the session manager I don't want to see it chat with us, it doesn't any good. I already told you the orange marked ones (the sessions that are running) must be on top\". The A100 manager tests now check the switch, the hidden chat and the saved choice; the A102 waiting test expects running chats after waiting ones; every other order assertion is unchanged. Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can\'t, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged."
+      "blob": "ee74fefc4d2b787f3ab2235e66126924458d54c6",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/sidebar.test.cjs": {
       "blob": "713f46529c23e8062527f0c1fd8f25fde0374f59",
@@ -465,8 +465,9 @@ export const retainedUpdates = {
       "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Masih 24 Oct: all chats start collapsed. Explicitly expand the parent before checking its child; preserve real exported renderer send, steer, interrupt, writable-history, theme and mobile journeys."
     },
     "tests/sidebar-attention.test.cjs": {
-      "blob": "c889f4da05279b38c5308c0ab1f0dd03037b0809",
-      ...pageRemovalApproval
+      "blob": "49489eeeeb40fb2d20ba75821b72040da2d19565",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/sidebar-nav-icons.test.cjs": {
       "blob": "764daea50569416e6f0ada062786112bafbd82b5",
@@ -518,9 +519,9 @@ export const retainedUpdates = {
       "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks. The independent height/font/offset mutation checks target a visible audited select control, rather than an unrelated file-reference button. Every drift assertion remains."
     },
     "tests/sidebar-indent.test.cjs": {
-      "blob": "5bb88e37e24230393592abe93c2e3d46ef669805",
-      "approval": "ef56904fcd8b39725632b4c24ca574cf8ab63d1e",
-      "reason": "V1, Masih's approved request in GATE11: \"every chat row uses the project-chat layout, all chevrons in one column\". Retain exact circle/title coordinates, hover, expansion, selection and reload checks in both themes."
+      "blob": "9dc5fbcf1194b8f85448986846350f255450cb75",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/tabs.test.cjs": {
       "blob": "2932bf023d601e4eb1972ee620c2644cf41ddc20",
@@ -528,9 +529,9 @@ export const retainedUpdates = {
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks. Await that popup's visibility before reading the same exact five choices; run40273131811 exposed the immediate empty snapshot."
     },
     "tests/sidebar-parity.test.cjs": {
-      "blob": "02943d2f19811a05e53e63a20c0417d777bdfe1a",
-      "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
-      "reason": "Footer, Masih 22 Oct: \"theme should be next to settings; and the name of the user shouldn't be clickable.\" The account-row test follows: the name only shows, and the theme button sits beside Settings."
+      "blob": "d695861d35e796471b07090562bf7bf0c6b2067a",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/reading-options.test.cjs": {
       "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
@@ -543,9 +544,9 @@ export const retainedUpdates = {
       "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
     },
     "tests/files-pane.test.cjs": {
-      "blob": "3e547bcd8194cba19154e950753beb4ddd4ba86b",
-      "approval": "84f35b9d43e7c7e40e1fea583b20f83f50b3ab6d",
-      "reason": "Masih 27 Oct: implement direct shared-document editing beside chat. Add the failed-refresh regression: text typed during an in-flight read survives its failure. This fails against the installed renderer. Preserve every existing file editing, preview, paging, navigation and selection assertion and the original baseline."
+      "blob": "502f1df3b15c4d6b0c91bb35545425ac1c067ff6",
+      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
+      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
     },
     "tests/love-spot.test.cjs": {
       "blob": "f5b82185db895c2a4dbf1414f0a5c0f3c1bd05f7",
