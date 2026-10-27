@@ -19,7 +19,7 @@ async function fixture(t) {
   return { directory, store, env, companion };
 }
 
-async function startPlayer(t, f, { name = 'matilda_test', openUri = true } = {}) {
+async function startPlayer(t, f, { name = 'matilda_test', openUri = true, volume = 0.37, writableVolume = true } = {}) {
   const calls = path.join(f.directory, 'player-calls');
   const player = spawn('python3', ['-u', '-c', `
 import sys, dbus, dbus.service, dbus.mainloop.glib
@@ -31,10 +31,15 @@ def log(action):
     with open(sys.argv[2], 'a') as output: output.write(action + '\\n')
 class Player(dbus.service.Object):
     status = 'Paused'
+    volume = ${volume === null ? 'None' : volume}
     url = 'file:///music/linkin%20park.m4a'
     @dbus.service.method('org.freedesktop.DBus.Properties', in_signature='s', out_signature='a{sv}')
     def GetAll(self, interface):
-        return {'PlaybackStatus': self.status, 'CanControl': True, 'CanPlay': True, 'CanPause': True, 'CanGoNext': False, 'Metadata': dbus.Dictionary({'xesam:title': 'linkin park masterpiece', 'xesam:artist': dbus.Array(['Linkin Park'], signature='s'), 'xesam:url': self.url}, signature='sv')}
+        return {'PlaybackStatus': self.status, 'CanControl': True, 'CanPlay': True, 'CanPause': True, 'CanGoNext': False, **({'Volume': dbus.Double(self.volume)} if self.volume is not None else {}), 'Metadata': dbus.Dictionary({'xesam:title': 'linkin park masterpiece', 'xesam:artist': dbus.Array(['Linkin Park'], signature='s'), 'xesam:url': self.url}, signature='sv')}
+    @dbus.service.method('org.freedesktop.DBus.Properties', in_signature='ssv', out_signature='')
+    def Set(self, interface, prop, value):
+        if interface != 'org.mpris.MediaPlayer2.Player' or prop != 'Volume' or sys.argv[4] == 'false': raise dbus.DBusException('Read only', name='org.freedesktop.DBus.Error.PropertyReadOnly')
+        log('Volume:' + str(float(value))); self.volume = float(value)
     @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='s', out_signature='')
     def OpenUri(self, uri):
         log('OpenUri')
@@ -51,7 +56,7 @@ class Player(dbus.service.Object):
 p = Player(bus, '/org/mpris/MediaPlayer2')
 print('ready', flush=True)
 GLib.MainLoop().run()
-`, name, calls, String(openUri)], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
+`, name, calls, String(openUri), String(writableVolume)], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(() => player.kill());
   let error = ''; player.stderr.on('data', data => { error += data; });
   await Promise.race([once(player.stdout, 'data'), once(player, 'exit').then(() => { throw new Error(error); })]);
@@ -160,4 +165,44 @@ test('an unsupported player never invokes the Audacious fallback', async t => {
   const companion = createMatildaCompanion({ store: f.store, env: { ...f.env, PATH: `${bin}:${f.env.PATH}` } });
   await assert.rejects(companion.act({ action: 'play-favorite', page: 'page' }), /could not open/i);
   await assert.rejects(fs.access(marker), { code: 'ENOENT' });
+});
+
+
+test('music mute changes only the selected player volume and restores it after reads and reopening', async t => {
+  const f = await fixture(t), { calls } = await startPlayer(t, f);
+  await f.companion.act({ action: 'pin', page: 'page' });
+  const before = (await f.companion.read('page')).music;
+  assert.equal(before.canMute, true);
+  assert.equal(before.muted, false);
+  const muted = (await f.companion.act({ action: 'toggle-mute', page: 'page' })).music;
+  assert.equal(muted.muted, true);
+  assert.equal(muted.volume, 0);
+  assert.equal(muted.status, before.status);
+  assert.equal(muted.uri, before.uri);
+  assert.equal((await f.companion.read('page')).music.muted, true);
+  const peer = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots') }); t.after(() => peer.close());
+  const reopened = createMatildaCompanion({ store: peer, env: f.env });
+  assert.equal((await reopened.read('page')).music.canMute, true);
+  const restored = (await reopened.act({ action: 'toggle-mute', page: 'page' })).music;
+  assert.equal(restored.volume, 0.37);
+  assert.equal(restored.muted, false);
+  assert.equal(restored.status, before.status);
+  assert.equal(restored.uri, before.uri);
+  assert.equal(await fs.readFile(calls, 'utf8'), 'Volume:0.0\nVolume:0.37\n', 'no playback, track, or system volume command');
+});
+
+for (const volume of [null, 0]) test(`music without a known restorable volume (${volume}) cannot toggle mute`, async t => {
+  const f = await fixture(t), { calls } = await startPlayer(t, f, { volume });
+  await f.companion.act({ action: 'pin', page: 'page' });
+  const music = (await f.companion.read('page')).music;
+  assert.equal(music.canMute, false);
+  assert.equal(music.muted, volume === 0);
+  await assert.rejects(f.companion.act({ action: 'toggle-mute', page: 'page' }), /volume/i);
+  await assert.rejects(fs.access(calls), { code: 'ENOENT' });
+});
+
+test('a refused player volume write reports failure without pausing playback', async t => {
+  const f = await fixture(t), { calls } = await startPlayer(t, f, { writableVolume: false });
+  await assert.rejects(f.companion.act({ action: 'toggle-mute', page: 'page' }), /volume|music controls/i);
+  await assert.rejects(fs.access(calls), { code: 'ENOENT' });
 });

@@ -10,6 +10,8 @@ import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-m
 import { readPreferences, savePreferences } from "@/lib/preferences";
 import { shortcutHint } from "@/lib/shortcuts";
 import { isAgent, title, type Thread } from "@/lib/api";
+import { useConversationColour } from "@/components/conversation-colour";
+import { WORKFLOW_COLOURS, type WorkflowColour } from "@/lib/workflow-identity";
 import type { ChatGroup } from "@/lib/chat-groups";
 
 const message = (e: unknown) => e instanceof Error ? e.message : String(e);
@@ -59,6 +61,7 @@ type Props = {
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
  * Failures are shown as Elpis reported them. */
 export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, renameDescription, onArchive, pinned, onPin, bookmarked, onBookmark, agents, renameRequested, onRenameRequestHandled, label, area, children, selection, onOpenInTui, onOpenSplit, onOpenWindow, attention, group, onMoveToProject, onNewProject, onPutUnder, onTakeOut }: Props) {
+  const conversationColour = useConversationColour(thread.id);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState<Thread[] | null>(null);
   const [name, setName] = useState("");
@@ -112,6 +115,10 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
+    { id: "colour", label: "Colour", run: () => {}, items: [
+      ...WORKFLOW_COLOURS.map(value => ({ id: `colour:${value}`, label: value[0].toUpperCase() + value.slice(1), icon: <span className="conversation-colour-swatch" data-colour={value} aria-hidden="true" />, checked: conversationColour.colour === value, run: () => void conversationColour.choose(value) })),
+      { id: "colour:reset", label: "Reset colour", separated: true, run: () => void conversationColour.choose(null) },
+    ] },
     organize,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
       : { id: "read", label: attention.unread ? "Mark as read" : "Mark as unread", icon: attention.unread ? <Eye size={14} /> : <EyeOff size={14} />, hint: "U", run: attention.onToggleRead } : undefined,
@@ -120,9 +127,10 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>
-    <RightClickMenu actions={actions} area={many || !onRename ? area : cloneElement(area as ReactElement<{ onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }>, { onKeyDown: event => { (area.props as { onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }).onKeyDown?.(event); renameKey(event); } })}>
+    <RightClickMenu actions={actions} area={cloneElement(area as ReactElement<{ "data-conversation-colour"?: WorkflowColour; onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }>, { "data-conversation-colour": conversationColour.colour, ...(!many && onRename ? { onKeyDown: (event: KeyboardEvent<HTMLElement>) => { (area.props as { onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void }).onKeyDown?.(event); renameKey(event); } } : {}) })}>
       {children(<MoreMenu actions={actions} className="thread-actions" label={label ?? `Actions for ${current}`} title="Rename, archive or delete" />)}
     </RightClickMenu>
+    {conversationColour.error && <p role="alert" className="px-2 text-xs text-destructive">{conversationColour.error}</p>}
     <AlertDialog open={renaming} onOpenChange={value => { if (!busy && !value) setRenaming(false); }}>
       <AlertDialogContent>
         <AlertDialogHeader>

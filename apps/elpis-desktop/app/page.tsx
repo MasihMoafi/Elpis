@@ -4,8 +4,8 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ArchiveIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, StopIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Archive, ArrowDown, Blocks, Bookmark, BookmarkMinus, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Sun, X, Zap } from "lucide-react";
+import { AgentsIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, StopIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Archive, ArrowDown, Blocks, Bookmark, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Sun, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -100,7 +100,6 @@ import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { AgentIdentity } from "@/components/agent-identity";
-import { ConversationColour } from "@/components/conversation-colour";
 import { ResumeConversation } from "@/components/resume-conversation";
 import { selectElementContent } from "@/lib/pane-select";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
@@ -613,6 +612,12 @@ export default function Home() {
     } catch (e) { if (request.current === id) setLiveError(prev => ({ ...prev, [thread.id]: e instanceof Error ? e.message : String(e) })); }
   }, [select, setText, reconcileLiveThread, saveDraft, savedDraft, liveKeysAfter, restoreAttachments, updateTabs, markRead, noteHistoryGap]);
 
+  // Navigation to the visible chat preserves its live transcript, draft and scroll. Explicit reloads still use loadThread.
+  const openThread = useCallback(async (thread: Thread) => {
+    if (selectedRef.current?.id === thread.id) { markRead(thread.id); setView("chat"); setSidebar(false); return; }
+    await loadThread(thread);
+  }, [loadThread, markRead]);
+
   useEffect(() => { setText(savedDraft(newDraftKey.current)); }, [savedDraft]);
 
   useEffect(() => {
@@ -745,7 +750,7 @@ export default function Home() {
         events.addEventListener("message", event => {
           const { method, params } = JSON.parse(event.data);
           if (method === "thread/goal/updated" || method === "thread/goal/cleared") window.dispatchEvent(new CustomEvent("elpis:goal-updated", { detail: { threadId: params.threadId } }));
-          notifyRuntimeEvent(method, params, threadsRef.current, id => void loadThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
+          notifyRuntimeEvent(method, params, threadsRef.current, id => void openThread({ id } as Thread)); void sendQueuedFollowUp(method, params).catch(e => setError(String(e)));
           const threadId: string | undefined = params.threadId ?? params.thread?.id;
           if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
             turnRevisions.current[threadId] = (turnRevisions.current[threadId] ?? 0) + 1;
@@ -819,7 +824,7 @@ export default function Home() {
               : merged;
           });
         });
-        events.addEventListener("approval", event => { const approval = JSON.parse(event.data); notifyApproval(approval, threadsRef.current, id => void loadThread({ id } as Thread)); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
+        events.addEventListener("approval", event => { const approval = JSON.parse(event.data); notifyApproval(approval, threadsRef.current, id => void openThread({ id } as Thread)); setApprovals(prev => [...prev.filter(a => a.id !== approval.id), approval]); });
         events.addEventListener("approvalResolved", event => { const { id } = JSON.parse(event.data); setApprovals(prev => prev.filter(a => a.id !== id)); clearApprovalDraft(id); });
         events.addEventListener("unsupportedApproval", event => { const { method } = JSON.parse(event.data); setError(`Elpis requested an unsupported approval (${method}). Update the app to answer this request.`); });
         events.addEventListener("account", event => { setAccountRefresh(n => n + 1); if (changesModelCatalog(JSON.parse(event.data).method)) void refreshModels(); });
@@ -985,6 +990,11 @@ export default function Home() {
 
   function openNewChat(draftKey = newDraftKey.current) { saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current); newDraftKey.current = draftKey; request.current++; stickToBottom.current = true; followingBottom.current = false; restoreScroll.current = null; select(null); setEntries([]); setItemCursor(null); setText(savedDraft(draftKey)); setError(""); restoreAttachments(draftKey); setLoading(false); setView("chat"); setSidebar(false); requestAnimationFrame(() => composerRef.current?.focus()); }
   const newChat = () => { setProjectId(null); setCwd(""); openNewChat(activeTab(tabsRef.current).draftKey ?? "new"); };
+  const clearChat = () => {
+    const previous = selectedRef.current;
+    if (previous) { setCwd(previous.cwd || cwd); setProjectId(projectChatsRef.current[previous.id] ?? projectId); }
+    openNewChat(`clear-${crypto.randomUUID()}`);
+  };
   const split = useSessionSplit({ thread: selected, text, attachments }, () => composerRef.current?.focus(), remaining => {
     const restore = () => { editDraft(remaining.text); setAttachments(remaining.attachments); saveAttachments(remaining.thread?.id || newDraftKey.current, remaining.attachments); };
     if (remaining.thread) void loadThread(remaining.thread).then(restore); else { newChat(); restore(); }
@@ -996,7 +1006,7 @@ export default function Home() {
   const tabDraftKey = (tab: ChatTab) => tab.draftKey ?? "new";
   /** Puts the tab's chat (or empty chat) on screen. */
   function openTab(tab: ChatTab) {
-    if (tab.threadId) void loadThread(find(tab.threadId) ?? { id: tab.threadId, ...(tab.title ? { name: tab.title } : {}) } as Thread);
+    if (tab.threadId) void openThread(find(tab.threadId) ?? { id: tab.threadId, ...(tab.title ? { name: tab.title } : {}) } as Thread);
     else { setProjectId(null); setCwd(""); openNewChat(tabDraftKey(tab)); }
   }
   function showTab(tab: ChatTab) {
@@ -1446,7 +1456,7 @@ export default function Home() {
     } catch (e) { if (request.current === revision) setError(String(e)); return false; }
     finally { if (request.current === revision) setLoading(false); }
   }
-  const openById = (id: string) => loadThread(threads.find(thread => thread.id === id) || related[id] || { id });
+  const openById = (id: string) => openThread(threads.find(thread => thread.id === id) || related[id] || { id });
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
   const openInTui = (thread: Thread) => {
     if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread);
@@ -1468,11 +1478,6 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
-  const chatWithMatilda = (id: string) => {
-    showChat();
-    if (selectedRef.current?.id === id && viewRef.current === "chat") { requestAnimationFrame(focusComposer); return; }
-    show("chat"); void openById(id).then(() => { if (selectedRef.current?.id === id) focusComposer(); });
-  };
   function beginReply(entry: Entry, quote?: string) {
     if (!selectedRef.current || readOnlyRun || readingFiles.current) return;
     const attachment = replyAttachment(entry, entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis", quote);
@@ -1705,6 +1710,7 @@ export default function Home() {
     { name: "review", description: "review my current changes and find issues", available: writable && idle, args: true, run: text => { if (!selected) return; if (text) void startReview(selected, { type: "custom", instructions: text }); else setPanel("review"); } },
     { name: "rename", description: "rename the current thread", available: !!selected, args: true, run: text => { if (text && selected) renameThread(selected, text).catch(e => setError(e instanceof Error ? e.message : String(e))); else setRenameRequest(true); } },
     { name: "new", description: "start a new chat during a conversation", run: newChat },
+    { name: "clear", description: "start a fresh chat in the current project", run: clearChat },
     { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) archiveChats([selected]); } },
     { name: "delete", description: "permanently delete this session", available: !!selected, run: () => { if (selected) deleteChats([selected.id]); } },
     { name: "resume", description: "resume a saved chat", run: () => setResumeOpen(true) },
@@ -1939,7 +1945,7 @@ export default function Home() {
     } else if (event.shiftKey) {
       const to = ids.indexOf(thread.id), at = ids.indexOf(markAnchor.current ?? selected?.id ?? thread.id), from = at < 0 ? to : at;
       setMarked(ids.slice(Math.min(from, to), Math.max(from, to) + 1)); event.currentTarget.focus();
-    } else { setMarked([]); markAnchor.current = thread.id; void loadThread(thread); }
+    } else { setMarked([]); markAnchor.current = thread.id; void openThread(thread); }
   }
   /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
   const arrowSelect = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -2143,12 +2149,6 @@ export default function Home() {
         {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
-      <ConversationColour id={thread.id} name={name} />
-      <span className="row-hover-actions">
-        {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
-        <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
-        {!depth && <Button variant="ghost" size="icon-xs" aria-label={`Archive ${name}`} title="Archive" onClick={() => archiveChats([thread])}><ArchiveIcon size={13} /></Button>}
-      </span>
       {bookmarked && <span className="thread-bookmark" role="img" aria-label="Bookmarked" title="Bookmarked"><Bookmark size={13} fill="currentColor" aria-hidden="true" /></span>}
       {menu}
       </>}
@@ -2232,15 +2232,15 @@ export default function Home() {
 
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
-    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={canBack(history)} canGoForward={canForward(history)} onShortcuts={() => shortcutAction.current("shortcuts")} /><MatildaCompanion onChat={chatWithMatilda} /><AppUpdate /></div>}
-    {!desktop && <div className="title-bar"><MatildaCompanion onChat={chatWithMatilda} /></div>}
+    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={canBack(history)} canGoForward={canForward(history)} onShortcuts={() => shortcutAction.current("shortcuts")} /><MatildaCompanion /><AppUpdate /></div>}
+    {!desktop && <div className="title-bar"><MatildaCompanion /></div>}
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
-    {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
+    {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void openThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
     {desktop && <StartupSplash />}
     <ProjectDialog projects={projects} editing={projectEdit} folders={projectEdit !== undefined ? [cwd, ...ordinaryThreads.map(thread => thread.cwd ?? "")] : []} description={newProjectFor ? `${newProjectFor.length} chats will move into this project. Their working folders stay as they are.` : undefined} onClose={() => { setProjectEdit(undefined); setNewProjectFor(null); }} onSave={newProjectFor ? saveProjectFromChats : saveProject} />
     <MoveChatDialog name={projectMove ? projectMove.length === 1 ? title(projectMove[0]) : `${projectMove.length} selected chats` : null} count={projectMove?.length} projects={projects} currentId={projectMove ? new Set(projectMove.map(chat => projectChats[chat.id] ?? null)).size === 1 ? projectChats[projectMove[0].id] ?? null : undefined : null} onMove={id => projectMove ? assignProject(projectMove.map(chat => chat.id), id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
-    <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void loadThread(thread); }} />
+    <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void openThread(thread); }} />
     <PutUnderDialog chats={nestTargets} candidates={nestTargets ? ordinaryThreads.filter(thread => canNest(nestTargets.map(chat => chat.id), thread.id)) : []} onPutUnder={parent => nestChats((nestTargets ?? []).map(chat => chat.id), parent)} onClose={() => setNestTargets(null)} />
     <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
       onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
@@ -2427,7 +2427,7 @@ export default function Home() {
         <div className="team-heading"><span className="inline-flex items-center gap-2"><AgentsIcon size={16} />Agents</span><small>{team.filter(thread => agentState(thread, waitingIds) === "working").length} working · {team.length} total</small></div>
         <button data-slot="team-row" className={`team-row root${selected.id === teamRoot.id ? " active" : ""}`} onClick={() => openById(teamRoot.id)}><span className="team-state"><i /></span><span className="team-title">{title(teamRoot)}</span><small>Main chat</small></button>
         {team.map(thread => { const state = agentState(thread, waitingIds);
-          return <button data-slot="team-row" key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => loadThread(thread)} title={activity[thread.id] || title(thread)}>
+          return <button data-slot="team-row" key={thread.id} className={`team-row ${state}${selected.id === thread.id ? " active" : ""}`} onClick={() => openThread(thread)} title={activity[thread.id] || title(thread)}>
             <span className="team-state" aria-label={stateLabels[state]}><i /></span>
             <span className="team-title">{title(thread)}{thread.agentNickname && thread.agentNickname !== title(thread) && <em>{thread.agentNickname}</em>}</span>
             <small>{state === "working" && activity[thread.id] ? activity[thread.id] : [modelLabel(thread.model, models), thread.reasoningEffort].filter(Boolean).join(" · ")}</small>

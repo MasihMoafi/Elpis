@@ -21,16 +21,16 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
     assert.ok(box && box.y < 36, `${name}: ${JSON.stringify(box)}`);
   }
   const before = (await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort();
-  const controls = page.getByRole('button', { name: 'Music controls', exact: true });
-  await controls.click();
-  await page.getByText('Music controls are unavailable.', { exact: false }).waitFor();
-  await page.keyboard.press('Escape');
-  await controls.waitFor();
-  assert.equal(await controls.getAttribute('aria-expanded'), 'false');
-  assert.equal(await controls.evaluate(el => el === document.activeElement), true);
-  await controls.click();
+  const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
+  const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
+  await avatar.click(); await mini.waitFor();
+  await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).fill('Keep this unsent');
+  await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
+  assert.equal(await avatar.evaluate(el => el === document.activeElement), true);
+  await avatar.click(); await mini.waitFor();
+  assert.equal(await mini.getByRole('textbox', { name: 'Message Matilda', exact: true }).inputValue(), 'Keep this unsent');
   await page.locator('.love-spot-editor').click({ position: { x: 40, y: 300 } });
-  assert.equal(await controls.getAttribute('aria-expanded'), 'false');
+  await mini.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await presence.waitFor();
   await page.reload();
@@ -55,52 +55,93 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
 });
 
 
-for (const colorScheme of ['light', 'dark']) test(`Matilda drags independently and music leaves the conversation size unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
+for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and dragging leave the main conversation unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
   const { fixture } = require('./parity-fixture.cjs');
   const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
-  let music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Playing', canPlay: true, canPause: true, canNext: true };
-  const f = await fixture({ colorScheme, width: 1000, height: 800, routes: {
+  let music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Playing', canMute: true, muted: false };
+  let entries = [], replyMode = 'ok', release, slowArrived;
+  const slowStarted = new Promise(resolve => { slowArrived = resolve; });
+  const talk = () => ({ entries, busy: false });
+  const f = await fixture({ colorScheme, nativeClipboard: true, width: 1000, height: 800, routes: {
     '/api/love-spot/companion': body => {
-      if (body?.action === 'pause') music = { ...music, status: 'Paused' };
-      if (body?.action === 'play') music = { ...music, status: 'Playing' };
+      if (body?.action === 'toggle-mute') music = { ...music, muted: !music.muted };
       return { pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: { ...music }, music, reason: '' };
+    },
+    '/api/love-spot/talk': async body => {
+      if (!body) return talk();
+      if (replyMode === 'failure') return { __http: 503, error: 'Matilda could not send this message.' };
+      if (replyMode === 'slow') await new Promise(resolve => { release = resolve; slowArrived(); });
+      const id = `mini-${entries.length}`;
+      entries = [...entries, { turnId: id, item: { id, type: 'userMessage', content: [{ type: 'text', text: body.text }] } }, { turnId: id, item: { id: `${id}-reply`, type: 'agentMessage', text: 'Matilda heard you.' } }];
+      return talk();
     },
   } });
   t.after(() => f.close());
   await f.open('chat-a');
-  const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });
-  await presence.waitFor();
-  const avatar = presence.getByAltText('Matilda', { exact: true });
-  assert.equal(await avatar.evaluate(el => !!el.closest('button')), false, 'The avatar is a drag handle, not a music button');
-  const composerBefore = await page.locator('.composer').boundingBox();
-  const chatBefore = await page.locator('.chat-scroll').boundingBox();
-  const musicButton = page.getByRole('button', { name: 'Music controls', exact: true });
-  await avatar.click();
-  assert.equal(await musicButton.getAttribute('aria-expanded'), 'false');
-  await musicButton.click();
-  const popup = page.getByText('Music', { exact: true }).locator('..');
-  await page.getByRole('button', { name: 'Pause music', exact: true }).waitFor();
-  const popupBefore = await popup.boundingBox();
-  await page.getByRole('button', { name: 'Pause music', exact: true }).click();
-  await page.getByRole('button', { name: 'Resume music', exact: true }).waitFor();
-  assert.deepEqual(await popup.boundingBox(), popupBefore, 'Track state does not resize the music panel');
-  assert.deepEqual(await page.locator('.composer').boundingBox(), composerBefore);
-  assert.deepEqual(await page.locator('.chat-scroll').boundingBox(), chatBefore);
-  await page.keyboard.press('Escape');
+  const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
+  const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
+  assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'the avatar itself opens the mini chat');
+  assert.equal(await presence.getByRole('button').count(), 3, 'avatar, mute and unpin; no separate chat or music-menu button');
+  const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
+  const field = mini.getByRole('textbox', { name: 'Message Matilda', exact: true });
+  const sends = () => f.posts.filter(post => post.path === '/api/love-spot/talk');
+  await f.composer.fill('Main chat draft stays here');
+  const mainState = async () => ({ url: page.url(), active: await page.locator('.thread-row.active').getAttribute('data-thread-id'), draft: await f.composer.inputValue(), composer: await page.locator('.composer').boundingBox(), chat: await page.locator('.chat-scroll').boundingBox() });
+  const mainBefore = await mainState();
+  await presence.getByRole('button', { name: 'Mute music', exact: true }).click();
+  await presence.getByRole('button', { name: 'Unmute music', exact: true }).waitFor();
+  assert.equal(await mini.count(), 0, 'mute opens no panel');
+  await presence.getByRole('button', { name: 'Unmute music', exact: true }).click();
+  await presence.getByRole('button', { name: 'Mute music', exact: true }).waitFor();
+  assert.deepEqual(f.posts.filter(post => post.path === '/api/love-spot/companion').map(post => post.body.action), ['toggle-mute', 'toggle-mute']);
+  assert.deepEqual(await mainState(), mainBefore);
+
+  await avatar.click(); await mini.waitFor();
+  await page.evaluate(() => navigator.clipboard.writeText('Pasted message'));
+  await field.focus(); await page.keyboard.press('Control+V');
+  await field.press('End'); await field.pressSequentially(' and typed text');
+  assert.equal(await field.inputValue(), 'Pasted message and typed text');
+  await page.waitForTimeout(650);
+  assert.equal(sends().length, 0, 'paste, typing and pause never auto-send');
+  await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
+  await avatar.click(); await mini.waitFor();
+  assert.equal(await field.inputValue(), 'Pasted message and typed text', 'dismissal preserves unsent text');
+  await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
+  await mini.getByText('Matilda heard you.', { exact: true }).waitFor();
+  assert.equal(sends().length, 1, 'explicit Send posts exactly once');
+  assert.equal(sends()[0].body.text, 'Pasted message and typed text');
+  assert.equal(await field.inputValue(), '');
+  assert.deepEqual(await mainState(), mainBefore);
+
+  replyMode = 'failure'; await field.fill('Keep failed message');
+  await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
+  await mini.getByRole('alert').filter({ hasText: 'Matilda could not send' }).waitFor();
+  assert.equal(await field.inputValue(), 'Keep failed message');
+  assert.equal(sends().length, 2);
+  replyMode = 'slow'; await field.fill('Slow message');
+  await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.matilda-mini-status'));
+  await field.fill('New text while waiting');
+  assert.equal(sends().length, 3);
+  await slowStarted; release();
+  await mini.getByRole('status').waitFor({ state: 'hidden' });
+  assert.equal(await field.inputValue(), 'New text while waiting', 'a slow acknowledgement cannot erase later typing');
+  assert.deepEqual(await mainState(), mainBefore);
+  await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
+
   const before = await presence.boundingBox(), face = await avatar.boundingBox();
   await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
   await page.mouse.down(); await page.mouse.move(face.x - 180, face.y + 140, { steps: 8 }); await page.mouse.up();
   const dragged = await presence.boundingBox();
   assert.ok(dragged.x < before.x - 150 && dragged.y > before.y + 100, JSON.stringify({ before, dragged }));
-  const hit = await avatar.evaluate(el => { const r = el.getBoundingClientRect(); return document.elementFromPoint(r.x + 12, r.y + 12) === el; });
-  assert.equal(hit, true, 'The moved avatar stays visible and usable above the page');
+  assert.equal(await mini.count(), 0, 'a drag never opens the mini chat');
+  const hit = await avatar.evaluate(el => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + 12, r.y + 12)); });
+  assert.equal(hit, true, 'the moved avatar stays visible and usable above the page');
   await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await presence.waitFor();
-  assert.deepEqual(await presence.boundingBox(), dragged, 'Position survives a reload');
-  await page.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
-  await page.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
-  await page.getByText('All green.', { exact: true }).waitFor();
+  assert.deepEqual(await presence.boundingBox(), dragged, 'position survives a reload');
   await avatar.focus(); await page.keyboard.press('Shift+ArrowLeft');
   const keyed = await presence.boundingBox(); assert.equal(Math.round(dragged.x - keyed.x), 30);
+  assert.equal(await mini.count(), 0, 'keyboard movement never opens the mini chat');
   await page.evaluate(() => window.__push({ visible: true, activeId: 'page-proof', fullView: 0, tabs: [{ id: 'page-proof', url: 'https://example.invalid/', title: 'Native page', comments: 0, zoom: 100 }] }));
   const viewport = page.locator('.browser-viewport'); await viewport.waitFor();
   const browser = await viewport.boundingBox(), handle = await avatar.boundingBox();
@@ -108,16 +149,20 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda drags independently a
   await page.mouse.move(browser.x + browser.width / 2, browser.y + browser.height / 2, { steps: 8 }); await page.mouse.up();
   const kept = await presence.boundingBox();
   assert.ok(kept.y + kept.height <= browser.y || kept.x + kept.width <= browser.x || kept.x >= browser.x + browser.width, JSON.stringify({ kept, browser }));
+  assert.equal(await mini.count(), 0);
   await page.evaluate(() => window.__push({ fullView: 1 }));
   await page.getByRole('button', { name: 'Collapse floating chat', exact: true }).click();
   assert.equal(await f.composer.isVisible(), false);
-  await page.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
-  await f.composer.waitFor({ state: 'visible' });
-  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Message Elpis');
+  await avatar.click(); await mini.waitFor();
+  assert.equal(await f.composer.isVisible(), false, 'mini chat does not reopen the main floating conversation');
+  await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
   await page.evaluate(() => window.__push({ visible: false, activeId: null, tabs: [] }));
   await viewport.waitFor({ state: 'hidden' });
   await page.setViewportSize({ width: 360, height: 400 });
   await page.waitForFunction(() => { const r = document.querySelector('[aria-label="Pinned Matilda"]').getBoundingClientRect(); return r.x >= 0 && r.right <= innerWidth && r.y >= 0 && r.bottom <= innerHeight; });
+  await avatar.click(); await mini.waitFor();
+  const small = await mini.boundingBox(); assert.ok(small.x >= 0 && small.x + small.width <= 361, JSON.stringify(small));
+  await page.keyboard.press('Escape');
   const fs = require('node:fs/promises'), path = require('node:path');
   const evidence = '/home/masih/.cache/elpis-tests/avatar-proof'; await fs.mkdir(evidence, { recursive: true });
   await page.setViewportSize({ width: 1000, height: 800 });

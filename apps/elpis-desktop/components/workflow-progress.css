@@ -1,4 +1,8 @@
-.workflow-progress { min-width: 0; }
+.workflow-progress { min-width: 0; container: workflow-progress / inline-size; }
+.workflow-progress-row { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 9.5rem; align-items: center; gap: 8px; min-width: 0; }
+.workflow-progress-status { text-align: left; overflow-wrap: anywhere; }
+.workflow-progress-row > button { width: 100%; }
+@container workflow-progress (max-width: 440px) { .workflow-progress-row { grid-template-columns: minmax(0, 1fr) 5rem 8rem; gap: 4px; } }
 .workflow-progress-report { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
 .workflow-progress-agent { min-width: 0; }
 .workflow-progress[data-compact] .workflow-progress-report { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-height: 3em; }

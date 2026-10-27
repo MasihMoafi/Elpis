@@ -9,7 +9,7 @@ const exec = promisify(execFile);
 const MPRIS = `
 import sys, json, dbus, subprocess, time
 bus = dbus.SessionBus()
-action, wanted, uri = sys.argv[1:]
+action, wanted, uri, volume = sys.argv[1:]
 players = []
 for name in sorted(str(n) for n in bus.list_names() if n.startswith('org.mpris.MediaPlayer2.')):
     try:
@@ -26,7 +26,14 @@ if not players: raise Exception('Open your music player first; no compatible pla
 if len(players) != 1: raise Exception('Several music players are available. Leave one playing so Matilda can use the right one.')
 name, obj, props = players[0]
 player = dbus.Interface(obj, 'org.mpris.MediaPlayer2.Player')
-if action != 'read':
+if action == 'volume':
+    if not props.get('CanControl', False) or 'Volume' not in props: raise Exception('This player does not support volume controls.')
+    target = float(volume)
+    if target < 0: raise Exception('This player volume is invalid.')
+    dbus.Interface(obj, 'org.freedesktop.DBus.Properties').Set('org.mpris.MediaPlayer2.Player', 'Volume', dbus.Double(target), timeout=2)
+    props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties').GetAll('org.mpris.MediaPlayer2.Player', timeout=2)
+    if abs(float(props.get('Volume', -1)) - target) > 0.000001: raise Exception('The player has not confirmed this volume change.')
+elif action != 'read':
     if not props.get('CanControl', False): raise Exception('This player does not support music controls.')
     capability = {'play': 'CanPlay', 'pause': 'CanPause', 'next': 'CanGoNext', 'open': 'CanPlay'}[action]
     if not props.get(capability, False): raise Exception('This player does not support that action.')
@@ -49,14 +56,14 @@ if action != 'read':
     elif action == 'next': player.Next(timeout=2)
     props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties').GetAll('org.mpris.MediaPlayer2.Player', timeout=2)
 meta = props.get('Metadata', {})
-print(json.dumps({'player': name, 'title': str(meta.get('xesam:title', '')), 'artist': ', '.join(str(a) for a in meta.get('xesam:artist', [])), 'uri': str(meta.get('xesam:url', '')), 'status': str(props.get('PlaybackStatus', 'Stopped')), 'canPlay': bool(props.get('CanPlay')), 'canPause': bool(props.get('CanPause')), 'canNext': bool(props.get('CanGoNext'))}))
+print(json.dumps({'player': name, 'title': str(meta.get('xesam:title', '')), 'artist': ', '.join(str(a) for a in meta.get('xesam:artist', [])), 'uri': str(meta.get('xesam:url', '')), 'status': str(props.get('PlaybackStatus', 'Stopped')), 'canPlay': bool(props.get('CanPlay')), 'canPause': bool(props.get('CanPause')), 'canNext': bool(props.get('CanGoNext')), 'volume': float(props['Volume']) if 'Volume' in props else None, 'canMute': bool(props.get('CanControl')) and 'Volume' in props}))
 `;
 
 export function createMatildaCompanion({ store, env = process.env }) {
-  async function music(action = 'read', favorite) {
+  async function music(action = 'read', favorite, volume) {
     if (process.platform !== 'linux') throw new BridgeError('Music controls currently need a Linux MPRIS player.');
     try {
-      const { stdout } = await exec('python3', ['-c', MPRIS, action, favorite?.player ?? '', favorite?.uri ?? ''], { env, timeout: 6000, maxBuffer: 128 * 1024 });
+      const { stdout } = await exec('python3', ['-c', MPRIS, action, favorite?.player ?? '', favorite?.uri ?? '', volume === undefined ? '' : String(volume)], { env, timeout: 6000, maxBuffer: 128 * 1024 });
       return JSON.parse(stdout);
     } catch (cause) {
       const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
@@ -68,6 +75,10 @@ export function createMatildaCompanion({ store, env = process.env }) {
     const saved = await store.companion(), pinned = saved.pinned.length > 0;
     let reason = '';
     if (pinned && !track) try { track = await music(); } catch (cause) { reason = cause.message; }
+    if (track) {
+      const volume = track.volume, previous = saved.musicVolumes?.[track.player];
+      track = { ...track, muted: volume === 0, canMute: track.canMute && Number.isFinite(volume) && (volume > 0 || (volume === 0 && Number.isFinite(previous) && previous > 0)) };
+    }
     return { pinned, favorite: saved.favorite, music: pinned || track ? track ?? null : null, reason, threadId: await store.chat(), face: pinned ? FACE_DATA_URL : undefined };
   }
   async function act(input) {
@@ -89,6 +100,14 @@ export function createMatildaCompanion({ store, env = process.env }) {
       if (!favorite) throw new BridgeError('Play a track and ask me to remember this song as your favorite first.');
       if (!/^(file|https?):\/\//.test(favorite.uri ?? '') || !/^org\.mpris\.MediaPlayer2\.[\w.-]+$/.test(favorite.player ?? '')) throw new BridgeError('The saved favorite is invalid. Remember the track again.');
       return state(page, await music('open', favorite));
+    }
+    if (action === 'toggle-mute') {
+      const track = await music(), saved = await store.companion();
+      const previous = saved.musicVolumes?.[track.player];
+      if (!track.canMute || !Number.isFinite(track.volume) || track.volume < 0) throw new BridgeError('This player does not support volume controls.');
+      if (track.volume === 0 && (!Number.isFinite(previous) || previous <= 0)) throw new BridgeError('This player is muted, but its previous volume is unknown. Unmute it in the music player first.');
+      if (track.volume > 0) await store.companion(current => ({ ...current, musicVolumes: { ...current.musicVolumes, [track.player]: track.volume } }));
+      return state(page, await music('volume', track, track.volume > 0 ? 0 : previous));
     }
     if (['play', 'pause', 'next'].includes(action)) return state(page, await music(action));
     throw new BridgeError('Unknown Matilda action.');

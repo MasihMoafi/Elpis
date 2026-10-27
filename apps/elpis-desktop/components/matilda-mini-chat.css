@@ -1,0 +1,12 @@
+.matilda-mini-popup { width:min(340px, calc(100vw - 24px)); padding:8px; }
+.matilda-mini-chat { min-width:0; font-size:var(--text-small); }
+.matilda-mini-composer { display:flex; align-items:center; gap:6px; min-height:36px; }
+.matilda-mini-composer textarea { min-width:0; min-height:32px; max-height:96px; flex:1; padding:6px 8px; resize:none; border:0; box-shadow:none; background:transparent; }
+.matilda-mini-composer textarea:focus-visible { outline:none; }
+.matilda-mini-messages { display:flex; flex-direction:column; gap:12px; max-height:min(220px, 35vh); overflow:auto; padding:4px 6px 12px; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
+.matilda-mini-message { min-width:0; }
+.matilda-mini-message[data-speaker="you"] { align-self:flex-end; max-width:90%; padding:6px 8px; background:var(--selected); }
+.matilda-mini-message :is(p,ul,ol,pre) { margin-block:4px; }
+.matilda-mini-message pre { max-width:100%; overflow:auto; }
+.matilda-mini-status { padding:6px 8px; color:var(--muted-foreground); }
+.matilda-mini-error { display:flex; align-items:center; gap:8px; padding:6px 8px; color:var(--destructive); overflow-wrap:anywhere; }

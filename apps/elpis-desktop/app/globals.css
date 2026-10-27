@@ -793,10 +793,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-link:focus-visible { outline:none; }
 .thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
 .thread-row.selected { background:var(--selected); }
-.row-hover-actions { display:none; align-items:center; flex-shrink:0; }
-.thread-row:hover .row-hover-actions, .thread-row:focus-within .row-hover-actions { display:inline-flex; }
-.row-hover-actions button { color:var(--muted-foreground); }
-.row-hover-actions button:hover { color:var(--primary); }
 .thread-bookmark { position:absolute; right:7px; top:50%; transform:translateY(-50%); color:var(--primary); pointer-events:none; }
 .thread-row:has(.thread-bookmark) .thread-actions { opacity:0; }
 .thread-row:has(.thread-bookmark):is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-actions { opacity:1; }
@@ -813,18 +809,18 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-dot.workflow-mark { display:inline-block; margin:0 3px; border-color:var(--workflow-colour); background:var(--workflow-colour); vertical-align:middle; }
 .conversation-state-slot { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:20px; height:24px; margin-left:20px; }
 .conversation-state-slot .thread-dot { margin:0; }
-.thread-row > button.conversation-colour-trigger[aria-expanded] { position:relative; left:auto; flex-shrink:0; width:24px; height:24px; margin:0; padding:0; color:var(--muted-foreground); }
-.conversation-colour-trigger .conversation-colour-swatch { position:absolute; right:0; bottom:1px; width:6px; height:6px; }
-.conversation-colour-trigger .conversation-colour-swatch:not([data-colour]) { opacity:0; }
 .conversation-colour-swatch { display:inline-block; flex-shrink:0; box-sizing:border-box; width:9px; height:9px; border:1.5px solid var(--workflow-colour, var(--subtle-foreground)); border-radius:50%; background:var(--workflow-colour, transparent); }
 .thread-row > .conversation-status { margin:0 2px; }
 
-:is(.workflow-mark, .conversation-colour-swatch)[data-colour="blue"] { --workflow-colour:light-dark(#2458b8,#8bb7ff); }
-:is(.workflow-mark, .conversation-colour-swatch)[data-colour="teal"] { --workflow-colour:light-dark(#146b67,#68d4c7); }
-:is(.workflow-mark, .conversation-colour-swatch)[data-colour="violet"] { --workflow-colour:light-dark(#6b44ac,#c1a0fa); }
-:is(.workflow-mark, .conversation-colour-swatch)[data-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
-:is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
-:is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"] { --workflow-colour:var(--brand-accent); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="blue"], .thread-row[data-conversation-colour="blue"] { --workflow-colour:light-dark(#2458b8,#8bb7ff); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="teal"], .thread-row[data-conversation-colour="teal"] { --workflow-colour:light-dark(#146b67,#68d4c7); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="violet"], .thread-row[data-conversation-colour="violet"] { --workflow-colour:light-dark(#6b44ac,#c1a0fa); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="rose"], .thread-row[data-conversation-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"], .thread-row[data-conversation-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"], .thread-row[data-conversation-colour="amber"] { --workflow-colour:var(--brand-accent); }
+.thread-row[data-conversation-colour] { background:color-mix(in oklch, var(--workflow-colour) 12%, var(--sidebar)); }
+.thread-row[data-conversation-colour]:is(:hover, [data-popup-open], :focus-within) { background:color-mix(in oklch, var(--workflow-colour) 18%, var(--sidebar)); }
+.thread-row[data-conversation-colour].active { background:color-mix(in oklch, var(--workflow-colour) 22%, var(--selected)); }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }

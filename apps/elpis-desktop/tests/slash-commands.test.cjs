@@ -95,8 +95,8 @@ const card = panel => panel.locator('dl > div').evaluateAll(rows => Object.fromE
 /** Typing after a command goes to the composer, wherever the command left the focus. */
 async function typesIntoComposer(page, composer, text) { await page.keyboard.type(text); assert.equal(await composer.inputValue(), text, 'typing goes to the composer'); await composer.fill(''); }
 
-const NEW_CHAT = ['/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/config', '/theme', '/mcp', '/rag'];
-const OPEN_CHAT = ['/btw', '/recap', '/goal', '/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/config', '/theme', '/mcp', '/rag'];
+const NEW_CHAT = ['/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/new', '/clear', '/resume', '/init', '/prune', '/plan', '/status', '/usage', '/config', '/theme', '/mcp', '/rag'];
+const OPEN_CHAT = ['/btw', '/recap', '/goal', '/model', '/fast', '/effort', '/pruner-model', '/memory-model', '/permissions', '/yolo', '/settings', '/memories', '/personal', '/hooks', '/review', '/rename', '/new', '/clear', '/archive', '/delete', '/resume', '/fork', '/init', '/compact', '/prune', '/plan', '/agent', '/copy', '/export', '/diff', '/status', '/pwd', '/usage', '/context', '/config', '/theme', '/mcp', '/rag'];
 const RUNNING_TURN = OPEN_CHAT.filter(name => !['/review', '/init', '/prune', '/fork', '/rag', '/export'].includes(name));
 
 test('"/" lists the terminal\'s commands the app can run, in its order: a new chat, an open chat, and one with a turn running', async () => {
@@ -436,6 +436,16 @@ test('in a chat, /fork, /rename, /delete, /archive and /new act on that chat, an
     await run('/new');
     await page.getByText('What should we build?', { exact: true }).waitFor();
     assert.equal(await focused(page), 'textarea:Message Elpis');
+    await openChat();
+    await run('/clear');
+    await page.getByText('What should we build?', { exact: true }).waitFor();
+    assert.equal(await page.getByText('The cache is fixed.', { exact: true }).count(), 0, 'clear starts a fresh context');
+    await run('/pwd');
+    await page.getByText('Current working directory: /tmp/elpis-fixture', { exact: true }).waitFor();
+    assert.equal(sentTo('/api/threads/chat/delete').length, 0, 'clear does not delete the previous chat');
+    assert.equal(sentTo('/api/threads/chat/archive').length, 0, 'clear does not archive the previous chat');
+    await openChat();
+    await page.getByText('The cache is fixed.', { exact: true }).waitFor();
     assert.equal(turns().length, 0, 'no command is sent as a message');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }

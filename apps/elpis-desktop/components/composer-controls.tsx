@@ -34,7 +34,6 @@ export function PermissionsMenu({ mode, disabled, managed, onChange }: { mode: P
         <current.Icon size={14} aria-hidden="true" /><span className="pill-long">{current.label}</span><span className="pill-short">{current.short}</span><ChevronDown size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="hud-menu w-80">
-        <p className="hud-menu-title">How should Elpis's actions be approved?</p>
         {PERMISSION_MODES.map(item => <DropdownMenuItem key={item.id} disabled={!permissionAllowed(item.id, managed)} title={!permissionAllowed(item.id, managed) ? "Restricted by managed settings" : undefined} onClick={() => item.id === "bypass" && mode !== "bypass" ? setConfirming(true) : onChange(item.id)} className={`hud-menu-item ${dangerous(item.id)}`}>
           <item.Icon aria-hidden="true" className={dangerous(item.id)} />
           <span className="grid gap-0.5"><span>{item.label}</span><small>{item.description}</small></span>

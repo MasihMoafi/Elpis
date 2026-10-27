@@ -71,7 +71,7 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
     assert.equal(new Set(names).size, 4, 'legacy duplicate run names get distinct display names');
     assert.ok(names.includes('Fix a bug 2'));
     assert.equal(await workflows(page).locator('.workflow-mark').count(), 0, 'workflow names and their section identify them without extra coloured dots');
-    assert.equal(await workflows(page).getByRole('button', { name: /^Colour for / }).count(), 4, 'each conversation has one explicit manual colour action, separate from runtime status');
+    assert.equal(await workflows(page).getByRole('button', { name: /^Colour for / }).count(), 0, 'manual colour belongs to the context menu, separate from runtime status');
     await sidebar(page).locator('section[aria-label="Projects"]').getByRole('button', { name: 'Projects', exact: true }).click();
     await page.mouse.move(800, 90);
     await shot(page, `sidebar-default-${colorScheme}`);
@@ -171,7 +171,7 @@ test('workflow names reject duplicates; canvas colour and separate sidebar names
     await eventually(async () => assert.equal(await markColor(canvas.locator('.iso-label[data-for="mother"] .workflow-mark')), await markColor(header)));
     await shot(page, 'identity-iso-dark');
     await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
-    assert.equal(await row(page, 'root-1').getByRole('button', { name: /^Colour for / }).count(), 1);
+    assert.equal(await row(page, 'root-1').getByRole('button', { name: /^Colour for / }).count(), 0);
     await row(page, 'root-1').locator('.thread-actions').click();
     await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
     const rename = page.getByRole('alertdialog', { name: 'Rename conversation', exact: true });
@@ -333,7 +333,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
   const saved = { id: 'observed-run', rootThreadId: 'chat-a', name: 'Observed team', status: 'failed', tasks: [
     { id: 'inspect', title: 'Inspect evidence', kind: 'research', assignedThreadId: 'observed-child', status: 'failed', failureReason: 'Previous attempt reached the weekly limit.', writeScopes: [], acceptanceCriteria: [], dependsOn: [] },
   ] };
-  let working = true;
+  let working = true, rootHistoryReads = 0;
   const mother = () => base('chat-a', saved.name, working);
   const child = () => ({ ...base('observed-child', 'Evidence agent', working), parentThreadId: 'chat-a' });
   const helper = () => ({ ...base('observed-helper', 'Source checker', working), parentThreadId: 'observed-child' });
@@ -341,7 +341,7 @@ test('failed workflow follows a resumed agent and paginated descendants without 
   const f = await open('light', [saved], {}, {}, {
     '/api/workflows': () => ({ data: [saved] }),
     '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? url.searchParams.has('cursor') ? [helper(), other] : [child()] : [mother(), child()], nextCursor: url.searchParams.has('ancestorThreadId') && !url.searchParams.has('cursor') ? 'second-page' : null }),
-    '/api/threads/chat-a': () => ({ thread: mother(), data: [{ turnId: 'mother-turn', item: { id: 'mother-update', type: 'agentMessage', text: 'The evidence agent is checking the source material.' }, completedAtMs: 200 }], nextCursor: null }),
+    '/api/threads/chat-a': (_body, url) => { if (url.searchParams.get('limit') === '100') rootHistoryReads++; return { thread: mother(), data: [{ turnId: 'mother-turn', item: { id: 'mother-update', type: 'agentMessage', text: 'The evidence agent is checking the source material.' }, completedAtMs: 200 }], nextCursor: null }; },
     '/api/threads/observed-child': () => ({ thread: child(), data: [], nextCursor: null }),
     '/api/threads/observed-helper': () => ({ thread: helper(), data: [], nextCursor: null }),
   });
@@ -354,6 +354,34 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await progress.getByText('Mother', { exact: true }).waitFor();
     await progress.getByText('Source checker', { exact: true }).waitFor();
     await progress.getByText(/Mother: The evidence agent is checking/).waitFor();
+    for (const colorScheme of ['light', 'dark']) {
+      if (await sidebar(page).getByRole('button', { name: `Use ${colorScheme} theme`, exact: true }).count()) await chooseTheme(page, colorScheme);
+      for (const width of [1440, 820]) {
+        await page.setViewportSize({ width, height: 900 });
+        const columns = await progress.locator('.workflow-progress-row').evaluateAll(rows => rows.map(row => {
+          const status = row.querySelector('.workflow-progress-status').getBoundingClientRect(), open = row.querySelector('button').getBoundingClientRect(), identity = row.querySelector('.agent-identity').getBoundingClientRect();
+          return { statusX: status.x, actionX: open.x, actionRight: open.right, identityRight: identity.right };
+        }));
+        assert.equal(columns.length, 3, 'Mother, child and nested child share the row layout');
+        for (const column of columns) {
+          assert.ok(Math.abs(column.statusX - columns[0].statusX) <= 1, `${colorScheme}/${width}: statuses share a column`);
+          assert.ok(Math.abs(column.actionX - columns[0].actionX) <= 1 && Math.abs(column.actionRight - columns[0].actionRight) <= 1, `${colorScheme}/${width}: Open buttons share a column`);
+          assert.ok(column.identityRight <= column.statusX, `${colorScheme}/${width}: identity fits before status`);
+        }
+      }
+    }
+    await chooseTheme(page, 'light'); await page.setViewportSize({ width: 1440, height: 900 });
+    await eventually(async () => assert.ok(f.posts.some(post => post.path === '/api/threads/chat-a/resume')));
+    const beforeOpen = { history: rootHistoryReads, resumes: f.posts.filter(post => post.path === '/api/threads/chat-a/resume').length };
+    await f.composer.fill('Keep this unsent draft');
+    for (const target of [progress.getByRole('button', { name: 'Open Mother chat', exact: true }), row(page, 'chat-a').locator('.thread-link')]) {
+      await target.click(); await target.click();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(rootHistoryReads, beforeOpen.history, 'opening the visible chat does not reload its history');
+      assert.equal(f.posts.filter(post => post.path === '/api/threads/chat-a/resume').length, beforeOpen.resumes, 'opening the visible chat does not resume it again');
+      assert.equal(await f.composer.inputValue(), 'Keep this unsent draft');
+      assert.equal(await f.shown(), 'chat-a');
+    }
     assert.equal(await progress.getByText('Unrelated workflow worker', { exact: true }).count(), 0, 'another run cannot enter this team');
     assert.equal(await summary.getByRole('button', { name: 'Resume workflow', exact: true }).isDisabled(), true, 'a resumed child prevents duplicate recovery');
     await shot(page, 'resumed-team-chat');
