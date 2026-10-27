@@ -92,7 +92,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { appStorage, readProjectChats, readProjects, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
 import { ResizeEdge } from "@/components/resize-edge";
 import { TaskList, type TaskPlan } from "@/components/task-list";
-import { chatOrigin } from "@/lib/love-activity";
+import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
@@ -332,6 +332,7 @@ export default function Home() {
     return () => { disposed = true; clearTimeout(timer); };
   }, [ready, searchTerm]);
   const [busy, setBusy] = useState(false);
+  const sending = useRef(0);
   const [loading, setLoading] = useState(false);
   const savedDraft = useCallback((id: string) => drafts.current[id] ?? readDraft(id), []);
   const saveDraft = useCallback((id: string, value: string) => {
@@ -935,7 +936,8 @@ export default function Home() {
   const visibleSlashNotice = fastSuccess && (fastNoticeOwner.current !== commandNoticeScope || (fastSuccess[1] === "on") !== fastOn) ? "" : slashNotice;
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
-  const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
+  const canSendFollowUp = !!selected && !!activeTurn && !continues;
+  const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || (busy && (!canSendFollowUp || shellMode)) || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
   const recoveryAttachments = selected ? attachmentDrafts.current[`recovery-${selected.id}`] ?? [] : [];
 
   const find = (id?: string | null) => id ? threads.find(thread => thread.id === id) ?? related[id] : undefined;
@@ -1211,11 +1213,11 @@ export default function Home() {
     const sideQuestion = own === undefined ? /^\/btw(?:[\s:,.]\s*([\s\S]*))?$/i.exec(textRef.current.trim()) : null;
     if (sideQuestion) { if (selected) editDraft(""); askSideQuestion(sideQuestion[1]); return; }
     const outgoing = own ?? textRef.current, files = own === undefined ? attachmentsRef.current : [];
-    if ((!outgoing.trim() && !files.length) || busy || dictating || attaching || projectChanging) return;
+    if ((!outgoing.trim() && !files.length) || (busy && !canSendFollowUp) || dictating || attaching || projectChanging) return;
     if (imageBlocked && own === undefined) return; // the box already says why
     if (missingChoiceNotice) return;
     if (needsModelId && !model.trim()) { setError("Enter a model ID for the selected provider."); return; }
-    setBusy(true); setError("");
+    sending.current++; setBusy(true); setError("");
     const sentText = outgoing, sentAttachments = [...files];
     const sentMentions = own === undefined ? usedMentions(outgoing, [...pickedMentions.current.values()]) : [];
     pickedMentions.current = new Map();
@@ -1294,7 +1296,7 @@ export default function Home() {
       if (errorThreadId) setRuntimeNotices(previous => ({ ...previous, [errorThreadId!]: e instanceof Error ? e.message : String(e) }));
       else if (originalRequest === request.current) setError(String(e instanceof Error ? e.message : e));
     } finally {
-      setBusy(false);
+      sending.current--; setBusy(sending.current > 0);
       if (request.current === originalRequest && (errorThreadId ? selectedRef.current?.id === errorThreadId : !selectedRef.current)) restoreComposerFocus(originalFocus);
     }
   }
@@ -2133,7 +2135,7 @@ export default function Home() {
         <>{isAgent(thread) || workflowSteps.has(thread.id) ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={thread.model} provider={thread.modelProvider} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
-        {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
+        {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state !== "idle" && <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
@@ -2309,7 +2311,7 @@ export default function Home() {
                 {tabs.tabs.map(chatTab)}
               </TabStrip>
             : chatActions(<div className="header-title-row" />, <h1>{heading}</h1>)}
-          {view === "chat" && selected && chatOrigin(selected, loveActivity.threads) === "Love Spot" && <Button variant="ghost" size="xs" className="thread-origin" data-origin="Love Spot" onClick={() => show("loveSpot")}><LoveSpotIcon size={13} />Love Spot</Button>}
+          {view === "chat" && selected && originLabel(chatOrigin(selected, loveActivity.threads), title(selected)) === "Love Spot" && <Button variant="ghost" size="xs" className="thread-origin" data-origin="Love Spot" onClick={() => show("loveSpot")}><LoveSpotIcon size={13} />Love Spot</Button>}
           {view === "chat" && selected && meta && <p className="thread-meta">{meta}</p>}
           {view === "chat" && selected && (selected.parentThreadId || selected.forkedFromId) && <p className="thread-links">
             {selected.parentThreadId && <Button variant="link" size="xs" aria-label={`Open parent: ${parent ? title(parent) : "parent conversation"}`} onClick={() => openById(selected.parentThreadId!)}>Agent of {parent ? title(parent) : "its parent conversation"}</Button>}

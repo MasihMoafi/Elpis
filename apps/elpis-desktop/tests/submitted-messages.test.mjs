@@ -72,3 +72,21 @@ test('messages sent one after another while the agent works stay in the order se
   const recorded = entry('active', 'first-echo', 'First');
   assert.deepEqual(withSubmittedMessages([ask, work, recorded], [first, second], 'chat').map(item => item.item.id), ['ask', 'work', 'first-echo', 'second'], 'a later one stays below an earlier one the engine has recorded');
 });
+
+test('recorded steering echoes stay after the work the person saw, even when history groups prompts first', () => {
+  const ask = entry('active', 'ask', 'Build it'), work = { turnId: 'active', item: { id: 'work', type: 'agentMessage', text: 'Already visible' } };
+  const first = entry('active', 'echo-first', 'First'), second = entry('active', 'echo-second', 'Second');
+  const submissions = ['First', 'Second'].map((text, index) => sent({ key: `local-${index}`, turnId: 'active', newTurn: false, content: submittedContent(text, []), previousKeys: [entryKey(ask), entryKey(work)] }));
+  const history = [ask, first, second, work];
+  const remembered = rememberSubmittedMessages(history, submissions, 'chat');
+  assert.deepEqual(withSubmittedMessages(history, remembered, 'chat').map(e => e.item.id), ['ask', 'work', 'echo-first', 'echo-second']);
+});
+
+test('a turn’s original submission cannot duplicate a later steering echo when it adds client identity', () => {
+  const ask = entry('active', 'ask', 'Build it'), work = { turnId: 'active', item: { id: 'work', type: 'agentMessage', text: 'Already visible' } }, echo = entry('active', 'echo', 'First');
+  const initial = sent({ key: 'initial', turnId: 'active', content: submittedContent('Build it', []), recorded: entryKey(ask) });
+  const follow = sent({ key: 'follow', turnId: 'active', newTurn: false, content: submittedContent('First', []), previousKeys: [entryKey(ask), entryKey(work)] });
+  const rendered = withSubmittedMessages([ask, work, echo], [initial, follow], 'chat');
+  assert.deepEqual(rendered.map(e => e.item.id), ['ask', 'work', 'echo']);
+  assert.equal(rendered[2].clientKey, 'follow');
+});

@@ -30,3 +30,7 @@ export function chatOrigin(thread: { id: string; name?: string | null }, loveThr
   if (typeof loveThreads[thread.id] === "string" || /^Love Spot(?:\s*[·:]|$)/i.test(thread.name ?? "")) return "Love Spot";
   if (/^Workflows\s*[·:]/i.test(thread.name ?? "")) return "Workflows";
 }
+
+export function originLabel(origin: string | undefined, name: string): string | undefined {
+  return origin && origin.trim().toLowerCase() !== name.trim().toLowerCase() ? origin : undefined;
+}

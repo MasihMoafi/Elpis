@@ -31,7 +31,7 @@ export function rememberSubmittedMessages(entries: Entry[], submissions: Submitt
     if (!found) return sent;
     const recorded = entryKey(found); used.add(recorded);
     if (sent.recorded === recorded) return sent;
-    changed = true; return { ...sent, recorded, turnId: found.turnId, previousKeys: [] };
+    changed = true; return { ...sent, recorded, turnId: found.turnId, previousKeys: sent.newTurn ? [] : sent.previousKeys.slice(-1) };
   });
   return changed ? next : submissions;
 }
@@ -44,12 +44,17 @@ export function withSubmittedMessages(entries: Entry[], submissions: SubmittedMe
     if (sent.scope !== scope) continue;
     const found = matchingEntry(entries, sent, used);
     earlier.add(sent.key);
-    if (found) {
+    if (found && sent.newTurn) {
       used.add(entryKey(found));
-      result = result.map(entry => entry === found ? { ...entry, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}) }
+      result = result.map(entry => entryKey(entry) === entryKey(found) ? { ...entry, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}) }
         : sent.newTurn && entry.turnId === found.turnId ? { ...entry, clientTurnKey: sent.key } : entry);
-    } else if (!sent.failed && !sent.recorded) {
-      const pending: Entry = { turnId: sent.turnId ?? sent.key, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}), clientPending: true, item: { id: sent.key, type: "userMessage", content: sent.content } };
+    } else if (found || !sent.failed && !sent.recorded) {
+      let pending: Entry;
+      if (found) {
+        const key = entryKey(found); used.add(key);
+        pending = { ...(result.find(entry => entryKey(entry) === key) ?? found), clientKey: sent.key };
+        result = result.filter(entry => entryKey(entry) !== key);
+      } else pending = { turnId: sent.turnId ?? sent.key, clientKey: sent.key, ...(sent.newTurn ? { clientTurnKey: sent.key } : {}), clientPending: true, item: { id: sent.key, type: "userMessage", content: sent.content } };
       // A new turn opens with its message; a message sent into a running turn sits right below what was shown when it
       // was sent, including the messages sent before it (R2, R4), so what the agent writes afterwards follows it.
       const seen = new Set(sent.previousKeys);
