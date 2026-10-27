@@ -10,7 +10,11 @@ export function selectPaneContent(event: Pick<KeyboardEvent, "ctrlKey" | "metaKe
   if (target !== field && target.closest("input, textarea, select, [contenteditable='true']")) return;
   event.preventDefault();
   if (field) { field.focus(); field.select(); return; }
+  selectElementContent(pane.querySelector("[data-pane-content]") ?? pane);
+}
+
+/** Select a readable content scope while excluding the rest of the application. */
+export function selectElementContent(pane: Element) {
   const range = document.createRange(), selection = window.getSelection();
-  range.selectNodeContents(pane.querySelector("[data-pane-content]") ?? pane);
-  selection?.removeAllRanges(); selection?.addRange(range);
+  range.selectNodeContents(pane); selection?.removeAllRanges(); selection?.addRange(range);
 }

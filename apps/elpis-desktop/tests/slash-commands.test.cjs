@@ -465,6 +465,28 @@ test('/fast changes OpenAI speed without sending a message, and gives clear on/o
 });
 
 
+test('Fast notices follow confirmed defaults and do not follow the user into a new chat', async () => {
+  const { page, context, errors, openChat, run } = await open();
+  try {
+    await openChat();
+    await page.route('**/api/threads/chat/service-tier', route => route.fulfill({ json: { serviceTier: 'priority', activeTurnApplied: true } }));
+    await run('/fast on');
+    const oldNotice = page.getByText('Fast is on. It uses plan limits faster. Applies from the next request in this turn.', { exact: true });
+    await oldNotice.waitFor();
+    await run('/new');
+    await page.getByText('What should we build?', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Fast mode', exact: true }).getAttribute('aria-pressed'), 'false');
+    assert.equal(await oldNotice.count(), 0, 'the old running chat notice cannot describe a new chat with Fast off');
+    // This fixture confirms standard/default speed despite the requested change.
+    await run('/fast on');
+    await page.getByText('Fast is off. Standard speed is selected.', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Fast mode', exact: true }).getAttribute('aria-pressed'), 'false');
+    assert.deepEqual(posts.filter(post => post.path === '/api/settings').at(-1).body.options, { serviceTier: 'fast' });
+    assert.equal(posts.filter(post => post.path.endsWith('/turns')).length, 0);
+    assert.deepEqual(errors, []);
+  } finally { await context.close(); }
+});
+
 test('the Fast lightning control changes a running turn without sending or losing the draft', async () => {
   const { page, context, errors, composer, openChat } = await open();
   try {

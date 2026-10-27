@@ -86,10 +86,28 @@ test('a chat link written from a repository one folder down opens that file; not
   await refused(readFile(root, 'apps/secret.md'), 404, /No such file/);
 });
 
-test('says so for a binary file or one over 512 KB, instead of sending it; refuses what lies outside the project', async t => {
+test('large UTF-8 text and HTML use a read-only preview beyond the editor limit', async t => {
+  const { root, outside } = await project(); cleanup(t, root, outside);
+  const content = '# Large document\n\n| Item | Result |\n| --- | --- |\n| Report | Ready |\n\n```js\nconst total = 6;\n```\n\n' + 'متن🙂\n'.repeat(60000);
+  assert.ok(Buffer.byteLength(content) > 512 * 1024);
+  for (const name of ['large.md', 'large.txt', 'large.html']) {
+    await fs.writeFile(path.join(root, name), content);
+    const result = await readFile(root, name);
+    assert.equal(result.preview, 'text');
+    assert.equal(result.content, content, 'UTF-8 and source blocks are retained exactly for paging');
+    assert.equal(result.tooLarge, undefined);
+    assert.equal(result.size, Buffer.byteLength(content));
+  }
+  await fs.writeFile(path.join(root, 'huge.txt'), '');
+  await fs.truncate(path.join(root, 'huge.txt'), 31 * 1024 * 1024);
+  const huge = await readFile(root, 'huge.txt');
+  assert.equal(huge.tooLarge, true); assert.equal(huge.content, undefined);
+  assert.equal(huge.limit, 30 * 1024 * 1024);
+});
+
+test('says so for a binary file and refuses what lies outside the project', async t => {
   const { root, outside } = await project(); cleanup(t, root, outside);
   assert.deepEqual(await readFile(root, 'blob.bin'), { path: 'blob.bin', binary: true, size: 5 });
-  assert.deepEqual(await readFile(root, 'big.txt'), { path: 'big.txt', tooLarge: true, size: 600 * 1024 });
   await refused(readFile(root, '../etc/passwd'), 400, /outside/i);
   await refused(readFile(root, path.join(outside, 'secret.txt')), 400, /outside/i);
   await refused(readFile(root, 'escape.txt'), 400, /outside/i);

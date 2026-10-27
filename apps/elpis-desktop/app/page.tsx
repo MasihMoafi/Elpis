@@ -97,7 +97,9 @@ import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
+import { DocumentReviewProvider } from "@/components/document-review";
 import { AgentIdentity } from "@/components/agent-identity";
+import { selectElementContent } from "@/lib/pane-select";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
@@ -636,9 +638,10 @@ export default function Home() {
         const selection = window.getSelection(), anchor = selection?.anchorNode;
         const source = target === document.body ? (anchor instanceof Element ? anchor : anchor?.parentElement) : target;
         const scope = source?.closest(".chat-content, .canvas-error-details, [data-select-all-scope]");
-        if (scope && selection) { const range = document.createRange(); range.selectNodeContents(scope); selection.removeAllRanges(); selection.addRange(range); }
+        if (scope) selectElementContent(scope);
         return;
       }
+      if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
       const hit = shortcutFor(event, typing); if (!hit) return;
       event.preventDefault(); shortcutAction.current(hit.id, hit.index);
     };
@@ -913,6 +916,12 @@ export default function Home() {
   const knownModel = (selected ? selectedChoice?.models : newChoice?.models)?.find(item => item.model === (turnModel || providerSettings?.main.model));
   const fastAvailable = dictationProvider === "openai" && !!fastServiceTier(knownModel ?? models.find(item => item.model === (turnModel || providerSettings?.main.model)));
   const fastOn = ["fast", "priority"].includes((selected ? selected.serviceTier : providerSettings?.options?.serviceTier) ?? "");
+  const commandNoticeScope = JSON.stringify([view, tabs.activeId, selected?.id ?? newDraftKey.current]);
+  const commandNoticeOwner = useRef(commandNoticeScope), fastNoticeOwner = useRef<string | null>(null);
+  commandNoticeOwner.current = commandNoticeScope;
+  useEffect(() => { setSlashNotice(""); }, [commandNoticeScope]);
+  const fastSuccess = /^Fast is (on|off)\./.exec(slashNotice);
+  const visibleSlashNotice = fastSuccess && (fastNoticeOwner.current !== commandNoticeScope || (fastSuccess[1] === "on") !== fastOn) ? "" : slashNotice;
   const imageBlocked = attachments.some(part => part.type === "image") && !!knownModel?.inputModalities && !knownModel.inputModalities.includes("image");
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
   const sendBlocked = readOnlyRun || (!text.trim() && !attachments.length) || busy || dictating || attaching || imageBlocked || !ready || !connected || (!shellMode && (!!missingChoiceNotice || needsModelId && !model.trim()));
@@ -1615,11 +1624,13 @@ export default function Home() {
   ];
   async function chooseFast(args?: string) {
     if (!ready || !connected) return;
+    const owner = commandNoticeOwner.current;
+    const notify = (message: string) => { if (commandNoticeOwner.current === owner) { fastNoticeOwner.current = owner; setSlashNotice(message); } };
     const choice = args?.trim().toLowerCase();
-    if (choice && choice !== 'on' && choice !== 'off') { setSlashNotice('Use /fast, /fast on or /fast off.'); return; }
+    if (choice && choice !== 'on' && choice !== 'off') { notify('Use /fast, /fast on or /fast off.'); return; }
     const provider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
-    if (provider !== 'openai') { setSlashNotice('/fast is available for OpenAI models.'); return; }
-    setBusy(true); setSlashNotice('');
+    if (provider !== 'openai') { notify('/fast is available for OpenAI models.'); return; }
+    setBusy(true); notify('');
     try {
       let serviceTier: string;
       let activeTurnApplied = false, warning: string | undefined;
@@ -1633,12 +1644,12 @@ export default function Home() {
         const enabled = choice ? choice === 'on' : !['fast', 'priority'].includes(current.options?.serviceTier ?? '');
         const chosen = models.find(item => item.model === (turnModel || current.main.model));
         if (enabled && !fastServiceTier(chosen)) throw new Error('This model does not offer Fast on this account.');
-        serviceTier = enabled ? 'fast' : 'default';
-        await saveSettings('/settings', { version: current.version, options: { serviceTier } });
+        const confirmed = await saveSettings('/settings', { version: current.version, options: { serviceTier: enabled ? 'fast' : 'default' } });
+        serviceTier = confirmed.options?.serviceTier ?? 'default';
       }
       const notice = ['fast', 'priority'].includes(serviceTier) ? 'Fast is on. It uses plan limits faster.' : 'Fast is off. Standard speed is selected.';
-      setSlashNotice(warning || notice + (activeTurnApplied ? ' Applies from the next request in this turn.' : ''));
-    } catch (error) { setSlashNotice(error instanceof Error ? error.message : String(error)); }
+      notify(warning || notice + (activeTurnApplied ? ' Applies from the next request in this turn.' : ''));
+    } catch (error) { notify(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   }
   async function chooseGoal(args?: string) {
@@ -2200,7 +2211,7 @@ export default function Home() {
     } });
   for (const [target, name] of [["agentsGuide", "Guide to managing agents"], ["experimentLab", "Lab"], ["canvas", "Workflows"], ["loveSpot", "Love Spot"], ["customize", "Customize"]] as const) if (!hiddenPages.includes(target) && !(target === "agentsGuide" && hiddenPages.includes("canvas"))) commandActions.push({ id: target, name, run: () => show(target) });
 
-  return <div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
+  return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""}${desktop ? " has-title-bar" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
     {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={canBack(history)} canGoForward={canForward(history)} onShortcuts={() => shortcutAction.current("shortcuts")} /><AppUpdate /></div>}
     <ProfileDialog ready={ready && connected} />
@@ -2339,7 +2350,7 @@ export default function Home() {
           {panel === "review" && selected && <ReviewPanel threadId={selected.id} onStart={target => void startReview(selected, target)} onClose={closePanel} />}
           {panel === "diff" && selected && <DiffPanel threadId={selected.id} onClose={closePanel} />}
           </ViewBoundary>
-          {slashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{slashNotice}</p>}
+          {visibleSlashNotice && <p role="status" className="mx-auto mb-2 w-full max-w-[var(--transcript-width,740px)] px-1 text-sm text-muted-foreground">{visibleSlashNotice}</p>}
           {selected && plans[selected.id] && <TaskList plan={plans[selected.id]} running={activeTurns[selected.id] === plans[selected.id].turnId} />}
           <QueuedFollowUps threadId={selected?.id} activeTurnId={activeTurn} onError={setError} onComplete={restoreComposerFocus} onEdit={editQueued} />
           {!selected && <div className="composer-tray"><EnvironmentMenu folder={chatFolder || null} disabled={!ready || busy} worktree={newWorktree} onWorktree={setNewWorktree} /><ProjectMenu variant="chip" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} /></div>}
@@ -2356,6 +2367,8 @@ export default function Home() {
             <Textarea ref={composerRef} aria-label="Message Elpis" {...(mention.open ? mention.inputProps : slash.inputProps)} onBlur={() => { slash.close(); mention.close(); promptKeys.cancel(); }} onSelect={e => setCaret(e.currentTarget.selectionStart)} placeholder={shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something"} value={text} onChange={e => { const value = e.target.value; if (!shellMode && !textRef.current && value.startsWith("!") && !attachmentsRef.current.length) { setShellMode(true); promptKeys.cancel(); editDraft(value.slice(1)); setCaret(value.length - 1); } else { editDraft(value); setCaret(e.target.selectionStart); } }} onPaste={e => { const files = transferFiles(e.clipboardData); if (files.length) { if (!e.clipboardData.getData("text/plain")) e.preventDefault(); void addFiles(files); } }} disabled={projectChanging} onKeyDown={e => { if (shellMode && (e.key === "Escape" || (e.key === "Backspace" && !textRef.current))) { e.preventDefault(); e.stopPropagation(); setShellMode(false); promptKeys.cancel(); return; } if (!ready || !connected) { if (isSendKey(e, preferences)) e.preventDefault(); return; } if (shellMode) { if (isSendKey(e, preferences)) { e.preventDefault(); void sendShell(); } return; } if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && turnEfforts.length && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); e.stopPropagation(); stepEffort(e.key === "ArrowUp" ? 1 : -1); return; } if (mention.onKeyDown(e) || slash.onKeyDown(e) || promptKeys.onKeyDown(e)) return; if (e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); cycleMode(); return; } if (activeTurn && !continues) { const followUp = followUpKey(e, preferences); if (followUp) { e.preventDefault(); send(undefined, followUp); } } else if (isSendKey(e, preferences)) { e.preventDefault(); send(); } }} />
             {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
+                fast={fastAvailable ? { on: fastOn, disabled: !ready || !connected || busy || projectChanging || readOnlyRun, onChange: () => void chooseFast(fastOn ? "off" : "on") } : undefined}
+                effort={turnEfforts.length ? { value: turnEffort, options: turnEfforts, disabled: !ready || !connected || busy, onChange: value => selected ? void saveEffort(selected.id, value) : setEffort(value) } : undefined}
                 onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} managed={settingsSnapshot?.managed} onChange={choosePermissions} />
@@ -2416,5 +2429,5 @@ export default function Home() {
       </div>
       {split.thread && view === "chat" && <iframe key={split.thread.id} ref={split.frame} className="split-session" title="Split session" src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`} />}
     </main>
-  </div>;
+  </div></DocumentReviewProvider>;
 }

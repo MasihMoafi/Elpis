@@ -288,20 +288,25 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByText('openai · gpt-6-luna', { exact: true }).waitFor();
     assert.equal(await summary.getByText('requested-only-model', { exact: false }).count(), 0, 'a configured model is not presented as an observed actual model');
     await summary.getByRole('button', { name: 'Open Inspect Pointt evidence chat', exact: true }).click();
-    await page.locator('.thread-row.active[data-thread-id="legal-step"]').waitFor();
     await page.getByText('Inspected the saved Pointt evidence.', { exact: true }).waitFor();
+    await page.locator('.activity-group > summary').click();
+    await page.locator('.activity-group .step > summary').click();
     await page.getByText('rg --files lat.md', { exact: true }).waitFor();
+    await page.getByText('lat.md/tasks.md', { exact: true }).waitFor();
     await row(page, 'chat-a').locator('.thread-link').click();
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     assert.deepEqual(await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), marks, 'opening an agent chat does not change its identity');
 
+    await shot(page, 'workflow-live-team');
     const before = await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1'));
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="evidence"]').waitFor();
     assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
+    await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     await page.getByRole('region', { name: 'Isometric board', exact: true }).getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await shot(page, 'workflow-recorded-isometric');
     assert.equal(await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1')), before, 'viewing the actual saved run never overwrites an unfinished draft');
     await page.getByRole('button', { name: 'New workflow', exact: true }).click();
     await page.getByRole('textbox', { name: 'Workflow request', exact: true }).waitFor();

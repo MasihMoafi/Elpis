@@ -111,14 +111,14 @@ const assetMime = (real, bytes) => previewType(real) === 'pdf'
 /** Read-only metadata for documents/pictures, or text for the source editor. The asset route rechecks path and type. */
 export async function readFile(cwd, target) {
   const { real, rel, info } = await inside(cwd, target, 'file');
-  const preview = previewType(real), limit = preview ? MAX_PREVIEW : MAX_VIEW;
-  if (info.size > limit) return { path: rel, tooLarge: true, size: info.size, ...(preview ? { limit } : {}) };
+  const preview = previewType(real), limit = MAX_PREVIEW;
+  if (info.size > limit) return { path: rel, tooLarge: true, size: info.size, limit };
   const bytes = await fs.readFile(real).catch(() => { throw new BridgeError('This file cannot be read.'); });
-  if (bytes.length > limit) return { path: rel, tooLarge: true, size: bytes.length, ...(preview ? { limit } : {}) };
+  if (bytes.length > limit) return { path: rel, tooLarge: true, size: bytes.length, limit };
   if (preview) return assetMime(real, bytes) ? { path: rel, preview, size: bytes.length } : { path: rel, binary: true, size: bytes.length };
   const content = bytes.toString('utf8');
   if (bytes.subarray(0, 8000).includes(0) || !Buffer.from(content).equals(bytes)) return { path: rel, binary: true, size: info.size };
-  return { path: rel, content, size: info.size, mtimeMs: info.mtimeMs };
+  return { path: rel, ...(bytes.length > MAX_VIEW ? { preview: 'text' } : {}), content, size: bytes.length, mtimeMs: info.mtimeMs };
 }
 
 /** An authenticated preview response can contain no active HTML, SVG, script or arbitrary file bytes. */

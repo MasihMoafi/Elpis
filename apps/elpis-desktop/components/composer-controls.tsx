@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState, type ElementType, type RefObject } from "react";
-import { AtSign, Check, ChevronDown, SquareSlash, Terminal, X } from "lucide-react";
+import { useEffect, useRef, useState, type ElementType, type RefObject } from "react";
+import { AtSign, Check, ChevronDown, SquareSlash, Terminal, X, Zap } from "lucide-react";
 import { AskIcon, AttachIcon, AutoApproveIcon, BypassIcon, FullAccessIcon, PlanIcon, PlusIcon } from "@/components/elpis-icons";
 import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { FollowUpChoice } from "@/lib/preferences";
 import type { PermissionRequirements } from "@/lib/api";
 import { permissionAllowed } from "../bridge/permission-presets.mjs";
@@ -65,10 +65,20 @@ type PlusActions = { onAttach: () => void; onMention: () => void; onSlash: () =>
 
 /** The "+" menu, as in the ChatGPT and Claude apps, limited to what Elpis runs: files (a picture is a file), an @ mention,
  * the slash commands and Plan mode. Closing it returns the focus to the message box (`returnFocus`). */
-export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, returnFocus, onAttach, onMention, onSlash, onPlan, onShell }: PlusActions & {
+export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, returnFocus, onAttach, onMention, onSlash, onPlan, onShell, fast, effort }: PlusActions & {
   disabled?: boolean; attachDisabled?: boolean;
   slashDisabled?: boolean; plan: boolean; returnFocus: RefObject<HTMLElement | null>;
+  fast?: { on: boolean; disabled: boolean; onChange: () => void };
+  effort?: { value: string; options: string[]; disabled: boolean; onChange: (value: string) => void };
 }) {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const composer = returnFocus.current?.closest(".composer");
+    if (!composer) return;
+    const observer = new ResizeObserver(entries => setCompact(entries[0].contentRect.width <= 640));
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, [returnFocus]);
   // An item that changes the message box (Mention, Slash commands) acts once the menu has closed and given the focus back.
   const afterClose = useRef<(() => void) | null>(null);
   const item = (Icon: ElementType, name: string, hint: string, props: { disabled?: boolean; onClick: () => void }, on?: boolean) =>
@@ -82,6 +92,11 @@ export function PlusMenu({ disabled, attachDisabled, slashDisabled, plan, return
       {item(SquareSlash, "Slash commands", slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review", { disabled: slashDisabled, onClick: () => { afterClose.current = onSlash; } })}
       {item(PlanIcon, "Plan mode", plan ? "Turn plan mode off" : "Turn plan mode on", { onClick: () => onPlan(!plan) }, plan)}
       {item(Terminal, "Run as a shell command", "Run a command directly in this project's shell", { onClick: () => { afterClose.current = onShell; } })}
+      {compact && fast && item(Zap, "Fast mode", fast.on ? "Fast is on" : "Fast is off", { disabled: fast.disabled, onClick: fast.onChange }, fast.on)}
+      {compact && effort && <><p className="hud-menu-title">Reasoning effort</p><DropdownMenuRadioGroup value={effort.value} onValueChange={effort.onChange} aria-label="Reasoning effort">
+        {["", ...effort.options].map(value => <DropdownMenuRadioItem key={value} value={value} disabled={effort.disabled}>{value || "Default effort"}</DropdownMenuRadioItem>)}
+      </DropdownMenuRadioGroup></>}
+
     </DropdownMenuContent>
   </DropdownMenu>;
 }

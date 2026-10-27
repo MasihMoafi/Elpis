@@ -308,3 +308,12 @@ Verification: the installed f608 failed the paste/pause, late-note, unavailable-
 - Recovery preserves the same run, successful tasks and existing worktrees. Mother performs a bounded, visible steering/retry decision for a blocked child; unavailable recovery remains actionable.
 
 Acceptance: targeted bridge and real-browser regressions, both themes for new layout, one local GUI build and standard forward-only installation. Full-suite reruns are outside this repair.
+
+
+## Document review and compact composer — 27 October 2026
+
+- HTML/HTM opens rendered Preview with bounded Source access. Project-local classic CSS/JS supports computed content in an opaque sandbox. No project file changes on preview.
+- UTF-8 text above the 512KB editable limit remains readable in bounded read-only pages, up to the existing 30MB preview cap; image/PDF behavior stays intact. Large Markdown currently uses paged source. Unsupported CSS/module resources are reported.
+- File cards and opened document selections share Mark for agent, Suggest edit and Ask agent to remove. Each creates editable feedback attached to the unfinished composer; sending remains explicit. HTML selection messages are accepted only from that preview frame.
+- Composer controls stay on one row at 600/400/320px; secondary controls move into Plus. Active audio controls remain mounted.
+- Fast feedback follows confirmed state and initiating chat/tab/view. It never describes an off toggle as on.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useDocumentReview } from "@/components/document-review";
 import type { MenuAction } from "@/components/action-menu";
 import { chooseEditor, useEditors, type EditorInfo } from "@/lib/editors";
 
@@ -30,7 +31,11 @@ export function fileActions(target: FileTarget, editors: EditorInfo[], onError: 
 }
 
 /** `fileActions` for a target, with the installed editors the app has. */
-export function useFileActions(target: FileTarget, onError: (message: string) => void, onFiles?: () => void) {
-  const editors = useEditors();
-  return useMemo(() => fileActions(target, editors, onError, onFiles), [target.abs, target.rel, target.inside, target.dir, target.line, editors, onError, onFiles]);
+export function useFileActions(target: FileTarget, onError: (message: string) => void, onFiles?: () => void, selection?: () => string) {
+  const editors = useEditors(), review = useDocumentReview();
+  return useMemo(() => [...fileActions(target, editors, onError, onFiles), ...(!target.dir && review ? [
+    { id: "review-mark", label: "Mark for agent", run: () => review(target.abs, "mark", selection?.() ?? "") },
+    { id: "review-edit", label: "Suggest edit", run: () => review(target.abs, "edit", selection?.() ?? "") },
+    { id: "review-remove", label: "Ask agent to remove", run: () => review(target.abs, "remove", selection?.() ?? "") },
+  ] : [])], [target.abs, target.rel, target.inside, target.dir, target.line, editors, onError, onFiles, review, selection]);
 }

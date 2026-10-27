@@ -10,6 +10,7 @@ export type Entry = { name: string; dir: boolean; link?: boolean };
 export type Listing = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; entries: Entry[] };
 export type Doc =
   | { status: "loading" } | { status: "error"; message: string } | { status: "binary" | "large"; size: number; limit?: number } | { status: "image" | "pdf"; src: string }
+  | { status: "preview"; text: string; size: number }
   | { status: "ready"; text: string; saved: string; mtimeMs: number; eol: "\n" | "\r\n"; saving: boolean; saveError: string };
 /** A file in the tab strip. A preview is replaced by the next file previewed; `focus` counts the times the lines were asked for. */
 export type OpenFile = { path: string; preview: boolean; line?: number; endLine?: number; focus: number; view?: "source" | "preview" };
@@ -117,11 +118,12 @@ export async function loadDoc(cwd: string, path: string) {
   if (!known || known.status !== "ready") set({ docs: { ...state.docs, [key]: { status: "loading" } } });
   try {
     const source = location(cwd, path);
-    const result = await api<{ content?: string; image?: string; preview?: "pdf" | "image"; binary?: boolean; tooLarge?: boolean; size: number; limit?: number; mtimeMs?: number }>(`/file?cwd=${enc(source.cwd)}&path=${enc(source.path)}`);
+    const result = await api<{ content?: string; image?: string; preview?: "pdf" | "image" | "text"; binary?: boolean; tooLarge?: boolean; size: number; limit?: number; mtimeMs?: number }>(`/file?cwd=${enc(source.cwd)}&path=${enc(source.path)}`);
     if (isDirty(state.docs[key])) return;
     if (result.preview === "pdf" || result.preview === "image") { set({ docs: { ...state.docs, [key]: { status: result.preview, src: fileAssetUrl(source.cwd, source.path) } } }); return; }
     if (typeof result.image === "string" && result.image.startsWith("data:image/")) { set({ docs: { ...state.docs, [key]: { status: "image", src: result.image } } }); return; }
     if (result.tooLarge) { set({ docs: { ...state.docs, [key]: { status: "large", size: result.size, limit: result.limit } } }); return; }
+    if (result.preview === "text" && typeof result.content === "string") { set({ docs: { ...state.docs, [key]: { status: "preview", text: result.content, size: result.size } } }); return; }
     if (result.binary || typeof result.content !== "string" || typeof result.mtimeMs !== "number") { set({ docs: { ...state.docs, [key]: { status: "binary", size: result.size } } }); return; }
     const text = FRESH(result.content), now = state.docs[key];
     if (now?.status === "ready" && now.saved === text && now.mtimeMs === result.mtimeMs) return;

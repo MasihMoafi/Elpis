@@ -56,3 +56,31 @@ test('a viewed image is a thumbnail on its folded row and in its step; a created
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+
+test('a created document can be marked or given an edit/removal request without sending unfinished text', async () => {
+  const f = await fixture({ chat: [['t1', 'Make a report.', 'The report is ready.', WORK]] });
+  try {
+    const { page } = f;
+    await f.open('chat-a');
+    const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+    await input.fill('Keep this unfinished question.');
+    await page.getByRole('button', { name: 'More actions for report.html', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Mark for agent', exact: true }).click();
+    const review = page.getByRole('alertdialog', { name: 'Document feedback', exact: true });
+    await review.getByRole('textbox', { name: 'Selected passage', exact: true }).fill('The cited evidence is incomplete.');
+    await review.getByRole('textbox', { name: 'Instructions for the agent', exact: true }).fill('Replace this conclusion after checking the sources.');
+    await review.getByRole('button', { name: 'Add to message', exact: true }).click();
+    await review.waitFor({ state: 'hidden' });
+    assert.equal(await input.inputValue(), 'Keep this unfinished question.');
+    await page.getByText('Feedback on report.html', { exact: true }).waitFor();
+    assert.equal(f.posts.some(post => /\/turns$/.test(post.path)), false, 'feedback never sends an unfinished composer');
+    await page.getByRole('button', { name: 'More actions for report.html', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Ask agent to remove', exact: true }).click();
+    await review.getByRole('textbox', { name: 'Instructions for the agent', exact: true }).waitFor();
+    assert.match(await review.getByRole('textbox', { name: 'Instructions for the agent', exact: true }).inputValue(), /remove/i);
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: 'Open report.html', exact: true }).count(), 1, 'a suggestion does not delete the document');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

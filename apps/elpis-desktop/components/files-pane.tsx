@@ -8,6 +8,7 @@ import { useFileActions } from "@/components/file-actions";
 import { fileKind } from "@/components/file-cards";
 import { FileEditor } from "@/components/file-editor";
 import { MarkdownText } from "@/components/markdown-text";
+import { HtmlFilePreview, LargeTextPreview } from "@/components/file-preview";
 import { FileTree } from "@/components/file-tree";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { Button } from "@/components/ui/button";
@@ -24,14 +25,22 @@ const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 /** The open file: its path, Save and Revert while it has unsaved edits, Open in, the file menu, and its text. */
 function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc | undefined }) {
   const [note, setNote] = useState("");
+  const selectedPassage = useRef("");
   const { softWrap } = usePreferences();
   const abs = file.path.startsWith("/") ? file.path : `${cwd.replace(/\/+$/, "")}/${file.path}`, dirty = isDirty(doc), ready = doc?.status === "ready" ? doc : null;
-  const markdown = /\.(md|markdown)$/i.test(file.path), source = file.view === "source";
-  const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), line: file.line }, setNote);
-  useEffect(() => setNote(""), [file.path]);
+  const markdown = /\.(md|markdown)$/i.test(file.path), html = /\.html?$/i.test(file.path), source = file.view === "source";
+  const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), line: file.line }, setNote, undefined, () => selectedPassage.current);
+  const rememberSelection = (event: React.SyntheticEvent<HTMLDivElement>) => {
+    const field = event.target instanceof HTMLTextAreaElement ? event.target : null;
+    if (field) selectedPassage.current = field.value.slice(field.selectionStart, field.selectionEnd);
+    else { const selection = window.getSelection(); if (selection?.anchorNode && event.currentTarget.contains(selection.anchorNode)) selectedPassage.current = selection.toString(); }
+  };
+  useEffect(() => { setNote(""); selectedPassage.current = ""; }, [file.path]);
   let body: React.ReactNode;
   if (!doc || doc.status === "loading") body = <p className="files-note" role="status">Reading the file…</p>;
   else if (doc.status === "error") body = <p className="files-note files-error" role="alert">{doc.message}</p>;
+  else if ((doc.status === "ready" || doc.status === "preview") && html && !source) body = <HtmlFilePreview key={file.path} text={doc.text} file={fileScope(cwd, file.path)} label={`Preview of ${file.path}`} onSelection={text => { selectedPassage.current = text; }} />;
+  else if (doc.status === "preview") body = <LargeTextPreview key={file.path} text={doc.text} />;
   else if (doc.status === "ready") body = markdown && !source
     ? <article className="file-markdown" tabIndex={-1} onKeyDown={selectPaneContent} aria-label={`Preview of ${file.path}`}><MarkdownText text={doc.text} file={fileScope(cwd, file.path)} /></article>
     : <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} />;
@@ -42,7 +51,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   return <>
     <div className="file-view-head">
       <span className="file-view-path" title={abs} dir="ltr">{file.path}</span>
-      {markdown && ready && <div className="file-view-mode" role="group" aria-label="Document view">
+      {(markdown || html) && (ready || doc?.status === "preview" && html) && <div className="file-view-mode" role="group" aria-label="Document view">
         <Button type="button" variant={source ? "ghost" : "secondary"} size="xs" aria-pressed={!source} onClick={() => setFileView(cwd, file.path, "preview")}>Preview</Button>
         <Button type="button" variant={source ? "secondary" : "ghost"} size="xs" aria-pressed={source} onClick={() => setFileView(cwd, file.path, "source")}>Source</Button>
       </div>}
@@ -52,7 +61,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
     </div>
     {note && <p role="alert" className="files-note files-error">{note}</p>}
     {ready?.saveError && <p role="alert" className="files-note files-error">{ready.saveError}</p>}
-    <div className="file-view-body">{body}</div>
+    <div className="file-view-body" onPointerUp={rememberSelection} onKeyUp={rememberSelection}>{body}</div>
   </>;
 }
 

@@ -55,8 +55,8 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) for (const running of [
   });
 }
 
-test('Plan, Fast and voice controls fit beside permissions and model in a narrow running chat', async t => {
-  const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running: true, routes: {
+for (const running of [false, true]) test(`composer options collapse into one row at 600, 400 and 320px (${running ? 'running' : 'idle'})`, async t => {
+  const f = await fixture({ width: 1100, height: 700, colorScheme: 'dark', running, routes: {
     '/api/models': () => ({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], serviceTiers: [{ id: 'priority', name: 'Fast' }] }] }),
     '/api/voice': () => ({ available: true }),
   } });
@@ -66,6 +66,7 @@ test('Plan, Fast and voice controls fit beside permissions and model in a narrow
   await f.page.getByRole('menuitem', { name: /Plan mode/ }).click();
   await f.page.getByRole('button', { name: 'Fast mode', exact: true }).waitFor();
   await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
+  await f.composer.fill('Keep this draft while resizing.');
   for (const width of [1100, 760, 500, 390]) {
     await f.page.setViewportSize({ width, height: 700 });
     const m = await probe(f.page);
@@ -74,11 +75,21 @@ test('Plan, Fast and voice controls fit beside permissions and model in a narrow
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
   }
   await f.page.setViewportSize({ width: 1100, height: 700 });
-  await f.page.locator('.composer').evaluate(element => { element.style.width = '400px'; });
-  const floating = await probe(f.page);
-  assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
-  assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
-  assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
+  for (const width of [600, 400, 320]) {
+    await f.page.locator('.composer').evaluate((element, width) => { element.style.width = `${width}px`; }, width);
+    const floating = await probe(f.page);
+    assert.equal(floating.toolbarRows, 1, `all controls share one row in the ${width}px composer`);
+    assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
+    assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
+    assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
+    assert.equal(await f.composer.inputValue(), 'Keep this draft while resizing.');
+    assert.equal(await f.page.getByRole('button', { name: running ? 'Send follow-up' : 'Send message', exact: true }).isVisible(), true);
+    if (running) assert.equal(await f.page.getByRole('button', { name: 'Stop response', exact: true }).isVisible(), true);
+    await f.page.getByRole('button', { name: 'Add files and more', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: /Fast mode/ }).waitFor();
+    await f.page.getByRole('menuitemradio', { name: 'high', exact: true }).waitFor();
+    await f.page.keyboard.press('Escape');
+  }
   });
 
 test('active composer controls keep a clear gap at the reported window width', async t => {
@@ -121,7 +132,7 @@ for (const model of ['sol', 'claude/claude-sonnet-5-5']) {
     assert.equal(p.shown, true);
     assert.equal(p.leaks, 0, JSON.stringify(p));
     assert.equal(p.overlaps, 0, JSON.stringify(p));
-    assert.ok(p.toolbarRows <= 2, JSON.stringify(p));
+    assert.equal(p.toolbarRows, 1, JSON.stringify(p));
     assert.ok(p.rowOffset <= 4, JSON.stringify(p));
     assert.equal(p.permission, 'Auto', JSON.stringify(p));
     assert.equal(p.model, model);

@@ -187,6 +187,56 @@ test('Markdown opens as a document; source editing and relative links/images kee
   }
 });
 
+test('large HTML previews local styling and computed content in an isolated frame; Source is bounded and read-only', async () => {
+  const f = await open();
+  try {
+    // The real host's default-src 'self' also governs frame navigation; this fixture otherwise has no CSP.
+    await f.page.evaluate(() => { const policy = document.createElement('meta'); policy.httpEquiv = 'Content-Security-Policy'; policy.content = "frame-src 'self'"; document.head.prepend(policy); });
+    const requests = [];
+    f.page.on('request', request => { if (request.url().includes('example.invalid/html-preview-')) requests.push(request.url()); });
+    const html = '<!doctype html><html><head><link rel="stylesheet" href="preview.css"></head><body><h1>Authority proposal</h1><table><tr><th>Measure</th><th>Total</th></tr><tr><td>Votes</td><td>6</td></tr></table><pre><code>const total = 6;</code></pre><button id="compute">Compute total</button><output id="result">Waiting</output><button id="navigate">Navigate away</button><img src="https://example.invalid/html-preview-image"><iframe src="https://example.invalid/html-preview-frame"></iframe><p id="isolation"></p><script>fetch("https://example.invalid/html-preview-fetch").catch(() => {});document.getElementById("isolation").textContent = "Isolated"; try { parent.document.body.dataset.htmlEscaped = "yes"; document.getElementById("isolation").textContent = "Escaped"; } catch {}</script><script src="preview.js"></script><!--' + 'padding '.repeat(80000) + '--></body></html>';
+    assert.ok(Buffer.byteLength(html) > 512 * 1024);
+    await fs.writeFile(path.join(CWD, 'docs/proposal.html'), html);
+    await fs.writeFile(path.join(CWD, 'docs/preview.css'), 'h1 { color: rgb(12, 34, 56); }');
+    await fs.writeFile(path.join(CWD, 'docs/preview.js'), 'document.getElementById("compute").addEventListener("click", () => { document.getElementById("result").textContent = String(2 * 3); }); document.getElementById("navigate").addEventListener("click", () => { location.href = "https://example.invalid/html-preview-navigation"; });');
+    await openFilesTab(f); await f.row('docs').click(); await f.row('proposal.html').click();
+    const frame = f.view.frameLocator('iframe[title="Preview of docs/proposal.html"]');
+    await frame.getByRole('heading', { name: 'Authority proposal' }).waitFor();
+    assert.equal(await frame.getByRole('heading').evaluate(node => getComputedStyle(node).color), 'rgb(12, 34, 56)');
+    assert.deepEqual(await frame.getByRole('cell').allInnerTexts(), ['Votes', '6']);
+    assert.equal(await frame.locator('pre code').innerText(), 'const total = 6;');
+    await frame.getByRole('button', { name: 'Compute total' }).click();
+    await frame.getByText('6', { exact: true }).last().waitFor();
+    assert.equal(await frame.locator('#result').innerText(), '6');
+    assert.equal(await frame.locator('#isolation').innerText(), 'Isolated');
+    assert.equal(await f.page.locator('body').getAttribute('data-html-escaped'), null);
+    assert.equal(await f.view.locator('iframe').getAttribute('sandbox'), 'allow-scripts');
+    await frame.getByRole('button', { name: 'Navigate away' }).click();
+    await f.page.waitForTimeout(150);
+    await frame.getByRole('heading', { name: 'Authority proposal' }).waitFor();
+    assert.deepEqual(requests, [], 'parsing and scripts cannot request external resources or navigate away');
+    await frame.getByRole('heading', { name: 'Authority proposal' }).evaluate(node => {
+      const range = document.createRange(); range.selectNodeContents(node); const selected = window.getSelection(); selected.removeAllRanges(); selected.addRange(range);
+    });
+    await f.view.getByRole('button', { name: 'More file actions', exact: true }).click();
+    await f.page.getByRole('menuitem', { name: 'Suggest edit', exact: true }).click();
+    const review = f.page.getByRole('alertdialog', { name: 'Document feedback', exact: true });
+    assert.equal(await review.getByRole('textbox', { name: 'Selected passage', exact: true }).inputValue(), 'Authority proposal');
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await f.shot('files-large-html-preview');
+    await f.view.getByRole('button', { name: 'Source', exact: true }).click();
+    assert.equal(await f.editor('docs/proposal.html').count(), 0, 'large source never mounts the editor');
+    const source = f.view.getByRole('region', { name: 'Read-only file contents' });
+    assert.ok((await source.innerText()).length < 40000, 'only one bounded page enters the document');
+    await f.view.getByRole('button', { name: 'Next page', exact: true }).click();
+    await f.view.getByText(/Page 2 of/).waitFor();
+    await f.view.getByRole('button', { name: 'Preview', exact: true }).click();
+    await frame.getByRole('heading', { name: 'Authority proposal' }).waitFor();
+    assert.equal(await fs.readFile(path.join(CWD, 'docs/proposal.html'), 'utf8'), html, 'preview and page navigation never write the file');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 /** Two real PDF pages with distinct visible content and proper object offsets. No renderer or inference is involved. */
 function previewPdf() {
   const texts = ['Elpis document preview', 'Second page: previews work'];
@@ -561,7 +611,7 @@ test('with no editor chosen, or none installed, Open in uses the system\'s defau
   } finally { await f.close(); }
 });
 
-test('the tree can be hidden and shown with its button; a file too large or binary says so instead of showing, and an image shows as itself', async () => {
+test('the tree can be hidden and shown; large text is paged, binary says so, and an image shows as itself', async () => {
   await fs.mkdir(CWD, { recursive: true });
   const f = await open();
   try {
@@ -573,7 +623,10 @@ test('the tree can be hidden and shown with its button; a file too large or bina
     await f.row('blob.bin').click();
     await f.view.getByText('This is a binary file, so it is not shown here.').waitFor();
     await f.row('big.txt').click();
-    await f.view.getByText(/over 512 KB, too large to show here/).waitFor();
+    await f.view.getByRole('region', { name: 'Read-only file contents' }).waitFor();
+    assert.equal(await f.editor('big.txt').count(), 0);
+    await f.view.getByRole('button', { name: 'Next page', exact: true }).click();
+    await f.view.getByText(/Page 2 of/).waitFor();
     await f.row('shot.png').click();
     const picture = f.view.getByRole('img', { name: 'shot.png', exact: true });
     await picture.waitFor();
