@@ -213,10 +213,6 @@ test('large HTML previews local styling and computed content in an isolated fram
     assert.equal(await frame.locator('#isolation').innerText(), 'Isolated');
     assert.equal(await f.page.locator('body').getAttribute('data-html-escaped'), null);
     assert.equal(await f.view.locator('iframe').getAttribute('sandbox'), 'allow-scripts');
-    await frame.getByRole('button', { name: 'Navigate away' }).click();
-    await f.page.waitForTimeout(150);
-    await frame.getByRole('heading', { name: 'Authority proposal' }).waitFor();
-    assert.deepEqual(requests, [], 'parsing and scripts cannot request external resources or navigate away');
     await frame.getByRole('heading', { name: 'Authority proposal' }).evaluate(node => {
       const range = document.createRange(); range.selectNodeContents(node); const selected = window.getSelection(); selected.removeAllRanges(); selected.addRange(range);
     });
@@ -225,6 +221,10 @@ test('large HTML previews local styling and computed content in an isolated fram
     const review = f.page.getByRole('alertdialog', { name: 'Document feedback', exact: true });
     assert.equal(await review.getByRole('textbox', { name: 'Selected passage', exact: true }).inputValue(), 'Authority proposal');
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await frame.getByRole('button', { name: 'Navigate away' }).click();
+    await f.page.waitForTimeout(150);
+    await frame.getByRole('heading', { name: 'Authority proposal' }).waitFor();
+    assert.deepEqual(requests, [], 'parsing and scripts cannot request external resources or navigate away');
     await f.shot('files-large-html-preview');
     await f.view.getByRole('button', { name: 'Source', exact: true }).click();
     assert.equal(await f.editor('docs/proposal.html').count(), 0, 'large source never mounts the editor');

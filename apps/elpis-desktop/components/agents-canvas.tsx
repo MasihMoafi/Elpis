@@ -501,7 +501,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   // Where the engine's merge clash stopped the run: the clashing files, by the agent whose work clashed.
   const [clashes, setClashes] = useState<Record<string, string[]>>({});
   // The run log, as Deus Ex's event cards: what started, finished, passed its check or failed, newest last.
-  type LogLine = { at: number; agent?: string; text: string; tone: "start" | "done" | "fail" };
+  type LogLine = { at?: number; agent?: string; text: string; tone: "start" | "done" | "fail" };
   const [log, setLog] = useState<LogLine[]>([]);
   const said = useRef<Record<string, TaskStatus>>({});
   const reports = useRef(new Set<string>()), logList = useRef<HTMLOListElement>(null);
@@ -519,7 +519,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
       setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null }])));
       setRun({ rootThreadId: record.rootThreadId, graphId: record.id, status: record.status, startedAt: record.startedAt ?? record.createdAt ?? Date.now(),
         ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
-      setLog(tasks.map(task => ({ at: Date.now(), agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" })));
+      setLog(tasks.map(task => ({ agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" })));
       setNotice(record.error || tasks.find(task => task.failureReason)?.failureReason || "");
     }).catch(cause => { if (live) setNotice(cause instanceof Error ? cause.message : String(cause)); });
     return () => { live = false; };
@@ -1486,7 +1486,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
       onDoubleClick={event => { const target = event.target as Element; if ((target === event.currentTarget || target.closest(".react-flow")) && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
       <div className="canvas-telemetry">
-        {run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} /></section>}
+        {run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><>{over(run) && !run.endedAt ? <span>Duration not recorded</span> : <RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} />}</></section>}
         {columns.length > 0 && <section className="canvas-order" aria-label="Run order">
           <p className="hud-menu-title" title="In-degree zero starts first; later waves need earlier agents and their checks">Kahn&rsquo;s order</p>
           <ol>{columns.map(({ level, members }) => { const names = members.map(node => node.data.title || "Untitled").join(", "); return <li key={level} data-status={waveState(members)}><span>Wave {level}</span><strong title={names}>{names}</strong></li>; })}</ol>
@@ -1522,7 +1522,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
       {run && <section className="canvas-log-panel" aria-label="Run capture">
         <p className="hud-menu-title">Run log · {log.length} events</p>
         <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
-          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={`Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}><time>+{clock(line.at - run.startedAt)}</time><span title={line.text}>{line.text}</span></Button></li>)}
+          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
         </ol>
       </section>}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}

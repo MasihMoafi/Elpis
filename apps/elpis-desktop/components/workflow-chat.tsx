@@ -55,13 +55,12 @@ export function graphForWorkflow(run: RecordedWorkflow): CanvasGraph {
   return arrange(withMother({ name: run.name || "Workflow", workflowId: run.id, nodes, edges }));
 }
 
-export function WorkflowChat({ run, identity, ready, models = [], threads = [], onOpenChat, onOpenCanvas }: {
+export function WorkflowChat({ run, identity, ready, models = [], onOpenChat, onOpenCanvas }: {
   run: WorkflowRun; identity?: WorkflowIdentity; ready: boolean; models?: Model[]; threads?: readonly Thread[];
   onOpenChat: (threadId: string) => void; onOpenCanvas: (run: WorkflowRun) => void;
 }) {
   const [record, setRecord] = useState<RecordedWorkflow>(run), [error, setError] = useState(""), [pending, setPending] = useState(false), [revision, setRevision] = useState(0);
   const [pick, setPick] = useState({ model: "", choiceId: "" });
-  const agentsById = useMemo(() => new Map(threads.map(thread => [thread.id, thread])), [threads]);
   const settings = useElpisSettings().data;
   const choices = useMemo(() => providerChoices(models, settings as ProviderSettings | null), [models, settings]);
   useEffect(() => {
@@ -104,7 +103,7 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
     {record.error && !tasks.some(task => task.failureReason === record.error) && <p role="alert" className="text-destructive">{record.error}</p>}
     {!tasks.length && <p>No task details have been recorded for this run.</p>}
     <ol className="space-y-3">{tasks.map(task => <li key={task.id} className="space-y-2 rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><AgentIdentity id={task.assignedThreadId || `${record.id}:${task.id}`} name={task.title || task.id} model={task.routing?.actual?.model ?? agentsById.get(task.assignedThreadId ?? "")?.model} provider={task.routing?.actual?.provider ?? agentsById.get(task.assignedThreadId ?? "")?.modelProvider} /><span>{task.status || "not recorded"}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><AgentIdentity id={task.assignedThreadId || `${record.id}:${task.id}`} name={task.title || task.id} model={task.routing?.actual?.model} provider={task.routing?.actual?.provider} /><span>{task.status || "not recorded"}</span></div>
       {!!task.dependsOn?.length && <p className="text-xs text-muted-foreground">After: {task.dependsOn.map(id => tasks.find(item => item.id === id)?.title || id).join(", ")}</p>}
       {task.failureReason && <p className="text-destructive">{task.failureReason}</p>}
       {task.routing?.requested && (task.routing.requested.model !== task.routing.actual?.model || task.routing.requested.provider !== task.routing.actual?.provider) && <p className="text-xs text-muted-foreground">Requested: {task.routing.requested.provider || "not recorded"} / {task.routing.requested.model || "not recorded"}</p>}

@@ -268,7 +268,7 @@ test('a manually named step keeps its name while legacy names use recorded step 
 test('saved failed workflow opens its live team in chat and both canvas views without replacing the draft', async () => {
   const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
     tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.', routing: { actual: { model: 'gpt-6-luna', provider: 'openai' } } },
-      { id: 'synthesis', kind: 'research', title: 'Write next steps', instruction: 'Summarize the evidence.', dependsOn: ['evidence'], writeScopes: [], acceptanceCriteria: ['Return next steps'], assignedThreadId: 'legal-synthesis', status: 'blocked', model: 'requested-only-model' }] };
+      { id: 'synthesis', kind: 'research', title: 'Write next steps', instruction: 'Summarize the evidence.', dependsOn: ['evidence'], writeScopes: [], acceptanceCriteria: ['Return next steps'], assignedThreadId: 'legal-synthesis', status: 'failed', failureReason: 'Claude (ACP) error: You have hit your weekly limit.', model: 'requested-only-model' }] };
   const draft = { ...graph, name: 'Unfinished personal draft', workflowId: 'draft-kept' };
   const f = await open('light', [saved], { 'elpis-workflow-draft-v1': JSON.stringify(draft) }, {}, { '/api/workflows': () => ({ data: [saved] }), '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }),
     '/api/threads/legal-step': () => ({ thread: { ...base('legal-step', 'Inspect Pointt evidence'), model: 'gpt-6-luna', parentThreadId: 'chat-a' }, data: [
@@ -286,6 +286,9 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     const marks = await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
     assert.equal(marks.length, 2); assert.equal(new Set(marks).size, 2, 'different agents have distinct stable marks');
     await summary.getByText('openai · gpt-6-luna', { exact: true }).waitFor();
+    const legacy = summary.locator('li').filter({ has: page.getByText('Write next steps', { exact: true }) });
+    await legacy.getByText('Claude (ACP) error: You have hit your weekly limit.', { exact: true }).waitFor();
+    assert.equal(await legacy.locator('.agent-model').count(), 0, 'a historical failure without recorded routing never borrows the assigned chat’s current OpenAI model');
     assert.equal(await summary.getByText('requested-only-model', { exact: false }).count(), 0, 'a configured model is not presented as an observed actual model');
     await summary.getByRole('button', { name: 'Open Inspect Pointt evidence chat', exact: true }).click();
     await page.getByText('Inspected the saved Pointt evidence.', { exact: true }).waitFor();
@@ -303,10 +306,14 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="evidence"]').waitFor();
+    await board.getByRole('region', { name: 'Run clock', exact: true }).getByText('Duration not recorded', { exact: true }).waitFor();
+    assert.equal(await board.getByRole('log', { name: 'Run log', exact: true }).locator('time').count(), 0, 'a saved task state is not assigned an invented observation timestamp');
     assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
     await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
-    await page.getByRole('region', { name: 'Isometric board', exact: true }).getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
+    await iso.getByRole('button', { name: /^Inspect Pointt evidence:/ }).hover();
+    await iso.locator('.iso-label[data-for="evidence"]').getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     await shot(page, 'workflow-recorded-isometric');
     assert.equal(await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1')), before, 'viewing the actual saved run never overwrites an unfinished draft');
     await page.getByRole('button', { name: 'New workflow', exact: true }).click();
