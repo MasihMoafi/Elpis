@@ -96,8 +96,9 @@ test('every project header has a "+" that starts a new chat in that project', as
 test('every chat keeps its automatic status at the left', async () => {
   await fixture(async ({ page, aside, emit, shoot }) => {
     const row = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first();
-    const dot = id => row(id).locator('.conversation-status');
+    const dot = id => row(id).locator('.conversation-state-slot .thread-dot');
     for (const id of ['t-idle', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} retains its automatic idle status marker`);
+    for (const id of ['t-idle', 't-crypto']) assert.equal(await row(id).locator('.conversation-status').count(), 0, `${id} has nothing to report: its idle ring is not a status`);
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'error']);
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Error']);
     const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
