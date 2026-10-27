@@ -144,3 +144,7 @@ ES.md
 # The desktop app ships its pictures: a build from a clean copy lost its logo on 17 Oct 2026.
 !apps/elpis-desktop/public/**
 !apps/elpis-desktop/desktop/elpis-icon.png
+
+# Agent handoff notes: local only, superseded by ES.md (27 Oct 2026)
+docs/HANDOFF.md
+docs/HANDOFF-WORKTREES.json
