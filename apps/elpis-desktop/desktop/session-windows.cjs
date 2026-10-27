@@ -13,6 +13,7 @@ const { trustedBrowserSender } = require('./browser-policy.cjs');
 const { createThreadOpener, createNewChatOpener, threadId: validThreadId } = require('./open-thread.cjs');
 const { createWindowIpc } = require('./window-ipc.cjs');
 const { registerImprove } = require('./improve.cjs');
+const { createScreenCapture } = require('./screen-capture.cjs');
 const ICON = path.join(__dirname, 'elpis-icon.png');
 const ZOOM = 1.1;
 const TITLE_BAR = { dark: { color: '#0d0e11', symbolColor: '#e6e0d3' }, light: { color: '#f2f2f1', symbolColor: '#252524' } };
@@ -27,6 +28,8 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
   const browsers = createBrowserSessions({ store, browserAgentSocket });
   const documents = createDocuments();
   browserAgentSocket?.setDocuments((id, name, args) => documents.call(id, name, args));
+  const screenCapture = createScreenCapture({ desktopCapturer: electron.desktopCapturer, Menu });
+  browserAgentSocket?.setScreenCapture((id, name, args) => screenCapture.call(id, name, args));
   let loveSpotWindow, openingLoveSpot;
   async function openLoveSpot() {
     if (loveSpotWindow && !loveSpotWindow.isDestroyed()) {
@@ -65,6 +68,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const disposeState = registerState({ host: window, origin, ipcMain, dialog, store });
     const disposeFiles = registerFiles({ host: window, origin, ipcMain, shell });
     const disposeDocuments = documents.attach({ host: window, origin, ipcMain, session: () => browser.sessionId });
+    const disposeScreenCapture = screenCapture.attach({ host: window, origin, ipcMain, session: () => browser.sessionId });
     const disposeTerminal = registerTerminal({ host: window, origin, ipcMain, clipboard });
     const disposeImprove = registerImprove({ host: window, origin, ipcMain });
     const disposeThreads = threads.attach({ host: window, origin, ipcMain });
@@ -115,7 +119,7 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
     const dispose = () => {
       if (disposed) return; disposed = true;
       ipcMain.removeHandler('elpis:session-window');
-      detachContextMenu(); disposeImprove(); disposeDocuments(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeScreenshotPopup(); disposeUpdates(); disposeState(); browser.dispose(); disposeTheme();
+      detachContextMenu(); disposeImprove(); disposeDocuments(); disposeScreenCapture(); disposeFiles(); disposeTerminal(); disposeThreads(); disposeNewChats(); disposeQuickEntry(); disposeScreenshotPopup(); disposeUpdates(); disposeState(); browser.dispose(); disposeTheme();
     };
     let flushingText = false;
     window.on('close', event => {

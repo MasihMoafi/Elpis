@@ -125,6 +125,7 @@
     "desktop/files.test.cjs",
     "desktop/documents.test.cjs",
     "desktop/improve.test.cjs",
+    "desktop/screen-capture.test.cjs",
     "desktop/launch.test.mjs",
     "desktop/media-policy.test.cjs",
     "desktop/open-thread.test.cjs",
@@ -349,6 +350,7 @@
     "tests/chat-labels.test.cjs"
   ],
   "opt-in": [
+    "tests/screen-capture-electron.test.cjs",
     "tests/context-ledger.runtime.mjs",
     "tests/tui-engine.runtime.mjs",
     "tests/missing-earlier-chat.runtime.mjs",

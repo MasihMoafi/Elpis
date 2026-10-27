@@ -1468,8 +1468,8 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
-  const chatWithMatilda = (id: string | null) => {
-    if (!id) { show("loveSpot"); return; }
+  const chatWithMatilda = (id: string) => {
+    showChat();
     if (selectedRef.current?.id === id && viewRef.current === "chat") { focusComposer(); return; }
     show("chat"); void openById(id).then(() => { if (selectedRef.current?.id === id) focusComposer(); });
   };

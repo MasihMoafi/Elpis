@@ -76,6 +76,10 @@ test('stdio MCP initializes, forwards tools over the socket, and fails closed wh
     assert.deepEqual(JSON.parse(document.result.content[0].text), { thread: 'child', name: 'document_open', path: '/tmp/draft.md' });
     const read = await rpc('tools/call', { name: 'document_read', arguments: { path: '/tmp/draft.md' }, _meta: { threadId: 'child' } });
     assert.equal(JSON.parse(read.result.content[0].text).content, 'Saved text — متن فارسی');
+    const image = { content: [{ type: 'image', mimeType: 'image/jpeg', data: Buffer.from('external page').toString('base64') }] };
+    endpoint.setScreenCapture(async (id, name, args) => { assert.equal(id, 'fixture'); assert.equal(name, 'screen_screenshot'); assert.deepEqual(args, {}); return image; });
+    assert.deepEqual((await rpc('tools/call', { name: 'screen_screenshot', arguments: {}, _meta: { threadId: 'fixture' } })).result, image);
+    await assert.rejects(callBrowser(endpoint.path, 'screen_screenshot', {}, 'foreign-screenshot-token'), /capability/i);
     endpoint.setResolver(()=>null);
     assert.equal((await rpc('tools/call',{name:'browser_tabs',arguments:{},_meta:{threadId:'fixture'}})).result.isError,true);
   } finally {child.stdin.end();child.kill();lines.close();await endpoint.close();}

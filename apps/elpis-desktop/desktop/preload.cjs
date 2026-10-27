@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('elpisDesktop',{
     capture:bounds=>ipcRenderer.invoke('elpis:improve:capture',bounds).then(checked),
     onPoint:callback=>{const listener=(_event,point)=>callback(point);ipcRenderer.on('elpis:improve:point',listener);return()=>ipcRenderer.removeListener('elpis:improve:point',listener);},
   },
+  screenCapture: {
+    setSession:threadId=>ipcRenderer.invoke('elpis:screen-capture:session',threadId).then(checked),
+  },
   storage: {
     getItem:key=>values[key] ?? null,
     setItem:(key,value)=>{ write(key,{value:String(value)}).catch(failed); },
