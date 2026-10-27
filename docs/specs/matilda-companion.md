@@ -10,3 +10,7 @@ Masih approved a small presence he can summon, pin and unpin, and ask to play hi
 Verify persistence across two store instances, separate pages, direct-command positive/negative cases, player failure and real MPRIS control on a private session bus. Exercise pin/unpin, keyboard focus, reload and narrow layouts in both themes. Validate the packaged app with a throwaway profile before installing forward.
 
 Evidence: 26 bridge checks pass; the top bar, navigation, menu dismissal, focus return, global Unpin and reload pass in light and dark at 1000 px and 360 px. The packaged app with its real bridge passes across Chat, Workflows, Customize, Settings and standalone Love Spot. Evidence: `~/.cache/elpis-tests/matilda-top/native-result.json`. Installation waits for another agent’s unfinished shared page edits; the existing installation and running app remain untouched.
+
+## Inline diagrams and arrow repair — 27 October 2026
+
+Masih reports raw `excalidraw` JSON in chat and misplaced arrows on the board. Render valid diagram fences inline, retain code copying, and preserve ordinary code blocks. Honor line/arrow x/y offsets while preserving absolute-points drawings. Repair only unchanged legacy arrows using their recorded reply; preserve edits and deletions. Visually inspect the real chat and Excalidraw outputs in both themes before presenting a result. No chat screenshots in replies; embed the diagram itself.

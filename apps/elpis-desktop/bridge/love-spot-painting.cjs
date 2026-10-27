@@ -29,19 +29,26 @@ function shapeFrom(raw) {
     const points = raw.points.map(point => Array.isArray(point) && point.length === 2 ? [number(point[0], -4000, 4000, NaN), number(point[1], -4000, 4000, NaN)] : null);
     if (points.some(point => !point || point.some(Number.isNaN))) return null;
     const xs = points.map(point => point[0]), ys = points.map(point => point[1]), x = xs[0], y = ys[0];
-    return { ...shape, x, y, points: points.map(([px, py]) => [px - x, py - y]), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys), left: Math.min(...xs), top: Math.min(...ys) };
+    const offsetX = number(raw.x, -4000, 4000, 0), offsetY = number(raw.y, -4000, 4000, 0);
+    return { ...shape, x: x + offsetX, y: y + offsetY, offsetX, offsetY, points: points.map(([px, py]) => [px - x, py - y]), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys), left: Math.min(...xs) + offsetX, top: Math.min(...ys) + offsetY };
   }
   return { ...shape, x: number(raw.x, -4000, 4000, 0), y: number(raw.y, -4000, 4000, 0), width: number(raw.width, 4, 2000, 60), height: number(raw.height, 4, 2000, 60) };
 }
 
 /** A reply split into the note to write and the shapes to draw; a block that is not valid JSON draws nothing and is still taken out. */
+function parsePainting(body) {
+  const shapes = [];
+  if (typeof body !== 'string' || body.length > 256 * 1024) return shapes;
+  try {
+    const list = JSON.parse(body);
+    if (Array.isArray(list)) for (const raw of list) { const shape = shapeFrom(raw); if (shape) shapes.push(shape); if (shapes.length === MAX_SHAPES) break; }
+  } catch { /* Incomplete or invalid data never becomes executable markup. */ }
+  return shapes;
+}
 function splitPainting(reply) {
   const shapes = [];
   const note = String(reply ?? '').replace(FENCE, (_, body) => {
-    try {
-      const list = JSON.parse(body);
-      if (Array.isArray(list)) for (const raw of list) { const shape = shapeFrom(raw); if (shape && shapes.length < MAX_SHAPES) shapes.push(shape); }
-    } catch { /* A broken block draws nothing. */ }
+    shapes.push(...parsePainting(body).slice(0, MAX_SHAPES - shapes.length));
     return '';
   }).replace(OPEN_FENCE, '').replace(/\n{3,}/g, '\n\n').trim();
   return { note, shapes };
@@ -73,4 +80,23 @@ function paintElements(shapes, origin, turnId, outer, now = Date.now()) {
   });
 }
 
-module.exports = { splitPainting, withoutPainting, paintingSize, paintElements, MAX_SHAPES };
+/** An inert image for chat, from exactly the same validated geometry as the board. */
+function diagramSvg(source) {
+  const shapes = parsePainting(source);
+  if (!shapes.length) return null;
+  const size = paintingSize(shapes), padding = 16;
+  const elements = paintElements(shapes, { x: padding, y: padding }, 'inline', undefined, 0);
+  const escape = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const markers = [...new Set(shapes.filter(shape => shape.type === 'arrow').map(shape => shape.strokeColor))].map(color => `<marker id="arrow-${color.slice(1)}" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="${color}" stroke-width="1.5"/></marker>`).join('');
+  const content = elements.map(e => {
+    const style = `fill="${e.backgroundColor}" stroke="${e.strokeColor}" stroke-width="${e.strokeWidth}"`;
+    if (e.type === 'rectangle') return `<rect x="${e.x}" y="${e.y}" width="${e.width}" height="${e.height}" rx="6" ${style}/>`;
+    if (e.type === 'ellipse') return `<ellipse cx="${e.x + e.width / 2}" cy="${e.y + e.height / 2}" rx="${e.width / 2}" ry="${e.height / 2}" ${style}/>`;
+    if (e.type === 'diamond') return `<polygon points="${e.x + e.width / 2},${e.y} ${e.x + e.width},${e.y + e.height / 2} ${e.x + e.width / 2},${e.y + e.height} ${e.x},${e.y + e.height / 2}" ${style}/>`;
+    if (e.type === 'text') return `<text fill="${e.strokeColor}" font-family="Arial, sans-serif" font-size="${e.fontSize}" dominant-baseline="hanging">${e.text.split('\n').map((line, i) => `<tspan x="${e.x}" y="${e.y + i * e.fontSize * 1.25}">${escape(line)}</tspan>`).join('')}</text>`;
+    return `<polyline points="${e.points.map(([x, y]) => `${e.x + x},${e.y + y}`).join(' ')}" fill="none" stroke="${e.strokeColor}" stroke-width="${e.strokeWidth}" stroke-linejoin="round"${e.type === 'arrow' ? ` marker-end="url(#arrow-${e.strokeColor.slice(1)})"` : ''}/>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width + padding * 2}" height="${size.height + padding * 2}" viewBox="0 0 ${size.width + padding * 2} ${size.height + padding * 2}"><rect width="100%" height="100%" fill="#ffffff"/><defs>${markers}</defs>${content}</svg>`;
+}
+
+module.exports = { splitPainting, withoutPainting, paintingSize, paintElements, diagramSvg, MAX_SHAPES };

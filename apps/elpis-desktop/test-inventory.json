@@ -109,7 +109,8 @@
     "bridge/settings-files.test.mjs",
     "bridge/love-spot-voice.test.mjs",
     "bridge/workflow-runs.test.mjs",
-    "bridge/matilda-companion.test.mjs"
+    "bridge/matilda-companion.test.mjs",
+    "bridge/love-spot-painting.test.cjs"
   ],
   "desktop": [
     "desktop/app-menu.test.cjs",
@@ -342,7 +343,8 @@
     "tests/sidebar-search.test.cjs",
     "tests/love-spot-voice.test.cjs",
     "tests/workflow-notice.test.cjs",
-    "tests/matilda-companion.test.cjs"
+    "tests/matilda-companion.test.cjs",
+    "tests/excalidraw-diagram.test.cjs"
   ],
   "opt-in": [
     "tests/context-ledger.runtime.mjs",

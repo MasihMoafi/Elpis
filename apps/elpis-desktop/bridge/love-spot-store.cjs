@@ -522,6 +522,36 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       catch (cause) { if (cause.code !== 'ENOENT') throw cause; return false; }
     });
   }
+  /** Correct the ignored-origin bug only when the recorded geometry still matches the drawing. */
+  async function repairPaintings(paintings) {
+    if (!paintings.length) return;
+    return locked(async () => {
+      const { scene } = await read(), byId = new Map(scene.elements.map(e => [e.id, e])), updates = [];
+      for (const { turnId, shapes } of paintings) {
+        const id = index => `love-paint-${turnId}-${index}`;
+        const anchorIndex = shapes.findIndex((shape, index) => {
+          const e = byId.get(id(index));
+          return !['line', 'arrow'].includes(shape.type) && e?.type === shape.type && !e.isDeleted && !e.angle;
+        });
+        if (anchorIndex < 0) continue;
+        const anchor = byId.get(id(anchorIndex)), x = anchor.x - shapes[anchorIndex].x, y = anchor.y - shapes[anchorIndex].y;
+        if (shapes.some((shape, index) => {
+          if (['line', 'arrow'].includes(shape.type)) return false;
+          const e = byId.get(id(index));
+          if (!e || e.isDeleted) return false;
+          return e.type !== shape.type || e.angle || Math.abs(e.x - (x + shape.x)) > 0.001 || Math.abs(e.y - (y + shape.y)) > 0.001 || (shape.type !== 'text' && (Math.abs(e.width - shape.width) > 0.001 || Math.abs(e.height - shape.height) > 0.001));
+        })) continue;
+        shapes.forEach((shape, index) => {
+          if (!shape.offsetX && !shape.offsetY) return;
+          const e = byId.get(id(index));
+          if (!e || e.isDeleted || e.angle || e.type !== shape.type || JSON.stringify(e.points) !== JSON.stringify(shape.points)) return;
+          if (Math.abs(e.x - (x + shape.x - shape.offsetX)) > 0.001 || Math.abs(e.y - (y + shape.y - shape.offsetY)) > 0.001) return;
+          updates.push({ ...e, x: x + shape.x, y: y + shape.y, version: e.version + 1, versionNonce: e.versionNonce + 1, updated: Date.now() });
+        });
+      }
+      if (updates.length) await persist(merge(scene, { elements: updates }));
+    });
+  }
   async function companion(update) {
     return locked(async () => {
       const file = path.join(directory, '.matilda-companion.json');
@@ -533,6 +563,6 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return value;
     });
   }
-  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, close };
+  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
 }
 module.exports = { createLoveSpot, newer, merge };

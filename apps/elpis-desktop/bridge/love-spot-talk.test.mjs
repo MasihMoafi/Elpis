@@ -9,6 +9,7 @@ import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
 import { createMatildaCompanion } from './matilda-companion.mjs';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
+import { splitPainting } from './love-spot-painting.cjs';
 
 const enabledAudio = { available: true };
 
@@ -106,6 +107,28 @@ test('Talk is Matilda: who she is goes with every message, and only as text she 
   await assert.rejects(f.talk.send({ text: 'Hi', model: 'text', persona: 'x'.repeat(4001) }), /persona/i); assert.equal(f.sent.length, 3);
 });
 const flower = [{ type: 'ellipse', x: 20, y: 0, width: 24, height: 24, strokeColor: '#e03131', backgroundColor: '#ffc9c9' }, { type: 'line', points: [[32, 24], [32, 80]], strokeColor: '#2f9e44' }, { type: 'text', x: 0, y: 84, text: 'for you' }];
+test('reopening a recorded painting repairs legacy arrow origins while preserving moved arrows and deletions', async t => {
+  const f = await fixture(t, { audio: LOVE_SPOT_AUDIO });
+  const source = shapes => '```excalidraw\n' + JSON.stringify(shapes) + '\n```';
+  const rectangle = { type: 'rectangle', x: 10, y: 20, width: 200, height: 60 };
+  const broken = splitPainting(source([rectangle, { type: 'arrow', points: [[0, 0], [0, 40]] }])).shapes;
+  const recorded = source([rectangle, { type: 'arrow', x: 110, y: 80, points: [[0, 0], [0, 40]] }]);
+  await f.store.chat(async () => 'chat');
+  for (const turnId of ['legacy', 'moved', 'deleted']) {
+    await f.store.reply(turnId, 'Drawing', () => true, undefined, broken);
+    f.entries.push({ turnId, item: { id: 'reply-' + turnId, type: 'agentMessage', text: recorded } });
+  }
+  const drawing = await f.store.read();
+  const moved = drawing.scene.elements.find(e => e.id === 'love-paint-moved-1');
+  const deleted = drawing.scene.elements.find(e => e.id === 'love-paint-deleted-1');
+  await f.store.save({ ...drawing.scene, elements: [{ ...moved, x: moved.x + 13, version: 2, versionNonce: 2 }, { ...deleted, isDeleted: true, version: 2, versionNonce: 2 }] });
+  const before = await f.store.read();
+  await f.talk.read();
+  const after = await f.store.read(), rect = after.scene.elements.find(e => e.id === 'love-paint-legacy-0'), arrow = after.scene.elements.find(e => e.id === 'love-paint-legacy-1');
+  assert.deepEqual([arrow.x - rect.x, arrow.y - rect.y], [100, 60]);
+  for (const id of ['love-paint-moved-1', 'love-paint-deleted-1']) assert.deepEqual(after.scene.elements.find(e => e.id === id), before.scene.elements.find(e => e.id === id));
+  await f.talk.read(); assert.deepEqual(await f.store.read(), after);
+});
 test('Matilda paints: a fenced excalidraw block is drawn beneath her note, checked, grouped, and kept out of the note and the panel', async t => {
   const f = await fixture(t);
   await f.talk.send({ text: 'Hello', model: 'text' });

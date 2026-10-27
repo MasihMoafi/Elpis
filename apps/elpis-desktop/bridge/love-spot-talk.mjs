@@ -116,6 +116,7 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
       });
       if (result) {
         thread = result.thread; entries = [...result.data].reverse();
+        await store.repairPaintings(entries.filter(e => e.item.type === 'agentMessage' && e.item.text?.includes('```excalidraw')).map(e => ({ turnId: e.turnId, shapes: splitPainting(e.item.text).shapes })));
         const resumed = await client.resume(threadId, {}); activeTurnId = resumed.activeTurnId ?? null;
       }
       loaded = true;

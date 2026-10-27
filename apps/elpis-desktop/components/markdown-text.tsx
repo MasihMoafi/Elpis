@@ -10,6 +10,7 @@ import { FileRefLink } from "@/components/file-ref";
 import { linkFilePaths, parseHref, resolveRef } from "@/lib/file-refs";
 import { fileAssetUrl, fileScope, useHost } from "@/lib/files-pane";
 import { ReplyableImage } from "@/components/image-reply";
+import { ExcalidrawDiagram } from "@/components/excalidraw-diagram";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -33,11 +34,12 @@ function languageOf(node: unknown) {
 }
 
 /** A code block: coloured by its language (rehype-highlight), named on its bar, with a button that copies the source. */
-function CodeBlock({ language, ...props }: React.ComponentProps<"pre"> & { language?: string }) {
+function CodeBlock({ language, source, ...props }: React.ComponentProps<"pre"> & { language?: string; source?: string }) {
   const ref = useRef<HTMLPreElement>(null);
+  const diagram = language === "excalidraw";
   return <div className="code-block">
-    <div className="code-block-bar">{language && <span className="code-block-language">{language}</span>}<CopyButton label="Copy code" text={() => (ref.current?.innerText ?? "").replace(/\n$/, "")} /></div>
-    <pre ref={ref} {...props} />
+    <div className={diagram ? "mb-1 flex items-center justify-end gap-1 text-muted-foreground" : "code-block-bar"} role={diagram ? "group" : undefined} aria-label={diagram ? "Diagram actions" : undefined}>{language && <span className="code-block-language">{diagram ? "Diagram" : language}</span>}<CopyButton label={diagram ? "Copy diagram code" : "Copy code"} text={() => source ?? (ref.current?.innerText ?? "").replace(/\n$/, "")} /></div>
+    {diagram ? <ExcalidrawDiagram source={source ?? ""} /> : <pre ref={ref} {...props} />}
   </div>;
 }
 
@@ -61,9 +63,14 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
 
 const directional = (tag: "p" | "ul" | "ol" | "blockquote" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "th" | "td") =>
   ({ node: _node, ...props }: HTMLAttributes<HTMLElement> & { node?: unknown }) => createElement(tag, { ...props, dir: "auto" });
+function codeText(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  if ("value" in node && typeof node.value === "string") return node.value;
+  return "children" in node && Array.isArray(node.children) ? node.children.map(codeText).join("") : "";
+}
 const components: Components = {
   ...Object.fromEntries((["p", "ul", "ol", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "th", "td"] as const).map(tag => [tag, directional(tag)])),
-  pre: ({ node, ...props }) => <CodeBlock language={languageOf(node)} {...props} />,
+  pre: ({ node, ...props }) => <CodeBlock language={languageOf(node)} source={languageOf(node) === "excalidraw" ? codeText(node) : undefined} {...props} />,
   table: ({ node: _node, ...props }) => <div className="markdown-table" role="region" aria-label="Scrollable table" tabIndex={0}><table {...props} /></div>,
   a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
   img: ({ src, alt }) => <ChatImage src={typeof src === "string" ? src : undefined} alt={alt} />,
