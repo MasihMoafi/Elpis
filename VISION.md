@@ -33,11 +33,9 @@ The terminal keeps the exact Codex shared behavior and layout (Masih, 9 Oct 2026
 - `tools/elpis-claude/` — provider bridges (Claude and others) that the terminal and desktop apps talk through.
 - `scripts/`, `tests/`, `tools/verify-elpis/` — checks. `docs/` — guide and reference. `website/` — a separate deployment boundary.
 
-## Honest state — 22 October 2026
+## Current state
 
-- Desktop: installed `latest8-4332bad73`. Newer work on `build/integrate-20261021` (hidden Lab, Workflows and Session Manager, one provider order, rewind speed-up) has passed local checks and awaits CI and an install.
-- Terminal: installed `tui-ci-20261021-4a729ff2f`. A CI build of `224e1dfa5` (Ledger placement, static title, no Untitled rows) passed and is not installed. The terminal is handled in its own session.
-- Builds and test matrices run on GitHub Actions; the desktop install is forward-only (`apps/elpis-desktop/scripts/install-desktop.mjs`).
+Read [the project handoff](docs/HANDOFF.md) before editing or installing. It owns the dated installed/candidate state, remaining checks and worktree triage. Older session notes are historical.
 
 ## What this file is for
 

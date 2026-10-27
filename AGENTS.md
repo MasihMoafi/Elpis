@@ -2,7 +2,7 @@
 
 ## Start
 
-- `VISION.md`: what Elpis is and the honest state. `ES.md`: this session's intent.
+- `VISION.md`: project purpose. `docs/HANDOFF.md`: current project state, installed/candidate versions, worktree triage and next action. `ES.md`: earlier session notes; read the handoff first.
 - Desktop app work: `apps/elpis-desktop/SPEC.md` lists what to build, with acceptance checks and state. Masih's rules are in `~/Desktop/p/skills/dev/MASIH-RULES.md`; read its `[all]` rules and the R rules before UI work.
 - Product and architecture: `docs/GUIDE.md`. Context, session and pruning behavior: `docs/context.md`, `docs/sessions.md`. Anything that reads the filesystem, environment or network, or a release: `docs/SHIPPING_RULES.md`. Builds: `docs/LOCAL_BUILD_RULES.md` (GitHub Actions only).
 - Verify repository state before editing and preserve unrelated changes.
