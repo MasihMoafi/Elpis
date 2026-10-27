@@ -274,8 +274,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .chat-view { display:flex; flex-direction:column; flex:1; min-height:0; }
 .chat-scroll-wrap { --prompt-rail-inset:6px; --prompt-rail-width:42px; --prompt-rail-gap:16px; position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
 .scroll-to-bottom { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:5; corner-shape:round; border-radius:9999px; border-color:var(--border); background:var(--background); box-shadow:0 2px 8px rgb(0 0 0 / .12); }
-/* One mark per user turn; the rail scrolls within a centered viewport. */
-.prompt-rail { position:absolute; left:var(--prompt-rail-inset); top:50%; transform:translateY(-50%); z-index:2; width:var(--prompt-rail-width); height:min(70vh, 40rem, calc(100% - 24px)); }
+/* Keep user-turn marks beside the centered transcript, with the edge inset
+   retained when the column fills its pane and beside native thin scrollbars. */
+.prompt-rail { position:absolute; left:max(var(--prompt-rail-inset), calc((100% - var(--transcript-width, 740px)) / 2 - var(--prompt-rail-width) - var(--prompt-rail-gap) - var(--prompt-rail-inset))); top:50%; transform:translateY(-50%); z-index:2; width:var(--prompt-rail-width); height:min(70vh, 40rem, calc(100% - 24px)); }
 .prompt-rail-marks { display:flex; flex-direction:column; align-items:center; width:100%; height:100%; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
 .prompt-tick { flex:none; display:flex; align-items:center; justify-content:center; width:var(--prompt-rail-width); height:10px; padding:0; border:0; border-radius:3px; background:none; cursor:pointer; }
