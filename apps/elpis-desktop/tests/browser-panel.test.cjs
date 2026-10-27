@@ -344,7 +344,7 @@ for (const colorScheme of ['light', 'dark']) test(`browser tabs select a range, 
     const sample = window.__state.tabs[0];
     window.__push({ tabs: Array.from({ length: 6 }, (_, index) => ({ ...sample, id: `range-${index}`, title: `Reference ${index + 1}`, url: `https://example.com/${index + 1}` })), activeId: 'range-0' });
   });
-  const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs', includeHidden: true });
   // A modal context menu hides the background from the accessibility tree; its marked tabs retain their selection.
   const selected = () => tabs.getByRole('tab', { selected: true, includeHidden: true }).allTextContents();
   await tabs.getByRole('tab', { name: 'Reference 2', exact: true }).click();
@@ -426,7 +426,7 @@ test('browser page pin, rename and mute use real controls; sidebar bookmarks sur
 
 test('browser Close other tabs preserves the context or selected group; Close tabs to the right preserves its left neighbours', async t => {
   const { page, errors } = await fixture(t);
-  const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs', includeHidden: true });
   for (const scenario of [
     { id: 'selected', grouped: true, action: 'Close other tabs', closed: [0, 4, 5] },
     { id: 'context', grouped: false, action: 'Close other tabs', closed: [0, 1, 3, 4, 5] },
@@ -455,7 +455,7 @@ test('closing a selected group containing the final active tab selects its survi
     const sample = window.__state.tabs[0];
     window.__push({ activeId: 'survivor-a', tabs: ['A', 'B', 'C'].map(letter => ({ ...sample, id: `survivor-${letter.toLowerCase()}`, title: `Page ${letter}`, url: `https://example.com/${letter.toLowerCase()}` })) });
   });
-  const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs', includeHidden: true });
   await tabs.getByRole('tab', { name: 'Page B', exact: true }).click();
   await tabs.getByRole('tab', { name: 'Page C', exact: true }).click({ modifiers: ['Shift'] });
   await tabs.getByRole('tab', { name: 'Page C', exact: true }).click({ button: 'right' });
