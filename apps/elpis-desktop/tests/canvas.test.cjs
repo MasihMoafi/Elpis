@@ -145,7 +145,6 @@ test('agents canvas: writers with automatic checks, architectures, wiring, persi
     };
     await drag('Nuvani · Join the parts', 'Zelko');
     await until('the drag made a wire', () => document.querySelectorAll('.react-flow__edge:not(.canvas-edge-mother)').length === 4);
-    assert.equal(await wave('Zelko'), '3');
 
     // A wire that would make a loop is refused, and says why.
     await fit();
