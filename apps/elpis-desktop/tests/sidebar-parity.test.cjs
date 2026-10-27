@@ -93,7 +93,7 @@ test('every project header has a "+" that starts a new chat in that project', as
   });
 });
 
-test('every chat has a left colour control; working, unread and error status remain separate', async () => {
+test('every chat keeps automatic status at the left with a separate colour action', async () => {
   await fixture(async ({ page, aside, emit, shoot }) => {
     const row = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first();
     const dot = id => row(id).locator('.conversation-status');
@@ -103,6 +103,7 @@ test('every chat has a left colour control; working, unread and error status rem
     for (const id of ['t-idle', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} retains its automatic idle status marker`);
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'error']);
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Error']);
+    for (const id of ['t-run', 't-idle', 't-bad']) assert.ok((await dot(id).boundingBox()).x < (await colour(id).boundingBox()).x, 'automatic status precedes the distinct manual colour action');
     const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
     const [run, idle, bad] = [await fill('t-run'), await paint(swatch('t-idle'), 'backgroundColor'), await fill('t-bad')];
     assert.ok(same(run, BASE), `a running chat's status is a ring, not a filled notification (${run})`);

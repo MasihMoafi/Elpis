@@ -118,7 +118,7 @@ test('Settings content stays beside navigation at large UI size across window wi
       for (const name of ['General', 'Appearance', 'Configuration']) {
         await visit(app.page, name);
         const geometry = await app.page.evaluate(() => {
-          const pane = document.querySelector('.settings-page'), header = pane.querySelector('.settings-page-header');
+          const pane = document.querySelector('.settings-page'), header = [...pane.querySelectorAll('.settings-page-header')].find(node => node.getClientRects().length);
           const p = pane.getBoundingClientRect(), h = header.getBoundingClientRect();
           return { inset: h.left - p.left, right: h.right, paneRight: p.right, overflow: pane.scrollWidth > pane.clientWidth + 1 };
         });
