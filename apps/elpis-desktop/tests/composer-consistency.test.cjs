@@ -66,10 +66,13 @@ for (const running of [false, true]) test(`composer options collapse into one ro
   await f.page.getByRole('menuitem', { name: /Plan mode/ }).click();
   await f.page.getByRole('button', { name: 'Fast mode', exact: true }).waitFor();
   await f.page.getByRole('button', { name: 'Start voice chat', exact: true }).waitFor();
-  await f.composer.fill('Keep this draft while resizing.');
+  const draft = 'Keep this unfinished message while resizing the pane. I still need to add details before sending it to the agent.';
+  await f.composer.fill(draft);
+  const height = await f.page.locator('.composer').evaluate(element => element.getBoundingClientRect().height);
   for (const width of [1100, 760, 500, 390]) {
     await f.page.setViewportSize({ width, height: 700 });
     const m = await probe(f.page);
+    assert.ok(Math.abs(await f.page.locator('.composer').evaluate(element => element.getBoundingClientRect().height) - height) <= 1, `width-only resizing preserves composer height at ${width}px`);
     assert.ok(m.rowOffset <= 4, `approval and model share a row at ${width}px`);
     assert.equal(m.leaks, 0, `controls stay inside the composer at ${width}px`);
     assert.equal(m.overlaps, 0, `controls do not overlap at ${width}px`);
@@ -78,11 +81,12 @@ for (const running of [false, true]) test(`composer options collapse into one ro
   for (const width of [600, 400, 320]) {
     await f.page.locator('.composer').evaluate((element, width) => { element.style.width = `${width}px`; }, width);
     const floating = await probe(f.page);
+    assert.ok(Math.abs(await f.page.locator('.composer').evaluate(element => element.getBoundingClientRect().height) - height) <= 1, `floating width-only resizing preserves composer height at ${width}px`);
     assert.equal(floating.toolbarRows, 1, `all controls share one row in the ${width}px composer`);
     assert.ok(floating.rowOffset <= 4, 'the narrow floating composer keeps approval on the same row');
     assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
     assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
-    assert.equal(await f.composer.inputValue(), 'Keep this draft while resizing.');
+    assert.equal(await f.composer.inputValue(), draft);
     assert.equal(await f.page.getByRole('combobox', { name: 'Reasoning effort', exact: true }).isVisible(), true, 'thinking/effort stays visible at every composer width');
     assert.equal(await f.page.getByRole('button', { name: running ? 'Send follow-up' : 'Send message', exact: true }).isVisible(), true);
     if (running) assert.equal(await f.page.getByRole('button', { name: 'Stop response', exact: true }).isVisible(), true);

@@ -3,7 +3,7 @@
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
-import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AgentsIcon, ArchiveIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Archive, ArrowDown, Blocks, Bookmark, BookmarkMinus, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Square, Sun, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -404,6 +404,13 @@ export default function Home() {
   const [related, setRelated] = useState<Record<string, Thread>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [view, setView] = useState<View>("chat");
+  // Draft edits may grow the input; a width-only resize keeps the height the user was typing in.
+  useLayoutEffect(() => {
+    const box = composerRef.current;
+    if (!box) return;
+    box.style.height = "auto";
+    box.style.height = `${Math.min(240, Math.max(44, box.scrollHeight))}px`;
+  }, [text, selected?.id, view]);
   const loveActivity = useLoveActivity(view === "loveSpot", ready, view === "chat" ? selected : null);
   const loveSpotAudioReason = selected && !LOVE_SPOT_AUDIO.available
     ? chatOrigin(selected, loveActivity.threads) === "Love Spot" ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
