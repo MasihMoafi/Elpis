@@ -1,6 +1,6 @@
 /* The side panel's Changes tab (components/changes-panel.tsx): a header with the totals, the list of changed files, and
    the open file's diff. Colours come from the app's own success and destructive tokens, so both themes follow. */
-.changes { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
+.changes { container:changes / inline-size; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; background:var(--background); }
 .changes-head { display:flex; align-items:center; gap:8px; height:34px; flex-shrink:0; padding:0 8px 0 12px; border-bottom:1px solid var(--hairline); font-size:12.5px; }
 .changes-summary { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); font-weight:500; }
 .changes-note { margin:0; padding:12px; font-size:13px; color:var(--muted-foreground); }
@@ -21,3 +21,12 @@
 
 .change-list > li { display:flex; align-items:center; gap:4px; }
 .change-list .change-row { display:flex; text-decoration:none; flex:1; min-width:0; }
+
+/* Give paths the full row when the pane is narrow; actions and counts keep their own readable row. */
+@container changes (max-width:380px) {
+  .diff-head { flex-wrap:wrap; }
+  .diff-title { flex-basis:100%; }
+  .change-row { flex-wrap:wrap; }
+  .change-path { flex-basis:calc(100% - 26px); }
+  .change-row .change-counts { margin-inline-start:26px; }
+}
