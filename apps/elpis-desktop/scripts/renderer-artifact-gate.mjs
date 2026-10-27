@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/chat-files.test.cjs": {
+      "blob": "585462a3d0f2a987f2a1c49283fce040dd4f94f6",
+      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
+      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
+    },
     "tests/canvas-father.test.cjs": {
       "blob": "78c1053e9cf7bc9fa66af647dbc7a4e254b6030e",
       "approval": "83d8782efe44951a031ad62e860228650d5d070f",
@@ -130,9 +135,9 @@ export const retainedUpdates = {
       "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion."
     },
     "tests/composer-consistency.test.cjs": {
-      "blob": "f0a5e4ab3f6103ddaec3614fbb7ae88109027c22",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "S35 keeps permissions beside the model while voice/send actions wrap together only when needed. The existing narrow Plan journey additionally includes supported Fast and voice controls; every no-overlap, fit and alignment assertion remains."
+      "blob": "0b7afac16415f3c75713fb3036703948717948d5",
+      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
+      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
     },
     "tests/love-spot-sync.test.cjs": {
       "blob": "48eaf184b0b76f7279186c538310a5e5c0130e4d",
@@ -230,9 +235,9 @@ export const retainedUpdates = {
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/slash-commands.test.cjs": {
-      "blob": "9d55c9df95dc2073d115471a1cce481a5647dce9",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
+      "blob": "119f55ff2c898bb19005aec469b186ba9c445ba0",
+      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
+      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
     },
     "tests/config-navigation.test.cjs": {
       "blob": "9fec23177956a4ec8f8b20b32eedc3410a5cab69",
@@ -533,9 +538,9 @@ export const retainedUpdates = {
       "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
     },
     "tests/files-pane.test.cjs": {
-      "blob": "5676e038dd8293b9a0bcfb8ad516707e67437d71",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+      "blob": "483fba4d84c7304add6abaaa3f7491c3b446eddd",
+      "approval": "cfb6ed796d1598377c58dd370b93bfdf06294ef3",
+      "reason": "Masih 27 Oct: HTML documents render with project-local computation; large text remains readable without a huge editor; cards and selected passages support explicit review/edit/removal feedback without sending unfinished text; secondary composer options collapse instead of wrapping; Fast feedback follows confirmed state and chat scope. Preserve existing file-save, PDF, image, chat and slash-command contracts; replace obsolete 512KB rejection expectations with bounded preview proof. Retain the original baseline."
     },
     "tests/love-spot.test.cjs": {
       "blob": "f5b82185db895c2a4dbf1414f0a5c0f3c1bd05f7",
