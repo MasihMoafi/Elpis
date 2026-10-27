@@ -100,9 +100,9 @@ export const retainedUpdates = {
       "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/canvas-basics.test.cjs": {
-      "blob": "6e61eb81636695bde4480b643fce839759b234ce",
-      "approval": "1c38728ed7888623b101881f83b047eb45cc04b9",
-      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged. Masih26–27Oct: choose Auto once and a short manual pattern once. Extend the owner to prove explicit choice, selected dependencies, persistence and no run before Run; before cases fail on the installed split-parts default. Also reject a planner dependency redesign without replacing the selected manual sequence."
+      "blob": "2096ffd00861087554c831722480da60baa65a23",
+      "approval": "75ad8bd8d24f86960bd9d5ef6084ef18016d2f07",
+      "reason": "Masih 27 Oct: add the page-never-scrolls journey (75ad8bd8d) to the explicit Auto/manual planning and editable-request checks (c5e2a69fc, 1c38728ed). Only additions; no assertion removed."
     },
     "tests/agents-guide.test.cjs": {
       "blob": "3fea4f19a19a338fc4861a189965b3d67448b2d2",
@@ -250,9 +250,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: right-click Colour tints the row, no palette or duplicate inline actions; keep automatic status and hover geometry stable. Avatar opens an independent pet-size chat; music only mutes/unmutes. Keep chat navigation idempotent, workflow columns aligned, and /clear starts fresh context in the same folder without deleting history. Retain persistence, keyboard, drafts, failure and lifecycle assertions. Immutable baseline unchanged."
 },
     "tests/config-navigation.test.cjs": {
-      "blob": "9fec23177956a4ec8f8b20b32eedc3410a5cab69",
-      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
-      "reason": "S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
+      "blob": "92d665dcbd354456c0a58778e07d4472b0d97891",
+      "approval": "d79d50cbe1a12493c903d5a2b3bf3f87ff5c4348",
+      "reason": "Masih 27 Oct: Settings is grouped as ChatGPT's (Personal, Integrations, Coding, Archived); the old category names remain /config aliases and still open working pages."
     },
     "tests/workflow-polish.test.cjs": {
       "blob": "6a91508074920acadebc49db298f2a47223d417e",
@@ -445,9 +445,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "c362c74c866ed8277865ce9e77ec0491994d16b7",
-      "approval": "24fb6fb07bb205926e195e6bd24a3787e15609f7",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). 23 Oct, Masih: add the voice picker in Settings exactly like the ChatGPT app screenshot. Open Advanced: transcription before the existing fallback and model writes; every assertion is retained. A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required. Masih requested native Browser settings and import of Claude Code MCPs. Add navigation, explicit selected import/conflict and native tab/pinned-store behavior; retain existing settings writes and layout checks. Supply the existing synthetic RAG endpoint when the fixture includes a RAG server, preserving import selection, redaction and conflict assertions."
+      "blob": "a3e8fc768228e0fddd8915ff1b1f9c483a92b301",
+      "approval": "9cb8eaec7aa2cc587bc2e133c263fd35956c8057",
+      "reason": "Masih 27 Oct: Settings pages follow ChatGPT's order (Personal, Integrations, Coding, Archived); each control still writes only its own setting."
     },
     "tests/settings-write.test.cjs": {
       "blob": "09f90ee692006240e183eb49d99051431d05de7b",
