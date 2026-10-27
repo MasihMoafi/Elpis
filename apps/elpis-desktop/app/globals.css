@@ -1117,6 +1117,11 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .dark [data-kind="agent"] { --kind:#ab84ff; }
 .canvas-board { position:relative; display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--background); }
 .canvas-board > .react-flow { flex:1 1 0; height:auto; min-height:0; }
+/* A short window keeps the board in view: the run clock and run log give up their height first (and scroll), the
+   board keeps room, and nothing in it spills over the error below (27 Oct). */
+.canvas-board { overflow:hidden; }
+.canvas-board > :is(.react-flow, .iso-board) { min-height:min(140px, 45%); }
+.canvas-board > :is(.canvas-telemetry, .canvas-log-panel) { flex:0 1 auto; min-height:0; overflow:auto; }
 .canvas-board .react-flow { --xy-background-color:var(--background); --xy-background-pattern-color:var(--border); --xy-edge-stroke:var(--muted-foreground); --xy-edge-stroke-selected:var(--foreground); --xy-connectionline-stroke:var(--context); --xy-controls-button-background-color:var(--card); --xy-controls-button-color:var(--foreground); --xy-controls-button-border-color:var(--hairline); --xy-minimap-background-color:var(--card); --xy-node-border-radius:10px; }
 /* Colour means state, as on Deus Ex's board: idle wires are a neutral grey in both themes, never the theme's gold. */
 .dark .canvas-board .react-flow { --xy-edge-stroke:color-mix(in oklch, var(--foreground) 45%, transparent); }
