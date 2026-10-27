@@ -7,6 +7,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   t.after(() => f.close());
   const page = f.page;
   await page.setViewportSize({ width: 1000, height: 800 });
+  await page.locator('.app-menus').waitFor();
   const pin = page.getByRole('button', { name: 'Pin Matilda', exact: true });
   await pin.waitFor({ timeout: 3000 });
   const start = await pin.boundingBox();
@@ -33,6 +34,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await presence.waitFor();
   await page.reload();
+  await page.locator('.app-menus').waitFor();
   await presence.waitFor();
   await page.setViewportSize({ width: 360, height: 760 });
   const box = await presence.boundingBox();
@@ -46,6 +48,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   assert.deepEqual((await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort(), before);
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.reload();
+  await page.locator('.app-menus').waitFor();
   await pin.waitFor();
   assert.equal(await presence.count(), 0);
   assert.equal(f.requests.some(url => /\/agents\/run|\/turn\/interrupt/.test(url)), false);
