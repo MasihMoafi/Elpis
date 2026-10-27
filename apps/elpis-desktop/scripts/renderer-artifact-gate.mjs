@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/workflows-wf1.test.cjs": {
+      "blob": "2b6c5657424d13bd4cf9be425a7b4852925ba31f",
+      "approval": "71e0791d2582c383bf32653d2bd7c984f743f34a",
+      "reason": "Masih: reconnect and other errors must not appear at the top. Replace only the superseded A30 header-placement expectations with contained bottom placement and an actual non-empty Run description. Preserve both themes, provider refusal, long permission refusal, actionable guidance, responsive toolbar fit, failed-agent explanation, successful retry and stale-error clearing. The real packaged-app refusal sibling follows the same policy; the immutable baseline is unchanged."
+    },
     "tests/canvas-keys.test.cjs": {
       "blob": "1f0db1128833104cc1943dcaf16e6115174a2857",
       "approval": "14e9c8f30d3f59b6b6f457821774032c1e031fd4",
