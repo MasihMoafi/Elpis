@@ -30,9 +30,9 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: Load earlier messages is stuck against the transcript; use the ChatGPT spacing reference. Extend the retained history owner to assert a readable gap while preserving complete pagination, retry, compaction and scroll behavior."
     },
     "tests/session-windows-electron.test.cjs": {
-      "blob": "dc50c1cca505165bfc358dcc13d48f23a0655c85",
-      "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
-      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged."
+      "blob": "da274747d46f1ba3dd1755710a3830c1ca70f24c",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/chat-files.test.cjs": {
       "blob": "585462a3d0f2a987f2a1c49283fce040dd4f94f6",
@@ -115,9 +115,9 @@ export const retainedUpdates = {
       "reason": "Wait for the actual composer focus after menu dismissal before typing immediately; keep exact text and add focused-element assertions for both Reply menu paths. This removes the browser input race without weakening the focus requirement."
     },
     "tests/browser-sessions-electron.test.cjs": {
-      "blob": "378ee80c3fb69cd7bbd5148ae9d0d708a83b5a78",
-      "approval": "dd2ca3576700a0c448c37aed1aea3fd417b9c036",
-      "reason": "A121/A70 timing correction already committed 21 Oct: native sendInputEvent click is asynchronous. Wait for the real h1[data-saved] mutation in all three session pages before reading the marker. Preserve every exact background marker, session switch, navigation, history, restart, tool isolation, and close-with-chat assertion. The candidate copy passed while retained baseline raced its click."
+      "blob": "00d3acaca69921e0267e1bd84c1eeb5dd4c3120a",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/agent-runs.test.cjs": {
       "blob": "c1fb99d08cf66e7a4bd8090fc3d9252c3319a51a",
@@ -240,9 +240,9 @@ export const retainedUpdates = {
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. Masih 27 Oct: add Shift/Ctrl/Cmd selection, grouped icon menu, close selected/other/right, real URL sidebar pins, rename/mute, compact empty pane after full view and preserved resized content. Retain previous panel and annotation checks."
     },
     "tests/terminal.test.cjs": {
-      "blob": "96f3319406a764eaf54f55128faf4f74eda06a84",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+      "blob": "14e55e4206d18fce9fe4cb763e3b7a1d79da8480",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/slash-commands.test.cjs": {
       "blob": "3cd68e17fb41437e83d4ac00ccaa072b78c11b1f",
@@ -260,9 +260,9 @@ export const retainedUpdates = {
       "reason": "SPEC O2 project creation uses known folder/chooser first; open Advanced: custom folder before typing. Deferred transcript bodies are opened and awaited before reading, preserving all activity/copy assertions. Historical activity content is materialized when its disclosures open. Wait for the real opened body before checking reasoning and tools; keep every copy, agent-discovery and activity assertion. Wait on stable disclosure owners: a :not([open]) locator changes identity after the click. Keep all reasoning, tool, copy and discovered-agent assertions after their bodies mount."
     },
     "tests/sidebar-groups.test.cjs": {
-      "blob": "53cdeee4621adb6cd757de78cfdf9ad4f62d801f",
-      "approval": "3afa19f438d0051e46274949bc8bb8cc6e42abb9",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. The isolated sidebar fixture supplies the same parent identity to list, read and resume routes. Retain every click, keyboard, collapsed descendant and grouping assertion. Use the unique Move to g typeahead prefix: Mo also matches Move to project and can cycle there after reopening. Preserve the real keyboard submenu, selection and move assertions. Wait for the open root menu to own focus before native typeahead. Preserve the exact move target, real submenu keyboard journey and all grouping/persistence assertions. R73, Masih 26 Oct: recorded native agents share their recursive parent tree. Open a linked leaf through its parent; use a real unlinked run to retain history-toggle uniqueness checks. Keep all grouping, storage, keyboard, no-write and exact indentation assertions."
+      "blob": "6614ab6bb40c35701d16910c949ea29e362828a5",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/workflow-observer.test.cjs": {
       "blob": "ce9413f242253cf0c57d89cb9a3ec5d7532270c4",
@@ -340,9 +340,9 @@ export const retainedUpdates = {
       "reason": "LOVEVOICE, Masih 24 Oct: feed a recorded WAV as the microphone; measure first audio actually played; tests headless. Allow explicit Chromium capture arguments for real media tests while preserving every existing fixture default and assertion. Love Spot, Masih 26 Oct: disable unavailable audio. Emit the actual server protocol's initial empty board scene, and allow a held scene/error event to verify that unknown legacy chat origins cannot warm or launch audio; keep ordinary chat audio proof after resolution and all existing fixture routes. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration. R73, Masih 26 Oct: custom recursive-tree fixtures can name their visible initial root for startup readiness. Existing chat-a default, connection, hydration and all bridge/browser behavior remain unchanged."
     },
     "tests/windows-split.test.cjs": {
-      "blob": "7e2255fda610c61f43c27f52f24e98b4219dd38f",
-      "approval": "0a00c2cc125aebb2794e5da274463c5a3f97d57d",
-      "reason": "SPLIT, Masih 22 Oct (R44): Ctrl+[ and Ctrl+] move the open chat in its list, so split-view focus is Ctrl+Alt+[ and Ctrl+Alt+]. Keep every split/composer/keyboard check; hold resume while both panes receive the event, persist its matching completed item before emission, and verify both real SSE subscribers. A child-only event-drop negative control fails at the retained child reply assertion."
+      "blob": "291f98b3f6e1e313587ecd643056c44ad1a39444",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/sidebar-focus.test.cjs": {
       "blob": "9c637b66d2fa18fe710fcd05ae395074a7ba3055",
@@ -355,9 +355,9 @@ export const retainedUpdates = {
       "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade. Masih 24 Oct: a dark opening before a light app is wrong; the opening follows the app theme. Preserve every animation, timing and click-through assertion."
     },
     "tests/controls.cjs": {
-      "blob": "774e13941df85a01c87b28003fa4201e1aa258a3",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "SETTINGS, Masih 21 Oct 22:45: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Read the fallback input or catalog select atomically as the catalog loads; keep A87's logo-colour guards. Footer, Masih 22 Oct: \"theme should be next to settings\". The helpers open Settings with the gear and switch the theme with its button (c88df8e6d). A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+      "blob": "ffee64ceab65ace7ecae2a1c22d4d30e90a4f4ed",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/input-hints.test.cjs": {
       "blob": "92ac3d5207622f5b5e70877b3593a5355ef28809",
@@ -426,9 +426,9 @@ export const retainedUpdates = {
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. S34 reconnect status stays at the workspace bottom even while a drawer or floating panel hides the chat. Restore the hidden chat before inspecting its preserved draft; keep bottom geometry and reconnection checks."
     },
     "tests/desktop-sweep.test.cjs": {
-      "blob": "78fdd5cbc72421b5b541276f42ead6e351312e36",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" The approved About page joins the exact page order and every fit check; keep the approved OBSRM navigation checks. Then, Masih 22 Oct, \"Yes please\" to the page being called Customize; the label follows. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "43230520872e7543d16d8ed1b99b84e1d131e43d",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/love-spot-pages.test.cjs": {
       "blob": "5e6bb4c0b87a64d9cf1d7217e2c583fbab199a2b",
@@ -455,9 +455,9 @@ export const retainedUpdates = {
       "reason": "S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": the memory options show only while Memories is on, so the saved-settings fixture has Memories on; every version-chained save assertion is unchanged."
     },
     "tests/context-menu.test.cjs": {
-      "blob": "b4bba2d7126b7bb0192503a80646c083ab292c45",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "F2 rename, Masih's request: \"F2 rename\" (docs/USER_REQUESTS.md, 21 October integration). GATE12: \"never weaken or delete an assertion that still describes wanted behaviour\". Await actual menu focus before sending F2, and its removal before Escape; keep every save, cancel, modifier and typing assertion. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" Show agents leaves the menu of a chat without agents (c88df8e6d). Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label."
+      "blob": "8c2c4c52f935d6c4f2be9405d60099f4cc873122",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/preferences.test.cjs": {
       "blob": "2a27c24660a0a2d14da383b02f7ad95ab2e6529f",
@@ -519,14 +519,14 @@ export const retainedUpdates = {
       "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/settings-rows.test.cjs": {
-      "blob": "c612c885b89ebc336f3f078d56764ac971bebd2f",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "SETTINGS, Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Retain every page and existing drift mutation; add closed/open model disclosures and independent compound alignment, size and clipping mutations. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks. The independent height/font/offset mutation checks target a visible audited select control, rather than an unrelated file-reference button. Every drift assertion remains."
+      "blob": "9c7e81e6da91d1c02e4caa6c7a09d9a05accbb13",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/sidebar-indent.test.cjs": {
-      "blob": "9dc5fbcf1194b8f85448986846350f255450cb75",
-      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
-      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
+      "blob": "2205d01288c3df27da3fa312802748a244124b45",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/tabs.test.cjs": {
       "blob": "2932bf023d601e4eb1972ee620c2644cf41ddc20",
@@ -534,9 +534,9 @@ export const retainedUpdates = {
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks. Await that popup's visibility before reading the same exact five choices; run40273131811 exposed the immediate empty snapshot."
     },
     "tests/sidebar-parity.test.cjs": {
-      "blob": "d695861d35e796471b07090562bf7bf0c6b2067a",
-      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
-      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
+      "blob": "5c54fa0068fee4874890b59c91d9209dc5d4dbc1",
+      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
+      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/reading-options.test.cjs": {
       "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
