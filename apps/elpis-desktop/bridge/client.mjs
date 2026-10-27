@@ -1992,6 +1992,7 @@ export class DesktopClient extends EventEmitter {
     return this.#mutate(id, async () => {
       const thread = await this.#current(id);
       if (thread.desktopAccess.mode === 'continue') throw new BridgeError('Wait for this agent to finish; a message then continues it in a new conversation.', 409);
+      await this.#workflowRuns.noteManualSteer(id);
       try { return await this.#rpc('turn/steer', params); }
       catch (error) {
         // The turn the app saw has ended or another replaced it: the message joins the running
