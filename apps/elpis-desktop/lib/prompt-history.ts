@@ -24,7 +24,8 @@ export function promptsOf(entries: Entry[]): string[] {
   }
   return prompts;
 }
-function attachedFile(part: { text?: string }) {
+/** Whether a text part is an attached file the app added, not something the person typed. */
+export function attachedFile(part: { text?: string }) {
   const elements = (part as { text_elements?: unknown; textElements?: unknown }).text_elements ?? (part as { textElements?: unknown }).textElements;
   return Array.isArray(elements) && elements.some(element => typeof (element as { placeholder?: unknown })?.placeholder === "string" && (element as { placeholder: string }).placeholder.startsWith("Attachment: "));
 }

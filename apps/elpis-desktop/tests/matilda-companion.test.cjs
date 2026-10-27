@@ -93,7 +93,9 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
       if (replyMode === 'failure') return { __http: 503, error: 'Matilda could not send this message.' };
       if (replyMode === 'slow') await new Promise(resolve => { release = resolve; slowArrived(); });
       const id = `mini-${entries.length}`;
-      entries = [...entries, { turnId: id, item: { id, type: 'userMessage', content: [{ type: 'text', text: body.text }] } }, { turnId: id, item: { id: `${id}-reply`, type: 'agentMessage', text: 'Matilda heard you.' } }];
+      // Recorded as the engine records it: what was typed, then each attached file as its own tagged text part.
+      const notes = 'File: Love Spot notes.txt\nCurrent Love Spot board notes (by colour):\n[]';
+      entries = [...entries, { turnId: id, item: { id, type: 'userMessage', content: [{ type: 'text', text: body.text }, { type: 'text', text: notes, text_elements: [{ byteRange: { start: 0, end: Buffer.byteLength(notes) }, placeholder: 'Attachment: Love Spot notes.txt' }] }] } }, { turnId: id, item: { id: `${id}-reply`, type: 'agentMessage', text: 'Matilda heard you.' } }];
       return talk();
     },
   } });
@@ -129,6 +131,8 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda mini chat, mute and d
   assert.equal(await field.inputValue(), 'Pasted message and typed text', 'dismissal preserves unsent text');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
   await mini.getByText('Matilda heard you.', { exact: true }).waitFor();
+  assert.equal(await mini.getByText('Pasted message and typed text', { exact: true }).count(), 1, 'the small chat shows what was typed');
+  assert.equal(await mini.getByText(/Love Spot notes|board notes/).count(), 0, 'attached board notes are not shown as part of the message');
   assert.equal(sends().length, 1, 'explicit Send posts exactly once');
   assert.equal(sends()[0].body.text, 'Pasted message and typed text');
   assert.equal(await field.inputValue(), '');

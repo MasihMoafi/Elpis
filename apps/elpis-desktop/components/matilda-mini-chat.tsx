@@ -7,6 +7,7 @@ import { SendIcon } from "@/components/elpis-icons";
 import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
 import { MATILDA_CHANGED, savedPersona } from "@/lib/matilda";
+import { attachedFile } from "@/lib/prompt-history";
 import "@/components/matilda-mini-chat.css";
 
 type Conversation = { entries: Entry[]; busy: boolean; error?: string };
@@ -61,7 +62,7 @@ export function useMatildaMiniChat(open: boolean) {
 function message(entry: Entry) {
   if (entry.item.type === "agentMessage") return typeof entry.item.text === "string" ? entry.item.text : "";
   if (entry.item.type !== "userMessage" || !Array.isArray(entry.item.content)) return "";
-  return entry.item.content.filter(part => part && typeof part === "object" && part.type === "text").map(part => part.text).join("\n");
+  return entry.item.content.filter(part => part && typeof part === "object" && part.type === "text" && !attachedFile(part)).map(part => part.text).join("\n");
 }
 
 export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMiniChat> }) {
