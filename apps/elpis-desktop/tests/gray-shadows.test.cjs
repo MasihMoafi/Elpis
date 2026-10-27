@@ -96,7 +96,8 @@ for (const colorScheme of ['light', 'dark']) {
     } finally { await f.close(); }
   });
 
-  test(`running composer Stop has ${colorScheme === 'light' ? 'no gray background or shadow' : 'its existing secondary background'} (${colorScheme})`, async () => {
+  // Stop is plain in both themes (R22; 00996c210 "keep Stop plain in both themes").
+  test(`running composer Stop has no gray background or shadow (${colorScheme})`, async () => {
     const f = await fixture({ ...options(colorScheme), running: true }), { page } = f;
     try {
       await f.open(parent.id);
@@ -110,32 +111,17 @@ for (const colorScheme of ['light', 'dark']) {
       await settle(page);
       const hover = await surface(stop);
       await capture(page, `running-composer-${colorScheme}-hover`);
-      if (colorScheme === 'light') {
-        assert.deepEqual(rest, plain, 'light Stop at rest');
-        assert.deepEqual(hover, plain, 'light Stop on hover');
-        await page.mouse.move(700, 60);
-        await f.composer.fill('Follow-up draft');
-        await page.getByRole('button', { name: 'Send follow-up', exact: true }).focus();
-        await page.keyboard.press('Shift+Tab');
-        await settle(page);
-        assert.equal(await stop.evaluate(element => element === document.activeElement && element.matches(':focus-visible')), true);
-        assert.deepEqual(await surface(stop), plain, 'light Stop on keyboard focus');
-        assert.equal(await stop.evaluate(element => getComputedStyle(element).outlineStyle), 'solid');
-        await capture(page, 'running-composer-light-keyboard-focus');
-      } else {
-        const expected = await stop.evaluate(element => {
-          const probe = document.createElement('span');
-          element.append(probe);
-          probe.style.backgroundColor = 'var(--muted)';
-          const rest = getComputedStyle(probe).backgroundColor;
-          probe.style.backgroundColor = 'color-mix(in oklab, var(--secondary), var(--foreground) 5%)';
-          const hover = getComputedStyle(probe).backgroundColor;
-          probe.remove();
-          return { rest, hover };
-        });
-        assert.equal(rest.background, expected.rest, 'dark Stop keeps its secondary fill');
-        assert.equal(hover.background, expected.hover, 'dark Stop keeps its hover fill');
-      }
+      assert.deepEqual(rest, plain, `${colorScheme} Stop at rest`);
+      assert.deepEqual(hover, plain, `${colorScheme} Stop on hover`);
+      await page.mouse.move(700, 60);
+      await f.composer.fill('Follow-up draft');
+      await page.getByRole('button', { name: 'Send follow-up', exact: true }).focus();
+      await page.keyboard.press('Shift+Tab');
+      await settle(page);
+      assert.equal(await stop.evaluate(element => element === document.activeElement && element.matches(':focus-visible')), true);
+      assert.deepEqual(await surface(stop), plain, `${colorScheme} Stop on keyboard focus`);
+      assert.equal(await stop.evaluate(element => getComputedStyle(element).outlineStyle), 'solid');
+      await capture(page, `running-composer-${colorScheme}-keyboard-focus`);
       await stop.click();
       assert.equal(f.posts.filter(post => post.path === '/api/threads/chat-a/interrupt').length, 1, 'Stop still interrupts the current reply');
       assert.deepEqual(f.errors, []);
