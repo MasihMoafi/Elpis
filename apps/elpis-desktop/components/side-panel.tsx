@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { SmartPruneDetail } from "@/components/smart-prune";
 import { onPruneRequest, type PruneTarget } from "@/lib/smart-prune";
-import { Maximize2, Minimize2, Scissors, X, ListTree } from "lucide-react";
+import { Maximize2, Minimize2, Scissors, X, ListTree, VolumeX } from "lucide-react";
 import { ContextPanel } from "@/components/context-usage";
 import { BrowserIcon, FileEditIcon, FolderIcon, PlusIcon, TerminalIcon } from "@/components/elpis-icons";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tab, TabStrip } from "@/components/tab-strip";
@@ -20,6 +22,7 @@ import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import { api } from "@/lib/api";
 import type { BrowserTab } from "@/lib/desktop";
 import { ResizeEdge } from "@/components/resize-edge";
+import { useBrowserPins } from "@/lib/browser-pins";
 import { SIDEBAR } from "@/lib/use-appearance";
 
 /** A shell in the side panel. Its key names the shell in Electron; `threadId` is the chat "Open in Elpis TUI" resumed in it. */
@@ -48,10 +51,10 @@ export function useSidePanel(browser: Browser) {
   const [active, setActive] = useState<string | null>(null);
   const [full, setFull] = useState(false), [chatCollapsed, setChatCollapsed] = useState(false);
   /** The panel's width in pixels once its edge has been dragged; until then it is as wide as the sidebar (app/globals.css). */
-  const [width, setWidth] = useState<number | null>(null);
+  const [width, setWidth] = useState<number | null>(null), [emptyWidth, setEmptyWidth] = useState<number | null>(null);
   const order = useRef<string[]>([]);
   const pages = browser.state?.tabs ?? [];
-  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : []), ...(prune ? [PRUNE] : []), ...(contextTab ? [CONTEXT] : [])]);
+  order.current = mergeOrder(order.current, [...terminals.map(tab => `t:${tab.key}`), ...pages.map(page => `b:${page.id}`), ...(changes ? [CHANGES] : []), ...(filesTab ? [FILES] : []), ...(prune ? [PRUNE] : []), ...(contextTab ? [CONTEXT] : [])], pages.map(page => `b:${page.id}`));
   const items = order.current.flatMap((key): Item[] => {
     if (key === PRUNE && prune) return [{ key, kind: "smartPrune", target: prune }];
     if (key === CHANGES) return [{ key, kind: "changes" }];
@@ -63,7 +66,7 @@ export function useSidePanel(browser: Browser) {
   const shown = items.find(item => item.key === active) ?? items.at(-1) ?? null;
   // Opened empty only on request (its chooser); otherwise a panel whose last tab or page went away closes itself.
   const [chooser, setChooser] = useState(false);
-  useEffect(() => { if (open && !items.length && !chooser) setOpen(false); }, [open, items.length, chooser]);
+  useEffect(() => { if (!items.length) { setFull(false); setChatCollapsed(false); if (open && !chooser) setOpen(false); } }, [open, items.length, chooser]);
   useEffect(() => { if (items.length) setChooser(false); }, [items.length]);
   const { visible, activeId } = browser.state ?? {}, command = browser.command;
 
@@ -126,7 +129,7 @@ export function useSidePanel(browser: Browser) {
     if (seen.current !== null && presses !== seen.current) toggleFull();
     seen.current = presses;
   }, [presses, toggleFull]);
-  return { open, full, width, setWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, openContext, toggleFiles, toggleTerminal };
+  return { open, full, width: shown ? width : emptyWidth, setWidth: shown ? setWidth : setEmptyWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, openContext, toggleFiles, toggleTerminal };
 }
 export type SidePanelState = ReturnType<typeof useSidePanel>;
 
@@ -159,6 +162,39 @@ type Props = {
  * that corner free. */
 export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, running = false, launch, covered, onAttach, imagesAllowed }: Props) {
   const [resizing, setResizing] = useState(false);
+  const [pinError, setPinError] = useState("");
+  const browserPins = useBrowserPins(setPinError);
+  const [selection, setSelection] = useState<string[]>([]), anchor = useRef<string | null>(null);
+  const [renaming, setRenaming] = useState<BrowserTab | null>(null), [name, setName] = useState(""), [renameError, setRenameError] = useState(""), [savingName, setSavingName] = useState(false);
+  const pageKeys = panel.items.filter(item => item.kind === "browser").map(item => item.key);
+  const selectedKeys = selection.filter(key => pageKeys.includes(key));
+  const selected = selectedKeys.length ? selectedKeys : panel.shown?.kind === "browser" ? [panel.shown.key] : [];
+  useEffect(() => { setSelection([]); anchor.current = null; setRenaming(null); }, [browser.sessionId]);
+  useEffect(() => {
+    const key = browser.state?.activeId ? `b:${browser.state.activeId}` : null;
+    if (key) setSelection(previous => previous.includes(key) ? previous : [key]);
+  }, [browser.state?.activeId]);
+  function selectPage(key: string, event: MouseEvent<HTMLButtonElement>) {
+    let next: string[];
+    if (event.shiftKey) {
+      const from = pageKeys.indexOf(anchor.current ?? (panel.shown?.kind === "browser" ? panel.shown.key : key)), to = pageKeys.indexOf(key);
+      const range = pageKeys.slice(Math.min(Math.max(0, from), to), Math.max(from, to) + 1);
+      next = event.ctrlKey || event.metaKey ? [...new Set([...selected, ...range])] : range;
+    } else if (event.ctrlKey || event.metaKey) {
+      next = selected.includes(key) && selected.length > 1 ? selected.filter(item => item !== key) : [...new Set([...selected, key])];
+      anchor.current = key;
+    } else { next = [key]; anchor.current = key; }
+    setSelection(next);
+    panel.select(next.includes(key) ? key : next.at(-1)!);
+  }
+  const closePages = (keys: string[]) => { for (const key of keys) panel.close(key); setSelection(previous => previous.filter(key => !keys.includes(key))); };
+  async function saveName() {
+    if (!renaming || savingName) return;
+    setSavingName(true); setRenameError("");
+    const response = await browser.command("rename", { id: renaming.id, text: name });
+    setSavingName(false);
+    if (response) setRenaming(null); else setRenameError("The tab could not be renamed. Try again.");
+  }
   // Tells the Files tab where this chat works and that it can open files (a path clicked in a reply is a file ref only then).
   useEffect(() => { attach(cwd); }, [cwd]);
   useEffect(() => detach, []);
@@ -179,7 +215,7 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
     <ResizeEdge className="side-resize" label="Resize side panel" width={panel.width} min={minWidth} initial={SIDEBAR.initial} grows="left" step={32}
       onResize={panel.setWidth} onClose={panel.closePanel} onDraggingChange={setResizing} />
     <div className="side-header">
-      <TabStrip label="Side panel tabs" activeKey={shown?.key ?? null} add={kinds.length > 0 && <DropdownMenu>
+      <TabStrip multiple label="Side panel tabs" activeKey={shown?.key ?? null} add={kinds.length > 0 && <DropdownMenu>
         <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="task-tab-new" aria-label="New side panel tab" title="New tab: terminal, browser, changes or files" />}><PlusIcon size={15} /></DropdownMenuTrigger>
         <DropdownMenuContent align="start">{kinds.map(kind => <DropdownMenuItem key={kind.id} onClick={kind.run}>{kind.icon}{kind.label}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>}>
@@ -194,9 +230,15 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
             actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
           if (item.kind === "terminal") return <Tab key={item.key} icon={<TerminalIcon size={14} />} label={item.terminal.n > 1 ? `Terminal ${item.terminal.n}` : "Terminal"} title={item.terminal.cwd} active={active}
             closeLabel={`Close Terminal ${item.terminal.n} tab`} actions={[{ id: "close", label: "Close tab", run: close }]} onSelect={select} onClose={close} />;
-          const { page } = item;
-          return <Tab key={item.key} icon={<BrowserIcon size={13} />} label={page.title} title={page.url === "about:blank" ? page.title : `${page.title}\n${page.url}`} active={active}
-            closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, close)} onSelect={select} onClose={close} />;
+          const { page } = item, targets = selected.includes(item.key) ? selected : [item.key];
+          const selectedPages = panel.items.filter((candidate): candidate is Item & { kind: "browser" } => candidate.kind === "browser" && targets.includes(candidate.key)).map(candidate => candidate.page);
+          const others = pageKeys.filter(key => !targets.includes(key)), right = pageKeys.slice(Math.max(...targets.map(key => pageKeys.indexOf(key))) + 1);
+          return <Tab key={item.key} icon={page.muted ? <VolumeX size={13} /> : <BrowserIcon size={13} />} label={page.title} title={page.url === "about:blank" ? page.title : `${page.title}\n${page.url}`} active={active} selected={selected.includes(item.key)}
+            closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, { selected: selectedPages, close: () => closePages(targets),
+              closeOthers: others.length ? () => closePages(others) : undefined, closeRight: right.length ? () => closePages(right) : undefined,
+              pin: () => { setPinError(""); void browserPins.toggle({ url: page.url, title: page.title }); }, pinned: browserPins.pins.some(pin => pin.url === page.url),
+              rename: () => { setName(page.title); setRenameError(""); setRenaming(page); } })}
+            onContextMenu={() => { if (!selected.includes(item.key)) { setSelection([item.key]); anchor.current = item.key; } }} onSelect={event => selectPage(item.key, event)} onClose={() => closePages(targets)} />;
         })}
       </TabStrip>
       <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={full} aria-label={full ? "Exit full view" : "Enter full view"} title={full ? "Exit full view (Ctrl+Shift+F)" : "Full view (Ctrl+Shift+F)"} onClick={() => panel.toggleFull()}>{full ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</Button>
@@ -210,7 +252,17 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
       {shown?.kind === "context" && <ContextPanel threadId={threadId} />}
       {shown?.kind === "browser" && <BrowserPanel onReturnToChat={panel.closePanel} browser={browser} cwd={cwd} covered={covered || resizing} onAttach={onAttach} imagesAllowed={imagesAllowed} />}
       {!shown && <Empty>{kinds.map(kind => <Button key={kind.id} type="button" variant="outline" size="sm" onClick={kind.run}>{kind.icon}{kind.label}</Button>)}</Empty>}
-    </ViewBoundary></div>
+    </ViewBoundary>{pinError && <p role="alert" className="browser-error">{pinError}</p>}</div>
+    <AlertDialog open={!!renaming} onOpenChange={value => { if (!value && !savingName) setRenaming(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>Rename tab</AlertDialogTitle><AlertDialogDescription>The name is saved with this chat’s browser. Leave it empty to use the page title.</AlertDialogDescription></AlertDialogHeader>
+        <form className="grid gap-4" aria-label="Rename tab" onSubmit={event => { event.preventDefault(); void saveName(); }}>
+          <Input aria-label="Tab name" maxLength={200} value={name} onChange={event => setName(event.target.value)} autoFocus />
+          {renameError && <p role="alert" className="text-sm text-destructive">{renameError}</p>}
+          <AlertDialogFooter><AlertDialogClose render={<Button type="button" variant="outline" disabled={savingName} />}>Cancel</AlertDialogClose><Button type="submit" disabled={savingName}>{savingName ? "Saving…" : "Save"}</Button></AlertDialogFooter>
+        </form>
+      </AlertDialogContent>
+    </AlertDialog>
   </section>;
 }
 

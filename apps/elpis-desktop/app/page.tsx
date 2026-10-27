@@ -4,7 +4,7 @@ import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import dynamic from "next/dynamic";
 import { flushSync } from "react-dom";
 import { cloneElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AgentsIcon, ArchiveIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { AgentsIcon, ArchiveIcon, BrowserIcon, ChatIcon, ExperimentLabIcon, FolderIcon, LoveSpotIcon, NewChatIcon, PinIcon, PlusIcon, SendIcon, WorkflowsIcon } from "@/components/elpis-icons";
 import { Archive, ArrowDown, Blocks, Bookmark, BookmarkMinus, ChevronRight, Layers, PanelLeft, PanelRightClose, PanelRightOpen, Pin, RefreshCw, Moon, Search, Settings as SettingsIcon, Square, Sun, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReorderItem, useReorder } from "@/components/reorder";
@@ -98,6 +98,7 @@ import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
+import { useBrowserPins } from "@/lib/browser-pins";
 import { useBrowser } from "@/components/browser-panel";
 import { onRequest as onFileRequest, openFile, setFileView } from "@/lib/files-pane";
 import { PersonalTip, usePersonal } from "@/components/personal-tip";
@@ -405,6 +406,7 @@ export default function Home() {
   useEffect(() => { setWindowAvailable(!!sessionWindowApi()); }, []);
   const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
   const side = useSidePanel(browser);
+  const browserPins = useBrowserPins(setError);
   useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
   // The side panel (components/side-panel.tsx): shells and browser pages as tabs, beside the chat.
@@ -2202,6 +2204,12 @@ export default function Home() {
               wrap={(area, content) => <ProjectActions project={item} onEdit={setProjectEdit} onRemove={removeProject} area={<ReorderItem reorder={projectReorder} itemId={item.id} render={area as React.ReactElement<React.HTMLAttributes<HTMLElement>>} />}>{content}</ProjectActions>}
               trailing={<Button className="project-new-chat" variant="ghost" size="icon-xs" aria-label={`Start new chat in ${item.name}`} title="New chat in this project" disabled={!ready || busy} onClick={() => void selectProject(item)}><PlusIcon size={13} /></Button>}
               empty={!chats.length}>{chats.map(chatRows)}</SidebarGroup>; })}
+        </section>}
+        {!searchTerm && browserPins.pins.length > 0 && <section aria-label="Pinned browser pages"><div className="section-label-row">{foldable("browser", "Browser")}</div>
+          {!collapsedSections.browser && browserPins.pins.map(pin => <div key={pin.url} className="thread-row">
+            <Button variant="ghost" className="thread-name w-full justify-start" title={`${pin.title}\n${pin.url}\nOpen in this chat’s browser`} onClick={() => { show("chat"); void browser.command("new", { url: pin.url }); }}><BrowserIcon size={14} /><span className="truncate">{pin.title}</span></Button>
+            <Button variant="ghost" size="icon-xs" aria-label={`Unpin ${pin.title} from sidebar`} title="Unpin from sidebar" onClick={() => void browserPins.toggle(pin)}><PinIcon size={14} /></Button>
+          </div>)}
         </section>}
         {pinnedChats.length > 0 && <section aria-label="Pinned"><div className="section-label-row">{foldable("pinned", "Pinned")}</div>{(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}</section>}
         {grouped && grouped.groups.length > 0 && <section aria-label="Groups"><div className="section-label-row">{foldable("groups", "Groups")}</div>{!collapsedSections.groups && grouped.groups.map(chatGroupSection)}</section>}

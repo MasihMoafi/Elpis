@@ -101,19 +101,9 @@ for (const colorScheme of ['light', 'dark']) test(`embedded Love Spot keeps the 
     const before = await sidebar.boundingBox();
     assert.equal(before.width, 320, 'the check must preserve a user-resized sidebar');
     await f.open(page);
-    const voiceInfo = page.getByRole('button', { name: 'Why read aloud is unavailable', exact: true });
-    await voiceInfo.focus();
-    // A mouse-opened board leaves focus in pointer mode; tab to the reason as a keyboard user would.
-    await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
-    const reasonId = await (await page.waitForFunction(button => {
-      if (document.activeElement !== button) return null;
-      return (button.getAttribute('aria-describedby') || '').split(/\s+/).find(id => document.getElementById(id)?.getAttribute('role') === 'tooltip');
-    }, await voiceInfo.elementHandle())).jsonValue();
-    const reason = page.locator(`[role="tooltip"][id=${JSON.stringify(reasonId)}]`);
-    await reason.getByText('Love Spot audio is temporarily unavailable.', { exact: true }).waitFor();
-    assert.ok((await voiceInfo.getAttribute('aria-describedby') || '').split(/\s+/).includes(await reason.getAttribute('id')), 'the reason also describes the focused control to assistive technology');
-    await page.keyboard.press('Escape'); await reason.waitFor({ state: 'hidden' });
-    await voiceInfo.blur();
+    assert.equal(await page.getByRole('group', { name: "Matilda's voice", exact: true }).count(), 0, 'unavailable audio has no toolbar group');
+    assert.equal(await page.getByRole('button', { name: /^(Why read aloud is unavailable|Voice unavailable|Start voice chat)$/ }).count(), 0);
+    assert.equal(await page.getByRole('switch', { name: 'Read replies aloud', exact: true }).count(), 0);
     for (const width of [1600, 1280, 1024, 820]) {
       await page.setViewportSize({ width, height: 960 });
       await page.waitForTimeout(200);

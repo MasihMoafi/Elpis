@@ -20,6 +20,7 @@ function fixture() {
         loadURL(url) { wc.url = url; wc.backgroundAtLoad = view.background; return Promise.resolve(); }, send: (channel, message) => wc.sent.push({ channel, message }),
         capturePage: async () => image, getZoomFactor: () => wc.zoom, setZoomFactor(value) { wc.zoom = value; },
         findInPage(text, options) { wc.finds.push([text, options]); return wc.finds.length; }, stopFindInPage(action) { wc.stopped = action; },
+        setAudioMuted(value) { wc.muted = value; }, isAudioMuted: () => !!wc.muted,
         reload() { wc.reloaded = true; }, reloadIgnoringCache() { wc.hard = true; }, stop() {}, print() { wc.printed = true; },
         openDevTools(options) { wc.devtools = options; }, inspectElement(x, y) { wc.inspected = [x, y]; }, isDevToolsOpened: () => !!wc.devtools,
         copy() {}, cut() {}, paste() {}, selectAll() {}, copyImageAt() {}, downloadURL() {}, replaceMisspelling() {}, session: {} });
@@ -202,13 +203,32 @@ test('a failed load reports its cause; a new navigation clears it; addresses car
   assert.equal(f.state().tabs[0].security, 'insecure');
 });
 
-test('tab menu commands: duplicate opens beside the tab, Copy URL writes the address', async () => {
+test('tab menu commands insert beside the target and preserve renamed/muted pages on restore', async () => {
   const f = fixture(); f.browser.open('https://a.example/'); f.browser.open('https://b.example/');
-  const [first] = f.state().tabs;
+  const [first, second] = f.state().tabs;
+  await f.command('new', { id: first.id });
+  assert.deepEqual(f.state().tabs.map(tab => tab.url), ['https://a.example/', 'about:blank', 'https://b.example/']);
   await f.command('duplicate', { id: first.id });
-  assert.deepEqual(f.state().tabs.map(tab => tab.url), ['https://a.example/', 'https://a.example/', 'https://b.example/']);
+  assert.deepEqual(f.state().tabs.map(tab => tab.url), ['https://a.example/', 'https://a.example/', 'about:blank', 'https://b.example/']);
   await f.command('copyUrl', { id: first.id });
   assert.equal(f.clipboard.text, 'https://a.example/');
+  await f.command('rename', { id: first.id, text: 'My reference' });
+  f.pages[0].emit('page-title-updated', {}, 'Site changed its title');
+  assert.equal(f.state().tabs[0].title, 'My reference', 'the person’s label wins over later page titles');
+  await f.command('mute', { id: first.id, value: true });
+  assert.equal(f.pages[0].muted, true);
+  assert.equal(f.state().tabs[0].muted, true);
+  assert.equal(f.state().tabs.find(tab => tab.id === second.id).muted, false, 'other tabs keep their audio');
+  const saved = f.browser.saved(), restored = fixture();
+  await restored.browser.restore(saved);
+  assert.equal(restored.state().tabs[0].title, 'My reference');
+  assert.equal(restored.state().tabs[0].muted, true);
+  assert.equal(restored.pages[0].muted, true, 'restore actually mutes the native page');
+  await restored.command('rename', { id: first.id, text: '   ' });
+  restored.pages[0].emit('page-title-updated', {}, 'Fresh page title');
+  assert.equal(restored.state().tabs[0].title, 'Fresh page title', 'clearing a custom name resumes page titles');
+  assert.match((await restored.command('rename', { id: first.id, text: 'x'.repeat(201) })).error, /Invalid/);
+  f.browser.dispose(); restored.browser.dispose();
 });
 
 test('Ctrl+T, Ctrl+W and Ctrl+Tab in Elpis’s own window are left to the chat tabs; on a page they act on the side panel’s page tabs', () => {

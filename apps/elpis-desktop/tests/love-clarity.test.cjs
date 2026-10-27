@@ -52,8 +52,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot identifies chats, l
     for (const id of ['review-chat', 'matilda-chat']) {
       await openChat(id);
       await page.locator('.love-unread').waitFor({ state: 'hidden' });
-      const unavailable = page.getByRole('button', { name: 'Voice unavailable', exact: true });
-      await unavailable.waitFor(); assert.equal(await unavailable.isDisabled(), true, 'legacy and named Love Spot chats share the audio fallback');
+      assert.equal(await page.getByRole('button', { name: /^(Voice unavailable|Start voice chat)$/ }).count(), 0, 'legacy and named Love Spot chats hide unavailable audio controls');
       await openChat('ordinary-chat');
       await reply(`Another answer after visiting ${id}.`);
       await page.locator('.love-unread').waitFor();

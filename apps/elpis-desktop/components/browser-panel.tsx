@@ -1,7 +1,7 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, PenLine, SquareDashedMousePointer, CircleAlert, X } from "lucide-react";
+import { ExternalLink, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Ellipsis, RefreshCw, Square, PenLine, SquareDashedMousePointer, CircleAlert, X, Copy, Link, Pencil, Plus, Pin, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -47,15 +47,28 @@ export type Browser = ReturnType<typeof useBrowser>;
 const BrowserDrawing = lazy(() => import("@/components/browser-drawing"));
 const measure = (src: string) => new Promise<{ width: number; height: number }>((resolve, reject) => { const image = new Image(); image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight }); image.onerror = () => reject(Error("The screenshot could not be read.")); image.src = src; });
 
-/** The ChatGPT app's menu for a page tab (right-click in the side panel): reload, duplicate, copy the address, open it elsewhere, close. */
-export function browserTabActions(browser: Browser, tab: BrowserTab, close: () => void): MenuAction[] {
-  const page = /^https?:/.test(tab.url);
+/** Page actions share the app's icon menu. Batch operations use only the explicitly selected pages. */
+export function browserTabActions(browser: Browser, tab: BrowserTab, options: {
+  selected: BrowserTab[]; close: () => void; closeOthers?: () => void; closeRight?: () => void;
+  rename: () => void; pin?: () => void; pinned?: boolean;
+}): MenuAction[] {
+  const { selected, close, closeOthers, closeRight, rename, pin, pinned } = options;
+  const page = /^https?:/.test(tab.url), many = selected.length > 1, muted = selected.every(page => page.muted);
+  const batch = async (action: string, value?: boolean) => {
+    for (const page of selected) if (!await browser.command(action, { id: page.id, ...(value === undefined ? {} : { value }) })) break;
+  };
   return [
-    ...(page ? [{ id: "reload", label: "Reload", run: () => void browser.command("reload", { id: tab.id }) },
-      { id: "duplicate", label: "Duplicate", run: () => void browser.command("duplicate", { id: tab.id }) },
-      { id: "copy", label: "Copy URL", run: () => void browser.command("copyUrl", { id: tab.id }) },
-      { id: "external", label: "Open in external browser", run: () => void browser.command("external", { id: tab.id }) }] : []),
-    { id: "close", label: "Close tab", hint: "Ctrl+W", run: close },
+    ...(page && pin ? [{ id: "pin", label: pinned ? "Unpin from sidebar" : "Pin to sidebar", icon: <Pin size={14} />, run: pin }] : []),
+    { id: "new", label: "New tab to the right", icon: <Plus size={14} />, separated: !!pin && page, run: () => void browser.command("new", { id: tab.id }) },
+    { id: "reload", label: many ? `Reload ${selected.length} tabs` : "Reload", icon: <RefreshCw size={14} />, run: () => void batch("reload") },
+    { id: "duplicate", label: many ? `Duplicate ${selected.length} tabs` : "Duplicate", icon: <Copy size={14} />, run: () => void batch("duplicate") },
+    ...(page ? [{ id: "copy", label: "Copy URL", icon: <Link size={14} />, run: () => void browser.command("copyUrl", { id: tab.id }) },
+      { id: "external", label: "Open in external browser", icon: <ExternalLink size={14} />, run: () => void browser.command("external", { id: tab.id }) }] : []),
+    { id: "rename", label: "Rename", icon: <Pencil size={14} />, separated: true, run: rename },
+    { id: "mute", label: many ? `${muted ? "Unmute" : "Mute"} ${selected.length} tabs` : muted ? "Unmute tab" : "Mute tab", icon: muted ? <Volume2 size={14} /> : <VolumeX size={14} />, run: () => void batch("mute", !muted) },
+    { id: "close", label: many ? `Close ${selected.length} tabs` : "Close tab", icon: <X size={14} />, separated: true, run: close },
+    ...(closeOthers ? [{ id: "closeOthers", label: "Close other tabs", icon: <X size={14} />, run: closeOthers }] : []),
+    ...(closeRight ? [{ id: "closeRight", label: "Close tabs to the right", icon: <X size={14} />, run: closeRight }] : []),
   ];
 }
 

@@ -335,3 +335,88 @@ for (const key of ['Enter', 'Control+Enter']) test(`a rejected comment keeps its
   await eventually(async () => assert.equal(await page.evaluate(() => window.__state.annotations.length), 0));
   assert.deepEqual(errors, []);
 });
+
+
+for (const colorScheme of ['light', 'dark']) test(`browser tabs select a range, toggle individual tabs and batch only that selection (${colorScheme})`, async t => {
+  const { page, errors, shoot } = await fixture(t);
+  await page.emulateMedia({ colorScheme });
+  await page.evaluate(() => {
+    const sample = window.__state.tabs[0];
+    window.__push({ tabs: Array.from({ length: 6 }, (_, index) => ({ ...sample, id: `range-${index}`, title: `Reference ${index + 1}`, url: `https://example.com/${index + 1}` })), activeId: 'range-0' });
+  });
+  const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
+  const selected = () => tabs.getByRole('tab', { selected: true }).allTextContents();
+  await tabs.getByRole('tab', { name: 'Reference 2', exact: true }).click();
+  await tabs.getByRole('tab', { name: 'Reference 5', exact: true }).click({ modifiers: ['Shift'] });
+  assert.deepEqual(await selected(), ['Reference 2', 'Reference 3', 'Reference 4', 'Reference 5']);
+  await tabs.getByRole('tab', { name: 'Reference 3', exact: true }).click({ modifiers: ['Control'] });
+  await tabs.getByRole('tab', { name: 'Reference 6', exact: true }).click({ modifiers: ['Meta'] });
+  assert.deepEqual(await selected(), ['Reference 2', 'Reference 4', 'Reference 5', 'Reference 6']);
+  await tabs.getByRole('tab', { name: 'Reference 4', exact: true }).click({ button: 'right' });
+  const menu = page.getByRole('menu');
+  for (const label of ['New tab to the right', 'Reload 4 tabs', 'Duplicate 4 tabs', 'Copy URL', 'Open in external browser', 'Rename', 'Mute 4 tabs', 'Close 4 tabs', 'Close other tabs']) {
+    const item = menu.getByRole('menuitem', { name: label, exact: true });
+    await item.waitFor();
+    assert.equal(await item.locator('svg').count(), 1, `${label} uses the shared icon menu`);
+  }
+  assert.ok(await menu.getByRole('separator').count() >= 2, 'navigation, labels/audio and closing have separate groups');
+  await shoot(`browser-tab-selection-${colorScheme}`);
+  const before = await page.evaluate(() => window.__commands.length);
+  await menu.getByRole('menuitem', { name: 'Reload 4 tabs', exact: true }).click();
+  await eventually(async () => assert.deepEqual((await page.evaluate(() => window.__commands)).slice(before), ['range-1', 'range-3', 'range-4', 'range-5'].map(id => ({ action: 'reload', id }))));
+  await tabs.getByRole('tab', { name: 'Reference 4', exact: true }).click({ button: 'right' });
+  const beforeClose = await page.evaluate(() => window.__commands.length);
+  await page.getByRole('menuitem', { name: 'Close 4 tabs', exact: true }).click();
+  await eventually(async () => assert.deepEqual((await page.evaluate(() => window.__commands)).slice(beforeClose).filter(item => item.action === 'close'), ['range-1', 'range-3', 'range-4', 'range-5'].map(id => ({ action: 'close', id }))));
+  await tabs.getByRole('tab', { name: 'Reference 1', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Close tab', exact: true }).waitFor();
+  assert.deepEqual(await selected(), ['Reference 1'], 'right-clicking outside the selection targets only that tab');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+});
+
+test('closing the last tab in full view reopens a compact empty chooser', async t => {
+  const { page, errors } = await fixture(t);
+  const side = page.getByRole('region', { name: 'Side panel', exact: true });
+  await widenSidePanel(page, 700);
+  await side.getByRole('button', { name: 'Enter full view', exact: true }).click();
+  await page.evaluate(() => window.__push({ visible: false, activeId: null, tabs: [] }));
+  await side.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Show side panel', exact: true }).click();
+  await side.waitFor();
+  assert.equal(await side.evaluate(element => element.classList.contains('full')), false, 'an empty panel never inherits full view');
+  assert.ok((await side.boundingBox()).width <= 320, 'the empty chooser stays compact despite an earlier large content width');
+  await page.evaluate(() => window.__push({ visible: true, activeId: 'restored', tabs: [{ id: 'restored', title: 'Restored page', url: 'https://example.com/', zoom: 100 }] }));
+  await page.getByRole('tab', { name: 'Restored page', exact: true }).waitFor();
+  assert.ok((await side.boundingBox()).width >= 650, 'real content restores the person’s chosen width');
+  assert.deepEqual(errors, []);
+});
+
+
+test('browser page pin, rename and mute use real controls; sidebar bookmarks survive reload and open in the current chat', async t => {
+  const { page, errors } = await fixture(t, { scoped: true });
+  const tab = page.getByRole('tab', { name: 'Example login', exact: true });
+  await tab.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Pin to sidebar', exact: true }).click();
+  const pins = page.getByRole('region', { name: 'Pinned browser pages', exact: true });
+  await pins.getByRole('button', { name: 'Example login', exact: true }).waitFor();
+  await page.reload();
+  await pins.getByRole('button', { name: 'Example login', exact: true }).click();
+  await eventually(async () => assert.ok(await page.evaluate(() => window.__commands.some(item => item.action === 'new' && item.url === 'https://example.com/login' && item.sessionId === window.__state.sessionId)), 'a saved address opens in this chat, without adopting another chat’s browser'));
+  await tab.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Rename tab', exact: true });
+  await dialog.getByRole('textbox', { name: 'Tab name', exact: true }).fill('My browser reference');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await eventually(async () => assert.ok((await page.evaluate(() => window.__commands)).some(item => item.action === 'rename' && item.id === 't1' && item.text === 'My browser reference')));
+  await tab.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Mute tab', exact: true }).click();
+  await eventually(async () => assert.ok((await page.evaluate(() => window.__commands)).some(item => item.action === 'mute' && item.id === 't1' && item.value === true)));
+  const before = await page.evaluate(() => window.__commands.length);
+  await pins.getByRole('button', { name: 'Unpin Example login from sidebar', exact: true }).click();
+  await pins.waitFor({ state: 'detached' });
+  assert.equal((await page.evaluate(() => window.__commands)).slice(before).filter(item => item.action === 'close').length, 0, 'unpinning never closes the person’s page');
+  await page.reload();
+  assert.equal(await pins.count(), 0, 'unpinning is persisted');
+  assert.deepEqual(errors, []);
+});

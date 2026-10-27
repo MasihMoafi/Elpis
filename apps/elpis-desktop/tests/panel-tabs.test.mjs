@@ -19,3 +19,8 @@ test('closing a tab shows its right neighbour, else its left, else nothing', () 
   assert.equal(neighbour(['a'], 'a'), null);
   assert.equal(neighbour(order, 'gone'), 'c');
 });
+
+
+test('browser insertion order is retained beside its source across mixed panel tabs', () => {
+  assert.deepEqual(mergeOrder(['t:1', 'b:a', 'b:b', 'f:files'], ['t:1', 'b:a', 'b:new', 'b:b', 'f:files'], ['b:a', 'b:new', 'b:b']), ['t:1', 'b:a', 'b:new', 'b:b', 'f:files']);
+});

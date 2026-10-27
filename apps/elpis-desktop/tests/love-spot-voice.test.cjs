@@ -20,7 +20,7 @@ async function loopback(page, offer) {
   }, offer);
 }
 
-for (const colorScheme of ['light', 'dark']) test(`Love Spot explains unavailable audio and keeps board text, persona and chat replies working (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`Love Spot hides unavailable audio and keeps board text, persona and chat replies working (${colorScheme})`, async () => {
   const posts = [], voiceSettingsReads = [];
   const f = await loveSpotFixture({ colorScheme, configureClient: client => { client.voiceStatus = async () => ({ available: true }); } });
   try {
@@ -38,14 +38,9 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot explains unavailabl
     });
     await page.reload();
     await f.open(page);
-    const read = page.getByRole('switch', { name: 'Read replies aloud', exact: true });
-    await read.waitFor(); assert.equal(await read.isDisabled(), true); assert.equal(await read.isChecked(), false);
-    const unavailable = page.getByRole('button', { name: 'Voice unavailable', exact: true });
-    await unavailable.focus(); await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
-    await page.getByRole('tooltip').filter({ hasText: 'Love Spot audio is temporarily unavailable.' }).waitFor();
-    assert.equal(await unavailable.isDisabled(), true);
-    await unavailable.evaluate(button => button.click());
-    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('group', { name: "Matilda's voice" }).count(), 0);
+    assert.equal(await page.getByRole('switch', { name: 'Read replies aloud', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0);
     const bounds = await page.locator('.excalidraw').boundingBox();
     await page.mouse.click(bounds.x + 450, bounds.y + 300); await page.keyboard.press('t');
     await page.mouse.click(bounds.x + 450, bounds.y + 300); await page.keyboard.type('Keep our text conversation.'); await page.keyboard.press('Escape');
@@ -59,7 +54,7 @@ for (const colorScheme of ['light', 'dark']) test(`Love Spot explains unavailabl
     const reply = page.locator('.message.agent').filter({ hasText: 'I am here with you.' });
     await reply.waitFor(); await reply.hover();
     assert.equal(await reply.getByRole('button', { name: 'Read aloud', exact: true }).count(), 0);
-    await page.getByRole('button', { name: 'Voice unavailable', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Voice unavailable', exact: true }).count(), 0, 'linked Love Spot chats hide unavailable Voice too');
     assert.equal(posts.filter(route => /\/voice(?:\/|$)/.test(route)).length, 0, 'the board, saved Voice-on preference and chat must not launch or warm audio');
     assert.deepEqual(await page.evaluate(() => window.voiceLaunches), { microphone: 0, peers: 0 });
     const shots = path.join(process.env.HOME, '.cache/elpis-shots'); await fs.mkdir(shots, { recursive: true });

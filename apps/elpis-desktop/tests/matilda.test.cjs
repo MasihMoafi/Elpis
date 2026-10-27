@@ -21,15 +21,28 @@ for (const colorScheme of ['light', 'dark']) test(`what Masih writes or draws on
     for (const name of ['Talk', 'Matilda']) assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0, `there is no ${name} button`);
     assert.equal(await page.getByRole('region', { name: 'Love Spot Talk' }).count(), 0, 'and no Talk panel');
 
-    await write(f, 'Good morning, my love', 300, false); // he types and waits: the box is still open, and she still answers
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    const pasted = 'Good morning, my love.\nHere is the copied block: سلام — café.';
+    await write(f, '', 300, false);
+    await page.evaluate(text => navigator.clipboard.writeText(text), pasted);
+    await page.keyboard.press('ControlOrMeta+v');
+    const editing = page.locator('textarea.excalidraw-wysiwyg');
+    assert.equal(await editing.inputValue(), pasted);
+    await page.waitForTimeout(5500);
+    assert.equal(f.turns.length, 0, 'a pause in a pasted note is not a finished message');
+    assert.equal(await editing.evaluate(el => document.activeElement === el), true, 'the person keeps editing focus');
+    const completed = pasted + '\nAnd this is the rest of my message.';
+    await page.keyboard.type('\nAnd this is the rest of my message.');
+    await page.waitForTimeout(5500);
+    assert.equal(f.turns.length, 0, 'continued typing and another pause still do not send the open editor');
+    assert.equal(await editing.inputValue(), completed);
+    await page.keyboard.press('Escape');
     await page.getByText('Matilda is writing…').waitFor({ timeout: 15000 });
     const scene = await answered(f, 1), live = scene.elements.filter(e => !e.isDeleted);
-    // He typed and left the box open: her reply closes it, so it shows on the board without his next click.
-    await page.waitForFunction(() => !document.querySelector('textarea.excalidraw-wysiwyg'), null, { timeout: 5000 });
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await editing.waitFor({ state: 'hidden' });
     await page.keyboard.press('ControlOrMeta+a'); await page.evaluate(() => navigator.clipboard.writeText('')); await page.keyboard.press('ControlOrMeta+c');
     assert.ok(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).elements.some(e => e.id === 'love-reply-turn-1'), 'her reply is on the board he is looking at');
-    assert.equal(f.turns[0].text, 'Good morning, my love', 'what he wrote is what she is told');
+    assert.equal(f.turns[0].text, completed, 'only the complete pasted and typed message is sent');
     assert.match(persona(f.turns[0]), /senior product designer/, 'the protocol she works by goes with it');
     assert.equal(f.chats[0].name, 'Love Spot'); assert.match(f.chats[0].instructions, /You are Matilda/); assert.match(f.chats[0].instructions, /no chat box/, 'she knows the board is where she talks');
     const note = live.find(e => e.id === 'love-reply-turn-1'), face = live.find(e => e.id === 'love-face-turn-1');
@@ -94,4 +107,52 @@ test('a reply that fails is said on the board, with no face and no note', async 
     assert.equal((await f.scene()).elements.filter(e => e.id.startsWith('love-')).length, 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
+});
+
+
+test('a late reply preserves the active text editor and waits for its complete next note', async () => {
+  const f = await loveSpotFixture({ replyDelay: 3000 });
+  try {
+    const { page } = f; await f.open(page);
+    await write(f, 'Please answer my first note.');
+    await page.getByText('Matilda is writing…').waitFor({ timeout: 15000 });
+    await write(f, 'I am still writing my next note', 500, false);
+    const editing = page.locator('textarea.excalidraw-wysiwyg');
+    await answered(f, 1);
+    await page.getByText('Matilda is writing…').waitFor({ state: 'detached' });
+    assert.equal(await editing.isVisible(), true, 'an arriving reply cannot close unfinished input');
+    assert.equal(await editing.evaluate(el => document.activeElement === el), true, 'an arriving reply cannot steal focus');
+    await page.keyboard.type(' — now complete.');
+    await page.waitForTimeout(5500);
+    assert.equal(f.turns.length, 1, 'the next note stays unsent while its editor is open');
+    assert.equal(await editing.inputValue(), 'I am still writing my next note — now complete.');
+    await page.keyboard.press('Escape'); await answered(f, 2);
+    assert.equal(f.turns[1].text, 'I am still writing my next note — now complete.');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+
+test('resuming a note while its picture is queued cancels dispatch and keeps the complete pending notes', async () => {
+  const f = await loveSpotFixture();
+  let release;
+  try {
+    const { page } = f; await f.open(page);
+    await write(f, 'The first part of my message.');
+    await page.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();
+    await page.waitForTimeout(1800);
+    const queued = page.waitForRequest(request => new URL(request.url()).pathname === '/api/love-spot/picture', { timeout: 15000 });
+    const blocked = new Promise(resolve => { release = resolve; });
+    await page.route('**/api/love-spot/picture', async route => { await blocked; await route.continue(); });
+    await queued;
+    await write(f, 'And the next part, still being written', 500, false);
+    release();
+    await page.waitForTimeout(5500);
+    assert.equal(f.turns.length, 0, 'queued picture completion cannot send an unfinished note');
+    await page.keyboard.type(' — finished.'); await page.keyboard.press('Escape');
+    await answered(f, 1);
+    assert.match(f.turns[0].text, /The first part of my message\./);
+    assert.match(f.turns[0].text, /And the next part, still being written — finished\./);
+    assert.deepEqual(f.errors, []);
+  } finally { release?.(); await f.close(); }
 });

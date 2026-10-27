@@ -881,6 +881,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .task-tab > button[role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-tab > button[role="tab"] svg { flex-shrink:0; }
 .task-tab:hover, .task-tab[data-popup-open] { background:var(--hover); color:var(--foreground); }
+.task-tab[data-selected]:not(.active) { background:var(--selected); color:var(--foreground); border-color:var(--border); }
 .task-tab.active { background:var(--card); border-color:var(--border); color:var(--foreground); }
 .task-tab.active::after { content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:1.5px; background:var(--primary); box-shadow:0 0 8px var(--primary); }
 .task-tab.chat-tab { max-width:340px; font-weight:500; }

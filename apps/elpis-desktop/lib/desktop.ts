@@ -6,7 +6,7 @@ export type DesktopMenu = { command:(command:NativeMenuCommand)=>Promise<{perfor
 declare global { interface Window { __elpisFlushLoveSpot?: () => Promise<boolean>; readonly __elpisHasUnsavedFiles?: boolean; __elpisFlushWorkflow?: () => boolean; __elpisFlushSettings?: () => boolean } }
 /** A page that failed to load: desktop/browser-policy.cjs loadFailure. */
 export type BrowserFailure = { heading:string; summary:string; tips:string[]; code:string };
-export type BrowserTab = { id:string; url:string; title:string; loading:boolean; error:string|null; failure:BrowserFailure|null; security:"secure"|"insecure"|"local"|null; zoom:number; comments:number; canGoBack:boolean; canGoForward:boolean };
+export type BrowserTab = { id:string; url:string; title:string; customTitle?:string|null; muted?:boolean; loading:boolean; error:string|null; failure:BrowserFailure|null; security:"secure"|"insecure"|"local"|null; zoom:number; comments:number; canGoBack:boolean; canGoForward:boolean };
 /** A comment on the active page (annotation mode); `draft` is the one being written. */
 export type BrowserComment = { id:string; number:number; kind:"element"|"region"|"text"; label:string; body:string };
 export type BrowserState = { visible:boolean; activeId:string|null; focusAddress:number; tabs:BrowserTab[]; annotating:boolean; markersVisible:boolean; annotations:BrowserComment[]; draft:(BrowserComment&{editing:boolean})|null;

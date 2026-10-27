@@ -30,7 +30,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       annotations:tab?tab.comments.map(item=>commentView(tab,item)):[],
       draft:tab?.draft?{...commentView(tab,tab.draft),editing:!!tab.draft.editing}:null,
       find:tab?{open:tab.find.open,text:tab.find.text,matches:tab.find.matches,active:tab.find.active,focus:tab.find.focus}:{open:false,text:'',matches:0,active:0,focus:0},
-      tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.title,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.view.webContents.navigationHistory.canGoForward()}))};
+      tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.customTitle??item.title,customTitle:item.customTitle,muted:item.view.webContents.isAudioMuted?.()??false,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.view.webContents.navigationHistory.canGoForward()}))};
   };
   const emit=()=>{if(disposed)return;onChange?.();if(presented&&!host.isDestroyed()&&!host.webContents.isDestroyed())host.webContents.send('elpis:browser:state',snapshot());};
   const agent=createBrowserAgent({tabs,open,select,origin,emit,isPresented:()=>presented,prepare(){if(annotating)setAnnotating(false);}});
@@ -80,7 +80,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
     // A session can receive agent input before its pane has ever been shown.
     const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
     host.contentView.addChildView(view);
-    const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
+    const tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,loading:false,error:null,failure:null,view,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
     if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
     const wc=view.webContents;tint(tab);
     agent.observe(tab);
@@ -226,7 +226,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       case 'agentAllow':agent.allow();break;
       case 'toggle':if(!tabs.size)open();else{visible=!visible;place();emit();}break;
       case 'hide':visible=false;place();emit();break;
-      case 'new':open(input.url);break;
+      case 'new':if(input.id&&!tab)throw Error('This browser tab is closed.');open(input.url,{after:input.id??null});break;
       case 'select':select(input.id);break;
       case 'close':close(input.id);break;
       case 'navigate':if(!tab)throw Error('Open a browser tab first.');navigate(tab,input.url);break;
@@ -241,7 +241,9 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
         await openExternal(url);break;
       }
       case 'external':if(tab&&/^https?:/.test(tab.url)&&openExternal)void openExternal(tab.url);break;
-      case 'duplicate':if(tab&&/^https?:/.test(tab.url))open(tab.url,{after:tab.id});break;
+      case 'duplicate':if(tab)open(tab.url,{after:tab.id});break;
+      case 'rename':if(!tab)throw Error('This browser tab is closed.');tab.customTitle=text(input.text,200,'tab name').trim()||null;emit();break;
+      case 'mute':if(!tab)throw Error('This browser tab is closed.');if(typeof input.value!=='boolean')throw Error('Invalid audio setting.');tab.view.webContents.setAudioMuted(input.value);emit();break;
       case 'copyUrl':if(tab&&/^https?:/.test(tab.url))clipboard?.writeText(tab.url);break;
       case 'annotate':setAnnotating(input.value===undefined?!annotating:input.value===true);break;
       case 'comment':{
@@ -310,7 +312,7 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
       }
       presented=value;if(!value){bounds=null;obscured=true;}place();if(value)emit();
     },
-    saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,zoom:tab.view.webContents.getZoomFactor(),
+    saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,customTitle:tab.customTitle,muted:tab.view.webContents.isAudioMuted?.()??false,zoom:tab.view.webContents.getZoomFactor(),
       history:tab.view.webContents.navigationHistory.getAllEntries?.(),historyIndex:tab.view.webContents.navigationHistory.getActiveIndex?.()}))};},
     async restore(saved){
       if(!saved||!Array.isArray(saved.tabs))return;
@@ -320,6 +322,8 @@ function createBrowser({host,origin,WebContentsView,session,ipcMain,openExternal
             ?item.history.map(entry=>({...entry,url:browserUrl(entry.url,origin)})):null;
           const id=open(item.url,{id:item.id,restoring:!!history}),tab=tabs.get(id),wc=tab.view.webContents;
           if(typeof item.title==='string')tab.title=item.title.slice(0,200);
+          if(typeof item.customTitle==='string')tab.customTitle=item.customTitle.trim().slice(0,200)||null;
+          if(item.muted===true)wc.setAudioMuted(true);
           if(Number.isFinite(item.zoom)&&item.zoom>=0.25&&item.zoom<=5)wc.setZoomFactor(item.zoom);
           // restore itself loads the active entry. A separate loadURL would duplicate it.
           // Do not wait for a remote site before allowing the user to switch chats.

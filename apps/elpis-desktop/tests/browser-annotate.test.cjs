@@ -99,3 +99,30 @@ test('wheel over an inner scroll area still scrolls it while annotating', async 
     await page.waitForFunction(() => document.querySelector('#scroller').scrollTop > 0);
   });
 });
+
+
+for (const kind of ['modal', 'popover']) test(`annotation selects popup elements above the page without dismissing its ${kind}`, async () => {
+  await withPage(async page => {
+    await page.evaluate(kind => {
+      const popup = document.createElement(kind === 'modal' ? 'dialog' : 'div');
+      popup.id = 'popup'; if (kind === 'popover') popup.setAttribute('popover', 'manual');
+      popup.innerHTML = '<button id="popup-choice">Popup choice</button>';
+      popup.style.cssText = 'position:fixed;inset:120px auto auto 200px;padding:40px;margin:0;background:white;border:1px solid black';
+      popup.querySelector('button').onclick = () => { window.popupClicks = (window.popupClicks || 0) + 1; };
+      document.body.append(popup);
+      if (kind === 'modal') popup.showModal(); else popup.showPopover();
+    }, kind);
+    await page.evaluate(() => window.__emit({ type: 'state', mode: true, markersVisible: true, comments: [], draft: null }));
+    const choice = await center(page, '#popup-choice');
+    await page.mouse.click(choice.x, choice.y);
+    const picks = await sent(page, 'pick');
+    assert.equal(picks.length, 1, 'the annotation layer receives the click above the popup');
+    assert.equal(picks[0].pick.selector, '#popup-choice');
+    assert.equal(picks[0].pick.name, 'Popup choice');
+    assert.equal(await page.evaluate(() => window.popupClicks || 0), 0, 'annotating never activates the popup option');
+    assert.equal(await page.locator('#popup').evaluate((element, kind) => kind === 'modal' ? element.open : element.matches(':popover-open'), kind), true, 'annotation preserves the popup');
+    await page.evaluate(() => window.__emit({ type: 'state', mode: false, markersVisible: false, comments: [], draft: null }));
+    await page.mouse.click(choice.x, choice.y);
+    assert.equal(await page.evaluate(() => window.popupClicks), 1, 'leaving annotation restores normal popup input');
+  });
+});

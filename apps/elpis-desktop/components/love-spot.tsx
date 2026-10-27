@@ -185,9 +185,6 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     // newest complete remote scene only after the local edit is committed.
     if (editor?.getAppState().editingTextElement || document.querySelector("textarea.excalidraw-wysiwyg")) {
       deferred.current = data;
-      // His box is still open after the quiet she waited for, so close it as Escape does (Excalidraw's own text box listens for it): her reply shows now, not after his next click.
-      if (data.scene.elements.some(e => !e.isDeleted && e.id.startsWith("love-reply-") && !editor?.getSceneElementsIncludingDeleted().some(shown => shown.id === e.id)))
-        document.querySelector("textarea.excalidraw-wysiwyg")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       return;
     }
     const recovered = journal.current!.recover(data.scene.elements, data.scene.page);
@@ -335,29 +332,39 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     return () => { mounted.current = false; clearTimeout(saveTimer.current); clearTimeout(viewTimer.current); saveLatest.current?.(true, true); };
   }, []);
 
-  const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>) => {
+  const sendWithBoard = useCallback(async (send: (revision: string) => Promise<void>, readyToSend: () => boolean) => {
+    const origin = currentPage.current?.session;
+    const isCurrent = () => readyToSend() && currentPage.current?.session === origin;
     clearTimeout(saveTimer.current); clearTimeout(viewTimer.current);
     // Keep capture and dispatch in the save queue. A simultaneous save must
     // wait until Matilda accepts the picture before changing its revision.
     const work = saving.current.then(async () => {
-      if (!editor) throw new Error("The board is still opening. Try again in a moment.");
-      const data = await api<Saved>("/love-spot", await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current)));
-      receive(data); await savePicture(data); await send(data.revision);
+      if (!editor || !isCurrent()) return false;
+      const drawing = await lightDrawing(snapshot(editor.getSceneElementsIncludingDeleted(), editor.getAppState(), editor.getFiles(), currentPage.current));
+      if (!isCurrent()) return false;
+      const data = await api<Saved>("/love-spot", drawing);
+      if (!isCurrent()) return false;
+      receive(data);
+      try { await savePicture(data); }
+      catch (cause) { if (!isCurrent()) return false; throw cause; }
+      if (!isCurrent()) return false;
+      await send(data.revision);
+      return true;
     });
     saving.current = work.then(() => {}, () => {});
     return work;
   }, [editor, receive]);
 
   // Matilda answers what he writes or draws; the board is the conversation. `told` reads the notes as they stand when she looks.
-  const matilda = useMatilda({ ready: !!editor && !!settings && !calling, onError: setError,
+  const matilda = useMatilda({ context: page?.session, ready: () => !!editorRef.current && !!settings && !calling && !pageBusy && !editorRef.current.getAppState().editingTextElement && !document.querySelector("textarea.excalidraw-wysiwyg"), onError: setError,
     told: ids => told(editorRef.current?.getSceneElements() ?? [], ids),
-    send: (text, persona) => sendWithBoard(async revision => {
+    send: (text, persona, isCurrent) => sendWithBoard(async revision => {
       const version = voiceVersion.current;
       speech?.stop();
       const reply = await api<{ voice: MatildaVoice }>("/love-spot/talk", { text, persona, revision, ...(pick.model ? { model: pick.model, ...(pickedProvider ? { provider: pickedProvider } : {}) } : {}) });
       if (mounted.current && version === voiceVersion.current) { setVoice(reply.voice); voiceEnabled.current = reply.voice.enabled; }
       if (mounted.current && voiceEnabled.current && reply.voice.enabled) speech?.stream("matilda");
-    }) });
+    }, isCurrent) });
 
   async function changeVoice(enabled: boolean) {
     if (!LOVE_SPOT_AUDIO.available) return;
@@ -387,6 +394,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     latest.current = snapshot(all, appState, files, currentPage.current);
     if (recoveryPending.current) { recoveryPending.current = false; queueMicrotask(() => void saveLatest.current?.()); }
     const editing = appState.editingTextElement && all.find(e => e.id === appState.editingTextElement?.id);
+    const editChanged = editingId.current !== editing?.id;
     const endedEdit = editingId.current && !editing;
     editingId.current = editing?.id;
     if (!remote.current && editing && currentPage.current) journal.current!.record(editing, currentPage.current);
@@ -397,8 +405,8 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
     // Loading, selection and pointer movement do not need a save or a new PNG.
     const filesChanged = before && (Object.keys(before.files).length !== Object.keys(files).length || Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
     const drawingChanged = before && (filesChanged || versions(before.elements) !== versions(all) || JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
+    if (!remote.current && (drawingChanged || editChanged)) matilda.notice(drawingChanged ? noticed(before.elements, all) : []);
     if (!remote.current && drawingChanged) {
-      matilda.notice(noticed(before.elements, all));
       setSaveStatus("Unsaved");
       clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => save(), 150);
     }
@@ -479,13 +487,13 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       </div>
       {/* Masih, 23 Oct: "I can't change her model!" It sat inside the ☰ menu's dialog; it belongs on the bar, beside the page. */}
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onChange={value => { setPick(value); keepModel(value); }} /></div>
-      <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
+      {LOVE_SPOT_AUDIO.available && <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Matilda's voice">
         <label className="flex items-center gap-2" title={LOVE_SPOT_AUDIO.available ? "Matilda reads each reply in your ChatGPT voice. It may use your ChatGPT allowance." : LOVE_SPOT_AUDIO.reason}><span aria-hidden="true">{LOVE_SPOT_AUDIO.available && voice?.enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</span>Read replies aloud<Switch aria-label="Read replies aloud" checked={LOVE_SPOT_AUDIO.available && !!voice?.enabled} disabled={!LOVE_SPOT_AUDIO.available || !voice?.available || voiceSaving} onCheckedChange={enabled => void changeVoice(enabled)} /></label>
         {(!LOVE_SPOT_AUDIO.available || voice && !voice.available) && <Tooltip content={LOVE_SPOT_AUDIO.available ? voice?.reason || "ChatGPT voice is unavailable." : LOVE_SPOT_AUDIO.reason}><Button variant="ghost" size="icon-xs" aria-label="Why read aloud is unavailable"><Info aria-hidden="true" size={16} /></Button></Tooltip>}
         <Voice key={page?.session} threadId="love-spot" persona={matilda.persona} disabled={!editor || !voice?.enabled} unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason} onBusy={busy => { setCalling(busy); if (busy) speech?.stop(); }} />
         {voiceSaving && <span className="sr-only" role="status">Saving Voice…</span>}
         {voiceProblem && <span className="text-destructive" role="alert">{voiceProblem}</span>}
-      </div>
+      </div>}
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}

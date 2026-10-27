@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioLines, MicOff, Mic, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
 import { api, sessionReady } from "@/lib/api";
 
 type Heard = { events: Record<string, number>; bytes: number; packets: number; energy: number; mic: number; listened: boolean; began: number };
@@ -133,7 +132,7 @@ export function Voice({ threadId, disabled, onBusy, persona, unavailableReason }
       end(cause instanceof DOMException && cause.name === "NotAllowedError" ? "Microphone access was denied. Allow it and try again." : cause instanceof Error ? cause.message : "Voice could not start.");
     }
   }
-  if (unavailableReason) return <Tooltip content={unavailableReason}><Button type="button" size="icon" variant="ghost" className="opacity-50" aria-label="Voice unavailable" disabled focusableWhenDisabled title={unavailableReason}><AudioLines size={17} /></Button></Tooltip>;
+  if (unavailableReason) return null;
   if (!available) return null;
   const active = phase !== "idle";
   // The same row, buttons and status as dictation, because it is the same kind of control.

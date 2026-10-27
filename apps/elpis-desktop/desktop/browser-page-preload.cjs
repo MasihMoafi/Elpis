@@ -15,7 +15,11 @@ function box(shadow, values) { const element = document.createElement('div'); st
 const pill = { background: BLUE, color: '#fff', font: '600 11px/16px system-ui, sans-serif', padding: '1px 6px', 'border-radius': '4px', 'white-space': 'nowrap', 'letter-spacing': '0' };
 
 function ensureLayer() {
-  const root = document.documentElement; if (!root) return null;
+  const pageRoot = document.documentElement; if (!pageRoot) return null;
+  // Modal dialogs make everything outside them inert. The annotation layer must be their child,
+  // then enter Chromium's top layer so dialogs and popovers cannot cover its pointer catcher.
+  const modals = mode ? [...document.querySelectorAll('dialog:modal')] : [];
+  const root = modals.findLast(dialog => dialog.contains(document.activeElement)) ?? modals.at(-1) ?? pageRoot;
   if (!layer) {
     // Inline styles marked important: they win over any page stylesheet and are allowed under a strict CSP.
     const host = style(document.createElement('elpis-annotations'), { all: 'initial', position: 'fixed', inset: '0', 'z-index': '2147483647', 'pointer-events': 'none', display: 'block' });
@@ -25,7 +29,14 @@ function ensureLayer() {
       drag: box(shadow, { border: `1.5px dashed ${BLUE}`, background: WASH }), draft: box(shadow, { border: `2px solid ${BLUE}`, background: 'rgba(47,111,237,0.06)', 'border-radius': '3px', 'box-shadow': '0 0 0 3px rgba(47,111,237,0.25)' }), markers: [] , shadow };
     listen(catcher);
   }
-  if (!layer.host.isConnected) root.append(layer.host);
+  if (layer.host.parentElement !== root) { if (layer.host.matches(':popover-open')) layer.host.hidePopover(); root.append(layer.host); }
+  if (mode && layer.host.showPopover) {
+    layer.host.setAttribute('popover', 'manual');
+    if (!layer.host.matches(':popover-open')) layer.host.showPopover();
+  } else if (layer.host.hasAttribute('popover')) {
+    if (layer.host.matches(':popover-open')) layer.host.hidePopover();
+    layer.host.removeAttribute('popover');
+  }
   return layer;
 }
 
@@ -207,6 +218,13 @@ addEventListener('keyup', event => { if (event.code === 'Space' && space) { spac
 addEventListener('blur', () => { if (space) { space = false; schedule(); } });
 addEventListener('scroll', schedule, { capture: true, passive: true });
 addEventListener('resize', schedule);
+// A popup may open while Space temporarily gives the page control. Bring the catcher above that
+// newly opened top-layer surface without closing it or changing the person's page selection.
+addEventListener('toggle', event => {
+  if (!mode || !layer || event.target === layer.host || !(event.target instanceof Element) || !event.target.matches('dialog,[popover]')) return;
+  if (layer.host.matches(':popover-open')) layer.host.hidePopover();
+  schedule();
+}, true);
 
 ipcRenderer.on('elpis:annotate', (_event, message) => {
   if (!message || typeof message !== 'object') return;

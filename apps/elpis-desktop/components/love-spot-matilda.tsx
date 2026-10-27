@@ -11,15 +11,16 @@ import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 const QUIET = 4000;
 
 /** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mjs). */
-export function useMatilda({ ready, told, send, onError }: {
-  ready: boolean; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string) => Promise<void>; onError: (message: string) => void;
+export function useMatilda({ ready, context, told, send, onError }: {
+  ready: () => boolean; context?: string; told: (ids: ReadonlySet<string>) => string; send: (text: string, persona: string, isCurrent: () => boolean) => Promise<boolean>; onError: (message: string) => void;
 }) {
   const [persona, setPersona] = useState(savedPersona), [replying, setReplying] = useState(false);
-  const latest = useRef({ ready, told, send, onError, persona });
-  latest.current = { ready, told, send, onError, persona };
+  const latest = useRef({ ready, context, told, send, onError, persona });
+  latest.current = { ready, context, told, send, onError, persona };
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
   const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const mounted = useRef(false), poll = useRef(0);
+  const mounted = useRef(false), poll = useRef(0), generation = useRef(0);
+  useEffect(() => { generation.current++; ids.current.clear(); clearTimeout(timer.current); }, [context]);
   /** Asks the bridge whether she is still writing, once a second while she is: no stream stays open, because each window's streams share the browser's six connections. */
   const ask = useCallback(async () => {
     if (!mounted.current) return;
@@ -38,18 +39,27 @@ export function useMatilda({ ready, told, send, onError }: {
   const look = useCallback(async () => {
     if (!mounted.current || !ids.current.size) return;
     const now = latest.current;
-    if (!now.ready || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
-    const text = now.told(ids.current); ids.current = new Set();
+    if (!now.ready() || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
+    const batch = ids.current, token = generation.current;
+    const text = now.told(batch); ids.current = new Set();
     if (!text) return;
+    const isCurrent = () => mounted.current && token === generation.current && now.context === latest.current.context && latest.current.ready();
     working.current = true; said.current = "";
-    try { await now.send(text, now.persona.trim() || PROTOCOL); ask(); }
+    try {
+      if (await now.send(text, now.persona.trim() || PROTOCOL, isCurrent)) ask();
+      else if (mounted.current && now.context === latest.current.context) for (const id of batch) ids.current.add(id);
+    }
     catch (cause) { if (mounted.current) now.onError(cause instanceof Error ? cause.message : "Matilda could not answer."); }
-    finally { working.current = false; }
+    finally {
+      working.current = false;
+      if (mounted.current && ids.current.size) { clearTimeout(timer.current); timer.current = setTimeout(look, QUIET); }
+    }
   }, [ask]);
   const notice = useCallback((found: string[]) => {
-    if (!found.length) return;
+    generation.current++;
     for (const id of found) ids.current.add(id);
-    clearTimeout(timer.current); timer.current = setTimeout(look, QUIET);
+    clearTimeout(timer.current);
+    if (ids.current.size) timer.current = setTimeout(look, QUIET);
   }, [look]);
   useEffect(() => { mounted.current = true; ask(); return () => { mounted.current = false; poll.current++; clearTimeout(timer.current); clearTimeout(asking.current); }; }, [ask]);
   return { persona, keep: (value: string) => { setPersona(value); keepPersona(value); }, replying, notice };
