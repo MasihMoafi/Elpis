@@ -9,4 +9,4 @@ Masih approved a small presence he can summon, pin and unpin, and ask to play hi
 
 Verify persistence across two store instances, separate pages, direct-command positive/negative cases, player failure and real MPRIS control on a private session bus. Exercise pin/unpin, keyboard focus, reload and narrow layouts in both themes. Validate the packaged app with a throwaway profile before installing forward.
 
-Evidence: private-bus music controls and persistence pass; board pin/unpin and narrow layouts pass in light and dark. Private packaged-app verification remains the final installation check.
+Evidence: private-bus music controls and persistence pass; board pin/unpin and narrow layouts pass in light and dark. The packaged standalone app with its real bridge also passed pin/unpin, Enter, reload persistence, readable player failure, unchanged drawing and no agent-start/interrupt requests. Installed forward as `ae76cf5ab`; the running app was left open. Evidence: `~/.cache/elpis-tests/matilda-pin/native-result.json`.
