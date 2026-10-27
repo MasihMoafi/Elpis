@@ -707,3 +707,21 @@ test('light and dark: the pane has only approved amber/orange accents in light, 
     } finally { await f.close(); }
   }
 });
+
+
+test('empty Files returns to a compact tree and restores the chosen document width on reopening', async () => {
+  const f = await open();
+  try {
+    await f.ref('src/lib/parser.ts:2-3').click(); await f.editor('src/lib/parser.ts').waitFor();
+    await widenSidePanel(f.page, 740);
+    const chosen = (await f.side.boundingBox()).width;
+    await f.tabs.getByRole('button', { name: 'Close parser.ts', exact: true }).click();
+    await eventually(async () => assert.ok((await f.side.boundingBox()).width <= 360, 'an empty Files pane does not inherit a wide document or browser layout'));
+    await f.tree.waitFor();
+    assert.equal(await f.view.isVisible(), false, 'the compact tree does not reserve a blank document viewer');
+    if (process.env.ELPIS_SHOTS) await f.shot('files-empty-compact');
+    await f.ref('src/lib/parser.ts:2-3').click(); await f.editor('src/lib/parser.ts').waitFor();
+    await eventually(async () => assert.ok(Math.abs((await f.side.boundingBox()).width - chosen) <= 1, 'opening real content restores the deliberate width'));
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

@@ -71,7 +71,7 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
     assert.equal(new Set(names).size, 4, 'legacy duplicate run names get distinct display names');
     assert.ok(names.includes('Fix a bug 2'));
     assert.equal(await workflows(page).locator('.workflow-mark').count(), 0, 'workflow names and their section identify them without extra coloured dots');
-    assert.equal(await workflows(page).getByRole('button', { name: /^Colour for / }).count(), 0, 'sidebar status is not an extra workflow colour action');
+    assert.equal(await workflows(page).getByRole('button', { name: /^Colour for / }).count(), 4, 'each conversation has one explicit manual colour action, separate from runtime status');
     await sidebar(page).locator('section[aria-label="Projects"]').getByRole('button', { name: 'Projects', exact: true }).click();
     await page.mouse.move(800, 90);
     await shot(page, `sidebar-default-${colorScheme}`);
@@ -171,7 +171,7 @@ test('workflow names reject duplicates; canvas colour and separate sidebar names
     await eventually(async () => assert.equal(await markColor(canvas.locator('.iso-label[data-for="mother"] .workflow-mark')), await markColor(header)));
     await shot(page, 'identity-iso-dark');
     await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
-    assert.equal(await row(page, 'root-1').getByRole('button', { name: /^Colour for / }).count(), 0);
+    assert.equal(await row(page, 'root-1').getByRole('button', { name: /^Colour for / }).count(), 1);
     await row(page, 'root-1').locator('.thread-actions').click();
     await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
     const rename = page.getByRole('alertdialog', { name: 'Rename conversation', exact: true });

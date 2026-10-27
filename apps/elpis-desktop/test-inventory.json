@@ -322,6 +322,7 @@
     "tests/browser-sessions-electron.test.cjs",
     "tests/sidebar-reorder.test.cjs",
     "tests/composer-consistency.test.cjs",
+    "tests/conversation-colors.test.cjs",
     "tests/chat-feedback.test.cjs",
     "tests/message-replies.test.cjs",
     "tests/question-replies.test.cjs",

@@ -1,5 +1,5 @@
 // The sidebar and start screen as in Claude's desktop app: a "+" on every project header that starts a chat in that
-// project, a status dot on every chat row, a "Local" chip beside the project chip above the composer, and the account
+// project, a persistent colour control and active status on chat rows, a "Local" chip beside the project chip above the composer, and the account
 // row at the bottom left with its menu. The exported UI against a scripted desktop bridge (tests/fake-desktop.cjs) and a
 // synthetic bridge HTTP/SSE server: no engine, no provider. Screenshots go to $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
@@ -93,37 +93,42 @@ test('every project header has a "+" that starts a new chat in that project', as
   });
 });
 
-test('every chat row has a status dot: a still amber ring while it runs, hollow when idle, red on error', async () => {
+test('every chat has a left colour control; working, unread and error status remain separate', async () => {
   await fixture(async ({ page, aside, emit, shoot }) => {
-    const dot = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first().locator('.thread-dot');
-    for (const id of ['t-run', 't-idle', 't-bad', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} has one dot`);
-    assert.deepEqual(await Promise.all(['t-run', 't-idle', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'idle', 'error']);
-    assert.deepEqual(await Promise.all(['t-run', 't-idle', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Idle', 'Error']);
+    const row = id => aside.locator(`.thread-row[data-thread-id="${id}"]`).first();
+    const dot = id => row(id).locator('.conversation-status');
+    const colour = id => row(id).locator('.conversation-colour-trigger');
+    const swatch = id => colour(id).locator('.conversation-colour-swatch');
+    for (const id of ['t-run', 't-idle', 't-bad', 't-crypto']) assert.equal(await colour(id).count(), 1, `${id} has one persistent colour control`);
+    for (const id of ['t-idle', 't-crypto']) assert.equal(await dot(id).count(), 0, `${id} has no redundant idle status`);
+    assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'error']);
+    assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Error']);
     const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');
-    const [run, idle, bad] = [await fill('t-run'), await fill('t-idle'), await fill('t-bad')];
-    assert.ok(same(run, BASE), `a running chat's dot is a ring, not a filled notification (${run})`);
-    assert.ok(!same(await ring('t-run'), await ring('t-idle')), 'a running ring is coloured, unlike an idle one');
-    assert.equal(await dot('t-run').evaluate(element => getComputedStyle(element).animationName), 'none', 'a running dot does not flash');
-    assert.ok(same(idle, BASE), `an idle chat's dot is hollow (${idle})`);
-    assert.ok(!same(await ring('t-idle'), BASE), 'a hollow dot still has its ring');
-    assert.ok(bad[0] > bad[1] + 60 && bad[0] > bad[2] + 60, `an error dot is red (${bad})`);
-    // Same size and place on every row, left of the title.
-    const boxes = await Promise.all(['t-run', 't-idle', 't-bad'].map(async id => ({ dot: await dot(id).boundingBox(), link: await aside.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).first().boundingBox() })));
+    const [run, idle, bad] = [await fill('t-run'), await paint(swatch('t-idle'), 'backgroundColor'), await fill('t-bad')];
+    assert.ok(same(run, BASE), `a running chat's status is a ring, not a filled notification (${run})`);
+    assert.ok(!same(await ring('t-run'), await paint(swatch('t-idle'), 'borderTopColor')), 'the working ring differs from an unassigned conversation colour');
+    assert.equal(await dot('t-run').evaluate(element => getComputedStyle(element).animationName), 'none', 'a running status does not flash');
+    assert.ok(same(idle, BASE), `an unassigned conversation colour is hollow (${idle})`);
+    assert.ok(!same(await paint(swatch('t-idle'), 'borderTopColor'), BASE), 'an unassigned colour still has its ring');
+    assert.ok(bad[0] > bad[1] + 60 && bad[0] > bad[2] + 60, `an error status is red (${bad})`);
+    // Persistent colour controls occupy one left column; activity no longer owns this position.
+    const boxes = await Promise.all(['t-run', 't-idle', 't-bad'].map(async id => ({ dot: await colour(id).boundingBox(), link: await row(id).locator('.thread-link').boundingBox() })));
     assert.ok(boxes.every(box => box.dot.width === boxes[0].dot.width && Math.abs(box.dot.x - boxes[0].dot.x) < 1), 'one size and one column');
     assert.ok(boxes.every(box => box.dot.x + box.dot.width <= box.link.x + 1), 'left of the title');
-    assert.ok(boxes.every(box => box.dot.width >= 8), 'big enough to read');
-    // A completed reply stays marked unread until that chat is opened.
+    assert.ok(boxes.every(box => box.dot.width >= 8), 'big enough to use');
+    const running = await dot('t-run').boundingBox(), link = await row('t-run').locator('.thread-link').boundingBox();
+    assert.ok(running.x >= link.x + link.width - 1, 'activity stays separate after the conversation title');
     emit('turn/started', { threadId: 't-idle', turn: { id: 'turn-9' } });
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'working'));
     assert.ok(same(await fill('t-idle'), BASE), 'still a ring while it works');
     emit('turn/completed', { threadId: 't-idle', turn: { id: 'turn-9', status: 'completed' } });
     await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'unread'));
     assert.ok(!same(await fill('t-idle'), BASE), 'filled once it finished unseen, like a notification');
-    await aside.locator('.thread-row[data-thread-id="t-idle"] .thread-link').first().click();
-    await eventually(async () => assert.equal(await dot('t-idle').getAttribute('data-state'), 'idle'));
+    await row('t-idle').locator('.thread-link').click();
+    await eventually(async () => assert.equal(await dot('t-idle').count(), 0));
+    assert.equal(await colour('t-idle').count(), 1, 'reading clears activity while retaining its colour control');
     assert.deepEqual(await oranges(page), [], 'light theme, sidebar dots: no orange');
-    // The row's own buttons are unchanged by the dot.
-    assert.deepEqual(await aside.locator('.thread-row[data-thread-id="t-idle"]').first().getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') || button.textContent.trim())).then(names => names.slice(0, 1)), ['Reread the statute']);
+    assert.deepEqual(await row('t-idle').getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label') || button.textContent.trim())).then(names => names.slice(0, 2)), ['Colour for Reread the statute', 'Reread the statute']);
     await shoot('sidebar-dots-light');
   });
 });

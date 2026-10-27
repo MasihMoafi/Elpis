@@ -99,6 +99,8 @@ import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
 import { DocumentReviewProvider } from "@/components/document-review";
 import { AgentIdentity } from "@/components/agent-identity";
+import { ConversationColour } from "@/components/conversation-colour";
+import { ResumeConversation } from "@/components/resume-conversation";
 import { selectElementContent } from "@/lib/pane-select";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
@@ -285,6 +287,7 @@ export default function Home() {
   const [voiceBusy, setVoiceBusy] = useState(false);
   const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
   const [search, setSearch] = useState("");
+  const [resumeOpen, setResumeOpen] = useState(false);
   const [agentRunsOpen, setAgentRunsOpen] = useState(false);
   const searchTerm = search.trim();
   const [searchResults, setSearchResults] = useState<{ query: string; data: Thread[]; nextCursor: string | null; loading: boolean; error: string }>({ query: "", data: [], nextCursor: null, loading: false, error: "" });
@@ -421,7 +424,7 @@ export default function Home() {
   const sessionWindowApi = () => window.elpisDesktop?.openSessionWindow ?? (window.parent !== window && new URLSearchParams(location.search).get("pane") === "1" ? window.parent.elpisDesktop?.openSessionWindow : undefined);
   useEffect(() => { setWindowAvailable(!!sessionWindowApi()); }, []);
   const browser = useBrowser(selected?.id ?? `draft:${tabs.activeId}`);
-  const side = useSidePanel(browser);
+  const side = useSidePanel(browser, selected?.cwd || cwd);
   const browserPins = useBrowserPins(setError);
   useEffect(() => onFileRequest(() => { if (view !== "chat") setView("chat"); }), [view]);
   useEffect(() => { setDesktop(!!window.elpisDesktop?.browser); }, []);
@@ -1689,7 +1692,7 @@ export default function Home() {
     { name: "new", description: "start a new chat during a conversation", run: newChat },
     { name: "archive", description: "archive this session", available: !!selected, run: () => { if (selected) archiveChats([selected]); } },
     { name: "delete", description: "permanently delete this session", available: !!selected, run: () => { if (selected) deleteChats([selected.id]); } },
-    { name: "resume", description: "resume a saved chat", run: focusSearch },
+    { name: "resume", description: "resume a saved chat", run: () => setResumeOpen(true) },
     { name: "fork", description: "fork the current chat", available: !!selected && !!lastTurn && !activeTurn, run: () => { if (selected && lastTurn) void forkFrom(selected, lastTurn); } },
     { name: "init", description: "create an AGENTS.md file with instructions for Elpis", available: !continues && idle, run: () => void send(INIT_PROMPT) },
     { name: "compact", description: idle ? "compact now, or add words to guide the summary" : "compact when this turn finishes, or add words to guide the summary", available: writable, args: true, run: text => {
@@ -2117,7 +2120,7 @@ export default function Home() {
         else { setExpanded(previous => ({ ...previous, [expandId]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
       }}><ChevronRight size={13} viewBox="4 4 16 16" className={open ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
-      {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
+      <ConversationColour id={thread.id} name={name} />
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
         <>{isAgent(thread) || workflowSteps.has(thread.id) ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={thread.model} provider={thread.modelProvider} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
@@ -2125,6 +2128,7 @@ export default function Home() {
         {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
+      {state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state !== "idle" && <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <span className="row-hover-actions">
         {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
         <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
@@ -2220,6 +2224,7 @@ export default function Home() {
     {desktop && <StartupSplash />}
     <ProjectDialog projects={projects} editing={projectEdit} folders={projectEdit !== undefined ? [cwd, ...ordinaryThreads.map(thread => thread.cwd ?? "")] : []} description={newProjectFor ? `${newProjectFor.length} chats will move into this project. Their working folders stay as they are.` : undefined} onClose={() => { setProjectEdit(undefined); setNewProjectFor(null); }} onSave={newProjectFor ? saveProjectFromChats : saveProject} />
     <MoveChatDialog name={projectMove ? projectMove.length === 1 ? title(projectMove[0]) : `${projectMove.length} selected chats` : null} count={projectMove?.length} projects={projects} currentId={projectMove ? new Set(projectMove.map(chat => projectChats[chat.id] ?? null)).size === 1 ? projectChats[projectMove[0].id] ?? null : undefined : null} onMove={id => projectMove ? assignProject(projectMove.map(chat => chat.id), id) : Promise.resolve()} onClose={() => setProjectMove(null)} />
+    <ResumeConversation open={resumeOpen} chats={sidebarThreads} returnFocus={composerRef} onClose={() => setResumeOpen(false)} onChoose={thread => { setResumeOpen(false); void loadThread(thread); }} />
     <PutUnderDialog chats={nestTargets} candidates={nestTargets ? ordinaryThreads.filter(thread => canNest(nestTargets.map(chat => chat.id), thread.id)) : []} onPutUnder={parent => nestChats((nestTargets ?? []).map(chat => chat.id), parent)} onClose={() => setNestTargets(null)} />
     <GroupNameDialog open={!!newGroupFor} state={chatGroups} group={null} switches={chatGroups.groupBy !== "custom"} onClose={() => setNewGroupFor(null)}
       onSave={name => { const ids = newGroupFor ?? [], id = crypto.randomUUID(); updateGroups(state => moveChats(addGroup(state, name, id), ids, id)); setNewGroupFor(null); setMarked([]); }} />
@@ -2368,7 +2373,6 @@ export default function Home() {
             {composerNotice && <div className="flex items-center gap-2 px-3 text-sm text-destructive" role="alert"><span className="whitespace-pre-line">{composerNotice}</span>{fileNotice && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss file notice" onClick={() => setFileNotice("")}><X size={14} /></Button>}</div>}
             <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
                 fast={fastAvailable ? { on: fastOn, disabled: !ready || !connected || busy || projectChanging || readOnlyRun, onChange: () => void chooseFast(fastOn ? "off" : "on") } : undefined}
-                effort={turnEfforts.length ? { value: turnEffort, options: turnEfforts, disabled: !ready || !connected || busy, onChange: value => selected ? void saveEffort(selected.id, value) : setEffort(value) } : undefined}
                 onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
               <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} managed={settingsSnapshot?.managed} onChange={choosePermissions} />

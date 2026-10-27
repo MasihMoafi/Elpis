@@ -81,11 +81,11 @@ test('A102: waiting flags and approvals come first, running chats next, then uns
     await eventually(async () => assert.equal((await ids(recents))[0], 'question'));
     await row(f.page, 'done').locator('.thread-link').click();
     await f.page.mouse.move(700, 300);
-    await eventually(async () => assert.equal(await row(f.page, 'done').locator('.thread-dot').getAttribute('data-state'), 'idle'));
+    await eventually(async () => assert.equal(await row(f.page, 'done').locator('.conversation-status').count(), 0));
     assert.deepEqual(await ids(recents), ['question', 'approval', 'working', 'chat-a', 'error', 'done']);
     await f.page.reload();
     await row(f.page, 'chat-a').waitFor();
-    assert.equal(await row(f.page, 'done').locator('.thread-dot').getAttribute('data-state'), 'idle');
+    assert.equal(await row(f.page, 'done').locator('.conversation-status').count(), 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

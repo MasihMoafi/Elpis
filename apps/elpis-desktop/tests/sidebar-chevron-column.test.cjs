@@ -34,36 +34,36 @@ async function measureSidebar(page) {
     const headers = [...sidebar.querySelectorAll('.sidebar-group-chevron')].map(icon => ({
       name: icon.closest('.sidebar-group').getAttribute('aria-label'), icon: box(icon), target: box(icon.closest('button')),
     }));
-    const rows = [...sidebar.querySelectorAll('.thread-list .thread-row')].filter(row => row.querySelector(':scope > .thread-dot')).map(row => {
-      const toggle = row.querySelector(':scope > button[aria-expanded]:first-child');
+    const rows = [...sidebar.querySelectorAll('.thread-list .thread-row')].filter(row => row.querySelector(':scope > .conversation-colour-trigger')).map(row => {
+      const toggle = row.querySelector(':scope > button[aria-expanded]:first-child:not(.conversation-colour-trigger)');
       const railStyle = getComputedStyle(row, '::before'), bounds = box(row), clips = [];
       for (let ancestor = row.parentElement; ancestor; ancestor = ancestor.parentElement) {
         if (getComputedStyle(ancestor).overflowX !== 'visible') clips.push(box(ancestor));
       }
       return { id: row.dataset.threadId, depth: (() => { let depth = 0, branch = row.parentElement; while (branch.parentElement?.firstElementChild?.matches('.thread-row')) { depth++; branch = branch.parentElement; } return depth; })(), row: bounds,
-        circle: box(row.querySelector('.thread-dot')), title: box(row.querySelector('.thread-title')),
+        circle: box(row.querySelector('.conversation-colour-trigger .conversation-colour-swatch')), title: box(row.querySelector('.agent-identity, .thread-title')),
         actions: box(row.querySelector('.thread-actions')), active: row.classList.contains('active'), selected: row.classList.contains('selected'),
         clipLeft: Math.max(...clips.map(clip => clip.x)), clipRight: Math.min(...clips.map(clip => clip.right)),
         rail: { x: bounds.x + (parseFloat(railStyle.left) || 0), width: parseFloat(railStyle.width) || 0, shown: railStyle.content !== 'none' },
         ...(toggle ? { icon: box(toggle.querySelector('svg')), target: box(toggle), expanded: toggle.getAttribute('aria-expanded'), hoverLabel: toggle.title } : {}) };
     });
-    const reference = sidebar.querySelector('.project-group .thread-row:not(.child) .thread-dot').closest('.thread-row');
+    const reference = sidebar.querySelector('.project-group .thread-row:not(.child) .conversation-colour-trigger').closest('.thread-row');
     return { project, headers, rows, emptyLabels: [...sidebar.querySelectorAll('.sidebar-group-empty')].map(element => ({ x: box(element).x + parseFloat(getComputedStyle(element).paddingLeft) })),
-      circle: box(reference.querySelector('.thread-dot')).x, title: box(reference.querySelector('.thread-title')).x };
+      circle: box(reference.querySelector('.conversation-colour-trigger .conversation-colour-swatch')).x, title: box(reference.querySelector('.thread-title')).x };
   });
 }
 function checkSidebar(actual, label) {
   const near = (value, expected, message) => assert.ok(Math.abs(value - expected) <= 0.5,
     `${label}: ${message}: ${value}px != ${expected}px (±0.5px)`);
   for (const header of actual.headers) near(header.icon.center, actual.project.center, `${header.name} chevron center`);
-  near(actual.circle, actual.project.center + 13.5, 'original project circle column');
-  near(actual.title, actual.project.center + 34.5, 'original project name column');
+  near(actual.circle, actual.project.center + 13, 'project conversation colour column');
+  near(actual.title, actual.project.center + 37.5, 'project name column after its colour control');
   for (const empty of actual.emptyLabels) near(empty.x, actual.circle, 'empty group label inset');
   for (const row of actual.rows) {
     const name = `${row.id} depth ${row.depth}`;
     if (row.icon) near(row.icon.center, actual.project.center + row.depth * 14, `${name} chevron center within its generation`);
     near(row.circle.x, actual.circle + row.depth * 14, `${name} circle column`);
-    near(row.title.x, actual.title + row.depth * 14, `${name} name column`);
+    near(row.title.x, actual.title + row.depth * 14, `${name} identity/name column`);
     assert.ok(row.title.width > 0 && row.title.right <= row.actions.x + 0.5, `${label}: ${name} name fits before its actions`);
     assert.ok(row.circle.right + 4 <= row.title.x, `${label}: ${name} circle stays clear of text`);
     if (!row.icon) continue;

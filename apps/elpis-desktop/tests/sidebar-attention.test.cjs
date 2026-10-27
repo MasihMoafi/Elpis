@@ -9,7 +9,7 @@ const { fixture } = require('./parity-fixture.cjs');
 const shots = process.env.ELPIS_PARITY_SHOTS;
 
 const row = (page, id) => page.locator(`aside.sidebar .thread-row[data-thread-id="${id}"]`).first();
-const dot = (page, id) => row(page, id).locator('.thread-dot');
+const dot = (page, id) => row(page, id).locator('.conversation-status');
 const finish = (f, threadId, turnId) => f.emit('message', { method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'completed', items: [] } } });
 async function screenshot(page, name) {
   if (!shots) return;
@@ -27,14 +27,14 @@ test('a reply that finishes in a chat you are not looking at is unread until you
     await f.open('chat-a');
     finish(f, 'chat-a', 'ta'); finish(f, 'chat-b', 'tb');
     await eventually(async () => assert.equal(await dot(page, 'chat-b').getAttribute('aria-label'), 'Unread response. Mark as read'));
-    assert.equal(await dot(page, 'chat-a').getAttribute('data-state'), 'idle', 'the chat you are reading is read');
+    assert.equal(await dot(page, 'chat-a').count(), 0, 'the chat you are reading is read');
     const weight = id => row(page, id).locator('.thread-title').evaluate(element => Number(getComputedStyle(element).fontWeight));
     assert.ok(await weight('chat-b') > await weight('chat-c'), 'an unread chat’s name stands out');
     await page.reload();
     await row(page, 'chat-b').waitFor();
     assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'unread');
     await f.open('chat-b');
-    await eventually(async () => assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'idle'));
+    await eventually(async () => assert.equal(await dot(page, 'chat-b').count(), 0));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -45,19 +45,19 @@ test('the dot, the menu, U and Mark all as read mark chats read and unread', asy
     finish(f, 'chat-b', 'tb'); finish(f, 'chat-c', 'tc');
     const recents = page.locator('aside.sidebar section[aria-label="Recents"]');
     await recents.getByRole('button', { name: 'Mark all as read' }).click();
-    for (const id of ['chat-b', 'chat-c']) assert.equal(await dot(page, id).getAttribute('data-state'), 'idle');
+    for (const id of ['chat-b', 'chat-c']) assert.equal(await dot(page, id).count(), 0);
     assert.equal(await recents.getByRole('button', { name: 'Mark all as read' }).count(), 0, 'nothing unread, no button');
     // The unread dot is a button: it marks the chat read without opening it.
     finish(f, 'chat-b', 'tb2');
     await row(page, 'chat-b').getByRole('button', { name: 'Unread response. Mark as read' }).click();
-    assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'idle');
+    assert.equal(await dot(page, 'chat-b').count(), 0);
     assert.equal(await f.shown(), null, 'marking read does not open the chat');
     finish(f, 'chat-b', 'tb2');
     await page.waitForTimeout(100);
-    assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'idle', 'a repeated completion does not restore an unread dot');
+    assert.equal(await dot(page, 'chat-b').count(), 0, 'a repeated completion does not restore an unread dot');
     f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-b', turn: { id: 'failed', status: 'failed', error: { message: 'Stopped' }, items: [] } } });
     await page.waitForTimeout(100);
-    assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'idle', 'a failed turn is not an unread response');
+    assert.equal(await dot(page, 'chat-b').count(), 0, 'a failed turn is not an unread response');
     // The row's menu, and U on a focused row, as in Claude's sidebar.
     await row(page, 'chat-c').click({ button: 'right' });
     const item = page.getByRole('menuitem', { name: /^Mark as unread/ });
@@ -66,7 +66,7 @@ test('the dot, the menu, U and Mark all as read mark chats read and unread', asy
     assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), 'unread');
     await row(page, 'chat-c').locator('.thread-link').focus();
     await page.keyboard.press('u');
-    assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), 'idle');
+    assert.equal(await dot(page, 'chat-c').count(), 0);
     await page.keyboard.press('u');
     assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), 'unread');
     assert.deepEqual(f.errors, []);
@@ -81,7 +81,7 @@ test('a selected chat is unread on another page; a new turn clears a plan waitin
     finish(f, 'chat-a', 'background');
     await eventually(async () => assert.equal(await dot(page, 'chat-a').getAttribute('data-state'), 'unread'));
     await f.open('chat-a');
-    assert.equal(await dot(page, 'chat-a').getAttribute('data-state'), 'idle');
+    assert.equal(await dot(page, 'chat-a').count(), 0);
     f.emit('message', { method: 'item/completed', params: { threadId: 'chat-b', turnId: 'plan-turn', item: { id: 'p', type: 'plan', text: 'Review this' } } });
     finish(f, 'chat-b', 'plan-turn');
     await row(page, 'chat-b').getByText('Plan ready for review').waitFor();
@@ -119,7 +119,7 @@ for (const colorScheme of ['light', 'dark']) test(`a waiting chat says why under
     assert.equal(await page.getByRole('menuitem', { name: /^Mark as unread|^Mark as read/ }).count(), 0, 'a ready plan is completed, not read');
     await page.getByRole('menuitem', { name: /^Mark as completed/ }).click();
     await line('chat-b').waitFor({ state: 'detached' });
-    assert.equal(await dot(page, 'chat-b').getAttribute('data-state'), 'idle');
+    assert.equal(await dot(page, 'chat-b').count(), 0);
     finish(f, 'chat-c', 'new-reply');
     await eventually(async () => assert.equal(await dot(page, 'chat-c').getAttribute('data-state'), 'unread'));
     await screenshot(page, `attention-unread-${colorScheme}.png`);

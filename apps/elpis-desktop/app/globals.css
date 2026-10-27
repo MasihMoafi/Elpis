@@ -797,7 +797,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-row:has(.thread-bookmark):is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-actions { opacity:1; }
 .thread-row:is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-bookmark { visibility:hidden; }
 /* Every chat reserves the same chevron column, including chats without agents. */
-/* A chat's status dot, before its title: a still amber ring while it runs, filled amber when it finished unseen, red on error. */
+/* Activity is separate from the manually chosen conversation colour. */
 .thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 26px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
 .thread-dot[data-state="working"] { border-color:var(--primary); background:transparent; }
 .thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }
@@ -806,12 +806,16 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .thread-subtitle { font-size:0.75rem; color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
 .thread-dot.workflow-mark { display:inline-block; margin:0 3px; border-color:var(--workflow-colour); background:var(--workflow-colour); vertical-align:middle; }
-.workflow-mark[data-colour="blue"] { --workflow-colour:light-dark(#2458b8,#8bb7ff); }
-.workflow-mark[data-colour="teal"] { --workflow-colour:light-dark(#146b67,#68d4c7); }
-.workflow-mark[data-colour="violet"] { --workflow-colour:light-dark(#6b44ac,#c1a0fa); }
-.workflow-mark[data-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
-.workflow-mark[data-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
-.workflow-mark[data-colour="amber"] { --workflow-colour:var(--brand-accent); }
+.thread-row > button.conversation-colour-trigger[aria-expanded] { position:static; left:auto; flex-shrink:0; width:20px; height:24px; margin-left:20px; padding:0; }
+.conversation-colour-swatch { display:inline-block; flex-shrink:0; box-sizing:border-box; width:9px; height:9px; border:1.5px solid var(--workflow-colour, var(--subtle-foreground)); border-radius:50%; background:var(--workflow-colour, transparent); }
+.thread-row > .conversation-status { margin:0 2px; }
+
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="blue"] { --workflow-colour:light-dark(#2458b8,#8bb7ff); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="teal"] { --workflow-colour:light-dark(#146b67,#68d4c7); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="violet"] { --workflow-colour:light-dark(#6b44ac,#c1a0fa); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"] { --workflow-colour:var(--brand-accent); }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
 .sidebar-group { margin-bottom:2px; }
@@ -1318,7 +1322,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 }
 @container composer (max-width:640px) {
   /* ContextUsage anchors the Ledger to the composer when its ring is hidden. */
-  .composer-right .context-ring, .composer-right > [aria-label="Reasoning effort"], .composer-right > .fast-toggle { display:none; }
+  .composer-right .context-ring, .composer-right > .fast-toggle, .composer-actions > [aria-label="More send options"] { display:none; }
   .composer-right .dictation-status:not(.dictation-error) { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
   .effort-long { display:none; } .effort-short { display:inline; }
   .composer-controls { gap:8px; }
@@ -1331,6 +1335,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
   .composer-actions:has([aria-label="End voice chat"]) > .dictation-control:has([aria-label="Dictate message"]):not(:has([aria-label="Cancel dictation"])),
   .composer-actions:has([aria-label="Cancel dictation"]) > .dictation-control:has([aria-label="Start voice chat"]) { display:none; }
   .composer-pill .pill-short { display:none; }
+  .composer [aria-label="Change permissions"] > svg:last-child { display:none; }
   .plan-pill > span { display:none; }
   .composer .model-select { min-width:40px; flex-shrink:1; }
 }

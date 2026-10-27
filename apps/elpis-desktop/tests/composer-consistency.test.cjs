@@ -83,11 +83,12 @@ for (const running of [false, true]) test(`composer options collapse into one ro
     assert.equal(floating.leaks, 0, 'floating controls stay inside the composer');
     assert.equal(floating.overlaps, 0, 'floating controls do not overlap');
     assert.equal(await f.composer.inputValue(), 'Keep this draft while resizing.');
+    assert.equal(await f.page.getByRole('combobox', { name: 'Reasoning effort', exact: true }).isVisible(), true, 'thinking/effort stays visible at every composer width');
     assert.equal(await f.page.getByRole('button', { name: running ? 'Send follow-up' : 'Send message', exact: true }).isVisible(), true);
     if (running) assert.equal(await f.page.getByRole('button', { name: 'Stop response', exact: true }).isVisible(), true);
     await f.page.getByRole('button', { name: 'Add files and more', exact: true }).click();
     await f.page.getByRole('menuitem', { name: /Fast mode/ }).waitFor();
-    await f.page.getByRole('menuitemradio', { name: 'high', exact: true }).waitFor();
+    assert.equal(await f.page.getByRole('menuitemradio', { name: 'high', exact: true }).count(), 0, 'effort remains a primary control instead of a duplicate in Plus');
     await f.page.keyboard.press('Escape');
   }
   });

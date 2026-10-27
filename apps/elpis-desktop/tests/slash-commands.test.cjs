@@ -390,7 +390,12 @@ test('commands that open a page: /settings, /memories, /hooks, /mcp, /theme, /pr
     }
     await page.locator('.new-chat').click();
     await run('/resume');
-    assert.equal(await focused(page), 'input:Search conversations', '/resume goes to the saved-chat search');
+    const chooser = page.getByRole('dialog', { name: 'Resume conversation', exact: true });
+    await chooser.waitFor();
+    await chooser.getByRole('textbox', { name: 'Find saved conversations', exact: true }).fill('Cache');
+    await chooser.getByRole('button', { name: /Cache chat/ }).click();
+    await page.getByText('The cache is fixed.', { exact: true }).waitFor();
+    await chooser.waitFor({ state: 'hidden' });
     assert.equal(turns().length, 0, 'no command is sent as a message');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }

@@ -315,7 +315,7 @@ Acceptance: targeted bridge and real-browser regressions, both themes for new la
 - HTML/HTM opens rendered Preview with bounded Source access. Project-local classic CSS/JS supports computed content in an opaque sandbox. No project file changes on preview.
 - UTF-8 text above the 512KB editable limit remains readable in bounded read-only pages, up to the existing 30MB preview cap; image/PDF behavior stays intact. Large Markdown currently uses paged source. Unsupported CSS/module resources are reported.
 - File cards and opened document selections share Mark for agent, Suggest edit and Ask agent to remove. Each creates editable feedback attached to the unfinished composer; sending remains explicit. HTML selection messages are accepted only from that preview frame.
-- Composer controls stay on one row at 600/400/320px; secondary controls move into Plus. Active audio controls remain mounted.
+- Composer controls stay on one row at 600/400/320px. Thinking/effort remains visible; secondary controls move into Plus. Active audio controls remain mounted.
 - Fast feedback follows confirmed state and initiating chat/tab/view. It never describes an off toggle as on.
 
 ## Shared document editing from chat — 27 October 2026
@@ -330,3 +330,14 @@ Masih approved implementing a document the agent can open beside the conversatio
 | DOC4 | Reuse the existing editor and stale-write guard. Reopening cannot replace unsaved text; a changed disk file rejects stale saves and keeps the local draft. Verify the shared flow in a packaged desktop on an isolated profile. | Verified locally |
 
 Verification: production build, focused controller/MCP/file/package checks, and the real-engine packaged journey in `tests/documents.runtime.mjs` pass. The journey covers saved Unicode, unsaved drafts across chat folders, Settings, stale saves, unavailable files, chat isolation, both themes and an 820px window. No model request is required. The failed-refresh regression fails against the earlier installed renderer and passes after the draft guard. User acceptance remains pending.
+
+## Conversation colour and retained evidence — 27 October 2026
+
+- A shared dot beside each sidebar conversation opens a named colour palette with Reset. Assignments persist per conversation, including nested agents; choosing a colour never opens or sends to the chat. Outside click/Escape dismisses it and keyboard focus returns to the trigger. Agent identity and runtime status stay distinct.
+- Saved task cards show only model routing recorded for that run; a later child-chat setting never rewrites a historical attempt. Missing historical duration/observation timestamps stay unknown rather than continuing a finished clock or inventing events.
+
+Read-aloud reliability, explicit login/API-key options and playback-speed control are deferred until this installation is complete, at Masih’s last priority. No new provider billing route is enabled by this repair.
+
+GUI `/resume` opens an explicit, searchable saved-conversation chooser even when the sidebar is closed or folded. Selecting a result opens its existing history without sending a model turn. Loading, empty, failed search and retry remain visible; Escape/outside dismissal returns focus to the composer.
+
+Empty Files uses a compact tree width independent of the last browser/document width. Opening a document restores the deliberate content width, or a readable default; closing its last file returns to the compact tree. Explicit resizing remains available.

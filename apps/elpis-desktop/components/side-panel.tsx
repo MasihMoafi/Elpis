@@ -17,7 +17,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { ChangesPanel } from "@/components/changes-panel";
 import { FilesPane } from "@/components/files-pane";
 import type { AttachToChat } from "@/components/browser-annotations";
-import { attach, detach, docKey, isDirty, onOpenPage, onRequest, openFile, openRef, setFileView, snapshot } from "@/lib/files-pane";
+import { attach, detach, docKey, isDirty, onOpenPage, onRequest, openFile, openRef, setFileView, snapshot, useFiles, paneIn } from "@/lib/files-pane";
 import { resolveRef } from "@/lib/file-refs";
 import { mergeOrder, neighbour } from "@/lib/panel-tabs";
 import { api } from "@/lib/api";
@@ -44,7 +44,9 @@ export const sideMinWidth = (shown: { kind: string } | null) => shown?.kind === 
  * The panel follows the browser: a page that opens or comes forward opens the panel on it, and the page stays
  * hidden whenever the panel is closed or shows a terminal. Full view makes it fill the work area; the chat then floats
  * over it as a card (`chatCollapsed`: a pill instead). */
-export function useSidePanel(browser: Browser) {
+export function useSidePanel(browser: Browser, cwd = "") {
+  const fileState = useFiles(), filePane = paneIn(fileState, cwd);
+  const [emptyFilesWidth, setEmptyFilesWidth] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const [prune, setPrune] = useState<PruneTarget | null>(null);
   const [terminals, setTerminals] = useState<TerminalTab[]>([]), [changes, setChanges] = useState(false), [filesTab, setFilesTab] = useState(false);
@@ -130,7 +132,8 @@ export function useSidePanel(browser: Browser) {
     if (seen.current !== null && presses !== seen.current) toggleFull();
     seen.current = presses;
   }, [presses, toggleFull]);
-  return { open, full, width: shown ? width : emptyWidth, setWidth: shown ? setWidth : setEmptyWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, openContext, toggleFiles, toggleTerminal };
+  const emptyFiles = shown?.kind === "files" && !filePane.open.some(file => file.path === filePane.active);
+  return { open, full, width: emptyFiles ? emptyFilesWidth : shown ? width ?? (shown.kind === "files" ? 640 : null) : emptyWidth, setWidth: emptyFiles ? setEmptyFilesWidth : shown ? setWidth : setEmptyWidth, chatCollapsed, setChatCollapsed, toggleFull, items, shown, openPanel, closePanel, select, close, openTerminal, openPage, openChanges, openFiles, openContext, toggleFiles, toggleTerminal };
 }
 export type SidePanelState = ReturnType<typeof useSidePanel>;
 
