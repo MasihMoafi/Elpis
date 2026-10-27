@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/history-paging.test.cjs": {
+      "blob": "1d5a27b96dd6ee101bb2953ba0e4405d14c30a6f",
+      "approval": "7f37528ca78fffdfdd84ff7b8ea796d3faea772c",
+      "reason": "Masih 27 Oct: Load earlier messages is stuck against the transcript; use the ChatGPT spacing reference. Extend the retained history owner to assert a readable gap while preserving complete pagination, retry, compaction and scroll behavior."
+    },
     "tests/session-windows-electron.test.cjs": {
       "blob": "dc50c1cca505165bfc358dcc13d48f23a0655c85",
       "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
