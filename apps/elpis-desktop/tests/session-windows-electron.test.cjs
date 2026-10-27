@@ -225,6 +225,7 @@ test('native file previews keep their document when scripts navigate or rename t
       });
       const preview = page.frameLocator('iframe[title="Navigation guard preview"]');
       await preview.getByRole('heading', { name: 'Retained local preview', exact: true }).waitFor();
+      await preview.locator('body').evaluate(body => { body.dataset.previewDocument = 'retained'; });
       for (const rename of [false, true]) {
         await preview.locator(rename ? '#rename' : '#leave').evaluate((button, { target, rename }) => {
           button.onclick = () => { if (rename) window.name = 'renamed-by-document'; location.href = target; };
@@ -233,7 +234,7 @@ test('native file previews keep their document when scripts navigate or rename t
         await preview.getByRole('heading', { name: 'Retained local preview', exact: true }).waitFor();
       }
       assert.deepEqual(attempts, [], 'native interception blocks even same-origin navigation before a network request');
-      assert.equal(page.frames().find(frame => frame.url() === 'about:srcdoc') !== undefined, true, 'the srcDoc remains loaded after attempts');
+      assert.equal(await preview.locator('body').getAttribute('data-preview-document'), 'retained', 'the original preview document remains loaded after attempts');
       await page.evaluate(() => document.querySelector('iframe[title="Navigation guard preview"]').remove());
     }
   } finally { if (electron) await electron.close(); await f.close(); }
