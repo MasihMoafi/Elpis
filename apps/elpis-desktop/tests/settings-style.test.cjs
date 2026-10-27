@@ -35,7 +35,7 @@ try{const f=path.join(__dirname,'..','out',url.pathname==='/'?'index.html':url.p
       const shown = page.locator('aside.sidebar').filter({ visible: true }), opener = page.getByRole('button', { name: 'Open sidebar', exact: true }).filter({ visible: true });
       await shown.or(opener).first().waitFor();
       if (native) await page.locator('.startup-splash').waitFor({ state: 'detached' });
-      if (!await shown.count()) await opener.click();
+      for (let tries = 0; !await shown.count(); tries++) { assert.ok(tries < 20, `${width}px: the sidebar opens`); await opener.click({ timeout: 500 }).catch(() => {}); }
       await openSettings(page);
       await page.evaluate(on => document.documentElement.classList.toggle('dark', on), dark);
       for (const name of PAGES) {
