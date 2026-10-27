@@ -115,7 +115,7 @@ for (const iso of [false, true]) for (const color of ['light', 'dark']) {
   });
 }
 
-for (const color of ['light', 'dark']) test(`A30 ${color}: run rejection and failed agent explain the next action beside Run graph; retry succeeds`, { skip: Boolean(process.env.ELPIS_WF1_CDP) && 'Mock responses are excluded from real-app acceptance; run workflows-wf1-real.cjs for a real refused write.' }, async () => {
+for (const color of ['light', 'dark']) test(`A30 ${color}: run rejection and failed agent explain the next action at the bottom; retry succeeds`, { skip: Boolean(process.env.ELPIS_WF1_CDP) && 'Mock responses are excluded from real-app acceptance; run workflows-wf1-real.cjs for a real refused write.' }, async () => {
   let failed = true;
   const f = await openCanvas({ graph, folders: [], listed(run) {
     return { id: run.graphId, status: failed ? 'failed' : 'succeeded', tasks: run.tasks.map((task, i) => ({ id: task.id, status: failed ? i === 0 ? 'failed' : 'blocked' : 'succeeded', assignedThreadId: null, failureReason: failed && i === 0 ? 'EACCES: permission denied, open agents/first/report.md' : null })) };
@@ -126,26 +126,31 @@ for (const color of ['light', 'dark']) test(`A30 ${color}: run rejection and fai
     let refusal = 'The agent could not start: provider unavailable.';
     await f.page.route('**/api/workflows/run', route => route.fulfill({ status: 403, json: { error: refusal } }));
     await run.click(); await f.canvas.getByRole('alert').waitFor();
-    const problem = header.getByRole('alert');
+    const problem = f.canvas.getByRole('alert');
     await f.page.screenshot({ path: `${shots}/A30-${color}-error.png` });
-    assert.equal(await problem.count(), 1, 'the reason is beside Run graph in its header');
+    assert.equal(await problem.count(), 1, 'the actionable reason stays in its workspace');
+    assert.equal(await header.getByRole('alert').count(), 0, 'run failures leave the toolbar clear');
     assert.match(await problem.innerText(), /provider unavailable/); assert.match(await problem.innerText(), /try|run again/i);
     refusal = `EACCES: permission denied, mkdir '/tmp/demo/${'long-project-folder/'.repeat(12)}agents/first'`;
     await run.click();
     await problem.filter({ hasText: /permission denied/ }).waitFor();
     assert.match(await problem.innerText(), /permission|write/i); assert.match(await problem.innerText(), /choose|allow|grant|check|try/i, 'gives an action');
-    assert.ok(await run.getAttribute('aria-describedby'), 'Run graph is linked to its reason');
+    assert.ok(await problem.getAttribute('id'), 'the actual reason has an accessible id');
+    assert.equal(await run.getAttribute('aria-describedby'), await problem.getAttribute('id'), 'Run graph is linked to its actual reason');
     for (const width of [1130, 1440]) {
       await f.page.setViewportSize({ width, height: 900 });
       const fits = await header.evaluate(el => el.scrollWidth <= el.clientWidth && [...el.querySelectorAll('[role="alert"], button')].every(child => { const b = child.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; }));
-      assert.equal(fits, true, `run error fits at ${width}`);
+      assert.equal(fits, true, `run toolbar fits at ${width}`);
+      const box = await problem.boundingBox(), workspace = await f.canvas.boundingBox();
+      assert.ok(box.x >= workspace.x && box.x + box.width <= workspace.x + workspace.width + 1, `run error fits at ${width}`);
+      assert.ok(Math.abs(box.y + box.height - workspace.y - workspace.height) <= 14, 'the complete refusal stays at the bottom');
       await f.page.screenshot({ path: `${shots}/A30-${color}-refused-${width}.png` });
     }
     await f.page.unroute('**/api/workflows/run');
-    await run.click(); await header.getByRole('alert').filter({ hasText: /First/ }).waitFor();
-    assert.match(await header.getByRole('alert').innerText(), /write|permission/i);
+    await run.click(); await problem.filter({ hasText: /First/ }).waitFor();
+    assert.match(await problem.innerText(), /write|permission/i);
     failed = false; await run.click(); await header.getByRole('status').filter({ hasText: /Finished/ }).waitFor();
-    assert.equal(await header.getByRole('alert').count(), 0, 'a successful retry clears the stale error');
+    assert.equal(await problem.count(), 0, 'a successful retry clears the stale error');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
