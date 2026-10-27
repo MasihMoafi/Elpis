@@ -98,6 +98,8 @@ html { font-size:var(--interface-size, 16px); }
   .hud-menu, .hud-popover, .hud-dialog, .side-chat, .pending-input-panel, .full-view > .workspace-content, .composer) { border-radius:var(--corner-radius-lg, var(--cut-lg) 0); corner-shape:var(--corner-shape, bevel); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 * { scrollbar-width:thin; scrollbar-color:color-mix(in oklch, var(--foreground) 16%, transparent) transparent; }
+/* The app fills the window and scrolls only inside its panes; the page itself never scrolls (27 Oct). */
+html, body { overflow:hidden; }
 body { margin:0; background:var(--background); color:var(--foreground); font:0.84375rem/1.5 var(--ui-font, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased; }
 /* --text-small: the smallest text in the app (Masih: icons and text larger, never smaller). */
 :root { --serif:"Inter Display", Inter, system-ui, sans-serif; --mono:"JetBrains Mono", "DejaVu Sans Mono", ui-monospace, monospace; --text-small:0.75rem; }

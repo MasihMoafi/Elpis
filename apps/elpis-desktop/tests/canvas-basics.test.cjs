@@ -620,3 +620,18 @@ for (const colorScheme of ['light', 'dark']) test(`workflow pattern explicitly c
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 27 Oct: scrolling in Workflows moved the whole window up, leaving an empty band at the bottom. The page itself never
+// scrolls, even when something placed on it (a popover, a hint) reaches past the window's bottom.
+test('scrolling over Workflows never scrolls the whole page', async () => {
+  const f = await fixture({ width: 1440, height: 900 });
+  try {
+    const { page } = f;
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.locator('.react-flow').waitFor();
+    await page.evaluate(() => { const tall = document.createElement('div'); tall.style.cssText = 'position:absolute;top:0;left:0;width:4px;height:1300px'; document.body.append(tall); });
+    for (const [x, y] of [[1300, 300], [900, 500], [150, 400]]) { await page.mouse.move(x, y); await page.mouse.wheel(0, 900); await page.waitForTimeout(200); }
+    assert.equal(await page.evaluate(() => document.scrollingElement.scrollTop), 0, 'the window content stays in place');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
