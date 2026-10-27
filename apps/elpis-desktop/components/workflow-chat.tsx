@@ -110,10 +110,10 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="flex min-w-0 items-center gap-2 text-base font-semibold">{identity && <WorkflowMark identity={identity} neutral />}{identity?.name || record.name || "Workflow"}</h2><span role="status">{record.status} · {complete}/{tasks.length} tasks complete</span></div>
     <WorkflowProgress run={record} team={team} onOpenChat={onOpenChat} onRefresh={() => { team.refresh(); setRevision(value => value + 1); }} />
     <div className="flex flex-wrap items-center gap-2"><Button variant="outline" size="sm" onClick={() => onOpenCanvas(record)}>Open workflow canvas</Button>
-      {["failed", "blocked"].includes(record.status) && <><Button variant="outline" size="sm" disabled={!ready || pending || working || team.loading || !!team.error} title={working ? "A workflow agent is already working; open its chat to steer it." : undefined} onClick={() => void resume()}>{pending ? "Resuming…" : "Resume workflow"}</Button>
+      {["failed", "blocked", "cancelled"].includes(record.status) && <><Button variant="outline" size="sm" disabled={!ready || pending || working || team.loading || !!team.error} title={working ? "A workflow agent is already working; open its chat to steer it." : undefined} onClick={() => void resume()}>{pending ? "Resuming…" : "Resume workflow"}</Button>
         {!!choices.length && <div role="group" aria-label="Model for retry"><ModelPicker choices={choices} models={models} model={pick.model} choiceId={pick.choiceId} disabled={!ready || pending} allowCustom={false} onChange={setPick} /></div>}</>}
     </div>
-    {working && ["failed", "blocked"].includes(record.status) && <p role="status">An agent is working now. The failure below belongs to the saved attempt; open the live team to follow or steer the current work. Resume is unavailable while work is active.</p>}
+    {working && ["failed", "blocked", "cancelled"].includes(record.status) && <p role="status">An agent is working now. The failure below belongs to the saved attempt; open the live team to follow or steer the current work. Resume is unavailable while work is active.</p>}
     {!ready && <p role="status">Reconnect to refresh or resume this workflow. Its saved state remains visible.</p>}
     {error && <p role="alert" className="text-destructive">{error}</p>}
     {!tasks.length && <p>No task details have been recorded for this run.</p>}

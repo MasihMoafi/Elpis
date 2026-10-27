@@ -4,6 +4,7 @@ export function workflowRoute(model = '', provider = '') {
 }
 export function quotaFailure(error) {
   return /^(usage_limit_reached|rate_limit_error|quota_exceeded|insufficient_quota)$/.test(error?.errorKind ?? '')
+    || /\b(?:hit|reached|exceeded|exhausted)\s+(?:your\s+|the\s+)?(?:weekly|monthly|daily|usage|plan|credit)\s+(?:usage\s+)?(?:limit|quota)\b/i.test(error?.message ?? '')
     || /(?:weekly|monthly|daily|usage|plan|credit).{0,60}(?:limit|quota).{0,40}(?:reach|exceed|exhaust)|(?:rate[_ -]?limit|quota)[_ -]?(?:error|exceeded|exhausted|reached)|too many requests/i.test(error?.message ?? '');
 }
 export function workflowModelRoutes(models, providers, requirements) {

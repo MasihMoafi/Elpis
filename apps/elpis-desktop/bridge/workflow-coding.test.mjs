@@ -274,23 +274,28 @@ test('subscription recovery routes exclude API billing, expired limits and manag
   assert.deepEqual(workflowModelRoutes(models, { ...providers, claude: { state: 'notConnected', signedOut: true }, gemini: { state: 'notConnected' } }, {}), [], 'signed-out subscriptions are unavailable');
 });
 
-test('a structured quota failure switches subscription once and preserves the attempt evidence', { timeout: 20000 }, async t => {
+for (const [error, kind, recovers] of [
+  ['Weekly usage limit reached', 'usage_limit_reached', true],
+  ['Claude (ACP) error: You have hit your weekly limit.', 'provider_error', true],
+  ['Weekly report failed because the file is missing', 'provider_error', false],
+  ['Please review the weekly limit documentation', 'provider_error', false],
+]) test(`quota recovery classifies ${error} without replaying unrelated failures`, { timeout: 20000 }, async t => {
   let f;
   f = fixture(t, { runner: {
     modelRoutes: async () => [{ model: 'claude/opus', provider: 'claude' }, { model: 'm-fast', provider: 'openai' }],
     nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model.replace(/^(claude|agy)\//, ''), env: {
       FAKE_ACP_NAME: `${node.provider}-${node.name}`, FAKE_ACP_MODELS: 'opus,m-fast', FAKE_ACP_LOG: path.join(f.home, `${node.name}.jsonl`),
-      ...(node.provider === 'claude' ? { FAKE_ACP_PROMPT_ERROR: 'Weekly usage limit reached', FAKE_ACP_ERROR_KIND: 'usage_limit_reached' } : {}),
+      ...(node.provider === 'claude' ? { FAKE_ACP_PROMPT_ERROR: error, FAKE_ACP_ERROR_KIND: kind } : {}),
     } }),
   } });
   const started = await f.start([task('limited', { model: 'claude/opus', provider: 'claude' })]);
   const completed = await f.finished(started.graphId), node = completed.tasks[0];
-  assert.equal(completed.status, 'succeeded', completed.error);
-  assert.deepEqual(node.routing.attempts.map(attempt => [attempt.provider, attempt.status]), [['claude', 'failed'], ['openai', 'succeeded']]);
-  assert.deepEqual(node.routing.actual, { model: 'm-fast', provider: 'openai' });
-  assert.match(node.routing.attempts[0].reason, /Weekly usage limit/);
-  assert.equal(f.log('limited').filter(row => row.method === 'session/prompt').length, 2, 'one turn reaches each subscription');
-  assert.equal(completed.mother, undefined, 'successful quota recovery does not create an unnecessary supervisor turn');
+  assert.equal(completed.status, recovers ? 'succeeded' : 'failed', completed.error);
+  assert.deepEqual(node.routing.attempts.map(attempt => [attempt.provider, attempt.status]), recovers ? [['claude', 'failed'], ['openai', 'succeeded']] : [['claude', 'failed']]);
+  assert.deepEqual(node.routing.actual, recovers ? { model: 'm-fast', provider: 'openai' } : { model: 'claude/opus', provider: 'claude' });
+  assert.ok(node.routing.attempts[0].reason.includes(error));
+  assert.equal(f.log('limited').filter(row => row.method === 'session/prompt').length, recovers ? 2 : 1, 'only quota failures reach another subscription');
+  if (recovers) assert.equal(completed.mother, undefined, 'successful quota recovery does not create an unnecessary supervisor turn');
 });
 
 test('Mother actually steers a running sibling after a node fails without blindly replaying the failed operation', { timeout: 20000 }, async t => {
@@ -359,4 +364,64 @@ test('recovery refuses an independently resumed assigned agent without changing 
   await assert.rejects(restored.resume(id, { cwd: f.cwd }), /already working/);
   assert.equal(fs.readFileSync(file, 'utf8'), before, 'status and recovery model remain untouched');
   assert.equal(f.log('evidence').length, 0, 'recovery does not start another agent');
+});
+
+
+for (const failure of ['failed verification', 'invalid verification', 'corrected verification', 'out-of-scope candidate']) test(`Mother supervises ${failure} with one visible corrective decision`, { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env });
+  env.evidence = failure === 'out-of-scope candidate'
+    ? { FAKE_ACP_WRITE: JSON.stringify({ file: 'outside-report', text: 'Preserve this rejected candidate' }) }
+    : { FAKE_ACP_ANSWER: failure === 'failed verification' ? JSON.stringify({ passed: false, summary: 'Required evidence is missing' }) : 'No structured verification evidence' };
+  if (failure === 'corrected verification') {
+    let attempts = 0;
+    Object.defineProperty(env, 'evidence', { get: () => ({ FAKE_ACP_ANSWER: JSON.stringify({ passed: ++attempts > 1, summary: 'Observed the requested evidence after focused correction' }) }) });
+  }
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'retry', taskId: 'evidence', instruction: 'Inspect the failed evidence and correct only the existing scope.', reason: 'The retained result needs one focused correction.' }) };
+  const started = await f.start([task('evidence', { kind: failure === 'out-of-scope candidate' ? 'explore' : 'verify', writeScopes: failure === 'out-of-scope candidate' ? ['src'] : [] })], failure === 'out-of-scope candidate' ? { isolation: 'worktree' } : {});
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, failure === 'corrected verification' ? 'succeeded' : 'failed');
+  assert.equal(completed.mother?.decisions.length, 1, 'Mother makes a single bounded decision even if the correction also fails');
+  assert.equal(completed.mother.decisions[0].decision, 'retry');
+  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 1);
+  assert.equal(f.log('evidence').filter(row => row.method === 'session/prompt').length, 2, 'the correction executes exactly once');
+  if (failure === 'corrected verification') {
+    assert.equal(completed.tasks[0].failureReason, null, 'a corrected task cannot retain a current failure');
+    assert.match(completed.tasks[0].result.summary, /Observed the requested evidence/);
+    assert.match(f.log('evidence').filter(row => row.method === 'session/prompt')[1].params.prompt[0].text, /Mother's corrective guidance/);
+  } else {
+    assert.match(completed.tasks[0].failureReason, failure === 'out-of-scope candidate' ? /outside its write scopes/ : /Check failed/);
+    assert.equal(completed.tasks[0].result, null);
+  }
+  if (failure === 'out-of-scope candidate') {
+    assert.equal(fs.readFileSync(path.join(completed.tasks[0].cwd, 'outside-report'), 'utf8'), 'Preserve this rejected candidate');
+    assert.equal(fs.existsSync(path.join(f.cwd, 'outside-report')), false, 'rejected work never reaches the source checkout');
+  }
+});
+
+for (const activeMember of ['nested', 'next-stage', 'unrelated']) test(`recovery checks paginated ${activeMember} work before starting an agent`, async t => {
+  let restored;
+  t.after(async () => { if (!restored) return; restored.close(); await until(() => restored.list(), list => list.every(record => record.status !== 'running')); });
+  const f = fixture(t), id = randomUUID(), rootThreadId = randomUUID(), childId = randomUUID(), nextId = randomUUID();
+  const retained = { id, rootThreadId, status: 'failed', round: 1, projectCwd: f.cwd, tasks: [task('evidence', { assignedThreadId: childId, status: 'failed' })], next: { threadId: randomUUID(), tasks: [task('next', { assignedThreadId: nextId, status: 'failed' })] } };
+  const file = path.join(f.home, 'state', `${id}.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(retained));
+  const before = fs.readFileSync(file, 'utf8'), pages = [];
+  restored = createWorkflowRuns({ ...f.runnerOptions,
+    observeThread: async threadId => ({ id: threadId, status: { type: threadId === 'foreign' || activeMember === 'next-stage' && threadId === nextId || activeMember === 'nested' && threadId === 'grandchild' ? 'active' : 'idle' } }),
+    listThreadDescendants: async options => {
+      pages.push(options);
+      return options.cursor ? { data: [{ id: 'grandchild', source: { subAgent: { thread_spawn: { parent_thread_id: childId } } }, status: { type: activeMember === 'nested' ? 'active' : 'idle' } }, { id: 'foreign', parentThreadId: rootThreadId, status: { type: 'active' } }], nextCursor: null }
+        : { data: [{ id: childId, parentThreadId: rootThreadId, status: { type: 'idle' } }, { id: nextId, parentThreadId: retained.next.threadId, status: { type: 'idle' } }], nextCursor: 'second' };
+    },
+  });
+  if (activeMember !== 'unrelated') {
+    await assert.rejects(restored.resume(id, { cwd: f.cwd }), /already working/);
+    assert.equal(fs.readFileSync(file, 'utf8'), before, 'refused recovery preserves the saved run and model');
+    assert.equal(f.log('evidence').length, 0);
+  } else {
+    await restored.resume(id, { cwd: f.cwd });
+    await until(() => restored.list(), list => list.every(record => record.status !== 'running'));
+    assert.ok(f.log('evidence').some(row => row.method === 'session/prompt'), 'unrelated live work cannot block recovery');
+    assert.deepEqual(pages.map(page => page.cursor ?? null), [null, 'second']);
+  }
 });

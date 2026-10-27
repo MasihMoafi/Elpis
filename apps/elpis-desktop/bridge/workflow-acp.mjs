@@ -5,6 +5,7 @@ import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
 import { workflowRoute, quotaFailure } from './workflow-models.mjs';
+import { agentParentId } from '../lib/agent-runs.mjs';
 import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged } from './workflow-worktrees.mjs';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
@@ -103,7 +104,7 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onSession, onEnd, modelRoutes, observeThread } = {}) {
+  onSession, onEnd, modelRoutes, observeThread, listThreadDescendants } = {}) {
   const records = new Map(), active = new Map();
   const controls = new Map(), progressTimers = new Map(), supervision = new Map(), routeSnapshots = new Map(), exhaustedProviders = new Map();
   const mergingSources = new Set(), mergeControllers = new Map();
@@ -285,24 +286,28 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),
               ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];
             const requested = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider ?? root.modelProvider ?? '' } : { model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' };
-            const attempt = () => runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
-              cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-              onPermission: request => permission(record, task, request), onUpdate: update => progress(record, task, update), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
-            });
-            let result;
-            try { result = await attempt(); }
+            const attempt = async () => {
+              const result = await runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
+                cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
+                onPermission: request => permission(record, task, request), onUpdate: update => progress(record, task, update), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
+              });
+              if (task.kind === 'verify') {
+                let verdict;
+                try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* invalid check cannot pass */ }
+                if (verdict?.passed !== true || typeof verdict.summary !== 'string' || !verdict.summary.trim()) throw new BridgeError(`Check failed: ${verdict?.summary || 'the agent did not return a passing check with evidence'}`, 409);
+              }
+              const changes = isolation ? await isolation.complete(task, round) : {};
+              return { result, changes };
+            };
+            let completed;
+            try { completed = await attempt(); }
             catch (error) {
               task.failureReason = error.message;
               if (!await supervise(record, task, error, root, controller)) throw error;
-              result = await attempt();
+              completed = await attempt();
             }
-            if (task.kind === 'verify') {
-              let verdict;
-              try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* invalid check cannot pass */ }
-              if (verdict?.passed !== true || typeof verdict.summary !== 'string' || !verdict.summary.trim()) throw new BridgeError(`Check failed: ${verdict?.summary || 'the agent did not return a passing check with evidence'}`, 409);
-            }
-            const changes = isolation ? await isolation.complete(task, round) : {};
-            answers.set(task.id, result.answer); task.result = { summary: result.answer, ...changes }; task.status = 'succeeded';
+            const { result, changes } = completed;
+            answers.set(task.id, result.answer); task.result = { summary: result.answer, ...changes }; task.status = 'succeeded'; task.failureReason = null;
           } catch (error) {
             task.status = controller.signal.aborted ? 'cancelled' : 'failed'; task.failureReason = error.message;
           }
@@ -379,7 +384,27 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!['failed', 'blocked', 'cancelled'].includes(record.status)) throw new BridgeError('Only failed or stopped workflow nodes need recovery', 409);
       if (active.has(record.rootThreadId) || mergeControllers.has(record.rootThreadId)) throw new BridgeError('This workflow is already running', 409);
       if (observeThread) {
-        const ids = [...new Set([record.rootThreadId, record.mother?.assignedThreadId, record.mother?.sessionId, ...record.tasks.map(task => task.assignedThreadId)].filter(Boolean))];
+        const memberIds = new Set([record.mother?.assignedThreadId, record.mother?.sessionId, record.next?.threadId,
+          ...[...record.tasks, ...record.next?.tasks ?? []].map(task => task.assignedThreadId)].filter(id => id && id !== record.rootThreadId));
+        if (listThreadDescendants) {
+          try {
+            const listed = [], cursors = new Set(); let cursor;
+            do {
+              const page = await listThreadDescendants({ ancestorThreadId: record.rootThreadId, limit: 100, ...(cursor ? { cursor } : {}) });
+              if (!Array.isArray(page?.data)) throw new Error('Invalid live team list');
+              listed.push(...page.data); cursor = page.nextCursor;
+              if (cursor && cursors.has(cursor)) throw new Error('Repeated live team page');
+              if (cursor) cursors.add(cursor);
+            } while (cursor);
+            for (let changed = true; changed;) {
+              changed = false;
+              for (const thread of listed) if (!memberIds.has(thread.id) && memberIds.has(agentParentId(thread))) {
+                memberIds.add(thread.id); changed = true;
+              }
+            }
+          } catch { throw new BridgeError('Could not check the workflow’s current agents. Refresh live progress or open their chats before retrying recovery.', 409); }
+        }
+        const ids = [...new Set([record.rootThreadId, ...memberIds])];
         for (let offset = 0; offset < ids.length; offset += 3) {
           let observed;
           try { observed = await Promise.all(ids.slice(offset, offset + 3).map(id => observeThread(id))); }

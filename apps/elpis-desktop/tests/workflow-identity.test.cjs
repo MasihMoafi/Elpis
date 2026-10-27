@@ -418,3 +418,29 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+
+test('cancelled workflow offers explicit same-run recovery without replaying completed tasks', async () => {
+  const saved = { id: 'cancelled-run', rootThreadId: 'chat-a', name: 'Interrupted evidence review', status: 'cancelled', tasks: [
+    { id: 'done', title: 'Retained evidence', kind: 'research', status: 'succeeded', result: { summary: 'Observed completed evidence' }, dependsOn: [], writeScopes: [], acceptanceCriteria: [] },
+    { id: 'interrupted', title: 'Interrupted summary', kind: 'research', status: 'cancelled', dependsOn: ['done'], writeScopes: [], acceptanceCriteria: [] },
+  ] };
+  const f = await open('light', [saved], {}, {}, {
+    '/api/workflows': () => ({ data: [saved] }),
+    '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }),
+    '/api/workflows/cancelled-run/resume': () => ({ graphId: saved.id, threadId: saved.rootThreadId }),
+  });
+  try {
+    const { page } = f;
+    await row(page, 'chat-a').locator('.thread-link').click();
+    const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
+    await summary.getByText('Observed completed evidence', { exact: true }).waitFor();
+    const resume = summary.getByRole('button', { name: 'Resume workflow', exact: true });
+    await eventually(async () => assert.equal(await resume.isEnabled(), true));
+    assert.equal(f.posts.some(post => /\/resume$/.test(post.path)), false, 'opening a stopped run cannot resume it');
+    await resume.click();
+    await eventually(async () => assert.equal(f.posts.filter(post => post.path === '/api/workflows/cancelled-run/resume').length, 1));
+    assert.equal(f.posts.some(post => post.path === '/api/workflows/run'), false, 'recovery sends the retained identity rather than starting another workflow');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
