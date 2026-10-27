@@ -321,6 +321,12 @@ for (const colorScheme of ['light', 'dark']) test(`long messages fold and expand
   f.emit('message', { method: 'item/agentMessage/delta', params: { threadId: 'chat-a', turnId: 'short', itemId: 'a-short', delta: '\n\nOne more streaming paragraph.' } });
   await eventually(async () => assert.ok((await page.locator('.message.agent').last().textContent()).includes('One more streaming paragraph.')));
   assert.equal(await page.locator('.message.agent').last().getByRole('button', { name: 'Expand message', exact: true }).getAttribute('aria-expanded'), 'false', 'streaming preserves the chosen collapsed state');
+  const lastExpand = page.locator('.message.agent').last().getByRole('button', { name: 'Expand message', exact: true });
+  await lastExpand.scrollIntoViewIfNeeded();
+  const readingTop = (await lastExpand.boundingBox()).y;
+  await lastExpand.click();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.ok(Math.abs((await growing.boundingBox()).y - readingTop) < 3, 'expanding at the bottom keeps the same reading position');
   assert.equal(await composer.inputValue(), 'Keep my unfinished draft');
   assert.equal(f.posts.filter(post => post.path.endsWith('/turns')).length, 0, 'folding never sends a turn');
 }));

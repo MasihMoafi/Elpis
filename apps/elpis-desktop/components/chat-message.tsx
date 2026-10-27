@@ -120,7 +120,7 @@ function CollapsibleMessage({children, direction}:{children:React.ReactNode;dire
   }, []);
   const folded = long && collapsed;
   return <div className="message-body">
-    {long && <Button type="button" variant="ghost" size="xs" className="message-fold-control" aria-expanded={!folded} aria-controls={id} onClick={() => setCollapsed(!folded)}>{folded ? "Expand message" : "Collapse message"}</Button>}
+    {long && <Button type="button" variant="ghost" size="xs" className="message-fold-control" data-preserve-scroll aria-expanded={!folded} aria-controls={id} onClick={() => setCollapsed(!folded)}>{folded ? "Expand message" : "Collapse message"}</Button>}
     <div id={id} className={folded ? "message-body-preview" : undefined} inert={folded} aria-hidden={folded || undefined}>
       <div ref={body} className="message-body-content" dir={direction}>{children}</div>
     </div>
