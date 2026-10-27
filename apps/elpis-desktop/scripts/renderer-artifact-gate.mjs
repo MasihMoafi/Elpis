@@ -140,9 +140,9 @@ export const retainedUpdates = {
       "reason": "Wait for opened folded work and its activity body before selecting a tool; scope the long group to that finished turn so a still-loading fold cannot select the live group. Preserve every collapse, focus return, keyboard reopening and reduced-motion assertion."
     },
     "tests/composer-consistency.test.cjs": {
-      "blob": "6ee214b7446ca8937cdbf4ad8718f68962ed4f2e",
-      "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
-      "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
+      "blob": "b33d5c98abbd8ac1b34c7023a7e71bf02af10ac6",
+      "approval": "9cfbfc1f07861e4b86ec4b3bf36f62dd63914ac3",
+      "reason": "Masih 27 Oct: retain one-row narrow controls and visible thinking, and extend the same idle/running owner check to preserve draft height during width-only resize; both negative cases reproduced before the repair. Immutable baseline retained."
     },
     "tests/love-spot-sync.test.cjs": {
       "blob": "48eaf184b0b76f7279186c538310a5e5c0130e4d",
