@@ -598,6 +598,17 @@ for (const colorScheme of ['light', 'dark']) test(`workflow pattern explicitly c
     for (const node of saved.nodes.filter(node => node.type === 'agent')) assert.deepEqual(saved.edges.filter(edge => edge.target === node.id && edge.source !== 'mother').map(edge => edge.source).sort(), [...byId.get(node.id)].sort());
     await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     assert.equal(await selector().getAttribute('data-value'), 'sequential', 'manual selection stays available after planning, renaming and reload');
+    await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Keep my chosen sequence');
+    const beforeRefusal = await f.saved();
+    await f.page.route('**/api/canvas/plan', async route => {
+      const changed = planFor(route.request().postDataJSON());
+      changed.agents[1].waitsFor = [];
+      await route.fulfill({ json: changed });
+    });
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await f.canvas.getByRole('alert').filter({ hasText: 'Elpis changed the selected pattern.' }).waitFor();
+    assert.deepEqual(await f.saved(), beforeRefusal, 'a redesigned dependency cannot replace the chosen manual pattern');
+    await f.page.unroute('**/api/canvas/plan');
     await pick('Auto · Elpis chooses');
     await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Fix the parser');
     const planned = f.page.waitForResponse(response => response.url().endsWith('/api/canvas/plan') && response.request().method() === 'POST');

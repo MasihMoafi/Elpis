@@ -878,7 +878,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .app-menu-content { min-width:220px; }
 @media(max-width:520px) { .title-bar .app-menu-trigger { padding-inline:6px; } }
 
-.has-title-bar .workspace-header > .sidebar-open { display:none !important; }
+.has-title-bar[data-desktop] .workspace-header > .sidebar-open { display:none !important; }
 .title-bar .sidebar-open-narrow { display:none; }
 @media(max-width:760px) { .title-bar .sidebar-open-narrow { display:inline-flex; } }
 .shortcuts-dialog { display:grid; gap:12px; max-width:520px; }
@@ -1166,10 +1166,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .react-flow__node:hover .agent-node::before { top:20%; bottom:20%; left:100%; width:48px; }
 .react-flow__node:hover .agent-node::after { left:30%; right:30%; top:100%; height:28px; }
 @media (prefers-reduced-motion:reduce) { .agent-node-plus { transition:none; } }
-/* An agent's dots: 12 px to see, 28 px to hit (an invisible ring around each), and they grow under the pointer. */
-.agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); transition:transform .12s ease; }
-.agent-node .react-flow__handle::after { content:""; position:absolute; inset:-9px; border-radius:50%; }
-.agent-node .react-flow__handle:hover { transform:scale(1.35); }
+/* Dots retain their centre on hover; the invisible ring stays easy to hit at normal board zoom. */
+.agent-node .react-flow__handle { width:12px; height:12px; border:2px solid var(--card); background:var(--kind); z-index:3; transition:scale .12s ease; }
+.agent-node .react-flow__handle::after { content:""; position:absolute; inset:-12px; border-radius:50%; }
+.agent-node .react-flow__handle:hover { scale:1.15; }
 @media (prefers-reduced-motion:reduce) { .agent-node .react-flow__handle { transition:none; } }
 /* A note for the user, never sent: dragged by its strip, written in below. */
 .canvas-note { display:grid; border-radius:4px; background:#f6e9a8; box-shadow:var(--shadow); }

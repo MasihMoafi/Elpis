@@ -198,3 +198,5 @@ open.
 ## 27 October — finish the complete current request list
 
 Masih: “don't stop till all is verified finished.” The complete current-session acceptance scope is C1–C14 in [the desktop specification](../apps/elpis-desktop/SPEC.md#completion-of-the-2627-october-requests). Install batches are checkpoints, not acceptance of the full request list. Preserve the requested priorities: workflows first and read aloud last; no provider API-key route.
+
+27 October clarification to the existing Settings-fit request: the navigation must fit the available desktop height, showing every destination without its current scrollbar. Keep readable targets and a reachable fallback at physically smaller heights; do not conceal clipped options.

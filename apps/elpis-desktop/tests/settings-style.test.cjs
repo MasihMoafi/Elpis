@@ -27,9 +27,9 @@ try{const f=path.join(__dirname,'..','out',url.pathname==='/'?'index.html':url.p
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM, headless: true });
   try {
-    for (const [width, height] of [[1280, 900], [390, 844]]) for (const dark of [false, true]) {
+    for (const [width, height, native] of [[1280, 900, true], [390, 844, true], [390, 844, false]]) for (const dark of [false, true]) {
       const page = await browser.newPage({ viewport: { width, height }, colorScheme: dark ? 'dark' : 'light' }); page.setDefaultTimeout(7000);
-      await page.addInitScript(fakeDesktop);
+      if (native) await page.addInitScript(fakeDesktop);
       await page.goto(`http://127.0.0.1:${server.address().port}`);
       if (!await page.locator('aside.sidebar').isVisible()) await page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
       await openSettings(page);
