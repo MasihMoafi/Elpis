@@ -24,6 +24,66 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/controls.cjs": {
+      "blob": "078c3475929479318cba0e93192cb3ec6c41418d",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Shared helpers for the deliberate 27 Oct changes: openPatterns (Workflows patterns open from the pattern menu) and rowAction (row Pin/Bookmark/Archive moved into the row's menu, 577d5a5ad, R83). Existing helpers unchanged."
+    },
+    "tests/sidebar.test.cjs": {
+      "blob": "5bc4e7a4f4e0b4029e2b53f0a7ca6e473045bd83",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/sidebar-parity.test.cjs": {
+      "blob": "8d0fc28e1983d5b499590637dfdbdff6a7640721",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/settings-rows.test.cjs": {
+      "blob": "3abeb2f5135a214f1da4d42a24a0116aa2f963cb",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/project-membership.test.cjs": {
+      "blob": "0821088899f85ff02c5eec05fdb6dc76b5dde459",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/gray-shadows.test.cjs": {
+      "blob": "7c1c7eca3f806305ab2d405009f2fea563ea2fbe",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/context-menu.test.cjs": {
+      "blob": "80ebe7fc9abb7062a27fe24d64ab24789354ed21",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/composer-files.test.cjs": {
+      "blob": "d9a5f4a3786f411d91210353bca2179e22d86811",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/chat-worktree.test.cjs": {
+      "blob": "1cc85cebd18d3e584f71b73410f1771c5251205d",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
+    },
+    "tests/input-hints.test.cjs": {
+      "blob": "3629e6b86ba60fc40a64b62bc4922c9eac2aa7b3",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
+    },
+    "tests/hud-language.test.cjs": {
+      "blob": "fbbecd45443a757f6269312701aa222854300e26",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
+    },
+    "tests/desktop-sweep.test.cjs": {
+      "blob": "1c550507844e546b6d29ba4937caa971c71499fd",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
+    },
     "tests/history-paging.test.cjs": {
       "blob": "1d5a27b96dd6ee101bb2953ba0e4405d14c30a6f",
       "approval": "7f37528ca78fffdfdd84ff7b8ea796d3faea772c",
@@ -70,49 +130,49 @@ export const retainedUpdates = {
       "reason": "Masih: reconnect and other errors must not appear at the top. Replace only the superseded A30 header-placement expectations with contained bottom placement and an actual non-empty Run description. Preserve both themes, provider refusal, long permission refusal, actionable guidance, responsive toolbar fit, failed-agent explanation, successful retry and stale-error clearing. The real packaged-app refusal sibling follows the same policy; the immutable baseline is unchanged."
     },
     "tests/canvas-keys.test.cjs": {
-      "blob": "5d4842d2a26ae8fb50a3fc68fb7eba4d08425bc2",
-      "approval": "d832d506732216ca0c0137533def4db8e80a6975",
-      "reason": "Masih 27 Oct: all errors belong at the bottom (14e9c8f30), and Ctrl+A selects only within the focused area (C5, d832d5067): the keys journey focuses the board before Ctrl+A instead of blurring. Keep the original undo, copy and keyboard assertions."
+      "blob": "d8de165da14a0db6cca9cc79d5a0edbe4f89f4c3",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/canvas.test.cjs": {
-      "blob": "942e566c66a40bc63e8bed115e1bb9cd6d7decf9",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "06c91ef4caa491773f1100238a243a0d9b6197d4",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/canvas-runlog.test.cjs": {
-      "blob": "2f64d2f33960ec25a7037dd08bee48e5aca128b7",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "8572492d5017dee8569fbb5898635ee3f1d2fed3",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/canvas-run.test.cjs": {
-      "blob": "91541bbde8ef1010ad9526b8e51f845fddce3c35",
-      "approval": "83d8782efe44951a031ad62e860228650d5d070f",
-      "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
+      "blob": "acf1b1e2e9ff45144f2157d71f8d8c0b434ea8ab",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/canvas-fit.test.cjs": {
-      "blob": "68d1bd78b5a8b0d4c2aca6850354a47fb1f7a1f2",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "6ce93aee945babbfb7003b0fa46e84051c2cac87",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/canvas-editing.test.cjs": {
-      "blob": "ba030a49f833cfec4cf825e8d90d355e5cf51307",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "1caab2c6902a3aa2adab4d2c7e81398ec79e8219",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/canvas-basics.test.cjs": {
-      "blob": "2096ffd00861087554c831722480da60baa65a23",
-      "approval": "75ad8bd8d24f86960bd9d5ef6084ef18016d2f07",
-      "reason": "Masih 27 Oct: add the page-never-scrolls journey (75ad8bd8d) to the explicit Auto/manual planning and editable-request checks (c5e2a69fc, 1c38728ed). Only additions; no assertion removed."
+      "blob": "54b7bb8727bd406a59b202e730e7ece08d441525",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/agents-guide.test.cjs": {
-      "blob": "3fea4f19a19a338fc4861a189965b3d67448b2d2",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "687320f691ddbd7befb4544df081ec10f1daad61",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/message-replies.test.cjs": {
-      "blob": "6a9bf9d261534b0c6f556dba8383330f0b2d5ff5",
-      "approval": "47b64a186f51fb3512125ed1acef2cc247327291",
-      "reason": "Wait for the actual composer focus after menu dismissal before typing immediately; keep exact text and add focused-element assertions for both Reply menu paths. This removes the browser input race without weakening the focus requirement."
+      "blob": "ceb18b7e8955deb65424364642e897435e52afa8",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"Please fix them all\". Follow deliberate 27 Oct changes: row hover Pin/Bookmark/Archive moved into the row's menu (577d5a5ad, R83) and Move to project under Organize (54442dcc7); Colour in chat menus (577d5a5ad, R84, SPEC C8); an idle ring is not a status (R8); Settings grouped as ChatGPT's and centred (d79d50cbe); Stop plain in both themes (00996c210, R22); the message fold wrapper (540411af9); agent rows show their mark and model (d832d5067). Assertions are kept or made stricter."
     },
     "tests/browser-sessions-electron.test.cjs": {
       "blob": "00d3acaca69921e0267e1bd84c1eeb5dd4c3120a",
@@ -155,14 +215,14 @@ export const retainedUpdates = {
       "reason": "Preserve all six real sync cases, deletion/Undo/save assertions and budgets. Prove the held-event key listener fired and report bounded source/element-version diagnostics on failure; no product seam was added. Run40273131811 proved the target deleted while legitimate reply elements arrived: require the target tombstone on disk and absence live, preserve every other saved live element, and retain both Undo assertions."
     },
     "tests/arrow-keys.test.cjs": {
-      "blob": "b1b75ec08ec928efb7997e605712daed25a3a14d",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Keep the complete control sweep unchanged. Report active focus, area and ancestor control availability only when a control fails to move, to diagnose the intermittent retained failure. R12: cancel a delayed sidebar selection when focus leaves or its destination disconnects. Preserve the complete original control sweep and closed-select behavior; add deterministic cancelled, leave-and-return, and held-focus navigation checks for the missing Sources anchor observed in run40277834091. Install the virtual clock before navigation so app timers share one clock; test navigation within one second rather than binding to the implementation's debounce duration. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "ff143709412619c6e98bbe550e354e55666856ef",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/workflow-provenance.test.cjs": {
-      "blob": "e8c987075e17eb0bac5e5129abc55aa2fab6a91b",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Wait for restored comparison results before asserting the saved stop choice after reload; retain exact restored choice, request and provenance assertions. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "493f54ef103baef8e7a105c1cdedd4f14a5ab86e",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/step-sentences.test.cjs": {
       "blob": "a137478ac4839fba2417d8274369404c0971fb2c",
@@ -225,9 +285,9 @@ export const retainedUpdates = {
       "reason": "A233/A251 makes Full access the shared default. Keep Bypass red, distinct and confirmed, Cancel lossless, managed refusals and immediate apply. Scope exact popup choices away from the S35 persistent menubar."
     },
     "tests/canvas-iso.test.cjs": {
-      "blob": "ec7a74fb7b3db3ba3dee8da6fce666d8c0af6ba5",
-      "approval": "612a8bfe2c3394b123afc7e2786ab2aa692bd8cc",
-      "reason": "Keep the dense node collision checks and extend them to dark mode after reserving the complete Mother workflow mark width. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks. Measure every visible workflow control. Exclude only the Base UI form backing input that is aria-hidden, non-tabbable and fully clipped at inset(50%); its intentional negative one-pixel box is not an offscreen interactive control. Keep all node, label, HUD, real-control, theme, run and overlap assertions; add failure-only element bounds."
+      "blob": "af44aed6624b1bb3e9f5a30b877f7f577c383d49",
+      "approval": "af885eb4978ee37e98e1df11423d545be9a1c75f",
+      "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
     },
     "tests/sidebar-creators.test.cjs": {
       "blob": "21f7ae074660ae529bc05d619b5fcab749512163",
@@ -309,11 +369,6 @@ export const retainedUpdates = {
       "approval": "fbe94e91f9d438cd87bcf582c03ce7f058e14a96",
       "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name)."
     },
-    "tests/hud-language.test.cjs": {
-      "blob": "93c89bb4f79df91378b27738bd2b2ae7f6bed42f",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "CUSTOMIZE, Masih 22 Oct: \"The name of Ledger is incorrect for this, however. What do you think it should be called? ... Claude calls it customize\", then \"Yes please\". The page is Customize; this test follows its label (the chat's Context Ledger button keeps its name). Wait for opened lazy activity bodies before checking their HUD geometry; retain every theme, menu, dialog and surface assertion. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
-    },
     "tests/ledger-page.test.cjs": {
       "blob": "3f08e4309e6681b9b8b861bc234fa259486a97bb",
       "approval": "e65e0f06f4235f85318c2cb3ce29ef844a720a65",
@@ -354,25 +409,10 @@ export const retainedUpdates = {
       "approval": "1de4129f742172ae62f0f63f5c3bd5d0a46374fe",
       "reason": "BOOT, Masih 24 Oct: \"the splash must never wait on slow or failed data; show the app and fill lists as they arrive\" and \"Fix so the window always opens within ~2 s\". Preserve the approved gyroscope and both themes; replace the former conversation-wait and eight-second expectations with startup-responsive.test.cjs, which fails on the installed renderer. Mouse clicks still pass through the fade. Masih 24 Oct: a dark opening before a light app is wrong; the opening follows the app theme. Preserve every animation, timing and click-through assertion."
     },
-    "tests/controls.cjs": {
-      "blob": "ffee64ceab65ace7ecae2a1c22d4d30e90a4f4ed",
-      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
-      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
-    },
-    "tests/input-hints.test.cjs": {
-      "blob": "92ac3d5207622f5b5e70877b3593a5355ef28809",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "S1/R34, Masih 22 Oct: \"This enter ID or the model name is unacceptable. There should always be the dropdown menu.\" The RAG models are menus; the long-hint check reads their typed fields behind Advanced: custom model. Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
-    },
     "tests/sidebar-order.test.cjs": {
       "blob": "ee74fefc4d2b787f3ab2235e66126924458d54c6",
       "approval": "9b3bfffb441e225b6d38cfdffb8f528c402d1c25",
       "reason": "Masih 27 Oct: explicit per-conversation colours replace idle markers while retaining active/unread/error semantics, alignment and keyboard proof; thinking stays visible as secondary controls collapse; GUI /resume visibly chooses and opens saved history. Retain document calculations, selected-text feedback before deliberate navigation fallback, paging and shared editing. Keep behavioral assertions and the immutable baseline."
-    },
-    "tests/sidebar.test.cjs": {
-      "blob": "713f46529c23e8062527f0c1fd8f25fde0374f59",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "The Session Manager is a switch, not a chat. Masih 22 Oct: \"people should be able to turn on and off the session manager right there ... I don't want to see it chat with us\". The sidebar test checks the switch above the list and that it never creates a chat; the rest is unchanged. Chat menu, Masih 22 Oct: \"it shouldn't have this show agents when there are no agents!\" The row menu of a chat with no agents offers none (c88df8e6d). Arrow keys, Masih 22 Oct: \"Please make it change just by the stroke of the keyboards.\" An arrow now opens the chat it reaches, so the test no longer presses Enter (7d3c12984). Masih, 23 Oct: the Session Manager \"is non-functional ... either fix it; if you can't, delete it.\" It is deleted: its switch row and its hidden chat checks go; the remaining sidebar checks are unchanged. A248: Bookmark belongs beside Pin and Archive; retain every deletion, selection, keyboard and hover assertion. S35, Masih 25 Oct screenshot: close beside the Elpis brand and reopen in the title bar. Assert the actual aligned position and retain all keyboard, draft, project, delete and selection checks."
     },
     "tests/desktop-small-fixes.test.cjs": {
       "blob": "f02b388191828cac085bcbd12a80f994762ef192",
@@ -415,20 +455,10 @@ export const retainedUpdates = {
       "approval": "0a00c2cc125aebb2794e5da274463c5a3f97d57d",
       "reason": pageRemovalApproval.reason + " Wait for the existing animation-frame search focus before checking it; preserve all command, saved-text and focus-return assertions."
     },
-    "tests/composer-files.test.cjs": {
-      "blob": "554d67113298a5a0616014375e6db96d3f7d7505",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "Masih 24 Oct: all chats must already be collapsed every time. Open the parent branch before using its children; retain collapse/keyboard, exact attachments, failed sends, observation and no-write checks. Offline editing becomes available before hydration. Wait for the actual loaded chat list before counting drop navigation, retaining exact zero-navigation and unchanged-URL assertions. Record exact navigation URLs only as failure evidence; retain all attachment bytes, draft, persistence, PDF, failure and no-send checks."
-    },
     "tests/desktop-polish.test.cjs": {
       "blob": "4d1df081303101817e4857fc702768ec8f5d331b",
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. S34 reconnect status stays at the workspace bottom even while a drawer or floating panel hides the chat. Restore the hidden chat before inspecting its preserved draft; keep bottom geometry and reconnection checks."
-    },
-    "tests/desktop-sweep.test.cjs": {
-      "blob": "43230520872e7543d16d8ed1b99b84e1d131e43d",
-      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
-      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/love-spot-pages.test.cjs": {
       "blob": "5e6bb4c0b87a64d9cf1d7217e2c583fbab199a2b",
@@ -453,11 +483,6 @@ export const retainedUpdates = {
       "blob": "09f90ee692006240e183eb49d99051431d05de7b",
       "approval": "279499d6bed5a579413834c6e7bc3e4d35006bfd",
       "reason": "S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": the memory options show only while Memories is on, so the saved-settings fixture has Memories on; every version-chained save assertion is unchanged."
-    },
-    "tests/context-menu.test.cjs": {
-      "blob": "8c2c4c52f935d6c4f2be9405d60099f4cc873122",
-      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
-      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
     },
     "tests/preferences.test.cjs": {
       "blob": "2a27c24660a0a2d14da383b02f7ad95ab2e6529f",
@@ -518,11 +543,6 @@ export const retainedUpdates = {
       "approval": "254cad52528fc88bb705b5fd53abca37f9dabd23",
       "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks. Masih requested a separate native Browser settings page. Include it in existing row geometry checks; retain all original pages."
     },
-    "tests/settings-rows.test.cjs": {
-      "blob": "96177b7edf0c9eb6528164182c196f402af52c1a",
-      "approval": "171effbfaffbc916ac007c19b77abb00e5e4c05e",
-      "reason": "Masih 27 Oct: Settings must fit beside navigation; measure only the painted retained page. Automatic orange read/completion status stays left, manual palette stays separate. Retain idle/working/error/completion/read lifecycle and alignment checks; preserve the immutable baseline."
-},
     "tests/sidebar-indent.test.cjs": {
       "blob": "2205d01288c3df27da3fa312802748a244124b45",
       "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
@@ -533,11 +553,6 @@ export const retainedUpdates = {
       "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks. Await that popup's visibility before reading the same exact five choices; run40273131811 exposed the immediate empty snapshot."
     },
-    "tests/sidebar-parity.test.cjs": {
-      "blob": "235958532748a35819716106fab33206533657b1",
-      "approval": "577d5a5ad4eba08326c323a18b5ca4579a12c53d",
-      "reason": "Masih 27 Oct: right-click Colour tints the row, no palette or duplicate inline actions; keep automatic status and hover geometry stable. Avatar opens an independent pet-size chat; music only mutes/unmutes. Keep chat navigation idempotent, workflow columns aligned, and /clear starts fresh context in the same folder without deleting history. Retain persistence, keyboard, drafts, failure and lifecycle assertions. Immutable baseline unchanged."
-},
     "tests/reading-options.test.cjs": {
       "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
       "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
