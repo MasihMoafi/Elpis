@@ -868,10 +868,22 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     if (iso) setTimeout(() => isoController.current?.reveal([made.id]), 140); else reveal([made.id]);
   };
   const viewMiddle = () => { const box = board.current?.getBoundingClientRect(); return box ? flow.screenToFlowPosition({ x: box.left + box.width / 2 - 100, y: box.top + box.height / 3 }) : undefined; };
+  // A note from the toolbar lands in the free spot nearest the middle of the visible board; with none free, it goes
+  // below and is brought into view, as new agents are.
+  const visibleSpot = (taken = boxes()) => {
+    const box = board.current?.querySelector(".react-flow")?.getBoundingClientRect(); if (!box) return undefined;
+    const from = flow.screenToFlowPosition({ x: box.left, y: box.top }), to = flow.screenToFlowPosition({ x: box.right, y: box.bottom });
+    const mid = { x: (from.x + to.x - NODE_W) / 2, y: (from.y + to.y - NODE_H) / 2 }, step = Math.max(20, Math.ceil((to.x - from.x) / 1200) * 20);
+    let best: XYPosition | undefined;
+    for (let x = Math.ceil((from.x + GAP) / step) * step; x + NODE_W + GAP <= to.x; x += step) for (let y = Math.ceil((from.y + GAP) / step) * step; y + NODE_H + GAP <= to.y; y += step)
+      if (freeAt(x, y, taken) && (!best || Math.hypot(x - mid.x, y - mid.y) < Math.hypot(best.x - mid.x, best.y - mid.y))) best = { x, y };
+    return best;
+  };
   const addNote = (at?: XYPosition, text = "") => {
-    checkpoint(); const position = place(at ?? viewMiddle());
+    checkpoint(); const spot = at || iso ? undefined : visibleSpot(), position = spot ?? place(at ?? viewMiddle()), id = newId("note");
     if (iso) isoController.current?.keepView();
-    setGraph(current => ({ ...current, nodes: [...current.nodes, { id: newId("note"), type: "note", position, ...(iso ? { isoPosition: at ?? { x: 300, y: 0 } } : {}), data: { text } }] }));
+    setGraph(current => ({ ...current, nodes: [...current.nodes, { id, type: "note", position, ...(iso ? { isoPosition: at ?? { x: 300, y: 0 } } : {}), data: { text } }] }));
+    if (!at && !spot && !iso) reveal([id]);
   };
   // Tab, Command, a clicked dot or a context menu opens the command bar, kept inside the board.
   const openAdder = (client?: XYPosition, from?: Adding["from"], between?: CanvasEdge, seed?: string) => {

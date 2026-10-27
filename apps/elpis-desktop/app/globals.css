@@ -434,7 +434,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  .settings-mode .settings-nav { padding:8px; gap:4px; }
  .settings-mode .settings-nav button[role="tab"] { height:28px; }
  .settings-mode .settings-nav .settings-title { margin:4px 8px 0; }
- .settings-mode .settings-nav .settings-section-link { padding:4px 8px; }
+ .settings-mode .settings-nav .settings-section-link { height:auto; margin:6px 0 2px; padding:4px 8px; }
 }
 @media (max-height:800px) {
  .settings-mode .settings-nav { gap:3px; }

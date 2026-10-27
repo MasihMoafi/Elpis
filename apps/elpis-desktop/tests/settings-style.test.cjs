@@ -31,7 +31,10 @@ try{const f=path.join(__dirname,'..','out',url.pathname==='/'?'index.html':url.p
       const page = await browser.newPage({ viewport: { width, height }, colorScheme: dark ? 'dark' : 'light' }); page.setDefaultTimeout(7000);
       if (native) await page.addInitScript(fakeDesktop);
       await page.goto(`http://127.0.0.1:${server.address().port}`);
-      if (!await page.locator('aside.sidebar').isVisible()) await page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
+      // Decide only once the app has rendered its sidebar or the visible opener, not on the first paint.
+      const shown = page.locator('aside.sidebar').filter({ visible: true }), opener = page.getByRole('button', { name: 'Open sidebar', exact: true }).filter({ visible: true });
+      await shown.or(opener).first().waitFor();
+      if (!await shown.count()) await opener.click();
       await openSettings(page);
       await page.evaluate(on => document.documentElement.classList.toggle('dark', on), dark);
       for (const name of PAGES) {
