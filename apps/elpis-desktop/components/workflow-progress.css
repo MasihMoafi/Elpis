@@ -1,3 +1,9 @@
 .workflow-progress { min-width: 0; }
 .workflow-progress-report { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
 .workflow-progress-agent { min-width: 0; }
+.workflow-progress[data-compact] .workflow-progress-report { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-height: 3em; }
+.workflow-progress[data-compact] details > ol { max-height: 130px; overflow: auto; }
+.agents-canvas[data-recorded] { grid-template-rows: auto minmax(440px, 1fr); overflow: auto; }
+.agents-canvas[data-recorded] > .canvas-header { max-height: min(36vh, 320px); overflow: auto; }
+.agents-canvas[data-recorded] > .canvas-board > :is(.react-flow, .iso-board) { min-height: 300px; }
+.agents-canvas[data-recorded] .canvas-log-panel { max-height: 180px; overflow: auto; }

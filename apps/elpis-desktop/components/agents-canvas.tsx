@@ -1423,15 +1423,27 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const found = finding === null ? [] : agents.filter(node => `${node.data.title} ${node.data.instruction}`.toLowerCase().includes(finding.toLowerCase()));
   const findAgent = (id: string) => { setSelection([id]); setFinding(null); focusBoard(); if (iso) isoController.current?.reveal([id]); else reveal([id]); };
   const scope = runTargets ? executionGraph(graph, runTargets).nodes.filter(node => node.type === "agent") : [];
-  return <section className="agents-canvas" aria-label="Workflows" data-panel={panelOpen ? "open" : "closed"}>
+  const historicalNotice = Boolean(recordedRun && savedRecord && notice && (notice === savedRecord.error || savedRecord.tasks?.some(task => task.failureReason === notice)));
+  const telemetry = <div className="canvas-telemetry">
+    {run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><>{over(run) && !run.endedAt ? <span>Duration not recorded</span> : <RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} />}</></section>}
+    {columns.length > 0 && <section className="canvas-order" aria-label="Run order">
+      <p className="hud-menu-title" title="In-degree zero starts first; later waves need earlier agents and their checks">Kahn&rsquo;s order</p>
+      <ol>{columns.map(({ level, members }) => { const names = members.map(node => node.data.title || "Untitled").join(", "); return <li key={level} data-status={waveState(members)}><span>Wave {level}</span><strong title={names}>{names}</strong></li>; })}</ol>
+    </section>}
+    <p className="canvas-inputs" aria-label="Inputs needed" title={selected ? `${selected.data.title}: ${selectedInputText}` : "Select an agent to inspect its inputs"}>{selected ? <><b>{selected.data.title}: </b>{selectedInputText}</> : "Select an agent to inspect its inputs"}</p>
+  </div>;
+  const capturedLog = run && <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
+    {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
+  </ol>;
+  return <section className="agents-canvas" aria-label="Workflows" data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
-      {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow run · {run?.status ?? "Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
+      {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
         <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" disabled={Boolean(planning || starting)} onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
         <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
       </form>}
-      {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
+      {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
       <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} onOpenCanvas={onOpenRecordedRun} />
       {presetName && !renamingPreset ? <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <OptionSelect aria-label="Workflow pattern" value={ENTRY_PATTERNS.some(pattern => pattern.id === graph.template) ? graph.template : ""} disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => {
@@ -1443,7 +1455,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       </div> : identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
       <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
-      {run && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
+      {run && !recordedRun && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
@@ -1508,14 +1520,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       onLostPointerCapture={() => { boxDrag.current = null; cutter.current = null; setSelectionBox(null); setStroke(null); }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
       onDoubleClick={event => { const target = event.target as Element; if ((target === event.currentTarget || target.closest(".react-flow")) && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
-      <div className="canvas-telemetry">
-        {run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><>{over(run) && !run.endedAt ? <span>Duration not recorded</span> : <RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} />}</></section>}
-        {columns.length > 0 && <section className="canvas-order" aria-label="Run order">
-          <p className="hud-menu-title" title="In-degree zero starts first; later waves need earlier agents and their checks">Kahn&rsquo;s order</p>
-          <ol>{columns.map(({ level, members }) => { const names = members.map(node => node.data.title || "Untitled").join(", "); return <li key={level} data-status={waveState(members)}><span>Wave {level}</span><strong title={names}>{names}</strong></li>; })}</ol>
-        </section>}
-        <p className="canvas-inputs" aria-label="Inputs needed" title={selected ? `${selected.data.title}: ${selectedInputText}` : "Select an agent to inspect its inputs"}>{selected ? <><b>{selected.data.title}: </b>{selectedInputText}</> : "Select an agent to inspect its inputs"}</p>
-      </div>
+      {!recordedRun && telemetry}
       {iso ? <IsoBoard workflowIdentity={identity} graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
         canConnect={validConnection} inserting={insertWire}
         onReconnect={(edge, source, target) => { connectionCancelled.current = false; reconnect(edge, source, target); }}
@@ -1542,12 +1547,15 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       {lasso && <span className="canvas-gesture-hint" role="status">Lasso · drag to select · Shift adds · Alt subtracts · Esc cancels</span>}
       {insertWire && <span className="canvas-gesture-hint" role="status">Shift-drop to insert on the highlighted wire · Esc cancels</span>}
       {selectionBox && <div aria-hidden="true" className={`canvas-selection absolute pointer-events-none z-10 border ${selectionBox.crossing ? "border-dashed border-success bg-success/12" : "border-solid border-primary bg-primary/10"}`} style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height }} />}
-      {run && <section className="canvas-log-panel" aria-label="Run capture">
+      {run && (recordedRun ? <details className="canvas-log-panel" aria-label={over(run) ? "Previous attempt" : "Run record"}>
+        <DisclosureSummary>{over(run) ? "Previous attempt" : "Run record"} · {run.status} · {savedRecord?.tasks?.filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length ?? 0}/{savedRecord?.tasks?.length ?? 0} tasks complete</DisclosureSummary>
+        {telemetry}
+        {historicalNotice && <p className="text-destructive">{notice}</p>}
+        {capturedLog}
+      </details> : <section className="canvas-log-panel" aria-label="Run capture">
         <p className="hud-menu-title">Run log · {log.length} events</p>
-        <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
-          {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
-        </ol>
-      </section>}
+        {capturedLog}
+      </section>)}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
       <div className="canvas-toolbar" role="toolbar" aria-label="Add to Workflows">
         <span className="canvas-toolbar-label">Add</span>
@@ -1678,7 +1686,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <ul>{GUIDE.map(item => <li key={item.href}><a href={item.href} target="_blank" rel="noreferrer">{item.title}</a><small>{item.note}</small></li>)}</ul>
       </section>
     </aside>}
-    {notice && <div id={runReasonId} className="canvas-notice canvas-error-notice" role="alert">
+    {notice && !historicalNotice && <div id={runReasonId} className="canvas-notice canvas-error-notice" role="alert">
       <div className="canvas-error-details" role="region" aria-label="Workflow error details" tabIndex={0}>{notice}</div>
       <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice("")}><X size={13} /></Button>
     </div>}

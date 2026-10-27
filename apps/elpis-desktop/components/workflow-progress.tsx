@@ -124,7 +124,7 @@ function status(thread?: Thread) {
   return workflowThreadActive(thread) ? "Working" : thread?.status?.type === "idle" ? "Idle" : thread?.status?.type || "Status unavailable";
 }
 
-export function WorkflowProgress({ run, team, onOpenChat, onRefresh }: { run: RecordedWorkflow; team: Team; onOpenChat: (id: string) => void; onRefresh?: () => void }) {
+export function WorkflowProgress({ run, team, onOpenChat, onRefresh, compact = false }: { run: RecordedWorkflow; team: Team; onOpenChat: (id: string) => void; onRefresh?: () => void; compact?: boolean }) {
   const active = team.agents.filter(workflowThreadActive).length;
   const complete = (run.tasks ?? []).filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length;
   const byId = new Map(team.agents.map(thread => [thread.id, thread]));
@@ -133,19 +133,19 @@ export function WorkflowProgress({ run, team, onOpenChat, onRefresh }: { run: Re
     while (parent && byId.has(parent) && !seen.has(parent)) { seen.add(parent); level++; parent = agentParentId(byId.get(parent)!); }
     return level;
   };
-  return <section className="workflow-progress space-y-3" aria-label="Live workflow progress">
+  return <section className={`workflow-progress ${compact ? "space-y-1" : "space-y-3"}`} data-compact={compact || undefined} aria-label="Live workflow progress">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <AgentIdentity id={team.motherId || run.rootThreadId} name="Mother" model={team.mother?.model} provider={team.mother?.modelProvider} />
       <span role="status">{status(team.mother)}</span>
       <Button variant="ghost" size="sm" disabled={team.loading} onClick={onRefresh ?? team.refresh} aria-label="Refresh live progress">Refresh progress</Button>
       {team.motherId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(team.motherId!)}>Open Mother chat</Button>}
     </div>
-    {!run.mother && <p className="text-xs text-muted-foreground">Mother is the run’s parent chat. No separate supervisor was recorded.</p>}
-    <p role="status">Live: {active} working · {team.agents.length} agents observed. Saved run: {run.status} · {complete}/{run.tasks?.length ?? 0} tasks complete.</p>
+    {!run.mother && !compact && <p className="text-xs text-muted-foreground">Mother is the run’s parent chat. No separate supervisor was recorded.</p>}
+    <p role="status">Live: {active} working · {team.agents.length} agents observed.{!compact && <> Saved run: {run.status} · {complete}/{run.tasks?.length ?? 0} tasks complete.</>}</p>
     {team.lastUpdate && <p className="workflow-progress-report"><span className="text-muted-foreground">Latest observed report · </span>{team.lastUpdate}</p>}
     {!team.lastUpdate && <p className="text-muted-foreground">{team.loading ? "Reading live progress…" : "No agent report observed yet."}</p>}
     {team.error && <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-destructive">{team.error}</p></div>}
-    {!!team.agents.length && <details open={active > 0}><DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary><ol className="space-y-2 pt-2">{team.agents.map(thread => <li key={thread.id} className="workflow-progress-agent flex flex-wrap items-center justify-between gap-2" style={{ paddingInlineStart: `${depth(thread) * 16}px` }}>
+    {!!team.agents.length && <details open={!compact && active > 0}><DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary><ol className="space-y-2 pt-2">{team.agents.map(thread => <li key={thread.id} className="workflow-progress-agent flex flex-wrap items-center justify-between gap-2" style={{ paddingInlineStart: `${depth(thread) * 16}px` }}>
       <AgentIdentity compact id={thread.id} name={thread.name || thread.workflowTaskTitle || "Agent"} model={thread.model} provider={thread.modelProvider} />
       <span>{status(thread)}</span><Button variant="ghost" size="sm" onClick={() => onOpenChat(thread.id)}>Open chat</Button>
     </li>)}</ol></details>}

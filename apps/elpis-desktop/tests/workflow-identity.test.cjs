@@ -307,8 +307,11 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
     await board.locator('.react-flow__node[data-id="evidence"]').waitFor();
+    const previousAttempt = board.locator('details.canvas-log-panel[aria-label="Previous attempt"]');
+    await previousAttempt.locator('summary').click();
     await board.getByRole('region', { name: 'Run clock', exact: true }).getByText('Duration not recorded', { exact: true }).waitFor();
     assert.equal(await board.getByRole('log', { name: 'Run log', exact: true }).locator('time').count(), 0, 'a saved task state is not assigned an invented observation timestamp');
+    await previousAttempt.locator('summary').click();
     assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
     await shot(page, 'workflow-recorded-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
@@ -359,15 +362,19 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await board.locator('.react-flow__node[data-id="live:observed-helper"]').waitFor();
     assert.equal(await board.locator('.mother-node[data-status="running"]').count(), 1, 'Mother shows the observed active root');
     assert.equal(await board.locator('.react-flow__node[data-id="inspect"] .agent-node').getAttribute('data-status'), 'running');
+    const visibleHeight = locator => locator.evaluate(element => { const box = element.getBoundingClientRect(); return Math.min(innerHeight, box.bottom) - Math.max(0, box.top); });
+    assert.ok(await visibleHeight(board.locator('.canvas-board > .react-flow')) >= 300, 'the actual flat canvas has at least 300 visible pixels');
+    assert.equal(await board.locator('details.canvas-log-panel').getAttribute('open'), null, 'historical failure starts collapsed');
     await shot(page, 'resumed-team-flat');
     await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
     await iso.getByRole('button', { name: /^Source checker:/ }).waitFor();
+    assert.ok(await visibleHeight(iso) >= 300, 'the actual isometric canvas has at least 300 visible pixels');
     await shot(page, 'resumed-team-isometric');
     working = false;
     await board.getByRole('button', { name: 'Refresh live progress', exact: true }).click();
     await board.getByRole('region', { name: 'Live workflow progress', exact: true }).getByText(/Live: 0 working/).waitFor();
-    assert.match(await board.innerText(), /Saved run: failed/, 'a live idle transition does not invent workflow success');
+    assert.match(await board.locator('details.canvas-log-panel > summary').innerText(), /Previous attempt.*failed/, 'a live idle transition does not invent workflow success');
     assert.equal(f.posts.some(post => /^\/api\/workflows\/(?:run|[^/]+\/resume)$/.test(post.path)), false, 'viewing and refreshing never starts a model request');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
