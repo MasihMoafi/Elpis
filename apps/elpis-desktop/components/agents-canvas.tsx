@@ -1451,7 +1451,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
       <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} onOpenCanvas={onOpenRecordedRun} />
       <div className="canvas-name-group relative flex min-w-0 max-w-full items-center gap-2">
-        {!recordedRun && <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting || run && !over(run))} onChange={event => {
+        {!recordedRun && !(run && !over(run)) && <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting || run && !over(run))} onChange={event => {
           const value = event.target.value;
           if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
           if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
@@ -1470,7 +1470,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       <ViewToggle iso={iso} onChange={setIso} />
       {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
-      <Button variant="ghost" size="sm" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} />Auto-arrange</Button>
+      <Button variant="ghost" size="icon-sm" aria-label="Auto-arrange" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} /></Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={side} title={side ? "Hide the side panel: the board takes the whole width" : "Show the patterns, or the selected agent"} onClick={() => { if (side) { showPanel(false); setMorePatterns(false); } else { showPanel(true); if (!selection.length) setMorePatterns(true); } }}><AgentsIcon size={16} /></Button>
       {!recordedRun && <div className="canvas-run-control">
         <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
@@ -1530,7 +1530,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       onLostPointerCapture={() => { boxDrag.current = null; cutter.current = null; setSelectionBox(null); setStroke(null); }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
       onDoubleClick={event => { const target = event.target as Element; if ((target === event.currentTarget || target.closest(".react-flow")) && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
-      {!recordedRun && telemetry}
+      {!recordedRun && run && telemetry}
       {iso ? <IsoBoard workflowIdentity={identity} graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
         canConnect={validConnection} inserting={insertWire}
         onReconnect={(edge, source, target) => { connectionCancelled.current = false; reconnect(edge, source, target); }}

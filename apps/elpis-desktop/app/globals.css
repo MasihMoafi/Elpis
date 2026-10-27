@@ -1013,7 +1013,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-header > .canvas-run-control { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
 .canvas-run-control > button { flex:none; }
 .canvas-header > .canvas-name-group { flex-shrink:1; }
-.canvas-name-group .canvas-name { flex:0 1 220px; width:auto; min-width:120px; }
+.canvas-name-group .canvas-name { width:160px; }
 @container agents-canvas (max-width:760px) {
   .canvas-header > .canvas-name { flex-basis:140px; }
   .canvas-board .canvas-minimap { display:none; }
