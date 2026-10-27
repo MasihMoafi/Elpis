@@ -370,6 +370,17 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     const iso = page.getByRole('region', { name: 'Isometric board', exact: true });
     await iso.getByRole('button', { name: /^Source checker:/ }).waitFor();
     assert.ok(await visibleHeight(iso) >= 300, 'the actual isometric canvas has at least 300 visible pixels');
+    await eventually(async () => {
+      const framing = await iso.evaluate(element => {
+        const pane = element.getBoundingClientRect();
+        return [...element.querySelectorAll('.iso-node')].map(node => {
+          const box = node.getBoundingClientRect();
+          return { id: node.getAttribute('data-id'), fits: box.width > 0 && box.left >= pane.left && box.top >= pane.top && box.right <= pane.right && box.bottom <= pane.bottom };
+        });
+      });
+      assert.equal(framing.length, 3, 'Mother, child and nested helper are actually drawn');
+      assert.deepEqual(framing.filter(node => !node.fits), [], 'the settled view frames every agent, including Mother');
+    });
     await shot(page, 'resumed-team-isometric');
     working = false;
     await board.getByRole('button', { name: 'Refresh live progress', exact: true }).click();
