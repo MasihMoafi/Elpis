@@ -145,10 +145,12 @@ async function openWidePanel(f) {
   await widenSidePanel(f.page, 600);
 }
 async function openFilesTab(f) {
-  await openWidePanel(f);
+  await f.page.getByRole('button', { name: 'Show side panel' }).click();
   await f.side.getByRole('button', { name: 'New side panel tab', exact: true }).click();
   await f.page.getByRole('menuitem', { name: 'Files', exact: true }).click();
   await f.tree.waitFor();
+  // The empty chooser has its own width; widen the actual Files content before opening a file.
+  await widenSidePanel(f.page, 600);
 }
 const lit = f => f.side.locator('.fe-line.hit').evaluateAll(lines => lines.map(line => line.textContent));
 

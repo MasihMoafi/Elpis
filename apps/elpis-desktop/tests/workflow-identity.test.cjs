@@ -290,9 +290,10 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByRole('button', { name: 'Open Inspect Pointt evidence chat', exact: true }).click();
     await page.getByText('Inspected the saved Pointt evidence.', { exact: true }).waitFor();
     await page.locator('.activity-group > summary').click();
-    await page.locator('.activity-group .step > summary').click();
     await page.getByText('rg --files lat.md', { exact: true }).waitFor();
-    await page.getByText('lat.md/tasks.md', { exact: true }).waitFor();
+    const output = page.getByText('lat.md/tasks.md', { exact: true }); await output.waitFor();
+    await page.locator('.activity-group .step > summary').click(); await output.waitFor({ state: 'hidden' });
+    await page.locator('.activity-group .step > summary').click(); await output.waitFor();
     await row(page, 'chat-a').locator('.thread-link').click();
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     assert.deepEqual(await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), marks, 'opening an agent chat does not change its identity');

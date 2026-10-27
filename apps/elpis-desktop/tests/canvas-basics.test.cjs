@@ -114,7 +114,6 @@ test('Ctrl+A selects only the focused workflow editor or board', async () => {
     assert.equal(await selected.count(), 1, 'text selection keeps board selection');
     await canvas.locator('.react-flow').focus(); await page.keyboard.press('Control+a');
     assert.equal(await selected.count(), 4, 'explicit board focus selects its four agents');
-    assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

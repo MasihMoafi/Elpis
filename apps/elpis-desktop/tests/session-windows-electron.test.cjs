@@ -203,3 +203,38 @@ test('production Electron windows share chats and live replies; native menu, cha
     await second.locator('.thread-row.active[data-thread-id="chat-b"]').waitFor();
   } finally { if (electron) await electron.close(); await f.close(); }
 });
+
+
+test('native file previews keep their document when scripts navigate or rename the frame in either app window', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-navigation-'));
+  const f = await fixture({ desktop: false }); let electron;
+  try {
+    electron = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cjs')], env: { ...process.env, XDG_SESSION_TYPE: 'x11', WAYLAND_DISPLAY: '', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url() } });
+    const primary = await electron.firstWindow(); primary.setDefaultTimeout(10000);
+    const opened = electron.waitForEvent('window');
+    await electron.evaluate(async () => { await global.sessionWindows.open({ newSession: true }); });
+    const secondary = await opened; secondary.setDefaultTimeout(10000);
+    for (const page of [primary, secondary]) {
+      await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
+      const attempts = [], target = new URL('/preview-navigation-away', page.url()).href;
+      page.on('request', request => { if (request.url().startsWith(target)) attempts.push(request.url()); });
+      await page.evaluate(() => {
+        const frame = document.createElement('iframe'); frame.style.cssText = 'position:fixed;left:80px;top:100px;width:500px;height:200px;z-index:99999;background:white'; frame.name = 'elpis-file-preview'; frame.title = 'Navigation guard preview'; frame.setAttribute('sandbox', 'allow-scripts');
+        frame.srcdoc = '<h1>Retained local preview</h1><button id="leave">Navigate away</button><button id="rename">Rename and navigate</button>';
+        document.body.append(frame);
+      });
+      const preview = page.frameLocator('iframe[title="Navigation guard preview"]');
+      await preview.getByRole('heading', { name: 'Retained local preview', exact: true }).waitFor();
+      for (const rename of [false, true]) {
+        await preview.locator(rename ? '#rename' : '#leave').evaluate((button, { target, rename }) => {
+          button.onclick = () => { if (rename) window.name = 'renamed-by-document'; location.href = target; };
+        }, { target: `${target}?renamed=${rename}`, rename });
+        await preview.getByRole('button', { name: rename ? 'Rename and navigate' : 'Navigate away', exact: true }).click();
+        await preview.getByRole('heading', { name: 'Retained local preview', exact: true }).waitFor();
+      }
+      assert.deepEqual(attempts, [], 'native interception blocks even same-origin navigation before a network request');
+      assert.equal(page.frames().find(frame => frame.url() === 'about:srcdoc') !== undefined, true, 'the srcDoc remains loaded after attempts');
+      await page.evaluate(() => document.querySelector('iframe[title="Navigation guard preview"]').remove());
+    }
+  } finally { if (electron) await electron.close(); await f.close(); }
+});

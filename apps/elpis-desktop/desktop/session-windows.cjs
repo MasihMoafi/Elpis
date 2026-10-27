@@ -86,6 +86,14 @@ function createSessionWindows({ electron, url, store, browserAgentSocket, quickE
         title: 'Unsaved changes', message: 'Leave with unsaved changes?', detail: 'Save or copy unsaved text before continuing. Personalization drafts are recovered from this device when available.' });
       if (choice === 0) event.preventDefault();
     });
+    // Local HTML previews may run their own scripts, but never replace their opaque document.
+    // Check the source URL too: a preview's script can rename its own browsing context.
+    window.webContents.on('will-frame-navigate', event => {
+      if (event.isMainFrame || !event.frame) return;
+      if (event.frame.name !== 'elpis-file-preview' && event.frame.url !== 'about:srcdoc') return;
+      if (event.url === 'about:srcdoc' && event.frame.url !== 'about:srcdoc') return;
+      event.preventDefault();
+    });
     window.webContents.on('will-navigate', (event, target) => {
       if (new URL(target).origin !== origin) event.preventDefault();
     });

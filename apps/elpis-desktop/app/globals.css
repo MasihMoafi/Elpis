@@ -1307,6 +1307,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 @container workspace (max-width:520px) { .composer-wrap { padding-inline:12px; } }
 .effort-short { display:none; }
 @container composer (max-width:780px) {
+  .composer .plan-pill { display:none; }
   .composer-controls { flex-wrap:nowrap; }
   .composer-right { display:flex; min-width:0; }
   .model-controls { flex-wrap:nowrap; flex-shrink:0; }
@@ -1317,7 +1318,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 }
 @container composer (max-width:640px) {
   /* ContextUsage anchors the Ledger to the composer when its ring is hidden. */
-  .composer-right .context-ring, .composer-right > [aria-label="Reasoning effort"], .composer-right > .fast-toggle, .composer .plan-pill { display:none; }
+  .composer-right .context-ring, .composer-right > [aria-label="Reasoning effort"], .composer-right > .fast-toggle { display:none; }
   .composer-right .dictation-status:not(.dictation-error) { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
   .effort-long { display:none; } .effort-short { display:inline; }
   .composer-controls { gap:8px; }

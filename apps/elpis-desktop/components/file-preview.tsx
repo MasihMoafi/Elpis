@@ -27,7 +27,8 @@ export function LargeTextPreview({ text }: { text: string }) {
 const POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; navigate-to 'none'";
 /** HTML runs in an opaque-origin frame. Only project-local resources are embedded before it starts. */
 export function HtmlFilePreview({ text, file, label, onSelection }: { text: string; file: { cwd: string; path: string }; label: string; onSelection?: (text: string) => void }) {
-  const frame = useRef<HTMLIFrameElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null), loaded = useRef(false);
+  const [navigationBlocked, setNavigationBlocked] = useState(false);
   useEffect(() => {
     const receive = (event: MessageEvent) => { if (event.source === frame.current?.contentWindow && event.data?.type === "elpis:document-selection" && typeof event.data.text === "string" && event.data.text.trim()) onSelection?.(event.data.text.slice(0, 24000)); };
     window.addEventListener("message", receive); return () => window.removeEventListener("message", receive);
@@ -36,7 +37,7 @@ export function HtmlFilePreview({ text, file, label, onSelection }: { text: stri
   useEffect(() => {
     let disposed = false;
     const controller = new AbortController();
-    setPreview(null);
+    setPreview(null); loaded.current = false; setNavigationBlocked(false);
     const prepare = async () => {
       const template = document.createElement("template"); template.innerHTML = text;
       // Template contents stay inert: even images cannot request resources while paths are being checked.
@@ -91,5 +92,5 @@ export function HtmlFilePreview({ text, file, label, onSelection }: { text: stri
     return () => { disposed = true; controller.abort(); };
   }, [text, file.cwd, file.path]);
   if (!preview) return <p className="files-note" role="status">Preparing document…</p>;
-  return <>{preview.warnings && <p className="files-note" role="status">Some resources are unavailable. Only files inside this project can be loaded.</p>}<iframe ref={frame} className="file-pdf" title={label} srcDoc={preview.html} name="elpis-file-preview" sandbox="allow-scripts" referrerPolicy="no-referrer" /></>;
+  return <>{navigationBlocked && <p className="files-note" role="status">Document navigation was blocked. Reopen Preview to restore interactive controls.</p>}{preview.warnings && <p className="files-note" role="status">Some resources are unavailable. Only files inside this project can be loaded.</p>}<iframe key={navigationBlocked ? "static" : "interactive"} ref={frame} onLoad={() => { if (!loaded.current) { loaded.current = true; return; } if (!navigationBlocked) { loaded.current = false; setNavigationBlocked(true); } }} className="file-pdf" title={label} srcDoc={preview.html} name="elpis-file-preview" sandbox={navigationBlocked ? "" : "allow-scripts"} referrerPolicy="no-referrer" /></>;
 }
