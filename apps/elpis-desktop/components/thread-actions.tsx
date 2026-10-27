@@ -115,10 +115,11 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
-    { id: "colour", label: "Colour", run: () => {}, items: [
+    // Colour marks a chat in the sidebar; an archived chat (no Archive action) is not there, so it is not offered.
+    onArchive ? { id: "colour", label: "Colour", run: () => {}, items: [
       ...WORKFLOW_COLOURS.map(value => ({ id: `colour:${value}`, label: value[0].toUpperCase() + value.slice(1), icon: <span className="conversation-colour-swatch" data-colour={value} aria-hidden="true" />, checked: conversationColour.colour === value, run: () => void conversationColour.choose(value) })),
       { id: "colour:reset", label: "Reset colour", separated: true, run: () => void conversationColour.choose(null) },
-    ] },
+    ] } : undefined,
     organize,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
       : { id: "read", label: attention.unread ? "Mark as read" : "Mark as unread", icon: attention.unread ? <Eye size={14} /> : <EyeOff size={14} />, hint: "U", run: attention.onToggleRead } : undefined,
