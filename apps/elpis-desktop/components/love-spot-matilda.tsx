@@ -31,6 +31,8 @@ export function useMatilda({ ready, context, told, send, onError }: {
   const ids = useRef(new Set<string>()), timer = useRef<ReturnType<typeof setTimeout>>(undefined), busy = useRef(false), working = useRef(false);
   const said = useRef<string | null>(null), asking = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mounted = useRef(false), poll = useRef(0), generation = useRef(0);
+  // What she would be told now; the editor is already gone when the board unmounts.
+  const waiting = useRef("");
   useEffect(() => { generation.current++; ids.current.clear(); clearTimeout(timer.current); }, [context]);
   /** Asks the bridge whether she is still writing, once a second while she is: no stream stays open, because each window's streams share the browser's six connections. */
   const ask = useCallback(async () => {
@@ -52,7 +54,7 @@ export function useMatilda({ ready, context, told, send, onError }: {
     const now = latest.current;
     if (!now.ready() || busy.current || working.current) { timer.current = setTimeout(look, QUIET); return; }
     const batch = ids.current, token = generation.current;
-    const text = now.told(batch); ids.current = new Set();
+    const text = now.told(batch); ids.current = new Set(); waiting.current = "";
     if (!text) { keepPending(now.context, ids.current); return; }
     const isCurrent = () => mounted.current && token === generation.current && now.context === latest.current.context && latest.current.ready();
     working.current = true; said.current = "";
@@ -71,6 +73,7 @@ export function useMatilda({ ready, context, told, send, onError }: {
     generation.current++;
     for (const id of found) ids.current.add(id);
     keepPending(latest.current.context, ids.current);
+    try { waiting.current = ids.current.size ? latest.current.told(ids.current) : ""; } catch { /* told again when she looks */ }
     clearTimeout(timer.current);
     if (ids.current.size) timer.current = setTimeout(look, QUIET);
   }, [look]);
@@ -84,7 +87,8 @@ export function useMatilda({ ready, context, told, send, onError }: {
     // Leaving the board sends what she has not been told yet; if she is still writing, it waits for the next visit.
     const now = latest.current, batch = new Set(ids.current);
     if (!batch.size || busy.current || working.current) return;
-    let text = ""; try { text = now.told(batch); } catch { return; }
+    let text = ""; try { text = now.told(batch); } catch { /* the editor is gone */ }
+    text ||= waiting.current;
     if (!text) return;
     keepPending(now.context, new Set());
     void api("/love-spot/talk", { text, persona: now.persona.trim() || PROTOCOL }).catch(() => keepPending(now.context, batch));
