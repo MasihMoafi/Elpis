@@ -55,14 +55,14 @@ export const retainedUpdates = {
       "reason": "Masih 27 Oct: an open editor is unfinished even after pasting and long pauses. Supersede forced closure by replies; prove complete dispatch after editing ends, focus during late reply and pending-note retention after cancelled queued picture dispatch. Retain drawing, persona and provider-failure checks."
     },
     "tests/love-spot-voice.test.cjs": {
-      "blob": "53691b45256261c32f6b7a1eead8e0788c58eb2e",
-      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
-      "reason": "Masih 27 Oct: hide unavailable board/chat audio instead of disabled controls; retain text, persona, ordinary read-aloud and zero audio-I/O proof."
+      "blob": "b271d4fcd3712681579216bdd94a94a640069260",
+      "approval": "4888c4c4fbd7fcaeb8eb03a2519a97a525c4e7eb",
+      "reason": "Masih 27 Oct: hide unavailable board/chat audio instead of disabled controls; retain text, persona, ordinary read-aloud and zero audio-I/O proof. Masih permits hiding unusable read aloud. Ordinary and Love Spot read aloud are unavailable; retain no-audio I/O, text and independent realtime/dictation checks."
     },
     "tests/voice.test.cjs": {
-      "blob": "e9a9f61c6d24bb46211340a7e8e34df71a065bd5",
-      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
-      "reason": "Masih 27 Oct: hide unavailable audio during Love Spot and unresolved origin. Preserve ordinary audio positives, positively prove resolved ordinary voice, and retain zero microphone, peer and audio-request boundaries."
+      "blob": "e30ee5d07af1f8cfa5750ade10c67692a54cf4e2",
+      "approval": "4888c4c4fbd7fcaeb8eb03a2519a97a525c4e7eb",
+      "reason": "Masih 27 Oct: hide unavailable audio during Love Spot and unresolved origin. Preserve ordinary audio positives, positively prove resolved ordinary voice, and retain zero microphone, peer and audio-request boundaries. Masih explicitly permits hiding unusable read aloud and prohibits another API-key service. Assert hidden controls and zero warming/read requests for ordinary and Love Spot chats; retain realtime microphone/Voice and dictation boundaries. No playback success claimed."
     },
     "tests/workflows-wf1.test.cjs": {
       "blob": "2b6c5657424d13bd4cf9be425a7b4852925ba31f",
@@ -100,9 +100,9 @@ export const retainedUpdates = {
       "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/canvas-basics.test.cjs": {
-      "blob": "99559a6df14dd0872c09d6bfa63270cf8805165a",
-      "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
-      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged."
+      "blob": "0020b5b7fa8fea14d235807a63edcb9e3ebf51ee",
+      "approval": "c5e2a69fc2941b5febf9147afae6426c7914f4ae",
+      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged. Masih26–27Oct: choose Auto once and a short manual pattern once. Extend the owner to prove explicit choice, selected dependencies, persistence and no run before Run; before cases fail on the installed split-parts default."
     },
     "tests/agents-guide.test.cjs": {
       "blob": "3fea4f19a19a338fc4861a189965b3d67448b2d2",
@@ -405,9 +405,9 @@ export const retainedUpdates = {
       "reason": "Initial SSE connection refreshes accounts; retain exact request deltas for every subsequent action A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
     },
     "tests/claude-chat.test.cjs": {
-      "blob": "b3ad5b4da4a2f6485c7605697959780b4be14602",
-      "approval": "d7892d47d94eacc2ca6d413e2656afdb79584bda",
-      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks. Masih 27 Oct: long messages need an option to collapse. Append both-theme shared user/reply folding, complete Copy, keyboard, short controls and streamed-growth checks; retain every existing test and assertion."
+      "blob": "4749b11d73fa1a96cc4f2ed7f5c41b90533dc117",
+      "approval": "4888c4c4fbd7fcaeb8eb03a2519a97a525c4e7eb",
+      "reason": "A121, Masih: \"You don't need to ask me that; I'm result-oriented.\" Await native scroll delivery alongside the mocked clock, keeping the last-prompt assertion and adding a no-pullback check. Keep the already approved OBSRM navigation update. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 persistent menubar items are separate from popup choices. Wait for the opened menu and preserve exact message/context actions and all reply-edit checks. Masih 27 Oct: long messages need an option to collapse. Append both-theme shared user/reply folding, complete Copy, keyboard, short controls and streamed-growth checks; retain every existing test and assertion. Masih permits hiding unusable read aloud. Remove only unavailable read-aloud menu expectation; retain all action, copy, folding, context and editing assertions."
     },
     "tests/command-menu.test.cjs": {
       "blob": "b5ee4928b92b7c915bc7a78b33fc75c848e8bf06",
@@ -445,9 +445,9 @@ export const retainedUpdates = {
       ...pageRemovalApproval
     },
     "tests/settings-pages.test.cjs": {
-      "blob": "c1e87b74514f41be314472b659a9dd432e2ba187",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). 23 Oct, Masih: add the voice picker in Settings exactly like the ChatGPT app screenshot. Open Advanced: transcription before the existing fallback and model writes; every assertion is retained. A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required."
+      "blob": "a1b8b30818405683a63fa38eceacfcecc07067ee",
+      "approval": "254cad52528fc88bb705b5fd53abca37f9dabd23",
+      "reason": "SETTINGS2, Masih's GATE12 handoff (approved 21 Oct 22:45): \"Personalization file editors, sizes and corners, sleep prevention, shortcut search, a new About page\" Include the approved About page and shortcut search; assert About identity, release link and no writes; retain every control-write, reload, page-order and narrow-layout assertion. S5/R37, Masih 22 Oct: \"it's the same as the enable memories yet one is off and the other is on\": Memories is one master switch and its options appear only when it is on. 23 Oct, Masih: \"we should add the import chats options like cloudroom does. add it.\" Settings gains the page Import chats, so this test lists it (and answers its route). 23 Oct, Masih: add the voice picker in Settings exactly like the ChatGPT app screenshot. Open Advanced: transcription before the existing fallback and model writes; every assertion is retained. A233/A251: one Default permissions setting defaults to Full access and respects managed constraints. Retain all provider usage persistence, sign-out, queue and settings-write checks; A125 initial connection reconciliation remains required. Masih requested native Browser settings and import of Claude Code MCPs. Add navigation, explicit selected import/conflict and native tab/pinned-store behavior; retain existing settings writes and layout checks."
     },
     "tests/settings-write.test.cjs": {
       "blob": "09f90ee692006240e183eb49d99051431d05de7b",
@@ -514,9 +514,9 @@ export const retainedUpdates = {
       "reason": "A87, Masih: \"this logo color is the color I like to have all-across for both themes.\" The retained theme check needs its matching exact-logo state helper, including token equality, old-orange rejection and text contrast."
     },
     "tests/settings-row-audit.cjs": {
-      "blob": "d1bfe4e596428f295143ab377869e4573bb22cac",
-      "approval": "b7d6485b31c68bb87b1421423327e761b58a2a4b",
-      "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
+      "blob": "b4bcc5a65608af14d3031cf32bddecaa4ba03ab0",
+      "approval": "254cad52528fc88bb705b5fd53abca37f9dabd23",
+      "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks. Masih requested a separate native Browser settings page. Include it in existing row geometry checks; retain all original pages."
     },
     "tests/settings-rows.test.cjs": {
       "blob": "96177b7edf0c9eb6528164182c196f402af52c1a",
