@@ -335,6 +335,14 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return (await fs.readFile(path.join(directory, 'view.png'))).toString('base64');
     });
   }
+  /** The last exported picture while it still shows the current drawing, else null: for a chat away from the board. */
+  async function currentPicture() {
+    return locked(async () => {
+      const current = await read();
+      if (await fs.readFile(path.join(directory, '.view-revision'), 'utf8').catch(() => '') !== current.revision) return null;
+      return (await fs.readFile(path.join(directory, 'view.png')).catch(() => null))?.toString('base64') ?? null;
+    });
+  }
   /** Writes the reply as a black note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cjs) beneath it; either may be missing. Face, note and painting are one group. */
   async function reply(turnId, text, agentColor, page, shapes = [], { preview = false } = {}) {
     if (typeof text === 'string') text = text.replaceAll('💙', '❤️');
@@ -564,6 +572,6 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       return value;
     });
   }
-  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
+  return { read, save, saveText, listPages, changePage, picture, boardPicture, currentPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
 }
 module.exports = { createLoveSpot, newer, merge };

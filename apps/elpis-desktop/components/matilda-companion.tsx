@@ -69,7 +69,9 @@ export function MatildaCompanion() {
       const browser = element.getBoundingClientRect();
       if (browser.width && browser.height && left < browser.right && left + bounds.width > browser.left && top < browser.bottom && top + bounds.height > browser.top) top = Math.max(0, browser.top - bounds.height - 4);
     }
-    const next = { x: Math.round(left - home.x), y: Math.round(top - home.y) };
+    // Whole pixels, rounded inside the window so a half pixel never crosses its edge.
+    const whole = (value: number, min: number, max: number) => Math.min(Math.max(Math.round(value), Math.ceil(min)), Math.floor(max));
+    const next = { x: whole(left - home.x, -home.x, innerWidth - bounds.width - home.x), y: whole(top - home.y, -home.y, innerHeight - bounds.height - home.y) };
     if (next.x === shownRef.current.x && next.y === shownRef.current.y) return;
     shownRef.current = next; setShown(next);
   };

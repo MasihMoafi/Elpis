@@ -298,7 +298,10 @@ export function createLoveSpotTalk({ client, store, companion, audio = LOVE_SPOT
         const action = await companion?.command(body.text, board.scene.page.session);
         if (action) attachments.push({ id: 'matilda-action', name: 'Matilda action result.txt', type: 'text', mimeType: 'text/plain', text: `The app executed this direct request. Report the actual result briefly; do not execute it again. ${JSON.stringify(action)}` });
         if (body.persona) attachments.push({ id: 'love-spot-persona', name: 'Who you are.txt', type: 'text', mimeType: 'text/plain', text: body.persona });
-        if (selected?.inputModalities?.includes('image')) attachments.push({ id: 'love-spot-picture', name: 'view.png', type: 'image', mimeType: 'image/png', dataUrl: `data:image/png;base64,${await store.boardPicture(body.revision)}` });
+        // The board sends the revision it exported and must match it; the small chat elsewhere sends none and gets the
+        // picture only while it still shows the drawing.
+        const picture = !selected?.inputModalities?.includes('image') ? null : body.revision === undefined ? await store.currentPicture() : await store.boardPicture(body.revision);
+        if (picture) attachments.push({ id: 'love-spot-picture', name: 'view.png', type: 'image', mimeType: 'image/png', dataUrl: `data:image/png;base64,${picture}` });
         // Masih, 23 Oct: "I can't change her model!" A chat keeps its provider, so a model from another connection starts her a
         // new Love Spot chat; the board, which is where you talk, stays as it is.
         const provider = body.provider ?? settings.main.provider;

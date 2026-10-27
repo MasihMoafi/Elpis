@@ -92,6 +92,22 @@ test('Talk creates one persistent normal chat, attributes live notes by colour, 
   f.talk.close(); const second = createLoveSpotTalk({ client: f.client, store: f.store, audio: enabledAudio }); t.after(() => second.close());
   await second.read(); await second.send({ text: 'After restart', model: 'text' }); assert.equal(f.created.length, 1);
 });
+// The pinned small chat sends no revision (27 Oct: "The drawing changed. Try sending again with its current picture.").
+test('the small chat sends to an image model with the current picture, or only the notes once the drawing moved on', async t => {
+  const f = await fixture(t);
+  await f.store.save({ elements: [note('masih', 'Apricot')] });
+  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: 'From the small chat', model: 'luna' });
+  assert.equal(f.sent[0].attachments.find(a => a.type === 'image')?.dataUrl, `data:image/png;base64,${PNG}`);
+  f.finish(); await f.talk.idle();
+  await f.store.save({ elements: [note('masih', 'Apricot'), note('masih-2', 'Plum')] });
+  await f.talk.send({ text: 'After a change elsewhere', model: 'luna' });
+  assert.equal(f.sent[1].attachments.some(a => a.type === 'image'), false, 'an outdated picture is left out, not refused');
+  assert.match(f.sent[1].attachments.find(a => a.type === 'text').text, /Plum/);
+  f.finish('turn-2'); await f.talk.idle();
+  await assert.rejects(f.talk.send({ text: 'From the board', model: 'luna', revision: 'stale' }), /drawing changed/, 'the board still sends only its current picture');
+});
+
 test('Talk is Matilda: who she is goes with every message, and only as text she can read', async t => {
   const f = await fixture(t);
   await f.talk.send({ text: 'Hello', model: 'text', persona: 'Masih\'s partner.' });

@@ -3,7 +3,8 @@ const { chooseOption, controlValue, optionsCut, openSettings, leaveSettings } = 
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 
-const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Browser', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Import chats', 'Archived chats', 'About'];
+// ChatGPT's order (27 Oct): Personal, Integrations, Coding, Archived.
+const PAGES = ['General', 'Notifications', 'Import chats', 'Appearance', 'Voice', 'Configuration', 'Personalization', 'Keyboard shortcuts', 'Usage & limits', 'Models & accounts', 'About', 'MCP servers', 'Browser', 'Hooks', 'Git', 'Worktrees', 'Archived chats'];
 
 test('settings pages appear in order and each control writes only its own backing setting', async () => {
   let version = 1;
