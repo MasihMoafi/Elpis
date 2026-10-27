@@ -109,6 +109,20 @@ test('Matilda recovers from a failed busy poll and answers later board notes', a
   } finally { await f.close(); }
 });
 
+// 27 Oct: a note written just before leaving Love Spot was never answered; the board unmounted and its pending note was lost.
+test('a note written just before leaving Love Spot still reaches Matilda once', async () => {
+  const f = await loveSpotFixture();
+  try {
+    await f.open(f.page); await note(f, 'A thought before I leave');
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await f.waitFor(() => f.turns.length === 1, 'the note written before leaving never reached her', 20000);
+    assert.match(f.turns[0].attachments.find(a => a.type === 'text').text, /A thought before I leave/);
+    await f.open(f.page); await f.page.waitForTimeout(6000);
+    assert.equal(f.turns.length, 1, 'returning to the board does not send it again');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a long non-Latin reply avoids obstacles after the editor restores its actual font dimensions', async () => {
   const f = await loveSpotFixture({ reply: '天地玄黄宇宙洪荒'.repeat(32) });
   try {
