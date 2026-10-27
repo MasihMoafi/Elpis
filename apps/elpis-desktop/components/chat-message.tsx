@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { BranchIcon, BrowserIcon, PlanIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
-import { Copy, FileText, Pencil, RefreshCw, Reply, Square, Terminal, Undo2, Volume2 } from "lucide-react";
+import { CircleCheck, CircleX, Copy, FileText, Pencil, RefreshCw, Reply, Square, Terminal, Undo2, Volume2 } from "lucide-react";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,6 +79,13 @@ function WorkflowNoticeStep({notice}:{notice:WorkflowNotice}) {
 }
 /** A command as Claude's desktop app shows it in an opened group: a short title, the script in a bordered block
  * coloured as shell, then its output; a failed command's exit code and output in red. */
+
+/** A workflow check answers with JSON for the run to read (bridge/workflow-acp.mjs); its chat shows the verdict and the evidence instead. */
+function checkVerdict(value:string){
+  if(!/^\s*(```(?:json)?\s*)?\{/.test(value))return null;
+  try{const parsed=JSON.parse(value.trim().replace(/^```(?:json)?\s*|\s*```$/g,""));return typeof parsed?.passed==="boolean"&&typeof parsed.summary==="string"&&Object.keys(parsed).length===2?{passed:parsed.passed as boolean,summary:parsed.summary as string}:null;}
+  catch{return null;}
+}
 export function CommandStep({item,open=true}:{item:Item;open?:boolean}) {
   const failed=stepFailed(item),output=text(item.aggregatedOutput).replace(/\n+$/,""),duration=stepDuration(item.durationMs);
   const outcome=failed ? typeof item.exitCode==="number" ? `failed · exit ${item.exitCode}` : "Failed" : typeof item.exitCode==="number" ? "passed" : statusLabel(item.status)||"Result not recorded";
@@ -166,11 +173,11 @@ export function ChatMessage({item,speaker="Elpis",threads=[],onOpenThread,onEdit
   }
   if(item.type==="agentMessage"){
     if(item.text!==undefined&&typeof item.text!=="string")throw unreadable("message");
-    const speechId = reference ?? item.id, speaking = speech?.active === speechId;
+    const speechId = reference ?? item.id, speaking = speech?.active === speechId, verdict = checkVerdict(item.text || "");
     const spokenText = readAloud ? plainText(item.text || "") : "";
     const speechAction:MessageAction[] = speech && (speaking || (readAloud && spokenText.trim())) ? [{ id: "read-aloud", label: speaking ? "Stop" : "Read aloud", title: speaking ? "Stop reading aloud" : "Read aloud · ChatGPT voice", icon: speaking ? <Square size={14}/> : <Volume2 size={14}/>, run: () => speaking ? speech.stop() : speech.play(speechId, spokenText) }] : [];
     const actions:MessageAction[]=item.text?[...replyAction(onReply),copyTextAction(()=>item.text||""),copyAction("Copy reply",()=>item.text||""),...speechAction,...(onRegenerate?[{id:"regenerate",label:"Regenerate reply",title:"Regenerate",icon:<RefreshCw size={14}/>,run:onRegenerate}]:[]),...rewindAction(onRewind),...(onFork?[{id:"fork",label:"Fork chat from here",icon:<BranchIcon size={14}/>,run:onFork}]:[])]:[];
-    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<CollapsibleMessage><MarkdownText text={item.text||""}/></CollapsibleMessage>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
+    return <RightClickMenu actions={menuActions(actions)} area={<article className={speaker==="Matilda"?"message agent flow-root":"message agent"} id={reference ? messageDomId(reference) : undefined} data-message-reference={onReply ? reference : undefined} tabIndex={reference ? -1 : undefined} {...(speechAction.length ? { onPointerEnter: speech?.warm, onFocus: speech?.warm } : {})}/>}>{speaker==="Matilda"&&<img src={FACE_DATA_URL} alt="Matilda" width={64} height={64} className="float-left mb-2 mr-4 h-16 w-16 object-contain"/>}{speaker!=="Elpis"&&<div className="speaker">{speaker}</div>}<CollapsibleMessage>{verdict?<section className={verdict.passed?"plan-card":"plan-card check-failed"} aria-label="Check result"><p className="plan-card-heading">{verdict.passed?<CircleCheck size={14} aria-hidden="true"/>:<CircleX size={14} aria-hidden="true"/>}{verdict.passed?"Check passed":"Check failed"}</p><MarkdownText text={verdict.summary}/></section>:<MarkdownText text={item.text||""}/>}</CollapsibleMessage>{speech?.error?.id===speechId&&<p role="alert" className="text-sm text-destructive">{speech.error.message}</p>}{actions.length>0&&<div className="message-actions"><MessageButtons actions={actions}/></div>}</RightClickMenu>;
   }
   if(item.type==="smartPrune")return <SmartPruneLine value={item.prune} mediaBase={mediaBase}/>;
   if(item.type==="commandExecution")return <CommandStep item={item}/>;

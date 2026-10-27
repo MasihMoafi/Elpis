@@ -688,6 +688,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .provider-key-row { display:flex; gap:8px; }
 .plan-card { margin:10px 0; padding:12px 16px 4px; border:1px solid var(--border); border-left:2px solid var(--primary); background:var(--card); }
 .plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; line-height:1.2; color:var(--accent-text); }
+/* A failed workflow check: its bar, icon, heading and underline take the destructive colour. */
+.plan-card.check-failed { --primary:var(--destructive); --accent-text:var(--destructive); }
 .permissions-auto svg:first-child { color:var(--primary); }
 .permissions-full { color:var(--warning); }
 /* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one

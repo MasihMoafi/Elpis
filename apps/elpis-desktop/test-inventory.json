@@ -346,6 +346,7 @@
     "tests/workflow-notice.test.cjs",
     "tests/matilda-companion.test.cjs",
     "tests/excalidraw-diagram.test.cjs",
+    "tests/check-verdict.test.cjs",
     "tests/live-submissions.test.cjs",
     "tests/chat-labels.test.cjs"
   ],
