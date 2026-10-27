@@ -28,17 +28,18 @@ async function fixture(t, { refuseFast = false, audio = enabledAudio, companion 
     send: async (id, value) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
     setServiceTier: async (id, value) => { speeds.push({ id, ...value }); if (refuseFast) throw Error('no Fast here'); return { serviceTier: 'priority' }; },
   });
-  const talk = createLoveSpotTalk({ client, store, audio, ...(companion ? { companion: createMatildaCompanion({ store, env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent-matilda-test' } }) } : {}) });
+  const presence = companion ? createMatildaCompanion({ store, env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent-matilda-test' } }) : undefined;
+  const talk = createLoveSpotTalk({ client, store, audio, companion: presence });
   t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
-  return { directory, store, talk, client, created, sent, finish, entries, speeds };
+  return { directory, store, talk, client, created, sent, finish, entries, speeds, presence };
 }
 test('board commands attach actual action results to the normal reply without treating discussion as a command', async t => {
   const f = await fixture(t, { companion: true, audio: LOVE_SPOT_AUDIO });
   await f.talk.send({ text: 'Matilda, pin yourself.', model: 'text' });
   const result = f.sent[0].attachments.find(a => a.name === 'Matilda action result.txt');
   assert.match(result.text, /"ok":true/);
-  assert.equal((await f.store.companion()).pinned.includes('global'), true);
+  assert.equal((await f.presence.read('settings')).pinned, true);
   f.finish(); await f.talk.idle();
   await f.talk.send({ text: 'Could you add a pin button?', model: 'text' });
   assert.equal(f.sent[1].attachments.some(a => a.name === 'Matilda action result.txt'), false);

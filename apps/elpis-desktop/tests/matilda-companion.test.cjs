@@ -41,6 +41,8 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   await page.keyboard.press('Enter');
   await pin.waitFor();
   assert.equal(await presence.count(), 0);
+  const tucked = await pin.boundingBox();
+  assert.ok(tucked.x >= 0 && tucked.x + tucked.width <= 360 && tucked.y < 36, JSON.stringify(tucked));
   assert.deepEqual((await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort(), before);
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.reload();

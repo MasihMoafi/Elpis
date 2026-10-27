@@ -44,7 +44,7 @@ export function MatildaCompanion() {
   return <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1 pr-2">
     {state?.pinned ? <section aria-label="Pinned Matilda" className="flex min-w-0 items-center gap-1">
       <Popover onOpenChange={open => { if (open) void refresh(); }}>
-        <PopoverTrigger render={<Button variant="ghost" size="sm" aria-label="Matilda controls" title="Matilda · Music" />}>
+        <PopoverTrigger render={<Button variant="ghost" size="sm" className="px-1 sm:px-2" aria-label="Matilda controls" title="Matilda · Music" />}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={state.face} alt="" width={24} height={24} className="shrink-0" /><span className="hidden sm:inline">Matilda</span>
         </PopoverTrigger>
@@ -59,8 +59,8 @@ export function MatildaCompanion() {
           {state.reason && <p className="text-xs text-muted-foreground">{state.reason}</p>}
         </PopoverContent>
       </Popover>
-      <Button variant="ghost" size="sm" aria-label="Unpin Matilda" title="Unpin Matilda everywhere" onClick={() => void act("unpin")}><PinOff aria-hidden="true" /><span className="hidden sm:inline">Unpin</span></Button>
-    </section> : <Button variant="ghost" size="sm" aria-label="Pin Matilda" title="Pin Matilda at the top of every page" disabled={busy} onClick={() => void act("pin")}><Pin aria-hidden="true" />Matilda</Button>}
+      <Button variant="ghost" size="sm" className="px-1 sm:px-2" aria-label="Unpin Matilda" title="Unpin Matilda everywhere" onClick={() => void act("unpin")}><PinOff aria-hidden="true" /><span className="hidden sm:inline">Unpin</span></Button>
+    </section> : <Button variant="ghost" size="sm" className="px-1 sm:px-2" aria-label="Pin Matilda" title="Pin Matilda at the top of every page" disabled={busy} onClick={() => void act("pin")}><Pin aria-hidden="true" className="hidden sm:block" />Matilda</Button>}
     {error && <p role="alert" className="fixed bottom-4 right-4 z-50 max-w-sm border border-border bg-background p-2 text-xs text-destructive">{error}</p>}
   </div>;
 }
