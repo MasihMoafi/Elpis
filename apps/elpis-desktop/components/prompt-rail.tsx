@@ -133,10 +133,11 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
       const visibility = turn.style.contentVisibility;
       turn.style.contentVisibility = "visible";
       let frame = 0, passes = 0, stable = 0;
-      let positionedTop = scroller.current?.scrollTop ?? 0;
+      // Measured from the first frame: the page restores its reading position after this effect when older turns arrive.
+      let positionedTop: number | null = null;
       const superseded = () => {
         const root = scroller.current;
-        if (!root || Math.abs(root.scrollTop - positionedTop) <= 2) return false;
+        if (!root || positionedTop === null || Math.abs(root.scrollTop - positionedTop) <= 2) return false;
         setTarget(current => current === target ? null : current);
         return true;
       };
