@@ -1547,7 +1547,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         onReconnectStart={(_, edge) => { connectionCancelled.current = false; reconnecting.current = edge.id; }}
         onReconnect={(edge, connection) => reconnect(edge as CanvasEdge, connection.source, connection.target)} onReconnectEnd={() => { reconnecting.current = null; }}
         isValidConnection={connection => validConnection(connection.source, connection.target, reconnecting.current, alongsideDrag.current || graph.edges.find(edge => edge.id === reconnecting.current)?.kind === "alongside")} disableKeyboardA11y
-        onPaneClick={() => { setSelection([]); setMenu(null); }} deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={FIT.minZoom} proOptions={{ hideAttribution: true }}>
+        onPaneClick={() => { setSelection([]); setMenu(null); }} elevateEdgesOnSelect deleteKeyCode={null} zoomOnDoubleClick={false} colorMode={dark ? "dark" : "light"} fitView fitViewOptions={FIT} minZoom={FIT.minZoom} proOptions={{ hideAttribution: true }}>
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
         <Controls showInteractive={false} fitViewOptions={OVERVIEW} />
         {minimap && <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />}
