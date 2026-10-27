@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import net from 'node:net';
+import { parseClaudeMcp } from './claude-mcp-import.mjs';
 import { DesktopClient, existingSocket } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { isAgentRun } from '../lib/agent-runs.mjs';
@@ -1592,6 +1593,32 @@ for (const [name, control] of [
   assert.deepEqual([...f.threads.keys()], f.unrelatedIds);
 });
 
+test('Claude MCP import previews safely, rejects stale and duplicate entries, and writes without reload', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-claude-mcp-'));
+  const configPath = path.join(home, 'config.toml');
+  await fs.writeFile(configPath, '', { mode: 0o600 });
+  const file = path.join(home, '.claude.json');
+  const source = { mcpServers: { shadcn: { command: 'npx', args: ['shadcn', 'mcp'], env: { SECRET: 'private-value' } }, rag: { command: 'old' } } };
+  await fs.writeFile(file, JSON.stringify(source));
+  const { client, socket, configRead } = fixture({ clientOptions: { appHome: home } });
+  configRead.layers[0].name.file = configPath;
+  await client.initialize();
+  const preview = await client.previewClaudeMcp();
+  assert.deepEqual(preview.servers.map(row => [row.name, row.status]), [['shadcn','available'],['rag','exists']]);
+  assert.doesNotMatch(JSON.stringify(preview), /private-value|npx/);
+  await assert.rejects(client.importClaudeMcp({ version: preview.version, revision: preview.revision, names: ['rag'] }), /Unsupported|changed/i);
+  const input = { version: preview.version, revision: preview.revision, names: ['shadcn'] };
+  await fs.writeFile(file, JSON.stringify({ ...source, changed: true }));
+  await assert.rejects(client.importClaudeMcp(input), /changed/);
+  await fs.writeFile(file, JSON.stringify(source));
+  assert.deepEqual(await client.importClaudeMcp(input), { imported: 1 });
+  const writes = socket.sent.filter(row => row.method === 'config/batchWrite');
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].params.edits, [{keyPath:'mcp_servers.shadcn', value:source.mcpServers.shadcn, mergeStrategy:'replace'}]);
+  assert.equal(writes[0].params.reloadUserConfig, false);
+  assert.equal(socket.sent.some(row => row.method === 'config/mcpServer/reload'), false);
+});
+
 test('providers report separate sign-in and usage per provider; MCP shows credential presence only', async () => {
   const { client, socket } = fixture(); await client.initialize();
   process.env.APP_TEST_OPENROUTER_KEY = 'PRIVATE CONFIG SECRET'; delete process.env.APP_TEST_COMPANY_KEY;
@@ -2549,4 +2576,21 @@ test('A101 archive order spans native pages, survives restart, and keeps paginat
   assert.equal(reloaded.data[0].archiveReason, 'Reason 104');
   await assert.rejects(cold.client.listArchivedThreads({ cursor: 'broken' }), /Invalid archive page cursor/);
   cold.threads.clear(); assert.deepEqual(await cold.client.listArchivedThreads({}), { data: [], nextCursor: null });
+});
+
+test('Claude MCP preview hides values and retains supported transports for selected import', () => {
+  const raw = JSON.stringify({mcpServers:{shadcn:{command:'npx',args:['shadcn@latest','mcp'],env:{SECRET:'private-value'}},remote:{type:'http',url:'https://example.test/mcp',headers:{Authorization:'private-header'}},bad:{type:'sse',url:'https://example.test'},existing:{command:'x'}}});
+  const parsed = parseClaudeMcp(raw, ['existing']);
+  assert.deepEqual(parsed.preview.map(({name,transport,status}) => [name,transport,status]), [['shadcn','stdio','available'],['remote','http','available'],['bad','unsupported','unsupported'],['existing','stdio','exists']]);
+  assert.doesNotMatch(JSON.stringify(parsed.preview), /private-value|private-header|example\.test|npx/);
+  assert.deepEqual(parsed.definitions.shadcn, {command:'npx',args:['shadcn@latest','mcp'],env:{SECRET:'private-value'}});
+  assert.deepEqual(parsed.definitions.remote, {url:'https://example.test/mcp',http_headers:{Authorization:'private-header'}});
+  assert.equal(parsed.definitions.existing, undefined);
+});
+
+test('malformed definitions and unsupported fields cannot be silently imported', () => {
+  const parsed = parseClaudeMcp(JSON.stringify({mcpServers:{bad:{command:'x',env:{SECRET:3}},extra:{command:'x',unexpected:'x'},wrong:{type:'http',url:'file:///tmp/x'}}}), []);
+  assert.ok(parsed.preview.every(row => row.status === 'unsupported'));
+  assert.deepEqual(Object.keys(parsed.definitions), []);
+  assert.throws(() => parseClaudeMcp('{', []), /Could not read/);
 });

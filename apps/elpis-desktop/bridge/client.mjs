@@ -1,3 +1,4 @@
+import { readClaudeMcp } from './claude-mcp-import.mjs';
 import { workflowModelRoutes } from "./workflow-models.mjs";
 import voiceHandoff from './voice-handoff.cjs';
 import { fastServiceTier } from '../lib/service-tier.mjs';
@@ -1057,6 +1058,27 @@ export class DesktopClient extends EventEmitter {
     const read = await this.#rpc('config/read', { includeLayers: false });
     const env = read.config?.mcp_servers?.rag?.env ?? {};
     return Object.fromEntries(['OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'RAG_MCP_CONFIG'].filter(key => typeof env[key] === 'string').map(key => [key, env[key]]));
+  }
+  /** Preview exposes no commands, URLs, environment or header values. */
+  async previewClaudeMcp() {
+    const current = await this.mcp();
+    const source = await readClaudeMcp(this.#appHome, current.servers.map(server => server.name));
+    return { servers: source.preview, revision: source.revision, version: current.version };
+  }
+  async importClaudeMcp(input) {
+    object(input, ['version', 'revision', 'names']);
+    text(input.version, 'MCP settings version', 200);
+    text(input.revision, 'Claude settings revision', 200);
+    if (!Array.isArray(input.names) || !input.names.length || input.names.length > 100 || new Set(input.names).size !== input.names.length || input.names.some(name => typeof name !== 'string' || !MCP_NAME.test(name))) throw new BridgeError('Choose one or more available servers.');
+    const current = await this.mcp();
+    if (!current.write.available || current.version !== input.version) throw new BridgeError('Settings changed. Preview the import again.', 409);
+    const source = await readClaudeMcp(this.#appHome, current.servers.map(server => server.name));
+    if (source.revision !== input.revision || input.names.some(name => !Object.hasOwn(source.definitions, name))) throw new BridgeError('Claude Code or Elpis settings changed. Preview the import again.', 409);
+    privateConfigFile(current.configPath);
+    const edits = input.names.map(name => ({ keyPath: `mcp_servers.${name}`, value: source.definitions[name], mergeStrategy: 'replace' }));
+    try { await this.#rpc('config/batchWrite', { edits, expectedVersion: input.version, reloadUserConfig: false }); }
+    catch (error) { if (error.status === 409) throw new BridgeError('Settings changed. Preview the import again.', 409); throw new BridgeError('MCP servers could not be imported.', error.status ?? 502); }
+    return { imported: input.names.length };
   }
   /** Adds, removes, enables or configures one MCP server through the native versioned config writer. */
   async saveMcp(input) {

@@ -15,6 +15,7 @@ import { ModelChoice } from "@/components/settings/maintenance";
 type Credential = { name: string; source: "config" | "environment"; set: boolean };
 type Server = { name: string; enabled: boolean; transport: "stdio" | "http"; command: string | null; url: string | null; credentials: Credential[]; whispertype?: { backend: "openrouter" | "codex" | "local"; model: string | null } };
 type Mcp = { configPath?: string | null; reloadRequested?: boolean; version: string | null; write: { available: boolean }; servers: Server[] };
+type ClaudePreview = { revision: string; version: string; servers: { name: string; transport: string; status: "available" | "exists" | "unsupported" }[] };
 type Stage = { stage: "embedding" | "reranking" | "generation"; provider: string | null; model: string | null; location: "local" | "api" | null };
 type Rag = { stages: Stage[]; keys: { openrouter: boolean } };
 
@@ -82,6 +83,9 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
   const [notice, setNotice] = useState("");
   const [data, setData] = useState<Mcp | null>(null);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<ClaudePreview | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ name: "", command: "", args: "" });
   const [removing, setRemoving] = useState<string | null>(null);
@@ -91,6 +95,20 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     setError("");
     try { setNotice(""); const saved = readMcp(await api<Mcp>("/mcp", { version: data?.version, name, ...body })); setData(saved); if (saved.reloadRequested === false) setNotice("Settings saved. Elpis could not refresh the active tools; reconnect Elpis to apply them."); }
     catch (e) { setError(message(e)); await load(); throw e; }
+  }
+  async function previewImport() {
+    setError(""); setNotice(""); setImporting(true);
+    try { setPreview(await api<ClaudePreview>("/mcp/import")); setSelected([]); }
+    catch (e) { setError(message(e)); } finally { setImporting(false); }
+  }
+  async function importSelected() {
+    if (!preview) return;
+    setError(""); setImporting(true);
+    try {
+      const result = await api<{ imported: number }>("/mcp/import", { names: selected, version: preview.version, revision: preview.revision });
+      setPreview(null); setSelected([]); setNotice(`Imported ${result.imported} MCP server${result.imported === 1 ? "" : "s"}. Reconnect Elpis to use them.`);
+      await load();
+    } catch (e) { setError(message(e)); setPreview(null); await load(); } finally { setImporting(false); }
   }
   async function add(event: React.FormEvent) {
     event.preventDefault();
@@ -102,6 +120,16 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     {notice && <SettingsNotice>{notice}</SettingsNotice>}
     {data?.configPath && <details className="text-xs text-muted-foreground"><DisclosureSummary className="cursor-pointer">Configuration file</DisclosureSummary><p className="mt-2 break-all">{data.configPath}</p></details>}
+    <Button variant="outline" disabled={importing || !data?.write?.available} onClick={() => void previewImport()}>Import from Claude Code</Button>
+    {preview && <section className="settings-card settings-form" aria-label="Import Claude Code MCP servers">
+      <p className="text-sm">Choose servers to import. Existing servers are kept. Imported servers start when Elpis reconnects.</p>
+      {preview.servers.length === 0 && <SettingsEmpty title="No Claude Code servers found">No global MCP servers were found.</SettingsEmpty>}
+      {preview.servers.map(server => <label className="flex items-center gap-2 text-sm" key={server.name}>
+        <input type="checkbox" checked={selected.includes(server.name)} disabled={importing || server.status !== "available"} onChange={event => setSelected(old => event.target.checked ? [...old, server.name] : old.filter(name => name !== server.name))} />
+        <span>{server.name} · {server.transport}{server.status === "exists" ? " · already in Elpis" : server.status === "unsupported" ? " · unsupported definition" : ""}</span>
+      </label>)}
+      <div className="flex justify-end gap-2"><Button variant="outline" disabled={importing} onClick={() => setPreview(null)}>Cancel</Button><Button disabled={importing || !selected.length} onClick={() => void importSelected()}>{importing ? "Importing…" : "Import selected"}</Button></div>
+    </section>}
     {adding && <form className="settings-card settings-form" aria-label="Add MCP server" onSubmit={add}>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">Server name<Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="letters, numbers, - or _" /></label>
