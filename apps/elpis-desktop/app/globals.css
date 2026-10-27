@@ -244,9 +244,9 @@ button:disabled { cursor:not-allowed; }
 .tool-item { border:1px solid var(--border); margin:12px 0; font-size:0.75rem; } .tool-item summary { padding:10px 14px; cursor:pointer; } .tool-item pre { margin:0; padding:12px; overflow:auto; max-height:340px; white-space:pre-wrap; }
 .composer-wrap { position:relative; padding:6px 32px 14px; }
 .composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:10px 10px 8px 14px; box-shadow:var(--shadow); }
-/* Light Stop stays plain; keyboard focus uses an outline instead of the button's shadow ring. */
-:root:not(.dark) .stop-button { background:transparent; box-shadow:none; }
-:root:not(.dark) .stop-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+/* Stop stays plain in both themes; keyboard focus uses an outline instead of a shadow ring. */
+.stop-button { background:transparent; box-shadow:none; }
+.stop-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .dictation-control { display:flex; align-items:center; gap:6px; margin-top:3px; min-width:0; }
 .dictation-buttons { display:flex; flex-shrink:0; align-items:center; }
 .dictation-status { font-size:var(--text-small); color:var(--muted-foreground); overflow-wrap:anywhere; line-height:1.4; }
