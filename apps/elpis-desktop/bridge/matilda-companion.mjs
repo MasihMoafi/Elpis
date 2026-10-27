@@ -46,8 +46,9 @@ export function createMatildaCompanion({ store, env = process.env }) {
       const { stdout } = await exec('python3', ['-c', MPRIS, action, favorite?.player ?? '', favorite?.uri ?? ''], { env, timeout: 6000, maxBuffer: 128 * 1024 });
       return JSON.parse(stdout);
     } catch (cause) {
-      const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^(Exception|.*DBusException): /, '');
-      throw new BridgeError(detail || 'Music controls are unavailable. Open a compatible music player; Linux also needs Python dbus.');
+      const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
+      const explained = /^(Open your music player first|Several music players are available|This player does not support)/.test(detail ?? '');
+      throw new BridgeError(explained ? detail : cause.killed ? 'The player has not confirmed this request. Check playback before trying again.' : action === 'open' ? 'The player could not open your favorite. Check that the track is still available.' : 'Music controls are unavailable. Open your music player and try again.');
     }
   }
   async function state(page, track) {

@@ -7,13 +7,14 @@ import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
+import { createMatildaCompanion } from './matilda-companion.mjs';
 import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
 
 const enabledAudio = { available: true };
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const note = (id, text, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
-async function fixture(t, { refuseFast = false, audio = enabledAudio } = {}) {
+async function fixture(t, { refuseFast = false, audio = enabledAudio, companion = false } = {}) {
   const base = os.tmpdir();
   const directory = createTestTempDir(path.join(base, 'love-talk-')), store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
   const client = new EventEmitter(), created = [], sent = [], entries = [], speeds = [];
@@ -27,11 +28,25 @@ async function fixture(t, { refuseFast = false, audio = enabledAudio } = {}) {
     send: async (id, value) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
     setServiceTier: async (id, value) => { speeds.push({ id, ...value }); if (refuseFast) throw Error('no Fast here'); return { serviceTier: 'priority' }; },
   });
-  const talk = createLoveSpotTalk({ client, store, audio });
+  const talk = createLoveSpotTalk({ client, store, audio, ...(companion ? { companion: createMatildaCompanion({ store, env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent-matilda-test' } }) } : {}) });
   t.after(async () => { talk.close(); store.close(); removeTestTempDir(directory); });
   const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
   return { directory, store, talk, client, created, sent, finish, entries, speeds };
 }
+test('board commands attach actual action results to the normal reply without treating discussion as a command', async t => {
+  const f = await fixture(t, { companion: true, audio: LOVE_SPOT_AUDIO });
+  await f.talk.send({ text: 'Matilda, pin yourself.', model: 'text' });
+  const result = f.sent[0].attachments.find(a => a.name === 'Matilda action result.txt');
+  assert.match(result.text, /"ok":true/);
+  assert.equal((await f.store.companion()).pinned.includes('legacy'), true);
+  f.finish(); await f.talk.idle();
+  await f.talk.send({ text: 'Could you add a pin button?', model: 'text' });
+  assert.equal(f.sent[1].attachments.some(a => a.name === 'Matilda action result.txt'), false);
+  f.finish('turn-2'); await f.talk.idle();
+  await f.talk.send({ text: 'play my favorite music', model: 'text' });
+  assert.match(f.sent[2].attachments.find(a => a.name === 'Matilda action result.txt').text, /"ok":false/);
+});
+
 test('text-only Matilda never reads voice preferences or status and still delivers board replies', async t => {
   const f = await fixture(t, { audio: LOVE_SPOT_AUDIO });
   const preferences = path.join(f.directory, '.voice.json'), saved = '{legacy malformed voice preference';
