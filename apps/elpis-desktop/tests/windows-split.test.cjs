@@ -1,3 +1,4 @@
+const { threadMenuItem } = require('./controls.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -6,7 +7,7 @@ const { assertUiFit } = require('./ui-fit.cjs');
 const secondary = page => page.frameLocator('iframe[title="Split session"]');
 async function split(page, id = 'chat-b') {
   await page.locator(`.thread-row[data-thread-id="${id}"]`).getByRole('button', { name: /^Actions for/ }).click();
-  await page.getByRole('menuitem', { name: 'Open session in split view', exact: true }).click();
+  await (await threadMenuItem(page, 'Open session in split view')).click();
   await secondary(page).getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
 }
 test('split chats keep separate composers, send to their own chat, focus with brackets, and close either pane', async () => {

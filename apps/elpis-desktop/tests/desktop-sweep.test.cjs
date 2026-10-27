@@ -1,3 +1,4 @@
+const { threadMenuItem } = require('./controls.cjs');
 // Whole desktop fit gate. Built renderer, synthetic bridge and desktop only: no engine, account, shell or user state.
 // Keep visiting after a failure so one broken page cannot hide the rest of the sweep.
 const { test } = require('node:test');
@@ -157,7 +158,7 @@ for (const colorScheme of ['light', 'dark']) for (const [width, height] of [[128
       await page.getByRole('button', { name: 'Close side panel', exact: true }).click();
       await check('split session', async () => {
         await page.locator('.thread-row[data-thread-id="chat-b"]').click({ button: 'right' });
-        await page.getByRole('menuitem', { name: 'Open session in split view', exact: true }).click();
+        await (await threadMenuItem(page, 'Open session in split view')).click();
         await page.frameLocator('iframe[title="Split session"]').getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
         await page.frameLocator('iframe[title="Split session"]').getByRole('heading', { name: 'Write the docs', exact: true }).waitFor();
         await page.frameLocator('iframe[title="Split session"]').locator('.startup-splash').waitFor({ state: 'detached' });

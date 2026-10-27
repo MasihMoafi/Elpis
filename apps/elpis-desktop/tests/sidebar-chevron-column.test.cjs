@@ -34,22 +34,22 @@ async function measureSidebar(page) {
     const headers = [...sidebar.querySelectorAll('.sidebar-group-chevron')].map(icon => ({
       name: icon.closest('.sidebar-group').getAttribute('aria-label'), icon: box(icon), target: box(icon.closest('button')),
     }));
-    const rows = [...sidebar.querySelectorAll('.thread-list .thread-row')].filter(row => row.querySelector(':scope > .conversation-colour-trigger')).map(row => {
+    const rows = [...sidebar.querySelectorAll('.thread-list .thread-row')].filter(row => row.querySelector(':scope > .conversation-state-slot')).map(row => {
       const toggle = row.querySelector(':scope > button[aria-expanded]:first-child:not(.conversation-colour-trigger)');
       const railStyle = getComputedStyle(row, '::before'), bounds = box(row), clips = [];
       for (let ancestor = row.parentElement; ancestor; ancestor = ancestor.parentElement) {
         if (getComputedStyle(ancestor).overflowX !== 'visible') clips.push(box(ancestor));
       }
       return { id: row.dataset.threadId, depth: (() => { let depth = 0, branch = row.parentElement; while (branch.parentElement?.firstElementChild?.matches('.thread-row')) { depth++; branch = branch.parentElement; } return depth; })(), row: bounds,
-        circle: box(row.querySelector('.conversation-colour-trigger .conversation-colour-swatch')), title: box(row.querySelector('.agent-identity, .thread-title')),
+        circle: box(row.querySelector('.conversation-state-slot .thread-dot')), title: box(row.querySelector('.agent-identity, .thread-title')),
         actions: box(row.querySelector('.thread-actions')), active: row.classList.contains('active'), selected: row.classList.contains('selected'),
         clipLeft: Math.max(...clips.map(clip => clip.x)), clipRight: Math.min(...clips.map(clip => clip.right)),
         rail: { x: bounds.x + (parseFloat(railStyle.left) || 0), width: parseFloat(railStyle.width) || 0, shown: railStyle.content !== 'none' },
         ...(toggle ? { icon: box(toggle.querySelector('svg')), target: box(toggle), expanded: toggle.getAttribute('aria-expanded'), hoverLabel: toggle.title } : {}) };
     });
-    const reference = sidebar.querySelector('.project-group .thread-row:not(.child) .conversation-colour-trigger').closest('.thread-row');
+    const reference = sidebar.querySelector('.project-group .thread-row:not(.child) .conversation-state-slot').closest('.thread-row');
     return { project, headers, rows, emptyLabels: [...sidebar.querySelectorAll('.sidebar-group-empty')].map(element => ({ x: box(element).x + parseFloat(getComputedStyle(element).paddingLeft) })),
-      circle: box(reference.querySelector('.conversation-colour-trigger .conversation-colour-swatch')).x, title: box(reference.querySelector('.thread-title')).x };
+      circle: box(reference.querySelector('.conversation-state-slot .thread-dot')).x, title: box(reference.querySelector('.thread-title')).x };
   });
 }
 function checkSidebar(actual, label) {

@@ -38,7 +38,7 @@ async function setup(colorScheme, project = false) {
 
 const coordinates = row => row.evaluate(element => {
   const x = selector => element.querySelector(selector).getBoundingClientRect().x;
-  return { circle: x('.conversation-colour-trigger .conversation-colour-swatch'), title: x('.agent-identity, .thread-title') };
+  return { circle: x('.conversation-state-slot .thread-dot'), title: x('.agent-identity, .thread-title') };
 });
 async function capture(page, name) {
   if (!shots) return;
@@ -54,7 +54,7 @@ for (const colorScheme of ['light', 'dark']) {
       measured.push({ depth, state, ...await row(id).evaluate(element => {
         const button = element.querySelector(':scope > button[aria-expanded]');
         const icon = button.querySelector('svg').getBoundingClientRect();
-        const circle = element.querySelector('.conversation-colour-trigger .conversation-colour-swatch').getBoundingClientRect();
+        const circle = element.querySelector('.conversation-state-slot .thread-dot').getBoundingClientRect();
         const target = button.getBoundingClientRect();
         const clipped = [];
         for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
@@ -114,8 +114,6 @@ for (const colorScheme of ['light', 'dark']) {
       await measure('selected');
       await capture(page, `${name}-selected`);
       await row(parent.id).locator('.thread-link').focus();
-      await page.keyboard.press('Shift+Tab');
-      assert.equal(await row(parent.id).locator('.conversation-colour-trigger').evaluate(element => element === document.activeElement), true, 'Tab reaches the persistent colour control');
       await page.keyboard.press('Shift+Tab');
       assert.equal(await toggle().evaluate(element => element === document.activeElement && element.matches(':focus-visible')), true, 'Tab reaches the chevron');
       await capture(page, `${name}-focus`);

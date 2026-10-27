@@ -98,19 +98,25 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     onPutUnder ? { id: "put-under", label: "Put under…", icon: <FolderInput size={14} />, run: () => onPutUnder(many ?? [thread]) } : undefined,
     onTakeOut ? { id: "take-out", label: "Take out", run: () => onTakeOut(many ?? [thread]) } : undefined,
     onMoveToProject ? { id: "project", label: "Move to project…", icon: <FolderInput size={14} />, run: () => onMoveToProject(many ?? [thread]) } : undefined,
-    onNewProject ? { id: "new-project", label: "New project from these…", icon: <FolderPlus size={14} />, run: () => onNewProject(many ?? [thread]) } : undefined,
+    onNewProject ? { id: "new-project", label: many ? `New project from ${many.length} chats…` : "New project from this chat…", icon: <FolderPlus size={14} />, run: () => onNewProject(many ?? [thread]) } : undefined,
   ];
-  const actions = (many ? [...organization, archive, remove] : [
+  const organizationItems = organization.filter((action): action is MenuAction => !!action);
+  const organize: MenuAction | undefined = organizationItems.length ? { id: "organize", label: "Organize", icon: <FolderInput size={14} />, run: () => {}, items: organizationItems } : undefined;
+  const openIn: (MenuAction | undefined)[] = [
+    onOpenInTui ? { id: "tui", label: "Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
+    onOpenSplit ? { id: "split", label: "Split view", icon: <Columns2 size={14} />, hint: "Alt+click", run: () => onOpenSplit(thread) } : undefined,
+    onOpenWindow ? { id: "window", label: "New window", icon: <SquareArrowOutUpRight size={14} />, run: () => onOpenWindow(thread) } : undefined,
+  ];
+  const openItems = openIn.filter((action): action is MenuAction => !!action);
+  const actions = (many ? [organize, archive, remove] : [
     onRename ? { id: "rename", label: "Rename", icon: <Pencil size={14} />, hint: "F2", run: rename } : undefined,
     onPin ? { id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? <PinOff size={14} /> : <PinIcon size={14} />, hint: shortcutHint("pin"), run: () => onPin(thread) } : undefined,
     onBookmark ? { id: "bookmark", label: bookmarked ? "Remove bookmark" : "Bookmark", icon: bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />, run: () => onBookmark(thread) } : undefined,
-    ...organization,
+    organize,
     attention ? attention.planReady ? { id: "completed", label: "Mark as completed", icon: <CircleCheck size={14} />, hint: "U", run: attention.onComplete }
       : { id: "read", label: attention.unread ? "Mark as read" : "Mark as unread", icon: attention.unread ? <Eye size={14} /> : <EyeOff size={14} />, hint: "U", run: attention.onToggleRead } : undefined,
     agents ? { id: "agents", label: agents.shown ? "Hide agents" : "Show agents", icon: <AgentsIcon size={14} />, run: agents.onToggle } : undefined,
-    onOpenInTui ? { id: "tui", label: "Open in Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) } : undefined,
-    onOpenSplit ? { id: "split", label: "Open session in split view", icon: <Columns2 size={14} />, hint: "Alt+click", run: () => onOpenSplit(thread) } : undefined,
-    onOpenWindow ? { id: "window", label: "Open session in new window", icon: <SquareArrowOutUpRight size={14} />, run: () => onOpenWindow(thread) } : undefined,
+    openItems.length ? { id: "open-in", label: "Open in", icon: <SquareArrowOutUpRight size={14} />, run: () => {}, items: openItems } : undefined,
     archive, remove,
   ]).filter((action): action is MenuAction => !!action);
   return <>

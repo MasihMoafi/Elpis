@@ -47,8 +47,8 @@ function DefaultFolder({ folder, onSave }: { folder: string; onSave: (folder: st
 function Speed() {
   const saver = useSaver();
   return <SettingsLoader>{settings => <>
-    <ConfigChoice settings={settings} name="serviceTier" title="Speed" scope="new chats" description="How quickly new chats run. Fast uses plan limits faster; Flex is slower. Supported models only."
-      values={[{ value: "default", label: "Standard" }, { value: "fast", label: "Fast" }, { value: "flex", label: "Flex" }]} disabled={!editable(settings) || saver.pending !== null}
+    <ConfigChoice settings={settings} name="serviceTier" title="Speed" scope="new chats" description="How quickly new chats run. Fast uses plan limits faster. Supported models only."
+      values={[{ value: "default", label: "Standard" }, { value: "fast", label: "Fast" }]} disabled={!editable(settings) || saver.pending !== null}
       onSave={patch => void saver.run("speed", () => saveOptions(settings, patch), "Speed saved. Applies to new conversations.")} />
     {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
   </>}</SettingsLoader>;

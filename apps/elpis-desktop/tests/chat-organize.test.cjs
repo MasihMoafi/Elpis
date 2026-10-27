@@ -1,3 +1,4 @@
+const { threadMenuItem } = require('./controls.cjs');
 // Real sidebar clicks, keys and pointer drags against the exported renderer and a mock bridge.
 // Owns display nesting and after-the-fact bulk project creation; engine acceptance remains separate.
 const { test } = require('node:test');
@@ -34,7 +35,7 @@ async function mark(page, values = children) {
 }
 async function action(page, id, name) {
   await row(page, id).getByRole('button', { name: /^Actions for / }).click();
-  await page.getByRole('menuitem', { name, exact: true }).click();
+  await (await threadMenuItem(page, name)).click();
 }
 async function putUnder(page, id = children[0], target = 'car-scraper-pro', theme) {
   await action(page, id, 'Put under…');
@@ -535,15 +536,15 @@ for (const desktop of [true, false]) test(`single-chat organizing actions are sh
     await f.open('chat-z');
     for (const trigger of [row(page, 'chat-z').getByRole('button', { name: 'Actions for Unrelated chat', exact: true }), page.locator('.workspace-header').getByRole('button', { name: 'Chat actions', exact: true })]) {
       await trigger.click();
-      await page.getByRole('menuitem', { name: 'Put under…', exact: true }).waitFor();
-      for (const name of ['Put under…', 'Move to project…', 'New project from these…']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1, name);
+      await (await threadMenuItem(page, 'Put under…')).waitFor();
+      for (const name of ['Put under…', 'Move to project…', 'New project from this chat…']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1, name);
       await page.getByRole('menuitem', { name: 'Put under…', exact: true }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     }
     await row(page, 'chat-a').getByRole('button', { name: /^Expand agents/ }).click();
     await row(page, 'native-agent').getByRole('button', { name: 'Actions for Native worker', exact: true }).click();
     await page.getByRole('menu').waitFor();
-    for (const name of ['Put under…', 'Move to project…', 'New project from these…', 'Take out']) assert.equal(await page.getByRole('menuitem', { name, exact: true }).count(), 1, 'native agents share the same display organization actions');
+    for (const name of ['Put under…', 'Move to project…', 'New project from this chat…', 'Take out']) assert.equal(await (await threadMenuItem(page, name)).count(), 1, 'native agents share the same display organization actions');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

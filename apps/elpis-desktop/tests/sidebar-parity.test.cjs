@@ -100,7 +100,7 @@ test('every chat has a left colour control; working, unread and error status rem
     const colour = id => row(id).locator('.conversation-colour-trigger');
     const swatch = id => colour(id).locator('.conversation-colour-swatch');
     for (const id of ['t-run', 't-idle', 't-bad', 't-crypto']) assert.equal(await colour(id).count(), 1, `${id} has one persistent colour control`);
-    for (const id of ['t-idle', 't-crypto']) assert.equal(await dot(id).count(), 0, `${id} has no redundant idle status`);
+    for (const id of ['t-idle', 't-crypto']) assert.equal(await dot(id).count(), 1, `${id} retains its automatic idle status marker`);
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('data-state'))), ['working', 'error']);
     assert.deepEqual(await Promise.all(['t-run', 't-bad'].map(id => dot(id).getAttribute('title'))), ['Working', 'Error']);
     const fill = async id => paint(dot(id), 'backgroundColor'), ring = async id => paint(dot(id), 'borderTopColor');

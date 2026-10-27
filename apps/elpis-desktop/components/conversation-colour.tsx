@@ -1,5 +1,6 @@
 "use client";
 import { useId, useState, useSyncExternalStore } from "react";
+import { Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { appStorage } from "@/lib/projects";
@@ -59,7 +60,7 @@ export function ConversationColour({ id, name }: { id: string; name: string }) {
   }
   return <Popover open={open} onOpenChange={value => { setOpen(value); if (value) setError(""); }}>
     <PopoverTrigger render={<Button variant="ghost" size="icon-xs" className="conversation-colour-trigger" aria-label={`Colour for ${name}`} title={colour ? `Conversation colour: ${colour}` : "Choose conversation colour"} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} />}>
-      <span className="conversation-colour-swatch" data-colour={colour} aria-hidden="true" />
+      <Palette size={14} aria-hidden="true" /><span className="conversation-colour-swatch" data-colour={colour} aria-hidden="true" />
     </PopoverTrigger>
     <PopoverContent role="dialog" aria-label="Conversation colour" className="w-56 space-y-2" onKeyDown={event => event.stopPropagation()}>
       <fieldset disabled={saving} className="space-y-1">

@@ -1,3 +1,4 @@
+const { threadMenuItem } = require('./controls.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -71,7 +72,7 @@ test('native settings changes update both windows without reverting another pref
     await first.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
     await first.getByRole('button', { name: 'Chat actions', exact: true }).click();
     const opened = electron.waitForEvent('window');
-    await first.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
+    await (await threadMenuItem(first, 'Open session in new window')).click();
     const second = await opened; second.setDefaultTimeout(10000);
     await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
     for (const page of [first, second]) { await openSettings(page); await page.getByRole('tab', { name: 'General', exact: true }).click(); }
@@ -143,7 +144,7 @@ test('production Electron windows share chats and live replies; native menu, cha
     await first.getByRole('textbox', { name: 'Message Elpis', exact: true }).fill('First window draft');
     const opened = electron.waitForEvent('window');
     await first.getByRole('button', { name: 'Chat actions', exact: true }).click();
-    await first.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
+    await (await threadMenuItem(first, 'Open session in new window')).click();
     const second = await opened; second.setDefaultTimeout(10000);
     await second.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
     await second.getByRole('status', { name: 'Elpis is starting', exact: true }).waitFor({ state: 'detached' });
@@ -177,7 +178,7 @@ test('production Electron windows share chats and live replies; native menu, cha
       }
     }
     await second.locator('.thread-row[data-thread-id="chat-b"]').getByRole('button', { name: /^Actions for/ }).click();
-    await second.getByRole('menuitem', { name: 'Open session in split view', exact: true }).click();
+    await (await threadMenuItem(second, 'Open session in split view')).click();
     const pane = second.frameLocator('iframe[title="Split session"]');
     await pane.getByRole('textbox', { name: 'Message Elpis', exact: true }).fill('Native split draft');
     await second.getByRole('textbox', { name: 'Message Elpis', exact: true }).click(); await second.keyboard.press('Control+]');
@@ -186,7 +187,7 @@ test('production Electron windows share chats and live replies; native menu, cha
     await assertUiFit(second.locator('.workspace'), 'native split primary fits');
     await assertUiFit(pane.locator('.workspace'), 'native split secondary fits');
     await pane.getByRole('button', { name: 'Chat actions', exact: true }).click();
-    const fromPane = electron.waitForEvent('window'); await pane.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
+    const fromPane = electron.waitForEvent('window'); await (await threadMenuItem(pane, 'Open session in new window')).click();
     const paneWindow = await fromPane; await paneWindow.locator('.thread-row.active[data-thread-id="chat-b"]').waitFor(); await paneWindow.close();
     await pane.getByRole('button', { name: 'Close split view', exact: true }).click();
     await second.locator('iframe').waitFor({ state: 'detached' });
@@ -194,7 +195,7 @@ test('production Electron windows share chats and live replies; native menu, cha
     // The surviving window must keep its registered handlers and create another window after its sibling closes.
     await second.getByRole('button', { name: 'Chat actions', exact: true }).click();
     const newWindow = electron.waitForEvent('window');
-    await second.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
+    await (await threadMenuItem(second, 'Open session in new window')).click();
     const fourth = await newWindow; await fourth.locator('.thread-row[data-thread-id="chat-a"]').waitFor();
     assert.equal(await second.getByRole('textbox', { name: 'Message Elpis', exact: true }).inputValue(), 'Second window draft');
     await fourth.close();

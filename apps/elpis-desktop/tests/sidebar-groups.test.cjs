@@ -34,12 +34,17 @@ async function moveMenu(page, id, how = 'right-click') {
     const menu = page.getByRole('menu').first();
     await menu.waitFor();
     await page.waitForFunction(menu => menu.contains(document.activeElement), await menu.elementHandle());
+    await page.keyboard.type('Organize');
+    await page.keyboard.press('ArrowRight');
+    await page.getByRole('menu', { name: 'Organize', exact: true }).waitFor();
     await page.keyboard.type('Move to g');
     await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Move to group');
     await page.keyboard.press('ArrowRight');
   } else {
     if (how === 'right-click') await row(page, id).click({ button: 'right' });
     else { await row(page, id).hover(); await row(page, id).locator('.thread-actions').click(); }
+    await page.getByRole('menuitem', { name: 'Organize', exact: true }).hover();
+    await page.getByRole('menu', { name: 'Organize', exact: true }).waitFor();
     const box = await page.getByRole('menuitem', { name }).boundingBox();
     await page.mouse.move(box.x + 4, box.y + box.height / 2);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });

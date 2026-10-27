@@ -9,7 +9,7 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 const CWD = '/tmp/elpis-rclick-fixture';
-const CHAT_ACTIONS = ['Rename', 'Pin', 'Bookmark', 'Move to group', 'Put under…', 'Move to project…', 'New project from these…', 'Mark as unread', 'Open session in split view', 'Archive', 'Delete'];
+const CHAT_ACTIONS = ['Rename', 'Pin', 'Bookmark', 'Organize', 'Mark as unread', 'Open in', 'Archive', 'Delete'];
 async function eventually(check) {
   const deadline = Date.now() + 4000;
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 40)); } }
@@ -73,6 +73,15 @@ test('a chat row opens its "…" menu on right-click, at the pointer, without th
   await row('alpha').hover(); await dots.click();
   const fromButton = await items(), buttonLook = await popup();
   assert.deepEqual(fromButton, CHAT_ACTIONS);
+  await page.getByRole('menuitem', { name: 'Organize', exact: true }).hover();
+  const organization = page.getByRole('menu', { name: 'Organize', exact: true });
+  await organization.waitFor();
+  assert.deepEqual(await organization.getByRole('menuitem').allTextContents(), ['Move to group', 'Put under…', 'Move to project…', 'New project from this chat…']);
+  await page.keyboard.press('Escape');
+  await page.getByRole('menuitem', { name: 'Open in', exact: true }).hover();
+  const opening = page.getByRole('menu', { name: 'Open in', exact: true }); await opening.waitFor();
+  assert.match(await opening.innerText(), /Split view/);
+  await page.keyboard.press('Escape');
   await shot('chat-row-dots-menu');
   await closeMenu();
   const box = await row('alpha').boundingBox();
@@ -148,12 +157,16 @@ test('right-click on a chat inside a Ctrl/Shift selection acts on the whole sele
   const link = id => row(id).locator('.thread-link');
   await link('alpha').click(); await link('charlie').click({ modifiers: ['Control'] }); await link('delta').click({ modifiers: ['Control'] });
   await row('charlie').click({ button: 'right' });
-  assert.deepEqual(await items(), ['Move 3 chats to group', 'Put under…', 'Move to project…', 'New project from these…', 'Archive 3 chats', 'Delete 3 chats', 'Change this…']);
+  assert.deepEqual(await items(), ['Organize', 'Archive 3 chats', 'Delete 3 chats', 'Change this…']);
+  await page.getByRole('menuitem', { name: 'Organize', exact: true }).hover();
+  const organization = page.getByRole('menu', { name: 'Organize', exact: true }); await organization.waitFor();
+  assert.deepEqual(await organization.getByRole('menuitem').allTextContents(), ['Move 3 chats to group', 'Put under…', 'Move to project…', 'New project from 3 chats…']);
+  await page.keyboard.press('Escape');
   const fromRightClick = await popup();
   await shot('chat-selection-right-click');
   await closeMenu();
   await row('charlie').hover(); await row('charlie').getByRole('button', { name: 'Actions for Charlie', exact: true }).click();
-  assert.deepEqual(await items(), ['Move 3 chats to group', 'Put under…', 'Move to project…', 'New project from these…', 'Archive 3 chats', 'Delete 3 chats'], 'the "…" of a selected chat is the same list');
+  assert.deepEqual(await items(), ['Organize', 'Archive 3 chats', 'Delete 3 chats'], 'the "…" of a selected chat is the same list');
   assert.deepEqual(await popup(), fromRightClick);
   await closeMenu();
   await row('delta').click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Delete 3 chats', exact: true }).click();

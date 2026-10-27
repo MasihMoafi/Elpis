@@ -185,4 +185,17 @@ async function assertDialogActionsExplained(dialog, expected) {
     if (expected) assert.match(reasons.join(' '), expected);
   }
 }
-module.exports = { LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
+/** Opens the shared chat menu's named submenu before finding its action. */
+async function threadMenuItem(page, name) {
+  const opening = { 'Open in Elpis TUI': 'Elpis TUI', 'Open session in split view': 'Split view', 'Open session in new window': 'New window' };
+  const organize = typeof name === 'string' && /^(Put under|Take out|Move .*project|New project from)/.test(name);
+  const parent = opening[name] ? 'Open in' : organize ? 'Organize' : null;
+  if (parent) {
+    const trigger = page.getByRole('menuitem', { name: parent, exact: true });
+    if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.hover();
+    await page.getByRole('menu', { name: parent, exact: true }).waitFor();
+  }
+  const wanted = name === 'New project from these…' ? /^New project from (?:this chat|\d+ chats)…$/ : opening[name] ?? name;
+  return page.getByRole('menuitem', { name: wanted, exact: typeof wanted === 'string' });
+}
+module.exports = { threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };

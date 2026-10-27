@@ -1,3 +1,4 @@
+const { threadMenuItem } = require('./controls.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -124,7 +125,7 @@ test('session browsers switch, start empty, restore history, isolate concurrent 
     }
     await page.getByRole('button', { name: 'Chat actions', exact: true }).click();
     const opened = electron.waitForEvent('window');
-    await page.getByRole('menuitem', { name: 'Open session in new window', exact: true }).click();
+    await (await threadMenuItem(page, 'Open session in new window')).click();
     const secondWindow = await opened; secondWindow.setDefaultTimeout(10000);
     await secondWindow.getByRole('textbox', { name: 'Search or enter a URL', exact: true }).waitFor();
     assert.deepEqual((await secondWindow.evaluate(() => window.elpisDesktop.browser.command('state'))).tabs.map(tab => tab.id), [a.id]);

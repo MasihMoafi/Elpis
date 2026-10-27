@@ -92,3 +92,40 @@ test('model disclosures audit only painted fields and catch compound alignment, 
     assert.deepEqual(app.errors, []);
   } finally { await app.close(); }
 });
+
+test('General Speed does not offer unsupported Flex and preserves a saved unknown tier', async () => {
+  for (const saved of [null, 'flex']) {
+    const app = await settingsFixture('light', { routes: {
+      '/api/settings': () => ({ version: 'v1', main: {}, background: {}, smartPrune: {}, memory: {}, options: { serviceTier: saved }, write: { available: true }, managed: {} }),
+    } });
+    try {
+      await visit(app.page, 'General');
+      await app.page.getByLabel('Speed', { exact: true }).click();
+      await app.page.getByRole('listbox').waitFor();
+      assert.equal(await app.page.getByRole('option', { name: 'Flex', exact: true }).count(), 0);
+      if (saved) assert.equal(await app.page.getByRole('option', { name: 'flex', exact: true }).getAttribute('aria-disabled'), 'true');
+      assert.equal(app.posts.filter(post => post.path === '/api/settings').length, 0, 'opening the saved tier does not rewrite it');
+    } finally { await app.close(); }
+  }
+});
+
+
+test('Settings content stays beside navigation at large UI size across window widths', async () => {
+  const app = await settingsFixture('light', { storage: { 'elpis-preferences-v1': JSON.stringify({ interfaceSize: 'l' }) } });
+  try {
+    for (const width of [820, 1271, 1600, 2400]) {
+      await app.page.setViewportSize({ width, height: 900 });
+      for (const name of ['General', 'Appearance', 'Configuration']) {
+        await visit(app.page, name);
+        const geometry = await app.page.evaluate(() => {
+          const pane = document.querySelector('.settings-page'), header = pane.querySelector('.settings-page-header');
+          const p = pane.getBoundingClientRect(), h = header.getBoundingClientRect();
+          return { inset: h.left - p.left, right: h.right, paneRight: p.right, overflow: pane.scrollWidth > pane.clientWidth + 1 };
+        });
+        assert.equal(geometry.inset, 32, `${name} at ${width}: content starts beside the navigation`);
+        assert.ok(geometry.right <= geometry.paneRight, `${name} at ${width}: content fits`);
+        assert.equal(geometry.overflow, false, `${name} at ${width}: no pane overflow`);
+      }
+    }
+  } finally { await app.close(); }
+});

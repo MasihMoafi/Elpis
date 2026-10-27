@@ -1,3 +1,4 @@
+const { threadMenuItem } = require('./controls.cjs');
 // The integrated terminal as in the ChatGPT app (Codex mode), and the Elpis TUI handoff in both directions.
 // The desktop bridge is a fake that records calls; no shell, engine or provider is started.
 const { test } = require('node:test');
@@ -139,15 +140,15 @@ test('Ctrl+` opens a shell as a side-panel tab in the chat’s folder; keys, out
 test('Open in Elpis TUI is in the tab and sidebar menus and resumes that chat in a terminal tab of the side panel; /app opens a chat here', () => fixture(async ({ page, calls }) => {
   await page.locator('.thread-row[data-thread-id="chat-two"]').hover();
   await page.getByRole('button', { name: 'Actions for Write the docs' }).click();
-  await page.getByRole('menuitem', { name: 'Open in Elpis TUI' }).click();
+  await (await threadMenuItem(page, 'Open in Elpis TUI')).click();
   await panel(page).waitFor();
   await eventually(async () => assert.deepEqual((await calls()).tui.map(([key, cwd, id]) => [/^terminal-/.test(key), cwd, id]), [[true, '/work/docs', 'chat-two']]));
   await page.getByRole('tab', { name: /Write the docs/ }).waitFor();
   await page.getByRole('button', { name: 'Chat actions' }).click();
-  await page.getByRole('menuitem', { name: 'Open in Elpis TUI' }).waitFor(); // the chat tab’s … menu has it too
+  await (await threadMenuItem(page, 'Open in Elpis TUI')).waitFor(); // the chat tab’s … menu has it too
   if (shots) await page.screenshot({ path: path.join(shots, 'open-in-tui-menu.png') });
   // Asking again for the same chat uses its terminal tab; it does not open another.
-  await page.getByRole('menuitem', { name: 'Open in Elpis TUI' }).click();
+  await (await threadMenuItem(page, 'Open in Elpis TUI')).click();
   await eventually(async () => assert.equal((await calls()).tui.length, 2));
   assert.equal(new Set((await calls()).tui.map(([key]) => key)).size, 1);
   assert.equal(await sidePanel(page).getByRole('tab').count(), 1);
