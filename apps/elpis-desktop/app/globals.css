@@ -74,7 +74,7 @@ html { font-size:var(--interface-size, 16px); }
 .hud-cut-sm { border-radius:var(--corner-radius-sm, var(--cut-sm) 0); }
 /* The HUD label: every small uppercase caption (the lab's mono labels) in one type — 12px, never smaller (--text-small),
  * mono, .14em, uppercase. Each label keeps its own line-height, colour and spacing. */
-:where(.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span, .canvas-order li span, .canvas-critical span,
+:where(.hud-label, .hud-menu-title, .section-label, .plan-card-heading, .canvas-toolbar-label, .canvas-hud span,
   .quick-add-crumb, .canvas-template-loaded, .agent-node-kind, .canvas-note-grip, .splash-boot li) {
   font-family:var(--mono); font-size:var(--label-size); font-weight:500; letter-spacing:var(--label-track); text-transform:uppercase; }
 /* Section header: the title over a group of rows (Settings groups, Ledger sections) — the lab status
@@ -1012,10 +1012,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Readiness stays beside Run; errors use a contained row at the workspace's bottom. */
 .canvas-header > .canvas-run-control { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; max-width:100%; }
 .canvas-run-control > button { flex:none; }
-.canvas-run-status { color:var(--muted-foreground); font-size:0.75rem; }
+.canvas-header > .canvas-name-group { flex-shrink:1; }
+.canvas-name-group .canvas-name { flex:0 1 220px; width:auto; min-width:120px; }
 @container agents-canvas (max-width:760px) {
   .canvas-header > .canvas-name { flex-basis:140px; }
-  .canvas-toolbar .canvas-toolbar-keys { display:none; }
   .canvas-board .canvas-minimap { display:none; }
 }
 .canvas-spacer { flex:1; }
@@ -1032,8 +1032,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-kind { width:9px; height:9px; border-radius:2px; background:var(--kind); }
 .canvas-toolbar-label { padding:0 6px 0 8px; line-height:1; color:var(--muted-foreground); }
 .canvas-toolbar-more { border-inline-start:1px solid var(--hairline); }
-.canvas-toolbar-keys { display:flex; gap:12px; margin-inline-start:10px; color:var(--muted-foreground); font-size:0.75rem; }
-.canvas-toolbar-keys > span { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
 .canvas-toolbar kbd, .quick-add kbd:not(.kbd-hint) { padding:1px 5px; border:1px solid var(--hairline); font:0.6875rem/1.3 var(--mono); color:var(--muted-foreground); }
 /* Counts typed in the header (CountField): out of range is refused in a note under the field. */
 .canvas-count { position:relative; }
@@ -1074,8 +1072,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-hud { flex:none; display:grid; gap:0; padding-right:14px; border-right:1px solid var(--border); }
 .canvas-hud span { line-height:1.4; color:var(--muted-foreground); }
 .canvas-hud strong { font:600 2.25rem/1.25 var(--mono); font-variant-numeric:tabular-nums; color:var(--accent-text); }
-.canvas-inputs { flex-basis:100%; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); font-size:0.75rem; line-height:1.5; }
-.canvas-inputs b { color:var(--foreground); font-weight:600; }
 .canvas-log-panel { flex:none; min-width:0; padding:6px 12px; border-top:1px solid var(--hairline); background:var(--card); }
 .canvas-log-panel .hud-menu-title { margin:0 0 4px; }
 .canvas-log { display:grid; align-content:start; gap:2px; height:76px; overflow:auto; margin:0; padding:0; list-style:none; }
@@ -1086,10 +1082,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-log li[data-tone="done"] { border-left-color:var(--success); }
 .canvas-log li[data-tone="fail"] { border-left-color:var(--destructive); }
 .canvas-log time { flex:none; font:0.6875rem/1.5 var(--mono); color:var(--muted-foreground); }
-.canvas-guide ul { display:grid; gap:8px; margin:0; padding:0 10px; list-style:none; }
-.canvas-guide a { color:var(--foreground); font-size:0.8125rem; font-weight:600; text-decoration:underline; text-decoration-color:var(--hairline); text-underline-offset:3px; }
-.canvas-guide a:hover { text-decoration-color:currentColor; }
-.canvas-guide small { display:block; margin-top:2px; color:var(--muted-foreground); font-size:0.75rem; line-height:1.35; }
 /* Which architecture is on the board, each one's shape (the Mother, then a column per wave), and the role-split caution. */
 .canvas-template[aria-current="true"] { border-color:var(--border); background:var(--hover); }
 .canvas-template-loaded { margin-inline-start:8px; line-height:1; color:var(--muted-foreground); vertical-align:2px; }
@@ -1101,17 +1093,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-side .canvas-count { display:flex; flex-wrap:wrap; height:auto; min-height:32px; padding-block:4px; }
 .canvas-help kbd, .canvas-inspector-actions kbd { padding:0 4px; border:1px solid var(--hairline); font:0.6875rem/1.4 var(--mono); }
 /* Run order: Kahn's waves, each with how it is doing. */
-.canvas-order { flex:1; min-width:130px; }
-.canvas-order .hud-menu-title { margin:0 0 4px; }
-.canvas-order ol { display:flex; gap:6px; overflow:auto; margin:0; padding:0; list-style:none; }
-.canvas-order li { flex:1 0 100px; min-width:0; max-width:240px; display:grid; gap:2px; padding:4px 8px; border-left:3px solid var(--hairline); color:var(--foreground); font-size:0.75rem; line-height:1.5; }
-.canvas-order li strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
-.canvas-order li span { line-height:1.6; color:var(--muted-foreground); }
-.canvas-order li[data-status="running"] { border-left-color:var(--context); background:color-mix(in oklab, var(--context) 14%, var(--card)); }
-.canvas-order li[data-status="succeeded"] { border-left-color:var(--success); }
-.canvas-order li[data-status="failed"] { border-left-color:var(--destructive); }
-.canvas-critical { display:grid; gap:2px; margin:6px 0 0; padding:6px 8px; border-left:2px solid var(--foreground); color:var(--foreground); font-size:0.78125rem; line-height:1.35; overflow-wrap:anywhere; cursor:default; }
-.canvas-critical span { line-height:1.6; color:var(--muted-foreground); }
 .canvas-help { margin:6px 4px 0; color:var(--muted-foreground); font-size:0.75rem; line-height:1.4; }
 [data-kind="mother"], [data-kind="father"] { --kind:var(--foreground); } [data-kind="agent"] { --kind:#6d5bd0; }
 .dark [data-kind="agent"] { --kind:#ab84ff; }

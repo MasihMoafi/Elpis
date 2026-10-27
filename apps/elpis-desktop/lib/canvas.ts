@@ -179,17 +179,6 @@ export function waves(graph: CanvasGraph): Map<string, number> {
   return wave;
 }
 
-/** The critical path: the longest chain of agents, each waiting for the one before. However many run at once, the
- * run takes at least as many rounds as it has agents; on a tie, the chain found first in board order. */
-export function criticalPath(graph: CanvasGraph): string[] {
-  const order = waves(graph), ids = new Set(order.keys()), longest = new Map<string, string[]>();
-  for (const id of [...ids].sort((a, b) => order.get(a)! - order.get(b)!)) {
-    const before = graph.edges.filter(edge => waits(edge) && edge.target === id && ids.has(edge.source)).map(edge => longest.get(edge.source) ?? []);
-    longest.set(id, [...before.reduce((best, chain) => chain.length > best.length ? chain : best, [] as string[]), id]);
-  }
-  return [...longest.values()].reduce((best, chain) => chain.length > best.length ? chain : best, [] as string[]);
-}
-
 /** A graph's shape for a thumbnail: how many agents start in each Kahn wave. */
 export function shapeOf(graph: CanvasGraph): number[] {
   const order = waves(graph), columns: number[] = [];
