@@ -1437,16 +1437,16 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const capturedLog = run && <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
     {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
   </ol>;
-  // The side panel shows only what was asked for: the selected agent or agents, the Mother, or the patterns.
-  const side = panelOpen && Boolean(sourceId || selected || chosen.length > 1 || motherOpen || morePatterns);
-  return <section className="agents-canvas" aria-label="Workflows" data-recorded={recordedRun ? true : undefined} data-panel={side ? "open" : "closed"}>
+  return <section className="agents-canvas" aria-label="Workflows" data-recorded={recordedRun ? true : undefined} data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
       {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
         <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
-        <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting || run && !over(run))} onChange={event => {
+        <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting)} onChange={event => {
           const value = event.target.value;
+          // The catalogue stays open to read during a run; loading a pattern waits for the run.
           if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
           if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
+          if (run && !over(run)) { setNotice("Wait for this run to finish before changing its pattern."); return; }
           const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
         }}><option value="auto">Auto · Elpis chooses</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
           {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
@@ -1471,7 +1471,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       {run && <Button variant="ghost" size="icon-sm" aria-label="Open run chat" title="Open run chat" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} /></Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="icon-sm" aria-label="Auto-arrange" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} /></Button>
-      <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={side} title={side ? "Hide the side panel: the board takes the whole width" : "Show the patterns, or the selected agent"} onClick={() => { if (side) { showPanel(false); setMorePatterns(false); } else { showPanel(true); if (!selection.length) setMorePatterns(true); } }}><AgentsIcon size={16} /></Button>
+      <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns and the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
       {!recordedRun && <div className="canvas-run-control">
         <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
         {!notice && (starting || run && !over(run)) && <span id={runReasonId} className="sr-only" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
@@ -1572,6 +1572,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="ghost" size="sm" onClick={() => addNote()}><StickyNote size={14} />Note <kbd aria-hidden="true">Shift+S</kbd></Button>
         <Button variant="ghost" size="sm" className="canvas-toolbar-more" onClick={() => openAdder()} title="Type a prompt, or how many, the model and thinking, then the prompts; Tab opens it too">Command <kbd>Tab</kbd></Button>
         <Button variant="ghost" size="sm" aria-label="Arrange by run order" title="Arrange by run order and fit the view" onClick={tidy}><ListOrdered size={14} />Arrange <kbd aria-hidden="true">Shift+Alt+T</kbd></Button>
+        {/* The guide to managing agents mounts here (components/canvas-guide-help.tsx), always one click away. */}
+        <section className="canvas-guide" aria-label="Guide" />
       </div>
       {graph.template === "recursive" && <label className="canvas-round-limit">Round limit <Input className="w-20" type="number" aria-label="Round limit" min={1} max={100} value={graph.roundLimit ?? ""} onChange={event => setGraph(current => ({ ...current, roundLimit: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
       {patternCommand !== null && <form className="canvas-pattern-command hud-menu" aria-label="Workflow command" onSubmit={event => {
@@ -1615,7 +1617,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
         <Button variant="outline" size="sm" onClick={() => { setGraph(undoLoad.previous); setUndoLoad(null); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); }}>Undo</Button>
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setUndoLoad(null)}><X size={13} /></Button></p>}
     </div>
-    {!side ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
+    {!panelOpen ? null : sourceId ? <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} /> : selected ? <aside className="canvas-side" aria-label="Selected agent">
       <p className="hud-menu-title">Agent{states[selected.id] ? ` · ${STATUS_LABEL[states[selected.id].status]}` : ""} · {CHECK_LABEL[states[checkOf(selected.id)]?.status ?? "idle"]}</p>
       <label>Name<Input ref={nameField} aria-label="Name" title={selected.data.title} value={selected.data.title} maxLength={256} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); promptField.current?.focus(); } }} onChange={event => edit({ title: event.target.value })} /></label>
       <label>Prompt<Textarea ref={promptField} aria-label="Prompt" rows={5} value={selected.data.instruction} placeholder="What this agent should do; left empty, Elpis fills it from the goal" onChange={event => edit({ instruction: event.target.value, title: promptName(selected.data, event.target.value) })} /></label>
@@ -1686,8 +1688,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
           <a className={buttonVariants({ variant: "link", size: "xs" })} href={`#workflow-sources-${template.id}`} aria-label={`Sources for ${template.name}`} onClick={event => { event.preventDefault(); setSelection([]); setSourceId(template.id); }}>Sources</a></div>)}
       </section>)}
       </details>
-      <section className="canvas-guide" aria-label="Guide">
-      </section>
     </aside>}
     {notice && !historicalNotice && <div id={runReasonId} className="canvas-notice canvas-error-notice" role="alert">
       <div className="canvas-error-details" role="region" aria-label="Workflow error details" tabIndex={0}>{notice}</div>

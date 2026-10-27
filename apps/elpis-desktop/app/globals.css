@@ -1014,6 +1014,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .canvas-run-control > button { flex:none; }
 .canvas-header > .canvas-name-group { flex-shrink:1; }
 .canvas-name-group .canvas-name { width:160px; }
+.canvas-toolbar > .canvas-guide { display:flex; margin-inline-start:6px; padding-inline-start:6px; border-inline-start:1px solid var(--hairline); }
 @container agents-canvas (max-width:760px) {
   .canvas-header > .canvas-name { flex-basis:140px; }
   .canvas-board .canvas-minimap { display:none; }

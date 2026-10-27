@@ -64,7 +64,8 @@ test('The command menu opens the guide; topics and the Workflows back link work 
     await page.getByRole('region', { name: 'Workflows', exact: true }).waitFor();
     await command(page, 'Guide');
     await guide(page).waitFor();
-    assert.equal(f.posts.filter(p => /workflows|turns|\/api\/threads$/.test(p.path)).length, 0);
+    // Opening Workflows prepares its sandbox folder (/api/workflows/workspace, SPEC W6); nothing runs.
+    assert.equal(f.posts.filter(p => /workflows\/run|turns|\/api\/threads$/.test(p.path)).length, 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -76,8 +77,9 @@ test('Canvas help opens the guide and returns to the board', async () => {
     await openPatterns(page.getByRole('region', { name: 'Workflows', exact: true }));
     await page.getByRole('button', { name: /^Voting/ }).click();
     const help = page.getByRole('region', { name: 'Guide', exact: true });
+    // The guide stays one click away under the board, whatever the side panel shows.
     await page.locator('.react-flow__node-agent').first().click();
-    await help.waitFor({ state: 'detached' });
+    await help.waitFor();
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     await help.getByRole('button', { name: 'Guide to managing agents', exact: true }).click();
     await guide(page).waitFor();

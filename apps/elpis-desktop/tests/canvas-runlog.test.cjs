@@ -54,7 +54,8 @@ test('the timer advances in either view and stops on completion, including a new
     const clock = canvas.getByRole('region', { name: 'Run clock', exact: true });
     await clock.waitFor(); const first = await clock.locator('strong').innerText();
     await page.waitForFunction(value => document.querySelector('[aria-label="Run clock"] strong')?.textContent !== value, first);
-    assert.ok(await clock.locator('strong').evaluate(el => parseFloat(getComputedStyle(el).fontSize)) >= 32);
+    // 27 Oct: the clock is a small time beside the run's status in the header, not a block on the board.
+    assert.equal(await clock.evaluate(el => Boolean(el.closest('.canvas-header'))), true);
     await canvas.getByRole('radio', { name: 'Flat', exact: true }).click(); await clock.waitFor();
     f.advance(4); await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
     const ended = await clock.locator('strong').innerText(); await page.waitForTimeout(2100);

@@ -84,9 +84,7 @@ test('agents canvas, isometric: agents as buttons to select and open, run state,
     await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).getByText(/^2 agents selected$/i).waitFor();
     const empty = await board.boundingBox();
     await page.mouse.click(empty.x + 8, empty.y + 8);
-    // Nothing selected, nothing asked for: no side panel.
-    await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).waitFor({ state: 'detached' });
-    assert.equal(await canvas.locator('.canvas-side').count(), 0);
+    await canvas.getByRole('complementary', { name: 'Architectures', exact: true }).waitFor();
     // The Mother opens her panel.
     await board.getByRole('button', { name: /^Mother:/ }).click();
     await canvas.getByRole('complementary', { name: 'Mother', exact: true }).waitFor();

@@ -372,8 +372,8 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).waitFor();
     await canvas.getByRole('complementary', { name: 'Selected agent', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();
 
-    // Done closes the agent's panel, and with nothing asked for no other panel takes its place.
-    await canvas.getByRole('complementary').waitFor({ state: 'detached' });
+    // The guide to managing agents stays one click away under the board.
+    await canvas.getByRole('region', { name: 'Guide' }).getByRole('button', { name: 'Guide to managing agents', exact: true }).waitFor();
 
     // The header fits a small window: nothing runs past its edge or is cut off.
     for (const width of [1130, 960]) {
