@@ -24,6 +24,26 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/browser-annotate.test.cjs": {
+      "blob": "88b44997918eb5dc9be9ab7af5764843e6ec5934",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "Masih 27 Oct: add real modal/popover annotation without activation or dismissal, and normal interaction after leaving; retain click, drag, text, Space, Escape, marker and inner scrolling checks."
+    },
+    "tests/matilda.test.cjs": {
+      "blob": "017932bb6a34c4e471d64f7e9b415a3df1c882cc",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "Masih 27 Oct: an open editor is unfinished even after pasting and long pauses. Supersede forced closure by replies; prove complete dispatch after editing ends, focus during late reply and pending-note retention after cancelled queued picture dispatch. Retain drawing, persona and provider-failure checks."
+    },
+    "tests/love-spot-voice.test.cjs": {
+      "blob": "53691b45256261c32f6b7a1eead8e0788c58eb2e",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "Masih 27 Oct: hide unavailable board/chat audio instead of disabled controls; retain text, persona, ordinary read-aloud and zero audio-I/O proof."
+    },
+    "tests/voice.test.cjs": {
+      "blob": "e9a9f61c6d24bb46211340a7e8e34df71a065bd5",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "Masih 27 Oct: hide unavailable audio during Love Spot and unresolved origin. Preserve ordinary audio positives, positively prove resolved ordinary voice, and retain zero microphone, peer and audio-request boundaries."
+    },
     "tests/workflows-wf1.test.cjs": {
       "blob": "2b6c5657424d13bd4cf9be425a7b4852925ba31f",
       "approval": "71e0791d2582c383bf32653d2bd7c984f743f34a",
@@ -90,9 +110,9 @@ export const retainedUpdates = {
       "reason": "Wait for the configured provider default, its actual credits and enabled Send before exercising routing. Do not reselect a model. Preserve every default, provider, model, pointer, keyboard and request assertion; the earlier generic Model-visible check ran before settings and connection finished."
     },
     "tests/love-clarity.test.cjs": {
-      "blob": "6c3dda6ccf1a6d670c3d92a3ad7e9f4c524f1712",
-      "approval": "902db1c847c47042ca4514c2ac634dbd91dc6c76",
-      "reason": "Masih 26 Oct: visiting Love Spot or its chat acknowledges its badge; ordinary chats do not, and later replies notify again. Unverified audio stays unavailable. Give workflow history its own coordinator so the ordinary chat remains ordinary. History and Workflow history follow recoverable history in 902db1c84; retain progress, palette, no-load-notification and both-theme checks."
+      "blob": "343243034b042a795b34100d50c595f2783c598d",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "Masih 26 Oct: visiting Love Spot or its chat acknowledges its badge; ordinary chats do not, and later replies notify again. Unverified audio stays unavailable. Give workflow history its own coordinator so the ordinary chat remains ordinary. History and Workflow history follow recoverable history in 902db1c84; retain progress, palette, no-load-notification and both-theme checks. Masih 27 Oct: hide unavailable Love Spot audio instead of disabled controls; preserve unread acknowledgement, ordinary chat and workflow checks."
     },
     "tests/workflow.test.cjs": {
       "blob": "dc6fe5ff3626c0363b97c62e6972c5a9a08e640e",
@@ -195,9 +215,9 @@ export const retainedUpdates = {
       "reason": "Isolated fixtures use the standard temporary directory on a fresh runner, without depending on a personal cache folder. All creator-history, folded-branch, keyboard, provider and persistence assertions remain."
     },
     "tests/browser-panel.test.cjs": {
-      "blob": "3272ad4cadc3dc05d26728f8553f89907463e0e0",
-      "approval": "b356030ddf001d5f993765c72b6fee3a79131d42",
-      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
+      "blob": "787eeb464fef5276f653ec2cc29b6cbcf0612eb0",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. Masih 27 Oct: add Shift/Ctrl/Cmd selection, grouped icon menu, close selected/other/right, real URL sidebar pins, rename/mute, compact empty pane after full view and preserved resized content. Retain previous panel and annotation checks."
     },
     "tests/terminal.test.cjs": {
       "blob": "96f3319406a764eaf54f55128faf4f74eda06a84",
@@ -513,9 +533,9 @@ export const retainedUpdates = {
       "reason": "Loose ends, Masih 22 Oct: \"Fix those loose-ends. delete them if we don't need them.\" The PDF test needed a full Chromium (absent here) to check the browser's own PDF viewer, which is not Elpis's code; it now checks the document frame, that no raw bytes open in an editor, and that the file is served as application/pdf. Every other test in the file is unchanged. A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks."
     },
     "tests/love-spot.test.cjs": {
-      "blob": "94499d6a2dee334bfe07795f9fccd8f987da049d",
-      "approval": "9f5a612d1d2f2a17850a3a457b1f815724d2568e",
-      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks. Love Spot, Masih 26 Oct: “its audio doesn't work; if you don't know how to do it - disable it” and “forget that functionality for now”. The temporary text-only gate supplies the unavailable reason; preserve all keyboard, tooltip association, layout and theme assertions. Resolve the focused information control's actual aria-describedby association instead of matching two equal tooltip texts. Preserve keyboard Tab/Escape, exact unavailable reason and every toolbar/theme/fit assertion."
+      "blob": "f5b82185db895c2a4dbf1414f0a5c0f3c1bd05f7",
+      "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
+      "reason": "Love Spot, Masih 22 Oct: \"I said remove the agents section in love spot; it's still there.\" The agents section is gone, so its steps leave this test (a3b057c0f). 23 Oct, Masih: \"remove the talk and matilda buttons.\" The toolbar has no Talk button, so the layout check no longer measures one; every other control is still measured. S35/R6: voice information stays compact and its unavailable reason remains keyboard accessible; retain wide/narrow and light/dark layout assertions. Keyboard focus must actually reach the shared tooltip; use Tab navigation and preserve all keyboard access, light/dark, wide/narrow and toolbar geometry checks. Shared tooltips expose role and an associated description. Preserve real Tab/Escape interaction, accessible unavailable information, all themes and complete toolbar fit checks. Love Spot, Masih 26 Oct: \u201cits audio doesn't work; if you don't know how to do it - disable it\u201d and \u201cforget that functionality for now\u201d. The temporary text-only gate supplies the unavailable reason; preserve all keyboard, tooltip association, layout and theme assertions. Resolve the focused information control's actual aria-describedby association instead of matching two equal tooltip texts. Preserve keyboard Tab/Escape, exact unavailable reason and every toolbar/theme/fit assertion. Masih 27 Oct: remove unavailable board audio controls, retain ordinary dictation plus both-theme sidebar, geometry and responsive fit checks."
     },
     "tests/love-dock.test.cjs": {
       "blob": "66f365c618094de453b2a8d8ef55afbb9b65ab56",
