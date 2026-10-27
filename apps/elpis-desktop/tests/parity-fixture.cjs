@@ -94,7 +94,9 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
     } catch { res.statusCode = 404; res.end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED,
+  let browser;
+  try {
+  browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, channel: browserChannel, headless: !process.env.ELPIS_UI_HEADED,
     args: browserArgs,
     ignoreDefaultArgs: showScrollbars ? ['--hide-scrollbars'] : undefined });
   const page = await browser.newPage({ viewport: { width, height }, colorScheme }); page.setDefaultTimeout(6000);
@@ -129,5 +131,11 @@ async function fixture({ staticDir = out, cwd = CWD, width = 1130, height = 660,
   const emitLove = data => { for (const stream of loveBoardStreams) stream.write(`data: ${JSON.stringify(data)}\n\n`); };
   const loveListening = () => loveBoardStreams.size;
   return { page, composer, errors, posts, open, shown, copied, close, turns, emit, listening, disconnectEvents, emitLove, loveListening };
+  } catch (error) {
+    await browser?.close().catch(() => {});
+    for (const stream of new Set([...streams, ...loveStreams, ...loveBoardStreams])) stream.end();
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+    throw error;
+  }
 }
 module.exports = { fixture, CWD, FILES, TURNS, THREADS };
