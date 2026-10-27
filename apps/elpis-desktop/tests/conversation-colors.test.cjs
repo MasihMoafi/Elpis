@@ -54,7 +54,7 @@ for (const colorScheme of ['light', 'dark']) for (const sidebarWidth of [256, 20
       assert.equal(await f.shown(), 'chat-a', 'assigning colour must not select the target conversation');
     }
     assert.equal(await row(page, 'workflow-agent').getByRole('img', { name: /^Agent mark / }).getAttribute('aria-label'), agentMark);
-    assert.equal(await row(page, 'workflow-root').locator('.thread-dot[data-state="error"]').count(), 1, 'failure status stays separate from manual colour');
+    assert.equal(await row(page, 'workflow-root').locator('.thread-dot[data-state="working"]').count(), 1, 'the live child’s working status stays separate from manual colour and the saved failure');
     const long = row(page, 'long-chat'); await unfocus(f);
     const title = await long.locator('.thread-title').evaluate(element => ({ width: element.clientWidth, overflow: getComputedStyle(element).textOverflow, clipped: element.scrollWidth > element.clientWidth }));
     assert.ok(title.width >= 60, 'a narrow idle row keeps usable title width'); assert.equal(title.overflow, 'ellipsis'); assert.equal(title.clipped, true);
