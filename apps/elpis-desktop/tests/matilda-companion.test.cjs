@@ -1,0 +1,40 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs/promises');
+const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+
+for (const colorScheme of ['light', 'dark']) test(`Matilda can be pinned and tucked away without changing the board (${colorScheme})`, { timeout: 45000 }, async t => {
+  const f = await loveSpotFixture({ colorScheme, prepareDirectory: async directory => {
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [{ id: 'keep-note', type: 'text', text: 'Keep my board safe', originalText: 'Keep my board safe', x: 100, y: 100, width: 230, height: 25, version: 1, versionNonce: 1, updated: 1, strokeColor: '#2f9e44', fontSize: 20, fontFamily: 5 }], appState: {}, files: {} }));
+  } });
+  t.after(() => f.close());
+  const page = f.page;
+  await page.setViewportSize({ width: 900, height: 800 });
+  await f.open(page);
+  await page.getByRole('button', { name: 'Pin Matilda', exact: true }).waitFor({ timeout: 3000 });
+  await page.getByRole('button', { name: 'Pin Matilda', exact: true }).click();
+  await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).waitFor();
+  const editorBefore = (await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort();
+  await page.reload();
+  await f.open(page);
+  await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).waitFor();
+  await page.setViewportSize({ width: 360, height: 760 });
+  const panel = await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).boundingBox();
+  assert.ok(panel.x >= 0 && panel.x + panel.width <= 360, JSON.stringify(panel));
+  const shots = path.join(process.env.ELPIS_COMPANION_EVIDENCE || f.root, 'screens');
+  await fs.mkdir(shots, { recursive: true });
+  await page.screenshot({ path: path.join(shots, `${colorScheme}.png`) });
+  await page.getByRole('button', { name: 'Unpin Matilda', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Pin Matilda', exact: true }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).count(), 0);
+  assert.deepEqual((await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort(), editorBefore);
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.reload();
+  await f.open(page);
+  await page.getByRole('button', { name: 'Pin Matilda', exact: true }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).count(), 0);
+  assert.equal(f.requests.some(url => /\/agents\/run|\/turn\/interrupt/.test(url)), false);
+});

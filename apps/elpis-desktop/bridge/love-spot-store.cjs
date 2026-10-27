@@ -522,6 +522,17 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       catch (cause) { if (cause.code !== 'ENOENT') throw cause; return false; }
     });
   }
-  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, close };
+  async function companion(update) {
+    return locked(async () => {
+      const file = path.join(directory, '.matilda-companion.json');
+      let value;
+      try { value = JSON.parse(await fs.readFile(file, 'utf8')); }
+      catch (cause) { if (cause.code !== 'ENOENT') throw fail('Matilda settings could not be read; they were left untouched.', 409); value = { pinned: [], favorite: null }; }
+      if (!record(value) || !Array.isArray(value.pinned)) throw fail('Matilda settings are invalid; they were left untouched.', 409);
+      if (update) { value = update(value); await atomic(file, JSON.stringify(value)); }
+      return value;
+    });
+  }
+  return { read, save, saveText, listPages, changePage, picture, boardPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, close };
 }
 module.exports = { createLoveSpot, newer, merge };

@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Dictation } from "@/components/dictation";
 import { Voice } from "@/components/voice";
 import { MatildaWho, useMatilda } from "@/components/love-spot-matilda";
+import { MatildaCompanion } from "@/components/matilda-companion";
 import { ModelPicker } from "@/components/model-picker";
 import { api, chatProvider, providerChoices, unreadable, type Model, type ProviderSettings } from "@/lib/api";
 import { keepModel, savedModel } from "@/lib/matilda";
@@ -534,6 +535,7 @@ function LoveSpotBoard({ dark, cwd, onOpenChat, toolbarHost }: LoveSpotProps) {
       if (id) { event.preventDefault(); event.stopPropagation(); void chooseScreenshot(id, "place"); }
     }}>
       {styleToggle}
+      <MatildaCompanion page={page?.session} replying={matilda.replying} />
       {initial ? <Excalidraw initialData={initial} excalidrawAPI={ready} onChange={changed} onPointerDown={(_tool: AppState["activeTool"], state: PointerDownState) => { lastPoint.current = state.origin; }} theme={dark ? "dark" : "light"}>
         {/* Excalidraw's own menu without its links to GitHub, X and Discord and without live collaboration. */}
         <MainMenu>

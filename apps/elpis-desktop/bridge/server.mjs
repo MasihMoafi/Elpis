@@ -20,6 +20,7 @@ import { createTrash } from './trash.mjs';
 import { smartPruneDetail } from './smart-prune.mjs';
 import { createLoveSpot } from './love-spot-store.cjs';
 import { createLoveSpotTalk } from './love-spot-talk.mjs';
+import { createMatildaCompanion } from './matilda-companion.mjs';
 import { createLoveAgents } from './love-agents.mjs';
 import { createDevServers, devServerRequest } from './dev-servers.mjs';
 import { createImprovements } from './improve.mjs';
@@ -105,7 +106,8 @@ export async function startDesktopServer(options = {}) {
   const listeners = new Set(); let origin; let closed = false;
   const loveSpot = createLoveSpot(options.loveSpot);
   await loveSpot.start();
-  const loveTalk = createLoveSpotTalk({ client, store: loveSpot, audio: options.loveSpotAudio ?? LOVE_SPOT_AUDIO });
+  const companion = createMatildaCompanion({ store: loveSpot });
+  const loveTalk = createLoveSpotTalk({ client, store: loveSpot, companion, audio: options.loveSpotAudio ?? LOVE_SPOT_AUDIO });
   // Love Spot's agents run as ACP agent processes (bridge/acp-nodes.mjs), not through this Elpis connection.
   const loveAgents = createLoveAgents(loveSpot, { ...options.loveAgents, env: profileEnvironment(options.elpisHome, options.loveAgents?.env) });
   const devServers = createDevServers();
@@ -196,6 +198,9 @@ export async function startDesktopServer(options = {}) {
           const value = method === 'GET' ? { screenshots: loveSpot.screenshotsList() } : await loveSpot.chooseScreenshot(await body(request, 32 * 1024 * 1024));
           response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
           return response.end(JSON.stringify(value));
+        }
+        if (url.pathname === '/api/love-spot/companion' && ['GET', 'POST'].includes(method)) {
+          return json(response, 200, method === 'GET' ? await companion.read(url.searchParams.get('page') ?? '') : await companion.act(await body(request)));
         }
         if (url.pathname === '/api/love-spot/talk') return json(response, 200, method === 'GET' ? await loveTalk.read() : await loveTalk.send(await body(request)));
         if (url.pathname === '/api/love-spot/voice/settings' && ['GET', 'POST'].includes(method)) {

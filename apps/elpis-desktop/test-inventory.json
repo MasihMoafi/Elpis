@@ -108,7 +108,8 @@
     "bridge/workflow-acp.test.mjs",
     "bridge/settings-files.test.mjs",
     "bridge/love-spot-voice.test.mjs",
-    "bridge/workflow-runs.test.mjs"
+    "bridge/workflow-runs.test.mjs",
+    "bridge/matilda-companion.test.mjs"
   ],
   "desktop": [
     "desktop/app-menu.test.cjs",
@@ -337,7 +338,8 @@
     "tests/load-earlier.test.cjs",
     "tests/sidebar-search.test.cjs",
     "tests/love-spot-voice.test.cjs",
-    "tests/workflow-notice.test.cjs"
+    "tests/workflow-notice.test.cjs",
+    "tests/matilda-companion.test.cjs"
   ],
   "opt-in": [
     "tests/context-ledger.runtime.mjs",
