@@ -24,6 +24,11 @@ const pageRemovalApproval = {
 };
 export const retainedUpdates = {
   "988aad0e78bd264c00e435be07598e79f08941e8": {
+    "tests/canvas-father.test.cjs": {
+      "blob": "78c1053e9cf7bc9fa66af647dbc7a4e254b6030e",
+      "approval": "83d8782efe44951a031ad62e860228650d5d070f",
+      "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
+    },
     "tests/browser-annotate.test.cjs": {
       "blob": "88b44997918eb5dc9be9ab7af5764843e6ec5934",
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
@@ -65,9 +70,9 @@ export const retainedUpdates = {
       "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/canvas-run.test.cjs": {
-      "blob": "982301976d112c67f5a6b5a4c9e2b85ab79e77ed",
-      "approval": "008cc33a1b57789dbd1857ed8f86e657a240940c",
-      "reason": "Masih: errors must stay at the bottom and the workflow must remain safe and understandable. Preserve long-detail containment, complete keyboard-scrolled text, Dismiss, Run description, both views/themes/sizes and all existing run journeys. Extend the same failed-writer case so selecting error text cannot select all agents, Backspace cannot delete agents, and Home scrolls the details instead of changing the graph view."
+      "blob": "91541bbde8ef1010ad9526b8e51f845fddce3c35",
+      "approval": "83d8782efe44951a031ad62e860228650d5d070f",
+      "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
     },
     "tests/canvas-fit.test.cjs": {
       "blob": "68d1bd78b5a8b0d4c2aca6850354a47fb1f7a1f2",
@@ -80,9 +85,9 @@ export const retainedUpdates = {
       "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
     },
     "tests/canvas-basics.test.cjs": {
-      "blob": "b194f149beb9f14bc5fb4790f71d2f336381a1c5",
-      "approval": "e1f0ddace744496160e8f1aadb10d081e8d72488",
-      "reason": "Masih overnight workflow request, 26 Oct: plain-language creation and a few selectable patterns, with the full catalogue under More patterns. Existing catalogue journeys reveal that catalogue before using its controls; every original action and assertion remains. Extend the owning entry journey for empty context, failed/late planning, Undo/Redo, saved request, offline editing and stale in-flight attempts; retain both views, geometry, placement and runtime checks."
+      "blob": "a0a0b8feda74903d71aebccc170706b474417b66",
+      "approval": "83d8782efe44951a031ad62e860228650d5d070f",
+      "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
     },
     "tests/agents-guide.test.cjs": {
       "blob": "3fea4f19a19a338fc4861a189965b3d67448b2d2",
@@ -175,9 +180,9 @@ export const retainedUpdates = {
       "reason": "Approved live effort selection persists immediately through the effort route. Preserve queue model, effort and Plan choices and all focus, send and everyday-use assertions."
     },
     "tests/effort-shortcuts.test.cjs": {
-      "blob": "57d89105f4ad958373917637b136ab9fb7052000",
-      "approval": "325dac7f8f719014b25252b0e369bf0e1bee7b2a",
-      "reason": "Approved live effort selection persists immediately through the effort route. Keep keyboard/manual selector agreement and reload proof; subsequent turns do not duplicate an already saved override."
+      "blob": "feb1e6ad351494b73744bb12817951513830f5dc",
+      "approval": "83d8782efe44951a031ad62e860228650d5d070f",
+      "reason": "Masih 27 Oct: workflow History dismisses outside/on Escape; new drafts remain available during active runs; sandbox and project selection preserve the board; saved runs show their actual team in chat and both views; remove redundant sidebar colour dots; Ctrl/Cmd+A follows explicit board or editor focus. Retain existing behavior checks, aim node-selection journeys at the focused board, and add focused recovery/identity regressions without advancing the retained baseline."
     },
     "tests/composer-keys.test.cjs": {
       "blob": "1523a01cb5fdef7b35d63f309a39b6523890650b",
