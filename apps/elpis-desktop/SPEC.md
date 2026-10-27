@@ -353,3 +353,10 @@ The shared Load earlier messages control sits on its own row with a 24px gap bef
 The saved workflow chat and both canvas views share one observed live-team summary. Show the Mother/root chat truthfully, its latest actual report, current agents and recursively spawned descendants even with sidebar rows collapsed. Keep saved failures and task routing historical; never replace them with current child model settings. A live child cannot disappear behind a terminal saved-run status. Resume cannot launch duplicate work while a related agent is active. No model request starts merely by opening or refreshing progress. Check paginated lineage, cross-run isolation, live→idle transition, both views and unchanged draft.
 
 Sidebar status keeps its original automatic left-hand position and unread action; manual colour is a separate palette action. Bookmark changes must persist through native workspace IPC without losing existing state. Settings starts beside navigation at readable width, unsupported Flex is absent, and existing unsupported saved values are not silently rewritten. The sidebar settles on complete rows above its footer. Chat menus group organization and Open in actions; singular and multi-selection labels match their targets.
+
+
+## Long messages — 27 October 2026
+
+Masih: “when a message is too long there should be an option to collapse it.”
+
+Long user messages and assistant replies share a visible Collapse message / Expand message control. Messages start expanded. Rendered height determines eligibility, including Persian text and narrow layouts; short messages gain no control. A collapsed message keeps a bounded preview. Resizing and streaming do not undo the chosen state. Stored text, complete Copy, attachments, reply context and editing stay intact. Check both roles/themes, keyboard operation, full Copy while collapsed and an unchanged composer draft through the existing chat owner; then build and install forward.

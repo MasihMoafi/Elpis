@@ -276,3 +276,42 @@ test('the new surfaces paint no orange in the light theme: the @ picker, the + m
   await page.getByRole('button', { name: 'Show side panel', exact: true }).click(); await page.locator('.side-panel').waitFor();
   assert.deepEqual(await oranges(page), [], 'the side panel beside the chat');
 }));
+
+// Long text is optional to fold; folding must never change the source used by Copy.
+for (const colorScheme of ['light', 'dark']) test(`long messages fold and expand without losing text · ${colorScheme}`, () => using({
+  colorScheme, width: 1100, height: 900,
+  chat: [
+    ['long', Array.from({ length: 45 }, (_, i) => `بند ${i + 1}: این متن فارسی برای بررسی کامل پیام است.`).join('\n\n'), Array.from({ length: 35 }, (_, i) => `**Section ${i + 1}**\n\nThe complete explanation stays available, including [this reference](https://example.invalid).`).join('\n\n')],
+    ['short', 'A short message.', 'A short reply.'],
+  ],
+}, async f => {
+  const { page, composer } = f;
+  await f.open('chat-a'); await composer.fill('Keep my unfinished draft');
+  for (const selector of ['.user-turn', '.message.agent']) {
+    const area = page.locator(selector).first(), body = selector === '.user-turn' ? area.locator('.message.user') : area;
+    const collapse = body.getByRole('button', { name: 'Collapse message', exact: true });
+    await collapse.waitFor(); assert.equal(await collapse.getAttribute('aria-expanded'), 'true', 'long messages start fully readable');
+    await collapse.scrollIntoViewIfNeeded();
+    const expandedHeight = (await body.boundingBox()).height;
+    await collapse.click();
+    const expand = body.getByRole('button', { name: 'Expand message', exact: true });
+    await expand.waitFor(); assert.equal(await expand.getAttribute('aria-expanded'), 'false');
+    assert.ok((await body.boundingBox()).height < expandedHeight / 2, 'the collapsed preview saves meaningful space');
+    await area.hover(); await area.getByRole('button', { name: selector === '.user-turn' ? 'Copy message' : 'Copy reply', exact: true }).click();
+    assert.equal(await f.copied(), f.turns[0][selector === '.user-turn' ? 1 : 2], 'Copy includes text beyond the preview');
+    await page.setViewportSize({ width: 820, height: 900 });
+    assert.equal(await expand.getAttribute('aria-expanded'), 'false', 'resizing preserves the choice');
+    if (process.env.ELPIS_COLLAPSE_SHOTS) {
+      await expand.scrollIntoViewIfNeeded();
+      await fs.mkdir(process.env.ELPIS_COLLAPSE_SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.ELPIS_COLLAPSE_SHOTS, `${selector === '.user-turn' ? 'user' : 'reply'}-${colorScheme}.png`) });
+    }
+    await expand.focus(); await page.keyboard.press('Space');
+    await collapse.waitFor(); assert.equal(await collapse.getAttribute('aria-expanded'), 'true', 'keyboard expands the full message');
+    assert.ok((await body.boundingBox()).height > expandedHeight / 2);
+    await page.setViewportSize({ width: 1100, height: 900 });
+  }
+  for (const selector of ['.user-turn', '.message.agent']) assert.equal(await page.locator(selector).last().getByRole('button', { name: /^(?:Collapse|Expand) message$/ }).count(), 0, 'short messages have no extra control');
+  assert.equal(await composer.inputValue(), 'Keep my unfinished draft');
+  assert.equal(f.posts.filter(post => post.path.endsWith('/turns')).length, 0, 'folding never sends a turn');
+}));
