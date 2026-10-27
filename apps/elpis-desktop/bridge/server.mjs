@@ -9,7 +9,7 @@ import { LOVE_SPOT_AUDIO } from '../lib/love-spot-audio.mjs';
 import { planCanvas } from './canvas-plan.mjs';
 import { createExperimentLab } from './experiment-lab.mjs';
 import { listDirectory, listFiles, readFile, readFileAsset, searchFiles, writeFile } from './files.mjs';
-import { listFolders, projectDirectory } from './folders.mjs';
+import { listFolders, projectDirectory, workflowWorkspace } from './folders.mjs';
 import { isRepository } from './git.mjs';
 import { createTools } from './tools.mjs';
 import { createTranscription } from './transcription.mjs';
@@ -342,6 +342,7 @@ export async function startDesktopServer(options = {}) {
         if (url.pathname === '/api/context/switches') return json(response, 200, method === 'GET' ? await client.contextSwitches() : await client.saveContextSwitches(await body(request)));
         if (url.pathname === '/api/hooks') return json(response, 200, method === 'GET' ? await client.hooks() : await client.saveHook(await body(request)));
         if (url.pathname === '/api/memories/reset' && method === 'POST') return json(response, 200, await client.resetMemories(await body(request)));
+        if (url.pathname === '/api/workflows/workspace' && method === 'POST') { object(await body(request), []); return json(response, 200, await workflowWorkspace(options.elpisHome ?? elpisHome())); }
         if (url.pathname === '/api/workflows/history' && method === 'GET') {
           if ([...url.searchParams.keys()].length) throw new BridgeError('Unexpected workflow history parameters');
           return json(response, 200, await client.workflowHistory());
@@ -373,6 +374,8 @@ export async function startDesktopServer(options = {}) {
         if (workflowMessage && method === 'POST') return json(response, 200, await client.steerWorkflow(workflowMessage[1], workflowMessage[2], await body(request)));
         const workflowMerge = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/merge$/i);
         if (workflowMerge && method === 'POST') return json(response, 200, await client.mergeWorkflow(workflowMerge[1], await body(request)));
+        const workflowResume = url.pathname.match(/^\/api\/workflows\/([a-f0-9-]{36})\/resume$/i);
+        if (workflowResume && method === 'POST') return json(response, 200, await client.resumeWorkflow(workflowResume[1], await body(request)));
         // Sidebar deletion: archived now, Ctrl+Z brings back the newest, quitting deletes for good.
         if (url.pathname === '/api/trash' && method === 'POST') return json(response, 200, await trash.trash(object(await body(request), ['threadIds']).threadIds));
         if (url.pathname === '/api/trash/undo' && method === 'POST') { object(await body(request), []); return json(response, 200, await trash.undo()); }

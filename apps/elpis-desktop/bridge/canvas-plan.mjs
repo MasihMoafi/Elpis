@@ -163,7 +163,6 @@ function check(answer, { folders, agents: board, maxAgents }) {
     const own = new Set(existing?.folders);
     const chosen = [...new Set(textList(agent, 'folders', label))];
     for (const folder of chosen) if (!listed.has(folder) && !own.has(folder)) throw refuse(`${label} uses the folder "${folder}", which is not in the project's folder list`);
-    if (!chosen.length && folders.length && !existing) throw refuse(`${label} needs at least one folder`);
     return { key: agent.key, title: agent.title.trim(), prompt: agent.prompt.trim(), folders: chosen, doneWhen: textList(agent, 'doneWhen', label), waitsFor: [...new Set(textList(agent, 'waitsFor', label))] };
   });
   for (const agent of agents) for (const key of agent.waitsFor) if (!seen.has(key)) throw refuse(`Agent "${agent.key}" waits for "${key}", which is not in the plan`);

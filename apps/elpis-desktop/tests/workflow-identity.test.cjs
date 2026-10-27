@@ -63,15 +63,15 @@ for (const colorScheme of ['light', 'dark']) test(`workflow history keeps runnin
   } finally { await f.close(); }
 });
 
-for (const colorScheme of ['light', 'dark']) test(`four saved workflows have distinct names/colours and twelve nested legacy step chats (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`four saved workflows have distinct names, one status indicator and twelve nested legacy step chats (${colorScheme})`, async () => {
   const f = await open(colorScheme), { page } = f;
   try {
     await eventually(async () => assert.equal(await workflows(page).locator('.thread-row:not(.child)').count(), 4));
     const names = await workflows(page).locator('.thread-row:not(.child) .thread-title').allTextContents();
     assert.equal(new Set(names).size, 4, 'legacy duplicate run names get distinct display names');
     assert.ok(names.includes('Fix a bug 2'));
-    const colours = await workflows(page).locator('.thread-row:not(.child) .workflow-mark').evaluateAll(items => items.map(el => getComputedStyle(el).backgroundColor));
-    assert.equal(new Set(colours).size, 4, 'automatic colours distinguish all four neighbours');
+    assert.equal(await workflows(page).locator('.workflow-mark').count(), 0, 'workflow names and their section identify them without extra coloured dots');
+    assert.equal(await workflows(page).getByRole('button', { name: /^Colour for / }).count(), 0, 'sidebar status is not an extra workflow colour action');
     await sidebar(page).locator('section[aria-label="Projects"]').getByRole('button', { name: 'Projects', exact: true }).click();
     await page.mouse.move(800, 90);
     await shot(page, `sidebar-default-${colorScheme}`);
@@ -88,7 +88,7 @@ for (const colorScheme of ['light', 'dark']) test(`four saved workflows have dis
       assert.equal(await row(page, task.assignedThreadId).getAttribute('class').then(value => value.includes('child')), true);
       const parentX = await row(page, run.rootThreadId).locator('.thread-title').evaluate(el => el.getBoundingClientRect().x);
       const childX = await row(page, task.assignedThreadId).locator('.thread-title').evaluate(el => el.getBoundingClientRect().x);
-      assert.ok(childX >= parentX + 12, 'step text visibly indents beyond its parent, including the colour control');
+      assert.ok(childX >= parentX + 12, 'step text visibly indents beyond its parent, without a duplicate colour control');
       assert.equal(await sidebar(page).locator(`[data-thread-id="${task.assignedThreadId}"]`).count(), 1, 'no flat duplicate');
     }
     await page.mouse.move(800, 90);
@@ -135,7 +135,7 @@ test('two runs in one root chat stay separate and never borrow one another’s s
   } finally { await f.close(); }
 });
 
-test('workflow names reject duplicates beside the field; colour and duplication persist across header/Mother/sidebar', async () => {
+test('workflow names reject duplicates; canvas colour and separate sidebar names persist after duplication', async () => {
   const f = await open('light'), { page } = f;
   try {
     await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
@@ -151,7 +151,8 @@ test('workflow names reject duplicates beside the field; colour and duplication 
     await canvas.getByRole('button', { name: 'Workflow colour', exact: true }).click();
     await page.getByRole('menuitemradio', { name: 'Violet', exact: true }).click();
     const header = canvas.locator('.canvas-header .workflow-mark').first();
-    await eventually(async () => assert.equal(await markColor(row(page, 'chat-a').locator('.workflow-mark')), await markColor(header)));
+    const chosenColour = await markColor(header);
+    assert.equal(await row(page, 'chat-a').locator('.workflow-mark').count(), 0, 'the canvas colour is not a duplicate sidebar dot');
     assert.equal(await markColor(canvas.locator('.mother-node .workflow-mark')), await markColor(header), 'Mother and header use the same mark');
     await page.keyboard.press('Escape');
     await assertUiFit(canvas.locator('.canvas-header'), 'identity controls fit');
@@ -170,11 +171,7 @@ test('workflow names reject duplicates beside the field; colour and duplication 
     await eventually(async () => assert.equal(await markColor(canvas.locator('.iso-label[data-for="mother"] .workflow-mark')), await markColor(header)));
     await shot(page, 'identity-iso-dark');
     await canvas.getByRole('radio', { name: 'Flat', exact: true }).click();
-    await row(page, 'root-1').getByRole('button', { name: 'Colour for Fix a bug 2', exact: true }).click();
-    await page.getByRole('menuitemradio', { name: 'Green', exact: true }).click();
-    await page.keyboard.press('Escape');
-    const otherColour = await markColor(row(page, 'root-1').locator('.workflow-mark'));
-    assert.notEqual(otherColour, await markColor(header), 'recolouring another run leaves the current workflow alone');
+    assert.equal(await row(page, 'root-1').getByRole('button', { name: /^Colour for / }).count(), 0);
     await row(page, 'root-1').locator('.thread-actions').click();
     await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
     const rename = page.getByRole('alertdialog', { name: 'Rename conversation', exact: true });
@@ -189,12 +186,12 @@ test('workflow names reject duplicates beside the field; colour and duplication 
     assert.equal(await row(page, 'root-1').locator('.thread-title').innerText(), 'Fix an import');
     await canvas.getByRole('button', { name: 'Duplicate workflow', exact: true }).click();
     await eventually(async () => assert.equal(await name.inputValue(), 'Fix checkout 2'));
-    assert.notEqual(await markColor(canvas.locator('.canvas-header .workflow-mark').first()), await markColor(row(page, 'chat-a').locator('.workflow-mark')), 'duplicate gets its own colour');
+    assert.notEqual(await markColor(canvas.locator('.canvas-header .workflow-mark').first()), chosenColour, 'the duplicated canvas gets its own intentional colour');
     await page.reload(); await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
     await eventually(async () => assert.equal(await name.inputValue(), 'Fix checkout 2'));
     assert.equal(await row(page, 'chat-a').locator('.thread-title').innerText(), 'Fix checkout');
     assert.equal(await row(page, 'root-1').locator('.thread-title').innerText(), 'Fix an import');
-    assert.equal(await markColor(row(page, 'root-1').locator('.workflow-mark')), otherColour);
+    assert.equal(await row(page, 'root-1').locator('.workflow-mark').count(), 0);
     await name.fill('Typed without leaving the field');
     await page.reload(); await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
     await eventually(async () => assert.equal(await name.inputValue(), 'Typed without leaving the field', 'workflow-name typing survives reload before blur'));
@@ -264,6 +261,35 @@ test('a manually named step keeps its name while legacy names use recorded step 
     await eventually(async () => assert.equal(await row(page, 'step-0-0').locator('.thread-title').innerText(), 'Chosen step name'));
     assert.equal(await row(page, 'step-0-1').locator('.thread-title').innerText(), 'Build');
     assert.equal(f.posts.some(post => /\/name$/.test(post.path)), false);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('saved failed workflow opens its live team in chat and both canvas views without replacing the draft', async () => {
+  const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
+    tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.' }] };
+  const draft = { ...graph, name: 'Unfinished personal draft', workflowId: 'draft-kept' };
+  const f = await open('light', [saved], { 'elpis-workflow-draft-v1': JSON.stringify(draft) }, {}, { '/api/workflows': () => ({ data: [saved] }), '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }) });
+  try {
+    const { page } = f;
+    await row(page, 'chat-a').locator('.thread-link').click();
+    await page.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
+    const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
+    await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    await summary.getByText('Weekly usage limit reached.', { exact: true }).waitFor();
+    assert.equal(await page.getByText('This conversation has no messages yet.', { exact: true }).count(), 0);
+    const before = await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1'));
+    await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
+    const board = page.getByRole('region', { name: 'Workflows', exact: true });
+    await board.locator('.react-flow__node[data-id="evidence"]').waitFor();
+    assert.match(await board.locator('.react-flow__node[data-id="evidence"]').innerText(), /Inspect Pointt evidence/);
+    await page.getByRole('radio', { name: 'Isometric', exact: true }).click();
+    await page.getByRole('region', { name: 'Isometric board', exact: true }).getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1')), before, 'viewing the actual saved run never overwrites an unfinished draft');
+    await page.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Workflow request', exact: true }).waitFor();
+    assert.equal((await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')))).name, draft.name);
+    assert.equal(f.posts.some(post => /interrupt|cancel|resume|workflows\/run/.test(post.path)), false, 'opening or leaving a run does not restart or stop it');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

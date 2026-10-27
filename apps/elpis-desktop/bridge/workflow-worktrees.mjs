@@ -37,9 +37,9 @@ export async function mergeWorkflowReview(review, signal) {
 
 /** Each task sees only committed prerequisites. All candidate commits combine in a separate worktree before a
  * guarded fast-forward touches the source checkout. Failed/conflicting candidates stay available for inspection. */
-export async function workflowWorktrees(project, id) {
+export async function workflowWorktrees(project, id, saved) {
   const source = await git(project, ['rev-parse', '--show-toplevel']);
-  const base = await git(source, ['rev-parse', 'HEAD']);
+  const base = saved?.worktreeBase ?? saved?.review?.base ?? await git(source, ['rev-parse', 'HEAD']);
   const relative = path.relative(source, await fs.realpath(project));
   const home = path.join(path.dirname(source), `${path.basename(source)}-elpis`, 'workflows', id);
   const places = new Map(), commits = new Map();
@@ -49,9 +49,34 @@ export async function workflowWorktrees(project, id) {
     await git(source, ['worktree', 'add', '-q', '--no-track', '-b', branch, root, base]);
     return { root, branch, cwd: path.join(root, relative), inherited: new Set() };
   };
-  return {
+  if (saved?.worktrees) {
+    for (const place of saved.worktrees) {
+      if (!place.taskId || !Number.isSafeInteger(place.round)) continue;
+      const task = saved.tasks.find(task => task.id === place.taskId), key = `${place.taskId}-r${place.round}`;
+      if (!task || place.path !== path.join(home, key) || place.branch !== `elpis/${id}/${key}`) throw new BridgeError('Saved workflow workspace could not be verified. Existing work was preserved.', 409);
+      const actual = await fs.realpath(place.path);
+      if (actual !== place.path || await git(actual, ['branch', '--show-current']) !== place.branch) throw new BridgeError('A workflow workspace moved or changed branch. Existing work was preserved.', 409);
+      const start = place.start ?? (task.result?.candidateCommit ? await git(actual, ['rev-parse', `${task.result.candidateCommit}^`]) : await git(actual, ['merge-base', base, 'HEAD']));
+      const made = { root: actual, branch: place.branch, cwd: path.join(actual, relative), start, inherited: new Set() };
+      if (!place.start && !task.result?.candidateCommit && await git(actual, ['status', '--porcelain'])) throw new BridgeError('This older workflow has unfinished edits without a saved checkpoint. Its workspace is preserved; inspect it before recovery.', 409);
+      places.set(key, made);
+      if (task.status === 'succeeded' && task.result?.candidateCommit) { commits.set(key, task.result.candidateCommit); made.inherited.add(key); }
+    }
+    const inherit = (taskId, seen = new Set()) => {
+      if (seen.has(taskId)) return seen; seen.add(taskId);
+      for (const dependency of saved.tasks.find(task => task.id === taskId)?.dependsOn ?? []) inherit(dependency, seen);
+      return seen;
+    };
+    for (const [key, made] of places) {
+      const dependencies = inherit(key.slice(0, key.lastIndexOf('-r')));
+      for (const candidate of commits.keys()) if (dependencies.has(candidate.slice(0, candidate.lastIndexOf('-r')))) made.inherited.add(candidate);
+    }
+  }
+  return { base,
     async prepare(task, round) {
-      const key = `${task.id}-r${round}`, made = await create(key);
+      const key = `${task.id}-r${round}`;
+      if (places.has(key)) return places.get(key).cwd;
+      const made = await create(key);
       places.set(key, made);
       const needed = new Set();
       for (const [key, value] of places) {
@@ -94,6 +119,6 @@ export async function workflowWorktrees(project, id) {
       return { status: 'ready', source, base, branch: merged.branch, path: merged.root, commit: await git(merged.root, ['rev-parse', 'HEAD']),
         diff: diff.slice(0, 128000), diffTruncated: diff.length > 128000, stat: await git(merged.root, ['diff', '--stat', base, 'HEAD', '--']) };
     },
-    paths() { return [...places].map(([key, { root, branch }]) => ({ path: root, branch, ...(key === 'integration' ? {} : { taskId: key.slice(0, key.lastIndexOf('-r')), round: Number(key.slice(key.lastIndexOf('-r') + 2)) }) })); },
+    paths() { return [...places].map(([key, { root, branch, start }]) => ({ path: root, branch, ...(start ? { start } : {}), ...(key === 'integration' ? {} : { taskId: key.slice(0, key.lastIndexOf('-r')), round: Number(key.slice(key.lastIndexOf('-r') + 2)) }) })); },
   };
 }

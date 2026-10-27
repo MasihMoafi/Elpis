@@ -6,6 +6,7 @@ import path from 'node:path';
 import { BridgeError } from './client.mjs';
 import { listFolders } from './folders.mjs';
 import { startDesktopServer } from './server.mjs';
+import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cjs';
 
 const dirs = [
   'src/lib/deep/deeper', 'src/components', 'src/.hidden/inner', 'docs', 'empty', 'Zed',
@@ -93,4 +94,86 @@ test('GET /api/folders requires the session and answers { data } or a 400 messag
   await bad(`${query(root)}&extra=1`, /cwd/i);
   const post = await fetch(origin + query(root), { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, Cookie: cookie }, body: '{}' });
   assert.notEqual(post.status, 200);
+});
+
+async function workspaceServer(t, root, profile, methods = {}) {
+  const client = { on() {}, off() {}, close() {}, connected: true, pendingApprovals: [], ragEnvironment: async () => ({}), ...methods };
+  const app = await startDesktopServer({ client, staticDir: root, ...(profile ? { elpisHome: profile } : {}),
+    trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'drawing'), screenshots: path.join(root, 'screenshots') } });
+  t.after(async () => { await app.close(); removeTestTempDir(root); });
+  const launch = new URL(app.url), origin = launch.origin;
+  const auth = await fetch(origin + '/api/session', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: launch.hash.slice(7) }) });
+  const cookie = auth.headers.get('set-cookie').split(';')[0];
+  return { origin, cookie,
+    request: (headers = {}) => fetch(origin + '/api/workflows/workspace', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: cookie, ...headers }, body: '{}' }),
+  };
+}
+
+test('POST /api/workflows/workspace requires session and origin; each profile keeps one private non-Git sandbox and its contents', async t => {
+  const ambient = process.env.ELPIS_HOME;
+  t.after(() => { if (ambient === undefined) delete process.env.ELPIS_HOME; else process.env.ELPIS_HOME = ambient; });
+  for (const explicit of [true, false]) {
+    const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-workspace-'));
+    const ambientHome = path.join(root, 'ambient'), profile = explicit ? path.join(root, 'selected') : ambientHome;
+    process.env.ELPIS_HOME = ambientHome;
+    const app = await workspaceServer(t, root, explicit ? profile : undefined), cwd = path.join(profile, 'workflows', 'sandbox');
+    const noSession = await app.request({ Cookie: '' });
+    assert.equal(noSession.status, 401);
+    const noOrigin = await app.request({ Origin: '' });
+    assert.equal(noOrigin.status, 403);
+    await assert.rejects(fs.stat(cwd), { code: 'ENOENT' }, 'refused requests never create the sandbox');
+    const first = await app.request();
+    assert.equal(first.status, 200);
+    assert.deepEqual(await first.json(), { cwd });
+    const stat = await fs.stat(cwd);
+    assert.ok(stat.isDirectory());
+    assert.equal(stat.mode & 0o777, 0o700);
+    await assert.rejects(fs.stat(path.join(cwd, '.git')), { code: 'ENOENT' }, 'a workflow sandbox does not initialize Git');
+    const report = path.join(cwd, 'report.md');
+    await fs.writeFile(report, 'Keep this report.');
+    await fs.chmod(cwd, 0o755);
+    const again = await app.request();
+    assert.equal(again.status, 200);
+    assert.deepEqual(await again.json(), { cwd });
+    const reused = await fs.stat(cwd);
+    assert.deepEqual([reused.dev, reused.ino], [stat.dev, stat.ino], 'reopening reuses the existing folder');
+    assert.equal(reused.mode & 0o777, 0o700, 'an existing sandbox is private too');
+    assert.equal(await fs.readFile(report, 'utf8'), 'Keep this report.');
+    if (explicit) await assert.rejects(fs.stat(path.join(ambientHome, 'workflows', 'sandbox')), { code: 'ENOENT' }, 'the explicit profile wins over the ambient profile');
+  }
+});
+
+test('POST /api/workflows/workspace reports a blocked path without replacing the existing file or returning a cwd', async t => {
+  for (const blocked of ['workflows', 'workflows/sandbox']) {
+    const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-workspace-blocked-')), profile = path.join(root, 'profile');
+    const file = path.join(profile, blocked);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'Keep the blocking file.');
+    const app = await workspaceServer(t, root, profile);
+    const response = await app.request(), result = await response.json();
+    assert.equal(response.status, 500);
+    assert.equal(typeof result.error, 'string');
+    assert.equal(result.cwd, undefined);
+    assert.equal(await fs.readFile(file, 'utf8'), 'Keep the blocking file.');
+  }
+});
+
+
+test('POST /api/workflows/:UUID/resume authenticates and forwards the ACP run identity and model choice', async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-workflow-resume-')), calls = [];
+  const id = '12345678-1234-4234-8234-123456789abc', threadId = 'abcdef01-1234-4234-8234-123456789abc';
+  const result = { graphId: id, threadId, turnId: id };
+  const app = await workspaceServer(t, root, path.join(root, 'profile'), {
+    async resumeWorkflow(...args) { calls.push(args); return result; },
+  });
+  const route = `/api/workflows/${id}/resume`, body = { model: 'fixture-model', provider: 'fixture' };
+  const post = (headers = {}, target = route) => fetch(app.origin + target, { method: 'POST', headers: { Origin: app.origin, 'Content-Type': 'application/json', Cookie: app.cookie, ...headers }, body: JSON.stringify(body) });
+  assert.equal((await post({ Cookie: '' })).status, 401);
+  assert.equal((await post({ Origin: '' })).status, 403);
+  assert.equal((await post({}, `/api/workflows/wf_${id}/resume`)).status, 404, 'script-run IDs do not reach the ACP resume route');
+  assert.deepEqual(calls, []);
+  const response = await post();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), result);
+  assert.deepEqual(calls, [[id, body]], 'the existing graph and requested model reach the resume owner unchanged');
 });

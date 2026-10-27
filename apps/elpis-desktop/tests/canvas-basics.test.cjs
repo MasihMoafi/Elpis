@@ -8,6 +8,94 @@ const { assertUiFit } = require('./ui-fit.cjs');
 const { captureReview, chooseTheme } = require('./controls.cjs');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
 
+for (const colorScheme of ['light', 'dark']) test(`workflows start in their sandbox without a project and keep reports scoped (${colorScheme})`, async () => {
+  const sandbox = '/tmp/elpis-workflow-sandbox';
+  const root = { id: 'sandbox-root', name: 'Pointt review', cwd: sandbox, status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };
+  const f = await fixture({ colorScheme, cwd: '', storage: {
+    'elpis-projects-v1': JSON.stringify({ projects: [], selectedId: null }),
+  }, routes: {
+    '/api/workflows/workspace': () => ({ cwd: sandbox }),
+    '/api/folders': () => ({ data: [] }),
+    '/api/canvas/plan': body => planFor(body, []),
+    '/api/threads': body => body ? { thread: root } : { data: THREADS.map(thread => ({ ...thread, cwd: '' })), nextCursor: null },
+    '/api/repository': () => ({ repository: false }),
+    '/api/workflows/run': () => ({ graphId: '00000000-0000-0000-0000-000000000011' }),
+    '/api/workflows': () => ({ data: [] }),
+  } });
+  try {
+    const { page } = f;
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
+    await canvas.getByRole('button', { name: 'Choose project', exact: true }).filter({ hasText: 'Sandbox' }).waitFor();
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    const goal = 'Review Pointt and tell me the next three steps.';
+    await request.fill(goal);
+    await canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.react-flow__node-agent').length === 1);
+    const plan = f.posts.find(post => post.path === '/api/canvas/plan');
+    assert.equal(plan.body.cwd, sandbox); assert.equal(plan.body.goal, goal); assert.deepEqual(plan.body.agents, []);
+    const sent = page.waitForResponse(response => response.url().endsWith('/api/workflows/run') && response.request().method() === 'POST');
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click(); await sent;
+    assert.equal(f.posts.find(post => post.path === '/api/threads').body.cwd, sandbox);
+    const run = f.posts.find(post => post.path === '/api/workflows/run').body;
+    assert.equal(run.isolation, undefined);
+    assert.ok(run.tasks.every(task => task.writeScopes.length === 1 && task.writeScopes[0].startsWith('agents/')), 'review tasks write only their own report/check folders');
+    assert.equal(await request.inputValue(), goal);
+    assert.equal(f.posts.filter(post => post.path === '/api/workflows/workspace').length, 1);
+    if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/workflow-sandbox-${colorScheme}.png` });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('choosing a workflow project stays on the board, preserves its request and can return to the sandbox', async () => {
+  const sandbox = '/tmp/elpis-workflow-sandbox', project = { id: 'pointt', name: 'Pointt', cwd: '/tmp/pointt' };
+  const f = await fixture({ cwd: '', storage: {
+    'elpis-projects-v1': JSON.stringify({ projects: [project], selectedId: null }),
+  }, routes: { '/api/workflows/workspace': () => ({ cwd: sandbox }), '/api/folders': () => ({ data: [] }), '/api/canvas/plan': body => planFor(body, []) } });
+  try {
+    const { page } = f; await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    await request.fill('Keep this exact review request.');
+    await canvas.getByRole('button', { name: 'Choose project', exact: true }).click();
+    await page.getByRole('menuitem', { name: /Pointt/ }).click();
+    await canvas.waitFor(); assert.equal(await request.inputValue(), 'Keep this exact review request.');
+    await canvas.getByRole('button', { name: 'New workflow', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.react-flow__node-agent').length === 1);
+    assert.equal(f.posts.filter(post => post.path === '/api/canvas/plan').at(-1).body.cwd, project.cwd);
+    await canvas.getByRole('button', { name: 'Choose project', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Use sandbox', exact: true }).click();
+    await canvas.getByRole('button', { name: 'Choose project', exact: true }).filter({ hasText: 'Sandbox' }).waitFor();
+    const replanned = page.waitForResponse(response => response.url().endsWith('/api/canvas/plan') && response.request().method() === 'POST');
+    await canvas.getByRole('button', { name: 'New workflow', exact: true }).click(); await replanned;
+    const sandboxPlan = f.posts.filter(post => post.path === '/api/canvas/plan').at(-1);
+    assert.equal(sandboxPlan.body.cwd, sandbox); assert.equal(sandboxPlan.body.goal, 'Keep this exact review request.');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('workflow history dismisses outside and with Escape, restores focus and keeps the draft', async () => {
+  const f = await fixture({ routes: { '/api/workflows/history': () => ({ data: [] }) } });
+  try {
+    const { page } = f;
+    await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    await request.fill('Keep my unfinished workflow request.');
+    const history = canvas.getByRole('button', { name: 'History', exact: true });
+    await history.click(); await page.getByText('No workflows in history.', { exact: true }).waitFor();
+    await request.click();
+    await page.getByText('No workflows in history.', { exact: true }).waitFor({ state: 'hidden' });
+    assert.equal(await request.inputValue(), 'Keep my unfinished workflow request.');
+    await history.click(); await page.getByText('No workflows in history.', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByText('No workflows in history.', { exact: true }).waitFor({ state: 'hidden' });
+    assert.equal(await history.evaluate(node => node === document.activeElement), true);
+    assert.equal(await request.inputValue(), 'Keep my unfinished workflow request.');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('offline workflows keep the exact request editable, block callbacks, and design after reconnecting', async () => {
   const f = await fixture({ width: 1440, height: 900, cwd: '/tmp/demo', storage: {
     'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }),

@@ -1,3 +1,4 @@
+import { workflowModelRoutes } from "./workflow-models.mjs";
 import voiceHandoff from './voice-handoff.cjs';
 import { fastServiceTier } from '../lib/service-tier.mjs';
 import { profileEnvironment } from './profile-env.mjs';
@@ -214,7 +215,12 @@ export class DesktopClient extends EventEmitter {
     });
     this.#openSocket = openSocket; this.#retryDelay = reconnectDelayMs;
     this.#workflowRuns = createWorkflowRuns({ stateDir: path.join(profileHome, 'desktop-workflows'),
-      onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record), ...workflowOptions,
+      onSession: (_record, _task, id) => { this.#known.add(id); }, onEnd: record => this.#workflowEnded(record),
+      modelRoutes: async () => {
+        const [catalog, providers, policy] = await Promise.all([this.models(), this.providers(), this.#rpc('configRequirements/read', {}).catch(() => null)]);
+        // Unknown managed policy cannot authorize a different connection.
+        return policy === null ? [] : workflowModelRoutes(catalog.data ?? [], providers, policy.requirements);
+      }, ...workflowOptions,
       env: workflowEnv });
     this.#workflowHistory = createWorkflowHistory(path.join(profileHome, 'desktop-workflow-history.json'));
     this.#bind(socket);
@@ -1285,6 +1291,20 @@ export class DesktopClient extends EventEmitter {
   async steerWorkflow(id, taskId, body) {
     threadId(id); text(taskId, 'workflow node', 100); object(body, ['id', 'text']);
     return this.#workflowRuns.steer(id, taskId, body);
+  }
+  async resumeWorkflow(id, body) {
+    threadId(id); object(body, ['model', 'provider']);
+    if (body.provider !== undefined && body.model === undefined) throw new BridgeError('A recovery provider needs a model');
+    if (body.model !== undefined) text(body.model, 'recovery model', 200);
+    if (body.provider !== undefined) text(body.provider, 'recovery provider', 100);
+    const record = (await this.#workflowRuns.list()).find(record => record.id === id);
+    if (!record) throw new BridgeError('Workflow not found', 404);
+    return this.#mutate(record.rootThreadId, async () => {
+      const root = await this.#current(record.rootThreadId);
+      if (root.status?.type === 'active') throw new BridgeError('Wait for the current conversation turn before resuming this workflow', 409);
+      if (body.model !== undefined) { await this.models(); await this.#providerModel(body.model, body.provider ?? root.modelProvider); }
+      return this.#workflowRuns.resume(id, root, body);
+    });
   }
   async mergeWorkflow(id, body) {
     threadId(id); object(body, []); return this.#workflowRuns.merge(id);

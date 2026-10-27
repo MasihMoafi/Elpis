@@ -12,6 +12,7 @@ import { MenuRow } from "@/components/ui/menu-row";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkflowHistory } from "@/components/workflow-history";
+import { graphForWorkflow, readWorkflowRun, taskState, type WorkflowRunRef } from "@/components/workflow-chat";
 import { WorkflowColourMenu, WorkflowIdentityEditor, WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowIdentity } from "@/lib/workflow-identity";
 import { WorkflowSources } from "@/components/workflow-sources";
@@ -415,9 +416,9 @@ function AgentDashboard({ node, own, wave, status, check, clash, chat, waitsFor,
 /** The agents canvas: the Mother, ready-made architectures, agents wired by what they wait for and laid out in Kahn's
  * waves, and a run that follows each agent live. The graph is kept on this device (lib/canvas.ts). */
 /** `projectMenu` is the app's project chooser (components/project-picker.tsx), shown in the header: agents write inside the project. */
-type Props = { workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode };
+type Props = { workflowCatalog: WorkflowCatalog; models: Model[]; cwd?: string; dark: boolean; ready: boolean; onOpenChat: (id: string) => void; projectMenu?: React.ReactNode; recordedRun?: WorkflowRunRef; onLeaveRecordedRun?: () => void; onOpenRecordedRun?: (run: WorkflowRunRef) => void };
 export function AgentsCanvas(props: Props) {
-  return <ReactFlowProvider><Canvas {...props} /></ReactFlowProvider>;
+  return <ReactFlowProvider><Canvas key={props.recordedRun?.id ?? "draft"} {...props} /></ReactFlowProvider>;
 }
 
 /** Models listed by a provider other than the engine's own, fetched once per provider and settings version. */
@@ -429,10 +430,10 @@ function runFailure(detail: string) {
   return `${detail} Review this message and the agents' Info, then try Run graph again.`;
 }
 
-function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCatalog }: Props) {
+function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCatalog, recordedRun, onLeaveRecordedRun, onOpenRecordedRun }: Props) {
   const isoController = useRef<IsoController>(null);
   const flow = useReactFlow(), flowStore = useStoreApi(), board = useRef<HTMLDivElement>(null), pointer = useRef<XYPosition | null>(null), connectFrom = useRef<XYPosition | null>(null);
-  const [graph, setGraph] = useState<CanvasGraph>(initialGraph);
+  const [graph, setGraph] = useState<CanvasGraph>(() => recordedRun ? { name: "Workflow", workflowId: recordedRun.id, nodes: [], edges: [] } : initialGraph());
   const connection = useRef({ ready, generation: 0 });
   if (connection.current.ready !== ready) connection.current = { ready, generation: connection.current.generation + 1 };
   const runtimeAttempt = () => {
@@ -449,7 +450,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
     if (identity && before?.id === identity.id && before.name !== identity.name && graph.name === before.name) setIdentity({ name: identity.name });
   }, [identity, graph.name]);
   useEffect(() => {
-    if (!workflowCatalog.hydrated) return;
+    if (recordedRun || !workflowCatalog.hydrated) return;
     try {
       const item = workflowCatalog.ensure(graph.workflowId || crypto.randomUUID(), graph.name);
       if (graph.workflowId !== item.id || !identity) setGraph(current => ({ ...current, workflowId: item.id, name: item.name }));
@@ -506,14 +507,31 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   const reports = useRef(new Set<string>()), logList = useRef<HTMLOListElement>(null);
   const followLog = useRef(true);
   useEffect(() => { if (followLog.current && logList.current) logList.current.scrollTop = logList.current.scrollHeight; }, [log]);
+  // A retained run is a separate presentation, never the unfinished draft in local storage.
+  const retainedRun = recordedRun ?? workflowCatalog.runs.find(item => item.id === graph.workflowId);
+  useEffect(() => {
+    if (!retainedRun || !ready) return;
+    let live = true;
+    void readWorkflowRun(retainedRun).then(record => {
+      if (!live) return;
+      if (recordedRun) setGraph(graphForWorkflow(record));
+      const tasks = [...(record.tasks ?? []), ...(record.next?.tasks ?? [])];
+      setStates(Object.fromEntries(tasks.map(task => [task.id, { status: taskState(task.status), chat: task.assignedThreadId ?? null }])));
+      setRun({ rootThreadId: record.rootThreadId, graphId: record.id, status: record.status, startedAt: record.startedAt ?? record.createdAt ?? Date.now(),
+        ...(record.endedAt ? { endedAt: record.endedAt } : {}), ...(record.next ? { father: { tasks: [], threadId: record.next.threadId, graphId: record.next.graphId, status: record.next.status, reported: record.next.reported } } : {}) });
+      setLog(tasks.map(task => ({ at: Date.now(), agent: task.id, text: `${task.title || task.id} · ${task.status || "not recorded"}${task.failureReason ? ` · ${task.failureReason}` : ""}`, tone: task.status === "failed" || task.status === "blocked" ? "fail" : task.status === "succeeded" || task.status === "completed" ? "done" : "start" })));
+      setNotice(record.error || tasks.find(task => task.failureReason)?.failureReason || "");
+    }).catch(cause => { if (live) setNotice(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { live = false; };
+  }, [retainedRun?.id, retainedRun?.rootThreadId, ready]);
   const [, setFetched] = useState(0);
   const settings = useElpisSettings().data;
   // What Elpis allows: agents in one graph, and at once (bridge/elpis-features.mjs `agentLimits`).
   const allowed = settings?.agents ?? { graph: 256, atOnce: 6, source: "Elpis default" };
-  useEffect(() => { const timer = setTimeout(() => { if (!saveGraph(graph)) setNotice("Could not keep the graph on this device."); }, 300); return () => clearTimeout(timer); }, [graph]);
+  useEffect(() => { if (recordedRun) return; const timer = setTimeout(() => { if (!saveGraph(graph)) setNotice("Could not keep the graph on this device."); }, 300); return () => clearTimeout(timer); }, [graph, recordedRun]);
   // A change made just before the window closes or reloads is kept too: the page saves the latest board on its way out.
   const latest = useRef(graph); latest.current = graph;
-  useEffect(() => { const flush = () => saveGraph(latest.current); window.__elpisFlushWorkflow = flush; window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); if (window.__elpisFlushWorkflow === flush) delete window.__elpisFlushWorkflow; window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, []);
+  useEffect(() => { if (recordedRun) return; const flush = () => saveGraph(latest.current); window.__elpisFlushWorkflow = flush; window.addEventListener("pagehide", flush); window.addEventListener("beforeunload", flush); return () => { flush(); if (window.__elpisFlushWorkflow === flush) delete window.__elpisFlushWorkflow; window.removeEventListener("pagehide", flush); window.removeEventListener("beforeunload", flush); }; }, [recordedRun]);
 
   // The existing provider catalog, shared by Add and the inspector; execution uses ACP.
   const choices = useMemo(() => providerChoices(models, (settings ?? null) as ProviderSettings | null).filter(choice => !choice.id.endsWith("/")), [models, settings]);
@@ -1305,7 +1323,8 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   async function letElpis(goal: string, scope?: CanvasGraph, newWorkflow = false): Promise<CanvasGraph | null> {
     const current = runtimeAttempt();
     if (!current()) return null;
-    if (planning || newWorkflow && (startingRun.current || run && !over(run))) { setNotice("Wait for the current design or run to finish."); return null; }
+    if (recordedRun) return null;
+    if (planning || startingRun.current) { setNotice("Wait for the current design to finish."); return null; }
     if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
     const base = newWorkflow ? withMother({ name: "Workflow", request: goal, nodes: [], edges: [], maxAgents: graph.maxAgents, mother: { ...mother, brief: goal } }) : graph;
     setPlanning(goal); setNotice(""); setMenu(null);
@@ -1318,7 +1337,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
         const item = scope.nodes.some(item => item.id === node.id) && plan.agents.find(item => item.key === node.id);
         return node.type === "agent" && item ? { ...node, data: { ...node.data, instruction: node.data.instruction.trim() ? node.data.instruction : item.prompt, writeScopes: node.data.writeScopes.length ? node.data.writeScopes : item.folders, acceptanceCriteria: node.data.acceptanceCriteria.length ? node.data.acceptanceCriteria : item.doneWhen } } : node;
       }) } : applyPlan(base, plan);
-      if (newWorkflow) { checkpoint(); setRun(null); setStates({}); setDashboardId(null); setUndoLoad(null); }
+      if (newWorkflow) { checkpoint(); void workflowCatalog.refresh(); setRun(null); setStates({}); setDashboardId(null); setUndoLoad(null); }
       setGraph(next); setSelection([]);
       setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
       return next;
@@ -1349,6 +1368,7 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   }
 
   async function start(targets?: string[]) {
+    if (recordedRun) return;
     const current = runtimeAttempt();
     if (!current()) return;
     if (startingRun.current || planning || run && !over(run)) { setNotice("Wait for this run to finish before starting another."); return; }
@@ -1382,13 +1402,13 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
   const scope = runTargets ? executionGraph(graph, runTargets).nodes.filter(node => node.type === "agent") : [];
   return <section className="agents-canvas" aria-label="Workflows" data-panel={panelOpen ? "open" : "closed"}>
     <header className="canvas-header">
-      <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
-        <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
-        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))}>{planning ? "Designing…" : "New workflow"}</Button>
+      {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow run · {run?.status ?? "Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
+        <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" disabled={Boolean(planning || starting)} onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
+        <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
-      </form>
-      <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} />
+      </form>}
+      <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} onOpenCanvas={onOpenRecordedRun} />
       {presetName && !renamingPreset ? <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <OptionSelect aria-label="Workflow pattern" value={ENTRY_PATTERNS.some(pattern => pattern.id === graph.template) ? graph.template : ""} disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => {
           if (event.target.value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
@@ -1406,10 +1426,10 @@ function Canvas({ models, cwd, dark, ready, onOpenChat, projectMenu, workflowCat
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="sm" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} />Auto-arrange</Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={panelOpen} title={panelOpen ? "Hide the side panel: the board takes the whole width" : "Show the side panel: patterns, run order, the selected agent"} onClick={() => showPanel(!panelOpen)}><AgentsIcon size={16} /></Button>
-      <div className="canvas-run-control">
+      {!recordedRun && <div className="canvas-run-control">
         <Button variant="outline" size="sm" onClick={() => void start()} aria-describedby={!ready ? offlineReasonId : notice || starting || run && !over(run) ? runReasonId : undefined} disabled={!ready || starting || Boolean(planning || run && !over(run))}><Play size={14} />{starting ? "Starting…" : "Run graph"}</Button>
         {!notice && (starting || run && !over(run)) && <span id={runReasonId} className="canvas-run-status" role="status">{starting ? "Starting the team. Wait for the run to start." : "Wait for this run to finish before starting another."}</span>}
-      </div>
+      </div>}
     </header>
     <div className="canvas-board" ref={board}
       data-tool={lasso ? "lasso" : undefined}

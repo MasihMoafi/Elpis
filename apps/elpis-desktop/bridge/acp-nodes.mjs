@@ -54,7 +54,7 @@ class AcpProcess {
         try { message = JSON.parse(line); } catch { continue; }
         if (message?.id !== undefined && !message.method) {
           const pending = this.#pending.get(message.id); this.#pending.delete(message.id);
-          if (message.error) pending?.reject(new BridgeError(`${name}: ${String(message.error.message ?? 'request refused').slice(0, 1000)}`, 502));
+          if (message.error) { const error = new BridgeError(`${name}: ${String(message.error.message ?? 'request refused').slice(0, 1000)}`, 502); if (typeof message.error.data?.errorKind === 'string') error.errorKind = message.error.data.errorKind; pending?.reject(error); }
           else pending?.resolve(message.result);
         } else if (message?.id !== undefined) {
           Promise.resolve(onRequest(message.method, message.params)).then(

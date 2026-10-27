@@ -295,3 +295,15 @@ Migration limit: old engine contexts do not record whether the person chose a mo
 - BROWSER-UX: Follow the supplied icon/grouped browser-tab menu. Shift selects a contiguous range; commands affect the intended selection, preserve unaffected tabs and retain keyboard/session behavior. Empty right panes do not restore an expanded blank view; actual content uses a compact initial width while explicit resized content widths persist. Close other tabs and Close tabs to the right preserve intended tabs. Popup/dialog elements can be annotated without activating or dismissing them. Retain real sidebar URL pins. Fork and new pane architecture are outside this follow-up (Masih clarified Close other tabs was his concern).
 
 Verification: the installed f608 failed the paste/pause, late-note, unavailable-audio, Shift-range, insertion-order, empty-full-pane and popup-selection regressions. Verify the combined local build with affected owner checks only, then install through the standard forward-only local installer. Masih explicitly requested no full-suite rerun on 27 October.
+
+
+## Workflow recovery and basic controls — 27 October 2026
+
+- A workflow starts in a private, persistent sandbox unless a project is chosen. Choosing or adding a project keeps the board and exact request.
+- Report-only agents accept empty project folders and retain their own report/check scope.
+- History dismisses on outside click and Escape, returns focus, and closes on navigation. New workflow stays visible and usable during another run without cancelling it.
+- Opening a saved run shows its actual team, task status, failure and outputs in chat and both canvas views, without replacing a separate draft.
+- Default avoids known exhausted subscription routes and tries another connected subscription after a quota error. Routing is visible; unrelated failures are not blindly replayed.
+- Recovery preserves the same run, successful tasks and existing worktrees. Mother performs a bounded, visible steering/retry decision for a blocked child; unavailable recovery remains actionable.
+
+Acceptance: targeted bridge and real-browser regressions, both themes for new layout, one local GUI build and standard forward-only installation. Full-suite reruns are outside this repair.

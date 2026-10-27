@@ -98,6 +98,14 @@ test('returns the validated plan as { name, agents }', async () => {
   assert.deepEqual(result, PLAN);
 });
 
+test('review-only agents need no project write folders even when project folders exist', async () => {
+  const review = { name: 'Project status review', agents: [
+    { key: 'evidence', title: 'Review current project evidence', prompt: 'Read the project without changing it. Write the evidence-based status and next steps only in your own report folder.', folders: [], doneWhen: ['The report separates proven work, unknowns and next steps with source paths.'], waitsFor: [] },
+  ] };
+  const { result } = await plan({ answer: review }, {}, { ...BODY, goal: 'Review the latest project state without changing project files.' });
+  assert.deepEqual(result, review, 'a review agent needs only its own report folder, not a project write scope');
+});
+
 test('reads a plan wrapped in a code fence, and the final answer rather than the commentary before it', async () => {
   const { result } = await plan({ answer: `\`\`\`json\n${JSON.stringify(PLAN)}\n\`\`\``, extra: [{ type: 'agentMessage', id: 'note', text: 'Let me plan.', phase: 'commentary' }] });
   assert.deepEqual(result, PLAN);
@@ -139,8 +147,6 @@ test('a plan may return an existing agent\'s fields empty (the canvas keeps its 
   assert.deepEqual((await plan({ answer: empty }, {}, { ...BODY, agents: board })).result, empty);
   const added = { name: 'Team', agents: [...empty.agents, { key: 'fresh', title: 'Fresh', prompt: '', folders: ['web'], doneWhen: [], waitsFor: [] }] };
   await refused(plan({ answer: added }, {}, { ...BODY, agents: board }), 502, /Agent "fresh".*prompt/);
-  const unfoldered = { name: 'Team', agents: [...empty.agents, { key: 'fresh', title: 'Fresh', prompt: 'Work.', folders: [], doneWhen: [], waitsFor: [] }] };
-  await refused(plan({ answer: unfoldered }, {}, { ...BODY, agents: board }), 502, /Agent "fresh".*at least one folder/);
 });
 
 test('with no folder list every agent must come back with no folders', async () => {
@@ -164,7 +170,6 @@ const REFUSALS = [
   ['more agents than maxAgents', { name: 'Big', agents: ['a', 'b', 'c', 'd'].map(key => ({ key, title: key, prompt: 'Work.', folders: ['api'], doneWhen: [], waitsFor: [] })) }, /4 agents.*limit is 3/],
   ['a folder that is not in the list', mutate(plan => { plan.agents[0].folders = ['api', 'secrets']; }), /"api".*"secrets".*not in the project's folder list/],
   ['the whole project as a folder', mutate(plan => { plan.agents[0].folders = ['.']; }), /"\."/],
-  ['an agent with no folder while folders were given', mutate(plan => { plan.agents[0].folders = []; }), /Agent "api".*at least one folder/],
   ['an agent without a prompt', mutate(plan => { plan.agents[0].prompt = ''; }), /Agent "api".*prompt/],
   ['an agent without a title', mutate(plan => { plan.agents[0].title = ' '; }), /Agent "api".*title/],
   ['a wrong type', mutate(plan => { plan.agents[0].waitsFor = 'web'; }), /Agent "api".*waitsFor/],

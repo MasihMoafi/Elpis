@@ -128,3 +128,26 @@ test('a project with no folders runs: every agent and its check write their repo
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+test('a new workflow can be designed at laptop width while the previous run keeps working', async () => {
+  const fixture = await openCanvas({ width: 1366, graph: { name: 'Existing work', nodes: [
+    { id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} },
+    { id: 'writer', type: 'agent', position: { x: 300, y: 0 }, data: { title: 'Keep working', instruction: 'Complete the existing task.', model: null, writeScopes: ['src'], acceptanceCriteria: ['Return the result'] } },
+  ], edges: [] }, listed(run) { return { id: run.graphId, status: 'running', tasks: run.tasks.map(task => ({ id: task.id, status: 'running', assignedThreadId: null })) }; } });
+  try {
+    const { page, canvas } = fixture;
+    await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
+    await canvas.getByText('Wait for this run to finish before starting another.', { exact: true }).waitFor();
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    assert.equal(await request.isEnabled(), true, 'an active run does not lock the next workflow request');
+    await request.fill('from scratch: prepare the next independent workflow');
+    const create = canvas.getByRole('button', { name: 'New workflow', exact: true });
+    assert.equal(await create.isEnabled(), true);
+    await assertUiFit(canvas.locator('.canvas-header'), 'new workflow remains reachable on a laptop during a run');
+    await create.click(); await fixture.agentCount(2, 'the new draft opens');
+    assert.equal(fixture.runs.length, 1, 'designing a new workflow does not start another run');
+    assert.equal(fixture.runs[0].ended, undefined, 'the previous run is still running');
+    assert.equal(fixture.posts.some(post => /interrupt|cancel|resume/.test(post.path)), false, 'the previous run is never stopped');
+    assert.deepEqual(fixture.errors, []);
+  } finally { await fixture.close(); }
+});

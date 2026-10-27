@@ -39,9 +39,9 @@ export function MoveChatDialog({ name, projects, currentId, count = 1, onMove, o
   </AlertDialog>;
 }
 
-export function ProjectMenu({ projects, selected, disabled, variant, onSelect, onAdd, label = "Choose project", addLabel = "New project…", allowNone = true }: {
+export function ProjectMenu({ projects, selected, disabled, variant, onSelect, onAdd, label = "Choose project", addLabel = "New project…", allowNone = true, noneLabel = "Don’t work in a project" }: {
   projects: Project[]; selected: Project | null; disabled: boolean; variant: "heading" | "chip";
-  onSelect: (project: Project | null) => Promise<void>; onAdd: () => void; label?: string; addLabel?: string; allowNone?: boolean;
+  onSelect: (project: Project | null) => Promise<void>; onAdd: () => void; label?: string; addLabel?: string; allowNone?: boolean; noneLabel?: string;
 }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   async function choose(project: Project | null) { setBusy(true); setError(""); try { await onSelect(project); } catch (e) { setError(message(e)); } finally { setBusy(false); } }
@@ -56,7 +56,7 @@ export function ProjectMenu({ projects, selected, disabled, variant, onSelect, o
           {project.id === selected?.id && <Check className="ml-auto" aria-label="Current" />}
         </DropdownMenuItem>)}
         <DropdownMenuItem onClick={onAdd}><PlusIcon aria-hidden="true" />{addLabel}</DropdownMenuItem>
-        {selected && allowNone && <DropdownMenuItem onClick={() => void choose(null)}><X aria-hidden="true" />Don’t work in a project</DropdownMenuItem>}
+        {selected && allowNone && <DropdownMenuItem onClick={() => void choose(null)}><X aria-hidden="true" />{noneLabel}</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
     {error && <span role="alert" className="project-error">{error}</span>}

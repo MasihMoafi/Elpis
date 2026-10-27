@@ -1406,7 +1406,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .dark .love-unread { color:var(--background); }
 
 .workflow-history { position:relative; margin-left:auto; }
-.workflow-history-list { position:absolute; left:0; top:calc(100% + 8px); z-index:30; width:min(380px, calc(100vw - 36px)); max-height:60vh; overflow:auto; padding:14px; background:var(--card); color:var(--foreground); }
+.workflow-history-list { width:min(440px, calc(100vw - 36px)); max-height:60vh; overflow:auto; padding:14px; background:var(--card); color:var(--foreground); }
 .workflow-history-list ul { display:grid; gap:10px; margin:10px 0 0; padding:0; list-style:none; }
 .workflow-history-list li { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:10px; border-top:1px solid var(--border); }
 .workflow-history-list li > div { display:grid; min-width:0; gap:4px; }

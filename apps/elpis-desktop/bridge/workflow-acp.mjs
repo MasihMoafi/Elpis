@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { BridgeError, text } from './client.mjs';
 import { loveNodeSpec } from './love-agents.mjs';
 import { runAcpNode } from './acp-nodes.mjs';
+import { workflowRoute, quotaFailure } from './workflow-models.mjs';
 import { workflowWorktrees, mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged } from './workflow-worktrees.mjs';
 
 const ended = new Set(['succeeded', 'failed', 'cancelled', 'blocked']);
@@ -102,9 +103,9 @@ export function validateWorkflow(tasks, roundLimit) {
 /** ACP owns node execution. This scheduler owns Kahn dependencies, bounded rounds, concurrency and failure state. */
 /** `onEnd(record)` hears each run's final record once it is saved: the bridge starts a run's next stage from it. */
 export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = process.env, timeoutMs,
-  onSession, onEnd } = {}) {
+  onSession, onEnd, modelRoutes } = {}) {
   const records = new Map(), active = new Map();
-  const controls = new Map(), progressTimers = new Map();
+  const controls = new Map(), progressTimers = new Map(), supervision = new Map(), routeSnapshots = new Map(), exhaustedProviders = new Map();
   const mergingSources = new Set(), mergeControllers = new Map();
   let loaded;
   const load = () => loaded ??= (async () => {
@@ -158,21 +159,94 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     if (!spec.elpis && !spec.instructionsInPrompt) spec.mode = 'default';
     return spec;
   };
+  async function routesFor(record) {
+    if (!modelRoutes) return [];
+    if (!routeSnapshots.has(record.id)) routeSnapshots.set(record.id, Promise.resolve().then(() => modelRoutes()).catch(() => []));
+    return routeSnapshots.get(record.id);
+  }
+  async function runNode(record, owner, requested, instructions, input, options) {
+    const routes = await routesFor(record), requestedRoute = workflowRoute(requested.model, requested.provider);
+    const desired = { ...routes.find(route => route.provider === requestedRoute.provider), ...routes.find(route => route.model === requestedRoute.model && route.provider === requestedRoute.provider), ...requestedRoute };
+    const candidates = [desired, ...routes.filter(route => route.provider !== desired.provider)], seen = new Set();
+    const unavailable = exhaustedProviders.get(record.id) ?? new Set(); exhaustedProviders.set(record.id, unavailable);
+    const routing = owner.routing ??= { requested: requestedRoute, actual: null, attempts: [] };
+    let previousError;
+    for (const route of candidates) {
+      if (seen.has(route.provider)) continue; seen.add(route.provider);
+      const attempt = { model: route.model, provider: route.provider, status: 'running', startedAt: Date.now() };
+      routing.attempts.push(attempt);
+      if (route.exhausted || unavailable.has(route.provider)) {
+        attempt.status = 'skipped'; attempt.reason = route.reason || 'This subscription reached its usage limit'; attempt.endedAt = Date.now();
+        progress(record, owner, { sessionUpdate: 'agent_message_chunk', messageId: `route-${randomUUID()}`, content: { type: 'text', text: `Skipped ${route.model || route.provider}: ${attempt.reason}` } });
+        continue;
+      }
+      routing.actual = { model: route.model, provider: route.provider };
+      if (route.model !== requestedRoute.model || route.provider !== requestedRoute.provider) {
+        attempt.reason = previousError?.message || 'The requested subscription is unavailable';
+        progress(record, owner, { sessionUpdate: 'agent_message_chunk', messageId: `route-${randomUUID()}`, content: { type: 'text', text: `Continuing with ${route.model} (${route.provider}). ${attempt.reason}` } });
+      }
+      await save(record);
+      try {
+        const recovery = previousError ? '\n\nA previous attempt reached its subscription limit. Continue in this same workspace. Inspect existing files before acting; preserve completed work and do not repeat actions already evidenced there. Previous progress:\n' + (owner.progress ?? []).filter(entry => entry.kind === 'text').slice(-3).map(entry => entry.text).join('\n').slice(-3000) : '';
+        const spec = fullAccess(nodeSpec({ name: owner.title, prompt: instructions, model: route.model, provider: route.provider }, env));
+        const effort = owner.reasoningEffort && Array.isArray(route.efforts) && !route.efforts.includes(owner.reasoningEffort) ? route.defaultEffort : owner.reasoningEffort;
+        if (effort) spec.reasoningEffort = effort;
+        spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${owner.title}`, workflow: { kind: owner.kind ?? 'verify', writeScopes: owner.writeScopes ?? [], ...(effort ? { reasoningEffort: effort } : {}) } } };
+        const result = await runAcpNode(spec, { ...input, task: input.task + recovery }, { ...options,
+          onSession: id => { owner.assignedThreadId = spec.elpis ? id : null; owner.sessionId = id; onSession?.(record, owner, id); void save(record).catch(() => {}); } });
+        attempt.status = 'succeeded'; attempt.endedAt = Date.now(); return result;
+      } catch (error) {
+        attempt.status = 'failed'; attempt.reason = error.message; attempt.endedAt = Date.now();
+        if (options.signal?.aborted || !quotaFailure(error)) throw error;
+        unavailable.add(route.provider); previousError = error; await save(record);
+      }
+    }
+    throw previousError ?? new BridgeError('No connected subscription has available quota. Choose another connected model and resume this workflow; completed work is preserved.', 409);
+  }
+  function supervise(record, task, error, root, controller) {
+    const previous = supervision.get(record.id) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(() => superviseNode(record, task, error, root, controller));
+    supervision.set(record.id, pending); return pending;
+  }
+  async function superviseNode(record, task, error, root, controller) {
+    if (controller.signal.aborted || task.supervisedRound === record.round) return false;
+    task.supervisedRound = record.round;
+    const mother = record.mother ??= { id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', progress: [], decisions: [] };
+    mother.decisions ??= []; mother.status = 'running'; await save(record);
+    try {
+      const instructions = 'You are Mother, the active workflow supervisor. Inspect the failed node and current evidence. Read only; do not edit files, run agents, merge, install or change permissions. Return only JSON: {"action":"retry","taskId":"the failed node","instruction":"specific corrective guidance","reason":"evidence"}, {"action":"steer","taskId":"one currently running node","message":"specific guidance","reason":"evidence"}, or {"action":"stop","reason":"actionable recovery needed"}. Retry only when specific new guidance can address the failure. Never repeat an unchanged failing tool, alter scope, or claim success without checks.';
+      const result = await runNode(record, mother, { model: 'claude/opus', provider: 'claude' }, instructions, { task: `Workflow: ${record.name}. Goal: ${record.goal ?? ''}. Failed node: ${task.id}. Failure: ${error.message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result?.summary?.slice(0, 2000), failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}` }, {
+        cwd: root.cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
+        onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
+      });
+      let decision; try { decision = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new BridgeError('Mother could not give a valid recovery decision. Choose a model and resume the failed nodes.', 409); }
+      if (!['retry', 'steer', 'stop'].includes(decision?.action) || typeof decision.reason !== 'string' || !decision.reason.trim()) throw new BridgeError('Mother did not give an actionable recovery decision. Choose a model and resume the failed nodes.', 409);
+      const entry = { at: Date.now(), taskId: decision.taskId ?? task.id, decision: decision.action, reasons: decision.reason.slice(0, 2000) }; mother.decisions.push(entry);
+      if (decision.action === 'retry') {
+        if (decision.taskId !== task.id || typeof decision.instruction !== 'string' || !decision.instruction.trim() || decision.instruction.length > 4000) throw new BridgeError('Mother requested an invalid retry. Completed work was preserved.', 409);
+        task.supervisorInstruction = decision.instruction.trim(); mother.status = 'succeeded'; await save(record); return true;
+      }
+      if (decision.action === 'steer') {
+        const target = record.tasks.find(node => node.id === decision.taskId && node.id !== task.id && node.status === 'running'), control = target && controls.get(`${record.id}:${target.id}`);
+        if (!control || typeof decision.message !== 'string' || !decision.message.trim() || decision.message.length > 4000) throw new BridgeError('Mother could not reach that running node. Resume the failed work after choosing a model.', 409);
+        const delivered = await control.steer(decision.message.trim()); entry.delivery = delivered.delivery;
+        (target.messages ??= []).push({ id: randomUUID(), text: decision.message.trim(), status: 'delivered', delivery: delivered.delivery, at: Date.now(), round: record.round, source: 'mother' });
+      }
+      mother.status = 'succeeded'; await save(record); return false;
+    } catch (failure) {
+      mother.status = controller.signal.aborted ? 'cancelled' : 'failed'; mother.failureReason = failure.message;
+      mother.decisions.push({ at: Date.now(), taskId: task.id, decision: 'stop', reasons: failure.message }); await save(record); return false;
+    } finally { controls.delete(`${record.id}:mother`); }
+  }
   async function reviewAndMerge(record, signal) {
     if (await checkWorkflowReview(record.review, signal)) { record.review = await mergeWorkflowReview(record.review, signal); return; }
-    const mother = record.mother = { id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: [] };
+    const mother = record.mother = { ...record.mother, id: 'mother', title: 'Mother', model: 'claude/opus', provider: 'claude', reasoningEffort: 'low', status: 'running', progress: record.mother?.progress ?? [], decisions: record.mother?.decisions ?? [] };
     record.review.status = 'reviewing'; await save(record);
     try {
       const instructions = 'You are Mother, the workflow coordinator. Review the children’s candidate commits and focused test evidence. Read and run checks only; do not change files, commit, merge, delegate or push. Approve only if the requested task is complete and the checks pass. Return only JSON: {"passed":true or false,"summary":"observed evidence and any remaining failure"}.';
-      const spec = fullAccess(nodeSpec({ name: 'Mother', prompt: instructions, model: mother.model, provider: mother.provider }, env));
-      spec.reasoningEffort = mother.reasoningEffort;
-      spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: 'Workflows · Mother', workflow: { kind: 'verify', writeScopes: [], reasoningEffort: mother.reasoningEffort } } };
-      const result = await runAcpNode(spec, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, answer: task.result?.summary ?? task.failureReason ?? task.status })) }, {
+      const result = await runNode(record, mother, record.recovery?.model ? record.recovery : { model: mother.model, provider: mother.provider }, instructions, { task: `Review candidate commit ${record.review.commit}. Workflow: ${record.name}.\n${record.goal ?? ''}\n\nChange summary:\n${record.review.stat}`, inputs: record.tasks.map(task => ({ name: task.title, answer: task.result?.summary ?? task.failureReason ?? task.status })) }, {
         cwd: record.review.path, signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-        onUpdate: update => progress(record, mother, update),
-        onControl: control => controls.set(`${record.id}:mother`, control),
-        onSession: id => { mother.sessionId = id; onSession?.(record, mother, id); void save(record).catch(() => {}); },
-        onPermission: request => permission(record, mother, request),
+        onUpdate: update => progress(record, mother, update), onControl: control => controls.set(`${record.id}:mother`, control), onPermission: request => permission(record, mother, request),
       });
       let verdict;
       try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* malformed review cannot authorize a merge */ }
@@ -183,16 +257,17 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
     } catch (error) { mother.status = signal?.aborted ? 'cancelled' : 'failed'; mother.failureReason = error.message; record.review.status = 'ready'; record.review.error = error.message; throw error; }
     finally { controls.delete(`${record.id}:mother`); clearTimeout(progressTimers.get(record.id)); progressTimers.delete(record.id); await save(record); }
   }
-  async function execute(record, root, controller) {
+  async function execute(record, root, controller, resuming = false) {
     let isolation;
     const inflight = new Set();
     try {
-      isolation = record.isolation ? await workflowWorktrees(root.cwd, record.id) : null;
+      isolation = record.isolation ? await workflowWorktrees(root.cwd, record.id, resuming ? record : undefined) : null;
+      if (isolation) record.worktreeBase = isolation.base;
       let previous = new Map();
-      for (let round = 1; round <= (record.roundLimit ?? 1); round++) {
+      for (let round = resuming ? record.round : 1; round <= (record.roundLimit ?? 1); round++) {
         record.round = round;
         const answers = new Map(), running = new Map();
-        record.tasks.forEach(task => { task.status = 'pending'; task.failureReason = null; task.assignedThreadId = null; task.result = null; });
+        record.tasks.forEach(task => { if (resuming && round === record.round && task.status === 'succeeded') { answers.set(task.id, task.result.summary); return; } task.status = 'pending'; task.failureReason = null; task.assignedThreadId = null; task.result = null; });
         const byId = new Map(record.tasks.map(t => [t.id, t]));
         const run = async task => {
           try {
@@ -207,18 +282,20 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
             const instructions = [`Acceptance criteria:\n${task.acceptanceCriteria.map(c => `- ${c}`).join('\n')}`,
               scopes.length ? `Write only in: ${scopes.join(', ')}.` : 'Read only. Do not change files.',
               task.kind === 'verify' ? 'Return only JSON: {"passed": true or false, "summary": "criteria and observed evidence"}. Set passed false if any criterion fails or cannot be checked.' : 'Return your final answer with observed evidence.'].join('\n\n');
-            const spec = fullAccess(nodeSpec({ name: task.title, prompt: instructions, model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' }, env));
-            if (task.reasoningEffort) spec.reasoningEffort = task.reasoningEffort;
-            spec.meta = { ...spec.meta, elpis: { ...spec.meta?.elpis, name: `Workflows · ${task.title}`, workflow: { kind: task.kind, writeScopes: scopes, ...(task.reasoningEffort ? { reasoningEffort: task.reasoningEffort } : {}) } } };
             const inputs = [...task.dependsOn.map(id => ({ name: byId.get(id).title, answer: answers.get(id) })),
               ...(round > 1 ? (task.feedbackFrom ?? []).map(id => ({ name: `${byId.get(id).title} · round ${round - 1}`, answer: previous.get(id) })) : [])];
-            const result = await runAcpNode(spec, { task: record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n${task.instruction}` : task.instruction, inputs }, {
+            const requested = record.recovery?.model ? { model: record.recovery.model, provider: record.recovery.provider ?? root.modelProvider ?? '' } : { model: task.model ?? root.model ?? '', provider: task.provider ?? root.modelProvider ?? '' };
+            const attempt = () => runNode(record, task, requested, instructions, { task: (record.roundLimit ? `Round ${round} of ${record.roundLimit}.\n` : '') + task.instruction + (task.supervisorInstruction ? `\n\nMother's corrective guidance:\n${task.supervisorInstruction}` : ''), inputs }, {
               cwd, signal: controller.signal, timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-              onPermission: request => permission(record, task, request),
-              onSession: id => { task.assignedThreadId = spec.elpis ? id : null; task.sessionId = id; onSession?.(record, task, id); void save(record).catch(() => {}); },
-              onUpdate: update => progress(record, task, update),
-              onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
+              onPermission: request => permission(record, task, request), onUpdate: update => progress(record, task, update), onControl: control => { controls.set(`${record.id}:${task.id}`, control); },
             });
+            let result;
+            try { result = await attempt(); }
+            catch (error) {
+              task.failureReason = error.message;
+              if (!await supervise(record, task, error, root, controller)) throw error;
+              result = await attempt();
+            }
             if (task.kind === 'verify') {
               let verdict;
               try { verdict = JSON.parse(result.answer.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { /* invalid check cannot pass */ }
@@ -244,7 +321,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         }
         await Promise.all(running.values());
         if (controller.signal.aborted || record.tasks.some(t => t.status !== 'succeeded')) break;
-        previous = answers;
+        previous = answers; resuming = false;
       }
       let status = controller.signal.aborted ? 'cancelled' : record.tasks.every(t => t.status === 'succeeded') ? 'succeeded' : 'failed';
       if (status === 'failed') record.error = record.tasks.find(task => task.failureReason)?.failureReason;
@@ -266,7 +343,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       try { await save(completed); }
       catch (error) { completed.status = 'failed'; completed.error = `Could not save the workflow result: ${error.message}`; }
       finally {
-        active.delete(record.rootThreadId); await fs.unlink(path.join(stateDir, `${record.rootThreadId}.lock`)).catch(() => {}); records.set(record.id, completed);
+        supervision.delete(record.id); routeSnapshots.delete(record.id); exhaustedProviders.delete(record.id); active.delete(record.rootThreadId); await fs.unlink(path.join(stateDir, `${record.rootThreadId}.lock`)).catch(() => {}); records.set(record.id, completed);
         if (onEnd) void Promise.resolve().then(() => onEnd(structuredClone(completed))).catch(error => console.error('Workflow next stage:', error.message));
       }
     }
@@ -289,12 +366,37 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
         if (alive(pid)) throw new BridgeError('A workflow is already running in this conversation', 409);
         await fs.unlink(lock); return this.start(params, root);
       }
-      const record = { ...structuredClone(params), id: randomUUID(), ownerPid: process.pid, status: 'running', startedAt: Date.now(), round: 1,
+      const record = { ...structuredClone(params), projectCwd: root.cwd, id: randomUUID(), ownerPid: process.pid, status: 'running', startedAt: Date.now(), round: 1,
         tasks: params.tasks.map(task => ({ ...structuredClone(task), status: 'pending', assignedThreadId: null, result: null, failureReason: null })) };
       const controller = new AbortController(); active.set(params.rootThreadId, controller); records.set(record.id, record);
       try { await save(record); } catch (error) { record.status = 'failed'; record.error = error.message; active.delete(params.rootThreadId); await fs.unlink(lock); throw error; }
       void execute(record, root, controller).catch(error => console.error('Could not save ACP workflow state:', error.message));
       return { graphId: record.id, threadId: params.rootThreadId, turnId: record.id };
+    },
+    async resume(id, root, overrides = {}) {
+      await load(); const record = records.get(id);
+      if (!record) throw new BridgeError('Workflow not found', 404);
+      if (!['failed', 'blocked', 'cancelled'].includes(record.status)) throw new BridgeError('Only failed or stopped workflow nodes need recovery', 409);
+      if (active.has(record.rootThreadId) || mergeControllers.has(record.rootThreadId)) throw new BridgeError('This workflow is already running', 409);
+      if (record.tasks.some(task => task.status === 'succeeded' && typeof task.result?.summary !== 'string')) throw new BridgeError('Completed workflow evidence is incomplete. Saved work was preserved; inspect the run before recovery.', 409);
+      if (overrides.model) record.recovery = { model: overrides.model, ...(overrides.provider ? { provider: overrides.provider } : {}), at: Date.now() };
+      if (record.tasks.every(task => task.status === 'succeeded') && record.review?.status === 'ready') { await this.merge(id); return { graphId: record.id, threadId: record.rootThreadId, turnId: record.id }; }
+      if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose the workflow project before recovery');
+      root = { ...root, cwd: await fs.realpath(root.cwd) };
+      const originalCwd = record.projectCwd ?? (!record.isolation ? record.tasks.find(task => task.cwd)?.cwd : undefined);
+      if (originalCwd && root.cwd !== originalCwd) throw new BridgeError('Recover this workflow in its original project. Its work and results have been preserved.', 409);
+      record.projectCwd ??= root.cwd;
+      const lock = path.join(stateDir, `${record.rootThreadId}.lock`);
+      try { const handle = await fs.open(lock, 'wx', 0o600); await handle.writeFile(String(process.pid)); await handle.close(); }
+      catch (error) { if (error.code !== 'EEXIST') throw error; const pid = Number(await fs.readFile(lock, 'utf8')); if (alive(pid)) throw new BridgeError('A workflow is already running in this conversation', 409); await fs.unlink(lock); return this.resume(id, root, overrides); }
+      record.status = 'running'; record.ownerPid = process.pid; record.resumedAt = Date.now(); delete record.endedAt; delete record.error;
+      if (overrides.model) record.recovery = { model: overrides.model, ...(overrides.provider ? { provider: overrides.provider } : {}), at: Date.now() };
+      for (const task of record.tasks) if (task.status !== 'succeeded') delete task.supervisedRound;
+      routeSnapshots.delete(id); exhaustedProviders.delete(id);
+      const controller = new AbortController(); active.set(record.rootThreadId, controller);
+      try { await save(record); } catch (error) { active.delete(record.rootThreadId); record.status = 'failed'; await fs.unlink(lock); throw error; }
+      void execute(record, root, controller, true).catch(error => console.error('Could not save recovered workflow state:', error.message));
+      return { graphId: record.id, threadId: record.rootThreadId, turnId: record.id };
     },
     cancel(rootThreadId) { const controller = active.get(rootThreadId) ?? mergeControllers.get(rootThreadId); if (!controller) return false; controller.abort(); return true; },
     async merge(id) {

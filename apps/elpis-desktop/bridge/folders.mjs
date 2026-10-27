@@ -18,6 +18,18 @@ export async function projectDirectory(cwd) {
   return cwd;
 }
 
+/** The profile's persistent workspace for workflows with no selected project. */
+export async function workflowWorkspace(home) {
+  const cwd = path.join(home, 'workflows', 'sandbox');
+  try {
+    await fs.mkdir(cwd, { recursive: true, mode: 0o700 });
+    await fs.chmod(cwd, 0o700);
+  } catch {
+    throw new BridgeError('Elpis could not create the workflow sandbox. Check that the profile folder is writable.', 500);
+  }
+  return { cwd };
+}
+
 /** Read-only: the project's directories (never files, never symlinks) as sorted repository-relative paths. */
 export async function listFolders(cwd) {
   await projectDirectory(cwd);

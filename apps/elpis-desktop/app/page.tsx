@@ -80,7 +80,7 @@ import { ReadAloud } from "@/components/read-aloud";
 import { MatildaAutoVoice } from "@/components/matilda-auto-voice";
 import { chooseProject, EnvironmentMenu, MoveChatDialog, ProjectActions, ProjectDialog, ProjectMenu } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
-import { WorkflowColourMenu, WorkflowMark } from "@/components/workflow-identity";
+import { WorkflowMark } from "@/components/workflow-identity";
 import { useWorkflowCatalog, workflowMembers, type WorkflowRun } from "@/lib/workflow-identity";
 import { BranchChip } from "@/components/branch-chip";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
@@ -96,6 +96,7 @@ import { useLoveActivity } from "@/lib/use-love-activity";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
+import { WorkflowChat } from "@/components/workflow-chat";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
@@ -183,6 +184,8 @@ export default function Home() {
   const [projectId, setProjectId] = useState<string | null>(null);
   // Workflows and Love Spot run in the last project chosen, while new chats start in none (TASKS.md: unscoped new chats).
   const [workflowProjectId, setWorkflowProjectId] = useState<string | null>(null);
+  const [workflowSandbox, setWorkflowSandbox] = useState<string>();
+  const [recordedWorkflow, setRecordedWorkflow] = useState<Pick<WorkflowRun, "id" | "rootThreadId">>();
   const [projectChats, setProjectChats] = useState<Record<string, string>>({});
   const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
   const [projectMove, setProjectMove] = useState<Thread[] | null>(null);
@@ -190,7 +193,8 @@ export default function Home() {
   const [nestTargets, setNestTargets] = useState<Thread[] | null>(null);
   const [projectChanging, setProjectChanging] = useState(false);
   const project = projects.find(item => item.id === projectId) ?? null;
-  const workflowProject = project ?? projects.find(item => item.id === workflowProjectId) ?? null, workflowFolder = newChatFolder(cwd || workflowProject?.cwd || "") || undefined;
+  const workflowProject = projects.find(item => item.id === workflowProjectId) ?? null;
+  const workflowFolder = workflowProject?.cwd || workflowSandbox;
   const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
   // Existing conversations: overrides for their next turn only.
   const [nextTurn, setNextTurn] = useState<Record<string, NextTurn>>({});
@@ -398,6 +402,15 @@ export default function Home() {
     ? chatOrigin(selected, loveActivity.threads) === "Love Spot" ? LOVE_SPOT_AUDIO.reason : !loveActivity.originsResolved ? LOVE_SPOT_AUDIO.pendingReason : undefined
     : undefined;
   const viewRef = useRef(view); viewRef.current = view;
+  useEffect(() => {
+    if (view !== "canvas" || !ready || !connected || workflowProject || workflowSandbox) return;
+    let current = true;
+    void api<{ cwd: string }>("/workflows/workspace", {}).then(result => {
+      if (!result.cwd?.startsWith("/")) throw unreadable("workflow sandbox");
+      if (current) setWorkflowSandbox(result.cwd);
+    }).catch(cause => { if (current) setError(cause instanceof Error ? cause.message : "Could not open the workflow sandbox. Choose a project or reopen Workflows to retry."); });
+    return () => { current = false; };
+  }, [view, ready, connected, workflowProject, workflowSandbox]);
   useEffect(() => { if (view === "chat" && selected) markRead(selected.id); }, [view, selected?.id, markRead]);
   const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
   const [desktop, setDesktop] = useState(false);
@@ -1015,13 +1028,17 @@ export default function Home() {
     setProjectChanging(true);
     try {
       if (next && window.elpisDesktop?.resolveFolder) await window.elpisDesktop.resolveFolder(next.cwd);
-      await saveProjects(projects, next?.id ?? null); setProjectId(next?.id ?? null); setWorkflowProjectId(next?.id ?? null); setCwd(next?.cwd ?? ""); openNewChat(next ? `new-${next.id}` : "new");
+      await saveProjects(projects, next?.id ?? null); setWorkflowProjectId(next?.id ?? null);
+      if (viewRef.current === "canvas") return;
+      setProjectId(next?.id ?? null); setCwd(next?.cwd ?? ""); openNewChat(next ? `new-${next.id}` : "new");
     } finally { setProjectChanging(false); }
   }
   async function saveProject(next: Project) {
     const known = projects.some(item => item.id === next.id), updated = known ? projects.map(item => item.id === next.id ? next : item) : [...projects, next];
     if (known) { await saveProjects(updated, projectId); setProjects(updated); if (projectId === next.id) setCwd(next.cwd); return; }
-    await saveProjects(updated, next.id); setProjects(updated); setProjectId(next.id); setWorkflowProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
+    await saveProjects(updated, next.id); setProjects(updated); setWorkflowProjectId(next.id);
+    if (viewRef.current === "canvas") return;
+    setProjectId(next.id); setCwd(next.cwd); openNewChat(`new-${next.id}`);
   }
   function newProjectFrom(chats: Thread[]) { setNewProjectFor(chats); setProjectEdit(null); }
   async function saveProjectFromChats(next: Project) {
@@ -1686,6 +1703,7 @@ export default function Home() {
   const listedThreadIds = useMemo(() => new Set(threads.map(thread => thread.id)), [threads]);
   const workflowRuns = useMemo(() => workflowCatalog.runs.filter(run => !hidden.current.has(run.rootThreadId) && (listedThreadIds.has(run.rootThreadId) || workflowMembers(run).some(member => listedThreadIds.has(member.threadId)))), [workflowCatalog.runs, listedThreadIds]);
   const workflowRoots = useMemo(() => new Map([...workflowRuns].sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0)).map(run => [run.rootThreadId, run])), [workflowRuns]);
+  const selectedWorkflow = selected ? workflowRoots.get(selected.id) : undefined;
   const workflowSteps = useMemo(() => new Map(workflowRuns.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id }] as const))), [workflowRuns]);
   const sidebarThreads = useMemo(() => [...threads, ...[...workflowRoots.values()].filter(run => !threads.some(thread => thread.id === run.rootThreadId)).map(run => ({ id: run.rootThreadId, name: run.name, status: { type: run.status === "running" ? "active" : "idle" } } as Thread))], [threads, workflowRoots]);
   const sidebarTitle = (thread: Thread) => {
@@ -2087,7 +2105,6 @@ export default function Home() {
         {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
         {thread.forkedFromId && <span className="thread-nickname">Continued agent chat</span>}
       </button>
-      {identity && <WorkflowColourMenu identity={identity} catalog={workflowCatalog} label={`Colour for ${identity.name}`} onError={setError} />}
       <span className="row-hover-actions">
         {!depth && <Button variant="ghost" size="icon-xs" aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`} title={pinned ? "Unpin" : "Pin"} onClick={() => togglePin(thread)}><PinIcon size={13} className={pinned ? "fill-current" : undefined} /></Button>}
         <Button variant="ghost" size="icon-xs" aria-label={bookmarked ? `Remove bookmark from ${name}` : `Bookmark ${name}`} title={bookmarked ? "Remove bookmark" : "Bookmark"} onClick={() => toggleBookmark(thread)}>{bookmarked ? <BookmarkMinus size={14} /> : <Bookmark size={14} />}</Button>
@@ -2109,7 +2126,7 @@ export default function Home() {
     const shown = tab.id === tabs.activeId, thread = tab.threadId ? (shown && selected?.id === tab.threadId ? selected : find(tab.threadId)) : undefined;
     const label = thread ? sidebarTitle(thread) : tab.threadId ? tab.title || "Chat" : "New chat";
     const identity = thread ? workflowCatalog.identities[workflowSteps.get(thread.id)?.runId ?? workflowRoots.get(thread.id)?.id ?? ""] : undefined;
-    return <Tab key={tab.id} chat icon={identity ? <WorkflowMark identity={identity} /> : <ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
+    return <Tab key={tab.id} chat icon={identity ? <WorkflowMark identity={identity} neutral /> : <ChatIcon size={14} />} label={label} active={shown} closeLabel={`Close ${label} tab`} trailing={shown}
       wrap={thread ? (area, content) => threadMenu(thread, area, content, shown) : undefined} onSelect={() => showTab(tab)} onClose={() => closeChatTab(tab.id)} />;
   }
   function descendants(parentId: string, depth: number, seen = new Set<string>()): React.ReactNode {
@@ -2284,9 +2301,9 @@ export default function Home() {
       {settingsVisited && <div className="page-scroll" hidden={view !== "settings"}><ViewBoundary label="Settings" resetKey={settingsNavigation}><SettingsView initialTab={settingsSection} navigationKey={settingsNavigation} active={view === "settings"} threadId={selected?.id} currentModel={selected?.model} currentPermission={selected ? permissionLabel(permissionMode) : null} accountRefresh={accountRefresh} theme={theme} onTheme={setTheme} onUnarchived={unarchived} onImported={() => void refreshThreads()} onDeleteThread={deleteThread} onBack={() => { show("chat"); requestAnimationFrame(focusComposer); }} onChatPermissions={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Change permissions")); }} onChatModel={() => { show("chat"); requestAnimationFrame(() => openComposerControl("Model")); }} modelChangeReason={!ready ? "Wait for Elpis to connect." : busy ? "Wait for this turn to finish before changing the model." : undefined} onCustomize={() => show("customize")} onChatContext={() => { show("chat"); requestAnimationFrame(() => window.dispatchEvent(new CustomEvent(OPEN_CONTEXT_EVENT))); }} onProvidersChanged={async () => { await reloadSettings(); void refreshModels(); }} /></ViewBoundary></div>}
       {view === "agentsGuide" && <div className="page-scroll"><ViewBoundary label="Guide to managing agents"><AgentsGuide onBack={() => show("canvas")} /></ViewBoundary></div>}
       {view === "experimentLab" && <ViewBoundary label="Lab"><ExperimentLab /></ViewBoundary>}
-      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
-        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
-      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={workflowFolder} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
+      {view === "canvas" && <ViewBoundary label="Workflows"><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas key={recordedWorkflow?.id ?? "draft"} recordedRun={recordedWorkflow} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} cwd={workflowFolder} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }}
+        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} /></CanvasGuideHelp></ViewBoundary>}
+      {view === "loveSpot" && <ViewBoundary label="Love Spot"><LoveSpot dark={dark} toolbarHost={loveToolbarHost} cwd={newChatFolder(cwd || workflowProject?.cwd || "") || undefined} onOpenChat={id => { show("chat"); void openById(id); }} /></ViewBoundary>}
       {view === "customize" && <div className="page-scroll"><ViewBoundary label="Customize"><CustomizeView cwd={cwd} onOpenSettings={() => openSettings("mcp")}
         onConnectGithub={hasTerminal ? () => { show("chat"); setTuiLaunch({ key: side.openTerminal(cwd), command: "github-login", token: Date.now() }); } : undefined}
         onCreateSkill={() => { newChat(); requestAnimationFrame(() => editDraft("Use $skill-creator to create a new skill that ")); }} /></ViewBoundary></div>}
@@ -2295,7 +2312,8 @@ export default function Home() {
           {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>
             : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
-          {!loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
+          {selectedWorkflow && <WorkflowChat run={selectedWorkflow} identity={workflowCatalog.identities[selectedWorkflow.id]} ready={ready && connected} models={models} onOpenChat={id => void openById(id)} onOpenCanvas={run => { setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId }); show("canvas"); }} />}
+          {!selectedWorkflow && !loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           {chatConversation}
           {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}
           {failedTurn && <FailedTurnCard key={`${selected?.id}:${failedTurn.turnId}`} failure={failedTurn} models={selectedChoice?.models ?? models} currentModel={selected?.model} disabled={!replaceable}
