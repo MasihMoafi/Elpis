@@ -125,9 +125,17 @@ test('reopening a recorded painting repairs legacy arrow origins while preservin
   const deleted = drawing.scene.elements.find(e => e.id === 'love-paint-deleted-1');
   await f.store.save({ ...drawing.scene, elements: [{ ...moved, x: moved.x + 13, version: 2, versionNonce: 2 }, { ...deleted, isDeleted: true, version: 2, versionNonce: 2 }] });
   const before = await f.store.read();
+  const readRecorded = f.client.readThread;
+  let pages = 0;
+  f.client.readThread = async (id, options) => {
+    pages++;
+    const value = await readRecorded(id);
+    return options?.cursor ? value : { ...value, data: [], nextCursor: 'older-diagram' };
+  };
   await f.talk.read();
   const after = await f.store.read(), rect = after.scene.elements.find(e => e.id === 'love-paint-legacy-0'), arrow = after.scene.elements.find(e => e.id === 'love-paint-legacy-1');
   assert.deepEqual([arrow.x - rect.x, arrow.y - rect.y], [100, 60]);
+  assert.equal(pages, 2, 'The original diagram can be older than the newest history page');
   for (const id of ['love-paint-moved-1', 'love-paint-deleted-1']) assert.deepEqual(after.scene.elements.find(e => e.id === id), before.scene.elements.find(e => e.id === id));
   await f.talk.read(); assert.deepEqual(await f.store.read(), after);
 });

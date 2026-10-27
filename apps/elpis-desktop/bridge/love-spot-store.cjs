@@ -529,6 +529,7 @@ function createLoveSpot({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.j
       const { scene } = await read(), byId = new Map(scene.elements.map(e => [e.id, e])), updates = [];
       for (const { turnId, shapes } of paintings) {
         const id = index => `love-paint-${turnId}-${index}`;
+        if (scene.elements.some(e => e.id.startsWith(`love-paint-${turnId}-`) && Number(e.id.match(/-(\d+)$/)?.[1]) >= shapes.length)) continue;
         const anchorIndex = shapes.findIndex((shape, index) => {
           const e = byId.get(id(index));
           return !['line', 'arrow'].includes(shape.type) && e?.type === shape.type && !e.isDeleted && !e.angle;
