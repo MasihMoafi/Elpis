@@ -41,7 +41,7 @@ export async function handleMcp(request,call) {
       const {name,arguments:args={}}=request.params||{};
       if(!tools.some(tool=>tool.name===name))throw Error('Unknown browser tool.');
       const result=await call(name,args,request.params?._meta);
-      return reply(result?.content?result:{content:[{type:'text',text:JSON.stringify(result)}]});
+      return reply(Array.isArray(result?.content)?result:{content:[{type:'text',text:JSON.stringify(result)}]});
     }catch(error){return reply({isError:true,content:[{type:'text',text:error.message}]});}
   }
   return {jsonrpc:'2.0',id:request.id,error:{code:-32601,message:'Unknown MCP method'}};

@@ -324,7 +324,9 @@ Masih approved implementing a document the agent can open beside the conversatio
 
 | ID | Behavior and acceptance | State |
 | --- | --- | --- |
-| DOC1 | `document_open` opens the exact existing text file in its own chat's Files pane, editable by default; Preview remains available. Report success after renderer acknowledgement. Missing, binary, oversized or unavailable files give an explicit error. | In progress |
-| DOC2 | `document_read` returns the saved file text, modification time and whether the editor has unsaved changes. User edits survive reopening; Save/Ctrl+S makes the new text readable by the agent. | In progress |
-| DOC3 | Host-owned thread metadata routes requests; another chat/window or embedded website cannot acknowledge them. A switched, disconnected or unresponsive renderer returns an error. | In progress |
-| DOC4 | Reuse the existing editor and stale-write guard. Reopening cannot replace unsaved text; a changed disk file rejects stale saves and keeps the local draft. Verify the shared flow in a packaged desktop on an isolated profile. | In progress |
+| DOC1 | `document_open` opens the exact existing text file in its own chat's Files pane, editable by default; Preview remains available. Report success after renderer acknowledgement. Missing, binary, oversized or unavailable files give an explicit error. | Verified locally |
+| DOC2 | `document_read` returns the saved file text, modification time and whether the editor has unsaved changes. User edits survive reopening; Save/Ctrl+S makes the new text readable by the agent. | Verified locally |
+| DOC3 | Host-owned thread metadata routes requests; another chat/window or embedded website cannot acknowledge them. A switched, disconnected or unresponsive renderer returns an error. | Verified locally |
+| DOC4 | Reuse the existing editor and stale-write guard. Reopening cannot replace unsaved text; a changed disk file rejects stale saves and keeps the local draft. Verify the shared flow in a packaged desktop on an isolated profile. | Verified locally |
+
+Verification: production build, focused controller/MCP/file/package checks, and the real-engine packaged journey in `tests/documents.runtime.mjs` pass. The journey covers saved Unicode, unsaved drafts across chat folders, Settings, stale saves, unavailable files, chat isolation, both themes and an 820px window. No model request is required. The failed-refresh regression fails against the earlier installed renderer and passes after the draft guard. User acceptance remains pending.

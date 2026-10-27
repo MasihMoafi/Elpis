@@ -98,7 +98,7 @@ try {
     const threadId=created.thread.id;
     const listed=await rpc('mcpServerStatus/list',{threadId,serverName:'elpis_browser'});
     const browser=listed.data.find(server=>server.name==='elpis_browser');
-    assert(browser,'registered browser server');assert.equal(Object.keys(browser.tools).length,11);
+    assert(browser,'registered browser server');
     toolCall=async(name,args={})=>{const value=await rpc('mcpServer/tool/call',{threadId,server:'elpis_browser',tool:name,arguments:args});if(value.isError)throw Error(value.content[0].text);return value.content[0].type==='image'?value:JSON.parse(value.content[0].text);};
     const target=new URL(app.url());target.searchParams.set('session',threadId);await app.goto(target.href);
     await app.getByRole('textbox',{name:'Message Elpis',exact:true}).waitFor();

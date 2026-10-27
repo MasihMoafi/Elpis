@@ -543,9 +543,9 @@ export const retainedUpdates = {
       "reason": "Improve Elpis, Masih 22 Oct, with a screenshot of the review dialog: \"keep and try it should be deleted.\" The review has Close and Check build & tests only; the steps that clicked or disabled Try it and Keep now check that neither exists, and the reasons they showed as tooltips are read from the dialog text."
     },
     "tests/files-pane.test.cjs": {
-      "blob": "d37069e57073356ece60572c3dfe030c161afbf2",
-      "approval": "78f23a50882c01bcf43a84479f4f9e1a127c1643",
-      "reason": "Masih 27 Oct: retain focused board selection and actual document preview, paging, native navigation interception and clickable saved-agent tools. Keep the existing behavioral assertions; remove only a redundant browser-selection-string assertion and exact opaque-frame URL assertion contradicted by native retained-document proof. Correct fixture sizing only after Files exists. Baseline remains unchanged."
+      "blob": "3e547bcd8194cba19154e950753beb4ddd4ba86b",
+      "approval": "84f35b9d43e7c7e40e1fea583b20f83f50b3ab6d",
+      "reason": "Masih 27 Oct: implement direct shared-document editing beside chat. Add the failed-refresh regression: text typed during an in-flight read survives its failure. This fails against the installed renderer. Preserve every existing file editing, preview, paging, navigation and selection assertion and the original baseline."
     },
     "tests/love-spot.test.cjs": {
       "blob": "f5b82185db895c2a4dbf1414f0a5c0f3c1bd05f7",

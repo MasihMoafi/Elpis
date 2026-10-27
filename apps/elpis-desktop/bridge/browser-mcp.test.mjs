@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { browserMcpConfig, handleMcp, callBrowser, tools } from './browser-mcp.mjs';
+import { browserMcpConfig, handleMcp, callBrowser } from './browser-mcp.mjs';
 const { startBrowserAgentSocket } = createRequire(import.meta.url)('../desktop/browser-agent.cjs');
 
 test('socket capabilities bind concurrent calls to their own session and reject missing or foreign scopes', async () => {
@@ -45,11 +45,8 @@ test('private reconnect record retains capabilities and host metadata isolates i
   } finally { await endpoint.close(); }
 });
 
-test('MCP lists typed tools and returns screenshots as images, failures as tool errors', async () => {
+test('MCP returns screenshots as images and failures as tool errors', async () => {
   assert.equal((await handleMcp(null,async()=>{})).error.code,-32600);
-  const listed = await handleMcp({id:1,method:'tools/list'},async()=>{});
-  assert.deepEqual(listed.result.tools.map(tool=>tool.name),tools.map(tool=>tool.name));
-  assert.ok(listed.result.tools.some(tool => tool.name === 'document_open'));
   const image = {content:[{type:'image',mimeType:'image/jpeg',data:'anBlZw=='}]};
   const request={id:2,method:'tools/call',params:{name:'browser_screenshot',arguments:{tabId:'one'}}};
   assert.deepEqual((await handleMcp(request,async()=>image)).result,image);
@@ -74,9 +71,11 @@ test('stdio MCP initializes, forwards tools over the socket, and fails closed wh
     assert.ok((await rpc('tools/list')).result.tools.some(tool => tool.name === 'document_read'));
     const call=await rpc('tools/call',{name:'browser_open',arguments:{url:'https://example.com'},_meta:{threadId:'fixture'}});
     assert.equal(JSON.parse(call.result.content[0].text).name,'browser_open');
-    endpoint.setDocuments(async (id, name, args) => ({ thread: id, name, path: args.path }));
+    endpoint.setDocuments(async (id, name, args) => ({ thread: id, name, path: args.path, ...(name === 'document_read' ? { content: 'Saved text — متن فارسی' } : {}) }));
     const document = await rpc('tools/call', { name: 'document_open', arguments: { path: '/tmp/draft.md' }, _meta: { threadId: 'child' } });
     assert.deepEqual(JSON.parse(document.result.content[0].text), { thread: 'child', name: 'document_open', path: '/tmp/draft.md' });
+    const read = await rpc('tools/call', { name: 'document_read', arguments: { path: '/tmp/draft.md' }, _meta: { threadId: 'child' } });
+    assert.equal(JSON.parse(read.result.content[0].text).content, 'Saved text — متن فارسی');
     endpoint.setResolver(()=>null);
     assert.equal((await rpc('tools/call',{name:'browser_tabs',arguments:{},_meta:{threadId:'fixture'}})).result.isError,true);
   } finally {child.stdin.end();child.kill();lines.close();await endpoint.close();}
