@@ -14,7 +14,7 @@ const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map
 const base = (id, name, active = false) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: active ? 'active' : 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const graph = { workflowId: 'run-0', name: 'Fix a bug', nodes: [{ id: 'mother', type: 'mother', position: { x: 0, y: 0 }, data: {} }, { id: 'writer', type: 'agent', position: { x: 400, y: 0 }, data: { title: 'Build', instruction: 'Return the requested evidence.', model: null, writeScopes: ['.'], acceptanceCriteria: ['Return evidence'] } }], edges: [] };
 const open = async (colorScheme, savedRuns = runs, state = {}, names = {}, routes = {}) => {
-  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : [])]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name }));
+  const listed = [...new Map(savedRuns.flatMap(run => [base(run.rootThreadId, run.name), ...(run.tasks ?? []).filter(task => typeof task.assignedThreadId === 'string' && task.assignedThreadId).map(task => base(task.assignedThreadId, `Workflows · ${task.title}`, task.status === 'running')), ...(run.mother?.sessionId ? [base(run.mother.sessionId, 'Workflows · Mother')] : [])]).map(thread => [thread.id, thread])).values()].map(thread => ({ ...thread, name: names[thread.id] ?? thread.name }));
   const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, threads: listed,
   // The fixture waits for chat-a, a workflow here, so the Workflows section is open (it starts folded: sidebar-organize.runtime.mjs).
   storage: { 'elpis-sidebar-folds-v1': JSON.stringify({ sections: { workflows: false }, projects: {} }), 'elpis-workflow-draft-v1': JSON.stringify(graph), 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'p', name: 'Fixture', cwd: CWD }], selectedId: 'p' }), ...state },
@@ -126,8 +126,14 @@ test('two runs in one root chat stay separate and never borrow one another’s s
     assert.equal(await row(page, 'step-1-0').count(), 0);
     assert.equal(await row(page, 'step-0-0').count(), 1, 'folding the latest run cannot hide a different run’s steps');
     await latest.getByRole('button', { name: /^Expand / }).click();
-    saved[1].status = 'succeeded';
     f.emit('message', { method: 'thread/status/changed', params: { threadId: 'step-1-0', status: { type: 'idle' } } });
+    await eventually(async () => assert.equal(await row(page, 'step-1-0').locator('.thread-dot[data-state="working"]').count(), 0));
+    assert.equal(await latest.locator('.thread-dot[data-state="working"]').count(), 1, 'the run stays working while its own remaining siblings are active');
+    saved[1].status = 'succeeded';
+    for (const task of saved[1].tasks) {
+      task.status = 'succeeded';
+      f.emit('message', { method: 'thread/status/changed', params: { threadId: task.assignedThreadId, status: { type: 'idle' } } });
+    }
     await eventually(async () => assert.equal(await latest.locator('.thread-dot[data-state="working"]').count(), 0));
     await eventually(async () => assert.equal(await row(page, 'step-1-0').count(), 0, 'completion folds even a manually expanded run'));
     assert.equal(await row(page, 'step-0-0').count(), 1, 'completion cannot fold another run');
@@ -439,10 +445,12 @@ test('cancelled workflow offers explicit same-run recovery without replaying com
     const { page } = f;
     await row(page, 'chat-a').locator('.thread-link').click();
     const summary = page.getByRole('region', { name: 'Workflow run', exact: true });
+    await summary.getByRole('list', { name: 'Saved workflow tasks', exact: true }).locator('li').filter({ hasText: 'Retained evidence' }).locator('details > summary').click();
     await summary.getByText('Observed completed evidence', { exact: true }).waitFor();
     const resume = summary.getByRole('button', { name: 'Resume workflow', exact: true });
     await eventually(async () => assert.equal(await resume.isEnabled(), true));
-    assert.equal(f.posts.some(post => /\/resume$/.test(post.path)), false, 'opening a stopped run cannot resume it');
+    assert.equal(f.posts.some(post => /^\/api\/workflows\/[^/]+\/resume$/.test(post.path)), false, 'opening a stopped run cannot resume it');
+    assert.equal(f.posts.some(post => /^\/api\/threads\/[^/]+\/(?:turns|steer)$/.test(post.path)), false, 'reading the retained history cannot start or steer a model turn');
     await resume.click();
     await eventually(async () => assert.equal(f.posts.filter(post => post.path === '/api/workflows/cancelled-run/resume').length, 1));
     assert.equal(f.posts.some(post => post.path === '/api/workflows/run'), false, 'recovery sends the retained identity rather than starting another workflow');
