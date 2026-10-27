@@ -19,6 +19,45 @@ async function fixture(t) {
   return { directory, store, env, companion };
 }
 
+async function startPlayer(t, f, { name = 'matilda_test', openUri = true } = {}) {
+  const calls = path.join(f.directory, 'player-calls');
+  const player = spawn('python3', ['-u', '-c', `
+import sys, dbus, dbus.service, dbus.mainloop.glib
+from gi.repository import GLib
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+bus = dbus.SessionBus()
+name = dbus.service.BusName('org.mpris.MediaPlayer2.' + sys.argv[1], bus)
+def log(action):
+    with open(sys.argv[2], 'a') as output: output.write(action + '\\n')
+class Player(dbus.service.Object):
+    status = 'Paused'
+    url = 'file:///music/linkin%20park.m4a'
+    @dbus.service.method('org.freedesktop.DBus.Properties', in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        return {'PlaybackStatus': self.status, 'CanControl': True, 'CanPlay': True, 'CanPause': True, 'CanGoNext': False, 'Metadata': dbus.Dictionary({'xesam:title': 'linkin park masterpiece', 'xesam:artist': dbus.Array(['Linkin Park'], signature='s'), 'xesam:url': self.url}, signature='sv')}
+    @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='s', out_signature='')
+    def OpenUri(self, uri):
+        log('OpenUri')
+        if sys.argv[3] == 'false': raise dbus.DBusException('Unsupported', name='org.freedesktop.DBus.Error.UnknownMethod')
+        self.url = uri; self.status = 'Playing'
+    @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='', out_signature='')
+    def Play(self): log('Play'); self.status = 'Playing'
+    @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='', out_signature='')
+    def Pause(self): self.status = 'Paused'
+    @dbus.service.method('org.matilda.Test', in_signature='s', out_signature='')
+    def Load(self, uri):
+        def loaded(): self.url = uri; self.status = 'Playing'; return False
+        GLib.timeout_add(150, loaded)
+p = Player(bus, '/org/mpris/MediaPlayer2')
+print('ready', flush=True)
+GLib.MainLoop().run()
+`, name, calls, String(openUri)], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => player.kill());
+  let error = ''; player.stderr.on('data', data => { error += data; });
+  await Promise.race([once(player.stdout, 'data'), once(player, 'exit').then(() => { throw new Error(error); })]);
+  return { calls };
+}
+
 test('one pin choice persists across every page and never changes board contents', async t => {
   const f = await fixture(t), before = await f.store.read();
   assert.equal((await f.companion.read('one')).pinned, false);
@@ -61,31 +100,7 @@ test('only explicit commands execute, and missing-player failure is truthful', a
 
 test('the real MPRIS adapter remembers and plays a track without launching or controlling another player', async t => {
   const f = await fixture(t);
-  const player = spawn('python3', ['-u', '-c', `
-import dbus, dbus.service, dbus.mainloop.glib
-from gi.repository import GLib
-dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-bus = dbus.SessionBus()
-name = dbus.service.BusName('org.mpris.MediaPlayer2.matilda_test', bus)
-class Player(dbus.service.Object):
-    status = 'Paused'
-    url = 'file:///music/linkin%20park.m4a'
-    @dbus.service.method('org.freedesktop.DBus.Properties', in_signature='s', out_signature='a{sv}')
-    def GetAll(self, interface):
-        return {'PlaybackStatus': self.status, 'CanControl': True, 'CanPlay': True, 'CanPause': True, 'CanGoNext': False, 'Metadata': dbus.Dictionary({'xesam:title': 'linkin park masterpiece', 'xesam:artist': dbus.Array(['Linkin Park'], signature='s'), 'xesam:url': self.url}, signature='sv')}
-    @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='s', out_signature='')
-    def OpenUri(self, uri): self.url = uri; self.status = 'Playing'
-    @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='', out_signature='')
-    def Play(self): self.status = 'Playing'
-    @dbus.service.method('org.mpris.MediaPlayer2.Player', in_signature='', out_signature='')
-    def Pause(self): self.status = 'Paused'
-p = Player(bus, '/org/mpris/MediaPlayer2')
-print('ready', flush=True)
-GLib.MainLoop().run()
-`], { env: f.env, stdio: ['ignore', 'pipe', 'pipe'] });
-  t.after(() => player.kill());
-  let error = ''; player.stderr.on('data', data => { error += data; });
-  await Promise.race([once(player.stdout, 'data'), once(player, 'exit').then(() => { throw new Error(error); })]);
+  await startPlayer(t, f);
   await f.companion.act({ action: 'favorite', page: 'page' });
   const remembered = await f.companion.read('page');
   assert.equal(remembered.favorite.title, 'linkin park masterpiece');
@@ -95,5 +110,54 @@ GLib.MainLoop().run()
   assert.equal((await f.companion.act({ action: 'unpin', page: 'page' })).music, null);
   await f.companion.act({ action: 'pin', page: 'page' });
   assert.equal((await f.companion.read('page')).music.status, 'Playing');
+  const otherUri = 'file:///music/another.m4a';
+  await f.store.companion(saved => ({ ...saved, favorite: { ...saved.favorite, uri: otherUri } }));
+  assert.equal((await f.companion.act({ action: 'play-favorite', page: 'page' })).music.uri, otherUri);
   await assert.rejects(f.companion.act({ action: 'next', page: 'page' }), /support/i);
+});
+
+test('a favorite already loaded resumes with Play when OpenUri is unavailable', async t => {
+  const f = await fixture(t), { calls } = await startPlayer(t, f, { openUri: false });
+  await f.companion.act({ action: 'favorite', page: 'page' });
+  const result = await f.companion.act({ action: 'play-favorite', page: 'page' });
+  assert.equal(result.music.status, 'Playing');
+  assert.equal(result.music.uri, 'file:///music/linkin%20park.m4a');
+  assert.equal(await fs.readFile(calls, 'utf8'), 'Play\n');
+});
+
+for (const confirms of [true, false]) test(`Audacious fallback ${confirms ? 'waits for the requested track' : 'rejects an unconfirmed track'}`, async t => {
+  const f = await fixture(t);
+  await startPlayer(t, f, { name: 'audacious', openUri: false });
+  const bin = path.join(f.directory, 'bin'), argsFile = path.join(f.directory, 'audacious-args');
+  await fs.mkdir(bin);
+  await fs.writeFile(path.join(bin, 'audacious'), `#!/usr/bin/python3
+import sys, json, dbus
+with open(${JSON.stringify(argsFile)}, 'w') as output: json.dump(sys.argv[1:], output)
+if ${confirms ? 'True' : 'False'}:
+    player = dbus.SessionBus().get_object('org.mpris.MediaPlayer2.audacious', '/org/mpris/MediaPlayer2')
+    dbus.Interface(player, 'org.matilda.Test').Load(sys.argv[-1])
+`, { mode: 0o755 });
+  const favorite = { title: 'favorite', uri: 'file:///music/a%20different%20track.m4a', player: 'org.mpris.MediaPlayer2.audacious' };
+  await f.store.companion(saved => ({ ...saved, favorite }));
+  const companion = createMatildaCompanion({ store: f.store, env: { ...f.env, PATH: `${bin}:${f.env.PATH}` } });
+  if (confirms) {
+    const result = await companion.act({ action: 'play-favorite', page: 'page' });
+    assert.equal(result.music.status, 'Playing');
+    assert.equal(result.music.uri, favorite.uri);
+  } else {
+    await assert.rejects(companion.act({ action: 'play-favorite', page: 'page' }), /could not open|not confirmed/i);
+  }
+  assert.deepEqual(JSON.parse(await fs.readFile(argsFile, 'utf8')), ['--headless', '--play', favorite.uri]);
+});
+
+test('an unsupported player never invokes the Audacious fallback', async t => {
+  const f = await fixture(t);
+  await startPlayer(t, f, { openUri: false });
+  const bin = path.join(f.directory, 'bin'), marker = path.join(f.directory, 'unexpected-launch');
+  await fs.mkdir(bin);
+  await fs.writeFile(path.join(bin, 'audacious'), `#!/usr/bin/python3\nopen(${JSON.stringify(marker)}, 'w').close()\n`, { mode: 0o755 });
+  await f.store.companion(saved => ({ ...saved, favorite: { uri: 'file:///music/another.m4a', player: 'org.mpris.MediaPlayer2.matilda_test' } }));
+  const companion = createMatildaCompanion({ store: f.store, env: { ...f.env, PATH: `${bin}:${f.env.PATH}` } });
+  await assert.rejects(companion.act({ action: 'play-favorite', page: 'page' }), /could not open/i);
+  await assert.rejects(fs.access(marker), { code: 'ENOENT' });
 });

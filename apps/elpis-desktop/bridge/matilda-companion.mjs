@@ -5,9 +5,9 @@ import { FACE_DATA_URL } from './matilda-face.cjs';
 
 const exec = promisify(execFile);
 // MPRIS stays on the user's session bus. Python/dbus is optional: no dependency is installed,
-// no player is launched, and a missing local service is returned as an ordinary explanation.
+// only an existing player is controlled, and a missing local service is returned as an ordinary explanation.
 const MPRIS = `
-import sys, json, dbus
+import sys, json, dbus, subprocess, time
 bus = dbus.SessionBus()
 action, wanted, uri = sys.argv[1:]
 players = []
@@ -30,7 +30,20 @@ if action != 'read':
     if not props.get('CanControl', False): raise Exception('This player does not support music controls.')
     capability = {'play': 'CanPlay', 'pause': 'CanPause', 'next': 'CanGoNext', 'open': 'CanPlay'}[action]
     if not props.get(capability, False): raise Exception('This player does not support that action.')
-    if action == 'open': player.OpenUri(uri, timeout=2)
+    if action == 'open':
+        if str(props.get('Metadata', {}).get('xesam:url', '')) == uri:
+            player.Play(timeout=2)
+        else:
+            try: player.OpenUri(uri, timeout=2)
+            except dbus.DBusException as error:
+                if name != 'org.mpris.MediaPlayer2.audacious' or error.get_dbus_name() != 'org.freedesktop.DBus.Error.UnknownMethod': raise
+                subprocess.run(['audacious', '--headless', '--play', uri], check=True, timeout=2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 2
+        while True:
+            props = dbus.Interface(obj, 'org.freedesktop.DBus.Properties').GetAll('org.mpris.MediaPlayer2.Player', timeout=2)
+            if str(props.get('Metadata', {}).get('xesam:url', '')) == uri and str(props.get('PlaybackStatus')) == 'Playing': break
+            if time.monotonic() >= deadline: raise Exception('The player has not confirmed this request. Check playback before trying again.')
+            time.sleep(0.05)
     elif action == 'play': player.Play(timeout=2)
     elif action == 'pause': player.Pause(timeout=2)
     elif action == 'next': player.Next(timeout=2)
@@ -47,7 +60,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
       return JSON.parse(stdout);
     } catch (cause) {
       const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
-      const explained = /^(Open your music player first|Several music players are available|This player does not support)/.test(detail ?? '');
+      const explained = /^(Open your music player first|Several music players are available|This player does not support|The player has not confirmed)/.test(detail ?? '');
       throw new BridgeError(explained ? detail : cause.killed ? 'The player has not confirmed this request. Check playback before trying again.' : action === 'open' ? 'The player could not open your favorite. Check that the track is still available.' : 'Music controls are unavailable. Open your music player and try again.');
     }
   }
@@ -55,7 +68,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
     const saved = await store.companion(), pinned = saved.pinned.length > 0;
     let reason = '';
     if (pinned && !track) try { track = await music(); } catch (cause) { reason = cause.message; }
-    return { pinned, favorite: saved.favorite, music: pinned || track ? track ?? null : null, reason, face: pinned ? FACE_DATA_URL : undefined };
+    return { pinned, favorite: saved.favorite, music: pinned || track ? track ?? null : null, reason, threadId: await store.chat(), face: pinned ? FACE_DATA_URL : undefined };
   }
   async function act(input) {
     object(input, ['action', 'page']); text(input.page, 'page', 200);

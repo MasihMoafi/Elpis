@@ -21,7 +21,7 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
     assert.ok(box && box.y < 36, `${name}: ${JSON.stringify(box)}`);
   }
   const before = (await f.scene()).elements.filter(e => !e.isDeleted).map(e => e.id).sort();
-  const controls = page.getByRole('button', { name: 'Matilda controls', exact: true });
+  const controls = page.getByRole('button', { name: 'Music controls', exact: true });
   await controls.click();
   await page.getByText('Music controls are unavailable.', { exact: false }).waitFor();
   await page.keyboard.press('Escape');
@@ -52,4 +52,60 @@ for (const colorScheme of ['light', 'dark']) test(`Matilda stays at the top acro
   await pin.waitFor();
   assert.equal(await presence.count(), 0);
   assert.equal(f.requests.some(url => /\/agents\/run|\/turn\/interrupt/.test(url)), false);
+});
+
+
+for (const colorScheme of ['light', 'dark']) test(`Matilda drags independently and music leaves the conversation size unchanged (${colorScheme})`, { timeout: 60000 }, async t => {
+  const { fixture } = require('./parity-fixture.cjs');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cjs');
+  let music = { title: 'Linkin Park masterpiece', artist: 'Linkin Park', uri: 'file:///favorite.m4a', status: 'Playing', canPlay: true, canPause: true, canNext: true };
+  const f = await fixture({ colorScheme, width: 1000, height: 800, routes: {
+    '/api/love-spot/companion': body => {
+      if (body?.action === 'pause') music = { ...music, status: 'Paused' };
+      if (body?.action === 'play') music = { ...music, status: 'Playing' };
+      return { pinned: true, face: FACE_DATA_URL, threadId: 'chat-a', favorite: { ...music }, music, reason: '' };
+    },
+  } });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true });
+  await presence.waitFor();
+  const avatar = presence.getByAltText('Matilda', { exact: true });
+  assert.equal(await avatar.evaluate(el => !!el.closest('button')), false, 'The avatar is a drag handle, not a music button');
+  const composerBefore = await page.locator('.composer').boundingBox();
+  const chatBefore = await page.locator('.chat-scroll').boundingBox();
+  const musicButton = page.getByRole('button', { name: 'Music controls', exact: true });
+  await avatar.click();
+  assert.equal(await musicButton.getAttribute('aria-expanded'), 'false');
+  await musicButton.click();
+  const popup = page.getByText('Music', { exact: true }).locator('..');
+  await page.getByRole('button', { name: 'Pause music', exact: true }).waitFor();
+  const popupBefore = await popup.boundingBox();
+  await page.getByRole('button', { name: 'Pause music', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume music', exact: true }).waitFor();
+  assert.deepEqual(await popup.boundingBox(), popupBefore, 'Track state does not resize the music panel');
+  assert.deepEqual(await page.locator('.composer').boundingBox(), composerBefore);
+  assert.deepEqual(await page.locator('.chat-scroll').boundingBox(), chatBefore);
+  await page.keyboard.press('Escape');
+  const before = await presence.boundingBox(), face = await avatar.boundingBox();
+  await page.mouse.move(face.x + face.width / 2, face.y + face.height / 2);
+  await page.mouse.down(); await page.mouse.move(face.x - 180, face.y + 140, { steps: 8 }); await page.mouse.up();
+  const dragged = await presence.boundingBox();
+  assert.ok(dragged.x < before.x - 150 && dragged.y > before.y + 100, JSON.stringify({ before, dragged }));
+  const hit = await avatar.evaluate(el => { const r = el.getBoundingClientRect(); return document.elementFromPoint(r.x + 12, r.y + 12) === el; });
+  assert.equal(hit, true, 'The moved avatar stays visible and usable above the page');
+  await page.reload(); await page.locator('.startup-splash').waitFor({ state: 'detached' }); await presence.waitFor();
+  assert.deepEqual(await presence.boundingBox(), dragged, 'Position survives a reload');
+  await page.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
+  await page.locator('.thread-row.active[data-thread-id="chat-a"]').waitFor();
+  await page.getByText('All green.', { exact: true }).waitFor();
+  await avatar.focus(); await page.keyboard.press('Shift+ArrowLeft');
+  const keyed = await presence.boundingBox(); assert.equal(Math.round(dragged.x - keyed.x), 30);
+  await page.setViewportSize({ width: 360, height: 400 });
+  await page.waitForFunction(() => { const r = document.querySelector('[aria-label="Pinned Matilda"]').getBoundingClientRect(); return r.x >= 0 && r.right <= innerWidth && r.y >= 0 && r.bottom <= innerHeight; });
+  const fs = require('node:fs/promises'), path = require('node:path');
+  const evidence = '/home/masih/.cache/elpis-tests/avatar-proof'; await fs.mkdir(evidence, { recursive: true });
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.screenshot({ path: path.join(evidence, `drag-${colorScheme}.png`) });
+  assert.deepEqual(f.errors, []);
 });

@@ -2,15 +2,24 @@
 
 Masih approved a small presence he can summon, pin and unpin, and ask to play his favorite music. It must stay quiet and leave other agents working. Replies remain ordinary board conversation; do not send chat screenshots.
 
-1. **Pin (verified, awaiting integration):** Masih clarified “on top of the page” and “on every page”. The same compact control lives in the top bar of every app view, including Settings and the standalone Love Spot. Pin stays on across navigation and board pages; Unpin removes the presence everywhere. Existing saved pin choices carry forward. Music controls open only when asked for; pinning never changes drawings, takes focus or changes playback.
+1. **Pin (installed):** Masih clarified “on top of the page” and “on every page”. The same compact control lives in the top bar of every app view, including Settings and the standalone Love Spot. Pin stays on across navigation and board pages; Unpin removes the presence everywhere. Existing saved pin choices carry forward. Music controls open only when asked for; pinning never changes drawings, takes focus or changes playback.
 2. **Music (implemented):** Use the existing Linux MPRIS player. Show its actual track; play/pause and remember the current track as a favorite. “Play my favorite music” reopens the saved track in that player. No player or an unsupported action yields a clear local explanation. No launches, downloads, paid service or autoplay on mount.
 3. **Conversation (implemented):** Only direct, short commands trigger actions. Questions, quoted commands, negation and implementation discussion do not. Matilda receives the actual action result before replying; no invented success.
 4. **Isolation (implemented):** Separate worktree; no edits to other agents' unfinished files. Persistence uses the existing board lock but a separate settings file. The feature neither interrupts turns nor restarts the app. Remove the feature commit to roll back; drawings and saved favorites remain intact.
 
 Verify persistence across two store instances, separate pages, direct-command positive/negative cases, player failure and real MPRIS control on a private session bus. Exercise pin/unpin, keyboard focus, reload and narrow layouts in both themes. Validate the packaged app with a throwaway profile before installing forward.
 
-Evidence: 26 bridge checks pass; the top bar, navigation, menu dismissal, focus return, global Unpin and reload pass in light and dark at 1000 px and 360 px. The packaged app with its real bridge passes across Chat, Workflows, Customize, Settings and standalone Love Spot. Evidence: `~/.cache/elpis-tests/matilda-top/native-result.json`. Installation waits for another agent’s unfinished shared page edits; the existing installation and running app remain untouched.
+Initial evidence: 26 bridge checks pass; the top bar, navigation, menu dismissal, focus return, global Unpin and reload pass in light and dark at 1000 px and 360 px. The packaged app with its real bridge passes across Chat, Workflows, Customize, Settings and standalone Love Spot. Evidence: `~/.cache/elpis-tests/matilda-top/native-result.json`. Installed forward with the inline-diagram, instant-message and duplicate-label fixes at `1939457ed`; running windows are left open.
 
 ## Inline diagrams and arrow repair — 27 October 2026
 
 Masih reports raw `excalidraw` JSON in chat and misplaced arrows on the board. Render valid diagram fences inline, retain code copying, and preserve ordinary code blocks. Honor line/arrow x/y offsets while preserving absolute-points drawings. Repair only unchanged legacy arrows using their recorded reply; preserve edits and deletions. Visually inspect the real chat and Excalidraw outputs in both themes before presenting a result. No chat screenshots in replies; embed the diagram itself.
+
+
+## Avatar, music and page context — 27 October 2026
+
+V: Masih requests an avatar without a label or click action, a separate pinned music icon, easy access to their existing conversation, dragging, and screenshot context from Elpis or another application. Keep the chat and composer dimensions unchanged. Preserve Unpin everywhere and other agents' work.
+
+Use the avatar as the pointer/keyboard drag handle; remember its position and keep controls within the viewport on resize. A separate Chat control opens the existing Love Spot conversation and focuses the composer. Music opens a fixed-size popover without moving the conversation. Resume an already loaded favorite with MPRIS Play; Audacious's missing OpenUri may use its native argv command, and must confirm the desired URI is playing.
+
+Provide one-shot screenshot capture on explicit request through the existing session-scoped tool channel. Let the OS/source picker choose the page; cancellation returns an error without an image. Capture no background stream. Verify actual app controls, chat dimensions, drag persistence, narrow layouts and both themes; inspect native capture of an external test window privately. Floating outside Elpis and automatic capture are separate preferences, not assumed.

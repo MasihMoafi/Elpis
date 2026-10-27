@@ -1468,6 +1468,11 @@ export default function Home() {
    * Commands that run the model or rewrite the chat wait for an idle chat; controls and views are always there. */
   const openSettings = (tab: SettingsDestination) => { setSettingsSection(tab); show("settings"); };
   const focusComposer = () => composerRef.current?.focus();
+  const chatWithMatilda = (id: string | null) => {
+    if (!id) { show("loveSpot"); return; }
+    if (selectedRef.current?.id === id && viewRef.current === "chat") { focusComposer(); return; }
+    show("chat"); void openById(id).then(() => { if (selectedRef.current?.id === id) focusComposer(); });
+  };
   function beginReply(entry: Entry, quote?: string) {
     if (!selectedRef.current || readOnlyRun || readingFiles.current) return;
     const attachment = replyAttachment(entry, entry.item.type === "userMessage" ? "You" : agentName(selectedRef.current) || "Elpis", quote);
@@ -2227,8 +2232,8 @@ export default function Home() {
 
   return <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}><div data-workspace={view} className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`} style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}>
     <title>{view === "canvas" ? "Workflows · Elpis" : view === "experimentLab" ? "Lab · Elpis" : view === "customize" ? "Customize — Elpis" : "Elpis"}</title>
-    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={canBack(history)} canGoForward={canForward(history)} onShortcuts={() => shortcutAction.current("shortcuts")} /><MatildaCompanion /><AppUpdate /></div>}
-    {!desktop && <div className="title-bar"><MatildaCompanion /></div>}
+    {desktop && <div className="title-bar"><NavButtons preferences={preferences} canBack={canBack(history)} canForward={canForward(history)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} />{(sidebarCollapsed || !sidebar) && <Button className={sidebarCollapsed || panelShown && panelDrawer ? undefined : "sidebar-open-narrow"} variant="ghost" size="icon-sm" aria-label="Open sidebar" title={shortcutTitle("Open sidebar", "sidebar", preferences)} onClick={() => showSidebar(true)}><PanelLeft size={16} /></Button>}<AppMenus preferences={preferences} onError={setError} onNewChat={newChat} onOpenFolder={() => void addProject()} onSettings={() => show("settings")} onToggleSidebar={() => showSidebar(narrow() ? !sidebar : sidebarCollapsed)} onBack={() => goHistory(-1)} onForward={() => goHistory(1)} canGoBack={canBack(history)} canGoForward={canForward(history)} onShortcuts={() => shortcutAction.current("shortcuts")} /><MatildaCompanion onChat={chatWithMatilda} /><AppUpdate /></div>}
+    {!desktop && <div className="title-bar"><MatildaCompanion onChat={chatWithMatilda} /></div>}
     <ProfileDialog ready={ready && connected} />
     <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} returnFocus={shortcutsReturnFocus} />
     {commandMenuOpen && <CommandMenu threads={ordinaryThreads} projects={busy || projectChanging ? [] : projects} actions={commandActions} returnFocus={commandReturnFocus} onClose={() => setCommandMenuOpen(false)} onThread={thread => { void loadThread(thread); }} onProject={item => { void selectProject(item).catch(cause => setError(cause instanceof Error ? cause.message : String(cause))); }} onNewChat={prompt => { newChat(); setDesktopPrompt(prompt); }} />}
