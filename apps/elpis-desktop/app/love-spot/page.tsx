@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { appStorage } from "@/lib/projects";
 import { AppUpdate } from "@/components/app-update";
+import { MatildaCompanion } from "@/components/matilda-companion";
 
 const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
 
@@ -28,7 +29,7 @@ export default function LoveSpotWindow() {
   }, []);
   return <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
     <title>Love Spot · Elpis</title>
-    {desktop && <div className="title-bar shrink-0"><AppUpdate /></div>}
+    <div className="title-bar shrink-0"><MatildaCompanion />{desktop && <AppUpdate />}</div>
     <ViewBoundary label="Love Spot"><LoveSpot dark={dark} onOpenChat={id => { void window.elpisDesktop?.openSessionWindow?.(id); }} /></ViewBoundary>
   </main>;
 }

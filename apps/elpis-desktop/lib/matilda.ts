@@ -2,6 +2,8 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { agentColor } from "@/lib/love-spot";
 import { appStorage } from "@/lib/projects";
 
+export const MATILDA_CHANGED = "elpis:matilda-changed";
+
 /** Matilda: the default agent of Love Spot. She answers on the board, beside her face (bridge/love-spot-store.cjs), to whatever the person writes or draws there
  * (components/love-spot-matilda.tsx). She is not a character to play: she works by the protocol of a profession, and the person can write her another one. */
 

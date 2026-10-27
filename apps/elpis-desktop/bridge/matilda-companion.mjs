@@ -52,7 +52,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
     }
   }
   async function state(page, track) {
-    const saved = await store.companion(), pinned = saved.pinned.includes(page);
+    const saved = await store.companion(), pinned = saved.pinned.length > 0;
     let reason = '';
     if (pinned && !track) try { track = await music(); } catch (cause) { reason = cause.message; }
     return { pinned, favorite: saved.favorite, music: pinned || track ? track ?? null : null, reason, face: pinned ? FACE_DATA_URL : undefined };
@@ -61,7 +61,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
     object(input, ['action', 'page']); text(input.page, 'page', 200);
     const { action, page } = input;
     if (action === 'pin' || action === 'unpin') {
-      await store.companion(saved => ({ ...saved, pinned: action === 'pin' ? [...new Set([...saved.pinned, page])] : saved.pinned.filter(id => id !== page) }));
+      await store.companion(saved => ({ ...saved, pinned: action === 'pin' ? ['global'] : [] }));
       return state(page);
     }
     if (action === 'favorite') {
@@ -98,7 +98,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
     if (!action) return null;
     try {
       const result = await act({ action, page });
-      const message = action === 'pin' ? 'Matilda is pinned on this page.' : action === 'unpin' ? 'Matilda is unpinned. Music was left alone.' : action === 'favorite' ? `Remembered ${result.favorite.title} as your favorite.` : `${result.music?.status ?? 'Updated'}: ${result.music?.title || 'music'}.`;
+      const message = action === 'pin' ? 'Matilda is pinned at the top of every page.' : action === 'unpin' ? 'Matilda is unpinned everywhere. Music was left alone.' : action === 'favorite' ? `Remembered ${result.favorite.title} as your favorite.` : `${result.music?.status ?? 'Updated'}: ${result.music?.title || 'music'}.`;
       return { ok: true, message };
     } catch (cause) { return { ok: false, message: cause.message }; }
   }

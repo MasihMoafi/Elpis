@@ -19,7 +19,7 @@ async function fixture(t) {
   return { directory, store, env, companion };
 }
 
-test('pin choices persist independently for pages and never change board contents', async t => {
+test('one pin choice persists across every page and never changes board contents', async t => {
   const f = await fixture(t), before = await f.store.read();
   assert.equal((await f.companion.read('one')).pinned, false);
   await Promise.all([
@@ -33,8 +33,16 @@ test('pin choices persist independently for pages and never change board content
   assert.equal((await reopened.read('two')).pinned, true);
   await reopened.act({ action: 'unpin', page: 'one' });
   assert.equal((await f.companion.read('one')).pinned, false);
-  assert.equal((await f.companion.read('two')).pinned, true);
+  assert.equal((await f.companion.read('two')).pinned, false);
   assert.deepEqual(await f.store.read(), before);
+});
+
+test('existing page pins carry forward and Unpin clears them everywhere', async t => {
+  const f = await fixture(t);
+  await f.store.companion(saved => ({ ...saved, pinned: ['legacy-board-page'] }));
+  assert.equal((await f.companion.read('settings')).pinned, true);
+  await f.companion.act({ action: 'unpin', page: 'settings' });
+  assert.equal((await f.companion.read('legacy-board-page')).pinned, false);
 });
 
 test('only explicit commands execute, and missing-player failure is truthful', async t => {

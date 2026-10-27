@@ -38,7 +38,7 @@ test('board commands attach actual action results to the normal reply without tr
   await f.talk.send({ text: 'Matilda, pin yourself.', model: 'text' });
   const result = f.sent[0].attachments.find(a => a.name === 'Matilda action result.txt');
   assert.match(result.text, /"ok":true/);
-  assert.equal((await f.store.companion()).pinned.includes('legacy'), true);
+  assert.equal((await f.store.companion()).pinned.includes('global'), true);
   f.finish(); await f.talk.idle();
   await f.talk.send({ text: 'Could you add a pin button?', model: 'text' });
   assert.equal(f.sent[1].attachments.some(a => a.name === 'Matilda action result.txt'), false);
