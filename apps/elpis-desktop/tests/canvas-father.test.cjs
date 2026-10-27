@@ -27,7 +27,7 @@ test('past ten agents the Father runs the rest in his own chat, after the Mother
     await page.keyboard.press('Enter');
     await agentCount(13, 'nine added');
     // Every agent gets a folder in one step.
-    await off(); await page.keyboard.press('Control+a');
+    await canvas.locator('.react-flow').focus(); await page.keyboard.press('Control+a');
     const group = canvas.getByRole('complementary', { name: 'Selected agents', exact: true });
     await chooseOption(group.getByRole('combobox', { name: 'Add a folder', exact: true }), 'src');
     await group.getByRole('button', { name: 'Done', exact: true }).click();

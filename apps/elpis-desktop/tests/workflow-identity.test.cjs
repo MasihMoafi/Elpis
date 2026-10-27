@@ -267,9 +267,14 @@ test('a manually named step keeps its name while legacy names use recorded step 
 
 test('saved failed workflow opens its live team in chat and both canvas views without replacing the draft', async () => {
   const saved = { id: 'legal-run', rootThreadId: 'chat-a', name: 'Legal current state', status: 'failed', startedAt: 100,
-    tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.' }] };
+    tasks: [{ id: 'evidence', kind: 'research', title: 'Inspect Pointt evidence', instruction: 'Review the saved project evidence.', dependsOn: [], writeScopes: [], acceptanceCriteria: ['Return evidence'], assignedThreadId: 'legal-step', status: 'failed', failureReason: 'Weekly usage limit reached.', routing: { actual: { model: 'gpt-6-luna', provider: 'openai' } } },
+      { id: 'synthesis', kind: 'research', title: 'Write next steps', instruction: 'Summarize the evidence.', dependsOn: ['evidence'], writeScopes: [], acceptanceCriteria: ['Return next steps'], assignedThreadId: 'legal-synthesis', status: 'blocked', model: 'requested-only-model' }] };
   const draft = { ...graph, name: 'Unfinished personal draft', workflowId: 'draft-kept' };
-  const f = await open('light', [saved], { 'elpis-workflow-draft-v1': JSON.stringify(draft) }, {}, { '/api/workflows': () => ({ data: [saved] }), '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }) });
+  const f = await open('light', [saved], { 'elpis-workflow-draft-v1': JSON.stringify(draft) }, {}, { '/api/workflows': () => ({ data: [saved] }), '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }),
+    '/api/threads/legal-step': () => ({ thread: { ...base('legal-step', 'Inspect Pointt evidence'), model: 'gpt-6-luna', parentThreadId: 'chat-a' }, data: [
+      { turnId: 'evidence-turn', item: { id: 'evidence-command', type: 'commandExecution', command: 'rg --files lat.md', status: 'completed', aggregatedOutput: 'lat.md/tasks.md', exitCode: 0 } },
+      { turnId: 'evidence-turn', item: { id: 'evidence-answer', type: 'agentMessage', text: 'Inspected the saved Pointt evidence.' } },
+    ], nextCursor: null }) });
   try {
     const { page } = f;
     await row(page, 'chat-a').locator('.thread-link').click();
@@ -278,6 +283,18 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
     await summary.getByText('Weekly usage limit reached.', { exact: true }).waitFor();
     assert.equal(await page.getByText('This conversation has no messages yet.', { exact: true }).count(), 0);
+    const marks = await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
+    assert.equal(marks.length, 2); assert.equal(new Set(marks).size, 2, 'different agents have distinct stable marks');
+    await summary.getByText('openai · gpt-6-luna', { exact: true }).waitFor();
+    assert.equal(await summary.getByText('requested-only-model', { exact: false }).count(), 0, 'a configured model is not presented as an observed actual model');
+    await summary.getByRole('button', { name: 'Open Inspect Pointt evidence chat', exact: true }).click();
+    await page.locator('.thread-row.active[data-thread-id="legal-step"]').waitFor();
+    await page.getByText('Inspected the saved Pointt evidence.', { exact: true }).waitFor();
+    await page.getByText('rg --files lat.md', { exact: true }).waitFor();
+    await row(page, 'chat-a').locator('.thread-link').click();
+    await summary.getByText('Inspect Pointt evidence', { exact: true }).waitFor();
+    assert.deepEqual(await summary.getByRole('img', { name: /^Agent mark / }).evaluateAll(items => items.map(item => item.getAttribute('aria-label'))), marks, 'opening an agent chat does not change its identity');
+
     const before = await page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1'));
     await summary.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
     const board = page.getByRole('region', { name: 'Workflows', exact: true });
@@ -289,7 +306,7 @@ test('saved failed workflow opens its live team in chat and both canvas views wi
     await page.getByRole('button', { name: 'New workflow', exact: true }).click();
     await page.getByRole('textbox', { name: 'Workflow request', exact: true }).waitFor();
     assert.equal((await page.evaluate(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1')))).name, draft.name);
-    assert.equal(f.posts.some(post => /interrupt|cancel|resume|workflows\/run/.test(post.path)), false, 'opening or leaving a run does not restart or stop it');
+    assert.equal(f.posts.some(post => /^\/api\/workflows\/(?:run|(?:[^/]+\/)?(?:interrupt|cancel|resume))$/.test(post.path)), false, 'opening or leaving a run does not restart or stop it');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

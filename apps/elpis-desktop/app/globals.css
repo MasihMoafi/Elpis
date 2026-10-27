@@ -146,6 +146,9 @@ button:disabled { cursor:not-allowed; }
 .thread-list > section:first-child > .section-label-row { padding-top:8px; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:0.8125rem; line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
+.thread-link .agent-identity { display:flex; align-items:center; gap:8px; }
+.thread-link .agent-mark { display:inline-flex; flex-shrink:0; }
+.thread-link .agent-identity-text { display:flex; flex-direction:column; min-width:0; }
 .sidebar-footer { display:flex; align-items:center; gap:4px; padding-top:6px; border-top:1px solid var(--hairline); }
 /* The account row (components/account-row.tsx): avatar, name and plan; it only shows. */
 .account-row { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:40px; padding:0 8px; color:var(--foreground); font-size:0.8125rem; text-align:left; cursor:default; }

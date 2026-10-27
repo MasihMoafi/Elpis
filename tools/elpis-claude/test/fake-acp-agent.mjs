@@ -80,6 +80,10 @@ const app = agent({ name: "fake-acp-agent" })
     s.rejectToolSteers = text.includes("[tool-race]") || text.includes("[tool-gap]");
     const say = (update) => client.notify("session/update", { sessionId: params.sessionId, update });
     const chunk = (messageId, body, meta) => say({ sessionUpdate: "agent_message_chunk", messageId, content: { type: "text", text: body }, ...(meta ? { _meta: meta } : {}) });
+    if (process.env.FAKE_ACP_PROMPT_ERROR) {
+      s.running = false;
+      throw new RequestError(-32603, process.env.FAKE_ACP_PROMPT_ERROR, { errorKind: process.env.FAKE_ACP_ERROR_KIND || 'usage_limit_reached' });
+    }
     if (process.env.FAKE_ACP_OFFLINE && fs.existsSync(process.env.FAKE_ACP_OFFLINE)) {
       s.running = false;
       throw new RequestError(-32603, "Internal error: API Error: Connection dropped (ECONNRESET)", { errorKind: "server_error" });
@@ -107,7 +111,7 @@ const app = agent({ name: "fake-acp-agent" })
       permission = `permission: ${answer.outcome.outcome === "selected" ? answer.outcome.optionId : "cancelled"}. `;
       if (answer.outcome.outcome === "cancelled") return { stopReason: "cancelled" };
     }
-    if (text.includes("[tool-flight]")) while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_TOOL_RELEASE)) await pause(10);
+    if (text.includes("[tool-flight]") || process.env.FAKE_ACP_HOLD_TOOL === "1") while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_TOOL_RELEASE)) await pause(10);
     if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }
     if (s.rejectToolSteers) {
       // A single transport read can contain the end of one tool and the start of
@@ -151,7 +155,7 @@ const app = agent({ name: "fake-acp-agent" })
       const passed = fs.existsSync(file) && fs.readFileSync(file, 'utf8') === text;
       checked = JSON.stringify({ passed, summary: passed ? `Read planted result: ${text}` : 'The planted result did not arrive' });
     }
-    if (text.includes("[wait]")) while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_RELEASE)) await pause(10);
+    if (text.includes("[wait]") || process.env.FAKE_ACP_HOLD_TURN === "1") while (!s.stopped && !fs.existsSync(process.env.FAKE_ACP_RELEASE)) await pause(10);
     if (s.stopped) { s.running = false; return { stopReason: "cancelled" }; }
     const answer = checked ?? process.env.FAKE_ACP_ANSWER ?? `${name}(${s.model}) answered: ${permission}${[text, ...s.steers].join("\n")}`;
     if (text.includes("[record-only]")) {

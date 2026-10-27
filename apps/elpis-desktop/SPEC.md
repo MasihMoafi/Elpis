@@ -301,6 +301,7 @@ Verification: the installed f608 failed the paste/pause, late-note, unavailable-
 
 - A workflow starts in a private, persistent sandbox unless a project is chosen. Choosing or adding a project keeps the board and exact request.
 - Report-only agents accept empty project folders and retain their own report/check scope.
+- Ctrl/Cmd+A follows the focused editor or explicit board; toolbar focus cannot select the whole board or app. Agent chats show distinct neutral identity marks and recorded provider/model, with normal rendered messages and clickable tools. Observability integration is deferred.
 - History dismisses on outside click and Escape, returns focus, and closes on navigation. New workflow stays visible and usable during another run without cancelling it.
 - Opening a saved run shows its actual team, task status, failure and outputs in chat and both canvas views, without replacing a separate draft.
 - Default avoids known exhausted subscription routes and tries another connected subscription after a quota error. Routing is visible; unrelated failures are not blindly replayed.

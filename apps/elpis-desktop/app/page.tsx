@@ -97,6 +97,7 @@ import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useScreenshotPopup } from "@/lib/use-screenshot-popup";
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { WorkflowChat } from "@/components/workflow-chat";
+import { AgentIdentity } from "@/components/agent-identity";
 import { agentState, attentionLine, mergeListedThreads, stateLabels } from "@/lib/agents";
 import { insertTranscript } from "@/lib/dictation";
 import { useBrowserPins } from "@/lib/browser-pins";
@@ -630,6 +631,14 @@ export default function Home() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (!typing && !event.defaultPrevented && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA") {
+        event.preventDefault();
+        const selection = window.getSelection(), anchor = selection?.anchorNode;
+        const source = target === document.body ? (anchor instanceof Element ? anchor : anchor?.parentElement) : target;
+        const scope = source?.closest(".chat-content, .canvas-error-details, [data-select-all-scope]");
+        if (scope && selection) { const range = document.createRange(); range.selectNodeContents(scope); selection.removeAllRanges(); selection.addRange(range); }
+        return;
+      }
       const hit = shortcutFor(event, typing); if (!hit) return;
       event.preventDefault(); shortcutAction.current(hit.id, hit.index);
     };
@@ -2099,7 +2108,7 @@ export default function Home() {
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
       {state === "unread" ? <button data-slot="thread-dot" className="thread-dot" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : <span className="thread-dot" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <span className="thread-title" title={name}>{name}</span>
+        <>{isAgent(thread) || workflowSteps.has(thread.id) ? <AgentIdentity compact id={thread.id} name={name} nameClassName="thread-title" model={thread.model} provider={thread.modelProvider} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {origin && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}
@@ -2312,7 +2321,7 @@ export default function Home() {
           {(itemCursor || heldCount >= 0 && earlierHeld(selected?.id)) ? <Button variant="outline" className="load-earlier-messages" disabled={loading} onClick={() => void older()}>Load earlier messages</Button>
             : !loading && selected && historyGaps.has(selected.id) && <div className="context-event" role="note">The earliest part of this chat is missing, so it opened with the history that remains.</div>}
           {loading && !shownEntries.length && <p role="status" className="chat-loading text-muted-foreground">Loading conversation…</p>}
-          {selectedWorkflow && <WorkflowChat run={selectedWorkflow} identity={workflowCatalog.identities[selectedWorkflow.id]} ready={ready && connected} models={models} onOpenChat={id => void openById(id)} onOpenCanvas={run => { setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId }); show("canvas"); }} />}
+          {selectedWorkflow && <WorkflowChat threads={threads} run={selectedWorkflow} identity={workflowCatalog.identities[selectedWorkflow.id]} ready={ready && connected} models={models} onOpenChat={id => void openById(id)} onOpenCanvas={run => { setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId }); show("canvas"); }} />}
           {!selectedWorkflow && !loading && !shownEntries.length && !activeTurn && <div className="empty-state">{selected ? <><h2>This conversation has no messages yet.</h2><p>Messages and tool activity appear here.</p></> : <><img className="empty-mark" src={brandMark} alt="" aria-hidden="true" /><h2>{project ? <>What should we build in <ProjectMenu variant="heading" projects={projects} selected={project} disabled={!ready || busy} onSelect={selectProject} onAdd={() => void addProject()} />?</> : "What should we build?"}</h2>{personal.showTip && <PersonalTip onOpen={personal.open} onDismiss={personal.dismiss} />}</>}</div>}
           {chatConversation}
           {selected && stoppedTurns[selected.id] && !activeTurn && <p className="turn-stopped" role="status">Stopped. The reply above is where it was when the turn was stopped.</p>}

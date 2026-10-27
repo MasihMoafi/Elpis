@@ -90,3 +90,20 @@ test('Shift+Up/Down in shell mode preserves the configured reasoning effort', as
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+
+test('Ctrl+A copies the focused chat content without navigation and keeps composer selection native', async () => {
+  const f = await fixture(), { page } = f;
+  try {
+    const content = page.locator('.chat-content');
+    await content.click({ position: { x: 12, y: 12 } });
+    await page.keyboard.press('Control+a');
+    const chosen = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    assert.ok(chosen.trim().length > 0);
+    assert.ok(!(chosen.includes('New chat') || chosen.includes('Local workspace')), 'selecting the chat excludes app navigation');
+    const input = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
+    await input.fill('Only the unfinished message.'); await input.press('Control+a');
+    assert.deepEqual(await input.evaluate(node => [node.selectionStart, node.selectionEnd]), [0, 28]);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

@@ -260,7 +260,7 @@ test('L draws a freehand lasso, Shift adds, Alt subtracts, Escape restores the o
 test('Alt+box drag subtracts only enclosed items, with Escape restoring selection', async () => {
   const f = await editing();
   try {
-    await off(f); await f.page.keyboard.press('Control+a'); const box = await f.canvas.locator('.react-flow__node[data-id="b"]').boundingBox();
+    await f.canvas.locator('.react-flow').focus(); await f.page.keyboard.press('Control+a'); const box = await f.canvas.locator('.react-flow__node[data-id="b"]').boundingBox();
     const drag = async cancel => {
       await f.page.keyboard.down('Alt'); await f.page.mouse.move(box.x - 10, box.y - 10); await f.page.mouse.down();
       await f.page.mouse.move(box.x + box.width + 10, box.y + box.height + 10, { steps: 8 }); if (cancel) await f.page.keyboard.press('Escape'); await f.page.mouse.up(); await f.page.keyboard.up('Alt');
@@ -401,7 +401,7 @@ test('Escape clears the selection made by Ctrl+A or a click; Escape in a field s
   const { page, canvas, node, errors, close } = await openCanvas();
   try {
     const selected = () => canvas.locator('.react-flow__node.selected').count();
-    await page.evaluate(() => document.activeElement?.blur());
+    await canvas.locator('.react-flow').focus();
     await page.keyboard.press('Control+a'); assert.ok(await selected() >= 4, 'Ctrl+A selects the agents');
     await page.keyboard.press('Escape'); assert.equal(await selected(), 0, 'Escape clears the selection');
     await node('Veyra · Part 2').click(); await page.evaluate(() => document.activeElement?.blur());

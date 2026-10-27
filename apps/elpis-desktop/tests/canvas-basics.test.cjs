@@ -7,6 +7,7 @@ const { openCanvas, planFor } = require('./canvas-fixture.cjs');
 const { assertUiFit } = require('./ui-fit.cjs');
 const { captureReview, chooseTheme } = require('./controls.cjs');
 const { fixture, THREADS } = require('./parity-fixture.cjs');
+const reportPlan = body => ({ name: 'Pointt review', agents: [{ key: 'evidence', title: 'Review evidence', prompt: body.goal, folders: [], doneWhen: ['Return the observed findings'], waitsFor: [] }] });
 
 for (const colorScheme of ['light', 'dark']) test(`workflows start in their sandbox without a project and keep reports scoped (${colorScheme})`, async () => {
   const sandbox = '/tmp/elpis-workflow-sandbox';
@@ -16,7 +17,7 @@ for (const colorScheme of ['light', 'dark']) test(`workflows start in their sand
   }, routes: {
     '/api/workflows/workspace': () => ({ cwd: sandbox }),
     '/api/folders': () => ({ data: [] }),
-    '/api/canvas/plan': body => planFor(body, []),
+    '/api/canvas/plan': reportPlan,
     '/api/threads': body => body ? { thread: root } : { data: THREADS.map(thread => ({ ...thread, cwd: '' })), nextCursor: null },
     '/api/repository': () => ({ repository: false }),
     '/api/workflows/run': () => ({ graphId: '00000000-0000-0000-0000-000000000011' }),
@@ -51,7 +52,7 @@ test('choosing a workflow project stays on the board, preserves its request and 
   const sandbox = '/tmp/elpis-workflow-sandbox', project = { id: 'pointt', name: 'Pointt', cwd: '/tmp/pointt' };
   const f = await fixture({ cwd: '', storage: {
     'elpis-projects-v1': JSON.stringify({ projects: [project], selectedId: null }),
-  }, routes: { '/api/workflows/workspace': () => ({ cwd: sandbox }), '/api/folders': () => ({ data: [] }), '/api/canvas/plan': body => planFor(body, []) } });
+  }, routes: { '/api/workflows/workspace': () => ({ cwd: sandbox }), '/api/folders': () => ({ data: [] }), '/api/canvas/plan': reportPlan } });
   try {
     const { page } = f; await page.getByRole('button', { name: 'Workflows', exact: true }).click();
     const canvas = page.getByRole('region', { name: 'Workflows', exact: true });
@@ -92,6 +93,28 @@ test('workflow history dismisses outside and with Escape, restores focus and kee
     await page.getByText('No workflows in history.', { exact: true }).waitFor({ state: 'hidden' });
     assert.equal(await history.evaluate(node => node === document.activeElement), true);
     assert.equal(await request.inputValue(), 'Keep my unfinished workflow request.');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('Ctrl+A selects only the focused workflow editor or board', async () => {
+  const f = await openCanvas();
+  try {
+    const { page, canvas } = f;
+    await f.node('Quillon · Part 1').click();
+    const selected = canvas.locator('.react-flow__node-agent.selected');
+    assert.equal(await selected.count(), 1);
+    await canvas.getByRole('button', { name: 'History', exact: true }).focus();
+    await page.keyboard.press('Control+a');
+    assert.equal(await selected.count(), 1, 'a toolbar control cannot select every node');
+    assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '', 'toolbar focus cannot select the whole app');
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    await request.fill('Only this input is selected.'); await request.press('Control+a');
+    assert.deepEqual(await request.evaluate(input => [input.selectionStart, input.selectionEnd]), [0, 28]);
+    assert.equal(await selected.count(), 1, 'text selection keeps board selection');
+    await canvas.locator('.react-flow').focus(); await page.keyboard.press('Control+a');
+    assert.equal(await selected.count(), 4, 'explicit board focus selects its four agents');
+    assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -294,7 +317,7 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.equal(await where(), placed, 'Shift+click moved nothing');
     await shiftClick('Veyra · Part 2');
     assert.deepEqual(await selected(), ['Quillon · Part 1', 'Orilo · Part 3'], 'Shift+click on a selected agent takes it out');
-    await off(); await page.keyboard.press('Control+a');
+    await canvas.locator('.react-flow').focus(); await page.keyboard.press('Control+a');
     assert.deepEqual(await selected(), ['Quillon · Part 1', 'Veyra · Part 2', 'Orilo · Part 3', 'Nuvani · Join the parts']);
     assert.equal(await canvas.getByRole('dialog', { name: 'Add agents', exact: true }).count(), 0, 'Ctrl+A selects; it opens nothing');
     await canvas.getByRole('complementary', { name: 'Selected agents', exact: true }).getByRole('button', { name: 'Done', exact: true }).click();

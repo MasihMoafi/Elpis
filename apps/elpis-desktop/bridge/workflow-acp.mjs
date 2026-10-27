@@ -379,6 +379,7 @@ export function createWorkflowRuns({ stateDir, nodeSpec = loveNodeSpec, env = pr
       if (!['failed', 'blocked', 'cancelled'].includes(record.status)) throw new BridgeError('Only failed or stopped workflow nodes need recovery', 409);
       if (active.has(record.rootThreadId) || mergeControllers.has(record.rootThreadId)) throw new BridgeError('This workflow is already running', 409);
       if (record.tasks.some(task => task.status === 'succeeded' && typeof task.result?.summary !== 'string')) throw new BridgeError('Completed workflow evidence is incomplete. Saved work was preserved; inspect the run before recovery.', 409);
+      if ((record.round ?? 1) > 1) throw new BridgeError('This multi-round run lacks retained earlier-round evidence for recovery. Start a new workflow using its saved results; existing work was preserved.', 409);
       if (overrides.model) record.recovery = { model: overrides.model, ...(overrides.provider ? { provider: overrides.provider } : {}), at: Date.now() };
       if (record.tasks.every(task => task.status === 'succeeded') && record.review?.status === 'ready') { await this.merge(id); return { graphId: record.id, threadId: record.rootThreadId, turnId: record.id }; }
       if (!path.isAbsolute(root.cwd ?? '')) throw new BridgeError('Choose the workflow project before recovery');

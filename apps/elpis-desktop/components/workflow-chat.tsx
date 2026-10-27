@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { AgentIdentity } from "@/components/agent-identity";
 import { ModelPicker } from "@/components/model-picker";
 import { MarkdownText } from "@/components/markdown-text";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { api, providerChoices, type Model, type ProviderSettings } from "@/lib/api";
+import { api, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { arrange, withMother, type CanvasGraph, type CanvasNode, type TaskStatus } from "@/lib/canvas";
 import type { WorkflowIdentity, WorkflowRun } from "@/lib/workflow-identity";
@@ -54,12 +55,13 @@ export function graphForWorkflow(run: RecordedWorkflow): CanvasGraph {
   return arrange(withMother({ name: run.name || "Workflow", workflowId: run.id, nodes, edges }));
 }
 
-export function WorkflowChat({ run, identity, ready, models = [], onOpenChat, onOpenCanvas }: {
-  run: WorkflowRun; identity?: WorkflowIdentity; ready: boolean; models?: Model[];
+export function WorkflowChat({ run, identity, ready, models = [], threads = [], onOpenChat, onOpenCanvas }: {
+  run: WorkflowRun; identity?: WorkflowIdentity; ready: boolean; models?: Model[]; threads?: readonly Thread[];
   onOpenChat: (threadId: string) => void; onOpenCanvas: (run: WorkflowRun) => void;
 }) {
   const [record, setRecord] = useState<RecordedWorkflow>(run), [error, setError] = useState(""), [pending, setPending] = useState(false), [revision, setRevision] = useState(0);
   const [pick, setPick] = useState({ model: "", choiceId: "" });
+  const agentsById = useMemo(() => new Map(threads.map(thread => [thread.id, thread])), [threads]);
   const settings = useElpisSettings().data;
   const choices = useMemo(() => providerChoices(models, settings as ProviderSettings | null), [models, settings]);
   useEffect(() => {
@@ -102,10 +104,10 @@ export function WorkflowChat({ run, identity, ready, models = [], onOpenChat, on
     {record.error && !tasks.some(task => task.failureReason === record.error) && <p role="alert" className="text-destructive">{record.error}</p>}
     {!tasks.length && <p>No task details have been recorded for this run.</p>}
     <ol className="space-y-3">{tasks.map(task => <li key={task.id} className="space-y-2 rounded-md border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><strong>{task.title || task.id}</strong><span>{task.status || "not recorded"}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><AgentIdentity id={task.assignedThreadId || `${record.id}:${task.id}`} name={task.title || task.id} model={task.routing?.actual?.model ?? agentsById.get(task.assignedThreadId ?? "")?.model} provider={task.routing?.actual?.provider ?? agentsById.get(task.assignedThreadId ?? "")?.modelProvider} /><span>{task.status || "not recorded"}</span></div>
       {!!task.dependsOn?.length && <p className="text-xs text-muted-foreground">After: {task.dependsOn.map(id => tasks.find(item => item.id === id)?.title || id).join(", ")}</p>}
       {task.failureReason && <p className="text-destructive">{task.failureReason}</p>}
-      {task.routing && <p className="text-xs text-muted-foreground">Requested: {task.routing.requested?.provider || "not recorded"} / {task.routing.requested?.model || "not recorded"} · Actual: {task.routing.actual?.provider || "not recorded"} / {task.routing.actual?.model || "not recorded"}</p>}
+      {task.routing?.requested && (task.routing.requested.model !== task.routing.actual?.model || task.routing.requested.provider !== task.routing.actual?.provider) && <p className="text-xs text-muted-foreground">Requested: {task.routing.requested.provider || "not recorded"} / {task.routing.requested.model || "not recorded"}</p>}
       {!!task.routing?.attempts?.length && <details><summary>Model attempts</summary><ol>{task.routing.attempts.map((attempt, index) => <li key={index}>{attempt.provider} / {attempt.model} · {attempt.status}{attempt.reason ? ` · ${attempt.reason}` : ""}</li>)}</ol></details>}
       {task.result && <details><summary>Result</summary><MarkdownText text={typeof task.result === "string" ? task.result : task.result.summary || "A result was recorded without a text summary."} allowImages={false} /></details>}
       {task.assignedThreadId && <Button variant="ghost" size="sm" onClick={() => onOpenChat(task.assignedThreadId!)}>Open {task.title || task.id} chat</Button>}

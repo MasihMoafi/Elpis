@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,6 +7,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createWorkflowRuns } from './workflow-acp.mjs';
+import { workflowModelRoutes } from './workflow-models.mjs';
 import { DesktopClient } from './client.mjs';
 import { startDesktopServer } from './server.mjs';
 import { EventEmitter } from 'node:events';
@@ -229,4 +231,118 @@ test('isolated results expose commits and diff; final review merges only a succe
       const head = f.git('rev-parse', 'HEAD'); await restored.merge(started.graphId); assert.equal(f.git('rev-parse', 'HEAD'), head, 'merge retries are idempotent');
     }
   }
+});
+
+
+test('Default workflow nodes skip an exhausted subscription and record their actual healthy route', { timeout: 20000 }, async t => {
+  const routes = [{ model: 'claude/opus', provider: 'claude', exhausted: true, reason: 'Weekly usage limit reached' }, { model: 'm-fast', provider: 'openai', exhausted: false }];
+  const f = fixture(t, { runner: { modelRoutes: async () => routes } });
+  const run = await f.runs.start({ rootThreadId: 'root', name: 'Quota routing', tasks: [task('default-node')] }, { cwd: f.cwd, model: 'claude/opus', modelProvider: 'claude' });
+  const completed = await f.finished(run.graphId);
+  assert.equal(completed.status, 'succeeded', completed.error);
+  assert.deepEqual(completed.tasks[0].routing.requested, { model: 'claude/opus', provider: 'claude' });
+  assert.deepEqual(completed.tasks[0].routing.actual, { model: 'm-fast', provider: 'openai' });
+  assert.equal(f.log('default-node').some(row => row.method === 'session/set_config_option' && row.params.value === 'opus'), false, 'known exhausted Claude never receives a model turn');
+  assert.match(completed.tasks[0].routing.attempts[0].reason, /Weekly/);
+});
+
+test('resume preserves successful nodes and the same run while retrying a failed dependent', { timeout: 20000 }, async t => {
+  const offline = path.join(os.tmpdir(), `workflow-offline-${process.pid}-${Date.now()}`);
+  fs.writeFileSync(offline, 'offline'); t.after(() => { if (fs.existsSync(offline)) execFileSync('gio', ['trash', offline]); });
+  const f = fixture(t, { env: { second: { FAKE_ACP_OFFLINE: offline } } });
+  const run = await f.start([task('first'), task('second', { dependsOn: ['first'] })]);
+  const failed = await f.finished(run.graphId); assert.equal(failed.status, 'failed');
+  const original = failed.tasks[0].result, before = f.log('first').filter(row => row.method === 'session/prompt').length;
+  execFileSync('gio', ['trash', offline]);
+  const resumed = await f.runs.resume(run.graphId, { cwd: f.cwd, model: 'm-fast', modelProvider: 'openai' }, {});
+  assert.equal(resumed.graphId, run.graphId, 'recovery keeps the original workflow');
+  const completed = await f.finished(run.graphId);
+  assert.equal(completed.status, 'succeeded', completed.error);
+  assert.deepEqual(completed.tasks[0].result, original, 'successful evidence stays byte-for-byte');
+  assert.equal(f.log('first').filter(row => row.method === 'session/prompt').length, before, 'the successful node is not replayed');
+  assert.equal(f.log('second').filter(row => row.method === 'session/prompt').length, 2);
+});
+
+
+test('subscription recovery routes exclude API billing, expired limits and managed-provider escapes', () => {
+  const models = ['m-fast', 'claude/opus', 'agy/gemini-4-argon-high'].map(model => ({ model }));
+  const providers = { openai: { auth: { state: 'signedIn', method: 'API key' }, usage: [] }, claude: { state: 'connected', usage: [{ secondary: { usedPercent: 100, resetsAt: Date.now() / 1000 - 60 } }] }, gemini: { state: 'connected', usage: [] }, openrouter: [{ keySet: true }] };
+  const routes = workflowModelRoutes(models, providers, {});
+  assert.deepEqual(routes.map(route => route.provider), ['claude', 'agy'], 'a stored API key never authorizes automatic paid fallback');
+  assert.equal(routes[0].exhausted, false, 'an expired usage window does not block a fresh allowance');
+  assert.deepEqual(workflowModelRoutes(models, providers, { modelProvider: 'claude' }).map(route => route.provider), ['claude'], 'managed connection restrictions apply before routing');
+  assert.deepEqual(workflowModelRoutes(models, { ...providers, claude: { state: 'notConnected', signedOut: true }, gemini: { state: 'notConnected' } }, {}), [], 'signed-out subscriptions are unavailable');
+});
+
+test('a structured quota failure switches subscription once and preserves the attempt evidence', { timeout: 20000 }, async t => {
+  let f;
+  f = fixture(t, { runner: {
+    modelRoutes: async () => [{ model: 'claude/opus', provider: 'claude' }, { model: 'm-fast', provider: 'openai' }],
+    nodeSpec: node => ({ name: node.name, command: process.execPath, args: [FAKE], model: node.model.replace(/^(claude|agy)\//, ''), env: {
+      FAKE_ACP_NAME: `${node.provider}-${node.name}`, FAKE_ACP_MODELS: 'opus,m-fast', FAKE_ACP_LOG: path.join(f.home, `${node.name}.jsonl`),
+      ...(node.provider === 'claude' ? { FAKE_ACP_PROMPT_ERROR: 'Weekly usage limit reached', FAKE_ACP_ERROR_KIND: 'usage_limit_reached' } : {}),
+    } }),
+  } });
+  const started = await f.start([task('limited', { model: 'claude/opus', provider: 'claude' })]);
+  const completed = await f.finished(started.graphId), node = completed.tasks[0];
+  assert.equal(completed.status, 'succeeded', completed.error);
+  assert.deepEqual(node.routing.attempts.map(attempt => [attempt.provider, attempt.status]), [['claude', 'failed'], ['openai', 'succeeded']]);
+  assert.deepEqual(node.routing.actual, { model: 'm-fast', provider: 'openai' });
+  assert.match(node.routing.attempts[0].reason, /Weekly usage limit/);
+  assert.equal(f.log('limited').filter(row => row.method === 'session/prompt').length, 2, 'one turn reaches each subscription');
+  assert.equal(completed.mother, undefined, 'successful quota recovery does not create an unnecessary supervisor turn');
+});
+
+test('Mother actually steers a running sibling after a node fails without blindly replaying the failed operation', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env });
+  const offline = path.join(f.home, 'offline'), release = path.join(f.home, 'tool-release'), finish = path.join(f.home, 'finish'); fs.writeFileSync(offline, 'offline');
+  env.bad = { FAKE_ACP_OFFLINE: offline };
+  env.live = { FAKE_ACP_TOOL_RELEASE: release, FAKE_ACP_HOLD_TOOL: '1', FAKE_ACP_RELEASE: finish, FAKE_ACP_HOLD_TURN: '1' };
+  env.Mother = { FAKE_ACP_ANSWER: JSON.stringify({ action: 'steer', taskId: 'live', message: 'Include MOTHER_GUIDANCE_2710 in your final evidence.', reason: 'The independent sibling can finish while the unavailable node waits for manual recovery.' }) };
+  const started = await f.start([task('seed'), task('live', { instruction: 'Continue the independent work.' }), task('bad', { dependsOn: ['seed'] })]);
+  await until(() => f.log('Mother'), log => log.some(row => row.method === 'session/prompt'));
+  assert.equal(f.log('live').some(row => row.method === '_session/steering'), false, 'Mother waits for a foreground tool before steering');
+  fs.writeFileSync(release, 'done');
+  await until(() => f.record(started.graphId), record => record.mother?.decisions?.some(decision => decision.decision === 'steer' && decision.delivery === 'currentTurn'));
+  fs.writeFileSync(finish, 'done');
+  const completed = await f.finished(started.graphId);
+  assert.equal(completed.status, 'failed', 'the genuinely failed node remains visible for recovery');
+  assert.match(completed.tasks.find(node => node.id === 'live').result.summary, /MOTHER_GUIDANCE_2710/);
+  const decision = completed.mother.decisions.find(decision => decision.decision === 'steer');
+  assert.equal(decision.taskId, 'live'); assert.equal(decision.delivery, 'currentTurn');
+  assert.equal(f.log('Mother').filter(row => row.method === 'session/prompt').length, 1, 'supervision is one bounded actual ACP decision');
+  assert.equal(f.log('bad').filter(row => row.method === 'session/prompt').length, 1, 'a generic provider failure never blindly replays the operation');
+});
+
+test('isolated workflow recovery keeps successful candidate commits and reuses the failed workspace', { timeout: 20000 }, async t => {
+  const env = {}, f = fixture(t, { env }), offline = path.join(f.home, 'offline'); fs.writeFileSync(offline, 'offline');
+  env.writer = { FAKE_ACP_WRITE: JSON.stringify({ file: 'src/preserved', text: 'preserved candidate evidence' }) };
+  env.check = { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: 'Observed preserved candidate evidence' }) };
+  env.second = { FAKE_ACP_OFFLINE: offline };
+  const started = await f.start([task('writer', { kind: 'implement', writeScopes: ['src'] }), task('check', { kind: 'verify', dependsOn: ['writer'] }), task('second', { dependsOn: ['check'] })], { isolation: 'worktree' });
+  const failed = await f.finished(started.graphId); assert.equal(failed.status, 'failed');
+  const candidate = failed.tasks[0].result.candidateCommit, workspace = failed.tasks.find(node => node.id === 'second').cwd;
+  const calls = f.log('writer').filter(row => row.method === 'session/prompt').length;
+  execFileSync('gio', ['trash', offline]);
+  const resumed = await f.runs.resume(started.graphId, { cwd: f.cwd, model: 'm-fast', modelProvider: 'openai' });
+  assert.equal(resumed.graphId, started.graphId);
+  const completed = await f.finished(started.graphId); assert.equal(completed.status, 'succeeded', completed.error);
+  assert.equal(completed.tasks[0].result.candidateCommit, candidate);
+  assert.equal(completed.tasks.find(node => node.id === 'second').cwd, workspace, 'the failed node continues in its existing worktree');
+  assert.equal(f.log('writer').filter(row => row.method === 'session/prompt').length, calls, 'successful writers are never replayed');
+  assert.equal(fs.readFileSync(path.join(completed.review.path, 'src/preserved'), 'utf8'), 'preserved candidate evidence');
+  assert.equal(fs.existsSync(path.join(f.cwd, 'src/preserved')), false, 'recovery still waits for a verified merge');
+});
+
+
+test('legacy later-round recovery refuses missing feedback evidence without changing saved work', async t => {
+  const f = fixture(t), id = randomUUID();
+  const retained = { id, rootThreadId: randomUUID(), status: 'failed', round: 2, roundLimit: 3, tasks: [task('legacy', { status: 'failed' })] };
+  const file = path.join(f.home, 'state', `${id}.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(retained));
+  const before = fs.readFileSync(file, 'utf8');
+  const restored = createWorkflowRuns({ stateDir: path.dirname(file) });
+  await assert.rejects(restored.resume(id, { cwd: f.cwd }, {}), /earlier-round evidence/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.equal(f.log('legacy').length, 0, 'no node is replayed with missing feedback');
 });
