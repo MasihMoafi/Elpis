@@ -9,7 +9,8 @@ const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 const CWD = '/tmp/elpis-rclick-fixture';
-const CHAT_ACTIONS = ['Rename', 'Pin', 'Bookmark', 'Organize', 'Mark as unread', 'Open in', 'Archive', 'Delete'];
+// Colour follows Bookmark in sidebar and tab menus (577d5a5ad; R84, SPEC C8: Masih, 27 Oct, a colour for any conversation).
+const CHAT_ACTIONS = ['Rename', 'Pin', 'Bookmark', 'Colour', 'Organize', 'Mark as unread', 'Open in', 'Archive', 'Delete'];
 async function eventually(check) {
   const deadline = Date.now() + 4000;
   for (;;) { try { return await check(); } catch (error) { if (Date.now() >= deadline) throw error; await new Promise(resolve => setTimeout(resolve, 40)); } }
