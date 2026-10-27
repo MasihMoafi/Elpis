@@ -519,10 +519,10 @@ export const retainedUpdates = {
       "reason": "SETTINGS and SETTINGS2 (adds the About page), Masih: \"in the settings I can't change whatever I want, there are limits. There shouldn't be.\" Audit the entire multiline model editor, excluding closed disclosure contents; preserve single-line heights, control sizes, alignment and clipping checks. S33, Masih 25 Oct: remove useless misleading Settings category destinations. Categories are plain labels; legacy aliases resolve real pages. S4/S33: linked instruction editors show accurate local loading/error/save states and text-only previews; retain controls, drafts, search, navigation, persistence and narrow layout checks."
     },
     "tests/settings-rows.test.cjs": {
-      "blob": "9c7e81e6da91d1c02e4caa6c7a09d9a05accbb13",
-      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
-      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
-    },
+      "blob": "96177b7edf0c9eb6528164182c196f402af52c1a",
+      "approval": "171effbfaffbc916ac007c19b77abb00e5e4c05e",
+      "reason": "Masih 27 Oct: Settings must fit beside navigation; measure only the painted retained page. Automatic orange read/completion status stays left, manual palette stays separate. Retain idle/working/error/completion/read lifecycle and alignment checks; preserve the immutable baseline."
+},
     "tests/sidebar-indent.test.cjs": {
       "blob": "2205d01288c3df27da3fa312802748a244124b45",
       "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
@@ -534,10 +534,10 @@ export const retainedUpdates = {
       "reason": "Junk tests, Masih 22 Oct: \"it's not a thing you run. it's a skill. You identify and delete the junk tests.\" Removes the screenshot probe, whose first line returns when no screenshot folder is set and which asserts nothing. Requested menu entries now include Read aloud, Bookmark, Put under, New project from these, Context and /goal. S32/S35, Masih 25 Oct: Fast applies within the current turn and has a lightning toggle. Preserve no-send, on/off, refusal and command coverage; compaction uses one shared label. S35 adds persistent File/Edit/View/Help menubar items. Scope the exact side-panel choice inventory to its open popup; retain all tab, shell, page and panel lifecycle checks. Await that popup's visibility before reading the same exact five choices; run40273131811 exposed the immediate empty snapshot."
     },
     "tests/sidebar-parity.test.cjs": {
-      "blob": "5c54fa0068fee4874890b59c91d9209dc5d4dbc1",
-      "approval": "54442dcc73bbc892e6771cf881d43a03141affae",
-      "reason": "Masih 27 Oct: restore the automatic orange completion/unread marker to the left; manual colour remains separate. Show observed Mother and recursively spawned live team despite a saved failure, keep recorded model evidence historical, and prevent duplicate recovery. Settings must fit beside navigation, hide unsupported Flex, show whole sidebar rows, and simplify chat actions into Organize/Open in with correct singular/bulk wording. Retain paging, keyboard, storage, action outcomes, isolation and alignment; shared test callers follow the same moved submenu actions. Immutable baseline retained."
-    },
+      "blob": "037563cddc0481b0ea2f670e2c499860bdb67a4b",
+      "approval": "171effbfaffbc916ac007c19b77abb00e5e4c05e",
+      "reason": "Masih 27 Oct: Settings must fit beside navigation; measure only the painted retained page. Automatic orange read/completion status stays left, manual palette stays separate. Retain idle/working/error/completion/read lifecycle and alignment checks; preserve the immutable baseline."
+},
     "tests/reading-options.test.cjs": {
       "blob": "fb2bcf9aeca29ea0316e6d3ee3f3a9c3e40afe87",
       "approval": "c88df8e6d0fa9bce03ddad94250d290679948d64",
