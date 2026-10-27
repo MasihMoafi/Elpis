@@ -1432,9 +1432,8 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
   const findAgent = (id: string) => { setSelection([id]); setFinding(null); focusBoard(); if (iso) isoController.current?.reveal([id]); else reveal([id]); };
   const scope = runTargets ? executionGraph(graph, runTargets).nodes.filter(node => node.type === "agent") : [];
   const historicalNotice = Boolean(recordedRun && savedRecord && notice && (notice === savedRecord.error || savedRecord.tasks?.some(task => task.failureReason === notice)));
-  const telemetry = <div className="canvas-telemetry">
-    {run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><>{over(run) && !run.endedAt ? <span>Duration not recorded</span> : <RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} />}</></section>}
-  </div>;
+  const runClock = run && <section className="canvas-hud" aria-label="Run clock"><span>{over(run) ? (["succeeded", "completed"].includes(run.father?.status ?? run.status) ? "Run done" : "Run ended") : "Running"}</span><>{over(run) && !run.endedAt ? <span>Duration not recorded</span> : <RunClock key={run.graphId} since={run.startedAt} until={run.endedAt} />}</></section>;
+  const telemetry = <div className="canvas-telemetry">{runClock}</div>;
   const capturedLog = run && <ol ref={logList} className="canvas-log" role="log" aria-label="Run log" aria-live="polite" aria-relevant="additions" onScroll={event => { const el = event.currentTarget; followLog.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12; }}>
     {log.map((line, index) => <li key={`${line.at}-${index}`} data-tone={line.tone}><Button variant="ghost" size="xs" className="w-full justify-start" title={line.at === undefined ? line.text : `Observed +${clock(line.at - run.startedAt)} · ${line.text}`} onClick={() => { if (line.agent) { setSelection([line.agent]); setDashboardId(line.agent); } else setSelection([MOTHER]); }}>{line.at !== undefined && <time>+{clock(line.at - run.startedAt)}</time>}<span title={line.text}>{line.text}</span></Button></li>)}
   </ol>;
@@ -1444,6 +1443,14 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     <header className="canvas-header">
       {recordedRun ? <div className="flex w-full flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span><Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>New workflow</Button></div> : <form className="flex w-full min-w-0 flex-wrap items-end gap-2" aria-label="New workflow" onSubmit={event => { event.preventDefault(); void letElpis(requestText, undefined, true); }}>
         <label className="field min-w-48 flex-1">What should the workflow do?<Input aria-label="Workflow request" value={requestText} maxLength={8000} placeholder="Describe what you want to achieve" onChange={event => setGraph(current => ({ ...current, request: event.target.value }))} /></label>
+        <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting || run && !over(run))} onChange={event => {
+          const value = event.target.value;
+          if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
+          if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
+          const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
+        }}><option value="auto">Auto · Elpis chooses</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
+          {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
+          <option value="more">More patterns…</option></OptionSelect>
         <Button type="submit" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting)}>{planning ? "Designing…" : "New workflow"}</Button>
         <Button type="button" variant="outline" size="sm" aria-describedby={!ready ? offlineReasonId : undefined} disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || run && !over(run))} onClick={() => void letElpis(requestText)}>Update current</Button>
         {!ready && <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">{OFFLINE_WORKFLOW}</p>}
@@ -1451,14 +1458,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
       <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} onOpenCanvas={onOpenRecordedRun} />
       <div className="canvas-name-group relative flex min-w-0 max-w-full items-center gap-2">
-        {!recordedRun && !(run && !over(run)) && <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting || run && !over(run))} onChange={event => {
-          const value = event.target.value;
-          if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
-          if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
-          const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
-        }}><option value="auto">Auto · Elpis chooses</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
-          {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
-          <option value="more">More patterns…</option></OptionSelect>}
         {identity && presetName && !renamingPreset && !recordedRun && <WorkflowColourMenu identity={identity} catalog={workflowCatalog} onError={setNotice} />}
         {presetName && !renamingPreset && !recordedRun ? <Button variant="ghost" size="icon-sm" aria-label="Rename workflow" title="Rename workflow" onClick={() => setRenamingPreset(true)}><Pencil size={14} /></Button>
           : identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
@@ -1466,9 +1465,10 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
       {run && !recordedRun && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
+      {run && !recordedRun && runClock}
       <span className="canvas-spacer" />
       <ViewToggle iso={iso} onChange={setIso} />
-      {run && <Button variant="ghost" size="sm" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} />Open run chat</Button>}
+      {run && <Button variant="ghost" size="icon-sm" aria-label="Open run chat" title="Open run chat" onClick={() => onOpenChat(run.rootThreadId)}><ExternalLink size={14} /></Button>}
       <Button variant="ghost" size="sm" aria-pressed={motherOpen} onClick={() => setSelection([MOTHER])} title="The run's settings: the brief every agent gets, her model, how many agents"><i className="canvas-kind" data-kind="mother" />Mother</Button>
       <Button variant="ghost" size="icon-sm" aria-label="Auto-arrange" aria-pressed={autoLayout} onClick={toggleAuto} title={autoLayout ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely." : "Auto-arrange is off. Click to arrange by run order and keep it so."}><ListOrdered size={14} /></Button>
       <Button variant="ghost" size="sm" aria-label="Side panel" aria-pressed={side} title={side ? "Hide the side panel: the board takes the whole width" : "Show the patterns, or the selected agent"} onClick={() => { if (side) { showPanel(false); setMorePatterns(false); } else { showPanel(true); if (!selection.length) setMorePatterns(true); } }}><AgentsIcon size={16} /></Button>
@@ -1530,7 +1530,6 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       onLostPointerCapture={() => { boxDrag.current = null; cutter.current = null; setSelectionBox(null); setStroke(null); }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
       onDoubleClick={event => { const target = event.target as Element; if ((target === event.currentTarget || target.closest(".react-flow")) && !target.closest(".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap")) addAgent({ x: event.clientX, y: event.clientY }); }}>
-      {!recordedRun && run && telemetry}
       {iso ? <IsoBoard workflowIdentity={identity} graph={graph} father={split.father} states={states} selected={selection} onSelect={setSelection} onOpen={setDashboardId} onRename={renameAgent} onWireClick={(event, edge) => { if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]); editFlow(event, edge); }} dark={dark} controller={isoController} modelLabel={modelLabel}
         canConnect={validConnection} inserting={insertWire}
         onReconnect={(edge, source, target) => { connectionCancelled.current = false; reconnect(edge, source, target); }}

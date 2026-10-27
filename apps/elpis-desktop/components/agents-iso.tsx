@@ -302,8 +302,7 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
   const subjectNode = subjectPlace ? nodes.get(subjectPlace.id) : undefined;
   const subjectModel = subjectNode?.type === "agent" ? `${modelLabel(subjectNode.data)}${subjectNode.data.effort ? ` · ${subjectNode.data.effort} thinking` : ""}` : null;
 
-  const waveCount = new Set(wave.values()).size;
-  const overview = `${agents.length} ${agents.length === 1 ? "agent" : "agents"} in ${waveCount} ${waveCount === 1 ? "wave" : "waves"}`;
+  const overview = `${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
   return <div ref={root} className="iso-board" role="region" aria-label="Isometric board" tabIndex={-1} data-panning={panning || undefined}
     onDoubleClick={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .iso-note, .iso-frame")) onAdd({ x: event.clientX, y: event.clientY }); }}
     onContextMenu={event => { if (!(event.target as Element).closest(".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .iso-note, .iso-frame")) onBoardMenu(event); }}
@@ -464,12 +463,11 @@ export function IsoBoard({ workflowIdentity, inserting, canConnect, onReconnect,
       <Button variant="outline" size="icon-sm" aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(1 / 1.25)}><Minus /></Button>
       <Button variant="outline" size="icon-sm" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Plus /></Button>
       <Button variant="outline" size="sm" aria-label="Fit view" title="Show the whole graph (Home)" onClick={() => setMoved(null)}><Maximize2 />Fit</Button>
-      <span className="canvas-toolbar-keys iso-keys"><span><b>←→</b>Move</span><span><b>Scroll</b>Pan</span><span><b>Ctrl/Cmd+scroll</b>Zoom</span><span><b>Middle-drag</b>Pan</span></span>
     </div>
     {/* The status panel, as Deus Ex's: what the pointer, the keys or the selection is on. */}
     <section className="iso-hud iso-status iso-chamfer" aria-label="Agent status" data-kind={subjectPlace?.kind}>
       {subjectPlace ? <><strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>
-        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `Wave ${wave.get(subjectPlace.id) ?? "–"} · ${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
+        <small title={subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}>{subjectPlace.kind !== "agent" ? parentLine(subjectPlace.id).join(" · ") : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}</small>{subjectModel && <small title={subjectModel}>{subjectModel}</small>}</>
         : <><strong title={overview}>{overview}</strong><small title="Click an agent to select it · Enter opens it">Click an agent to select it · Enter opens it</small></>}
     </section>
   </div>;
