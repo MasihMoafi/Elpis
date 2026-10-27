@@ -215,7 +215,7 @@ export const retainedUpdates = {
       "reason": "Isolated fixtures use the standard temporary directory on a fresh runner, without depending on a personal cache folder. All creator-history, folded-branch, keyboard, provider and persistence assertions remain."
     },
     "tests/browser-panel.test.cjs": {
-      "blob": "64f96cc9ac412ac5c18f19bf60e1648242f434fc",
+      "blob": "738f19738dee94817087e3ae5855b16c80061c24",
       "approval": "8e43b6441294365f45d1193358c47cfb0a68da00",
       "reason": "A217: panel starts at sidebar width and closing its last tab closes it. S35, Masih 25 Oct: close beside the Elpis brand, top application menus and aligned composer controls; retain draft, clipping, keyboard, drawing and panel checks. Masih 27 Oct: add Shift/Ctrl/Cmd selection, grouped icon menu, close selected/other/right, real URL sidebar pins, rename/mute, compact empty pane after full view and preserved resized content. Retain previous panel and annotation checks."
     },

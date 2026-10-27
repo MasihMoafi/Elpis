@@ -345,7 +345,8 @@ for (const colorScheme of ['light', 'dark']) test(`browser tabs select a range, 
     window.__push({ tabs: Array.from({ length: 6 }, (_, index) => ({ ...sample, id: `range-${index}`, title: `Reference ${index + 1}`, url: `https://example.com/${index + 1}` })), activeId: 'range-0' });
   });
   const tabs = page.getByRole('tablist', { name: 'Side panel tabs' });
-  const selected = () => tabs.getByRole('tab', { selected: true }).allTextContents();
+  // A modal context menu hides the background from the accessibility tree; its marked tabs retain their selection.
+  const selected = () => tabs.getByRole('tab', { selected: true, includeHidden: true }).allTextContents();
   await tabs.getByRole('tab', { name: 'Reference 2', exact: true }).click();
   await tabs.getByRole('tab', { name: 'Reference 5', exact: true }).click({ modifiers: ['Shift'] });
   assert.deepEqual(await selected(), ['Reference 2', 'Reference 3', 'Reference 4', 'Reference 5']);
@@ -439,7 +440,7 @@ test('browser Close other tabs preserves the context or selected group; Close ta
     await tab(scenario.grouped ? 2 : 1).click();
     if (scenario.grouped) await tab(4).click({ modifiers: ['Shift'] });
     await tab(3).click({ button: 'right' });
-    assert.deepEqual(await tabs.getByRole('tab', { selected: true }).allTextContents(), (scenario.grouped ? [2, 3, 4] : [3]).map(number => `${scenario.id} reference ${number}`), 'right-click preserves an existing marked group and replaces a selection outside its target');
+    assert.deepEqual(await tabs.getByRole('tab', { selected: true, includeHidden: true }).allTextContents(), (scenario.grouped ? [2, 3, 4] : [3]).map(number => `${scenario.id} reference ${number}`), 'right-click preserves an existing marked group and replaces a selection outside its target');
     const before = await page.evaluate(() => window.__commands.length);
     await page.getByRole('menuitem', { name: scenario.action, exact: true }).click();
     await eventually(async () => assert.deepEqual((await page.evaluate(() => window.__commands)).slice(before).filter(item => item.action === 'close'), scenario.closed.map(index => ({ action: 'close', id: `${scenario.id}-${index}` })), `${scenario.action} closes exactly the requested neighbours`));
