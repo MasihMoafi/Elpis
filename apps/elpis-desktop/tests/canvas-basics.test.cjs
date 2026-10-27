@@ -573,3 +573,39 @@ test('canvas basics: undo and redo, copy and paste, duplicate, delete keeping th
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+
+for (const colorScheme of ['light', 'dark']) test(`workflow pattern explicitly chooses Auto or preserves the selected manual pattern (${colorScheme})`, async () => {
+  const f = await openCanvas({ desktop: true });
+  const selector = () => f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
+  const pick = async label => { await selector().click(); await f.page.getByRole('option', { name: label, exact: true }).click(); };
+  try {
+    if (colorScheme === 'dark') await chooseTheme(f.page, 'dark');
+    assert.equal(await selector().getAttribute('data-value'), 'auto');
+    await pick('Sequential');
+    const request = f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    await request.fill('Review the project and report the next steps.');
+    const manualPlanned = f.page.waitForResponse(response => response.url().endsWith('/api/canvas/plan') && response.request().method() === 'POST');
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click(); await manualPlanned;
+    const selected = f.plans.at(-1);
+    assert.ok(selected.agents.length > 1, 'manual selection supplies its team rather than an empty automatic request');
+    assert.ok(selected.goal.includes('Review the project and report the next steps.'));
+    assert.ok(selected.goal.includes('pattern exactly'));
+    assert.equal(selected.agents.filter(agent => !agent.waitsFor.length).length, 1, 'the sequential pattern starts with one agent');
+    assert.ok(selected.agents.every(agent => agent.waitsFor.length <= 1));
+    let saved = await f.saved();
+    assert.equal(saved.planningPattern, 'sequential');
+    const byId = new Map(selected.agents.map(agent => [agent.key, agent.waitsFor]));
+    for (const node of saved.nodes.filter(node => node.type === 'agent')) assert.deepEqual(saved.edges.filter(edge => edge.target === node.id && edge.source !== 'mother').map(edge => edge.source).sort(), [...byId.get(node.id)].sort());
+    await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
+    assert.equal(await selector().getAttribute('data-value'), 'sequential', 'manual selection stays available after planning, renaming and reload');
+    await pick('Auto · Elpis chooses');
+    await f.canvas.getByRole('textbox', { name: 'Workflow request', exact: true }).fill('Fix the parser');
+    const planned = f.page.waitForResponse(response => response.url().endsWith('/api/canvas/plan') && response.request().method() === 'POST');
+    await f.canvas.getByRole('button', { name: 'New workflow', exact: true }).click(); await planned;
+    assert.deepEqual(f.plans.at(-1).agents, [], 'Auto starts from the task, without carrying over the manual team');
+    saved = await f.saved(); assert.equal(saved.planningPattern, 'auto');
+    assert.equal(f.runs.length, 0, 'choosing/designing never runs the team before an explicit Run');
+    await captureReview(f.page, `workflow-auto-manual-${colorScheme}`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

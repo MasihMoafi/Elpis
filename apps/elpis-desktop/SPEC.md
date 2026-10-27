@@ -360,3 +360,25 @@ Sidebar status keeps its original automatic left-hand position and unread action
 Masih: “when a message is too long there should be an option to collapse it.”
 
 Long user messages and assistant replies share a visible Collapse message / Expand message control. Messages start expanded. Rendered height determines eligibility, including Persian text and narrow layouts; short messages gain no control. A collapsed message keeps a bounded preview. Resizing and streaming do not undo the chosen state. Stored text, complete Copy, attachments, reply context and editing stay intact. Check both roles/themes, keyboard operation, full Copy while collapsed and an unchanged composer draft through the existing chat owner; then build and install forward.
+
+
+## Completion of the 26–27 October requests
+
+Keep this full scope open until each row has current executable evidence. The user requested continued work until all fixes are verified; a completed install batch does not close this list. Voice remains last, and unsupported read aloud may be hidden as explicitly authorized. No provider API-key route.
+
+| ID | Requested outcome | Verification required | State |
+| --- | --- | --- | --- |
+| C1 | Workflow starts in its sandbox; Auto or a short manual pattern choice; removable history dismisses outside/Escape; New remains usable during a run. | Rendered entry and persistence, refusal/retry, both themes. | Auto/manual repair in progress; existing sandbox/history checks retained. |
+| C2 | Mother and recursive live team shown in chat, Flat and Isometric; summaries reflect actual progress and steering. | Live progress, nested lineage, active supervision and stale/manual races. | Bridge/summary work in progress. |
+| C3 | Exact quota failure falls back to a connected subscription; same-run recovery preserves work and refuses every active descendant. | Literal error and negative controls, failure/verification/merge paths, cancelled UI. | Bridge repaired; wiring/UI verification pending. |
+| C4 | Recursive agent tree, drag a grandchild out, distinct identity/model and clickable tools/rendered chat. | Existing recursive placement/agent view owners on exact candidate. | Reconcile and drive. |
+| C5 | Disconnected typing, /resume, /clear, no empty reasoning, focused Ctrl+A, truthful Fast and fixed-height narrow composer with thinking/Send/Stop. | Existing focused chat owners, width/theme sweeps. | Reconcile and drive. |
+| C6 | Long messages fold without text/copy loss or reading jumps; Load earlier/Working/action spacing is usable; right panel fits and text stays readable. | Current fold proof plus affected layout owners. | Fold verified53e83; action geometry and ordering verified; final regression pending. |
+| C7 | Love Spot waits for finished input, read badge clears, avatar opens a small chat, music only mutes, hover/drag is stable. | Existing board/native companion and notification owners. | Reconcile and drive. |
+| C8 | Right-click row colour only, automatic left status preserved, bookmark persistence, concise singular/bulk menus and functional Manual sorting. | Native store and sidebar/order owners. | Existing ordering7/7 and selected-radio probe pass; final candidate sweep pending. |
+| C9 | Browser Shift selection, close others/right, popup annotation/selection, own Browser section/native tools. | Renderer plus native browser boundaries and Settings entry. | Browser Settings repair in progress. |
+| C10 | Computed sandboxed HTML, bounded large documents and editable card/passage feedback for agent. | Existing file/preview/review owner journeys. | Reconcile and drive. |
+| C11 | Settings fits and saves; no unsupported Flex or redundant approval heading; actual Full access scope described accurately. | Current settings writes/failure/fit and permission owners. | Reconcile and drive. |
+| C12 | Import existing Claude Code MCPs, including shadcn, without exposing keys or replacing connections; subscription child model selection. | Synthetic import boundary, UI/refusal, actual safe shadcn import and installed model/schema evidence. | MCP import coded; UI/actual import pending. |
+| C13 | Shared web skills carry bounded standard interaction rules; screenshot names are useful; prior Codex contribution request can be found. | Read actual rules, rename map and existing chat/task references. | Reconcile supporting requests. |
+| C14 | Read aloud is reliable with reusable audio/speed or unavailable controls are hidden; realtime Voice and dictation remain separate. | Hidden/zero-read/warm requests and preserved independent voice paths. | Shared fallback coded; fresh-renderer proof pending. |

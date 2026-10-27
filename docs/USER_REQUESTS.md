@@ -193,3 +193,8 @@ plain nodes such as Veyra and Orin in his screenshot. Changing artwork must
 preserve the node’s existing work and connections. Local implementation and
 fixture evidence are recorded in ES.md; integration and Masih’s acceptance remain
 open.
+
+
+## 27 October — finish the complete current request list
+
+Masih: “don't stop till all is verified finished.” The complete current-session acceptance scope is C1–C14 in [the desktop specification](../apps/elpis-desktop/SPEC.md#completion-of-the-2627-october-requests). Install batches are checkpoints, not acceptance of the full request list. Preserve the requested priorities: workflows first and read aloud last; no provider API-key route.

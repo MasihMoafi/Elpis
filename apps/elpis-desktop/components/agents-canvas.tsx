@@ -964,7 +964,7 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     window.addEventListener("keydown", keydown, true);
     return () => window.removeEventListener("keydown", keydown, true);
   });
-  const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setRenamingPreset(false); setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, request: current.request, template: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
+  const loadTemplate = (template: (typeof TEMPLATES)[number]) => { setRenamingPreset(false); setUndoLoad({ loaded: template.name, previous: graph }); setGraph(current => ({ ...withMother(template.build()), maxAgents: current.maxAgents, mother: current.mother, request: current.request, template: template.id, planningPattern: template.id })); setSelection([]); setMenu(null); setDashboardId(null); setRun(null); setStates({}); setNotice("");
     // Keys go to the board again (Tab opens the command bar), not to the template just clicked.
     (document.activeElement as HTMLElement | null)?.blur(); setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60); };
   const tidy = () => { checkpoint(); setGraph(current => arrange(current)); setTimeout(() => { if (iso) isoController.current?.fit(); else void flow.fitView({ ...FIT, duration: 250 }); }, 60); };
@@ -1349,12 +1349,24 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
     if (recordedRun) return null;
     if (planning || startingRun.current) { setNotice("Wait for the current design to finish."); return null; }
     if (!cwd) { setNotice("Choose the project the agents work in, then try again."); return null; }
-    const base = newWorkflow ? withMother({ name: "Workflow", request: goal, nodes: [], edges: [], maxAgents: graph.maxAgents, mother: { ...mother, brief: goal } }) : graph;
+    const chosenPattern = newWorkflow ? TEMPLATES.find(item => item.id === graph.planningPattern) : undefined;
+    const starter = chosenPattern?.build();
+    const base = newWorkflow ? withMother({ ...starter, name: "Workflow", request: goal,
+      nodes: starter?.nodes.map(node => node.type === "agent" ? { ...node, data: { ...node.data, instruction: "", writeScopes: [], acceptanceCriteria: [] } } : node) ?? [],
+      edges: starter?.edges ?? [], template: chosenPattern?.id, planningPattern: graph.planningPattern ?? "auto", maxAgents: graph.maxAgents, mother: { ...mother, brief: goal } }) : graph;
+    const planningGoal = chosenPattern ? `${goal}\n\nUse the selected ${chosenPattern.name} pattern exactly: keep these agents and their dependencies, without adding or removing agents. Tailor their prompts, folders and completion checks to this goal.` : goal;
     setPlanning(goal); setNotice(""); setMenu(null);
     try {
-      const plan = await api<Plan>("/canvas/plan", { goal, cwd, folders: project.folders ?? [], agents: boardForPlan(scope ?? base), maxAgents: limit });
+      const plan = await api<Plan>("/canvas/plan", { goal: planningGoal, cwd, folders: project.folders ?? [], agents: boardForPlan(scope ?? base), maxAgents: limit });
       if (!current()) return null;
       if (editKey(latest.current) !== editKey(graph)) throw Error("The current workflow changed while Elpis was designing. Your changes are kept; try again.");
+      if (chosenPattern) {
+        const selected = boardForPlan(base);
+        if (plan.agents.length !== selected.length || selected.some(agent => {
+          const planned = plan.agents.find(item => item.key === agent.key);
+          return !planned || JSON.stringify([...planned.waitsFor].sort()) !== JSON.stringify([...agent.waitsFor].sort());
+        })) throw Error("Elpis changed the selected pattern. Your current workflow is kept; try again.");
+      }
       // A scoped run may fill its missing instructions, but cannot redesign the board behind its scope preview.
       const next = scope ? { ...graph, nodes: graph.nodes.map(node => {
         const item = scope.nodes.some(item => item.id === node.id) && plan.agents.find(item => item.key === node.id);
@@ -1445,14 +1457,19 @@ function Canvas({ models, cwd, dark, ready, threads = [], onOpenChat, projectMen
       </form>}
       {recordedRun && savedRecord && <div className="w-full"><WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} /></div>}
       <WorkflowHistory catalog={workflowCatalog} revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`} onOpenChat={onOpenChat} onOpenCanvas={onOpenRecordedRun} />
-      {presetName && !renamingPreset ? <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-2">
-        <OptionSelect aria-label="Workflow pattern" value={ENTRY_PATTERNS.some(pattern => pattern.id === graph.template) ? graph.template : ""} disabled={ready && Boolean(planning || starting || run && !over(run))} onChange={event => {
-          if (event.target.value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
-          const template = TEMPLATES.find(item => item.id === event.target.value); if (template) loadTemplate(template);
-        }}><option value="" disabled>Choose a pattern</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}<option value="more">More patterns…</option></OptionSelect>
+      <div className="relative flex min-w-0 max-w-full flex-wrap items-center gap-2">
+        {!recordedRun && <OptionSelect aria-label="Workflow pattern" value={graph.planningPattern ?? "auto"} disabled={Boolean(planning || starting || run && !over(run))} onChange={event => {
+          const value = event.target.value;
+          if (value === "more") { setSelection([]); setMorePatterns(true); showPanel(true); return; }
+          if (value === "auto") { setGraph(current => ({ ...current, planningPattern: "auto" })); return; }
+          const template = TEMPLATES.find(item => item.id === value); if (template) loadTemplate(template);
+        }}><option value="auto">Auto · Elpis chooses</option>{ENTRY_PATTERNS.map(pattern => <option key={pattern.id} value={pattern.id}>{pattern.label}</option>)}
+          {graph.planningPattern && graph.planningPattern !== "auto" && !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && <option value={graph.planningPattern}>{TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}</option>}
+          <option value="more">More patterns…</option></OptionSelect>}
         {identity && <WorkflowColourMenu identity={identity} catalog={workflowCatalog} onError={setNotice} />}
-        <Button variant="ghost" size="icon-sm" aria-label="Rename workflow" title="Rename workflow" onClick={() => setRenamingPreset(true)}><Pencil size={14} /></Button>
-      </div> : identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
+        {presetName && !renamingPreset ? <Button variant="ghost" size="icon-sm" aria-label="Rename workflow" title="Rename workflow" onClick={() => setRenamingPreset(true)}><Pencil size={14} /></Button>
+          : identity ? <WorkflowIdentityEditor key={identity.id} identity={identity} catalog={workflowCatalog} name={graph.name} onName={name => setGraph(current => ({ ...current, name }))} /> : <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />}
+      </div>
       <Button variant="ghost" size="icon-sm" aria-label="Duplicate workflow" title="Duplicate workflow" onClick={() => { setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name })); setRun(null); setStates({}); setSelection([]); }}><Copy size={14} /></Button>
       {projectMenu}
       {run && !recordedRun && <span className="canvas-chip" role="status"><i className="canvas-dot" data-status={over(run) ? run.father?.status ?? run.status : "running"} />{over(run) ? "Finished" : run.father?.threadId ? "Running · the Father's part" : "Running"} · {done} of {agents.length} done</span>}
