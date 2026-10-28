@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createLoveSpot } from './love-spot-store.cjs';
-import { createMatildaCompanion } from './matilda-companion.mjs';
+import { createMatildaCompanion, PYTHON } from './matilda-companion.mjs';
 
 async function fixture(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'matilda-'));
@@ -21,7 +21,7 @@ async function fixture(t) {
 
 async function startPlayer(t, f, { name = 'matilda_test', openUri = true, volume = 0.37, writableVolume = true } = {}) {
   const calls = path.join(f.directory, 'player-calls');
-  const player = spawn('python3', ['-u', '-c', `
+  const player = spawn(PYTHON, ['-u', '-c', `
 import sys, dbus, dbus.service, dbus.mainloop.glib
 from gi.repository import GLib
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -119,6 +119,17 @@ test('the real MPRIS adapter remembers and plays a track without launching or co
   await f.store.companion(saved => ({ ...saved, favorite: { ...saved.favorite, uri: otherUri } }));
   assert.equal((await f.companion.act({ action: 'play-favorite', page: 'page' })).music.uri, otherUri);
   await assert.rejects(f.companion.act({ action: 'next', page: 'page' }), /support/i);
+});
+
+// 28 Oct, arch-drawer: from a conda shell "play my favorite music" ran conda's python3, which has no dbus, and failed.
+test('music uses the system Python, not a python3 earlier on PATH', async t => {
+  const f = await fixture(t), bin = path.join(f.directory, 'bin');
+  await startPlayer(t, f);
+  await fs.mkdir(bin);
+  await fs.writeFile(path.join(bin, 'python3'), "#!/bin/sh\necho \"ModuleNotFoundError: No module named 'dbus'\" >&2\nexit 1\n", { mode: 0o755 });
+  const companion = createMatildaCompanion({ store: f.store, env: { ...f.env, PATH: `${bin}:${f.env.PATH}` } });
+  await companion.act({ action: 'favorite', page: 'page' });
+  assert.equal((await companion.read('page')).favorite.title, 'linkin park masterpiece');
 });
 
 test('a favorite already loaded resumes with Play when OpenUri is unavailable', async t => {

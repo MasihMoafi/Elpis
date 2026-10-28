@@ -1,9 +1,12 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { BridgeError, object, text } from './validate.mjs';
 import { FACE_DATA_URL } from './matilda-face.cjs';
 
 const exec = promisify(execFile);
+/** The system Python, which has dbus; a python3 earlier on PATH (conda) may not. */
+export const PYTHON = existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3';
 // MPRIS stays on the user's session bus. Python/dbus is optional: no dependency is installed,
 // only an existing player is controlled, and a missing local service is returned as an ordinary explanation.
 const MPRIS = `
@@ -63,7 +66,7 @@ export function createMatildaCompanion({ store, env = process.env }) {
   async function music(action = 'read', favorite, volume) {
     if (process.platform !== 'linux') throw new BridgeError('Music controls currently need a Linux MPRIS player.');
     try {
-      const { stdout } = await exec('python3', ['-c', MPRIS, action, favorite?.player ?? '', favorite?.uri ?? '', volume === undefined ? '' : String(volume)], { env, timeout: 6000, maxBuffer: 128 * 1024 });
+      const { stdout } = await exec(PYTHON, ['-c', MPRIS, action, favorite?.player ?? '', favorite?.uri ?? '', volume === undefined ? '' : String(volume)], { env, timeout: 6000, maxBuffer: 128 * 1024 });
       return JSON.parse(stdout);
     } catch (cause) {
       const detail = cause.stderr?.trim().split('\n').at(-1)?.replace(/^Exception: /, '');
